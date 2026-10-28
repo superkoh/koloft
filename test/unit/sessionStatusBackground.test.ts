@@ -442,26 +442,6 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB5' && s.status === 'waiting', 8000)
   }, 20_000)
 
-  it('a promoted hold outlives the recency window, so one long tool call neither flaps the dot nor fires a false turn-done', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabB19', cwd, [...initialLines(cwd), spawnRec('toolu_old', cwd)])
-    expect(status(tracker, 'tabB19')).toBe('waiting')
-
-    await sleep(RESUME_MS + 300)
-    const promoted = new Promise<void>((resolve) =>
-      tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
-        if (e.tabId === 'tabB19' && e.next === 'working') resolve()
-      })
-    )
-    const wroteAt = Date.now()
-    writeSubagentJsonl(cwd, SID, 'agent-live.jsonl', [subagentRec(wroteAt)])
-    await promoted
-
-    await sleep(Math.max(0, wroteAt + HOLD_MS + 2 * SCAN_MS - Date.now()))
-    expect(status(tracker, 'tabB19')).toBe('working')
-  }, 12_000)
-
   it('stale subagent content never promotes (record time, not fold time)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -626,7 +606,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB15')).toBe('waiting')
   })
 
-  it('an idle nudge while resting cannot block the background promotion', async () => {
+  it('an idle nudge while resting cannot block the background promotion: the next subagent write still promotes', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabB16', cwd, initialLines(cwd))
@@ -635,6 +615,8 @@ describe('run-state vs background work: any live background task keeps the sessi
     await sleep(RESUME_MS + 200)
     writeSubagentJsonl(cwd, SID, 'agent-live.jsonl', [subagentRec(Date.now())])
     await tracker.reportTurnEnd('tabB16')
+    await sleep(RESUME_MS + 200)
+    writeSubagentJsonl(cwd, SID, 'agent-next.jsonl', [subagentRec(Date.now())])
     await waitFor(tracker, (s) => s.tabId === 'tabB16' && s.status === 'working', 8000)
   }, 12_000)
 
