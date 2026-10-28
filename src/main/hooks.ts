@@ -499,10 +499,17 @@ export function hookSettings(
   hookScript: string,
   regDir: string,
   tabId: string,
-  statusLine?: StatusLineSetting,
-  quote: (s: string) => string = shq,
-  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer',
-  hold?: { script: string; event: HoldEvent }
+  {
+    statusLine,
+    quote = shq,
+    dialogs = 'wait-for-answer',
+    hold
+  }: {
+    statusLine?: StatusLineSetting
+    quote?: (s: string) => string
+    dialogs?: 'wait-for-answer' | 'record-only'
+    hold?: { script: string; event: HoldEvent }
+  } = {}
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
@@ -652,15 +659,10 @@ export function writeTabHookSettings(
 ): string {
   fs.rmSync(statusLogOf(paths.regDir, tabId), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
-  const settings = hookSettings(
-    paths.hookScript,
-    paths.regDir,
-    tabId,
+  const settings = hookSettings(paths.hookScript, paths.regDir, tabId, {
     statusLine,
-    shq,
-    'wait-for-answer',
-    holdWhileBusy ? { script: paths.hold, event: 'hold' } : undefined
-  )
+    hold: holdWhileBusy ? { script: paths.hold, event: 'hold' } : undefined
+  })
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
   // CC§13 ADR-0028
