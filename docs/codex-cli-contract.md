@@ -928,6 +928,18 @@ way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 `ultra`, as `supported_reasoning_levels` for `gpt-6-astra`). Codex has no flag that
 names the session, so a scheduled Codex run gets its title from Codex itself.
 
+**Which models a task can name.** 2026-10-26, standalone Codex CLI 0.162.0, `codex
+app-server` on stdio in a throwaway `CODEX_HOME` and `HOME` with no login, `initialize`
+then `model/list {}`: eight models, none hidden, each `{id, displayName,
+supportedReasoningEfforts, defaultReasoningEffort, isDefault, upgrade, …}`.
+`gpt-6.1-sol` "GPT-6.1-Sol" (`isDefault`), `gpt-6-astra` "GPT-6-Astra", `gpt-6-sol`
+"GPT-6-Sol", `gpt-6-luna` "GPT-6-Luna", then `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna` and `gpt-5.5`, whose `upgrade` names a `gpt-6-*` model. `gpt-6.1-sol`,
+`gpt-6-astra` and `gpt-6-sol` take `low` … `max` and `ultra`; `gpt-6-luna` `low` …
+`max`; `gpt-5.5` stops at `xhigh`. A signed-in plan can get fewer or more (section 13,
+`availableAccessPrograms`); that a plan without `gpt-6-astra` refuses it at launch is
+**not probed yet**.
+
 ## 15. One login per CODEX_HOME, and its rate limits
 
 **The browser login ends on a loopback address that takes the redirect from anywhere on

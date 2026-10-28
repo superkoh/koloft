@@ -1757,7 +1757,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§14
-  test('a scheduled job set to run in Codex starts Codex with its task, model and thinking level, never asking, and counts as running once Codex binds', async ({
+  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, never asking, and counts as running once Codex binds', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -1780,14 +1780,13 @@ test.describe('Codex sessions through the real method chooser, process transport
       await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
       await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
       await dlg.locator('[aria-label="What to run"]').fill(TASK)
-      await dlg.locator('.chip', { hasText: 'Other…' }).click()
-      await dlg.locator('input[aria-label="Model name"]').fill('gpt-5.5')
+      await dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click()
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
       await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
       await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
       await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-5.5 · high`)
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-6-luna · high`)
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 
       await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
@@ -1797,7 +1796,7 @@ test.describe('Codex sessions through the real method chooser, process transport
         '-s',
         'danger-full-access',
         '-m',
-        'gpt-5.5',
+        'gpt-6-luna',
         '-c',
         'model_reasoning_effort="high"',
         TASK
