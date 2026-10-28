@@ -26,7 +26,8 @@ inside the desktop login session so the Keychain works. A bullet measured only o
 - a **terminal**: a pty driver that answers the TUI's queries (DA1, DA2, DECRQM, OSC
   11, OSC 7501, XTVERSION, cursor position), or tmux 3.3a where a bullet names it.
 
-Nothing ran against Google's real servers.
+Nothing ran against Google's real servers, except the one `agy update` §3 names, which
+only downloaded the public release.
 
 ## §1 The command line
 
@@ -118,6 +119,18 @@ Nothing ran against Google's real servers.
   `{"success":true,"message":"Update successful, restart CLI to use"}`.
   `agy update` prints `Checking for updates… Found new version… Update successful!
   Please restart agy.` and exits 0.
+- `agy update` on 1.3.6 at `~/.local/bin/agy`, run by its name from `PATH` as a plain
+  user, with the network on (2026-10-26, Linux arm64 Docker): it fetched the current
+  release, 1.4.7, in about 3 seconds, asked for no password and read nothing from
+  stdin; the next `agy --version` printed `1.4.7`. `AGY_CLI_DISABLE_AUTO_UPDATE=true`
+  does not stop it: the same run with it set updated just the same. The same binary in a folder the
+  user cannot write (`/usr/local/bin`, owned by another user) printed `Error: directory
+  /usr/local/bin is not fully accessible (readable: true, writable: false)`, exited 1
+  and stayed 1.3.6.
+- The installer takes only `-d`/`--dir`: no flag or variable picks a version, it
+  always installs what the manifest names (read 2026-10-26). Run as a plain user while
+  an unwritable `/usr/local/bin/agy` 1.3.6 was on `PATH`, it put 1.4.7 at
+  `~/.local/bin/agy` and exited 0 (same container, same day).
 - Only `AGY_CLI_DISABLE_AUTO_UPDATE=true` turns it off (log: `Auto-update disabled via
   environment variable`). `1`, `TRUE`, `True`, `yes` and `on` do not. No
   `settings.json` key does.
@@ -242,7 +255,9 @@ Nothing ran against Google's real servers.
   `initializing`, about 0.3 s after launch, while the question is still up; the
   first run, at once, carries `""` and `authenticating`. So which conversation the
   process holds is known before the answer. "No, exit" then exits and records no
-  trust; "Yes" opens the history. The id arrives at the same 0.3 s on the colour
+  trust (exit code 0, about 0.3 s after Enter, or 2 s after Esc; it leaves its own
+  screen, so nothing of it stays on the terminal — agy 1.4.7 on Linux in Docker,
+  2026-10-26); "Yes" opens the history. The id arrives at the same 0.3 s on the colour
   screen (no `onboarding.json`; `initializing`), on the sign-in screen (no
   `modelProvider`, no token; still `authenticating`), with `-c` on the trust screen,
   and with the folder trusted. An id with no stored conversation keeps
@@ -670,6 +685,44 @@ Nothing ran against Google's real servers.
 - A subagent is a child conversation: a summaries row with `parent_conversation_id`,
   `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
   turn.
+- **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
+  network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
+  tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
+  MaxIterations?, ExactTiming?, TimerCondition?}`: a one-shot timer or a cron, run as a
+  background task whose id is `<conversation id>/task-<stepIdx of the call>`. The call
+  returns at once ("Tool is running as a background task with task id: …"); the footer
+  shows "1 task(s)" and a line "● [time] 25s timer running".
+  - `PreToolUse` carries `toolCall {name:"schedule", args}` and `stepIdx`.
+    `PostToolUse` for it comes only when the task ends: a timer when it fires, a cron
+    after its last firing (`MaxIterations`), with the same `stepIdx`.
+  - Each firing starts a turn by itself: `PreInvocation` (`invocationNum` 0), one model
+    request whose last content is a `<SYSTEM_MESSAGE>` "[Message] … sender=<task id>
+    priority=MESSAGE_PRIORITY_HIGH content=<Prompt>", then `Stop`. No `SessionStart`.
+  - While a timer or a plain cron waits, every `Stop` says `fullyIdle:false` (a 25 s
+    timer; a `* * * * *` cron with `MaxIterations` 2, both firings); the `Stop` after
+    the last firing says `true`. A cron with `IsDaemon:true` gives `fullyIdle:true` on
+    every `Stop`, the one that set it up included, while it keeps firing every minute.
+  - `manage_task {Action:"kill", TaskId:"<task id>"}` cancels it ("Task … cancelled."):
+    `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
+    the `schedule` ever comes. The short id `task-2`, sent from the conversation that
+    set it, cancels it the same way. A malformed id fails with a non-empty `error`.
+    After `/clear`, `task-2` sent from the new conversation came back to the model as
+    "Tool execution was canceled", with a `PreToolUse` and no `PostToolUse`.
+  - A `CronExpression` agy cannot read ("not a cron") fails at once: `PostToolUse` for
+    the `schedule` comes right after its `PreToolUse`, with `error` "invalid
+    CronExpression …".
+  - After `/clear` the screen and footer show no task, yet a daemon cron and a 45 s
+    one-shot timer both went on to fire a turn in the old conversation, their hooks
+    (the timer's `PostToolUse` too) carrying the old conversation id.
+  - A message the user typed did not cancel a timer set with `TimerCondition:"any"`:
+    the `Stop` after it still said `fullyIdle:false`.
+  - It lives in the process: killed and resumed with `-c`, agy showed the conversation
+    but nothing fired in the next 150 s and the footer listed no task.
+  - The Connect API's `ListBackgroundTasks {cascadeId}` lists it while it waits
+    (`toolName:"schedule"`, `description:"Timer: 25s, Prompt: …"`) and returns `{}` once
+    it has ended.
+  - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
+    cancelling a task from the TUI's `/tasks`; the macOS build.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -871,6 +924,19 @@ Nothing ran against Google's real servers.
 - `--effort low|medium|high|xhigh|max`, but each model allows fewer (3.1 Pro: low and
   high; `xhigh` exits 1). It becomes `thinkingBudget`: low 1024 (Pro) / 1000 (Flash),
   high −1.
+- 1.4.7 (2026-10-26, Linux arm64 in Docker, `--network none`, fake Gemini server, one
+  `agy -p` per model and effort, exit code and request read): `agy models` adds
+  `gemini-4-argon-{high,medium,low}` (14 rows, the rest as above). Every model refuses
+  `xhigh` and `max` before any request, exit 1, `error: invalid model selection
+  (--model "<m>" --effort "<e>"): <base> has no "<e>" effort (available: …)`.
+  `gemini-3.1-pro` (also the default, `--model` left out) takes low and high, not
+  medium; `gemini-4-argon`, `gemini-3.8-flash` and `gemini-3.6-flash` take low, medium
+  and high. `gemini-3.7-flash` was not run; that it takes the three its `agy models`
+  ids name, as every model run did, is inferred, not checked. Argon sends `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`, `MEDIUM` with no
+  `--effort`) instead of `thinkingBudget`; Flash with no `--effort` is medium (4000).
+  An id that names its effort (`gemini-3.1-pro-high`, `gemini-4-argon-low`) runs with
+  no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
+  --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
   gives `no model configuration is available for this account`, and the real shape
   is not probed.

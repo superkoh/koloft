@@ -8,6 +8,7 @@ import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
   addCodexAccount,
+  installAgy,
   installCodex,
   installMuse,
   installRealGhThatOnlyReads,
@@ -38,6 +39,7 @@ import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
   agentShell,
@@ -79,6 +81,7 @@ import {
   runOnBastion,
   runOnTarget,
   startSshLab,
+  stopMachine,
   stopSshLab,
   transcriptOnTarget,
   useRealClaudeOnTheMachine,
@@ -718,6 +721,41 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: 60_000
         })
         .toContain('keep going')
+    })
+  })
+
+  test('E-SSH-29: koloft session new --workspace on a machine that has gone down is refused with ssh’s reason for every agent, Claude too, instead of reported as started; New Claude session there says the same reason and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodex(env, JSON.stringify({ tokens: { access_token: 'mac-token', account_id: 'lab' } }))
+    installMuse(env)
+    installAgy(env)
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      let reason = ''
+      for (const backend of SESSION_BACKENDS) {
+        const before = (await terminalText(page, parentTab)).length
+        const reply = async (): Promise<string> =>
+          (await terminalText(page, parentTab)).slice(before)
+        await runIn(
+          page,
+          centerTerm(page),
+          `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+        )
+        await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
+        const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
+        expect(refused).not.toBeNull()
+        reason = refused![1].trim()
+      }
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'New Claude session' }).click()
+      await expect(page.locator('.toast-msg')).toContainText(reason, { timeout: 30_000 })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(0)
     })
   })
 

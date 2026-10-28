@@ -15,6 +15,7 @@ import {
   openWorktreeSession,
   panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted,
   waitForCalls,
@@ -454,6 +455,38 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
 
       const popup = server.page('/popped', '<title>Popped</title>p')
+      await guest.evaluate((u) => void window.open(u), popup)
+
+      await expect
+        .poll(() => persistedTabsOnDisk(env, sessionA).map((t) => t.url), { timeout: 30_000 })
+        .toContain(popup)
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+      await openBrowser(page)
+      await expect(openTabs(page)).toHaveCount(0)
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('after ⇧⌘R, a pop-up from a page in that session’s Workbench still opens in that session while another session is on screen', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const server = await startEchoServer()
+    try {
+      await addressBarSession(page)
+      const sessionA = (await waitForCalls(env, 1))[0].sessionId
+      await typeInAddressBar(page, server.page('/before-restart', '<title>Before</title>b'))
+      const guest = await guestByUrl(app, '/before-restart')
+      await sendShortcut(app, 'shortcut:restart-session')
+      await waitForCalls(env, 2)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await startSessionIn(page, 'ws-b')
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+
+      const popup = server.page('/popped-after-restart', '<title>Popped</title>p')
       await guest.evaluate((u) => void window.open(u), popup)
 
       await expect

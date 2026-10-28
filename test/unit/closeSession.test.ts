@@ -19,7 +19,7 @@ describe('unexpectedExitWanted', () => {
   })
   it('reports Codex crashes using its own source', () => {
     expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
-    expect(unexpectedExitNotice(crash, 'codex')).toContain('Codex')
+    expect(unexpectedExitNotice(crash, 'codex', true)).toContain('Codex')
   })
   it('does not want it for a clean exit, or for a tab that is not a conversation', () => {
     expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, { exitCode: 0 })).toBe(false)
@@ -167,13 +167,29 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
 // PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude')).toContain('signal 9')
-    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude')).toContain('exit code 1')
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true)).toBe(
+      'Claude session ended: killed by signal 9'
+    )
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', true)).toBe(
+      'Claude session ended unexpectedly (exit code 1)'
+    )
+  })
+
+  it('says the agent closed before the session started when the tab never bound one, keeping the code as the only clue left', () => {
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', false)).toBe(
+      'Claude closed before the session started (exit code 1)'
+    )
+    expect(unexpectedExitNotice({ exitCode: 3 }, 'codex', false)).toBe(
+      'Codex closed before the session started (exit code 3)'
+    )
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'codex', false)).toBe(
+      'Codex closed before the session started (killed by signal 9)'
+    )
   })
 
   // ADR-0030
   it('says Claude did not start for want of an account when the claude shim refused it, since the tab and its message are gone at once', () => {
-    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude')).toBe(
+    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude', false)).toBe(
       SHIM_FOUND_NO_ACCOUNT_NOTICE
     )
   })

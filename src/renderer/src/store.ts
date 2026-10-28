@@ -303,6 +303,11 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+export function tabEverBound(tabId: string): boolean {
+  return lastSessionId.has(tabId)
+}
+
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
@@ -363,6 +368,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
     workbenchParked.set(newId, parked)
   }
   rekeyOwner(oldId, newId)
+  window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   lastSessionId.set(newId, sessionId)

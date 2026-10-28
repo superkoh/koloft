@@ -15,7 +15,7 @@ import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
 import {
@@ -177,6 +177,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
+  promptBeforeBind?: boolean
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -184,6 +185,7 @@ interface AgyRun extends StoredRun {
   liveWrites: number
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
+  schedules?: Set<string>
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -203,7 +205,6 @@ const AGY: CliSpec = {
 }
 
 // AGY§3
-const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000
 const TICK_MS = 500
 // AGY§17
 const COMPACTION_SHOWS_AFTER_MS = 500
@@ -796,6 +797,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    this.replaySchedules(run)
+  }
+
+  // AGY§13
+  private replaySchedules(run: AgyRun): void {
+    for (const line of (readText(run.log.file) ?? '').split('\n')) {
+      if (!line.includes('"schedule"') && !line.includes('"manage_task"')) continue
+      const read = agyLogLine(line)
+      if (read && 'hook' in read) this.trackSchedule(run, read.hook)
+    }
   }
 
   // AGY§11 AGY§12
@@ -803,8 +814,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const read = agyLogLine(line)
     if (!read) return
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
-    if ('hook' in read) this.onHook(run, read.hook)
-    else this.onTitle(run, read.title)
+    if ('hook' in read) {
+      this.trackSchedule(run, read.hook)
+      this.onHook(run, read.hook)
+    } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
     if (status && status.state !== run.shown) {
       run.shown = status.state
@@ -843,6 +856,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
   }
 
@@ -862,6 +876,26 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       case 'Stop':
         return this.onStop(run, input)
     }
+  }
+
+  // AGY§13
+  private trackSchedule(run: AgyRun, hook: AgyHook): void {
+    if (run.explicitStop || run.stopping) return
+    const { event, input, conversationId } = hook
+    const call = record(input.toolCall)
+    if (call.name !== 'schedule' && call.name !== 'manage_task') return
+    const args = record(call.args)
+    const schedules = (run.schedules ??= new Set())
+    const before = schedules.size
+    if (call.name === 'schedule') {
+      const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+      if (event === 'PreToolUse') schedules.add(taskId)
+      else if (event === 'PostToolUse') schedules.delete(taskId)
+    } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
+      const taskId = argOf(args, 'TaskId') ?? ''
+      schedules.delete(taskId.includes('/') ? taskId : `${conversationId}/${taskId}`)
+    }
+    if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
   }
 
   // AGY§8 AGY§12
@@ -919,8 +953,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const run = this.runs.get(tabId)
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
-    if (!run.info) return
+    if (!run.info) {
+      run.promptBeforeBind = states[states.length - 1].state === 'idle'
+      this.deps.pty.wakeReady(tabId)
+      return
+    }
     for (const status of states) this.emitState(run, status)
+  }
+
+  // AGY§8 AGY§10
+  showsPromptBeforeBind(tabId: string): boolean {
+    const run = this.runs.get(tabId)
+    return !!run && !run.info && !run.explicitStop && !!run.promptBeforeBind
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {

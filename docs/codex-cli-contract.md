@@ -281,8 +281,8 @@ archived afterwards.
 
 ## 7. Rechecking a CLI upgrade
 
-Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0
-or 0.164.0. Koloft
+Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
+0.164.0 or 0.165.0. Koloft
 treats the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`)
 as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
 `test/unit/codexRuntime.test.ts`) and warns on anything newer. The owner raised the
@@ -306,7 +306,21 @@ levels), 13 (the token-usage fields, and reasoning tokens as a part of output), 
 27 (two new hook events) and 28 (the start race, not fixed) were measured again, and
 the same e2e specs passed, the remote ones (E-SSH-23/24/25) too with 0.164.0 as the
 Mac's codex (that the Linux lab machine then ran 0.164.0 as well is inferred from the
-install script taking a version, not checked). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+install script taking a version, not checked). On 0.165.0 (2026-10-28, an app-server
+over stdio per build in a throwaway `CODEX_HOME` and `HOME`, three real `gpt-6-luna`
+turns each against 0.164.0): sections 1 (`thread/list` keys `data, readStates,
+nextCursor, backwardsCursor`, 32 keys per row, the same notification set in a turn;
+the experimental schema adds only the client method `thread/memory/read`,
+`ThreadForkParams.attachToSource` and `ThreadListParams.attachedToThreadId`, and no
+server notification or request), 11 (a resume's `never` / `danger-full-access`, the
+`-c` given ignored; with no `approvals_reviewer` set `thread/start` answers
+`approvalsReviewer: "user"` on both), 13/14 (`model/list`: the same eight models on
+both builds, `gpt-6.1-terra` new to this ledger, the default still `gpt-6.1-sol`), 15
+(`login status`, `auth.json` unchanged by a turn, the sign-in read once at start), 17
+(a message queued mid-turn starts the next turn within 14 ms, `clientId` kept), the
+rollout records of section 13 (one new record, see there) and 27 (the same four events, order and stdin keys) were measured
+again, and the same e2e specs passed. `codex --help`, `app-server --help`, `exec
+--help` and `resume --help` are byte-identical to 0.164.0's. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -370,10 +384,41 @@ unless marked.
 - `account`, `account-email`, `plan`, `rate-limits`, `git-worktree`, `git-changes`,
   `git-review` and `session-cost` produce invalid-item warnings; picker searches for
   account, worktree, plan and usage return no matches.
-- `five-hour-limit` and `weekly-limit` are described as **remaining** usage on the
-  primary and secondary limit. On the unauthenticated home both are omitted; the
-  picker preview's `primary 0% · secondary 0%` is sample text. What they show on a
-  signed-in home was not checked.
+- The picker describes `five-hour-limit` and `weekly-limit` as **remaining** usage on
+  the primary and secondary limit, but they pick a window by its length (below). On the
+  unauthenticated home both are omitted; the picker preview's `primary 0% · secondary
+  0%` is sample text.
+- **What `five-hour-limit` and `weekly-limit` draw.** Checked 2026-10-26 on 0.162.0, no
+  real login: a TUI started as `--remote ws://…` against a small relay in front of an
+  `app-server --listen ws://…` on a scratch `CODEX_HOME` (API-key `auth.json`, a local
+  fake Responses server). The relay answered `account/read` as a ChatGPT `pro` account,
+  answered the TUI's own `account/rateLimits/read` in section 15's shape, and pushed
+  `account/rateLimits/updated`. The PTY output was decoded with pyte.
+  - Primary `{usedPercent: 25, windowDurationMins: 300}`, secondary `{usedPercent: 60,
+    windowDurationMins: 10080}`: the footer read `Context 0% used · 5h 75% left · weekly
+    40% left · …` from the startup read, and kept it after a turn.
+  - **The footer follows the TUI's own read, which it repeats every 60 s.** The TUI sent
+    `account/rateLimits/read` at startup and then once a minute (7 reads in 390 s). When
+    the relay answered the second read with new numbers, the footer changed at that
+    minute (`5h 50% left · weekly 10% left`). A pushed `account/rateLimits/updated` with
+    new numbers did not change the footer (it raised Codex's low-limit warning below),
+    and the app-server's own push after each turn on the API-key home (`primary: null,
+    secondary: null`) did not blank it.
+  - The items pick a window by its length, not its slot: with only a primary
+    `{usedPercent: 85, windowDurationMins: 10080}` (the shape section 15 measured on a Pro
+    login), `weekly-limit` alone drew `weekly 15% left` and `five-hour-limit` alone drew
+    nothing.
+  - `account/rateLimits/read` answering `-32600` (signed out, or an API-key login): both
+    omitted, no warning, the turn ran.
+  - Neither item takes an "Ignored invalid status line items" warning. Below 25% left,
+    Codex adds its own "Heads up, you have less than 25% of your weekly limit left"
+    warning and a line above the composer; that comes with the data, not with the items.
+  - Koloft's list `context-used, five-hour-limit, weekly-limit, git-branch,
+    codex-version, model-with-reasoning, …` in a folder with no branch: at 100 columns
+    both limits stayed and `current-dir` was cut with an ellipsis; at 80 columns the
+    model name was cut too (`· probe-model defau…`).
+  - `x-codex-primary-*` / `x-codex-secondary-*` headers on a custom provider's responses
+    (API-key login) did not fill either item.
 - `branch-changes` counts **committed** changes against the default branch only: an
   uncommitted edit showed `No changes`, the same edit committed showed `+2 -0`. It is
   not a substitute for working-directory change counts.
@@ -478,9 +523,14 @@ no key.
   Trust this folder?" for `<repo>/.claude/worktrees/<name>`. A second table for the
   worktree path itself stopped it.
 - Unanswered, the question left `config.toml` byte-for-byte unchanged.
-- What Codex writes when a person answers **No** was not tried. That it writes a
-  table for the folder (so Koloft, which leaves any existing table alone, never
-  overrides the answer) is **inferred, not checked**.
+- **Codex CLI 0.162.0 (2026-10-26) has no No**: in a git repository the question
+  offers "1. Trust and continue / 2. Back to Agent Command Center". Picking 2 (↓ then
+  Enter), or Esc, does not exit: Codex shows its task list ("Agent command center …
+  No tasks yet") and writes nothing to `config.toml`; Esc there goes back to the
+  ordinary prompt, and Ctrl+C there prints "Shutting down..." and exits 0. The same
+  under `--remote`. In a plain empty folder that is not a git repository it did not
+  ask at all. Probed with a pty driver, a temp HOME and `CODEX_HOME` holding an
+  API-key `auth.json`.
 - The same table shape (`[projects."<absolute path>"]` / `trust_level = "trusted"`) is
   what Codex itself had written into this Mac's own `~/.codex/config.toml`, read on the
   same day.
@@ -797,6 +847,14 @@ field names and numbers only.
   `turn_context` is written before that turn's first record; `response_id` never
   repeats, within a file or across files, and is never null; the sum of a turn's
   `usage.total_tokens` equals its last `turn_token_usage.total_tokens`.
+- **0.165.0 adds a `response_item` of `type: "configuration_update"`**, `{type,
+  reasoning: {effort}}` with `metadata.harness_authored_configuration`, written in the
+  middle of the first turn; every other record type and its keys are the same as
+  0.164.0's (2026-10-28, three app-server turns per build in a throwaway `CODEX_HOME`).
+  Koloft's usage scan reads only `session_meta`, `turn_context` and
+  `token_usage_record`, so it passes over it. 0.165.0 also writes
+  `thread_settings_applied` on a resume only at the next turn, where 0.164.0 wrote it
+  at the resume itself.
 - **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it
   was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
 - **Size.** 46 files, 89 MB, read in 0.6 s.
@@ -891,6 +949,18 @@ name typed as a scheduled task reaches the model as plain text. Only `high` was 
 way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 `ultra`, as `supported_reasoning_levels` for `gpt-6-astra`). Codex has no flag that
 names the session, so a scheduled Codex run gets its title from Codex itself.
+
+**Which models a task can name.** 2026-10-26, standalone Codex CLI 0.162.0, `codex
+app-server` on stdio in a throwaway `CODEX_HOME` and `HOME` with no login, `initialize`
+then `model/list {}`: eight models, none hidden, each `{id, displayName,
+supportedReasoningEfforts, defaultReasoningEffort, isDefault, upgrade, …}`.
+`gpt-6.1-sol` "GPT-6.1-Sol" (`isDefault`), `gpt-6-astra` "GPT-6-Astra", `gpt-6-sol`
+"GPT-6-Sol", `gpt-6-luna` "GPT-6-Luna", then `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna` and `gpt-5.5`, whose `upgrade` names a `gpt-6-*` model. `gpt-6.1-sol`,
+`gpt-6-astra` and `gpt-6-sol` take `low` … `max` and `ultra`; `gpt-6-luna` `low` …
+`max`; `gpt-5.5` stops at `xhigh`. A signed-in plan can get fewer or more (section 13,
+`availableAccessPrograms`); that a plan without `gpt-6-astra` refuses it at launch is
+**not probed yet**.
 
 ## 15. One login per CODEX_HOME, and its rate limits
 
@@ -988,6 +1058,19 @@ folder then swapped for a link to a shared one holding another rollout, listed b
 Koloft links every account home's `sessions/` and `archived_sessions/` to the default
 home's, lists history once from the default home, and resumes a session in whichever
 account the picker chooses.
+
+**Memories and plugins stay in each home.** Checked 2026-10-28 with codex-cli 0.164.0
+and 0.165.0, a Node client on `codex app-server` in throwaway homes signed in with a
+copied `auth.json`. Memories are off by default on both (`codex features list`:
+`memories stable false`) and a fresh home writes no memory files. With `[features]
+memories = true` in `config.toml` (0.165.0), each home made its own `memories_v2/` (a git
+repo), `memories_v2.lock` and `memories_v2_1.sqlite` at app-server start and queued its
+own `memory_consolidate_global` job, also in a home whose shared folders and
+`config.toml` linked to another's; no memory was written within 20 minutes (the job
+failed with `failed_agent` and set a retry an hour later), so whether two homes end up
+with the same memories was not seen (issue #1153). A signed-in turn on either build also
+fetched the curated `figma` plugin (about 600 files) into
+`<CODEX_HOME>/plugins/cache/openai-curated-remote/`, one copy per home.
 
 **A deleted rollout leaves `thread/list` at once; an archived one moves to the
 `archived: true` list.** Checked 2026-10-24 with codex-cli 0.162.0, a Node client on
@@ -1735,6 +1818,21 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   the box. `/diff` runs git through `command/exec` and opens a pager that Esc does not
   close and `q` does. `/status` shows its answer only on the screen (it only calls
   `account/rateLimits/read`).
+- **What a slash command prints is written to no file; only `/diff`'s text crosses the
+  wire** (2026-10-26, Codex CLI
+  0.162.0, a real `codex --remote` TUI in a python pty, 120×40, the screen read through
+  `pyte`, on a Node relay in front of `codex app-server --stdio` that logged every line; a
+  temporary `CODEX_HOME` whose model was a fake Responses-API server on localhost, no
+  login; one model turn, then `/status`, `/diff` and `/mcp`, each typed, Esc, Enter). The
+  screen showed each answer, but none of its words were in the rollout file,
+  `history.jsonl`, `state_5.sqlite`, `thread_history_1.sqlite` or `logs_2.sqlite` (their
+  `-wal` files too), where the turn's reply was. On the wire: `/status` sent nothing
+  (without a login there were no limits to ask for); `/mcp` sent
+  `mcpServerStatus/list`, whose reply is data, not the drawn text; `/diff` sent five
+  `command/exec` requests (`git rev-parse --is-inside-work-tree`, two `git config` reads,
+  `git … diff --no-textconv --no-ext-diff --submodule=short --ignore-submodules=dirty
+  --color`, `git ls-files --others --exclude-standard`), and the `diff` reply's `stdout`
+  held the diff the pager showed, colour codes included.
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
@@ -2368,4 +2466,35 @@ lines of `test/unit/sessionRoute.real.test.ts`.
   worse.** With `"rule": <the number of the rule you took>` as the first added field,
   "koloft里…为什么session list前没有展示agent对应的icon" went to rule 8 or 5 (7 of 10)
   or rule 3 (1 of 10), where the prompt without it gave rule 6 in 10 of 10.
+
+## 32. No wake-up after the turn ends
+
+2026-10-26, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
+`codex exec --ephemeral --ignore-user-config -s read-only` in an empty folder, the
+owner's login, `gpt-6.1-sol`, told to call no tool:
+
+- The request itself was not captured on this route (it goes to OpenAI). On the API-key
+  route the request's tool list was read at a fake Responses server (section 16):
+  `exec_command, write_stdin, request_user_input, apply_patch, view_image, get_goal,
+  create_goal, update_goal, tool_search, web_search`, none of which schedules anything.
+- Asked for every tool it can call, the model listed `functions.wait`,
+  `request_user_input`, `request_user_input_async`, `exec`, `apply_patch`,
+  `create_goal`, `get_goal`, `update_goal`, `exec_command`, `write_stdin`,
+  `view_image`, the MCP resource tools, `request_plugin_install`, `clock__curr_time`,
+  `image_gen__imagegen`, `web__run`, `clock.sleep` and the `collaboration.*` agent tools,
+  and answered that none of them starts a turn after the current one has ended (its own
+  account of its tools, not read from the request).
+- Asked to quote them, it gave `clock.sleep` as "Pause execution for a specified
+  duration. The sleep ends early when new input arrives for the active turn. Returns the
+  elapsed wall-clock time." with `duration_ms` from 1 to 43200000; and
+  `collaboration.followup_task` as sending a task to "an existing non-root target agent",
+  never to the thread itself. A Codex wait therefore runs inside the turn, which stays
+  open, so the tab reads as working; there is no wake-up to keep a finished tab for, the
+  way Claude Code's `/loop` (CC§8) or Muse's `cron_create` (MUSE§9) leave one.
+- `codex features list` on that build shows `sleep_tool` stable and on, and
+  `in_app_local_automation` stable and on; the binary's only other traces of
+  scheduling are thread-source labels ("Scheduled follow-ups", "Scheduled automations")
+  and a prompt line telling the model to prefer `clock.sleep` "over automations". No
+  app-server method or model tool that makes an automation was found in its strings;
+  what makes one in the Codex desktop app was not probed.
 

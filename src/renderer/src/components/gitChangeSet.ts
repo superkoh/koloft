@@ -7,6 +7,7 @@ export interface GitChangeSet {
   base: string | null | undefined
   rootMissing: boolean
   watchDead: boolean
+  firstReadFailed: boolean
   reread: () => void
 }
 
@@ -57,8 +58,12 @@ export function useGitChangeSet(
   const [base, setBase] = useState<string | null | undefined>(undefined)
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
   const fetchNow = useRef<(() => void) | null>(null)
-  const reread = useCallback(() => fetchNow.current?.(), [])
+  const reread = useCallback(() => {
+    setReadFailed(false)
+    fetchNow.current?.()
+  }, [])
 
   useEffect(() => {
     setGit({})
@@ -66,6 +71,7 @@ export function useGitChangeSet(
     setBase(undefined)
     setRootMissing(false)
     setWatchDead(false)
+    setReadFailed(false)
   }, [root])
 
   useEffect(() => {
@@ -73,6 +79,7 @@ export function useGitChangeSet(
     setGit({})
     setNumstat({})
     setBase(undefined)
+    setReadFailed(false)
   }, [active])
 
   useEffect(() => {
@@ -93,8 +100,11 @@ export function useGitChangeSet(
               : r.numstat
           )
           setRootMissing(r.missing)
+          setReadFailed(false)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (mine === seq) setReadFailed(true)
+        })
     }
     fetchGit()
     fetchNow.current = fetchGit
@@ -114,5 +124,6 @@ export function useGitChangeSet(
     }
   }, [active, root, baseChoice, refreshNonce])
 
-  return { git, numstat, base, rootMissing, watchDead, reread }
+  const firstReadFailed = readFailed && base === undefined
+  return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
 }

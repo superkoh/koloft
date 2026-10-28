@@ -29,6 +29,7 @@ import type { RemoteSync } from '../remote/sync'
 import {
   AGENT_DROP_NAME,
   REQUEST_NAME,
+  errorText,
   replyJson,
   tabSpokenFor,
   type AgentReply
@@ -909,11 +910,7 @@ export class ClaudeBackend implements SessionBackend {
     try {
       return await this.resumeTab(req)
     } catch (error) {
-      return {
-        ok: false,
-        code: 'backend',
-        message: error instanceof Error ? error.message : String(error)
-      }
+      return { ok: false, code: 'backend', message: errorText(error) }
     }
   }
 
@@ -1146,15 +1143,12 @@ export function machineHookSettings(
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  const settings = hookSettings(
-    `${machineDir}/hook.sh`,
-    REMOTE_HOOK_DIR,
-    tabId,
-    remoteStatusLine,
-    dq,
-    'record-only',
-    holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
-  )
+  const settings = hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, {
+    statusLine: remoteStatusLine,
+    quote: dq,
+    dialogs: 'record-only',
+    hold: holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
+  })
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
   return settings

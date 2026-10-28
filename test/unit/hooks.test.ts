@@ -1045,8 +1045,10 @@ describe('injected hook script', () => {
       expect(local[0].matcher).toBe('*')
       expect(local[0].hooks[0].command).toMatch(/ ask$/)
       expect(local[0].hooks[0].timeout).toBe(3600)
-      const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', undefined, dq, 'record-only')
-        .hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
+      const remote = machineHookSettings('tabC2', '$HOME/.koloft/m', false, false).hooks as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >
       expect(remote.PermissionRequest[0].hooks[0].command).toMatch(/ asked$/)
       expect(remote.PermissionRequest[0].hooks[0]).not.toHaveProperty('timeout')
     })
@@ -1174,17 +1176,14 @@ describe('injected hook script', () => {
   describe('U-HOOK-2: settings for a tab running on another machine', () => {
     const machine = remoteMachineDir('m-abc123')
     const build = (): Record<string, unknown> =>
-      hookSettings(
-        `${machine}/hook.sh`,
-        REMOTE_HOOK_DIR,
-        'tabR',
-        {
+      hookSettings(`${machine}/hook.sh`, REMOTE_HOOK_DIR, 'tabR', {
+        statusLine: {
           type: 'command',
           command: dq(`${machine}/run.sh`),
           padding: 0
         },
-        dq
-      )
+        quote: dq
+      })
 
     const commands = (s: Record<string, unknown>): string[] =>
       Object.values(s.hooks as Record<string, { hooks: { command: string }[] }[]>).flatMap((g) =>

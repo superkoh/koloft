@@ -14,6 +14,7 @@ import {
 } from '@shared/types'
 import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
+import { effortsFor, takenEffort } from '@shared/cronModels'
 import { describeSchedule, describeWhen, DOW } from '@shared/schedule'
 import {
   histText,
@@ -228,6 +229,13 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
   }
 }
 
+export function effortRefusal(input: CronSaveInput, patch: CronPatch): string | null {
+  const backend = input.backend ?? 'claude'
+  if (!patch.effort || takenEffort(backend, input.model, patch.effort)) return null
+  const takes = effortsFor(backend, input.model).join(', ')
+  return `${input.model ?? 'the default model'} does not take --effort ${patch.effort}; it takes ${takes}.`
+}
+
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
   if (/^\d+$/.test(ref)) {
     const job = jobs[Number(ref) - 1]
@@ -347,6 +355,8 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     if (sub === 'list') return answered(formatList(jobs, live, now))
     if (sub === 'add') {
       const input = newJobInput(patch, workspace, caller.session.backendId)
+      const refusal = effortRefusal(input, patch)
+      if (refusal) return refused(`koloft cron: ${refusal}`)
       return saved(runner.save(input), 'added', 'Added')
     }
 
@@ -354,7 +364,12 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     if (!found.ok) return refused(`koloft cron: ${found.error}`)
     const job = found.value
     if (sub === 'show') return answered(formatShow(job, jobs.indexOf(job) + 1, live, now))
-    if (sub === 'edit') return saved(runner.save(mergeEdit(job, patch)), 'changed', 'Changed')
+    if (sub === 'edit') {
+      const input = mergeEdit(job, patch)
+      const refusal = effortRefusal(input, patch)
+      if (refusal) return refused(`koloft cron: ${refusal}`)
+      return saved(runner.save(input), 'changed', 'Changed')
+    }
     if (sub === 'rm') {
       runner.delete(job.id)
       tell('removed', job.name)
