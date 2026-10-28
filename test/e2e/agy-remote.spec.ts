@@ -2,7 +2,20 @@ import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { E2E_AGY_ACCOUNT, installAgy, seedSettings, type E2EEnv } from './helpers/env'
-import { centerTerm, newSessionInWith, runIn, sendShortcut, waitBooted, wsRows } from './helpers/p1'
+import {
+  centerTerm,
+  chooseBackend,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
+  newSessionInWith,
+  openWorktreeSession,
+  runIn,
+  sendShortcut,
+  waitBooted,
+  worktreeDialog,
+  wsMenuTexts,
+  wsRows
+} from './helpers/p1'
 import {
   REMOTE_WS_NAME,
   agyReady,
@@ -35,8 +48,8 @@ function setUp(env: E2EEnv): void {
 test.describe('Antigravity sessions in a remote workspace, over the fake ssh with tmux and only the CLI faked', () => {
   test.setTimeout(240_000)
 
-  // AGY§4 AGY§11 AGY§12
-  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts and the API key, the account named above agy's screen; its row binds, takes agy's title and goes working then done", async ({
+  // AGY§4 AGY§11 AGY§12 AGY§31
+  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts, the koloft skill and the API key, the account named above agy's screen; its row binds, takes agy's title and goes working then done", async ({
     env
   }) => {
     setUp(env)
@@ -62,6 +75,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       expect(fs.readlinkSync(path.join(accountFolder(env), 'antigravity-cli', 'brain'))).toBe(
         path.join(machineHome(env), '.gemini', 'antigravity-cli', 'brain')
       )
+      const skill = path.join(accountFolder(env), 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+      expect(fs.lstatSync(skill).isFile()).toBe(true)
+      expect(fs.readFileSync(skill, 'utf8')).toMatch(/^---\nname: koloft\n/)
 
       await agyReady(page)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
@@ -73,6 +89,32 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
       const { id } = await boundRemoteAgy(page)
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity worktree session in a remote workspace runs agy on the machine in a worktree made there, with the ignored files .worktreeinclude lists copied in there', async ({
+    env
+  }) => {
+    setUp(env)
+    gitRepoWithAnIncludedEnv(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, REMOTE_WS_NAME)
+      await worktreeDialog(page).locator('input').fill('agy-tree')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'agy-tree')
+      expect(fs.realpathSync(machineAgyCalls(env)[0].cwd)).toBe(fs.realpathSync(tree))
+      expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
     } finally {
       await quitAndClose(app)
     }

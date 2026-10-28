@@ -29,7 +29,7 @@ import { newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
 import { startFakeGithub } from './helpers/fakeGithub'
 import { portOffset } from '../../src/shared/worktreeName'
-import { lastCodexTurnPermissions } from './helpers/codexRollout'
+import { codexRolloutText, lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
   PR_3_CHECKS_LINE,
   PR_3_FAILING_CHECK_PASTE_HEAD,
@@ -981,6 +981,52 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       })
       expect(fs.existsSync(target)).toBe(true)
       expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toContain('TOUCH-DONE')
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§17
+  test("a real Codex tab is handed the koloft skill from Koloft's own folder, never the owner's Codex home, and reads it when asked", async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    useRealCodex(env, [env.workspaces.a])
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      const started = await page.evaluate(
+        (cwd) =>
+          window.api.terminal.create({
+            kind: 'codex',
+            cwd,
+            firstPrompt:
+              'Do you have a skill named koloft? If so, read its SKILL.md and reply with only the first word of the line after its frontmatter. If not, reply with only NO-SKILL.'
+          }),
+        env.workspaces.a
+      )
+      if (!started.ok) throw new Error('the Codex session did not start')
+      await expect.poll(() => boundSessionId(page, started.id), { timeout: 60_000 }).toBeTruthy()
+      const sessionId = (await boundSessionId(page, started.id))!
+      await expect
+        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBeGreaterThan(0)
+      expect(codexRolloutText(env, sessionId)).toMatch(
+        /agent-plugin\/skills`[\s\S]*- koloft:koloft: /
+      )
+      expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toMatch(/koloft/)
+      expect(fs.existsSync(path.join(env.home, '.codex', 'skills', 'koloft'))).toBe(false)
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
       throw e

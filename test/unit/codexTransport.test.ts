@@ -29,9 +29,11 @@ beforeEach(async () => {
 const {spawn} = require('child_process');
 const readline = require('readline');
 let initialized = false;
+const seen = [];
 const out = obj => process.stdout.write(JSON.stringify(obj) + '\\n');
 readline.createInterface({input:process.stdin}).on('line', line => {
  const f=JSON.parse(line);
+ seen.push(f.params?.extraRoots ? f.method + ' ' + f.params.extraRoots.join(',') : f.method);
  if(f.method==='initialize') {out({id:f.id,result:{userAgent:'fake'}});return;}
  if(f.method==='initialized') {initialized=true;return;}
  if(f.id===991 && !f.method) {out({method:'approval/received',params:f.result});return;}
@@ -42,6 +44,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  if(mode==='partial') {process.stdout.write('{');process.exit(0);return;}
  if(mode==='oversize') {process.stdout.write('x'.repeat(2000));return;}
  if(mode==='approval') {out({id:991,method:'item/commandExecution/requestApproval',params:{command:'echo ok'}});return;}
+ if(mode==='question') {out({id:992,method:'item/tool/requestUserInput',params:{threadId:'t',questions:[{id:'colour',question:'Red or Green?'}],isBlocking:false,autoResolutionMs:120000}});return;}
  if(mode==='tree') {
    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000)"],{detached:true,stdio:'ignore'});
    child.unref();
@@ -55,7 +58,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    process.stdout.write(bytes.subarray(0,offset));
    setTimeout(()=>process.stdout.write(bytes.subarray(offset)),15);return;
  }
- out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
+ out({id:f.id,result:{data:[],params:f.params,seen,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
 });
 process.stdin.on('end',()=>process.exit(0));
 `,
@@ -365,6 +368,36 @@ describe('Codex TUI transport', () => {
     expect(errors).toEqual([])
   })
 
+  // CODEX§20
+  it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner with no timer, while the observer sees what Codex sent', async () => {
+    const observed: CodexFrame[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      }
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const question = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'question' } }))
+    expect(await question).toEqual({
+      id: 992,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 't',
+        questions: [{ id: 'colour', question: 'Red or Green?' }],
+        isBlocking: true,
+        autoResolutionMs: null
+      }
+    })
+    expect(observed).toContainEqual(
+      expect.objectContaining({ id: 992, params: expect.objectContaining({ isBlocking: false }) })
+    )
+  })
+
   it('an observer cannot rewrite TUI requests or stop their delivery by throwing', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({
@@ -406,6 +439,32 @@ describe('Codex TUI transport', () => {
     ).resolves.toMatchObject({ params: { threadId: 'main' } })
     await tuiRead('after')
     expect(seen.map((f) => f.id)).toEqual([0, 'after'])
+  })
+
+  // CODEX§17
+  it("Koloft's skills folder reaches the app-server right after the TUI's initialized, ahead of the thread the TUI starts next, and its answer never reaches the TUI", async () => {
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      skillRoots: ['/koloft/plugin/skills']
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/start', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 2,
+      result: {
+        seen: [
+          'initialize',
+          'initialized',
+          'skills/extraRoots/set /koloft/plugin/skills',
+          'thread/start'
+        ]
+      }
+    })
   })
 
   it("an error answer fails Koloft's request and is not saved up for a TUI that connects later", async () => {

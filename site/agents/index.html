@@ -260,19 +260,19 @@
           <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">
+        <figure class="shot" style="--ar: 1322 / 691; --ar-phone: 736 / 744">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/i-settings-extensions-phone2.webp"
-                width="710"
-                height="590"
+                srcset="../img/i-settings-extensions-phone3.webp"
+                width="736"
+                height="744"
               />
               <img
-                src="../img/i-settings-extensions2.webp"
+                src="../img/i-settings-extensions3.webp"
                 width="1322"
-                height="661"
+                height="691"
                 loading="lazy"
                 alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
               />
@@ -369,7 +369,8 @@
                 <td>pages it can see</td>
                 <td>
                   That session's tabs only. Each session has its own address, reachable only from
-                  this Mac, behind a path no one can guess.
+                  this Mac, behind a path no one can guess. A Claude Code session on a remote folder
+                  also reaches it from that machine, through Koloft's ssh link.
                 </td>
               </tr>
               <tr>
@@ -392,6 +393,35 @@
           </table>
         </div>
 
+        <h3 id="remote-browser">Claude Code on a remote folder</h3>
+        <p>
+          A Claude Code session on a <a href="../remote/">remote folder</a> can drive its web tabs
+          too, through Koloft's own ssh link to that machine. There it works only through
+          <code>playwright-cli</code>, not Playwright MCP tools. Koloft puts
+          <code>playwright-cli</code> on the machine with <code>npm</code> (Node's package tool) the
+          first time the session runs it (see
+          <a href="../remote/#installs">what Koloft installs there</a>), and it finds the address on
+          its own each time it runs.
+        </p>
+        <ul class="dash">
+          <li>
+            The web tabs live on your Mac, so from the machine it can never open a file of your Mac,
+            upload one, or open a web server running on your Mac (<code>localhost</code>,
+            <code>127.0.0.1</code>, or any address that is your Mac). It is told:
+            <code
+              >a session on another machine cannot reach files or local servers of the Mac Koloft
+              runs on</code
+            >. A web server it starts on the machine shows only at an address your Mac can reach
+            (the machine's own name or IP address), never as <code>localhost</code>.
+          </li>
+          <li>A web tab it has used keeps these limits for you too, until you close it.</li>
+          <li>
+            With the switch off, while Koloft is not connected to the machine, or when the machine's
+            ssh server does not allow port forwarding, <code>playwright-cli</code> says why and
+            cannot reach the web tabs.
+          </li>
+        </ul>
+
         <h3>If you run tools another way (Claude Code)</h3>
         <ul class="dash">
           <li>
@@ -407,10 +437,9 @@
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>
-            <s class="struck">the browser in remote folders</s>
+            <s class="struck">the browser for Codex, Muse and Antigravity in remote folders</s>
             <span class="why"
-              >(a session on another machine has the koloft command, but not the web tabs,
-              yet)</span
+              >(they have the koloft command there, but cannot drive the web tabs yet)</span
             >
           </li>
         </ul>

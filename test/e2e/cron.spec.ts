@@ -220,7 +220,9 @@ const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
+const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
+const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -797,14 +799,17 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M33 in Codex: with "Close it" on, a Codex run whose question the TUI let go with no answer stays open and says so; once you write to it and its turn ends, it closes', async ({
+  test('BB-M33 in Codex: with "Close it" on, a Codex run whose question goes unanswered past the time the TUI would let it go still asks you; once you pick an answer and its turn ends, it closes', async ({
     env
   }) => {
     test.setTimeout(180_000)
     installCodex(env)
     gitInit(env.workspaces.a)
     env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
-    fs.writeFileSync(path.join(env.home, 'fake-codex-question-gives-up-ms'), '1500')
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-question-gives-up-ms'),
+      String(TUI_GIVES_UP_ON_A_QUESTION_MS)
+    )
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -817,17 +822,17 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await dlg.locator('.modal-foot .btn-primary').click()
       await clickRunNow(page, 'Colour check')
 
-      await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
-        .toBe('Done — not closed: it asked you a question nobody answered')
       const row = cronRows(page, 'ws-a')
-      await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/st-approval/, { timeout: 60_000 })
+      await page.waitForTimeout(TUI_GIVES_UP_ON_A_QUESTION_MS * 2)
+      await expect(row).toHaveClass(/st-approval/)
+      expect((await histLines(page)).some((line) => line.state.startsWith('Done'))).toBe(false)
       expect(await tabDisplays(page)).toHaveLength(1)
 
       const tabId = await row.getAttribute('data-tab-id')
       await closeCron(page)
       await row.click()
-      await page.evaluate((t) => window.api.terminal.write(t!, 'Green\r'), tabId)
+      await page.evaluate((t) => window.api.terminal.write(t!, '2'), tabId)
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
@@ -876,7 +881,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   test('BB-M32: an after-each-run job starts its next run only once the wait has passed since the last run closed itself, and skips nothing meanwhile', async ({
     env
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(360_000)
     gitInit(env.workspaces.a)
     env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
     const app = await launchApp(env)
@@ -894,14 +899,19 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await clickRunNow(page, 'Push issues')
       await waitNewCall(env, 0)
       await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .poll(async () => (await histLines(page))[0]?.state, {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
         .toBe('Done — closed itself')
       const closedAt = Date.now()
 
       await waitNewCall(env, 1, EVERY_MINUTE_DUE_PLUS_TICK_MS)
       expect(Date.now() - closedAt).toBeGreaterThanOrEqual(ONE_MINUTE_LESS_THE_POLL_LAG_MS)
-      const states = (await histLines(page)).map((l) => l.state)
-      expect(new Set(states)).toEqual(new Set(['Done — closed itself']))
+      await expect
+        .poll(async () => (await histLines(page)).map((l) => l.state), {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
+        .toEqual(['Done — closed itself', 'Done — closed itself'])
     } finally {
       await app.close().catch(() => {})
     }
@@ -1405,8 +1415,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      freshLaunches: (env) =>
-        machineAgyCalls(env).filter((c) => !c.argv.includes('--version')).length
+      freshLaunches: (env) => machineAgyCalls(env).length
     }
   ]
   for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
@@ -1534,10 +1543,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      ranIn: (env) =>
-        machineAgyCalls(env)
-          .filter((c) => !c.argv.includes('--version'))
-          .map((c) => c.cwd)
+      ranIn: (env) => machineAgyCalls(env).map((c) => c.cwd)
     }
   ]
   for (const { agent, setUp, ranIn } of REMOTE_CLOSE_IT_AGENTS) {

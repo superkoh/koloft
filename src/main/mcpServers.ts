@@ -39,17 +39,24 @@ export function jsonServers(backend: BackendId, files: ConfigText[]): McpServer[
   return files.flatMap((f) => listed(backend, parsed(f.text).mcpServers, f.onlyIn))
 }
 
+export interface ClaudeFolder {
+  folder: string
+  projectKey: string
+}
+
 // CC§22
 export function claudeServers(
   claudeJson: string | null,
   projectFiles: ConfigText[],
-  folders: string[]
+  folders: ClaudeFolder[]
 ): McpServer[] {
   const doc = parsed(claudeJson)
   const projects = asRecord(doc.projects)
   return [
     ...listed('claude', doc.mcpServers),
-    ...folders.flatMap((folder) => listed('claude', asRecord(projects[folder]).mcpServers, folder)),
+    ...folders.flatMap(({ folder, projectKey }) =>
+      listed('claude', asRecord(projects[projectKey]).mcpServers, folder)
+    ),
     ...jsonServers('claude', projectFiles)
   ]
 }

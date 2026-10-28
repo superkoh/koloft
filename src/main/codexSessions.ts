@@ -226,6 +226,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   agent: {
     enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+    skillsFolder(): string | undefined
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
     picked(cwd: string): Promise<boolean>
@@ -710,6 +711,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return { picked, binary: this.binary!, processEnv: this.processEnv }
   }
 
+  protected launchAccount({ picked }: CodexLaunch): string {
+    return picked.account
+  }
+
   protected async startRun(
     { opts, cwd, resource, freshWorktree, workspace }: StartContext,
     { picked, binary, processEnv }: CodexLaunch
@@ -838,8 +843,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...processOptions.configOverrides!,
         ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
       ]
+      const skills = agent && !machine ? agent.skillsFolder() : undefined
       transport = await this.startTransport({
         ...processOptions,
+        ...(skills && { skillRoots: [skills] }),
         ...(machine && {
           upstream: (frame, failure) =>
             new MachineCodexUpstream(

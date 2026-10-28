@@ -237,6 +237,25 @@ describe('koloft cron: changing tasks', () => {
     expect('autoClose' in c.runner.state().jobs[0]).toBe(false)
   })
 
+  it('refuses an --effort the Antigravity model would exit on and names the levels it takes, while an edit that leaves --effort out of an older such task still goes through', async () => {
+    const c = cron([job({ backend: 'agy', effort: 'xhigh' })], { backend: 'agy' })
+    expect(
+      await c.run('add', '--name', 'n2', '--daily', '04:00', '--effort', 'medium', '--', 'Go')
+    ).toEqual({
+      text: 'koloft cron: the default model does not take --effort medium; it takes low, high.',
+      exit: 1
+    })
+    expect(
+      await c.run('edit', 'nightly', '--model', 'gemini-4-argon-low', '--effort', 'high')
+    ).toEqual({
+      text: 'koloft cron: gemini-4-argon-low does not take --effort high; it takes low.',
+      exit: 1
+    })
+    expect((await c.run('edit', 'nightly', '--name', 'renamed')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ name: 'renamed', backend: 'agy' })
+    expect('effort' in c.runner.state().jobs[0]).toBe(false)
+  })
+
   it('reaches only the caller workspace: another workspace’s task is neither listed nor found by name or number', async () => {
     const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })])
     const listed = await c.run('list')

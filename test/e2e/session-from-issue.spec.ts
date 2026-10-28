@@ -6,8 +6,9 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installFakeGh, setGithubFixture, type E2EEnv } from './helpers/env'
 import {
   dialogPrimary,
-  gitCommitAll,
   gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   menuItemTexts,
   openMenu,
   openWorktreeSession,
@@ -160,11 +161,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
   }) => {
     test.setTimeout(180_000)
     const ws = env.workspaces.a
-    gitInit(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n.env\n')
-    fs.writeFileSync(path.join(ws, '.worktreeinclude'), '.env\n')
-    gitCommitAll(ws)
-    fs.writeFileSync(path.join(ws, '.env'), 'PORT=3000\n')
+    gitRepoWithAnIncludedEnv(ws)
     const onBranch = path.join(ws, '.claude', 'worktrees', 'fix-190')
     git(ws, 'worktree', 'add', '-q', '-b', 'fix/restart', onBranch)
     const prHead = pushPrOnlyOnGithub(env, ws)
@@ -201,7 +198,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       expect(calls[1].argv).not.toContain('-w')
       expect(git(made, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feat/payment-retry')
       expect(git(made, 'rev-parse', 'HEAD')).toBe(prHead)
-      expect(fs.readFileSync(path.join(made, '.env'), 'utf8')).toBe('PORT=3000\n')
+      expect(fs.readFileSync(path.join(made, '.env'), 'utf8')).toBe(INCLUDED_ENV)
       await waitForSessionRow(page, 'ws-a', 'pr-330')
     } finally {
       await quitAndClose(app)

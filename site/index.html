@@ -123,8 +123,8 @@
             data-film="pal-start"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P starts a session from one line"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":56,"to":56,"html":"⏎ start","x":"6%","y":"70%"},{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":64,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":"enter+1","crop":"0,0,1440,860"}]'
+            data-cues='[{"at":"typing","to":"enter-2","html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":"enter-1","to":"enter-1","html":"⏎ start","x":"6%","y":"70%"},{"at":"enter","to":"enter+6","html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":"enter+7","html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
           ></div>
         </div>
         <p class="real">
@@ -205,8 +205,8 @@
             data-film="pal-start"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P starts a session"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":"enter+1","crop":"0,0,1440,860"}]'
+            data-cues='[{"at":"enter","to":"enter+6","html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"}]'
           ></div>
           <div
             class="win"
@@ -216,8 +216,8 @@
             data-film="pal-jump"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P jumps to a session"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":9,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":7,"to":8,"html":"↓ then ⏎","x":"8%","y":"70%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":"enter","crop":"0,0,1440,860"}]'
+            data-cues='[{"at":"down-1","to":"down","html":"↓ then ⏎","x":"8%","y":"70%"}]'
             hidden
           ></div>
           <div
@@ -228,8 +228,8 @@
             data-film="pal-search"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P searches every conversation"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":8,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":6,"to":6,"html":"<kbd>⌥⏎</kbd> search every conversation","x":"8%","y":"70%"},{"at":7,"to":7,"html":"the chat that said “timer”","x":"8%","y":"70%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":"enter","crop":"0,0,1440,860"}]'
+            data-cues='[{"at":"search-1","to":"search-1","html":"<kbd>⌥⏎</kbd> search every conversation","x":"8%","y":"70%"},{"at":"search","to":"search","html":"the chat that said “timer”","x":"8%","y":"70%"}]'
             hidden
           ></div>
         </div>
@@ -265,7 +265,7 @@
             data-film="tree"
             data-phone-crop="0,0,360,520"
             data-title="Koloft, recorded: a session splits its job into two sessions that report back"
-            data-cues='[{"at":14,"to":20,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":21,"to":27,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":28,"html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
+            data-cues='[{"at":"children","to":"children+6","html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":"children+7","to":"children+13","html":"each one reports back by itself","x":"30%","y":"60%"},{"at":"children+14","html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
           ></div>
         </div>
         <div class="proof reveal">
@@ -315,7 +315,7 @@
             class="win"
             data-film="browser"
             data-title="Koloft, recorded: the agent opens a page in its Workbench, clicks Refresh and reads it; then a terminal tab runs a command"
-            data-cues='[{"at":12,"to":14,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":15,"to":19,"html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":20,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
+            data-cues='[{"at":"page","to":"page+2","html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":"page+3","to":"terminal-1","html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":"terminal","html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
           ></div>
         </div>
         <div class="proof reveal">
@@ -413,7 +413,8 @@
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
             <b>It keeps track</b>Ask how a session is doing, or tell it how to answer one that is
-            waiting: it reads the session, answers it, and tells you in the channel.
+            waiting: it reads the session, answers it, and tells you in the channel. While you are
+            away, it hears when a session finishes or waits, and writes to you if you are needed.
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg>

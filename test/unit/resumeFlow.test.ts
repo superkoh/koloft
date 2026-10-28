@@ -10,12 +10,12 @@ import {
   releaseResume,
   releaseSettledResumes,
   renamedRequest,
-  resumeFailureMessage,
   resumeInFlight,
   resumeSession,
   runResume,
   UNAVAILABLE_NOTICE
 } from '../../src/renderer/src/resumeFlow'
+import { resumeFailureMessage } from '../../src/renderer/src/agentUi'
 import { useStore } from '../../src/renderer/src/store'
 
 const target = { id: 'sid-1', backendId: 'claude' as const, title: 'Refactor session management' }
@@ -275,8 +275,17 @@ describe('a rebuild that fails', () => {
 
 describe('resumeFailureMessage', () => {
   it('keeps the vanished-folder wording distinct from a generic failure', () => {
-    expect(resumeFailureMessage('cwd-missing')).toBe('Folder is gone — cannot resume here')
-    expect(resumeFailureMessage('invalid-args')).toBe('Resume failed')
-    expect(resumeFailureMessage('rebuild-failed')).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'cwd-missing' })).toBe(
+      'Folder is gone — cannot resume here'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'invalid-args' })).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'rebuild-failed' })).toBe('Resume failed')
+  })
+
+  it("gives the agent's own reason, or a generic failure when it gave none", () => {
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: 'No account' })).toBe(
+      'No account'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: '' })).toBe('Resume failed')
   })
 })

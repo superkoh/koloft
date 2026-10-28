@@ -1256,6 +1256,38 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **`git worktree remove` that cannot delete a file still unregisters the tree**: a
+  read-only folder anywhere inside (`chmod 555`, ignored or tracked), a read-only parent
+  folder, or a `chflags uchg` file makes it exit 255 with one line on stderr,
+  `error: failed to delete '<tree>': Permission denied` (`Operation not permitted` for
+  `uchg`). By then git has deleted `.git/worktrees/<name>`, so the leftover folder is
+  no worktree: `git worktree list` no longer shows it, its branch stays, and a second
+  `git worktree remove`, `--force --force` too, answers "is not a working tree". Only
+  deleting the folder by hand (after `chmod -R u+w`) finishes it. Whether the tree's
+  own `.git` file is gone follows the folder's read order: on macOS it stayed, so git
+  run inside fails (`status` exits 128); on Linux it went, so git run inside finds the
+  repository above it and reads that one's HEAD and status. A process whose cwd is
+  inside the tree, holding a file there open, does not stop the removal on either.
+  Apple's git prints that line in English even under `LANG=zh_CN.UTF-8`, and the git
+  Koloft ships has no `share/locale`; a remote machine's git with its translations
+  installed is not probed.
+  (Measured 2026-10-27 on throwaway repos as a non-root user: git 2.54.0 on macOS
+  APFS; git 2.39.5 on Debian 12 in the e2e sshd Docker image.)
+- **A half-removed tree can lose its `.git` file first** (seen once in 42 kills of
+  `git worktree remove --force` on git 2.x, 2026-10-24; not again in 186 kills at
+  100–220 ms on git 2.54.0, 2026-10-26). Git run inside that folder then reads the
+  parent checkout around it: `git rev-parse --show-prefix` prints the folder's path
+  inside the parent (`.claude/worktrees/<name>/`) where a worktree's own top prints an
+  empty line, `symbolic-ref HEAD` names the parent's branch, and `status` lists the
+  parent's changes. `git worktree remove [--force]` refuses it (`validation failed,
+  cannot remove working tree: '<path>/.git' does not exist`) and `git worktree list`
+  marks it `prunable`. **`git worktree repair <path>`, run in the parent, writes the
+  `.git` file back but exits non-zero** (`repair: .git file broken: <path>`); afterwards
+  `status` lists the deleted files as ` D` and `git worktree remove --force` removes the
+  folder and its registration. Once the registration under `.git/worktrees/<name>` is
+  gone too, `repair` cannot write the file back. (Measured 2026-10-26
+  with the `.git` file deleted by hand, on git 2.54.0 macOS and git 2.39.5 Debian 12 in
+  Docker, on a throwaway repo.)
 - **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
   or pruned, and only then**: a repo with none has no such folder, `git worktree add`
   creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock
@@ -1914,6 +1946,15 @@ Gateway (the live connection that pushes events):
   reported `change` and the single ones `rename`. A watcher that must know what
   happened has to look at the file itself.
 - A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+- **With `recursive: true` every event names the path below the watched folder, and
+  still says `rename` for an append.** Measured 2026-10-27 on macOS 27.0 (APFS) under
+  Electron 43.8.1's own Node 24.22 (`ELECTRON_RUN_AS_NODE=1`): creating
+  `2026/10/27/rollout-new.jsonl` in a new day folder gave `rename` for `2026/10/27` and
+  for the file; a single append, twenty quick appends and five appends 300 ms apart each
+  gave `rename` with the file's path (the twenty folded into one); deleting a file gave
+  `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
+  recursive watcher, too, must look at the file to tell a new or deleted one from an
+  append.
 
 ## §41 What an Electron app's quit does to its children
 
@@ -1926,6 +1967,16 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+- **A pty program that ignores SIGHUP holds the app's quit for good.** While Node shuts
+  down, node-pty joins the thread that waits for the program to exit
+  (`SetupExitCallback` → `std::thread::join` in `pty.node`, seen with `sample`), so the
+  main process never exits while the program lives; JS timers no longer run by then, so
+  only a process outside the app can end the wait, by killing the program. While the
+  app hangs there, the program's parent pid is still the app's main process, and the
+  app's `quit` event has already fired. Measured
+  2026-10-27 (Electron 43.8.1, node-pty 1.1.0, macOS 27.0) in the e2e app: a Workbench
+  shell running `trap '' HUP; exec sleep 600` kept Koloft up past 120 s, the same shell
+  without the trap quit in 88 ms.
 
 ## §42 A Node command-line tool run on Electron's own Node
 
@@ -2505,3 +2556,16 @@ cli/cli --limit 1 --json number,closingIssuesReferences`:
 
 Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
 field and says so; a remote workspace's pull requests are listed by that machine's gh.
+
+## §62 Node `fs.rmSync` on a symbolic link to a folder
+
+- **Node 24 refuses it without `recursive`.** `fs.rmSync(link, { force: true })`, where
+  `link` is a symbolic link to a folder, throws `ERR_FS_EISDIR` ("Path is a directory") on
+  Node 24.13.0; on Node 22.12.0 (the version CI runs) it removes the link.
+- **With `recursive: true` both remove only the link**: the folder it points to and its
+  files stay.
+- Measured 2026-10-26 with a scratch script: Node 24.13.0 on macOS 27.0, Node 22.12.0 in the
+  `node:22.12.0-bookworm-slim` Docker image.
+
+Koloft dependents: `installFakeRemote` in `test/e2e/helpers/remote.ts`, which a case may
+call twice on one home, the second time over the link the first one made.
