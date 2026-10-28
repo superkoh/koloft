@@ -25,7 +25,8 @@ import {
   CAP,
   hasUsableAccount,
   noUsableAccountLead,
-  launchLine
+  launchLine,
+  launchUsageProbe
 } from '../../src/shared/accountUsage'
 import { meta } from './helpers/accounts'
 
@@ -409,6 +410,31 @@ describe('oldestAt', () => {
       view({ name: 'c', usage: snap({ at: NOW_MS - 5_000 }) })
     ]
     expect(oldestAt(rows)).toBe(NOW_MS - 5_000)
+  })
+})
+
+describe('launchUsageProbe — what opening Koloft reads before any tab starts', () => {
+  it('reads every account once a Claude subscription account is on', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth' }), meta({ kind: 'apikey' })])).toBe(
+      'everyAccount'
+    )
+  })
+
+  it('reads a Codex, Muse or Antigravity account with no Claude subscription, because reading their limits makes no model call', () => {
+    for (const kind of ['codex-home', 'muse-home', 'agy-home'] as const)
+      expect(launchUsageProbe([meta({ kind })])).toBe('signInFoldersOnly')
+  })
+
+  it('never reads a metered Claude account on launch, as that read is a billed request', () => {
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'codex-home' })])).toBe(
+      'signInFoldersOnly'
+    )
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'custom' })])).toBe(null)
+  })
+
+  it('leaves a switched-off account out', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth', enabled: false })])).toBe(null)
+    expect(launchUsageProbe([meta({ kind: 'codex-home', enabled: false })])).toBe(null)
   })
 })
 

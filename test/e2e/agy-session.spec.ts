@@ -11,6 +11,7 @@ import {
   agyTranscriptOf as transcriptOf,
   installAgy,
   ownersGemini,
+  seededAccount,
   seedSettings,
   trustInAgy,
   type AgyCall,
@@ -719,6 +720,33 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         )
       ) as { modelProvider?: string }
       expect(own.modelProvider).toBe('gemini')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§23
+  test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it, with no tab started and nothing clicked', async ({
+    env
+  }) => {
+    const binary = path.join(env.fakeBin, 'agy')
+    fs.symlinkSync(FAKE_AGY, binary)
+    env.launchEnv.KOLOFT_AGY_CMD = binary
+    const appDir = path.join(accountHome(env), 'antigravity-cli')
+    fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+    fs.writeFileSync(
+      path.join(appDir, 'cache', 'onboarding.json'),
+      JSON.stringify({ onboardingComplete: true })
+    )
+    fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
+      expect(agyCalls(env).filter((c) => c.argv.includes('/usage'))).toHaveLength(1)
+      expect(sessionCalls(env)).toEqual([])
     } finally {
       await quitAndClose(app)
     }
