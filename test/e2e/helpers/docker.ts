@@ -283,6 +283,10 @@ export function stopSshLab(lab: SshLab, controlDir?: string): void {
   spawnSync(docker(), ['network', 'rm', lab.network], { stdio: 'ignore' })
 }
 
+export function stopMachine(lab: SshLab): void {
+  dk(['stop', '-t', '1', lab.target])
+}
+
 export function runOnTarget(
   lab: SshLab,
   user: string,
@@ -336,6 +340,16 @@ export function installFakeCodexOnTarget(lab: SshLab): void {
     'sh',
     '-c',
     `printf '#!/bin/sh\\nexec node ${dir}/fake-codex.js "$@"\\n' > /usr/local/bin/codex && chmod 755 /usr/local/bin/codex`
+  ])
+}
+
+export function installCurlOnTarget(lab: SshLab): void {
+  dk([
+    'exec',
+    lab.target,
+    'sh',
+    '-c',
+    'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl'
   ])
 }
 

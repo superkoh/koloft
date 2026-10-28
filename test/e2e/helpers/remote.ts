@@ -228,7 +228,8 @@ export function installFakeRemote(env: E2EEnv): void {
   fs.mkdirSync(path.dirname(playwrightCliTheWrapperFindsSoItNeverReachesForNpm), {
     recursive: true
   })
-  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true })
+  // PLATFORM§62
+  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true, recursive: true })
   fs.symlinkSync(
     path.dirname(require.resolve('@playwright/cli/package.json')),
     playwrightCliTheWrapperFindsSoItNeverReachesForNpm
@@ -249,7 +250,9 @@ export function installRemoteAgy(env: E2EEnv): void {
 }
 
 export function machineAgyCalls(env: E2EEnv): AgyCall[] {
-  return agyCalls(env, machineHome(env)).filter((c) => !c.argv.includes('-p'))
+  return agyCalls(env, machineHome(env)).filter(
+    (c) => !c.argv.includes('-p') && !c.argv.includes('--version')
+  )
 }
 
 export async function agyReady(page: Page): Promise<void> {

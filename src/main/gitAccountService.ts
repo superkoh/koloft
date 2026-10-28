@@ -927,15 +927,13 @@ export class GitAccountService {
   ): Promise<GitAccountSuggestion> {
     const facts = await this.onMachine.factsFor(machine)
     if (!facts) return { kind: 'off' }
+    const clues = await this.onMachine.cluesIn(machine, dir)
     return suggestFor(
       dir,
       { network: network && facts.timeout, pushChecks: false },
       {
-        git: (cwd, args, opts) => this.onMachine.clueGit(machine, cwd, args, opts.input),
-        ssh: (args) => this.onMachine.clueSsh(machine, args),
-        readFile: (p) => this.onMachine.clueFile(machine, p),
+        ...clues,
         home: facts.home,
-        env: await this.onMachine.clueEnv(machine),
         githubUrl: GITHUB_URL,
         accounts: () => this.accountsIn(machine),
         serverOf: credentialUrlOf,

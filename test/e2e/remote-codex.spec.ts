@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
-import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
+import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
   chooseBackend,
   gitCommitAll,
@@ -217,7 +217,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§11
-  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, its server the port offset of that name, and, with skip permission prompts on, approvals and the sandbox off', async ({
+  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, its server the port offset of that name, with skip permission prompts on, approvals and the sandbox off, and its screen on this Mac the same status line as a local tab, limits left included', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -252,6 +252,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       })
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
       expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a never -s danger-full-access')
+      expect(tuiCalls(env)[0].argv).toContain(STATUS_LINE_CONFIG)
     } finally {
       await quitAndClose(app)
     }

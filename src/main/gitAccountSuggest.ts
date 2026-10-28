@@ -36,8 +36,9 @@ export interface SuggestDeps {
 }
 
 const OFF: GitAccountSuggestion = { kind: 'off' }
-const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
-const COMMIT_EMAILS_LOOKED_AT = 50
+export const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
+export const CREDENTIAL_HELPER_KEYS = '^credential\\..*helper$'
+export const COMMIT_EMAILS_LOOKED_AT = 50
 const SSH_GREETS: GitPlatform[] = ['github', 'ghes', 'gitlab', 'gitea']
 
 export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -180,7 +181,7 @@ async function firstClue(
     if (configured) return { login: configured, reason: 'config-user' }
     if (!platform || !isGhPlatform(platform)) return null
     if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN || d.env.GH_ENTERPRISE_TOKEN) return null
-    const helpers = (await out(['config', '--get-regexp', '^credential\\..*helper$'])) ?? ''
+    const helpers = (await out(['config', '--get-regexp', CREDENTIAL_HELPER_KEYS])) ?? ''
     const ghLogin = ghActiveLogin(
       await readGhHosts(d),
       usesGhCredentialHelper(helpers, here.host),

@@ -120,6 +120,19 @@ export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   }
 }
 
+const CONVERSATION_AT_FIRST_PROMPT: Record<BackendId, boolean> = {
+  claude: false,
+  codex: false,
+  // MUSE§4
+  muse: false,
+  // AGY§8
+  agy: true
+}
+
+export function conversationAtFirstPrompt(backend: BackendId): boolean {
+  return CONVERSATION_AT_FIRST_PROMPT[backend]
+}
+
 // AGY§16
 export function namedAtLaunch(backend: BackendId, remote: boolean): boolean {
   return !(backend === 'agy' && remote)
