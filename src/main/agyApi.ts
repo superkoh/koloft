@@ -167,7 +167,10 @@ export class AgyApi {
       await this.call('ListBackgroundTasks', { cascadeId: conversationId })
     ).tasks
     return new Set(
-      (Array.isArray(tasks) ? tasks : []).map((t) => String(record(record(t).task).taskId))
+      (Array.isArray(tasks) ? tasks : []).flatMap((t) => {
+        const id = record(record(t).task).taskId
+        return typeof id === 'string' ? [id] : []
+      })
     )
   }
 

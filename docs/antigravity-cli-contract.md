@@ -540,7 +540,8 @@ only downloaded the public release.
   current_usage{input_tokens, output_tokens, cache_creation_input_tokens,
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
-  `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
+  `conversation_title`, `tool_confirmation_pending` (seen on macOS), and `task_count`
+  (1.4.7, while background tasks run, §13).
   - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
     conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
     is open), `reviewing` (an artifact is waiting for review, §19).
@@ -758,6 +759,15 @@ only downloaded the public release.
   - After `/clear` the footer showed no task while the daemon kept running, and
     `ListBackgroundTasks` with the old conversation id still listed it. Ending agy
     (Ctrl+C twice) ended it.
+  - The status line and title scripts (§11) get `task_count`, the conversation's
+    background tasks, left out when there are none. With a daemon started: `working`
+    without it, `working` with `task_count:1`, then `idle` with it. A `k` in `/tasks`
+    ran the scripts again 0.3 s later, `idle` with no `task_count`.
+  - Without `--dangerously-skip-permissions` the daemon's `PreToolUse` comes before
+    the ask (`tool_use`, `tool_confirmation_pending:true`). Declined with `4`: the next
+    title input is `idle` with no `task_count`, and no other hook comes (no
+    `PostToolUse`, no `Stop`). Allowed with `1`: `working` with no `task_count`, then
+    `Stop`, then `idle` with `task_count:1`; the count came only after the turn ended.
 
 ## §14 Asks in the terminal and the keys that answer them
 

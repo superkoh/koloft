@@ -189,8 +189,7 @@ interface AgyRun extends StoredRun {
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
   schedules?: Set<string>
-  daemons?: Map<string, { label: string; listed: boolean }>
-  daemonsCheckedAt?: number
+  daemons?: Map<string, string>
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -223,8 +222,7 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
-// AGY§13
-const DAEMON_RECHECK_MS = 2000
+const SERVER_LABEL_CHARS = 160
 
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
@@ -772,39 +770,40 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       this.ticking = undefined
       return
     }
-    for (const run of this.runs.values())
-      if (!run.explicitStop && !run.remote) {
-        run.log.read()
-        this.recheckDaemons(run)
-      }
+    for (const run of this.runs.values()) if (!run.explicitStop && !run.remote) run.log.read()
   }
 
-  // AGY§13
-  private recheckDaemons(run: AgyRun): void {
-    const daemons = run.daemons
-    const now = Date.now()
-    if (!run.api || !daemons?.size || now - (run.daemonsCheckedAt ?? 0) < DAEMON_RECHECK_MS) return
-    run.daemonsCheckedAt = now
-    const conversations = new Set([...daemons.keys()].map((id) => id.split('/')[0]))
-    void Promise.all([...conversations].map((id) => run.api!.backgroundTaskIds(id)))
-      .then((lists) => {
-        const live = new Set(lists.flatMap((ids) => [...ids]))
-        const gone: string[] = []
-        for (const [id, daemon] of daemons) {
-          if (live.has(id)) daemon.listed = true
-          else if (daemon.listed) gone.push(id)
-        }
-        this.dropDaemons(run, gone)
+  // AGY§11 AGY§13
+  private countDaemons(
+    run: AgyRun,
+    { conversationId, agentState, taskCount = 0 }: AgyTitleState
+  ): void {
+    if (agentState !== 'idle') return
+    const mine = [...(run.daemons?.keys() ?? [])].filter((id) =>
+      id.startsWith(`${conversationId}/`)
+    )
+    if (mine.length <= taskCount) return
+    if (!taskCount) return this.dropDaemons(run, mine)
+    void run.api
+      ?.backgroundTaskIds(conversationId)
+      .then((live) => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+        this.dropDaemons(
+          run,
+          mine.filter((id) => !live.has(id))
+        )
       })
       .catch(() => undefined)
   }
 
   private dropDaemons(run: AgyRun, ids: string[]): void {
-    if (ids.filter((id) => run.daemons?.delete(id)).length) this.publishBackground(run)
+    let dropped = false
+    for (const id of ids) if (run.daemons?.delete(id)) dropped = true
+    if (dropped) this.publishBackground(run)
   }
 
   private publishBackground(run: AgyRun): void {
-    const servers: BackgroundItem[] = [...(run.daemons ?? [])].map(([id, { label }]) => ({
+    const servers: BackgroundItem[] = [...(run.daemons ?? [])].map(([id, label]) => ({
       id,
       kind: 'server',
       label,
@@ -856,17 +855,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.replayTasks(run)
   }
 
-  // AGY§13
+  // AGY§11 AGY§13
   private replayTasks(run: AgyRun): void {
     for (const line of (readText(run.log.file) ?? '').split('\n')) {
       if (
         !line.includes('"schedule"') &&
         !line.includes('"manage_task"') &&
-        !line.includes('"IsDaemon":true')
+        !line.includes('"IsDaemon":true') &&
+        !line.includes('"conversation_id"')
       )
         continue
       const read = agyLogLine(line)
       if (read && 'hook' in read) this.trackTasks(run, read.hook)
+      else if (read) this.countDaemons(run, read.title)
     }
   }
 
@@ -894,6 +895,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
+    this.countDaemons(run, state)
     if (state.title && state.title !== before?.title) {
       run.givenTitle = undefined
       this.retitle(run.info, state.title)
@@ -949,8 +951,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const taskId = `${conversationId}/task-${String(input.stepIdx)}`
     if (call.name === 'run_command' && args.IsDaemon === true) {
       if (event === 'PreToolUse') {
-        const label = argOf(args, 'CommandLine')?.slice(0, 160) ?? 'Background command'
-        ;(run.daemons ??= new Map()).set(taskId, { label, listed: false })
+        const label =
+          argOf(args, 'CommandLine')?.slice(0, SERVER_LABEL_CHARS) ?? 'Background command'
+        ;(run.daemons ??= new Map()).set(taskId, label)
         this.publishBackground(run)
       } else if (event === 'PostToolUse') this.dropDaemons(run, [taskId])
       return

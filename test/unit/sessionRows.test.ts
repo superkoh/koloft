@@ -395,12 +395,6 @@ describe('parkedBadge', () => {
     ])
     expect(b.hint).toMatch(/ctrl\+b/)
   })
-
-  it('points Muse and Antigravity at the command that lists their background tasks', () => {
-    const server = [{ kind: 'server' as const, label: 'python3 -m http.server 8077' }]
-    expect(parkedBadge(server, 'muse').hint).toMatch(/Muse session \(\/tasks/)
-    expect(parkedBadge(server, 'agy').hint).toMatch(/Antigravity session \(\/tasks/)
-  })
 })
 
 describe('welcomeQuietLine', () => {

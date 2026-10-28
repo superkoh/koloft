@@ -181,6 +181,7 @@ export interface AgyTitleState {
   title?: string
   contextUsed?: number
   model?: string
+  taskCount?: number
 }
 
 // AGY§9 AGY§11
@@ -197,7 +198,8 @@ function titleState(r: Record<string, unknown>): AgyTitleState | undefined {
         ? r.conversation_title
         : undefined,
     contextUsed: typeof context.used_percentage === 'number' ? context.used_percentage : undefined,
-    model: typeof model.id === 'string' ? model.id : undefined
+    model: typeof model.id === 'string' ? model.id : undefined,
+    taskCount: typeof r.task_count === 'number' ? r.task_count : undefined
   }
 }
 
