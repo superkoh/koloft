@@ -27,7 +27,7 @@ import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../s
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
 import { FullWidthButton } from './WorkbenchBars'
-import { keepCaretInSessionTerminal } from './WorkbenchTabStrip'
+import { keepCaretInSessionTerminal } from '../keys'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'

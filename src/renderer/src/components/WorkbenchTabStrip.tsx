@@ -11,6 +11,7 @@ import {
 } from '../icons'
 import type { BrowserAudioState, GithubInfo, GithubTarget } from '@shared/types'
 import { CHANGES_MSG, type ChangeTotals } from './changesModel'
+import { keepCaretInSessionTerminal } from '../keys'
 import { FilesTabLabel } from './FilesTabLabel'
 import type { ChecksDot } from './prChecksView'
 import { GithubButton } from './workbenchGithub'
@@ -21,10 +22,6 @@ export type TabAudio = Record<string, Pick<BrowserAudioState, 'audible' | 'muted
 function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void }): void {
   e.stopPropagation()
   e.preventDefault()
-}
-
-export function keepCaretInSessionTerminal(e: { preventDefault(): void }): void {
-  if (document.activeElement?.closest('.term-island .xterm')) e.preventDefault()
 }
 
 function iconFor(t: WorkbenchTab): JSX.Element {

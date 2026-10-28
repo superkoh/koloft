@@ -18,8 +18,7 @@ import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
-import { isComposing } from '../keys'
-import { keepCaretInSessionTerminal } from './WorkbenchTabStrip'
+import { isComposing, keepCaretInSessionTerminal } from '../keys'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
