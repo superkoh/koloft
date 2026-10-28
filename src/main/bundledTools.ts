@@ -77,6 +77,39 @@ export function setupBundledGit(
   return dir
 }
 
+function isScript(file: string): boolean {
+  const head = Buffer.alloc(2)
+  const fd = fs.openSync(file, 'r')
+  try {
+    fs.readSync(fd, head, 0, 2, 0)
+  } finally {
+    fs.closeSync(fd)
+  }
+  return head.toString() === '#!'
+}
+
+function isRealGitProgram(file: string): boolean {
+  try {
+    const real = fs.realpathSync(file)
+    return path.basename(real) === 'git' && isExecutableFile(real) && !isScript(real)
+  } catch {
+    return false
+  }
+}
+
+// PLATFORM§1
+export function stepAsideForTheUsersGit(gitBinDir: string, loginPath: string | undefined): void {
+  const theirs = dirsAnotherGitMayBeIn(loginPath)
+    .filter((dir) => path.isAbsolute(dir))
+    .map((dir) => path.join(dir, 'git'))
+    .find(isRealGitProgram)
+  if (!theirs) return
+  const launcher = path.join(gitBinDir, 'git')
+  const next = `${launcher}.theirs`
+  linkOrUnlink(next, theirs)
+  fs.renameSync(next, launcher)
+}
+
 export function linkOrUnlink(link: string, target: string | undefined): void {
   try {
     fs.unlinkSync(link)

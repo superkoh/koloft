@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -6,6 +7,16 @@ import { startLocalSession } from './helpers/codex'
 import { agentShell, openSessionTerminal, panelTerm, runIn, waitBooted, wsRows } from './helpers/p1'
 
 const A_SHELL_STEP_FINISHES_WITHIN_MS = 30_000
+const SHIPPED_GIT_PROGRAM = path.join(
+  __dirname,
+  '..',
+  '..',
+  'vendor',
+  'git',
+  'libexec',
+  'git-core',
+  'git'
+)
 
 test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on this computer and its terminal find them', () => {
   for (const backend of ['claude', 'codex'] as const) {
@@ -32,6 +43,43 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
         await openSessionTerminal(app, page)
         await runIn(page, panelTerm(page), 'git --version | sed "s/^/TERM_/"')
         await expect(panelTerm(page)).toContainText('TERM_git version 2.53.0', { timeout: 25_000 })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test(`${backend}: a real git program only the login shell puts on the PATH (nix, pkgsrc, a hand-built one) wins over the git Koloft ships, in the agent and the terminal`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      env.launchEnv.KOLOFT_TEST_CLT = 'missing'
+      if (backend === 'codex') installCodex(env)
+      const nixBin = path.join(env.home, '.nix-profile', 'bin')
+      fs.mkdirSync(nixBin, { recursive: true })
+      const nixGit = path.join(nixBin, 'git')
+      fs.copyFileSync(SHIPPED_GIT_PROGRAM, nixGit)
+      fs.chmodSync(nixGit, 0o755)
+      const theirExecPath = execFileSync(nixGit, ['--exec-path'], { encoding: 'utf8' }).trim()
+      fs.appendFileSync(
+        path.join(env.home, '.zprofile'),
+        'export PATH="$HOME/.nix-profile/bin:$PATH"\n'
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await page.waitForLoadState('domcontentloaded')
+        await waitBooted(page)
+        await startLocalSession(page, env, backend)
+        const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
+        const run = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
+
+        await expect
+          .poll(() => run('git --exec-path'), { timeout: 30_000 })
+          .toContain(theirExecPath)
+
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'git --exec-path | sed "s/^/TERM_/"')
+        await expect(panelTerm(page)).toContainText(`TERM_${theirExecPath}`, { timeout: 25_000 })
       } finally {
         await quitAndClose(app)
       }
