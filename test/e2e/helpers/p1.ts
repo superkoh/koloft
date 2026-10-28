@@ -812,6 +812,13 @@ export async function wsMenuTexts(page: Page, wsName: string): Promise<string[]>
   return items
 }
 
+export async function restoreOffered(page: Page, wsName: string): Promise<boolean> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const greyed = await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()
+  await closeMenu(page)
+  return greyed === 0
+}
+
 export function gitMark(page: Page, wsName: string): Locator {
   return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
 }

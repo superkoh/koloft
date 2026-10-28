@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import {
   acceptClaudeTrust,
+  claudeProjectKey,
   claudeTrustsFolder,
   isTrustedByClaude,
   markClaudeOnboarded
@@ -111,6 +112,45 @@ describe('claudeTrustsFolder stops looking up at the top of the git repo', () =>
     expect(claudeTrustsFolder(file, worktree)).toBe(false)
     trustOnly(outer)
     expect(claudeTrustsFolder(file, worktree)).toBe(true)
+  })
+
+  it('says no for a submodule, or a worktree whose main repo is gone, under a trusted repo: a .git file with no readable commondir is its own top', () => {
+    const repo = path.join(tmp, 'repo')
+    const submodule = path.join(repo, 'sub')
+    const moduleGitDir = path.join(repo, '.git', 'modules', 'sub')
+    fs.mkdirSync(moduleGitDir, { recursive: true })
+    fs.mkdirSync(submodule)
+    fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+    const orphan = path.join(repo, 'orphan')
+    fs.mkdirSync(orphan)
+    fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(tmp, 'gone', '.git')}\n`)
+    trustOnly(repo)
+
+    expect(claudeTrustsFolder(file, submodule)).toBe(false)
+    expect(claudeTrustsFolder(file, orphan)).toBe(false)
+    trustOnly(submodule)
+    expect(claudeTrustsFolder(file, submodule)).toBe(true)
+  })
+})
+
+// CC§22
+describe('claudeProjectKey names the ~/.claude.json projects entry Claude Code keeps a folder’s local MCP servers under', () => {
+  it('a folder inside a repo and a linked worktree of it share the main checkout’s key; a plain folder keeps its own', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-projkey-')))
+    const repo = path.join(tmp, 'repo')
+    const worktree = path.join(tmp, 'wt')
+    const admin = path.join(repo, '.git', 'worktrees', 'wt')
+    fs.mkdirSync(path.join(repo, 'sub'), { recursive: true })
+    fs.mkdirSync(admin, { recursive: true })
+    fs.mkdirSync(worktree, { recursive: true })
+    fs.writeFileSync(path.join(admin, 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${admin}\n`)
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+
+    expect(claudeProjectKey(path.join(repo, 'sub'))).toBe(repo)
+    expect(claudeProjectKey(worktree)).toBe(repo)
+    expect(claudeProjectKey(path.join(tmp, 'plain', 'sub'))).toBe(path.join(tmp, 'plain', 'sub'))
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })
 

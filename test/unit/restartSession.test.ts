@@ -99,7 +99,8 @@ beforeEach(() => {
           killed.push(id)
           order.push('kill')
         }
-      }
+      },
+      tabs: { moved: () => {} }
     }
   }
   useStore.setState({

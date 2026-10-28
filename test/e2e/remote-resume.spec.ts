@@ -3,17 +3,19 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { addKeychainEntry, seededAccount, seedSettings } from './helpers/env'
+import { addKeychainEntry, seededAccount, seedSettings, type E2EEnv } from './helpers/env'
 import {
   installFakeRemote,
   killFakeRemote,
   REMOTE_HOST,
   REMOTE_WS_NAME,
   remoteDir,
+  remoteKey,
   seedRemoteWorkspace,
   sshCommands
 } from './helpers/remote'
-import { resumedId, seedJsonl, waitBooted, waitForCalls, wsRows } from './helpers/p1'
+import { readCalls, resumedId, seedJsonl, waitBooted, waitForCalls, wsRows } from './helpers/p1'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -108,6 +110,74 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     } finally {
       await quitAndClose(app)
       await new Promise((ok) => probe.close(ok))
+    }
+  })
+
+  function seedRemoteRowWithNoUsableAccount(env: E2EEnv): string {
+    seedSettings(env, { accounts: [seededAccount('no-secret-in-the-keychain')] })
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    return seedJsonl(env, remoteDir(env), {
+      root: path.join(env.userData, 'remote', REMOTE_HOST, 'projects'),
+      cwd: remoteDir(env),
+      summary: 'Yesterday on the build machine'
+    })
+  }
+
+  test('clicking a cold remote Claude row while no Koloft account can be used says why in the toast, not just "Resume failed", and starts nothing', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedRemoteRowWithNoUsableAccount(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+      await expect(page.locator('.toast-msg')).toContainText(NO_USABLE_ACCOUNT.claude, {
+        timeout: 60_000
+      })
+      expect(readCalls(env)).toEqual([])
+      await expect(row).toHaveClass(/\bcold\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('reopening a remote Claude tab after a restart while no Koloft account can be used names the session and says why in the toast, not just "click it to try again", and starts nothing', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const seeded = seedRemoteRowWithNoUsableAccount(env)
+    fs.writeFileSync(
+      path.join(env.userData, 'open-tabs.json'),
+      JSON.stringify({
+        tabs: [
+          {
+            sessionId: seeded,
+            kind: 'claude',
+            title: 'Yesterday on the build machine',
+            cwd: remoteKey(env)
+          }
+        ],
+        active: seeded
+      })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(page.locator('.toast-msg')).toContainText(
+        `Could not start “Yesterday on the build machine” — ${NO_USABLE_ACCOUNT.claude}`,
+        { timeout: 90_000 }
+      )
+      expect(readCalls(env)).toEqual([])
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bcold\b/)
+    } finally {
+      await quitAndClose(app)
     }
   })
 })

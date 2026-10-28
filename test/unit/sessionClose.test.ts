@@ -198,6 +198,40 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(fs.existsSync(tree)).toBe(true)
   })
 
+  it('removes a folder whose removal was cut off after its .git file went, though git there reads the parent checkout (#1012)', async () => {
+    removalCutOffHalfWay()
+    fs.rmSync(path.join(tree, '.git'))
+    fs.writeFileSync(path.join(repo, 'parent-draft.md'), 'not the run’s')
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(fs.existsSync(tree)).toBe(false)
+    expect(branches()).toEqual(['main'])
+    expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain('run-1')
+  })
+
+  it('keeps a folder whose .git file and registration are both gone, naming neither the parent’s changes nor its branch', async () => {
+    removalCutOffHalfWay()
+    fs.rmSync(path.join(tree, '.git'))
+    fs.rmSync(path.join(repo, '.git', 'worktrees', 'run-1'), { recursive: true })
+    fs.writeFileSync(path.join(repo, 'parent-draft.md'), 'not the run’s')
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({
+      removed: false,
+      kept: [`git could not read ${tree}: its .git file is gone.`]
+    })
+    expect(fs.existsSync(tree)).toBe(true)
+    expect(branches()).toEqual(['main', 'worktree-run-1'])
+  })
+
+  it('names the run’s own deleted files, not the parent’s, when closing a run whose .git file went', async () => {
+    removalCutOffHalfWay()
+    fs.rmSync(path.join(tree, '.git'))
+    fs.writeFileSync(path.join(repo, 'parent-draft.md'), 'not the run’s')
+    const closing = await closingTree(localGitOut, run())
+    expect(closing?.branches).toEqual(['worktree-run-1'])
+    expect(await whatIsLeft(localGitOut, closing!)).toEqual([
+      'Changes not committed:\n D .gitignore'
+    ])
+  })
+
   it('still names a deleted file when a session is closed, outside the tidy', async () => {
     removalCutOffHalfWay()
     const left = await whatIsLeft(localGitOut, await treeOf(tree))
