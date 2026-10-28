@@ -1467,6 +1467,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  finishing?: true
   note?: string
 }
 

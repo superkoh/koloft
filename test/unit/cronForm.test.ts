@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { CronJob, Schedule, SkillSuggestion } from '@shared/types'
+import type { CronJob, LiveRun, Schedule, SkillSuggestion } from '@shared/types'
 import { describeSchedule } from '@shared/schedule'
-import { histEnd, histText, histWhen } from '@shared/cronHistory'
+import { histEnd, histText, histWhen, liveWords } from '@shared/cronHistory'
 import {
   emptyFields,
   fieldsToSchedule,
@@ -332,6 +332,19 @@ describe('history rows', () => {
     expect(histWhen({ dueAt: at(9, 0), state: 'skipped', count: 1, until: at(9, 0) }, NOW)).toBe(
       'today 09:00'
     )
+  })
+
+  it('says a finished run set to "Close it" is closing, or still finishing while background work runs, and only one kept open or not set to close waits for you', () => {
+    const done: LiveRun = { jobId: 'j', tabId: 't', state: 'done', startedAt: 0, dueAt: 0 }
+    expect(liveWords({ autoClose: true }, done)).toBe('done — closing')
+    expect(liveWords({ autoClose: true }, { ...done, finishing: true })).toBe(
+      'done — still finishing'
+    )
+    expect(liveWords({ autoClose: true }, { ...done, kept: 'Changes not committed' })).toBe(
+      'done — waiting for you'
+    )
+    expect(liveWords({}, done)).toBe('done — waiting for you')
+    expect(liveWords({ autoClose: true }, { ...done, state: 'running' })).toBe('working')
   })
 
   it('ends where the row ends', () => {

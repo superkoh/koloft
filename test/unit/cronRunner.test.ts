@@ -865,7 +865,7 @@ describe('CronRunner — a live run growing up', () => {
     await h.fireTimers(T0 + 1 * MIN)
 
     expect(h.closeForGood).not.toHaveBeenCalled()
-    expect(h.runner.state().live[0]).toMatchObject({ state: 'done' })
+    expect(h.runner.state().live[0]).toMatchObject({ state: 'done', finishing: true })
     expect(h.runner.state().live[0].kept).toBeUndefined()
     expect(h.notify).not.toHaveBeenCalled()
 

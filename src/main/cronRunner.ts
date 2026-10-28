@@ -686,6 +686,7 @@ export class CronRunner {
     } else if (next === 'working' && run.state === 'done') {
       run.state = 'running'
       delete run.kept
+      delete run.finishing
       this.clearTimer(tabId)
       changed = true
     }
@@ -710,6 +711,11 @@ export class CronRunner {
     const busy = await this.d.stillWorking(tabId)
     const left = busy ? [] : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
     if (!this.isStillDone(run)) return
+    if (busy !== !!run.finishing) {
+      if (busy) run.finishing = true
+      else delete run.finishing
+      this.push()
+    }
     if (!busy && left.length === 0) {
       this.dropRun(run)
       const folder = run.worktree && runFolder(job.workspacePath, run.worktree)
