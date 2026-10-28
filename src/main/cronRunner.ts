@@ -640,8 +640,10 @@ export class CronRunner {
         startedAt: this.d.now()
       }
       this.live.set(tabId, run)
-      if (run.state === 'done')
+      if (run.state === 'done') {
+        if (job.autoClose) run.closing = 'soon'
         this.armTimer(tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
+      }
       this.d.store.save(this.jobs)
       this.push()
       return
@@ -707,7 +709,13 @@ export class CronRunner {
   private async closeIfFinished(run: LiveRun): Promise<void> {
     const { tabId } = run
     const job = this.byId(run.jobId)
-    if (!job?.autoClose || !this.isStillDone(run)) return
+    if (!job?.autoClose || !this.isStillDone(run)) {
+      if (run.closing) {
+        delete run.closing
+        this.push()
+      }
+      return
+    }
     run.closing ??= 'soon'
     const busy = await this.d.stillWorking(tabId)
     const left = busy ? [] : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)

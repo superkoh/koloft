@@ -879,6 +879,22 @@ describe('CronRunner — a live run growing up', () => {
     )
   })
 
+  it('a run whose "Close it" was switched off at its next check, then on again, is no longer being closed, so it says it waits for you', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.busy = true
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    delete h.jobs[0].autoClose
+    await h.fireTimers(T0 + 1 * MIN)
+    h.jobs[0].autoClose = true
+
+    expect(lastRunOf(h.jobs[0], h.runner.state().live, new Date(T0))?.words).toBe(
+      'done — waiting for you'
+    )
+  })
+
   it('with "Close it" on, a finished run still working in the background stays open without a word, and closes at a later check once that work is over', async () => {
     const h = makeHarness([makeJob({ autoClose: true })])
     h.flags.busy = true
