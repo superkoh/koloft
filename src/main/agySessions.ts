@@ -180,7 +180,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
-  promptBeforeBind?: boolean
+  stateBeforeBind?: ProgramStatus
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -869,6 +869,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
+    // AGY§10
+    const before = run.stateBeforeBind
+    run.stateBeforeBind = undefined
+    if (before) this.emitState(run, before)
   }
 
   // AGY§12
@@ -965,7 +969,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
     if (!run.info) {
-      run.promptBeforeBind = states[states.length - 1].state === 'idle'
+      run.stateBeforeBind = states[states.length - 1]
       this.deps.pty.wakeReady(tabId)
       return
     }
@@ -975,7 +979,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && !!run.promptBeforeBind
+    return !!run && !run.info && !run.explicitStop && run.stateBeforeBind?.state === 'idle'
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {

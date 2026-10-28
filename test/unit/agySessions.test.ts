@@ -547,6 +547,17 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.showsPromptBeforeBind(id)).toBe(false)
   })
 
+  it('the last status frame from before the bind counts once bound, so a turn that started or ended before it is not lost', async () => {
+    const { id } = await launch()
+    say(id, state('idle'))
+    say(id, state('working'))
+    expect(events('prompt')).toHaveLength(0)
+    title(id, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(1)
+    expect(events('stop')).toHaveLength(0)
+  })
+
   it('binds on its own from the title log, without waiting for a status frame', async () => {
     const { id } = await launch()
     title(id, { conversation_id: A })
