@@ -1011,6 +1011,19 @@ Koloft links every account home's `sessions/` and `archived_sessions/` to the de
 home's, lists history once from the default home, and resumes a session in whichever
 account the picker chooses.
 
+**Memories and plugins stay in each home.** Checked 2026-10-28 with codex-cli 0.164.0
+and 0.165.0, a Node client on `codex app-server` in throwaway homes signed in with a
+copied `auth.json`. Memories are off by default on both (`codex features list`:
+`memories stable false`) and a fresh home writes no memory files. With `[features]
+memories = true` in `config.toml` (0.165.0), each home made its own `memories_v2/` (a git
+repo), `memories_v2.lock` and `memories_v2_1.sqlite` at app-server start and queued its
+own `memory_consolidate_global` job, also in a home whose shared folders and
+`config.toml` linked to another's; no memory was written within 20 minutes (the job
+failed with `failed_agent` and set a retry an hour later), so whether two homes end up
+with the same memories was not seen (issue #1153). A signed-in turn on either build also
+fetched the curated `figma` plugin (about 600 files) into
+`<CODEX_HOME>/plugins/cache/openai-curated-remote/`, one copy per home.
+
 **A deleted rollout leaves `thread/list` at once; an archived one moves to the
 `archived: true` list.** Checked 2026-10-24 with codex-cli 0.162.0, a Node client on
 `codex app-server` in a throwaway `CODEX_HOME` holding three copied interactive rollouts,
