@@ -446,6 +446,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
+- `auth set --provider meta --api-key-stdin` does not check the key: a made-up one
+  exited 0 with "credentials saved for provider meta" and was written to `auth.json`
+  (0600) as `{schema_version, providers: {meta: {api_key}}}`. `account/read` then
+  answered `{state: "apiKey", label: "stored key"}`, and with `META_API_KEY` set
+  `{state: "envKey", label: "META_API_KEY"}`; `usage/read` answered `{}` either way
+  (1.4.14, Linux arm64, Docker, `TBH_CREDENTIAL_BACKEND=file`, 2026-10-28). A wrong key
+  shows only when a session starts (the last bullet of this section).
 - How much of a Meta account's quota is used showed only inside a live session: the
   TUI's `/usage` draws a box (screen only, §11), while a fresh `muse serve` answers
   `usage/read` with nothing in it and `muse exec --json` prints no usage record
