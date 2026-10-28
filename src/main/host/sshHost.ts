@@ -59,6 +59,7 @@ import { launchMode } from '../remote/sync'
 import {
   backgroundOptions,
   ensureControlDir,
+  machineOutOfReach,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -727,6 +728,11 @@ export class SshHost implements Host {
     return r.code === 0
   }
 
+  async reachOrThrow(): Promise<void> {
+    const r = await this.sh('true', [])
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+  }
+
   async makeDir(dir: string): Promise<boolean> {
     return (await this.sh('mkdir -- "$1"', [this.bare(dir)])).code === 0
   }
@@ -1124,6 +1130,7 @@ export class SshHost implements Host {
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
     await this.sshReady()
+    await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
