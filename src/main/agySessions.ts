@@ -115,13 +115,14 @@ export interface AgyHomePick {
   account: string
   home: string
   banner?: string
+  notice?: string
 }
 
 export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
-  pickHome(resumeSessionId?: string): AgyHomePick | undefined
+  pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
   browserEndpoint(tabId: string): string
@@ -391,7 +392,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
     const key = parseRemoteKey(dir)
     if (!key) return agyTrustsFolder(picked.home, dir)
@@ -473,7 +474,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0030
     const pick = this.deps.pickHome(opts.resumeSessionId)
     if (!pick) throw new Error(NO_USABLE_ACCOUNT.agy)
+    if (pick.notice) this.deps.error(pick.notice)
     return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
+  }
+
+  protected launchAccount({ pick }: AgyLaunch): string {
+    return pick.account
   }
 
   protected runDetails(run: AgyRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {

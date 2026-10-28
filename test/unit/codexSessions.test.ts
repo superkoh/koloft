@@ -484,6 +484,23 @@ describe('CodexSessions', () => {
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
+  it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
+    const seen: string[][] = []
+    vi.mocked(deps.pickHome).mockImplementation(() => {
+      seen.push(sessions.launchedSessions().map((s) => s.account ?? ''))
+      return { account: 'work', home: '/homes/work' }
+    })
+    const [first] = await Promise.all([
+      sessions.launch({ kind: 'codex', cwd: repo }),
+      sessions.launch({ kind: 'codex', cwd: repo })
+    ])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    const closing = sessions.stop(first.id)
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work'])
+    await closing
+  })
+
   // CODEX§15
   it('lists history from the default home every account home shares, tells a thread has a transcript from the file its listing named without asking Codex, and reads a thread whose listed file is not written yet on that same app-server', async () => {
     const written = path.join(directory, 'rollout-a.jsonl')

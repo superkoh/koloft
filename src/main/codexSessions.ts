@@ -711,6 +711,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return { picked, binary: this.binary!, processEnv: this.processEnv }
   }
 
+  protected launchAccount({ picked }: CodexLaunch): string {
+    return picked.account
+  }
+
   protected async startRun(
     { opts, cwd, resource, freshWorktree, workspace }: StartContext,
     { picked, binary, processEnv }: CodexLaunch

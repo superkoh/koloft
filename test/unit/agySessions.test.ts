@@ -361,6 +361,18 @@ describe('AgySessions launch', () => {
     expect(created).toEqual([])
   })
 
+  it('counts each tab on the account it runs on, from the moment it starts opening, and says so when every account is at its limit', async () => {
+    const seen: (string | undefined)[][] = []
+    sessions['deps'].pickHome = () => {
+      seen.push(sessions.launchedSessions().map((s) => s.account))
+      return { ...picked!, notice: 'Every Antigravity account is at its limit' }
+    }
+    await Promise.all([launch(), launch()])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    expect(sessions['deps'].error).toHaveBeenCalledWith('Every Antigravity account is at its limit')
+  })
+
   it("writes the folder into agy's own trust list only when Koloft was told to trust it", async () => {
     await launch()
     expect(sessions.trustsFolder(repo)).toBe(false)
