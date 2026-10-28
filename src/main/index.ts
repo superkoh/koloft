@@ -125,13 +125,7 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import {
-  formatRemoteKey,
-  hostOf,
-  isAbsoluteOnHost,
-  isRemoteKey,
-  parseRemoteKey
-} from '@shared/remoteKey'
+import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -1379,7 +1373,7 @@ function machineTreeIo(cwd: string): TreeIo {
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
     keyed: (listed) => pinnedKeyOn(host, listed),
-    onThisMac: false
+    machine
   }
 }
 
@@ -6036,7 +6030,7 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
   )

@@ -165,7 +165,7 @@ const machineTreeIo: TreeIo = {
   exists: async (p) => fs.existsSync(barePath(p)),
   real: (p) => p,
   keyed: (listed) => `ssh://${MACHINE}${listed}`,
-  onThisMac: false
+  machine: undefined
 }
 
 async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
