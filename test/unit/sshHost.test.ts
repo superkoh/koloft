@@ -15,6 +15,7 @@ import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicke
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
+import { removeTree } from '../../src/main/sessionClose'
 
 const MACHINE = 'devbox'
 let home: string
@@ -839,4 +840,22 @@ describe('the utility terminal on the machine', () => {
     expect(printed.status).toBe(0)
     expect(fs.readFileSync(realLog, 'utf8')).toBe('-p hi there\n')
   })
+})
+
+it('a worktree git cannot delete on the machine is reported in git’s words, with the commands to run on that machine', async () => {
+  const tree = path.join(repo, '.claude', 'worktrees', 'w')
+  git('worktree', 'add', '-q', '-b', 'worktree-w', tree)
+  const readOnly = path.join(tree, 'build', 'ro')
+  fs.mkdirSync(readOnly, { recursive: true })
+  fs.writeFileSync(path.join(readOnly, 'out.o'), 'x')
+  fs.chmodSync(readOnly, 0o555)
+  const problem = await removeTree(machine().gitOut, {
+    root: keyed(repo),
+    treeRoot: keyed(tree),
+    worktreeName: 'w',
+    branches: ['worktree-w']
+  })
+  fs.chmodSync(readOnly, 0o755)
+  expect(problem).toContain(`failed to delete '${tree}': Permission denied`)
+  expect(problem).toContain(`run on ${MACHINE}: chmod -R u+w '${tree}' && rm -rf '${tree}'`)
 })

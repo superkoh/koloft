@@ -1641,12 +1641,19 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (inOrder) =>
+  closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
-      for (const target of inOrder)
-        await closeSessionFully(target).catch((error) =>
-          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
-        )
+      for (const target of inOrder) {
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
+          tell(`${target.title}: ${String(error)}`)
+          return false
+        })
+        if (!closed) return
+      }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
@@ -4478,7 +4485,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
 const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
@@ -4508,25 +4515,33 @@ async function whatClosingWouldLose(
   ]
 }
 
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+}
+
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
-): Promise<void> {
+  info = projectInfoFor(target.treeRoot),
+  tell = tellTheOwner
+): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
-    return
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
-    return
+    tell(
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
+    )
+    return false
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
@@ -4536,6 +4551,7 @@ async function closeSessionFully(
     Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
   )
   void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
 async function removeUntouchedWorktree(
