@@ -52,6 +52,7 @@ const TRANSCRIPT_PATH_FIELD = `'"transcript_path"[[:space:]]*:[[:space:]]*"[^"]*
 const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
 const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
+export const DISCORD_SAID_SUFFIX = '.discord-said'
 
 // ADR-0031
 export const LANGUAGE_FNS = `whole_chars() {
@@ -138,11 +139,15 @@ const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agent_id)"[
   remind_reply_language PostToolUse`
 
 // CC§19
-export const QUOTE_PROMPT_FN = `quote_prompt() {
+export const QUOTE_PROMPT_FN = `prompt_body() {
   printf '%s' "$input" |
-    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"${JSON_STRING_BODY}".*/\\1/p' |
+    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"${JSON_STRING_BODY}".*/\\1/p'
+}
+quote_prompt() {
+  prompt_body |
     LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
       -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
+      -e 's/^\\[Discord\\] //' \\
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} | whole_chars
 }
@@ -159,7 +164,24 @@ export const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDE
        save_quote
      fi`
 
+// ADR-0028 CODEX§33 MUSE§9
+export const QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD = `relay_key() {
+  LC_ALL=C sed -E -e 's/\\\\(u[0-9a-fA-F]{4}|.)//g' -e $'s/[^A-Za-z0-9\\x80-\\xff]//g'
+}
+said_by_the_relay() {
+  key="$(prompt_body | relay_key)"
+  [ -n "$key" ] && [ -f "$discord_said" ] && relay_key < "$discord_said" | grep -qxF -- "$key"
+}
+flag=""
+case "$input" in
+  *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
+  *'"prompt":"${DISCORD_PREFIX} '*)
+    if said_by_the_relay; then save_quote; else flag=${shq(NOT_FROM_THE_RELAY)}; fi ;;
+  *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
+esac`
+
 export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
+export const CODEX_DISCORD_SAID_ENV = 'KOLOFT_CODEX_DISCORD_SAID'
 export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
 const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
@@ -186,6 +208,7 @@ export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
 notice="$${NOTICE_ENV}"
+discord_said="$${CODEX_DISCORD_SAID_ENV}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
@@ -198,11 +221,8 @@ if [ "$1" = "stop" ]; then
   exit 0
 fi
 ${QUOTE_PROMPT_FN}
-case "$input" in
-  *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
-  *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
-esac
-remind_reply_language UserPromptSubmit
+${QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD}
+remind_reply_language UserPromptSubmit "$flag"
 exit 0
 `
 
@@ -446,7 +466,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
 }
 
 const TAB_MARKER =
-  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice(\.\w+)*)$/
+  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|discord-said|allow|notice(\.\w+)*)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -584,6 +604,14 @@ export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
 
+export function discordSaidFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${DISCORD_SAID_SUFFIX}`)
+}
+
+export function discordSaidBeside(notice: string): string {
+  return notice.slice(0, -NOTICE_SUFFIX.length) + DISCORD_SAID_SUFFIX
+}
+
 export function saidFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.said`)
 }
@@ -642,7 +670,11 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
 }
 
 export function forgetAssistMarkers(regDir: string, tabId: string): void {
-  for (const file of [discordIdsFile(regDir, tabId), path.join(regDir, `${tabId}.typed`)])
+  for (const file of [
+    discordIdsFile(regDir, tabId),
+    discordSaidFile(regDir, tabId),
+    path.join(regDir, `${tabId}.typed`)
+  ])
     fs.rmSync(file, { force: true })
 }
 

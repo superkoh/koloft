@@ -64,12 +64,14 @@ import {
   type KoloftHook
 } from './codexLaunchConfig'
 import {
+  CODEX_DISCORD_SAID_ENV,
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
   codexHoldHook,
+  discordSaidFile,
   HOLD_TAB_ENV,
   NOTICE_ENV,
   noticeFile,
@@ -795,7 +797,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said,
-          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) })
+          ...(this.deps.hookRegDir && {
+            [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId),
+            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId)
+          })
         }),
         ...(holdHere && {
           [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,

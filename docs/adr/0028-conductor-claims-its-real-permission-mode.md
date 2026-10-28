@@ -35,6 +35,21 @@ acceptable because every session may already press keys in any other session wit
 `[Discord]` is the owner's own words. Koloft notes the id of every Discord message it
 sends in `<tab>.discord-ids`, and the Assist's `UserPromptSubmit` hook flags a
 `[Discord]` message whose id is not there. That file is readable by any program the same
-user runs, so the check only catches a session that writes `[Discord]` by accident (for
-example in a `koloft session send`); a program set on pretending to be the owner can
-read an id, and nothing stops it.
+user runs, so the check only catches a session that writes `[Discord]` onto the Assist's
+socket by accident (a `koloft session send` is wrapped as "From the session …" and never
+starts with `[Discord]`); a program set on pretending to be the
+owner can read an id, and nothing stops it.
+
+**Codex and Muse Assists, by the words instead of an id**: a message reaches them as plain
+text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while
+another program can reach them the same way — `codex queue` for Codex (CODEX§33), a Muse
+session's `send_session_message` tool for Muse (MUSE§9). So the relay writes the words of
+each `[Discord]` message it hands over to `<tab>.discord-said`, and the Assist's
+`UserPromptSubmit` hook flags a `[Discord]`-first prompt whose words are not there. The
+words are compared with every escape and every ASCII sign and space taken out, as Codex,
+Node and Muse escape JSON differently. The hook cannot tell typed text from a message, so
+`[Discord]` typed into those tabs is flagged too, where Claude takes it as typed. On
+another machine no relay writes the file, so every `[Discord]` is flagged there, as in a
+remote Claude tab. **Antigravity has no check**: only typing reaches it (AGY§16 — its
+local API needs a token no other program can read), and Claude does not flag typed text
+either.

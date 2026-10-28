@@ -2545,3 +2545,27 @@ owner's login, `gpt-6.1-sol`, told to call no tool:
   app-server method or model tool that makes an automation was found in its strings;
   what makes one in the Codex desktop app was not probed.
 
+## 33. A message queued from outside Koloft
+
+2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`), a
+throwaway `CODEX_HOME` with no login (deleted afterwards), a Node client on
+`codex app-server --stdio` (`initialize` with `experimentalApi: true`), the folder trusted,
+a `UserPromptSubmit` hook given with `-c` and trusted as in section 27 that logged its
+stdin. Each turn then failed at the model (401), after the hook had run. One run.
+
+- **Anything that knows the tab's `CODEX_HOME` and thread id can put a turn into it.**
+  `codex queue --thread <id> --message "[Discord] …"`, run as a separate process with the
+  same `CODEX_HOME`, printed `Queued message <id> for thread <id>.` and exited 0. The
+  stdio app-server, which no client of that process had asked, sent
+  `thread/queue/changed`, then (once its running turn ended) `turn/started` for a turn
+  whose `userMessage` held the text, with a `clientId` Codex made up (a UUID). The home
+  gained `queue_1.sqlite`, which is how the two processes met. That a TUI on `--remote`
+  in front of that server draws it is inferred, not checked: the server, not the TUI,
+  drained the queue.
+- **`UserPromptSubmit` cannot tell who queued a message.** For the message Koloft's own
+  `thread/queue/add` sent (`clientUserMessageId: "koloft-discord-1"`) and for the one
+  `codex queue` sent, the stdin had the same fields: `session_id`, `turn_id`,
+  `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `prompt` — the
+  text as sent, no client id. The hook ran before the turn's `userMessage` item was
+  sent, so the id was not in the rollout yet either.
+
