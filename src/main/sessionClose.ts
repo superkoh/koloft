@@ -1,5 +1,6 @@
 import path from 'path'
-import { barePath } from '@shared/remoteKey'
+import { barePath, parseRemoteKey } from '@shared/remoteKey'
+import { shq } from '@shared/shellQuote'
 import type { ProjectInfo } from '@shared/types'
 import { gitProbes, type GitOut } from './resumePlan'
 
@@ -128,16 +129,31 @@ export async function removeTree(
   tree: ClosingTree,
   force = false
 ): Promise<string | null> {
-  const dir = barePath(tree.treeRoot)
-  await git(tree.root, ['worktree', 'unlock', dir])
+  const onItsHost = barePath(tree.treeRoot)
+  await git(tree.root, ['worktree', 'unlock', onItsHost])
+  let gitSaid = ''
   const removed = await git(
     tree.root,
-    ['worktree', 'remove', ...(force ? ['--force'] : []), dir],
-    DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
+    ['worktree', 'remove', ...(force ? ['--force'] : []), onItsHost],
+    DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS,
+    (stderr) => (gitSaid = stderr.trim())
   )
-  if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
+  if (removed === null) return couldNotRemove(tree, onItsHost, gitSaid)
   await deleteBranches(git, tree.root, tree.branches)
   return null
+}
+
+const GIT_LET_GO_OF_THE_TREE_BUT_LEFT_FILES = 'failed to delete'
+
+// PLATFORM§30
+function couldNotRemove(tree: ClosingTree, onItsHost: string, gitSaid: string): string {
+  const said = `git could not remove the worktree ${tree.treeRoot}${gitSaid ? `:\n${gitSaid}` : '.'}`
+  if (!gitSaid.includes(GIT_LET_GO_OF_THE_TREE_BUT_LEFT_FILES)) return said
+  const host = parseRemoteKey(tree.treeRoot)?.host
+  const branches = tree.branches.length
+    ? ` && git -C ${shq(barePath(tree.root))} branch -D ${tree.branches.map(shq).join(' ')}`
+    : ''
+  return `${said}\nTo finish by hand, run${host ? ` on ${host}` : ''}: chmod -R u+w ${shq(onItsHost)} && rm -rf ${shq(onItsHost)}${branches}`
 }
 
 async function deleteBranches(git: GitOut, root: string, branches: string[]): Promise<boolean> {

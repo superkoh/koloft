@@ -4,8 +4,9 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   FAKE_SESSION_TITLE,
-  gitCommitAll,
   gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   openWorktreeSession,
   resumedId,
   sendShortcut,
@@ -54,11 +55,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
   }) => {
     test.setTimeout(180_000)
     const ws = env.workspaces.a
-    gitInit(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n.env\n')
-    fs.writeFileSync(path.join(ws, '.worktreeinclude'), '.env\n')
-    gitCommitAll(ws)
-    fs.writeFileSync(path.join(ws, '.env'), 'PORT=3000\n')
+    gitRepoWithAnIncludedEnv(ws)
 
     const app = await launchApp(env)
     try {
@@ -92,7 +89,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await row.click()
       const calls = await waitForCalls(env, 2, 60_000)
       expect(resumedId(calls[calls.length - 1])).toBe(first.sessionId)
-      expect(fs.readFileSync(path.join(wtDir, '.env'), 'utf8')).toBe('PORT=3000\n')
+      expect(fs.readFileSync(path.join(wtDir, '.env'), 'utf8')).toBe(INCLUDED_ENV)
     } finally {
       await quitAndClose(app)
     }

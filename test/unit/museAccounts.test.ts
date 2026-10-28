@@ -79,10 +79,10 @@ describe("a Muse account's own settings folder", () => {
     expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(
       path.join(owner, 'muse', 'skills', 'review')
     )
-    placeKoloftSkill(home, '---\nname: koloft\n---\n')
+    placeKoloftSkill(home, true)
     expect(fs.lstatSync(path.join(skills, 'koloft')).isSymbolicLink()).toBe(false)
     expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toContain('koloft')
-    placeKoloftSkill(home, undefined)
+    placeKoloftSkill(home, false)
     expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
     expect(fs.existsSync(path.join(owner, 'muse', 'skills', 'koloft'))).toBe(true)
   })

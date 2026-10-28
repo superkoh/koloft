@@ -44,8 +44,10 @@ import {
   addWorkspace,
   agentShell,
   centerTerm,
+  chooseBackend,
   closeMenu,
   FAKE_SESSION_TITLE,
+  INCLUDED_ENV,
   fetchNowInGitPanel,
   openGitPanel,
   menuItemTexts,
@@ -61,7 +63,9 @@ import {
   terminalText,
   termIds,
   waitBooted,
+  worktreeDialog,
   wsGroup,
+  wsMenuTexts,
   wsRows
 } from './helpers/p1'
 import {
@@ -106,6 +110,9 @@ const A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS = 15_000
 const COMMIT_THE_PROJECT =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
+const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
+  'cd proj && printf "NOTES.md\\n.env\\n" > .gitignore && printf ".env\\n" > .worktreeinclude' +
+  ' && git init -q && git add -A && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
 
@@ -1264,6 +1271,39 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect([listening(), pidFiles()]).toEqual(['1', '1'])
         await sendShortcut(app, 'shortcut:close-tab')
         await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // CC§3
+  test('E-SSH-31: a worktree Koloft makes on a Linux machine for a Codex session there gets the ignored files .worktreeinclude lists, copied there by the machine’s own sh and git', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    seedSettings(env, { hintsOff: true })
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        runOnTarget(
+          lab,
+          'kuser',
+          `${COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV} && printf '${INCLUDED_ENV}' > .env`
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await expect
+          .poll(async () => (await wsMenuTexts(page, 'kt-key')).join(' | '), { timeout: 60_000 })
+          .toContain('New worktree session')
+        await openWorktreeSession(page, 'kt-key')
+        await worktreeDialog(page).locator('input').fill('lab-tree')
+        await chooseBackend(page, 'Codex')
+        await expect(
+          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
+        ).toHaveCount(1, { timeout: 120_000 })
+        expect(runOnTarget(lab, 'kuser', 'cat proj/.claude/worktrees/lab-tree/.env')).toBe(
+          INCLUDED_ENV
+        )
       },
       (lab) => installFakeCodexOnTarget(lab)
     )

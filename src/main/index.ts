@@ -126,13 +126,7 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import {
-  formatRemoteKey,
-  hostOf,
-  isAbsoluteOnHost,
-  isRemoteKey,
-  parseRemoteKey
-} from '@shared/remoteKey'
+import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -237,7 +231,7 @@ import { probeAccount, shouldSkipFable } from './usageProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  codexAllLimitedNotice,
+  allLimitedNotice,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -533,7 +527,7 @@ import {
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -1380,7 +1374,7 @@ function machineTreeIo(cwd: string): TreeIo {
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
     keyed: (listed) => pinnedKeyOn(host, listed),
-    onThisMac: false
+    machine
   }
 }
 
@@ -1527,17 +1521,17 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
-    return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
+    return codexPicker.peek(accountViews()) ? undefined : 'every Codex account is at its limit'
   },
   muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
-    return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+    return musePicker.peek(accountViews()) ? undefined : 'there is no usable Muse account'
   },
   agy: async () => {
     if (!agySessions || !(await agySessions.availability()).available)
       return 'Antigravity is not available on this Mac'
-    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
+    return agyPicker.peek(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
 }
 
@@ -1642,12 +1636,19 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (inOrder) =>
+  closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
-      for (const target of inOrder)
-        await closeSessionFully(target).catch((error) =>
-          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
-        )
+      for (const target of inOrder) {
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
+          tell(`${target.title}: ${String(error)}`)
+          return false
+        })
+        if (!closed) return
+      }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
@@ -1839,25 +1840,25 @@ const utilTerminalPicks: Record<
   Exclude<BackendId, 'claude'>,
   () => UtilTerminalPick | undefined
 > = {
-  codex: () => {
-    const picked = pickCodexHome()
-    return (
-      picked && {
-        account: picked.account,
-        home: picked.home,
-        banner: picked.banner,
-        warning: picked.notice
-      }
-    )
-  },
-  muse: () => {
-    const picked = pickMuseHome()
-    return picked && { account: picked.account, home: picked.home, banner: picked.banner }
-  },
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
   agy: () => {
-    const picked = pickAgyHome()
+    const picked = terminalPickOf(pickAgyHome())
     return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
   }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -2120,7 +2121,11 @@ function pickCodexHome(
   resumeSessionId?: string
 ): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
+  const picked = codexPicker.pick(
+    views,
+    sessionAccounts?.of('codex', resumeSessionId),
+    codexSessions?.launchedSessions()
+  )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
@@ -2130,7 +2135,7 @@ function pickCodexHome(
     account: picked.name,
     home,
     banner: launchLine(picked, Date.now()),
-    notice: codexAllLimitedNotice(picked)
+    notice: allLimitedNotice(picked, 'codex')
   }
 }
 
@@ -2265,7 +2270,11 @@ function museHomeFor(name: string): string {
 // ADR-0030 MUSE§13
 function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
-  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  const picked = musePicker.pick(
+    views,
+    sessionAccounts?.of('muse', resumeSessionId),
+    museSessions?.launchedSessions()
+  )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
@@ -2275,7 +2284,8 @@ function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string 
     account: picked.name,
     home,
     env: museAccountEnv(home),
-    banner: launchLine(picked, Date.now())
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
   }
 }
 
@@ -2338,6 +2348,7 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
+const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
 function ownersGemini(): string {
@@ -2358,13 +2369,25 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
-  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
+function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+  const views = accountViews()
+  const picked = onlyAsking
+    ? agyPicker.peek(views)
+    : agyPicker.pick(
+        views,
+        sessionAccounts?.of('agy', resumeSessionId),
+        agySessions?.launchedSessions()
+      )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+    void probeAgyAccounts()
   return (
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now())
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'agy')
     }
   )
 }
@@ -2373,6 +2396,7 @@ function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
 async function probeAgyAccount(name: string): Promise<void> {
   const acct = findAccount(name, 'agy-home')
   if (!acct) return
+  agyProbedAt.set(name, Date.now())
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
@@ -2980,7 +3004,8 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
+        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -3712,6 +3737,8 @@ app.on('before-quit', (e) => {
   closeAllDirWatchers()
   resetQuitGuard()
 })
+
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
 
 function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
@@ -4530,7 +4557,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
 const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
@@ -4560,25 +4587,33 @@ async function whatClosingWouldLose(
   ]
 }
 
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+}
+
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
-): Promise<void> {
+  info = projectInfoFor(target.treeRoot),
+  tell = tellTheOwner
+): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
-    return
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
-    return
+    tell(
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
+    )
+    return false
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
@@ -4588,6 +4623,7 @@ async function closeSessionFully(
     Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
   )
   void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
 async function removeUntouchedWorktree(
@@ -6071,7 +6107,7 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
   )

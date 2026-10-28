@@ -156,6 +156,17 @@ export function gitCommitAll(dir: string): void {
   )
 }
 
+export const INCLUDED_ENV = 'PORT=3000\n'
+
+// CC§3
+export function gitRepoWithAnIncludedEnv(dir: string): void {
+  gitInit(dir)
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n.env\n')
+  fs.writeFileSync(path.join(dir, '.worktreeinclude'), '.env\n')
+  gitCommitAll(dir)
+  fs.writeFileSync(path.join(dir, '.env'), INCLUDED_ENV)
+}
+
 // CC§3
 export function gitWorktreeAdd(repo: string, name: string): string {
   assertFixtureDir('gitWorktreeAdd', repo)
@@ -792,6 +803,13 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
+}
+
+export async function wsMenuTexts(page: Page, wsName: string): Promise<string[]> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const items = await menuItemTexts(page)
+  await closeMenu(page)
+  return items
 }
 
 export async function restoreOffered(page: Page, wsName: string): Promise<boolean> {

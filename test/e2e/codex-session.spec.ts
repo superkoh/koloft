@@ -14,6 +14,7 @@ import {
   quitAndClose
 } from './helpers/app'
 import {
+  E2E_CODEX_ACCOUNT,
   installCodex,
   installFakeGh,
   seedNoClaudeAccountButStillSetUp,
@@ -44,6 +45,7 @@ import {
   type CodexCall
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   addWorkspace,
   centerTerm,
@@ -53,6 +55,7 @@ import {
   dialogPrimary,
   gitCommitAll,
   gitInit,
+  gitRepoWithAnIncludedEnv,
   newSessionInWith,
   oneStillRunning,
   openMenu,
@@ -480,6 +483,27 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('restarting a Codex session once no Codex account can be used says why, and starts no Codex', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await page.evaluate(
+        (name) => window.api.accounts.toggle(name, 'codex-home', false),
+        E2E_CODEX_ACCOUNT
+      )
+      await clickAppMenuItem(app, page, 'restart-session')
+      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.codex)
+      expect(codexCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§15
   test('with only a Codex account the usage capsule still shows, its panel lists the account under Codex with its balance and saved resets, and a walled account uses a saved reset only after a yes, then reads its limits again', async ({
     env
@@ -763,11 +787,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     env
   }) => {
     installCodex(env)
-    gitInit(env.workspaces.a)
-    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n.env\n')
-    fs.writeFileSync(path.join(env.workspaces.a, '.worktreeinclude'), '.env\n')
-    gitCommitAll(env.workspaces.a)
-    fs.writeFileSync(path.join(env.workspaces.a, '.env'), 'PORT=3000\n')
+    gitRepoWithAnIncludedEnv(env.workspaces.a)
     const includedIn = (dir: string): boolean => fs.existsSync(path.join(dir, '.env'))
     const app = await launchApp(env)
     try {

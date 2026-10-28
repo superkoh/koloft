@@ -40,7 +40,12 @@ export function dirExistsSync(p: string): boolean {
   }
 }
 
-export type GitOut = (dir: string, args: string[], timeoutMs?: number) => Promise<string | null>
+export type GitOut = (
+  dir: string,
+  args: string[],
+  timeoutMs?: number,
+  onFailure?: (stderr: string) => void
+) => Promise<string | null>
 
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {

@@ -361,6 +361,18 @@ describe('AgySessions launch', () => {
     expect(created).toEqual([])
   })
 
+  it('counts each tab on the account it runs on, from the moment it starts opening, and says so when every account is at its limit', async () => {
+    const seen: (string | undefined)[][] = []
+    sessions['deps'].pickHome = () => {
+      seen.push(sessions.launchedSessions().map((s) => s.account))
+      return { ...picked!, notice: 'Every Antigravity account is at its limit' }
+    }
+    await Promise.all([launch(), launch()])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    expect(sessions['deps'].error).toHaveBeenCalledWith('Every Antigravity account is at its limit')
+  })
+
   it("writes the folder into agy's own trust list only when Koloft was told to trust it", async () => {
     await launch()
     expect(sessions.trustsFolder(repo)).toBe(false)
@@ -397,6 +409,25 @@ describe('AgySessions launch', () => {
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
     const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
     expect(after.permissions).toBeUndefined()
+  })
+
+  // AGY§31
+  it("puts the koloft skill as a real file in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on", async () => {
+    const skillHere = (): string =>
+      path.join(picked!.home, 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+    agentTools = true
+    await launch()
+    expect(fs.lstatSync(skillHere()).isFile()).toBe(true)
+    expect(fs.readFileSync(skillHere(), 'utf8')).toMatch(/^---\nname: koloft\n/)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const fromPackage = '/agent-plugin/skills/koloft/SKILL.md'
+    expect(machine.launches[0].program.run).toContain(fromPackage)
+    agentTools = false
+    await launch()
+    expect(fs.existsSync(skillHere())).toBe(false)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    expect(machine.launches[1].program.run).not.toContain(fromPackage)
+    expect(machine.launches[1].program.run).toContain('rm -rf "$A/antigravity-cli/skills/koloft"')
   })
 
   // AGY§9 AGY§24

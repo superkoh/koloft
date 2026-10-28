@@ -1,5 +1,6 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -55,6 +56,15 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
+const QUIT_HANGUP_GRACE_SECONDS = 10
+const KILL_IF_STILL_OURS = `k=$1
+s=$2
+shift 2
+sleep "$s"
+for p in "$@"; do
+  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
+done`
+
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
 // PLATFORM§2
@@ -99,6 +109,7 @@ export class PtyManager extends EventEmitter {
   agentDir?: string
 
   private ptys = new Map<string, PtyHandle>()
+  private running = new Set<pty.IPty>()
   private readyWaiters = new Map<string, Set<() => void>>()
   private typing = new Map<string, Promise<void>>()
   private counter = 0
@@ -218,6 +229,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
+    this.running.add(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -258,6 +270,7 @@ export class PtyManager extends EventEmitter {
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
+      this.running.delete(proc)
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
@@ -392,6 +405,26 @@ export class PtyManager extends EventEmitter {
 
   moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void {
     for (const h of this.list()) if (h.ownerTabId === oldOwnerTabId) h.ownerTabId = newOwnerTabId
+  }
+
+  // PLATFORM§41
+  killWhatOutlivesTheQuit(): void {
+    const pids = [...this.running].map((proc) => String(proc.pid))
+    if (!pids.length) return
+    spawn(
+      '/bin/sh',
+      [
+        '-c',
+        KILL_IF_STILL_OURS,
+        'sh',
+        String(process.pid),
+        String(QUIT_HANGUP_GRACE_SECONDS),
+        ...pids
+      ],
+      { detached: true, stdio: 'ignore' }
+    )
+      .on('error', () => {})
+      .unref()
   }
 
   killUtilOrphans(): void {

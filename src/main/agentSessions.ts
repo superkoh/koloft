@@ -401,7 +401,10 @@ export interface SessionVerbDeps {
   startedSessions: StartedSessions
   closable(): ClosableSession[]
   whatIsLeft(target: ClosableSession): Promise<string[]>
-  closeSoon(inOrder: ClosableSession[]): void
+  closeSoon(
+    inOrder: ClosableSession[],
+    tellStarter: (closed: ClosableSession, text: string) => void
+  ): void
   isButler(tabId: string): boolean
   speaksForTheOwner(tabId: string): boolean
   butlerFolder(): string
@@ -682,6 +685,11 @@ function starterRow(
 ): PlacedRow | undefined {
   const [id] = d.startedSessions.startersOf({ ...caller.session, tabId: caller.tabId })
   return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
+}
+
+function sessionTarget(d: SessionVerbDeps, id: string): Target | undefined {
+  const row = placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === id)
+  return d.butlerTarget(id) ?? (row && rowTarget(d, row))
 }
 
 interface NamedRows {
@@ -1056,8 +1064,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (asked !== undefined && !turn.said.some((l) => l.text.includes(asked))) return false
     replyOwed.delete(tabId)
     if (!turn.reply.trim()) return false
-    const parent = placedRows(d.sidebar(), d.allSessions()).find((p) => p.row.id === owner)
-    const to = d.butlerTarget(owner) ?? (parent && rowTarget(d, parent))
+    const to = sessionTarget(d, owner)
     if (!to) return false
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return false
@@ -1288,7 +1295,12 @@ export function sessionVerb(d: SessionVerbDeps): {
           `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
       const started = await startedSessionsToClose(d, target, caller.tabId)
-      d.closeSoon([target, ...started.close])
+      d.closeSoon([target, ...started.close], (closed, text) => {
+        const [id] = d.startedSessions.startersOf(closed)
+        const starter = id === undefined ? undefined : sessionTarget(d, id)
+        if (starter?.tabId && !starter.butler)
+          void deliver('send', starter, `${FROM_KOLOFT}${text}`, caller, false).catch(() => {})
+      })
       return answered(
         [
           target.tabId === caller.tabId
