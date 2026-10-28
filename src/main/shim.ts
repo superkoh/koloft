@@ -592,6 +592,7 @@ exit 0
 
 const STALE_REGISTRATION_AGE_MS = 12 * 60 * 60 * 1000
 const STALE_PICK_AGE_MS = 60 * 60 * 1000
+const OPEN_REQUEST_STILL_WANTED_MS = 60_000
 
 // ADR-0004
 function pruneStale(dir: string, maxAgeMs = STALE_REGISTRATION_AGE_MS): void {
@@ -629,7 +630,7 @@ export function setupShim(gitAuthDir: string, butlerFolder: string): ShimPaths {
   fs.mkdirSync(pickDir, { recursive: true })
   fs.mkdirSync(agentDir, { recursive: true })
   pruneStale(regDir)
-  pruneStale(openDir)
+  pruneStale(openDir, OPEN_REQUEST_STILL_WANTED_MS)
   pruneStale(pickDir, STALE_PICK_AGE_MS)
   pruneStale(agentDir, STALE_PICK_AGE_MS)
 
