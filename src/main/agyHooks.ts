@@ -49,7 +49,7 @@ const LAST_REPLY_FN = `last_reply() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
-// AGY§12 ADR-0031
+// AGY§12 AGY§16 ADR-0028 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
 [ "$1" != PreInvocation ] || [ -n "$BASH_VERSION" ] || exec bash "$0" "$@"

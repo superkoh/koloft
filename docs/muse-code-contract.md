@@ -282,6 +282,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
   `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
   `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
+- **`UserPromptSubmit`'s stdin is compact JSON with non-ASCII text left as UTF-8.**
+  2026-10-28, muse 1.4.14 (`koloft-muse-probe-1411`, which updated itself), Docker,
+  `muse exec --provider echo --trust-workspace "[Discord] 你好 \"a\" <b> é<TAB>x"`, the hook
+  given through `TBH_MANAGED_HOOKS_PATH`, one run: the hook read
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx"` — only the quote and the tab escaped, as
+  Node's `JSON.stringify` does.
 - Tool shapes (fake model): `write_file` and `edit_file` → `PostToolUse.tool_response
   {filePath, structuredPatch:[{lines:["+…","-…"], oldStart, oldLines, newStart,
   newLines}]}`; `bash` with `yield_time_ms` that outlives it → `tool_response` holds
