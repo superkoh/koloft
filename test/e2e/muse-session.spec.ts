@@ -124,7 +124,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§13
-  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
+  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel as soon as Koloft opens, with no Claude subscription account and nothing clicked, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
     env
   }) => {
     installMuse(env)
@@ -142,7 +142,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect(page.locator('.tbu .tbu-fill:not(.cold)')).toHaveCount(1)
       await page.locator('.tbu').click()
       const pop = page.locator('.tbu-pop')
       await expect(pop.locator('.tbu-pop-head', { hasText: /^Muse$/ })).toBeVisible()

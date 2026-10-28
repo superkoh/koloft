@@ -262,6 +262,16 @@ export function oldestAt(views: AccountView[]): number | null {
   return oldest
 }
 
+export type LaunchUsageProbe = 'everyAccount' | 'signInFoldersOnly' | null
+
+export function launchUsageProbe(
+  accounts: readonly Pick<AccountMeta, 'kind' | 'enabled'>[]
+): LaunchUsageProbe {
+  const enabled = accounts.filter((a) => a.enabled)
+  if (enabled.some((a) => a.kind === 'oauth')) return 'everyAccount'
+  return enabled.some((a) => SIGN_IN_FOLDER_KINDS.includes(a.kind)) ? 'signInFoldersOnly' : null
+}
+
 export const AUTO_PROBE_MS = 5 * 60_000
 
 export function autoProbeDue(

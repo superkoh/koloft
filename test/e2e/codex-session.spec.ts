@@ -505,7 +505,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('with only a Codex account the usage capsule still shows, its panel lists the account under Codex with its balance and saved resets, and a walled account uses a saved reset only after a yes, then reads its limits again', async ({
+  test('with only a Codex account, opening Koloft reads its limits with no tab started and nothing clicked; its panel lists the account under Codex with its balance and saved resets, and a walled account uses a saved reset only after a yes, then reads its limits again', async ({
     env
   }) => {
     installCodex(env)
@@ -520,7 +520,6 @@ test.describe('Codex sessions through the real method chooser, process transport
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await page.evaluate(() => window.api.accounts.probe())
       const capsule = page.locator('.tbu')
       await expect(capsule.locator('.tbu-bar')).toHaveCount(1)
       await expect(capsule.locator('.tbu-fill.bad')).toHaveCount(1)

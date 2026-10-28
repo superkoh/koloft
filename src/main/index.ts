@@ -367,7 +367,13 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
+import {
+  ACCOUNT_KINDS_OF,
+  AUTO_PROBE_MS,
+  launchLine,
+  launchUsageProbe,
+  type LaunchUsageProbe
+} from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -2020,7 +2026,13 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
-let probeOnceTheRendererIsUp = false
+let probeOnceTheRendererIsUp: LaunchUsageProbe = null
+
+function probeSignInFolderAccounts(): Promise<void> {
+  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
+    () => undefined
+  )
+}
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
@@ -2029,9 +2041,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
       (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
     )
     await Promise.all([
-      probeCodexAccounts(),
-      probeMuseAccounts(),
-      probeAgyAccounts(),
+      probeSignInFolderAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -2053,6 +2063,11 @@ function probeAllForPanel(): Promise<AccountView[]> {
   }
   void round.then(release, release)
   return round
+}
+
+const LAUNCH_PROBES: Record<NonNullable<LaunchUsageProbe>, () => Promise<unknown>> = {
+  everyAccount: probeAllForPanel,
+  signInFoldersOnly: probeSignInFolderAccounts
 }
 
 async function addAccount(
@@ -2457,12 +2472,17 @@ async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
   return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
 
+let agyProbeRound: Promise<void> | null = null
+
 function probeAgyAccounts(): Promise<void> {
-  return Promise.all(
+  agyProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'agy-home' && a.enabled)
       .map((a) => probeAgyAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    agyProbeRound = null
+  })
+  return agyProbeRound
 }
 
 // AGY§6
@@ -3688,9 +3708,7 @@ app.whenReady().then(() => {
   createWindow()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
-  const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  probeOnceTheRendererIsUp = capsuleShownSoLaunchProbeIsNotBilledForNothing()
+  probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -5348,8 +5366,8 @@ function registerIpc(): void {
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {
-      probeOnceTheRendererIsUp = false
-      void probeAllForPanel().catch(() => {})
+      void LAUNCH_PROBES[probeOnceTheRendererIsUp]().catch(() => {})
+      probeOnceTheRendererIsUp = null
     }
     const activeAsleep = restoreOpenTabs()
     cronRunner?.onRendererReady()
