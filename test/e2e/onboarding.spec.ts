@@ -187,8 +187,10 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     installAgy(env)
     const now = Math.floor(Date.now() / 1000)
     const codexThread = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b'
+    const codexSaved = path.join(env.home, '.codex', 'sessions')
+    fs.mkdirSync(codexSaved, { recursive: true })
     fs.writeFileSync(
-      path.join(env.home, '.codex', 'sessions', codexThread + '.json'),
+      path.join(codexSaved, codexThread + '.json'),
       JSON.stringify({
         id: codexThread,
         cwd: env.workspaces.a,
