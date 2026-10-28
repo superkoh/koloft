@@ -281,8 +281,8 @@ archived afterwards.
 
 ## 7. Rechecking a CLI upgrade
 
-Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0
-or 0.164.0. Koloft
+Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
+0.164.0 or 0.165.0. Koloft
 treats the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`)
 as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
 `test/unit/codexRuntime.test.ts`) and warns on anything newer. The owner raised the
@@ -306,7 +306,21 @@ levels), 13 (the token-usage fields, and reasoning tokens as a part of output), 
 27 (two new hook events) and 28 (the start race, not fixed) were measured again, and
 the same e2e specs passed, the remote ones (E-SSH-23/24/25) too with 0.164.0 as the
 Mac's codex (that the Linux lab machine then ran 0.164.0 as well is inferred from the
-install script taking a version, not checked). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+install script taking a version, not checked). On 0.165.0 (2026-10-28, an app-server
+over stdio per build in a throwaway `CODEX_HOME` and `HOME`, three real `gpt-6-luna`
+turns each against 0.164.0): sections 1 (`thread/list` keys `data, readStates,
+nextCursor, backwardsCursor`, 32 keys per row, the same notification set in a turn;
+the experimental schema adds only the client method `thread/memory/read`,
+`ThreadForkParams.attachToSource` and `ThreadListParams.attachedToThreadId`, and no
+server notification or request), 11 (a resume's `never` / `danger-full-access`, the
+`-c` given ignored; with no `approvals_reviewer` set `thread/start` answers
+`approvalsReviewer: "user"` on both), 13/14 (`model/list`: the same eight models on
+both builds, `gpt-6.1-terra` new to this ledger, the default still `gpt-6.1-sol`), 15
+(`login status`, `auth.json` unchanged by a turn, the sign-in read once at start), 17
+(a message queued mid-turn starts the next turn within 14 ms, `clientId` kept), the
+rollout records of section 13 (one new record, see there) and 27 (the same four events, order and stdin keys) were measured
+again, and the same e2e specs passed. `codex --help`, `app-server --help`, `exec
+--help` and `resume --help` are byte-identical to 0.164.0's. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -833,6 +847,14 @@ field names and numbers only.
   `turn_context` is written before that turn's first record; `response_id` never
   repeats, within a file or across files, and is never null; the sum of a turn's
   `usage.total_tokens` equals its last `turn_token_usage.total_tokens`.
+- **0.165.0 adds a `response_item` of `type: "configuration_update"`**, `{type,
+  reasoning: {effort}}` with `metadata.harness_authored_configuration`, written in the
+  middle of the first turn; every other record type and its keys are the same as
+  0.164.0's (2026-10-28, three app-server turns per build in a throwaway `CODEX_HOME`).
+  Koloft's usage scan reads only `session_meta`, `turn_context` and
+  `token_usage_record`, so it passes over it. 0.165.0 also writes
+  `thread_settings_applied` on a resume only at the next turn, where 0.164.0 wrote it
+  at the resume itself.
 - **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it
   was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
 - **Size.** 46 files, 89 MB, read in 0.6 s.
@@ -1036,6 +1058,19 @@ folder then swapped for a link to a shared one holding another rollout, listed b
 Koloft links every account home's `sessions/` and `archived_sessions/` to the default
 home's, lists history once from the default home, and resumes a session in whichever
 account the picker chooses.
+
+**Memories and plugins stay in each home.** Checked 2026-10-28 with codex-cli 0.164.0
+and 0.165.0, a Node client on `codex app-server` in throwaway homes signed in with a
+copied `auth.json`. Memories are off by default on both (`codex features list`:
+`memories stable false`) and a fresh home writes no memory files. With `[features]
+memories = true` in `config.toml` (0.165.0), each home made its own `memories_v2/` (a git
+repo), `memories_v2.lock` and `memories_v2_1.sqlite` at app-server start and queued its
+own `memory_consolidate_global` job, also in a home whose shared folders and
+`config.toml` linked to another's; no memory was written within 20 minutes (the job
+failed with `failed_agent` and set a retry an hour later), so whether two homes end up
+with the same memories was not seen (issue #1153). A signed-in turn on either build also
+fetched the curated `figma` plugin (about 600 files) into
+`<CODEX_HOME>/plugins/cache/openai-curated-remote/`, one copy per home.
 
 **A deleted rollout leaves `thread/list` at once; an archived one moves to the
 `archived: true` list.** Checked 2026-10-24 with codex-cli 0.162.0, a Node client on
