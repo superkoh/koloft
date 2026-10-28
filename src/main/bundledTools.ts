@@ -98,16 +98,16 @@ function isRealGitProgram(file: string): boolean {
 }
 
 // PLATFORM§1
-export function stepAsideForTheUsersGit(gitBinDir: string, loginPath: string | undefined): void {
-  const theirs = dirsAnotherGitMayBeIn(loginPath)
+export function theUsersGit(loginPath: string | undefined): string | undefined {
+  return dirsAnotherGitMayBeIn(loginPath)
     .filter((dir) => path.isAbsolute(dir))
     .map((dir) => path.join(dir, 'git'))
     .find(isRealGitProgram)
-  if (!theirs) return
-  const launcher = path.join(gitBinDir, 'git')
-  const next = `${launcher}.theirs`
-  linkOrUnlink(next, theirs)
-  fs.renameSync(next, launcher)
+}
+
+export function stepAsideForTheUsersGit(gitBinDir: string, loginPath: string | undefined): void {
+  const theirs = theUsersGit(loginPath)
+  if (theirs) writeExecutable(path.join(gitBinDir, 'git'), `#!/bin/sh\nexec ${shq(theirs)} "$@"\n`)
 }
 
 export function linkOrUnlink(link: string, target: string | undefined): void {

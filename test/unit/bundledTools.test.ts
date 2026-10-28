@@ -7,9 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
 
 const { pathWithDirLast } = await import('../../src/main/toolInstall')
-const { gitLauncherScript, gitMissing, gitSystemConfig, stepAsideForTheUsersGit } =
+const { gitLauncherScript, gitMissing, gitSystemConfig, theUsersGit } =
   await import('../../src/main/bundledTools')
-const { writeExecutable } = await import('../../src/main/playwrightCli')
 
 let dir: string
 
@@ -21,7 +20,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-function executable(file: string, text: string): string {
+function executable(file: string, text: string | Buffer): string {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text, { mode: 0o755 })
   return file
@@ -58,6 +57,7 @@ describe('the bundled git', () => {
   })
 
   it('gives way to the first real git program on the login PATH, skipping a relative folder, a script named git (an asdf or mise shim, or its own launcher) and a link to a program not named git (a mise shim)', () => {
+    const program = Buffer.from([0xcf, 0xfa, 0xed, 0xfe])
     const gitBin = path.join(dir, 'git-bin')
     const launcher = executable(path.join(gitBin, 'git'), '#!/bin/sh\necho shipped\n')
     const linkBack = path.join(dir, 'link-back')
@@ -66,11 +66,10 @@ describe('the bundled git', () => {
     const asdf = path.join(dir, 'asdf')
     executable(path.join(asdf, 'git'), '#!/usr/bin/env bash\nexec asdf exec git "$@"\n')
     const mise = path.join(dir, 'mise')
-    const miseProgram = executable(path.join(dir, 'mise-bin', 'mise'), '\xcf\xfa\xed\xfe')
     fs.mkdirSync(mise)
-    fs.symlinkSync(miseProgram, path.join(mise, 'git'))
+    fs.symlinkSync(executable(path.join(dir, 'mise-bin', 'mise'), program), path.join(mise, 'git'))
     const nix = path.join(dir, 'nix-profile', 'bin')
-    const store = executable(path.join(dir, 'store', 'git-2.47', 'bin', 'git'), '\xcf\xfa\xed\xfe')
+    const store = executable(path.join(dir, 'store', 'git-2.47', 'bin', 'git'), program)
     fs.mkdirSync(nix, { recursive: true })
     fs.symlinkSync(store, path.join(nix, 'git'))
     const prevCwd = process.cwd()
@@ -78,26 +77,15 @@ describe('the bundled git', () => {
     process.chdir(path.dirname(store))
     process.env.KOLOFT_TEST_CLT = 'missing'
     try {
-      stepAsideForTheUsersGit(gitBin, `.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin`)
-      expect(fs.readFileSync(launcher, 'utf8')).toBe('#!/bin/sh\necho shipped\n')
-
-      stepAsideForTheUsersGit(gitBin, `.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin:${nix}`)
-      expect(fs.readlinkSync(launcher)).toBe(path.join(nix, 'git'))
+      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin`)).toBeUndefined()
+      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin:${nix}`)).toBe(
+        path.join(nix, 'git')
+      )
     } finally {
       process.chdir(prevCwd)
       if (prevClt === undefined) delete process.env.KOLOFT_TEST_CLT
       else process.env.KOLOFT_TEST_CLT = prevClt
     }
-  })
-
-  it('is written again on the next launch without writing into the user’s git its launcher links to', () => {
-    const theirs = executable(path.join(dir, 'own', 'git'), '#!/bin/sh\necho theirs\n')
-    const launcher = path.join(dir, 'git-bin', 'git')
-    fs.mkdirSync(path.dirname(launcher))
-    fs.symlinkSync(theirs, launcher)
-    writeExecutable(launcher, '#!/bin/sh\necho shipped\n')
-    expect(fs.readFileSync(theirs, 'utf8')).toBe('#!/bin/sh\necho theirs\n')
-    expect(fs.readFileSync(launcher, 'utf8')).toBe('#!/bin/sh\necho shipped\n')
   })
 
   it('runs git from its own folder with its own exec path and system config, passing every argument', () => {
