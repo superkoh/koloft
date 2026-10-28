@@ -38,7 +38,9 @@ import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
+  claudeTabSpec,
   killSessionCmd,
+  machineToolProgram,
   renameSessionCmd,
   resizeStandInCmd,
   launchLine,
@@ -987,12 +989,10 @@ export class SshHost implements Host {
           fallbackCwd: bareOrNot(spec.fallbackCwd),
           banner: '',
           portOffset: spec.portOffset,
-          settings: {},
           ownerWords: spec.ownerWords,
-          claudeArgs: [],
-          program: {
-            name: 'muse',
-            run: museRunLines({
+          program: machineToolProgram(
+            'muse',
+            museRunLines({
               tabId,
               account: spec.account.name,
               banner: spec.banner,
@@ -1001,7 +1001,7 @@ export class SshHost implements Host {
               trustIf: bareOrNot(spec.trustIf)
             }),
             files
-          }
+          )
         })
         return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
       },
@@ -1118,8 +1118,6 @@ export class SshHost implements Host {
           banner: '',
           env: spec.env,
           portOffset: spec.portOffset,
-          settings: {},
-          claudeArgs: [],
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1160,20 +1158,27 @@ export class SshHost implements Host {
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd,
-          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? '',
-          env: account?.env,
-          portOffset: worktree ? portOffset(worktree) : undefined,
-          settings: d.hookSettings(tabId, machineDir, agentTools),
-          ownerWords: spec.ownerWords,
-          agentPlugin: agentTools,
-          claudeArgs
-        })
+        writeTabPackage(
+          tabDir,
+          claudeTabSpec(
+            {
+              tabId,
+              tmuxName,
+              machineName: pkg.name,
+              cwd,
+              fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
+              banner: account?.banner ?? '',
+              env: account?.env,
+              portOffset: worktree ? portOffset(worktree) : undefined,
+              ownerWords: spec.ownerWords
+            },
+            {
+              settings: d.hookSettings(tabId, machineDir, agentTools),
+              agentPlugin: agentTools,
+              claudeArgs
+            }
+          )
+        )
         return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,
