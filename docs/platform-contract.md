@@ -2569,3 +2569,18 @@ field and says so; a remote workspace's pull requests are listed by that machine
 
 Koloft dependents: `installFakeRemote` in `test/e2e/helpers/remote.ts`, which a case may
 call twice on one home, the second time over the link the first one made.
+
+## §63 A command line typed into the user's own login shell: `VAR=x exec cmd` in fish
+
+- **fish drops the variable.** `fish -c "A=1 exec fakecli"` ran `fakecli` with `A`
+  empty. `A=1 fakecli` without `exec` got `A=1`.
+- **`exec env A=1 cmd` passes it in fish, zsh and bash**, and the shell ends when `cmd`
+  ends (a `; echo` after it never ran; the exit code was `cmd`'s).
+- **`printf '\033…\007'` prints a real ESC and BEL in all three**, so a marker printed
+  that way differs from its own echo on the typed line.
+- Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
+  image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+
+Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
+Antigravity sign-in into the user's login shell with an account's environment, and
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`.

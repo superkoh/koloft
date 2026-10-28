@@ -1227,10 +1227,18 @@ probed: a real `consume` — every try spends one of the owner's resets, so Kolo
 it only on a walled account and only the fake codex has run it; whether
 `nothingToReset` leaves the credit unspent is inferred from its description.
 
+**A `codex login` stopped part way leaves the home signed out.** Checked 2026-10-28 with
+Codex CLI 0.165.0 (Linux, `node:22-bookworm` Docker image, no account): `codex login` and
+`codex login --device-auth`, each in an empty `CODEX_HOME` under `script`, were sent SIGHUP
+8 s in, while waiting for the browser or the device code. Each home then held only a
+`log/` folder, no `auth.json`, and `codex login status` printed "Not logged in" and
+exited 1. So the probe Koloft runs when a sign-in tab closes reads such a home as not
+signed in.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
-  done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
-  only on exit 0) — **inferred, not checked**;
+  done (Koloft execs `codex login` in the sign-in terminal, so the tab closes when it
+  ends, and the probe after it decides) — **inferred, not checked**;
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
 
