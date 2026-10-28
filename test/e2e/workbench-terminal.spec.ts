@@ -10,9 +10,12 @@ import {
   addCodexAccount,
   addMuseAccount,
   installCodex,
+  installMuse,
+  seededAccount,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
+import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { codexCalls, startLocalSession } from './helpers/codex'
 import {
   centerTerm,
@@ -347,6 +350,88 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         for (const name of ['codex', 'muse', 'agy'])
           await expect(panelTerm(page)).toContainText(`WT05B_${name}_OK`, { timeout: 25_000 })
         await expect(panelTerm(page)).not.toContainText('_BAD')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('T-WT-05c: with every account of that agent at its limit, codex exec, muse exec and agy -p in a terminal tab each say so on a line of their own, then still run', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installCodex(env, JSON.stringify({ usedPercent: 100 }))
+      installMuse(env)
+      fs.writeFileSync(
+        path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+        JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      )
+      fs.writeFileSync(
+        path.join(env.home, 'fake-muse-quota.json'),
+        JSON.stringify({ current: 100, weekly: 100 })
+      )
+      const agy = path.join(env.fakeBin, 'agy')
+      fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-agy.js'), agy)
+      env.launchEnv.KOLOFT_AGY_CMD = agy
+      const agyApp = path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli')
+      fs.mkdirSync(path.join(agyApp, 'cache'), { recursive: true })
+      fs.writeFileSync(
+        path.join(agyApp, 'cache', 'onboarding.json'),
+        JSON.stringify({ onboardingComplete: true })
+      )
+      fs.writeFileSync(path.join(agyApp, 'antigravity-oauth-token'), 'fake')
+      const accounts = (
+        JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')) as {
+          accounts: unknown[]
+        }
+      ).accounts
+      seedSettings(env, {
+        hintsOff: true,
+        accounts: [...accounts, seededAccount(E2E_AGY_ACCOUNT, 'agy-home')]
+      })
+      const resetsTomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-usage.json'),
+        JSON.stringify({
+          groups: [
+            {
+              name: 'Gemini Models',
+              buckets: [
+                {
+                  id: 'gemini-5h',
+                  name: 'Five Hour Limit Remaining',
+                  window: '5h',
+                  remaining_fraction: 0,
+                  reset_time: resetsTomorrow
+                }
+              ]
+            }
+          ]
+        })
+      )
+      const recorders = path.join(env.home, 'recorders')
+      fs.mkdirSync(recorders)
+      for (const name of ['codex', 'muse', 'agy'])
+        fs.writeFileSync(path.join(recorders, name), `#!/bin/sh\necho WT05C_${name}_RAN\n`, {
+          mode: 0o755
+        })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await page.evaluate(() => window.api.accounts.probe())
+        await startSessionIn(page, 'ws-a', { method: 'Claude' })
+        await openSessionTerminal(app, page)
+        await runIn(
+          page,
+          panelTerm(page),
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+        )
+        for (const name of ['codex', 'muse', 'agy'] as const) {
+          await expect(panelTerm(page)).toContainText(`WT05C_${name}_RAN`, { timeout: 25_000 })
+          await expect(panelTerm(page)).toContainText(
+            `Every ${BACKEND_LABEL[name]} account is at its limit`
+          )
+        }
       } finally {
         await quitAndClose(app)
       }
