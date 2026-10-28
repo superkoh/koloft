@@ -31,6 +31,8 @@ function cwdFromBody(body: string, hostname: string): string | undefined {
 export class OscBodies {
   private carry = ''
 
+  constructor(private readonly carryMax: number = OSC_CARRY_MAX) {}
+
   push(chunk: string): string[] {
     const s = this.carry + chunk
     this.carry = ''
@@ -77,7 +79,7 @@ export class OscBodies {
   }
 
   private hold(partial: string, found: string[]): string[] {
-    this.carry = partial.length <= OSC_CARRY_MAX ? partial : ''
+    this.carry = partial.length <= this.carryMax ? partial : ''
     return found
   }
 }
