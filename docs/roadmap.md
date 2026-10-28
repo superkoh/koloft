@@ -35,9 +35,6 @@ when it works. That is what "judged against" means.
 
 ### Tier 1 — orchestration: the session is the unit
 
-- **Broadcast input** — type once, send to the sessions you selected. The workspace →
-  session tree is the first reliable "select N sessions" unit Koloft has had, so the
-  scope is unambiguous: the rows you picked, nothing implied.
 - **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
@@ -84,7 +81,6 @@ Reopen one of these only with new evidence, not a new argument.
   a sibling session through messages (Claude Code's own `SendMessage`, and
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
-  Broadcast input above is a feature for the *person*, with the rows they picked.
   Three exceptions, all the owner's decisions. First, a `koloft session send`
   to a Claude session on another machine over ssh is typed into its terminal, because
   that session's message socket is on the other machine where Koloft cannot reach it.
@@ -160,7 +156,7 @@ would settle Tier 1 against Tier 2.
   Codex TUI, which is why it has the whole centre. That is not the same as keeping a
   free-floating shell, which is a non-goal.
 - **Anti-patterns with a track record of backlash**: telemetry, forced login, hiding the
-  terminal, auto-hide-on-blur without an opt-out, ambiguous broadcast scope. Koloft has
+  terminal, auto-hide-on-blur without an opt-out. Koloft has
   none of the first three and will not add them. The one sign-in it does ask for is a
   Claude or Codex account added in Settings ▸ Accounts, which every session runs on
   (ADR-0030) — the tools' own sign-in, never an account with Koloft.
