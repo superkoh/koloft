@@ -2,7 +2,11 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { commandLineToolsMissing, dirsAnotherGitMayBeIn } from './commandLineTools'
+import {
+  APPLE_GIT_STUB_DIR,
+  commandLineToolsMissing,
+  dirsAnotherGitMayBeIn
+} from './commandLineTools'
 import { writeExecutable } from './playwrightCli'
 
 function vendorPath(name: string): string {
@@ -91,7 +95,12 @@ function isScript(file: string): boolean {
 function isRealGitProgram(file: string): boolean {
   try {
     const real = fs.realpathSync(file)
-    return path.basename(real) === 'git' && isExecutableFile(real) && !isScript(real)
+    return (
+      path.basename(real) === 'git' &&
+      path.dirname(real) !== APPLE_GIT_STUB_DIR &&
+      isExecutableFile(real) &&
+      !isScript(real)
+    )
   } catch {
     return false
   }

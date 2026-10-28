@@ -56,7 +56,7 @@ describe('the bundled git', () => {
     }
   })
 
-  it('gives way to the first real git program on the login PATH, skipping a relative folder, a script named git (an asdf or mise shim, or its own launcher) and a link to a program not named git (a mise shim)', () => {
+  it('gives way to the first real git program on the login PATH, skipping a relative folder, Apple’s install stub however /usr/bin is spelled, a script named git (an asdf or mise shim, or its own launcher) and a link to a program not named git (a mise shim)', () => {
     const program = Buffer.from([0xcf, 0xfa, 0xed, 0xfe])
     const gitBin = path.join(dir, 'git-bin')
     const launcher = executable(path.join(gitBin, 'git'), '#!/bin/sh\necho shipped\n')
@@ -77,8 +77,8 @@ describe('the bundled git', () => {
     process.chdir(path.dirname(store))
     process.env.KOLOFT_TEST_CLT = 'missing'
     try {
-      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin`)).toBeUndefined()
-      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin:${nix}`)).toBe(
+      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin/`)).toBeUndefined()
+      expect(theUsersGit(`.:${gitBin}:${linkBack}:${asdf}:${mise}:/usr/bin/:${nix}`)).toBe(
         path.join(nix, 'git')
       )
     } finally {
