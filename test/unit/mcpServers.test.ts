@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { claudeServers, codexServers, jsonServers } from '../../src/main/mcpServers'
+import {
+  claudeServers,
+  codexServers,
+  foldersUpToRepoTop,
+  foldersUpToRoot,
+  jsonServers
+} from '../../src/main/mcpServers'
 
 describe('the MCP servers koloft todo reads from each agent’s own config', () => {
   // CC§22
@@ -61,6 +67,24 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ).toEqual([
       { name: 'linear', backend: 'agy' },
       { name: 'jira', backend: 'agy', onlyIn: '/work/shop' }
+    ])
+  })
+
+  // CC§22 MUSE§18 AGY§30
+  it('a workspace in a sub-folder: Claude reads the project file of every folder up to /, Muse and Antigravity only up to the nearest folder holding .git, or only the workspace’s own outside a repository', async () => {
+    expect(foldersUpToRoot('/work/mono/app')).toEqual([
+      '/work/mono/app',
+      '/work/mono',
+      '/work',
+      '/'
+    ])
+    const inRepo = async (folder: string): Promise<boolean> => folder === '/work/mono'
+    expect(await foldersUpToRepoTop('/work/mono/app', inRepo)).toEqual([
+      '/work/mono/app',
+      '/work/mono'
+    ])
+    expect(await foldersUpToRepoTop('/work/mono/app', async () => false)).toEqual([
+      '/work/mono/app'
     ])
   })
 

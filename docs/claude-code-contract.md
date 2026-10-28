@@ -2876,6 +2876,12 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   the same variables removed, run from A, A/sub, a linked worktree W of A and W/sub, with
   A a git repository and again with A not one. A submodule, and `/mcp` in the TUI, were
   not probed.
+- **`.mcp.json` is read in the cwd and every folder above it, up to `/`:** the git
+  top-level does not stop the walk, nor does `HOME`. Run from two folders below a
+  repository's top level, `mcp list` showed the servers of the folder in between, of the
+  top level, of the folder above the repository and of a folder above `HOME`; run in a
+  repository inside another, it showed the outer repository's too. Measured 2026-10-28,
+  CC 2.1.312, `claude mcp list` under a throwaway `HOME` with the same variables removed.
 - **A `.mcp.json` server connects only after approval:** `mcp list` showed it `⏸ Pending
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).

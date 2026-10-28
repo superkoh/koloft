@@ -591,6 +591,13 @@ in the model request.
   workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
   untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
   `<A>/.agents/settings.json` were not read.
+- **Which folders' `.mcp.json`:** the workspace's and every folder above it up to the
+  nearest one holding `.git` (a folder, or the file of a linked worktree), that one
+  included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, a repository inside another did not reach the outer one, and
+  `--trust-workspace` for the cwd alone was enough for the files above it to load.
+  Measured 2026-10-28, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec --provider
+  echo --trust-workspace`, MCP servers that logged their start.
 - **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
   scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
   only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because
