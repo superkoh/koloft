@@ -191,9 +191,14 @@ Working principles:
   `model: 'opus'` — writing code, running tests, reading and searching code,
   design drafts, review along the way. Only the independent check of what the owner
   will decide on (the plan, design or audit report above) goes to `model: 'fable'`:
-  a Fable agent costs about 2.5 times an Opus one. Fan out by slices of work, never one agent per
+  a Fable agent costs about 2.5 times an Opus one. Its brief opens with the line
+  `Never consult the advisor tool.`, before the shell-rule block: a helper inherits
+  the session's advisor, which is Fable too, so asking it re-reads the whole check at
+  full Fable price; without the line 3 of 3 Fable checks asked it, with it 0 of 3.
+  Fan out by slices of work, never one agent per
   finding — a handful per phase — and say how many before launching. Every brief and
-  every Workflow step prompt starts with the shell-rule block below, word for word:
+  every Workflow step prompt starts with the shell-rule block below, word for word
+  (a Fable check's right after its advisor line):
   an Explore agent never sees this file, and agents whose brief lacked the block
   were refused 2–3 times as often. An agent
   writes only patches or code, in a scratchpad folder of its own.
