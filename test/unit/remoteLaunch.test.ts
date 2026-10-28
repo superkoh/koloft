@@ -259,7 +259,7 @@ describe('U-LINE-*: the launch line', () => {
     const st = stage(r, { 'run.sh': 'x' }, spec())
     r.fail(4, 7)
     const live = typeLineLive(r, st.line())
-    expect(await until(() => live.out().includes('ended (exit 7)'))).toBe(true)
+    expect(await until(() => live.out().includes('exit code 7'))).toBe(true)
     expect(live.out()).toContain('press Enter to close')
     await new Promise((res) => setTimeout(res, 300))
     expect(live.running()).toBe(true)
@@ -648,6 +648,10 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const clean = box(spec()).run()
     expect(clean.status).toBe(0)
     expect(clean.stdout).not.toContain('the last screen')
+  })
+
+  it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
+    expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

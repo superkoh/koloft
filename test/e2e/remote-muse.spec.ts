@@ -175,7 +175,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
-        .toMatch(/ended \(exit [1-9]/)
+        .toMatch(/stopped with exit code [1-9]/)
       await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
       await expect(
         page.locator('.toast', { hasText: /^Muse session ended unexpectedly \(exit code [1-9]/ })

@@ -171,7 +171,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
-        .toContain('ended (exit 137)')
+        .toContain('stopped with exit code 137')
       await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
       await expect(
         page.locator('.toast', {

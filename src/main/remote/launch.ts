@@ -183,6 +183,8 @@ fi
 `
 }
 
+const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
+
 export function tabScript(spec: TabSpec): string {
   assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
   const T = tabPath(spec.tabId)
@@ -200,17 +202,20 @@ if [ "$1" = run ]; then
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  (
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
+  (
 ${program.run}  )
-  c=$?; echo $c > "${T}.exit"
-  [ $c = 0 ] || tmux -L koloft capture-pane -p > "${T}.screen" 2>/dev/null
+  c=$?
+  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
+  echo $c > "${T}.exit"
   exit
 fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 exited() {
-  c=$?; [ -f "${T}.exit" ] && c=$(cat "${T}.exit")
-  [ -f "${T}.screen" ] && awk 'NF { for (; n; n--) print ""; print; next } { n++ }' "${T}.screen"
-  rm -f "${T}.exit" "${T}.screen" "${T}.env"; exit $c
+  c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
+  [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
+  [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
+  rm -f "${T}.env"; exit $c
 }
 [ "$1" = attach ] && { tmux -L koloft attach -d -t ${attachTo}; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
@@ -296,7 +301,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
     `${tabPushed(s)}a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
-    `[ "$c" = 0 ] || { echo "[Koloft] the session on the machine ended (exit $c) — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
+    `[ "$c" = 0 ] || { echo "[Koloft] the session on the machine stopped with exit code $c — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
   )

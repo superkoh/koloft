@@ -219,7 +219,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
-        .toContain('ended (exit 137)')
+        .toContain('stopped with exit code 137')
 
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
