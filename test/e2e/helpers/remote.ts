@@ -228,7 +228,8 @@ export function installFakeRemote(env: E2EEnv): void {
   fs.mkdirSync(path.dirname(playwrightCliTheWrapperFindsSoItNeverReachesForNpm), {
     recursive: true
   })
-  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true })
+  // PLATFORM§62
+  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true, recursive: true })
   fs.symlinkSync(
     path.dirname(require.resolve('@playwright/cli/package.json')),
     playwrightCliTheWrapperFindsSoItNeverReachesForNpm

@@ -361,6 +361,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           )
         await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
         if (reported === 'agy') await agyReady(page)
+        if (reported === 'muse')
+          await expect(wsRows(page, workspace)).toHaveClass(/st-waiting/, { timeout: 60_000 })
         const postedBefore = said(fake).length
         await runIn(page, centerTerm(page), 'hello')
         await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
