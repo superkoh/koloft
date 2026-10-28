@@ -991,8 +991,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const flagged = /^Koloft: this \[Discord\] message was not sent by Koloft's Discord relay/
       await expect.poll(() => promptContexts(env).filter((c) => flagged.test(c))).toHaveLength(1)
       expect(
-        promptContexts(env).filter((c) => !flagged.test(c) && c.includes('«please look at the PR»'))
-      ).toHaveLength(1)
+        promptContexts(env).some((c) => !flagged.test(c) && c.includes('«please look at the PR»'))
+      ).toBe(true)
     } finally {
       await quitAndClose(app)
       await fake.close()

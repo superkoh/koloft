@@ -2568,4 +2568,8 @@ stdin. Each turn then failed at the model (401), after the hook had run. One run
   `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `prompt` — the
   text as sent, no client id. The hook ran before the turn's `userMessage` item was
   sent, so the id was not in the rollout yet either.
+- **The `prompt` is compact JSON with non-ASCII text left as UTF-8.** A queued
+  `[Discord] 你好 "a" <b> é<TAB>x<LF>line2` reached the hook as
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx\nline2"`: only the quote, the tab and the line
+  feed escaped, as Node's `JSON.stringify` does (second run, same setup).
 

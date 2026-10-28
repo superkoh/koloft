@@ -42,14 +42,21 @@ owner can read an id, and nothing stops it.
 
 **Codex and Muse Assists, by the words instead of an id**: a message reaches them as plain
 text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while
-another program can reach them the same way — `codex queue` for Codex (CODEX§33), a Muse
-session's `send_session_message` tool for Muse (MUSE§9). So the relay writes the words of
-each `[Discord]` message it hands over to `<tab>.discord-said`, and the Assist's
+another program can reach them the same way — `codex queue` for Codex (CODEX§33); for
+Muse, another Muse session's `send_session_message` tool (MUSE§7, MUSE§9; that it lands
+as a prompt is inferred, not checked). So the relay writes the words of each `[Discord]`
+message it hands over to a Codex or Muse tab to `<tab>.discord-said`, and the Assist's
 `UserPromptSubmit` hook flags a `[Discord]`-first prompt whose words are not there. The
-words are compared with every escape and every ASCII sign and space taken out, as Codex,
-Node and Muse escape JSON differently. The hook cannot tell typed text from a message, so
-`[Discord]` typed into those tabs is flagged too, where Claude takes it as typed. On
-another machine no relay writes the file, so every `[Discord]` is flagged there, as in a
-remote Claude tab. **Antigravity has no check**: only typing reaches it (AGY§16 — its
-local API needs a token no other program can read), and Claude does not flag typed text
-either.
+words are compared with every JSON escape and every ASCII sign and space taken out, so a
+later CLI that escapes a sign Node does not cannot turn the owner's words into a flag
+(today both escape as Node does: CODEX§33, MUSE§9). The hook cannot tell typed text from
+a message, so `[Discord]` typed into those tabs is flagged too, where Claude takes it as
+typed. On another machine no relay writes the file, so every `[Discord]` is flagged
+there, as in a remote Claude tab. **Antigravity has no check**: only typing reaches it
+(AGY§16 — its local API needs a token no other program can read), and Claude does not
+flag typed text either.
+**Rejected**: putting Claude's `(Koloft message <id>)` line at the end of the Codex and
+Muse text too, so every backend checks an id. The model, Koloft's own transcript reading
+(the owner's words handed to a helper, a session's last prompt) and the owner would all
+see that line, and each reader would need it cut off; the words file changes nothing
+anyone sees.

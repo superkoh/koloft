@@ -49,7 +49,7 @@ export const JSON_STRING_BODY = '(([^"\\\\]|\\\\.)*)'
 const ASSISTANT_TEXT_RECORD = '"role":"assistant","content":\\[\\{"type":"(output_)?text","text":"'
 const TRANSCRIPT_PATH_FIELD = `'"transcript_path"[[:space:]]*:[[:space:]]*"[^"]*"'`
 // ADR-0028
-const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
+export const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
 const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
 export const DISCORD_SAID_SUFFIX = '.discord-said'
@@ -169,14 +169,17 @@ export const QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD = `relay_key() {
   LC_ALL=C sed -E -e 's/\\\\(u[0-9a-fA-F]{4}|.)//g' -e $'s/[^A-Za-z0-9\\x80-\\xff]//g'
 }
 said_by_the_relay() {
-  key="$(prompt_body | relay_key)"
-  [ -n "$key" ] && [ -f "$discord_said" ] && relay_key < "$discord_said" | grep -qxF -- "$key"
+  [ -f "$discord_said" ] && relay_key < "$discord_said" | grep -qxF -- "$(prompt_body | relay_key)"
 }
 flag=""
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
   *'"prompt":"${DISCORD_PREFIX} '*)
-    if said_by_the_relay; then save_quote; else flag=${shq(NOT_FROM_THE_RELAY)}; fi ;;
+    if said_by_the_relay; then
+      ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
+    else
+      flag=${shq(NOT_FROM_THE_RELAY)}
+    fi ;;
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac`
 
@@ -610,6 +613,11 @@ export function discordSaidFile(regDir: string, tabId: string): string {
 
 export function discordSaidBeside(notice: string): string {
   return notice.slice(0, -NOTICE_SUFFIX.length) + DISCORD_SAID_SUFFIX
+}
+
+// ADR-0028
+export function noteDiscordSaid(regDir: string, tabId: string, text: string): void {
+  fs.appendFileSync(discordSaidFile(regDir, tabId), `${JSON.stringify(text).slice(1, -1)}\n`)
 }
 
 export function saidFile(regDir: string, tabId: string): string {
