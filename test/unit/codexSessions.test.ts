@@ -406,6 +406,28 @@ describe('CodexSessions', () => {
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
   })
 
+  it('names each folder this Mac’s history used, with its session count and newest use, and leaves out a remote machine’s (the welcome’s list; the shared stored-sessions history, so Muse and Antigravity too)', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    deps.machine = fakeMachine()
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: D, cwd: '/srv/repo', updatedAt: 900 }]
+    }))
+    await sessions.refreshMachineHistory('box', true)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived
+        ? [{ id: B, cwd: repo, updatedAt: 300 }]
+        : [
+            { id: A, cwd: repo, updatedAt: 100 },
+            { id: C, cwd: other, createdAt: 200 }
+          ]
+    }))
+    expect(await sessions.localHistoryFolders()).toEqual([
+      { cwd: repo, sessions: 2, mtime: 300_000 },
+      { cwd: other, sessions: 1, mtime: 200_000 }
+    ])
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',

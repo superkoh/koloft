@@ -1238,6 +1238,28 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     ])
   })
 
+  it('offers the folders Codex, Muse and Antigravity used too, counted with Claude’s', async () => {
+    const a = path.join(root, 'a')
+    fs.mkdirSync(a)
+    writeJsonl(a, 'a-1')
+    setMtime(a, 'a-1', 1000)
+    const x = path.join(root, 'x')
+    fs.mkdirSync(x)
+    Object.assign((mgr as unknown as { deps: object }).deps, {
+      additionalFolders: async () => [
+        { cwd: a, sessions: 2, mtime: 3000_000 },
+        { cwd: x, sessions: 1, mtime: 2000_000 },
+        { cwd: repo, sessions: 4, mtime: 9000_000 },
+        { cwd: path.join(root, 'gone'), sessions: 1, mtime: 9000_000 }
+      ]
+    })
+
+    expect(await mgr.discover()).toEqual([
+      { path: a, sessions: 3, mtime: 3000_000 },
+      { path: x, sessions: 1, mtime: 2000_000 }
+    ])
+  })
+
   it('offers at most 8 folders, newest first', async () => {
     for (let i = 0; i < 9; i++) {
       const dir = path.join(root, 'p' + i)

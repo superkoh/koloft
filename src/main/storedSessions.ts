@@ -16,6 +16,7 @@ import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionPlace } from './usageCache'
+import type { UsedFolder } from './workspaces'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
@@ -119,6 +120,7 @@ export interface SessionsWithStore {
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
+  localHistoryFolders(): Promise<UsedFolder[]>
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
@@ -400,6 +402,22 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   hasHistoryOn(host: string): boolean {
     for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
     return false
+  }
+  async localHistoryFolders(): Promise<UsedFolder[]> {
+    await this.refreshHistory()
+    const scope = this.rowScope()
+    const byFolder = new Map<string, UsedFolder>()
+    for (const [key, t] of this.history) {
+      if (hostOfKey(key) || isRemoteKey(t.cwd)) continue
+      const cwd = this.workspaceFor(t.cwd, scope)
+      const mtime = (t.updatedAt ?? t.createdAt ?? 0) * 1000
+      const prev = byFolder.get(cwd)
+      if (prev) {
+        prev.sessions++
+        prev.mtime = Math.max(prev.mtime, mtime)
+      } else byFolder.set(cwd, { cwd, sessions: 1, mtime })
+    }
+    return [...byFolder.values()]
   }
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
     const scope = this.rowScope()

@@ -3066,6 +3066,8 @@ app.whenReady().then(() => {
         stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
       ),
     additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
+    additionalFolders: async () =>
+      (await Promise.all(storedSessions().map((stored) => stored.localHistoryFolders()))).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
     saveLayout,
