@@ -385,7 +385,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(edges).toEqual([])
   })
 
-  it('a delivered task-notification drains the ledger; the next turn-end waits', async () => {
+  it('a delivered task-notification drops its task; the next turn-end waits', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB2', cwd, initialLines(cwd))
@@ -415,7 +415,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB3')).toBe('waiting')
   })
 
-  it('a silent ledger holds past the recency window, then self-releases at the silence cap', async () => {
+  it('a silent acked task holds past the recency window, then self-releases at the silence cap', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB4', cwd, initialLines(cwd))
@@ -429,7 +429,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB4' && s.status === 'waiting', 8000)
   }, 12_000)
 
-  it('fresh subagent growth promotes a resting dot (Koloft bound mid-run, ledger empty)', async () => {
+  it('fresh subagent growth promotes a resting dot (Koloft bound mid-run, task list empty)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabB5', cwd, [...initialLines(cwd), spawnRec('toolu_old', cwd)])
@@ -537,7 +537,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB12' && s.status === 'waiting', 8000)
   }, 12_000)
 
-  it('a live spawn ack inside the catch-up batch still enters the ledger', async () => {
+  it('a live spawn ack inside the catch-up batch still enters the task list', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     tracker.track('tabB13', cwd)
@@ -606,21 +606,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB15')).toBe('waiting')
   })
 
-  it('an idle nudge while resting cannot block the background promotion: the next subagent write still promotes', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabB16', cwd, initialLines(cwd))
-    expect(status(tracker, 'tabB16')).toBe('waiting')
-
-    await sleep(RESUME_MS + 200)
-    writeSubagentJsonl(cwd, SID, 'agent-live.jsonl', [subagentRec(Date.now())])
-    await tracker.reportTurnEnd('tabB16')
-    await sleep(RESUME_MS + 200)
-    writeSubagentJsonl(cwd, SID, 'agent-next.jsonl', [subagentRec(Date.now())])
-    await waitFor(tracker, (s) => s.tabId === 'tabB16' && s.status === 'working', 8000)
-  }, 12_000)
-
-  it('a truncation mid-hold re-ledgers live spawn acks (no degraded 10s hold)', async () => {
+  it('a truncation mid-hold keeps live spawn acks in the task list', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB17', cwd, initialLines(cwd))
@@ -799,7 +785,7 @@ describe('run-state vs background work: any live background task keeps the sessi
   })
 
   // CC§8
-  it('a fork with no background flag never enters the ledger (its result is already final)', async () => {
+  it('a fork with no background flag never enters the task list (its result is already final)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabF3', cwd, initialLines(cwd))
@@ -829,7 +815,7 @@ describe('run-state vs background work: any live background task keeps the sessi
   })
 
   // CC§8
-  it('every delivered-notification shape retires the ledger (attachment / queue-op / legacy)', async () => {
+  it('every delivered-notification shape retires its task (attachment / queue-op / legacy)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabN1', cwd, initialLines(cwd))
@@ -979,7 +965,7 @@ describe('run-state vs background work: any live background task keeps the sessi
 })
 
 // CC§8
-describe("run-state from the turn-end payload: the Stop hook's own task list outranks the inferred ledger, which stays for an older claude", () => {
+describe("run-state from the turn-end payload: the Stop hook's own task list decides, and a spawn ack only adds to it", () => {
   it('a reported live task holds working with NO ack in the transcript at all', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -998,7 +984,7 @@ describe("run-state from the turn-end payload: the Stop hook's own task list out
   })
 
   // CC§8
-  it('a reported empty list rests the dot even while the inferred ledger still holds', async () => {
+  it('a reported empty list rests the dot even after a spawn ack this turn', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabP2', cwd, initialLines(cwd))
@@ -1009,18 +995,7 @@ describe("run-state from the turn-end payload: the Stop hook's own task list out
     expect(status(tracker, 'tabP2')).toBe('waiting')
   })
 
-  it('no reported list falls back to the inferred ledger', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    const file = await bindCaughtUp(tracker, 'tabP3', cwd, initialLines(cwd))
-    tracker.setStatus('tabP3', 'working')
-
-    appendJsonl(file, [spawnRec('toolu_old', cwd)])
-    await tracker.reportTurnEnd('tabP3')
-    expect(status(tracker, 'tabP3')).toBe('working')
-  })
-
-  it('an empty ledger cannot release a payload-held turn-end early', async () => {
+  it('a reported task holds past the recency window with no ack on disk', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabP5', cwd, initialLines(cwd))
@@ -1508,7 +1483,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(parked(tracker, 'tabL9')).toBeUndefined()
   })
 
-  it('an idle nudge re-judges the reported list rather than the ledger (live shell, empty ledger)', async () => {
+  it('an idle nudge re-judges the reported list, so a live listed shell keeps it working', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabL10', cwd, initialLines(cwd))
@@ -1520,7 +1495,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL10')).toBe('working')
   })
 
-  it('an idle nudge cannot be held by a ledger entry the list has judged idle', async () => {
+  it('an idle nudge cannot be held by a spawn ack the list has since replaced with an idle teammate', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL11', cwd, initialLines(cwd))

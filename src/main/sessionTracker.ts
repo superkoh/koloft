@@ -676,10 +676,6 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
-    this.endTurnHeldByWhatRuns(t)
-  }
-
-  private endTurnHeldByWhatRuns(t: Tracked): void {
     this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
@@ -709,7 +705,6 @@ export class SessionTracker extends SessionRuntime {
 
   private judgeReported(t: Tracked, holding = true): boolean {
     const now = Date.now()
-    const list = t.reported
     const procs = t.procs
     const parked: BackgroundItem[] = []
     const running: BackgroundItem[] = []
@@ -718,12 +713,12 @@ export class SessionTracker extends SessionRuntime {
     }
     let observed = false
     let trusted = false
-    const reportedIds = new Set(list.map((x) => x.id))
+    const reportedIds = new Set(t.reported.map((x) => x.id))
     const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
-    for (const task of list) {
+    for (const task of t.reported) {
       if (task.type === 'shell') {
         const label = t.ledger.labelOf(task.id) ?? task.id
         if (t.ledger.isMonitor(task.id)) {
@@ -786,10 +781,9 @@ export class SessionTracker extends SessionRuntime {
 
   private async refreshProcs(t: Tracked, force = false): Promise<void> {
     if (t.remote) return
-    const list = t.reported
     const observable = (x: ReportedTask): boolean =>
       x.type === 'teammate' || AGENT_TYPES.has(x.type) || x.type === 'shell'
-    if (!list.some(observable)) return
+    if (!t.reported.some(observable)) return
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
@@ -1314,7 +1308,7 @@ export class SessionTracker extends SessionRuntime {
     if (this.statusSince(tabId) > t.lastInterruptTs) return
     await this.refreshProcs(t, true)
     if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
-    this.endTurnHeldByWhatRuns(t)
+    this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
