@@ -15,7 +15,7 @@ import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
 import {
@@ -204,7 +204,6 @@ const AGY: CliSpec = {
 }
 
 // AGY§3
-const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000
 const TICK_MS = 500
 // AGY§17
 const COMPACTION_SHOWS_AFTER_MS = 500

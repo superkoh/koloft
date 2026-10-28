@@ -26,7 +26,8 @@ inside the desktop login session so the Keychain works. A bullet measured only o
 - a **terminal**: a pty driver that answers the TUI's queries (DA1, DA2, DECRQM, OSC
   11, OSC 7501, XTVERSION, cursor position), or tmux 3.3a where a bullet names it.
 
-Nothing ran against Google's real servers.
+Nothing ran against Google's real servers, except the one `agy update` §3 names, which
+only downloaded the public release.
 
 ## §1 The command line
 
@@ -118,6 +119,18 @@ Nothing ran against Google's real servers.
   `{"success":true,"message":"Update successful, restart CLI to use"}`.
   `agy update` prints `Checking for updates… Found new version… Update successful!
   Please restart agy.` and exits 0.
+- `agy update` on 1.3.6 at `~/.local/bin/agy`, run by its name from `PATH` as a plain
+  user, with the network on (2026-10-26, Linux arm64 Docker): it fetched the current
+  release, 1.4.7, in about 3 seconds, asked for no password and read nothing from
+  stdin; the next `agy --version` printed `1.4.7`. `AGY_CLI_DISABLE_AUTO_UPDATE=true`
+  does not stop it: the same run with it set updated just the same. The same binary in a folder the
+  user cannot write (`/usr/local/bin`, owned by another user) printed `Error: directory
+  /usr/local/bin is not fully accessible (readable: true, writable: false)`, exited 1
+  and stayed 1.3.6.
+- The installer takes only `-d`/`--dir`: no flag or variable picks a version, it
+  always installs what the manifest names (read 2026-10-26). Run as a plain user while
+  an unwritable `/usr/local/bin/agy` 1.3.6 was on `PATH`, it put 1.4.7 at
+  `~/.local/bin/agy` and exited 0 (same container, same day).
 - Only `AGY_CLI_DISABLE_AUTO_UPDATE=true` turns it off (log: `Auto-update disabled via
   environment variable`). `1`, `TRUE`, `True`, `yes` and `on` do not. No
   `settings.json` key does.
