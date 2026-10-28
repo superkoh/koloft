@@ -544,15 +544,17 @@ test.describe('The butler: one global session at the top of the sessions list, k
   })
 
   // AGY§8
-  test('koloft session send from another session to an Antigravity butler opened with nothing to say types the message in as its first prompt, which binds it', async ({
+  test('koloft session send from another session to an Antigravity butler opened with nothing to say long before types the message in as its first prompt, which binds it', async ({
     env
   }) => {
     installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
     const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
     try {
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
       const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
 
       const sent = await koloftRun(page, 'session send Alfred "please tidy the notes"')
@@ -562,6 +564,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect((await terminalText(page, butlerTab)).replace(/\s+/g, '')).toContain(
         'pleasetidythenotes'
       )
+      await expectNoToastAtAnyMomentOfAWindow(page)
+      await expect(butlerRow(page)).toHaveAttribute('data-tab-id', butlerTab)
     } finally {
       await close()
     }

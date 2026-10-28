@@ -73,6 +73,7 @@ interface Conducting {
   quotedPrompts?: Record<string, string>
   conductors?: Record<string, Target>
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
+  bound?: (tabId: string, ms: number) => boolean
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
@@ -192,7 +193,7 @@ function harness(
       return `${r.id}-tab`
     },
     ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
-    bound: async () => true,
+    bound: async (tabId, ms) => conducting.bound?.(tabId, ms) ?? true,
     asking: (tabId) => conducting.asking?.includes(tabId) ?? false,
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })
@@ -1389,6 +1390,32 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     const idle = harness(live, {}, [], conducting())
     expect((await idle.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
       'Typed into api-fix.'
+    )
+  })
+
+  it('send types into a tab that has no conversation yet as its first prompt and waits for it to bind before answering; a bind that does not come is said in the answer', async () => {
+    const waits: number[] = []
+    const binds = harness(
+      live,
+      {},
+      [],
+      conducting({
+        bound: (_tab, ms) => {
+          waits.push(ms)
+          return ms > 0
+        }
+      })
+    )
+    expect((await binds.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
+      'Typed into api-fix.'
+    )
+    expect(binds.pressed).toEqual([{ tabId: 'api', keys: [ownerSays('hi'), '\r'] }])
+    expect(waits).toHaveLength(2)
+    expect(waits[1]).toBeGreaterThan(0)
+
+    const never = harness(live, {}, [], conducting({ bound: () => false }))
+    expect((await never.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
+      'Typed into api-fix, but it has not started a conversation yet.'
     )
   })
 
