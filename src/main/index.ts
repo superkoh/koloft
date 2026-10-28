@@ -63,7 +63,7 @@ import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
-import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
+import type { SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
@@ -559,7 +559,7 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
-const claudeAsks = new Map<string, AskPayload>()
+const claudeAsks = new Map<string, string>()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -610,9 +610,9 @@ const sessionBackends = new SessionBackends({
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
-    claudeAsks.set(tabId, ask)
+    claudeAsks.set(tabId, claudeAskLine(ask))
     if (discordRelay) discordRelay.onAsk(tabId, ask)
-    else sendToRenderer(CH.sessions.update, onSessionsChanged())
+    else showAskOnItsRow(tabId)
   },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -627,8 +627,14 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
-  return ask && claudeAskLine(ask)
+  const line = claudeAsks.get(tabId)
+  if (line) return line
+  const held = discordRelay?.heldAsk(tabId)
+  return held && claudeAskLine(held)
+}
+function showAskOnItsRow(tabId: string): void {
+  if (tracker.statusOf(tabId) === 'approval')
+    sendToRenderer(CH.sessions.update, onSessionsChanged())
 }
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
@@ -3311,7 +3317,7 @@ app.whenReady().then(() => {
     asksChanged: (tabId) => {
       ptyMgr.wakeReady(tabId)
       void buttons.check(tabId)
-      sendToRenderer(CH.sessions.update, onSessionsChanged())
+      showAskOnItsRow(tabId)
     },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,

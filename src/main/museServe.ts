@@ -169,7 +169,7 @@ export function museHistory(items: unknown, n: number): Turn[] {
 }
 
 export interface MuseAsk {
-  approval?: { id: string; command?: string }
+  approval?: { id: string; command?: string; file?: string }
   question?: { id: string; question: string; options: { label: string; description?: string }[] }
 }
 

@@ -1,6 +1,7 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
+import { toolFilePath } from './claudeTouchedFiles'
+import { planOf, questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
 
 const LINE_KEEPS_CHARS = 200
 
@@ -17,15 +18,19 @@ const edited = (file: string): string => `Edited ${basename(file)}`
 const wrote = (file: string): string => `Wrote ${basename(file)}`
 const read = (file: string): string => `Read ${basename(file)}`
 const used = (tool: string): string => `Used ${oneLine(tool)}`
-
-const CLAUDE_ASKS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+const searched = (what: string): string => `Searched for ${oneLine(what)}`
 
 // CC§2
 export function claudeToolDid(name: string, input: Record<string, unknown>): string | undefined {
-  if (CLAUDE_ASKS.has(name)) return undefined
-  const file = str(input.file_path) ?? str(input.notebook_path)
+  const file = toolFilePath(input) ?? undefined
   const command = str(input.command)
+  const pattern = str(input.pattern)
+  const query = str(input.query)
+  const url = str(input.url)
   switch (name) {
+    case 'AskUserQuestion':
+    case 'ExitPlanMode':
+      return undefined
     case 'Bash':
       return command && ran(command)
     case 'Edit':
@@ -38,11 +43,11 @@ export function claudeToolDid(name: string, input: Record<string, unknown>): str
       return file && read(file)
     case 'Grep':
     case 'Glob':
-      return str(input.pattern) && `Searched for ${oneLine(String(input.pattern))}`
+      return pattern && searched(pattern)
     case 'WebSearch':
-      return str(input.query) && `Searched the web for ${oneLine(String(input.query))}`
+      return query && `Searched the web for ${oneLine(query)}`
     case 'WebFetch':
-      return str(input.url) && `Opened ${oneLine(String(input.url))}`
+      return url && `Opened ${oneLine(url)}`
     case 'Agent':
     case 'Task':
       return `Started a helper: ${oneLine(str(input.description) ?? 'helper')}`
@@ -58,7 +63,10 @@ function records(value: unknown): Record<string, unknown>[] {
 
 // CODEX§12
 export function codexEditTarget(item: Record<string, unknown>): string | undefined {
-  return item.type === 'fileChange' ? str(records(item.changes)[0]?.path) : undefined
+  if (item.type !== 'fileChange') return undefined
+  const change = records(item.changes)[0]
+  const kind = (change?.kind ?? {}) as Record<string, unknown>
+  return str(kind.move_path) ?? str(change?.path)
 }
 
 // CODEX§12
@@ -70,7 +78,8 @@ export function codexItemDid(item: Record<string, unknown>): string | undefined 
   if (item.type !== 'commandExecution') return undefined
   const actions = records(item.commandActions)
   const only = actions.length === 1 ? actions[0] : undefined
-  if (only?.type === 'read' && str(only.path)) return read(String(only.path))
+  const readPath = only?.type === 'read' ? str(only.path) : undefined
+  if (readPath) return read(readPath)
   const command = str(only?.command) ?? str(item.command)
   return command && ran(SHELL_WRAPPED.exec(command)?.[1] ?? command)
 }
@@ -82,9 +91,10 @@ export function museToolDid(
   response: Record<string, unknown>
 ): string | undefined {
   const file = str(response.filePath) ?? str(input.path)
+  const command = str(input.command)
   switch (name) {
     case 'bash':
-      return str(input.command) && ran(String(input.command))
+      return command && ran(command)
     case 'edit_file':
       return file && edited(file)
     case 'write_file':
@@ -101,11 +111,12 @@ export function agyToolDid(
   arg: (key: string) => string | undefined
 ): string | undefined {
   const file = arg('TargetFile')
+  const command = arg('CommandLine')
   switch (name) {
     case 'ask_question':
       return undefined
     case 'run_command':
-      return arg('CommandLine') && ran(arg('CommandLine')!)
+      return command && ran(command)
     case 'replace_file_content':
       return file && edited(file)
     case 'write_to_file':
@@ -119,10 +130,10 @@ export function claudeAskLine(p: AskPayload): string {
     const first = questionsOf(p)[0]
     return first ? `Asks: ${oneLine(first.question)}` : 'Asks you a question'
   }
-  if (typeof p.tool_input?.plan === 'string') return 'Asks: Approve this plan?'
+  if (planOf(p) !== undefined) return 'Asks: Approve this plan?'
   const command = str(p.tool_input?.command)
   if (command) return `Wants to run: ${oneLine(command)}`
-  const file = str(p.tool_input?.file_path) ?? str(p.tool_input?.notebook_path)
+  const file = toolFilePath(p.tool_input)
   if (file) return `Wants to edit: ${basename(file)}`
   return `Wants to use: ${oneLine(p.tool_name ?? 'a tool')}`
 }

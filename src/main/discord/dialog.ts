@@ -49,7 +49,7 @@ export function questionText(q: Question): string {
   return [q.question, ...options].join('\n')
 }
 
-function planOf(p: AskPayload): string | undefined {
+export function planOf(p: AskPayload): string | undefined {
   const plan = p.tool_input?.plan
   return typeof plan === 'string' ? plan : undefined
 }
