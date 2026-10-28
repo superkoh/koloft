@@ -95,6 +95,7 @@ import {
 } from './helpers/docker'
 
 const BACKGROUND_CONNECT_MS = 45_000
+const A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS = 3000
 const LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC = 'lab-page.test'
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
@@ -194,6 +195,24 @@ async function withLab(
     if (app) await quitAndClose(app)
     stopSshLab(lab, defaultControlDir())
   }
+}
+
+async function refusedSessionNewOnKtKey(
+  page: Page,
+  parentTab: string,
+  backend: string
+): Promise<string> {
+  const before = (await terminalText(page, parentTab)).length
+  const reply = async (): Promise<string> => (await terminalText(page, parentTab)).slice(before)
+  await runIn(
+    page,
+    centerTerm(page),
+    `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+  )
+  await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
+  const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
+  expect(refused).not.toBeNull()
+  return refused![1].trim()
 }
 
 const LAB_GIT = 'git -c user.email=lab@koloft.test -c user.name=lab'
@@ -782,24 +801,42 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
       stopMachine(lab)
       let reason = ''
-      for (const backend of SESSION_BACKENDS) {
-        const before = (await terminalText(page, parentTab)).length
-        const reply = async (): Promise<string> =>
-          (await terminalText(page, parentTab)).slice(before)
-        await runIn(
-          page,
-          centerTerm(page),
-          `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
-        )
-        await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
-        const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
-        expect(refused).not.toBeNull()
-        reason = refused![1].trim()
-      }
+      for (const backend of SESSION_BACKENDS)
+        reason = await refusedSessionNewOnKtKey(page, parentTab, backend)
       await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
       await page.locator('.menu .mi', { hasText: 'New Claude session' }).click()
       await expect(page.locator('.toast-msg')).toContainText(reason, { timeout: 30_000 })
       await expect(wsRows(page, 'kt-key')).toHaveCount(0)
+    })
+  })
+
+  test('E-SSH-32: resuming a closed Claude Code session on a machine that has gone down says ssh’s reason, the same one koloft session new gives there, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const row = wsRows(page, 'kt-key').first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      const reason = await refusedSessionNewOnKtKey(page, parentTab, 'claude')
+      const terminalsBefore = await termIds(page)
+
+      await row.click()
+      await expect(page.locator('.toast-msg', { hasText: reason })).toBeVisible({
+        timeout: 30_000
+      })
+      await page.waitForTimeout(A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS)
+      expect(await termIds(page)).toEqual(terminalsBefore)
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1)
+      await expect(row).toHaveClass(/\bcold\b/)
     })
   })
 
