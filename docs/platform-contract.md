@@ -1589,6 +1589,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   own screen (2026-10-25, tmux 3.3a in the `koloft-muse-probe` Docker image and in the agy
   probe image, a python pty answering the terminal's queries, its output replayed into
   `@xterm/headless`). So a remote tab's account line goes in the pane's run lines.
+- **The tmux client exits 0 however the program in the pane ends** — exit 1, SIGKILL, or
+  the session killed from outside — and prints `[exited]`. To pass the program's code on,
+  the pane's shell runs it in a subshell, writes `$?` to a file, and the script that ran
+  the client exits with it; `tmux capture-pane -p` run from that shell after the program
+  ended still holds the program's last screen (2026-10-28, tmux 3.3a in the
+  `koloft-e2e-sshd` Docker image: codes 3, 137 and 0 came through, the screen was captured).
+- **On a machine whose `/bin/sh` is dash, a Ctrl-C reaching the pane kills the waiting
+  shell** once its child exits, even when the child handled the signal, so nothing after the
+  child runs. `trap : INT QUIT` in that shell keeps it alive and still hands the child the
+  default action after `exec` (2026-10-28, dash in the same image, `setsid -w` per case:
+  untrapped, the shell died with 130; trapped, it saw the child's 5; a child that did not
+  handle INT died with 130 as before).
+- **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
+  link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
 
 ## §36 ccstatusline
 
