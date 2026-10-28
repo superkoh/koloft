@@ -101,19 +101,16 @@ function reachText(s: McpServer): string {
 export function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): string[] {
   if (!servers.length) return ['No agent has an MCP server set up.']
   const names = [...new Set(servers.map((s) => s.name))].sort()
-  const lines = names.map(
-    (name) =>
-      `- ${name}: ${[
-        ...new Set(
-          servers
-            .filter((s) => s.name === name)
-            .sort(
-              (a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend)
-            )
-            .map(reachText)
-        )
-      ].join(', ')}`
-  )
+  const reachOf = (name: string): string =>
+    [
+      ...new Set(
+        servers
+          .filter((s) => s.name === name)
+          .sort((a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend))
+          .map(reachText)
+      )
+    ].join(', ')
+  const lines = names.map((name) => `- ${name}: ${reachOf(name)}`)
   const reachable = names.filter((name) =>
     servers.some(
       (s) => s.name === name && s.backend === mine && (!s.onlyIn || s.onlyIn === myFolder)

@@ -71,14 +71,15 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
   })
 
   // CC§22 MUSE§18 AGY§30
-  it('a workspace in a sub-folder: Claude reads the project file of every folder up to /, Muse and Antigravity only up to the nearest folder holding .git, or only the workspace’s own outside a repository', async () => {
+  it('a workspace in a sub-folder: Claude reads the project file of every folder up to /, Muse and Antigravity only up to the nearest folder holding .git even inside another repository, or only the workspace’s own outside a repository', async () => {
     expect(foldersUpToRoot('/work/mono/app')).toEqual([
       '/work/mono/app',
       '/work/mono',
       '/work',
       '/'
     ])
-    const inRepo = async (folder: string): Promise<boolean> => folder === '/work/mono'
+    const inRepo = async (folder: string): Promise<boolean> =>
+      folder === '/work/mono' || folder === '/work'
     expect(await foldersUpToRepoTop('/work/mono/app', inRepo)).toEqual([
       '/work/mono/app',
       '/work/mono'

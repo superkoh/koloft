@@ -294,7 +294,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor, realpathSafe } from './projectInfo'
+import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -1421,24 +1421,26 @@ function textOrNull(file: string): Promise<string | null> {
 }
 
 async function mcpServersNow(): Promise<McpServer[]> {
-  const local = (workspaceMgr?.pinnedPaths() ?? []).flatMap((w) =>
-    isRemoteKey(w.path) ? [] : [w.path]
+  const folders = [
+    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    conductorFolder(app.getPath('userData'))
+  ]
+  const walks = await Promise.all(
+    folders.map(async (onlyIn) => ({
+      onlyIn,
+      toRoot: foldersUpToRoot(onlyIn),
+      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
+    }))
   )
-  const inFolders = (file: string, foldersOf: string[][]): Promise<ConfigText[]> =>
+  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
     Promise.all(
-      local.flatMap((onlyIn, i) =>
-        foldersOf[i].map(async (folder) => ({
-          onlyIn,
+      walks.flatMap((w) =>
+        w[walk].map(async (folder) => ({
+          onlyIn: w.onlyIn,
           text: await textOrNull(path.join(folder, file))
         }))
       )
     )
-  const holdsGit = (folder: string): Promise<boolean> =>
-    fs.promises.access(path.join(folder, '.git')).then(
-      () => true,
-      () => false
-    )
-  const upToRepoTop = await Promise.all(local.map((w) => foldersUpToRepoTop(w, holdsGit)))
   const museSettings = path.join(
     museConfigHome(museSessions?.defaultEnv ?? process.env),
     'muse',
@@ -1447,14 +1449,14 @@ async function mcpServersNow(): Promise<McpServer[]> {
   const [claudeJson, projectFiles, museProjectFiles, agyProjectFiles, codexToml, muse, agy] =
     await Promise.all([
       textOrNull(claudeJsonPath()),
-      inFolders(PROJECT_MCP_FILE, local.map(foldersUpToRoot)),
-      inFolders(PROJECT_MCP_FILE, upToRepoTop),
-      inFolders(AGY_PROJECT_MCP_FILE, upToRepoTop),
+      inFolders(PROJECT_MCP_FILE, 'toRoot'),
+      inFolders(PROJECT_MCP_FILE, 'toRepoTop'),
+      inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
       textOrNull(codexSharedConfig()),
       textOrNull(museSettings),
       textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
     ])
-  const claudeFolders = [...local, conductorFolder(app.getPath('userData'))].map((folder) => ({
+  const claudeFolders = folders.map((folder) => ({
     folder,
     projectKey: claudeProjectKey(folder)
   }))
