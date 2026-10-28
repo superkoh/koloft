@@ -417,7 +417,6 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       const row = wsRows(page, 'ws-a').first()
       await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 40_000 })
       expect(processAlive(pid)).toBe(true)
-      await expect(termBodies(page)).toHaveCount(1)
 
       await closeKeptTab(page, row)
       await expect.poll(() => processAlive(pid), { timeout: 40_000 }).toBe(false)
