@@ -14,6 +14,7 @@ import {
   quitAndClose
 } from './helpers/app'
 import {
+  E2E_CODEX_ACCOUNT,
   installCodex,
   installFakeGh,
   seedNoClaudeAccountButStillSetUp,
@@ -44,6 +45,7 @@ import {
   type CodexCall
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   addWorkspace,
   centerTerm,
@@ -475,6 +477,27 @@ test.describe('Codex sessions through the real method chooser, process transport
         sessionId: first.sessionId,
         codexHome: homeOf('other')
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('restarting a Codex session once no Codex account can be used says why, and starts no Codex', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await page.evaluate(
+        (name) => window.api.accounts.toggle(name, 'codex-home', false),
+        E2E_CODEX_ACCOUNT
+      )
+      await clickAppMenuItem(app, page, 'restart-session')
+      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.codex)
+      expect(codexCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }
