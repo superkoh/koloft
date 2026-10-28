@@ -293,8 +293,8 @@ export function Onboarding({
           <>
             <div className="big">Pick your first workspace.</div>
             <div className="quiet">
-              You have used Claude Code in these folders before. Pin the ones you want in the
-              sidebar.
+              You have used Claude Code, Codex, Muse or Antigravity in these folders before. Pin the
+              ones you want in the sidebar.
             </div>
             <div className="disc-list">
               {found.map((f) => (
