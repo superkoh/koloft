@@ -1,16 +1,18 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { E2E_AGY_ACCOUNT, installAgy, seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   chooseBackend,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
+  killSession,
   newSessionInWith,
   openWorktreeSession,
   runIn,
   sendShortcut,
+  terminalText,
   waitBooted,
   worktreeDialog,
   wsMenuTexts,
@@ -145,6 +147,41 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })).toHaveCount(
         0
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity agent that dies on the machine leaves its tab saying it ended with its exit code until Enter, then Koloft says it ended unexpectedly and its row stays with the “exited” mark, not dropped as if it had quit on its own', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'die remote')
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'die remote' })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteAgy(page)
+
+      killSession(machineAgyCalls(env)[0].pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain('ended (exit 137)')
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect(
+        page.locator('.toast', {
+          hasText: 'Antigravity session ended unexpectedly (exit code 137)'
+        })
+      ).toBeVisible()
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
+      await expect(row).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

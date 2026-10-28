@@ -202,7 +202,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark, drawn as a red dot on its row and said in an OS notification, once the machine’s tmux list has lost it', async ({
+  test('E-RW-20: a remote claude that dies without an end report leaves its tab saying it ended with its exit code, and raises the “exited” mark, drawn as a red dot on its row and said in an OS notification, once the machine’s tmux list has lost it', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -211,11 +211,15 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const [first] = await waitForCalls(env, 1)
-      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/st-waiting|st-idle/, {
-        timeout: 60_000
-      })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) ?? ''
 
       killSession(first.pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain('ended (exit 137)')
 
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
