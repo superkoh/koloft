@@ -686,13 +686,13 @@ export class CronRunner {
     } else if (next === 'working' && run.state === 'done') {
       run.state = 'running'
       delete run.kept
-      delete run.finishing
+      delete run.closing
       this.clearTimer(tabId)
       changed = true
     }
     if (!changed) return
-    this.push()
     if (run.state === 'done') void this.closeIfFinished(run)
+    this.push()
   }
 
   private killRun(tabId: string): void {
@@ -708,12 +708,13 @@ export class CronRunner {
     const { tabId } = run
     const job = this.byId(run.jobId)
     if (!job?.autoClose || !this.isStillDone(run)) return
+    run.closing ??= 'soon'
     const busy = await this.d.stillWorking(tabId)
     const left = busy ? [] : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
     if (!this.isStillDone(run)) return
-    if (busy !== !!run.finishing) {
-      if (busy) run.finishing = true
-      else delete run.finishing
+    const closing = busy ? 'after-background-work' : 'soon'
+    if (run.closing !== closing) {
+      run.closing = closing
       this.push()
     }
     if (!busy && left.length === 0) {

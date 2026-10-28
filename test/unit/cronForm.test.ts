@@ -334,17 +334,19 @@ describe('history rows', () => {
     )
   })
 
-  it('says a finished run set to "Close it" is closing, or still finishing while background work runs, and only one kept open or not set to close waits for you', () => {
+  it('says a finished run Koloft is closing is closing, or still finishing while background work runs; one kept open, not being closed, or whose job no longer closes waits for you', () => {
     const done: LiveRun = { jobId: 'j', tabId: 't', state: 'done', startedAt: 0, dueAt: 0 }
-    expect(liveWords({ autoClose: true }, done)).toBe('done — closing')
-    expect(liveWords({ autoClose: true }, { ...done, finishing: true })).toBe(
+    const closing: LiveRun = { ...done, closing: 'soon' }
+    expect(liveWords({ autoClose: true }, closing)).toBe('done — closing')
+    expect(liveWords({ autoClose: true }, { ...done, closing: 'after-background-work' })).toBe(
       'done — still finishing'
     )
-    expect(liveWords({ autoClose: true }, { ...done, kept: 'Changes not committed' })).toBe(
+    expect(liveWords({ autoClose: true }, { ...closing, kept: 'Changes not committed' })).toBe(
       'done — waiting for you'
     )
-    expect(liveWords({}, done)).toBe('done — waiting for you')
-    expect(liveWords({ autoClose: true }, { ...done, state: 'running' })).toBe('working')
+    expect(liveWords({ autoClose: true }, done)).toBe('done — waiting for you')
+    expect(liveWords({}, closing)).toBe('done — waiting for you')
+    expect(liveWords({ autoClose: true }, { ...closing, state: 'running' })).toBe('working')
   })
 
   it('ends where the row ends', () => {

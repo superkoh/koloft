@@ -72,8 +72,10 @@ const LIVE_WORDS: Record<LiveRun['state'], string> = {
 }
 
 export function liveWords(job: Pick<CronJob, 'autoClose'>, run: LiveRun): string {
-  if (run.state !== 'done' || !job.autoClose || run.kept) return LIVE_WORDS[run.state]
-  return run.finishing ? 'done — still finishing' : 'done — closing'
+  if (run.state !== 'done' || !job.autoClose || !run.closing || run.kept) {
+    return LIVE_WORDS[run.state]
+  }
+  return run.closing === 'after-background-work' ? 'done — still finishing' : 'done — closing'
 }
 
 export const HIST_WORDS: Record<HistoryLine['state'], string> = {
