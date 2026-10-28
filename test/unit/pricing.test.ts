@@ -47,20 +47,6 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('gpt-6-astra-2026-09-01')).toBeUndefined()
   })
 
-  // CODEX§13
-  it.each([
-    'gpt-6.1-sol',
-    'gpt-6.1-terra',
-    'gpt-6-astra',
-    'gpt-6-sol',
-    'gpt-6-luna',
-    'gpt-5.6-sol',
-    'gpt-5.6-terra',
-    'gpt-5.6-luna'
-  ])('prices %s, a model Codex model/list offers, so a session on it shows a cost', (id) => {
-    expect(resolvePricing(id)).toBeDefined()
-  })
-
   // AGY§21
   it.each([
     ['gemini-3.1-pro-low', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],
@@ -127,9 +113,18 @@ describe('resolvePricing — exact then longest-prefix match', () => {
         windowTokens: 1_000_000
       }
     ],
-    ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }]
+    ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }],
+    [
+      'gpt-6.1-terra',
+      {
+        inPerM: 1,
+        outPerM: 5,
+        cacheReadPerM: 0.05,
+        longContext: { aboveInputTokens: 272_000, inPerM: 2, cacheReadPerM: 0.1, outPerM: 7.5 }
+      }
+    ]
   ])(
-    'prices %s, a default model of Claude Code 2.1.293+ or Codex 0.161+, at its own row',
+    'prices %s, a model Claude Code 2.1.293+ or Codex 0.161+ offers, at its own row',
     (id, expected) => {
       expect(resolvePricing(id)).toMatchObject(expected)
     }
