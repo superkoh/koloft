@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
+import { takenEffort } from '@shared/cronModels'
 import {
   cronBackend,
   CRON_PERMISSIONS,
@@ -208,13 +209,15 @@ function clean(input: CronSaveInput): Clean {
     .trim()
   const permission = CRON_PERMISSIONS.includes(input.permission) ? input.permission : 'same'
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
+  const backend = backendIdOf(input.backend) ?? 'claude'
+  const effort = isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined
   return {
     name,
     task,
-    backend: backendIdOf(input.backend) ?? 'claude',
+    backend,
     permission,
     ...(model ? { model } : {}),
-    ...(isCronEffort(input.effort) ? { effort: input.effort } : {}),
+    ...(effort ? { effort } : {}),
     ...(input.autoClose === true ? { autoClose: true } : {})
   }
 }
@@ -469,7 +472,7 @@ export class CronRunner {
         cwd: job.workspacePath,
         worktree,
         model: job.model,
-        effort: job.effort,
+        effort: takenEffort(backend, job.model, job.effort),
         permission: LAUNCH_PERMISSION[job.permission],
         firstPrompt: job.task,
         name: job.name,

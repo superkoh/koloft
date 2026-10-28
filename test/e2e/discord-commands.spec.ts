@@ -3,6 +3,8 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  agySessionCalls,
+  installAgy,
   installCodex,
   installMuse,
   museCalls,
@@ -13,6 +15,7 @@ import {
 import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
+  processAlive,
   startSessionIn,
   terminalText,
   waitBooted,
@@ -133,6 +136,35 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
+  // AGY§8
+  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'agy' } })
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    try {
+      await waitBooted(await app.firstWindow())
+      await expect.poll(() => fake.identifies).toBe(1)
+      await expect
+        .poll(() => agySessionCalls(env).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe(1)
+      fake.interact(OWNER, 'run', { command: '/model' })
+      await expect
+        .poll(() => butlerSessionOnDisk(env)?.sessionIds.length ?? 0, {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(1)
+      expect(agySessionCalls(env)).toHaveLength(1)
+      expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('D-CMD-2: a message that starts with a slash runs in the conductor itself; its /clear gives the conductor a new conversation that it keeps on the next start', async ({
     env
   }) => {
@@ -189,7 +221,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  // MUSE§11
+  // MUSE§11 MUSE§19
   test('D-CMD-6: in a Muse session, the butler’s koloft session command types the command once its input box is empty and hands the butler its screen, since Muse draws a command’s output only there', async ({
     env
   }) => {

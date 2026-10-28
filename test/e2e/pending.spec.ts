@@ -112,7 +112,10 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     try {
       await startMainSession(app, page)
       await waitForCalls(env, 1)
-      await expect(page.locator('.toast-msg')).toContainText('exit code 1', { timeout: 20_000 })
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude closed before the session started (exit code 1)',
+        { timeout: 20_000 }
+      )
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
     } finally {

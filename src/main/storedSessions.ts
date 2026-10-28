@@ -135,6 +135,7 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer?(tabId: string, reply: string): Promise<string | undefined | false>
   deliver?(tabId: string, text: string): Promise<boolean>
+  showsPromptBeforeBind?(tabId: string): boolean
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
@@ -523,6 +524,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       this.refreshing = undefined
     })
     return this.refreshing
+  }
+
+  async refreshHistoryStartedNow(): Promise<void> {
+    await this.refreshing
+    return this.refreshHistory()
   }
 
   private async readHistory(): Promise<void> {

@@ -5,17 +5,25 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install'
 import {
+  CLUE_ALL,
   RECEIVE_FILES,
   SYNC_FILES,
   fileLines,
   machineHelperScript,
   machinePaths,
+  parseClueAll,
   parsePreflight
 } from '../../src/main/remote/gitAccounts'
-import { GitMachineAccounts, throughTempStore } from '../../src/main/gitMachineAccounts'
+import {
+  GitMachineAccounts,
+  throughTempStore,
+  type MachineClues
+} from '../../src/main/gitMachineAccounts'
 import { machineGhWrapperScript } from '../../src/main/gitCredentialScripts'
-import { fileNameOf } from '../../src/main/gitConfigFile'
-import type { GitAccount } from '../../src/shared/types'
+import { GITHUB_URL, credentialUrlOf, fileNameOf } from '../../src/main/gitConfigFile'
+import { suggestFor } from '../../src/main/gitAccountSuggest'
+import { pushAccessOn } from '../../src/main/gitPlatformApi'
+import type { GitAccount, GitAccountSuggestion } from '../../src/shared/types'
 
 let home: string
 
@@ -157,6 +165,90 @@ describe('a file Koloft reads on a machine for a suggestion', () => {
     expect(read).toContain('user: bob')
     expect(read).not.toContain('gho_SECRET')
     expect(await machine.clueFile('box', path.join(home, 'missing.yml'))).toBeNull()
+  })
+})
+
+describe('a suggestion for a repository on a machine', () => {
+  const github: GitAccount = {
+    ...bob,
+    id: 'github.com/bob',
+    platform: 'github',
+    url: 'https://github.com',
+    host: 'github.com'
+  }
+
+  function repo(name: string, url: string, config: string[][] = []): string {
+    const dir = path.join(home, name)
+    sh(`git init -q '${dir}' && git -C '${dir}' remote add origin '${url}'`)
+    for (const [key, value] of config) sh(`git -C '${dir}' config '${key}' '${value}'`)
+    return dir
+  }
+
+  async function suggestOnMachine(
+    dir: string,
+    oneTrip: boolean
+  ): Promise<{ suggestion: GitAccountSuggestion; trips: string[] }> {
+    const trips: string[] = []
+    const machine = new GitMachineAccounts(async (_m, script, args = [], opts = {}) => {
+      const r = onMachine(script, args, opts.input)
+      trips.push(script === CLUE_ALL ? JSON.stringify([...parseClueAll(r.stdout)]) : r.stdout)
+      return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+    })
+    const clues: MachineClues = oneTrip
+      ? await machine.cluesIn('box', dir)
+      : {
+          env: {},
+          git: (cwd, args, { input }) => machine.clueGit('box', cwd, args, input),
+          ssh: (args) => machine.clueSsh('box', args),
+          readFile: (file) => machine.clueFile('box', file)
+        }
+    const suggestion = await suggestFor(
+      dir,
+      { network: false, pushChecks: false },
+      {
+        ...clues,
+        home,
+        githubUrl: GITHUB_URL,
+        accounts: () => [github],
+        serverOf: credentialUrlOf,
+        token: async () => null,
+        pushAccess: pushAccessOn
+      }
+    )
+    return { suggestion, trips }
+  }
+
+  it('takes one trip to the machine and finds what a trip per step finds', async () => {
+    fs.mkdirSync(path.join(home, '.config/gh'), { recursive: true })
+    fs.writeFileSync(
+      path.join(home, '.config/gh/hosts.yml'),
+      'github.com:\n    oauth_token: gho_SECRET\n    user: bob\n'
+    )
+    const repos = [
+      repo('gh', 'https://github.com/acme/app.git', [
+        ['credential.https://github.com.helper', '!gh auth git-credential']
+      ]),
+      repo('configured', 'https://github.com/acme/app.git', [
+        ['credential.https://github.com.username', 'bob'],
+        ['credential.https://github.com.helper', '!printf "password=gho_%s\\n" FROM_HELPER']
+      ]),
+      repo('in-url', 'https://bob@github.com/acme/app.git'),
+      repo('ssh', 'git@github.com:acme/app.git')
+    ]
+    const found: GitAccountSuggestion[] = []
+    for (const dir of repos) {
+      const one = await suggestOnMachine(dir, true)
+      expect(one.trips).toHaveLength(1)
+      expect(one.trips.join('')).not.toMatch(/gho_SECRET|gho_FROM_HELPER/)
+      expect(one.suggestion).toEqual((await suggestOnMachine(dir, false)).suggestion)
+      found.push(one.suggestion)
+    }
+    expect(found.map((s) => ('reason' in s ? s.reason : s.kind))).toEqual([
+      'gh-user',
+      'config-user',
+      'url-user',
+      'none'
+    ])
   })
 })
 

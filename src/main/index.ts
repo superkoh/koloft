@@ -60,6 +60,7 @@ import {
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
+import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -480,7 +481,7 @@ import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
 import { todoVerb } from './agentTodo'
-import { claudeJsonPath } from './claudeTrust'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
   PROJECT_MCP_FILE,
@@ -1444,11 +1445,12 @@ async function mcpServersNow(): Promise<McpServer[]> {
     textOrNull(museSettings),
     textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
   ])
+  const claudeFolders = [...local, conductorFolder(app.getPath('userData'))].map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
   return [
-    ...claudeServers(claudeJson, projectFiles, [
-      ...local,
-      conductorFolder(app.getPath('userData'))
-    ]),
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
     ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
@@ -3032,6 +3034,8 @@ app.whenReady().then(() => {
       })
       .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
+  for (const stored of [codexSessions, museSessions, agySessions])
+    if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>
@@ -3161,6 +3165,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3285,6 +3290,7 @@ app.whenReady().then(() => {
     answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
@@ -4723,8 +4729,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
-function couldNotStart(title: string): string {
-  return `Could not start “${title}” — click it to try again.`
+function couldNotStart(title: string, reason?: string): string {
+  return `Could not start “${title}” — ${reason || 'click it to try again.'}`
 }
 
 // CC§11
@@ -4754,7 +4760,9 @@ async function resumeRow(
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action
   })
-  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
+  if (!res.ok) {
+    return { ok: false, error: couldNotStart(row.title, res.code === 'backend' ? res.message : '') }
+  }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -4764,6 +4772,10 @@ async function resumeRow(
   }
   sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
+}
+
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
@@ -4877,6 +4889,7 @@ function butlerDestination(): Destination {
       const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
     typeCommand: async (tabId, command) => {
@@ -5197,6 +5210,12 @@ function registerIpc(): void {
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
+  ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
+    if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
+    ptyMgr.moveOwner(oldTabId, newTabId)
+    for (const wc of webContents.getAllWebContents())
+      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+  })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
   ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {

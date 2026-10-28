@@ -34,7 +34,8 @@ export const CH = {
     dirtyTabs: 'workbench:dirtyTabs'
   },
   tabs: {
-    list: 'tabs:list'
+    list: 'tabs:list',
+    moved: 'tabs:moved'
   },
   tab: {
     killedByMain: 'tab:killedByMain',

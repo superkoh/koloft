@@ -64,6 +64,12 @@ function claudeTrustRepoTop(realDir: string): string | null {
   }
 }
 
+// CC§9 CC§22
+export function claudeProjectKey(dir: string): string {
+  const real = realpathSafe(dir)
+  return claudeTrustRepoTop(real) ?? real
+}
+
 // CC§9
 export function claudeTrustsFolder(claudeJson: string, dir: string): boolean {
   const key = realpathSafe(dir)

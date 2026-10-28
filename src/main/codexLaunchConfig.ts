@@ -11,8 +11,11 @@ const codexHookOverride = ({ event, command, matcher, timeout }: KoloftHook): st
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'
 
+// CODEX§8
 export const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'context-used',
+  'five-hour-limit',
+  'weekly-limit',
   'git-branch',
   'codex-version',
   'model-with-reasoning',

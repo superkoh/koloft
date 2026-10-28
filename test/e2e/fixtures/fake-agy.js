@@ -65,6 +65,12 @@ const FULL_CASCADE_CONFIG = {
 }
 const MODEL_FAMILIES = [
   {
+    base: 'gemini-4-argon',
+    label: 'Gemini 4 Argon',
+    efforts: ['high', 'medium', 'low'],
+    fallback: 'medium'
+  },
+  {
     base: 'gemini-3.8-flash',
     label: 'Gemini 3.8 Flash',
     efforts: ['high', 'medium', 'low'],
@@ -1903,7 +1909,8 @@ function openLaunchConversation() {
 
 function nextPhase() {
   if (!signedIn()) return showSignIn()
-  if (!onboardingDone()) return showColorScheme()
+  if (!onboardingDone() || fs.existsSync(sentinel('fake-agy-stuck-in-setup')))
+    return showColorScheme()
   if (!trusted()) return showTrust()
   enterPrompt()
 }
