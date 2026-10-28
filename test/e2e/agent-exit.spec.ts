@@ -28,8 +28,8 @@ const loggedExits = (env: E2EEnv): string[] =>
         .filter((l) => / tab \S+ (exited with code|was killed by signal) /.test(l))
     : []
 
-test.describe('an agent that exits on its own keeps its tab: the row says so, the last screen stays, ⌘R starts it again', () => {
-  test('a Codex that dies before its session starts keeps its row and last screen, logs that screen, and ⌘R starts it again in the same tab', async ({
+test.describe('an agent that exits on its own keeps its tab: the row says so, the last screen stays, ⇧⌘R starts it again', () => {
+  test('a Codex that dies before its session starts keeps its row and last screen, logs that screen, and ⇧⌘R starts it again in the same tab', async ({
     env
   }) => {
     installCodex(env)
@@ -94,7 +94,7 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
       expect(loggedExits(env)[0]).toMatch(/ claude tab \S+ exited with code 1 /)
 
       await openMenu(page, kept)
-      expect(await menuItemTexts(page)).toEqual(['Start again⌘R', 'Close⌘W'])
+      expect(await menuItemTexts(page)).toEqual(['Start again⇧⌘R', 'Close⌘W'])
       await page.locator('.menu .mi', { hasText: /^Close/ }).click()
       await expect(kept).toHaveCount(0, { timeout: 20_000 })
       await expect.poll(() => termIds(page)).toHaveLength(0)

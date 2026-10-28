@@ -92,7 +92,7 @@ const FORCE_CLOSE_FAILED_NOTICE =
 
 const CRON_BADGE_MS = 30_000
 
-const ENDED_ROW_TIP = 'Click to see its last screen · ⌘R starts it again · ⌘W closes it'
+const ENDED_ROW_TIP = 'Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it'
 
 const GIB = 2 ** 30
 const SMALLEST_MEMORY_SHOWN_GB = 0.05
@@ -896,7 +896,7 @@ function SidebarFloating({
               useStore.getState().restartActiveSession()
             }}
           >
-            Start again<span className="k">⌘R</span>
+            Start again<span className="k">⇧⌘R</span>
           </div>
           <div
             className="mi"

@@ -408,7 +408,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
-  if (sessionId) lastSessionId.set(newId, sessionId)
+  if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
