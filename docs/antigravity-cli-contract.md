@@ -1239,6 +1239,12 @@ fake Gemini server with MCP servers that logged their start.
   `<workspace>/.agents/plugins/<p>/mcp_config.json` (named `<p>_<server>`) were loaded in
   folder A and not in folder B; `<A>/.gemini/mcp_config.json`, `<A>/.gemini/settings.json`
   and `<A>/.mcp.json` were not. In `-p` this held with A out of `trustedWorkspaces`.
+- **Which folders' `.agents/mcp_config.json`:** the workspace's and every folder above it
+  up to the nearest one holding `.git` (a folder, or the file of a linked worktree), that
+  one included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, nor a repository inside another the outer one. Measured
+  2026-10-28, agy 1.4.9 (the manifest's `linux_arm64.json`), Docker, `agy -p` against a
+  fake Gemini server, MCP servers that logged their start.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).
 
