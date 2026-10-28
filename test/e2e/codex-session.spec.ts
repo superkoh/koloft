@@ -49,6 +49,7 @@ import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   addWorkspace,
   centerTerm,
+  closeKeptTab,
   agentRow,
   chooseBackend,
   clickAppMenuItem,
@@ -1101,7 +1102,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show, and you stay on the folder page instead of the butler', async ({
+  test('a Codex that fails before any session binds leaves no mark behind once you close its kept tab, so the Dock badge counts nothing no row can show, and you stay on the folder page instead of the butler', async ({
     env
   }) => {
     installCodex(env)
@@ -1115,6 +1116,7 @@ test.describe('Codex sessions through the real method chooser, process transport
         'Codex closed before the session started (exit code 3)',
         { timeout: 20_000 }
       )
+      await closeKeptTab(page, wsRows(page, 'ws-a'))
       await expect.poll(() => termIds(page)).toHaveLength(0)
       await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)

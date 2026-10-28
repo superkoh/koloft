@@ -6,7 +6,8 @@ import {
   useStore,
   openInterceptedFile,
   markRestoreLaunch,
-  consumeRestoreExit
+  consumeRestoreExit,
+  rememberLaunch
 } from '../../src/renderer/src/store'
 import {
   allEditTabs,
@@ -91,6 +92,24 @@ describe('store: claude → shell revert, only after a session actually bound', 
       alive: false,
       sessionId: 'sid-end1',
       ended: { note: 'exited (code 1)', wsPath: '/w', row }
+    })
+  })
+
+  it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace it was started in', () => {
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        { workspace: { path: '/w', missing: false, isGit: true, hasHistory: false }, rows: [] }
+      ]
+    })
+    const s = useStore.getState()
+    s.addTab({ id: 'end2', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    rememberLaunch('end2', { kind: 'codex', cwd: '/w', worktree: 'fix-1' })
+    s.keepEndedTab('end2', 'exited (code 3)')
+    const t = useStore.getState().tabs.find((x) => x.id === 'end2')!
+    expect(t.ended).toMatchObject({
+      wsPath: '/w',
+      row: { id: 'end2', title: 'Codex', worktree: 'fix-1', backendId: 'codex' }
     })
   })
 

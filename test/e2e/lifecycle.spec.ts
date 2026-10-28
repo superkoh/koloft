@@ -6,6 +6,7 @@ import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpe
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
+  closeKeptTab,
   closeMenu,
   FAKE_SESSION_TITLE,
   type ClaudeCall,
@@ -26,6 +27,7 @@ import {
   runClaudeElsewhere,
   runIn,
   seedJsonl,
+  sendShortcut,
   setNextSessionTitle,
   snap,
   startSessionIn,
@@ -91,6 +93,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
     killSession(hard.pid, env)
     await expect(hardRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    await closeKeptTab(page, hardRow)
     await landsOnTheButler(page)
 
     await switchToRow(page, gracefulRow)
@@ -225,7 +228,8 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     expect(layoutOnDisk(env).members).toContain(call.sessionId)
   })
 
-  test('T-LIFE-05: a session that dies closes its tab, says killed by signal in a toast, lands on the butler, and leaves a cold, unselected row', async ({
+  test('T-LIFE-05: a session that dies keeps its tab selected and says killed by signal in a toast and on its row; ⌘W then lands on the butler and leaves a cold, unselected row', async ({
+    app,
     page,
     env
   }) => {
@@ -239,11 +243,16 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     killSession(session.pid, env)
     // PLATFORM§29
     await expect(page.locator('.toast-msg')).toContainText('killed by signal', { timeout: 20_000 })
+    await expect(row.locator('.ws-tab-sub')).toHaveText('main · killed (signal 9)')
+    await expect(row).toHaveClass(/\bcold\b/)
+    await expect(row).toHaveClass(/\bactive\b/)
+    await snap(page, 'T-LIFE-05')
+
+    await sendShortcut(app, 'shortcut:close-tab')
     await landsOnTheButler(page)
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
     await expect(row).not.toHaveClass(/\bactive\b/)
-
-    await snap(page, 'T-LIFE-05')
+    await expect(row.locator('.ws-tab-sub')).toHaveText('main')
   })
 
   test('T-LIFE-06: a cold row resumes with --resume in its original cwd, mask shown while binding', async ({
@@ -880,6 +889,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
     killSession(call.pid, env)
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+    await closeKeptTab(page, row)
     expect(persistedTabsOnDisk(env, call.sessionId)).toHaveLength(1)
 
     await openMenu(page, row)

@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import {
@@ -318,6 +318,30 @@ function killTerminalsOf(tabId: string): string[] {
 
 export function rememberLaunch(tabId: string, opts: CreateTabOptions): void {
   launchOptions.set(tabId, opts)
+}
+
+function rowOfLaunch(
+  s: Pick<AppState, 'tabs' | 'workspaceRows' | 'butlerWorkspace'>,
+  tabId: string
+): { row: SessionRow; wsPath: string } | undefined {
+  const tab = s.tabs.find((t) => t.id === tabId)
+  const launch = launchOptions.get(tabId)
+  const wsPath = launch?.cwd
+  if (!tab || !isSessionKind(tab.kind) || !wsPath) return undefined
+  if (!everyWorkspaceRows(s).some((w) => w.workspace.path === wsPath)) return undefined
+  return {
+    wsPath,
+    row: {
+      id: tabId,
+      title: tab.title,
+      worktree: launch.worktree ?? 'main',
+      cwd: wsPath,
+      running: false,
+      invalidCwd: false,
+      mtime: Date.now(),
+      ...sourceOf(tab.kind, wsPath)
+    }
+  }
 }
 
 export function tabEverBound(tabId: string): boolean {
@@ -748,12 +772,14 @@ export const useStore = create<AppState>((set, get) => ({
       if (!cur || cur.alive === alive || cur.asleep || cur.ended) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
-  keepEndedTab: (id, note) =>
+  keepEndedTab: (id, note) => {
+    for (const pty of terminalsOf(get(), id)) window.api.terminal.kill(pty)
     set((s) => {
       const sessionId = boundSessionId(s, id) ?? lastSessionId.get(id)
-      const at = everyWorkspaceRows(s)
-        .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
-        .find(({ row }) => row.id === id || row.id === sessionId)
+      const at =
+        everyWorkspaceRows(s)
+          .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
+          .find(({ row }) => row.id === id || row.id === sessionId) ?? rowOfLaunch(s, id)
       return {
         tabs: s.tabs.map((t) =>
           t.id === id
@@ -761,7 +787,8 @@ export const useStore = create<AppState>((set, get) => ({
             : t
         )
       }
-    }),
+    })
+  },
   setTabAsleep: (id) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
