@@ -1008,8 +1008,7 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
 stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
 `account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
 `thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
-"chatgpt authentication required to read rate limits". So on such a home a client that
-asks for rate limits after `account/read` gets an error for a home that is signed in.
+"chatgpt authentication required to read rate limits".
 
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that

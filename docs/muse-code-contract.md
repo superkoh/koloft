@@ -451,8 +451,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   (0600) as `{schema_version, providers: {meta: {api_key}}}`. `account/read` then
   answered `{state: "apiKey", label: "stored key"}`, and with `META_API_KEY` set
   `{state: "envKey", label: "META_API_KEY"}`; `usage/read` answered `{}` either way
-  (1.4.14, Linux arm64, Docker, `TBH_CREDENTIAL_BACKEND=file`, 2026-10-28). A wrong key
-  shows only when a session starts (the last bullet of this section).
+  (1.4.14, Linux arm64, Docker, `TBH_CREDENTIAL_BACKEND=file`, 2026-10-28). That a wrong
+  stored key then ends the launch the way a rejected `META_API_KEY` does (below) is
+  inferred, not checked.
 - How much of a Meta account's quota is used showed only inside a live session: the
   TUI's `/usage` draws a box (screen only, §11), while a fresh `muse serve` answers
   `usage/read` with nothing in it and `muse exec --json` prints no usage record
@@ -465,7 +466,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   is closed. In the first second or two after start the box has only the session lines;
   typed again a moment later it has the Subscription block (1.4.10, real Meta account,
   macOS, 2026-10). An API-key account (`account/read` state `apiKey`) shows no
-  Subscription block (inferred from the box's layout, not checked: no API key on hand).
+  Subscription block (inferred from the box's layout, not checked: no real API key on hand).
 - `muse schema generate-ts --experimental` lists `usage/read` and `usage/changed` with
   `SubscriptionUsage {tier, window {usedPercent, resetsAtMs, windowDurationMins},
   weekly {usedPercent, resetsAtMs}, observedAtMs}`, the window described as "the
