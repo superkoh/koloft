@@ -27,6 +27,7 @@ import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../s
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
 import { FullWidthButton } from './WorkbenchBars'
+import { keepCaretInSessionTerminal } from './WorkbenchTabStrip'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
@@ -291,6 +292,7 @@ export const FilesBar = memo(function FilesBar({
         <button
           className={c.view === 'changes' ? 'on' : undefined}
           aria-pressed={c.view === 'changes'}
+          onMouseDown={keepCaretInSessionTerminal}
           onClick={() => c.setView('changes')}
         >
           Changes{changedCount > 0 && <span className="n">{changedCount}</span>}
@@ -298,6 +300,7 @@ export const FilesBar = memo(function FilesBar({
         <button
           className={c.view === 'browse' ? 'on' : undefined}
           aria-pressed={c.view === 'browse'}
+          onMouseDown={keepCaretInSessionTerminal}
           onClick={() => c.setView('browse')}
         >
           Browse
@@ -739,6 +742,7 @@ function ReadingArea({
                 className={v === caps.current ? 'on' : undefined}
                 aria-pressed={v === caps.current}
                 disabled={v === 'diff' && !caps.hasDiff}
+                onMouseDown={keepCaretInSessionTerminal}
                 onClick={() => c.setReadingView(v)}
               >
                 {v === 'render' ? 'Rendered' : v === 'diff' ? 'Diff' : 'Source'}
