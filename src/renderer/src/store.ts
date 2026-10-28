@@ -368,6 +368,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
     workbenchParked.set(newId, parked)
   }
   rekeyOwner(oldId, newId)
+  window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   lastSessionId.set(newId, sessionId)

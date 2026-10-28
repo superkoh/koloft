@@ -114,6 +114,7 @@ const api: KoloftApi = {
   },
   tabs: {
     list: () => ipcRenderer.invoke(CH.tabs.list),
+    moved: (oldTabId, newTabId) => ipcRenderer.send(CH.tabs.moved, oldTabId, newTabId),
     onKilledByMain: (cb) => {
       const handler = (_e: unknown, tabId: string): void => cb(tabId)
       ipcRenderer.on(CH.tab.killedByMain, handler)

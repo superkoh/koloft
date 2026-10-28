@@ -322,6 +322,32 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     })
   }
 
+  test('after ⇧⌘R on a Claude Code tab on the machine, koloft open typed in its Workbench shell still shows the file in that tab’s Workbench', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'after-restart.md'), '# shown after restart\n')
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      await openSessionTerminal(app, page)
+
+      await sendShortcut(app, 'shortcut:restart-session')
+      await waitForCalls(env, 2, 90_000)
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+
+      await runIn(page, panelTerm(page), 'koloft open after-restart.md')
+      await expect(artifactBody(page)).toContainText('shown after restart', { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-24: an ssh drop keeps the remote Changes list and offers Retry, never "This directory no longer exists."', async ({
     env
   }) => {

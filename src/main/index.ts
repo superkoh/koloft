@@ -5203,6 +5203,12 @@ function registerIpc(): void {
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
+  ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
+    if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
+    ptyMgr.moveOwner(oldTabId, newTabId)
+    for (const wc of webContents.getAllWebContents())
+      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+  })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
   ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
