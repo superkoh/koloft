@@ -1,7 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
-import { SAID_MARKS } from './museSessionLog'
+import { REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
 import { remoteNoticeFile } from './hooks'
 import { KOLOFT_SKILL, MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
@@ -25,7 +25,7 @@ FRAME = re.compile(b'\\x1b\\\\]7501;([^\\x07\\x1b]*)(?:\\x07|\\x1b\\\\\\\\)')
 LONGEST_PARTIAL_FRAME = 4096
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
-LOG_MARKS = (b'session.name.changed', b'inbox_item_queued', b'context.compact.manual')
+LOG_MARKS = (${REMOTE_LOG_MARKS.map(pyBytes).join(', ')},)
 
 hook_dir, run_id = sys.argv[1], sys.argv[2]
 args = sys.argv[3:]

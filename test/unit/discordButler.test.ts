@@ -37,6 +37,7 @@ let noticeArrives: boolean
 let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
+let promptShown: Set<string>
 let testRun = 0
 
 function make(): Butler {
@@ -81,6 +82,7 @@ function make(): Butler {
       if (run === testRun) notices.push(t)
       return noticeArrives
     },
+    showsPromptBeforeBind: (tabId) => promptShown.has(tabId),
     bindDeadlineMs: DEADLINE_MS
   }
   return new Butler(deps)
@@ -114,6 +116,7 @@ beforeEach(() => {
   transcripts = new Set()
   choice = { backend: 'claude' }
   release = () => {}
+  promptShown = new Set()
 })
 
 afterEach(() => {
@@ -344,6 +347,74 @@ describe('the butler', () => {
     expect(c.isButlerSession('tab-1')).toBe(true)
     c.onPtyExit('tab-1')
     expect(c.isButlerSession('tab-1')).toBe(false)
+  })
+
+  // AGY§8
+  it('on Antigravity, which makes its conversation only at the first prompt, one started with nothing to say that sits at its prompt at the deadline is kept, and held to the deadline again once words are on their way', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const tab = await opened(c)
+    promptShown.add(tab)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([])
+    expect(toasts).toEqual([])
+    expect(c.firstWordsComing(tab)).toBe(true)
+    expect(c.firstWordsComing(tab)).toBe(false)
+    promptShown.delete(tab)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([tab])
+    expect(toasts).toEqual(['Alfred did not start.'])
+  })
+
+  // AGY§5 AGY§8
+  it('on Antigravity, one stuck on a setup screen at launch is closed at the deadline as not started, with no words sent', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const tab = await opened(c)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([tab])
+    expect(toasts).toEqual(['Alfred did not start.'])
+  })
+
+  // AGY§8
+  it('on Antigravity, words asked to open an already open quiet butler are handed to it once as a notice, however many ask; one started on words or resumed waits for none', async () => {
+    choice = { backend: 'agy' }
+    const c = make()
+    const quiet = await opened(c)
+    await Promise.all([c.open('a helper has it'), c.open('a helper has it')])
+    expect(notices).toEqual(['a helper has it'])
+    c.onPtyExit(quiet)
+
+    const told = c.open('set up Discord')
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    const toldTab = await told
+    if (!toldTab.ok) throw new Error(toldTab.error)
+    expect(started[1].firstPrompt).toBe('set up Discord')
+    expect(c.firstWordsComing(toldTab.tabId)).toBe(false)
+    c.onPtyExit(toldTab.tabId)
+
+    const agyKey = 'agy:local:conv-1'
+    session = { sessionIds: [agyKey], lastSessionKey: agyKey, knowsTodo: [agyKey] }
+    transcripts.add(agyKey)
+    const again = make()
+    const resumedTab = await again.open('a helper has it')
+    if (!resumedTab.ok) throw new Error(resumedTab.error)
+    expect(again.firstWordsComing(resumedTab.tabId)).toBe(false)
+    expect(notices).toHaveLength(1)
+  })
+
+  it('a quiet Antigravity butler that bound already waits for no first words', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, 'agy:local:conv-1')
+    expect(c.firstWordsComing(tab)).toBe(false)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([])
   })
 
   it('only while bound to Discord is it kept awake and its channel known by its tab; unbinding keeps its conversation and its tab', async () => {

@@ -403,6 +403,10 @@ export class PtyManager extends EventEmitter {
     if (h) h.resumeSessionId = undefined
   }
 
+  moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void {
+    for (const h of this.list()) if (h.ownerTabId === oldOwnerTabId) h.ownerTabId = newOwnerTabId
+  }
+
   // PLATFORM§41
   killWhatOutlivesTheQuit(): void {
     const pids = [...this.running].map((proc) => String(proc.pid))

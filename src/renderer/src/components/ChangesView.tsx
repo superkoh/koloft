@@ -50,6 +50,8 @@ import '../inlineDiff.css'
 export interface ChangesViewProps {
   root: string
   base: string | null | undefined
+  firstReadFailed: boolean
+  onReread: () => void
   git: GitStatusMap
   numstat: GitNumstatMap
   filters: ChangeFilters
@@ -99,6 +101,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const {
     root,
     base,
+    firstReadFailed,
+    onReread,
     git,
     numstat,
     filters,
@@ -449,10 +453,14 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [split]
   )
 
-  const banner = load.failed ? (
+  const gitFailed = load.failed || firstReadFailed
+  const banner = gitFailed ? (
     <div className="cv-banner cv-banner-err" role="status">
       <span>{MSG.gitFailed}</span>
-      <button className="cv-retry" onClick={() => setRetryNonce((n) => n + 1)}>
+      <button
+        className="cv-retry"
+        onClick={() => (load.failed ? setRetryNonce((n) => n + 1) : onReread())}
+      >
         Retry
       </button>
     </div>
@@ -516,7 +524,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       <div className="cv-stream" ref={streamEl}>
         {banner}
         {shown.length === 0
-          ? !load.failed && (
+          ? !gitFailed && (
               <div className="fv-empty cv-empty">
                 <p>{emptyMsg}</p>
               </div>
