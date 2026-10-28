@@ -1,0 +1,17 @@
+{
+  "frameFound": true,
+  "frames": [
+    {
+      "url": "http://127.0.0.1:57565/outer",
+      "processId": 7
+    },
+    {
+      "url": "http://localhost:57565/inner",
+      "processId": 10
+    }
+  ],
+  "pressedAfter": "true",
+  "innerClicks": 1,
+  "prompts": [],
+  "stoppedByButton": "false"
+}

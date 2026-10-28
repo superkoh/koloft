@@ -3,11 +3,12 @@ import os from 'os'
 import path from 'path'
 import { describe, it, expect } from 'vitest'
 import { cssValue, elementLabel, pickText, savePickHere } from '../../src/main/elementPick'
-import { holdDebugger } from '../../src/main/guestDebugger'
+import { hiddenFromClients, holdDebugger, openOwnSession } from '../../src/main/guestDebugger'
 
 const picked = {
   url: 'http://127.0.0.1:5173/cart',
   title: 'Cart',
+  frame: null,
   label: 'button#buy.primary',
   box: { x: 10.4, y: 20.6, width: 200, height: 60 },
   html: '<button id="buy" class="primary">Buy</button>',
@@ -49,6 +50,15 @@ describe('the text a pick pastes into the session', () => {
         'color: rgb(255, 255, 255);'
       ].join('\n')
     )
+  })
+
+  it('names the frame right after the page when the element sits inside an iframe', () => {
+    const text = pickText({ ...picked, frame: 'https://pay.example/widget' }, null)
+    expect(text.split('\n').slice(1, 4)).toEqual([
+      'Page: http://127.0.0.1:5173/cart ("Cart")',
+      'Inside the frame: https://pay.example/widget',
+      'Element: button#buy.primary, 200 × 60 px at (10, 21)'
+    ])
   })
 
   it('leaves the picture line out when no picture could be saved', () => {
@@ -124,6 +134,35 @@ function fakeGuest(): {
   } as unknown as Parameters<typeof holdDebugger>[0]
   return { wc, attaches: () => attaches, attached: () => attached }
 }
+
+describe('a session Koloft opens on a guest for itself', () => {
+  it('is kept from CDP clients: its messages, and the attach and detach that announce it, even before the attach answers', async () => {
+    let answer: (v: { sessionId: string }) => void = () => {}
+    const wc = {
+      debugger: {
+        sendCommand: () => new Promise<{ sessionId: string }>((resolve) => (answer = resolve))
+      }
+    } as unknown as Parameters<typeof openOwnSession>[0]
+    const opening = openOwnSession(wc, 'FRAME-1')
+    expect(
+      hiddenFromClients('Target.attachedToTarget', {
+        sessionId: 'S-1',
+        targetInfo: { targetId: 'FRAME-1' }
+      })
+    ).toBe(true)
+    answer({ sessionId: 'S-1' })
+    expect(await opening).toBe('S-1')
+    expect(hiddenFromClients('Overlay.inspectNodeRequested', {}, 'S-1')).toBe(true)
+    expect(hiddenFromClients('Target.detachedFromTarget', { sessionId: 'S-1' })).toBe(true)
+    expect(hiddenFromClients('Page.frameNavigated', {}, 'S-2')).toBe(false)
+    expect(
+      hiddenFromClients('Target.attachedToTarget', {
+        sessionId: 'S-2',
+        targetInfo: { targetId: 'FRAME-1' }
+      })
+    ).toBe(false)
+  })
+})
 
 describe('one debugger attachment per guest, shared by the agent and the picker', () => {
   it('attaches once for two holders and detaches only when the last one lets go', () => {

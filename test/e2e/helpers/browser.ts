@@ -393,6 +393,19 @@ export async function pickIntoSession(
   await page.keyboard.press('Enter')
 }
 
+export async function pictureCentre(
+  app: ElectronApplication,
+  file: string
+): Promise<[number, number, number]> {
+  return await app.evaluate(({ nativeImage }, f) => {
+    const image = nativeImage.createFromPath(f)
+    const { width, height } = image.getSize()
+    const bgra = image.toBitmap()
+    const i = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4
+    return [bgra[i + 2], bgra[i + 1], bgra[i]] as [number, number, number]
+  }, file)
+}
+
 export async function openViaAgent(page: Page, target: string): Promise<void> {
   await runIn(page, centerTerm(page), `/open ${target}`)
 }

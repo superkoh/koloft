@@ -28,14 +28,17 @@ export function useElementPick(
     const held = { guest, n: ++count.current }
     current.current = held
     setPicking(true)
-    void window.api.browser.pickElement(guest, pasteTab).then(async (text) => {
-      if (current.current !== held) return
-      current.current = null
-      setPicking(false)
-      if (!text) return
-      await window.api.terminal.paste(pasteTab, text)
-      onReturnFocus()
-    })
+    void window.api.browser
+      .pickElement(guest, pasteTab)
+      .catch(() => null)
+      .then(async (text) => {
+        if (current.current !== held) return
+        current.current = null
+        setPicking(false)
+        if (!text) return
+        await window.api.terminal.paste(pasteTab, text)
+        onReturnFocus()
+      })
   }, [guestId, pasteTab, onReturnFocus, stop])
 
   useEffect(() => stop, [pageKey, pasteTab, stop])

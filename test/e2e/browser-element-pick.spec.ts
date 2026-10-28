@@ -14,6 +14,7 @@ import {
 } from './helpers/p1'
 import {
   BROWSER,
+  INSPECT_MODE_SETTLES_MS,
   PICKED_LABEL,
   PICK_PAGE,
   cdpEndpointOf,
@@ -22,6 +23,7 @@ import {
   guestByUrl,
   openPickPage,
   pickIntoSession,
+  pictureCentre,
   tabByTitle
 } from './helpers/browser'
 import { claudePrompts } from './helpers/workbench'
@@ -68,6 +70,7 @@ test.describe('Pick an element in a Workbench web tab and paste it into the sess
       const picture = picturePath(prompt)
       expect(picture.startsWith(path.join(env.userData, 'picks') + path.sep)).toBe(true)
       expect([...fs.readFileSync(picture).subarray(0, 4)]).toEqual(PNG_SIGNATURE)
+      expect(await pictureCentre(app, picture)).toEqual([10, 120, 250])
       expect(await guest.evaluate('window.clicks')).toBe(0)
 
       await runIn(page, centerTerm(page), '/need-approval')
@@ -245,6 +248,55 @@ test.describe('Pick an element in a Workbench web tab and paste it into the sess
           )
         )
         .toBe(false)
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('BP-08: a pick inside a cross-origin iframe picks the element there, names the frame and pictures it, while an agent driving the page keeps its own hold on that iframe', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const server = await startEchoServer()
+    try {
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const transcript = await claudeTranscript(page, env)
+      const inner = server
+        .page(
+          '/inner',
+          '<!doctype html><title>Inner</title><body style="margin:0"><button id="in" style="width:400px;height:200px;border:0;background:rgb(200,10,10)"></button>' +
+            '<script>window.clicks=0;document.getElementById("in").onclick=()=>window.clicks++</script>'
+        )
+        .replace('127.0.0.1', 'localhost')
+      const url = server.page(
+        '/outer',
+        `<!doctype html><title>Outer</title><div style="height:900px">tall</div><iframe id="f" src="${inner}" style="width:400px;height:200px;border:0"></iframe>`
+      )
+      const browser = await connectCdp(page, await cdpEndpointOf(env))
+      const agentPage = await browser.contexts()[0].newPage()
+      await agentPage.goto(url)
+      await agentPage.locator('#f').scrollIntoViewIfNeeded()
+      const agentFrame = (): ReturnType<Page['frames']>[number] | undefined =>
+        agentPage.frames().find((f) => f.url() === inner)
+      await expect.poll(() => !!agentFrame()).toBe(true)
+      const guest = await guestByUrl(app, url)
+      await tabByTitle(page, 'Outer').click()
+
+      await pickIntoSession(page, guest, 'iframe#f', ' BP-08 inside the frame')
+      const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-08'))
+      await expect.poll(fromPick, { timeout: 30_000 }).toHaveLength(1)
+      const [prompt] = fromPick()
+      expect(prompt).toContain(`Inside the frame: ${inner}`)
+      expect(prompt).toContain('Element: button#in')
+      expect(await pictureCentre(app, picturePath(prompt))).toEqual([200, 10, 10])
+
+      await page.waitForTimeout(INSPECT_MODE_SETTLES_MS)
+      expect(agentFrame()?.isDetached()).toBe(false)
+      expect(await agentFrame()?.evaluate('[document.title, window.clicks]')).toEqual(['Inner', 0])
+      await browser.close()
     } finally {
       await server.close()
     }

@@ -6,7 +6,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
-import { holdDebugger } from './guestDebugger'
+import { hiddenFromClients, holdDebugger } from './guestDebugger'
 import { urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
@@ -271,13 +271,20 @@ function backendFor(client: Client): RelayBackend {
       try {
         await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
       } catch {}
-      const onMessage = (_e: unknown, method: string, params: unknown, sessionId?: string): void =>
+      const onMessage = (
+        _e: unknown,
+        method: string,
+        params: unknown,
+        sessionId?: string
+      ): void => {
+        if (hiddenFromClients(method, params, sessionId)) return
         client.protocol.fromGuest(
           targetId,
           method,
           swapIds(params, frameIds.get(targetId), targetId),
           sessionId
         )
+      }
       const onDetach = (): void => {
         client.protocol.forceDetach(targetId, 'Target.detachedFromTarget')
       }

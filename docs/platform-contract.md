@@ -722,6 +722,31 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   coordinates: with the page scrolled 1040 px, a clip straight from the box model came
   back as an empty transparent picture; adding `Page.getLayoutMetrics`'
   `cssVisualViewport.pageX/pageY` gave the element.
+- **A cross-origin iframe in a guest is its own target, and inspect mode does not reach
+  it from the guest's session.** Measured 2026-10-28, same Electron, in the built app,
+  with a page on `127.0.0.1` holding an iframe from `localhost` (its own renderer
+  process): with `Overlay.setInspectMode` on the guest's root session only, a click in
+  the iframe reached the iframe's page and no `inspectNodeRequested` came. From the
+  root session, `Target.getTargets` lists every target of the app (the host page too);
+  the iframe is `type: 'iframe'` with `parentId` the guest's own target id
+  (`Target.getTargetInfo`). `Target.attachToTarget {flatten: true}` on it gives a
+  session where the same inspect mode works: the click is held, and
+  `inspectNodeRequested` arrives with that session id. The iframe's box model is in its
+  own viewport; `DOM.getFrameOwner {frameId: <iframe target id>}` on the parent session
+  plus that owner's content box gives the offset in the guest.
+  - That attach sends `Target.attachedToTarget`, and its detach
+    `Target.detachedFromTarget`, on the guest's root session — the session a relay
+    client listens on. Passed on to a Playwright client that drives the page, they made
+    it drop its own frame for that iframe (measured: `frame.isDetached()` came back
+    undefined, the frame gone from `page.frames()`); kept from the client, its frame
+    still evaluated afterwards.
+  - `Page.captureScreenshot` from the guest's root session draws the iframe's area
+    transparent (a clip on a red button inside it came back all 0,0,0,0), also with
+    `captureBeyondViewport`. The guest's own `webContents.capturePage(rect)`, with
+    `rect` in the viewport's DIP, drew it (centre pixel the button's red).
+- **An agent's click inside a cross-origin iframe does not land through the relay**
+  (measured the same day: Playwright's `frame.click()` on a button in such an iframe
+  left the page's click counter at 0, with no element pick running).
 
 ## §17 Playwright as a CDP client
 

@@ -5739,7 +5739,7 @@ function registerIpc(): void {
     const guest = webContents.fromId(id)
     if (!guest || guest.getType() !== 'webview') return null
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
-    const picked = await pickElement(guest)
+    const picked = await pickElement(guest).catch(() => null)
     if (!picked) return null
     const name = `${tabId}-${Date.now()}.png`
     const machine = machineOfTab(tabId)
