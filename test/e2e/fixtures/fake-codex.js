@@ -593,6 +593,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         })
         return
       }
+      if (method === 'account/read' && flag('fake-codex-account-read-fails')) {
+        fs.writeFileSync(file('fake-codex-account-read-failed'), '')
+        error(id, 'stream disconnected before completion')
+        return
+      }
       if (method === 'account/read') {
         result(id, {
           account: signIn()

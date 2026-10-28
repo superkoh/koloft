@@ -14,10 +14,15 @@ export class SignInOutput {
 
   feed(data: string): void {
     if (!this.started) {
-      const at = data.indexOf(OUTPUT_START_SEEN)
-      if (at < 0) return
+      const seen = this.buf + data
+      const at = seen.indexOf(OUTPUT_START_SEEN)
+      if (at < 0) {
+        this.buf = seen.slice(1 - OUTPUT_START_SEEN.length)
+        return
+      }
       this.started = true
-      data = data.slice(at + OUTPUT_START_SEEN.length)
+      this.buf = ''
+      data = seen.slice(at + OUTPUT_START_SEEN.length)
     }
     this.buf = (this.buf + data).slice(-KEPT_OUTPUT_MAX)
   }

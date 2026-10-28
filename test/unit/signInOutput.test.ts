@@ -7,8 +7,15 @@ const printedMark = execFileSync('/bin/sh', ['-c', MARK_OUTPUT_START], { encodin
 describe('the text a sign-in tab shows back in Settings ▸ Accounts', () => {
   it('leaves out the prompt and the typed command, which echo before the CLI prints anything', () => {
     const out = new SignInOutput()
-    out.feed(`me@Mac ~ % ${MARK_OUTPUT_START}; CODEX_HOME=/h exec codex login\r\n`)
+    out.feed(`me@Mac ~ % ${MARK_OUTPUT_START}; exec env CODEX_HOME=/h codex login\r\n`)
     out.feed(`${printedMark}Error: the device code expired\r\n`)
+    expect(out.tail()).toBe('Error: the device code expired')
+  })
+
+  it('still finds where the CLI starts when the terminal hands that over in two pieces', () => {
+    const out = new SignInOutput()
+    out.feed(`me@Mac ~ % ${printedMark.slice(0, 9)}`)
+    out.feed(`${printedMark.slice(9)}Error: the device code expired\r\n`)
     expect(out.tail()).toBe('Error: the device code expired')
   })
 

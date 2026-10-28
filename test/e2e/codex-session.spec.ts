@@ -1703,6 +1703,46 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
+  test('a Codex sign-in that worked but whose first check after it fails keeps the new account’s row and says nothing failed, and a later Refresh usage shows its weekly use', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const readFails = path.join(env.home, 'fake-codex-account-read-fails')
+    const readFailed = path.join(env.home, 'fake-codex-account-read-failed')
+    fs.writeFileSync(readFails, '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Codex' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect
+        .poll(() => fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json')), {
+          timeout: 30_000
+        })
+        .toBe(true)
+      fs.rmSync(readFailed, { force: true })
+      await expect.poll(() => fs.existsSync(readFailed), { timeout: 30_000 }).toBe(true)
+      fs.rmSync(readFails)
+
+      await page.getByRole('button', { name: 'Refresh usage' }).click()
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^work$/ })
+      })
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('30%', {
+        timeout: 30_000
+      })
+      await expect(page.locator('.acct-login-state.bad')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
   test('a Codex sign-in tab still waiting for the browser names itself above the terminal, and its Cancel closes it and brings Settings ▸ Accounts back saying the sign-in did not complete, with no row left for the new account, and Try again opens the tab again', async ({
     env
   }) => {

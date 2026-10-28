@@ -2148,8 +2148,12 @@ function forgetAccount(name: string, kind: AccountKind): void {
 }
 
 async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
-  await probeHomeAccount[s.kind](s.name)
-  if (findAccount(s.name, s.kind)?.status === 'ok') return
+  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
+    () => false
+  )
+  const account = findAccount(s.name, s.kind)
+  if (!probeAnswered || !account || account.status === 'ok') return
   if (!s.again) forgetAccount(s.name, s.kind)
   setSignInFailure({
     backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
@@ -2223,12 +2227,18 @@ async function signInToHome(
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
+  // PLATFORM§63
   const signIn = (quotedBinary: string): string =>
-    `${MARK_OUTPUT_START} && ${assignments.join(' ')} exec ${quotedBinary} ${args}`
+    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
   const tab = homeShellTab(
-    login.binary
-      ? signIn(shq(login.binary))
-      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+    `${MARK_OUTPUT_START}; ` +
+      (login.binary
+        ? signIn(shq(login.binary))
+        : installThen(
+            BACKEND_OF_SIGN_IN_FOLDER[kind],
+            signIn,
+            process.env.KOLOFT_TEST_TOOL_INSTALLER
+          ))
   )
   signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
