@@ -8,6 +8,7 @@ import {
   UNPACKAGED_BUILD_AGY_SVC,
   agyCalls,
   agySessionCalls as sessionCalls,
+  agyTranscriptOf as transcriptOf,
   installAgy,
   ownersGemini,
   seedSettings,
@@ -67,18 +68,6 @@ const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
-
-function transcriptOf(env: E2EEnv, conversationId: string): string {
-  const file = path.join(
-    ownersApp(env),
-    'brain',
-    conversationId,
-    '.system_generated',
-    'logs',
-    'transcript.jsonl'
-  )
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-}
 
 async function startAgy(page: Page, env: E2EEnv): Promise<AgyCall> {
   const before = sessionCalls(env).length

@@ -89,6 +89,8 @@ const DELIVERED = '✅'
 const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const BUTLER_GETS_READY_WITHIN_MS = 10 * 60_000
+// AGY§8
+const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 export const HELD_ASKS_CHECKED_EVERY_MS = 30_000
 
 export interface Destination {
@@ -121,6 +123,7 @@ export interface RelayDeps {
   answered(tabId: string, reply: string): void
   backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
+  showsPromptBeforeBind(tabId: string): boolean
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
   turnOver(tabId: string): boolean
@@ -358,6 +361,7 @@ export class DiscordRelay {
 
   private async deliver(dest: Destination, item: Inbound): Promise<void> {
     const tab = await this.readyTab(dest)
+    const first = !this.d.boundKey(tab)
     const text = await item.text()
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
@@ -369,6 +373,8 @@ export class DiscordRelay {
       if (item.quiet) this.quietTurns.delete(tab)
       throw error
     }
+    // AGY§8
+    if (first) await this.d.ready(tab, () => !!this.d.boundKey(tab), FIRST_PROMPT_BINDS_WITHIN_MS)
   }
 
   quietTurn(tab: string): boolean {
@@ -411,7 +417,9 @@ export class DiscordRelay {
     return tab
   }
 
+  // AGY§8
   private typable(tab: string): boolean {
+    if (this.d.showsPromptBeforeBind(tab)) return true
     const status = this.d.status(tab)
     return (
       !!this.d.boundKey(tab) &&
@@ -422,9 +430,14 @@ export class DiscordRelay {
     )
   }
 
+  // AGY§8
   takesCommand(tab: string): boolean {
     return (
-      this.typable(tab) && this.d.turnOver(tab) && !this.dialogOpen(tab) && this.d.queueDrained(tab)
+      this.d.showsPromptBeforeBind(tab) ||
+      (this.typable(tab) &&
+        this.d.turnOver(tab) &&
+        !this.dialogOpen(tab) &&
+        this.d.queueDrained(tab))
     )
   }
 

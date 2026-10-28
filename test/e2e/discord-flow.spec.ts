@@ -3,6 +3,8 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  agySessionCalls,
+  agyTranscriptOf,
   installAgy,
   installCodex,
   installGhForWorkspaceA,
@@ -70,6 +72,8 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 const TALLER_THAN_ONE_PICTURE_PX = 20_000
 const AWAY_DIGEST_GATHERS_MS = 500
 const AWAY_DIGEST_OPENS = 'The owner is away from Koloft, and these sessions changed'
+const SHORT_BIND_DEADLINE_MS = 5_000
+const DEADLINE_FIRED_SETTLE_MS = 1_500
 
 function seedConductor(
   env: E2EEnv,
@@ -181,14 +185,26 @@ async function tabOf(page: Page, sessionId: string): Promise<string> {
 async function connected(
   env: E2EEnv,
   fake: FakeDiscord,
-  launches = 1
+  launches = 1,
+  conductorBindsAtLaunch = true
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await waitBooted(page)
   await expect.poll(() => fake.identifies).toBe(launches)
-  await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
+  if (conductorBindsAtLaunch) await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
   return { app, page }
+}
+
+// AGY§8
+function agyPrompts(env: E2EEnv, conversationId: string): string {
+  return agyTranscriptOf(env, conversationId)
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as { type: string; content?: string })
+    .filter((step) => step.type === 'USER_INPUT')
+    .map((step) => step.content ?? '')
+    .join('\n')
 }
 
 test.describe('Discord flow: the owner talks to the butler in its channel, and the butler looks after the sessions', () => {
@@ -311,6 +327,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     ['claude', 'claude', false],
     ['codex', 'claude', false],
     ['muse', 'claude', false],
+    ['agy', 'claude', false],
     ['claude', 'codex', false],
     ['claude', 'muse', false],
     ['claude', 'agy', false],
@@ -350,7 +367,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         }
       })
       const fake = await startFakeDiscord(env)
-      const { app, page } = await connected(env, fake)
+      const { app, page } = await connected(env, fake, 1, conductor !== 'agy')
       try {
         if (remote) await addRemoteWorkspace(page, env)
         if (used.size === 1) await startSessionIn(page, workspace, { remote })
@@ -368,8 +385,10 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
         const reportedId = (await reportedSession())!.sessionId
 
-        const butlerId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+        const butlerKey = (): string => butlerSessionOnDisk(env)?.sessionIds[0] ?? ''
         const butlerGot = (): string => {
+          const butlerId = identityOf(butlerKey()).nativeSessionId
+          if (conductor === 'agy') return butlerKey() ? agyPrompts(env, butlerId) : ''
           if (conductor === 'claude') return peerMessages(env).join('\n')
           if (conductor === 'codex')
             return codexQueued(env)
@@ -402,7 +421,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         )
         if (conductor === 'claude')
           await expect
-            .poll(() => transcriptText(env, butlerId), {
+            .poll(() => transcriptText(env, identityOf(butlerKey()).nativeSessionId), {
               timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
             })
             .toContain('Peer said:')
@@ -428,6 +447,44 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         if (remote) killFakeRemote(env)
       }
     })
+
+  // AGY§8
+  test('an Antigravity butler that Discord opens with nothing to say stays open past the start deadline; the owner’s first message is typed into it as its first prompt, binds it, and its answer reaches the channel', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    seedSettings(env, {
+      hintsOff: true,
+      assist: { on: true, backend: 'agy' },
+      discord: {
+        userId: OWNER.id,
+        userName: OWNER.username,
+        channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
+      }
+    })
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake, 1, false)
+    try {
+      await expect
+        .poll(() => agySessionCalls(env).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe(1)
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      expect(agySessionCalls(env)).toHaveLength(1)
+      expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
+      expect(butlerSessionOnDisk(env)?.sessionIds ?? []).toEqual([])
+
+      fake.say(OWNER, 'hello there')
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Answer to: [Discord] hello there')
+      expect(butlerSessionOnDisk(env)?.sessionIds).toHaveLength(1)
+      expect(agySessionCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
 
   test('the butler’s koloft discord send uploads a file with a line of text to its channel', async ({
     env

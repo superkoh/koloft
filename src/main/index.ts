@@ -3160,6 +3160,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3284,6 +3285,7 @@ app.whenReady().then(() => {
     answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
@@ -4765,6 +4767,10 @@ async function resumeRow(
   return { ok: true, tabId: res.id }
 }
 
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
@@ -4876,6 +4882,7 @@ function butlerDestination(): Destination {
       const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
     typeCommand: async (tabId, command) => {

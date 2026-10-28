@@ -91,6 +91,7 @@ function setup(
     answered: (tab, reply) => void answered.push({ tab, reply }),
     backendOf: () => 'claude',
     boundKey: () => 'session-1',
+    showsPromptBeforeBind: () => false,
     status: (): SessionStatus => 'waiting',
     awaitsInput: () => false,
     turnOver: (t) => ['waiting', 'idle'].includes(deps.status(t) ?? ''),
@@ -924,5 +925,48 @@ describe('DiscordRelay: Koloft telling a conductor something', () => {
       expect(bodies()).toEqual(['[Koloft] Could not deliver to fix-login: it closed.'])
     )
     expect(fs.existsSync(path.join(dir, `${TAB}.discord-ids`))).toBe(false)
+  })
+})
+
+// AGY§8
+describe('DiscordRelay: an Antigravity butler that has no conversation yet', () => {
+  it('types an owner message as its first prompt as soon as it shows its prompt, without waiting for a bind, and types the next one only once that bound it', async () => {
+    let prompt = false
+    let key: string | undefined
+    let looked = 0
+    const lookedAgain = async (times: number): Promise<void> => {
+      const from = looked
+      await vi.waitFor(() => expect(looked).toBeGreaterThanOrEqual(from + times))
+    }
+    const { relay, writes, reactions } = setup({}, [], {
+      backendOf: () => 'agy',
+      boundKey: () => {
+        looked++
+        return key
+      },
+      status: () => (key ? 'working' : undefined),
+      showsPromptBeforeBind: () => prompt && !key
+    })
+    relay.onMessage(message('701', OWNER, 'what is on today'))
+    relay.onMessage(message('702', OWNER, 'and tomorrow'))
+    await lookedAgain(3)
+    expect(writes).toEqual([])
+    prompt = true
+    await vi.waitFor(() =>
+      expect(writes.map((w) => w.data)).toEqual(['[Discord] what is on today', '\r'])
+    )
+    await lookedAgain(3)
+    expect(writes).toHaveLength(2)
+    expect(reactions).not.toContain('701 +✅')
+    key = 'agy:local:conv-1'
+    await vi.waitFor(() =>
+      expect(writes.map((w) => w.data)).toEqual([
+        '[Discord] what is on today',
+        '\r',
+        '[Discord] and tomorrow',
+        '\r'
+      ])
+    )
+    expect(reactions).toContain('701 +✅')
   })
 })

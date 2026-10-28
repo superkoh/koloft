@@ -185,6 +185,7 @@ beforeEach(() => {
     }),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
+    wakeReady: vi.fn(),
     kill: vi.fn(),
     clearResumeIntent: vi.fn()
   })
@@ -490,6 +491,19 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     say(id, state('working'))
     expect(sessions.list()[0]).toMatchObject({ sessionId: agySessionKey(A), nativeSessionId: A })
     expect(events('bound')).toHaveLength(1)
+  })
+
+  // AGY§5 AGY§8
+  it('before its first prompt it tells whether it shows the prompt or a setup screen, and once bound it no longer says so', async () => {
+    const { id } = await launch()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('blocked', ':kind=question'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('idle'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+    title(id, { conversation_id: A })
+    say(id, state('working'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
   })
 
   it('binds on its own from the title log, without waiting for a status frame', async () => {
