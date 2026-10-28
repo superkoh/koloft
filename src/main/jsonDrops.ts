@@ -79,25 +79,18 @@ function onePassAtATime(
   inWriteOrder: InWriteOrder
 ): () => void {
   const eachOnce = oncePerName(handlerFor)
-  let running = false
-  let wantedAgain = false
-  const pass = (): void => {
-    if (running) {
-      wantedAgain = true
-      return
-    }
-    running = true
-    readInWriteOrder(dir, eachOnce, inWriteOrder)
-      .catch(() => {})
-      .finally(() => {
-        running = false
-        if (wantedAgain) {
-          wantedAgain = false
-          pass()
-        }
+  let passes = Promise.resolve()
+  let nextPassWaiting = false
+  return () => {
+    if (nextPassWaiting) return
+    nextPassWaiting = true
+    passes = passes
+      .then(() => {
+        nextPassWaiting = false
+        return readInWriteOrder(dir, eachOnce, inWriteOrder)
       })
+      .catch(() => {})
   }
-  return pass
 }
 
 function sweepJsonDrops(
