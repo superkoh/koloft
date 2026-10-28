@@ -198,6 +198,33 @@ The completed **spawn tool call** is not completion of the **spawned child**.
 The parent-child relationship comes from the collab item, not from treating every
 other thread on the wire as a child. Temporary title threads share that wire too.
 
+### No Monitor; a server left in a background terminal
+
+**Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
+macOS, `codex app-server --stdio` driven by a Node script, a fresh `CODEX_HOME` whose model
+was a fake Responses-API server on localhost, `sandbox_mode = "danger-full-access"`, no
+login, 1 run.**
+
+- `codex features list` has no Monitor-like feature, and section 32's tool list has no
+  tool that wakes the model on a running command's output; a command that outlives its
+  turn ends with `item/completed` and starts no turn. The thread's only way to wait is
+  `clock.sleep` inside a turn (section 32).
+- The fake model answered with one `exec_command {cmd: "python3 -m http.server 18799",
+  yield_time_ms: 1000}`, then a message. The item was `/bin/zsh -lc 'python3 -m
+  http.server 18799'`, `inProgress`, `processId` `"71962"`; the turn completed with it
+  still `inProgress`. `ps` then showed the server as a direct child of the app-server
+  pid, its command line the interpreter's own file (`…/Python.app/Contents/MacOS/Python
+  -m http.server 18799`, as in MUSE§8).
+- `thread/backgroundTerminals/list {threadId}` (an experimental method: it is in
+  `codex app-server generate-json-schema --experimental` only, and `initialize` sent
+  `capabilities.experimentalApi: true`) answered one entry `{itemId: "call_1", processId:
+  "71962", command: "python3 -m http.server 18799", cwd, osPid: null, cpuPercent: null,
+  rssKb: null}`: no OS PID on macOS.
+- `thread/backgroundTerminals/clean {threadId}` answered `{}`, the item then completed
+  `failed` with `exitCode: -1`, the process was gone and the list was empty. The binary's
+  strings hold "thread/backgroundTerminals/clean failed in TUI", "/ps to view" and
+  "/stop to close"; the TUI's `/ps` and `/stop` were not run.
+
 ### Schema limits
 
 The 0.153.4 generated schemas declare:

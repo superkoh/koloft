@@ -540,7 +540,8 @@ only downloaded the public release.
   current_usage{input_tokens, output_tokens, cache_creation_input_tokens,
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
-  `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
+  `conversation_title`, `tool_confirmation_pending` (seen on macOS), and `task_count`
+  (1.4.7, while background tasks run, §13).
   - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
     conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
     is open), `reviewing` (an artifact is waiting for review, §19).
@@ -723,6 +724,52 @@ only downloaded the public release.
     it has ended.
   - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
     cancelling a task from the TUI's `/tasks`; the macOS build.
+- **Daemon commands, and no Monitor.** 1.4.7 Linux arm64 in Docker with no network, a
+  fake Gemini server, the TUI in tmux with `--dangerously-skip-permissions`, every hook
+  logged, `ps` and `ListBackgroundTasks` read every few seconds, 2026-10-28.
+  - The tool list that build sent was `read_file`, `run_command`, `manage_task`,
+    `send_message`, `schedule`, `invoke_subagent`, `define_subagent`,
+    `manage_subagents`, `write_file`, `edit_file`, `search_web`, `ask_question`.
+    `run_command` takes `{CommandLine, WaitMsBeforeAsync, toolSummary, IsDaemon?}`;
+    `IsDaemon` is described as "long-running support processes that are meant to keep
+    running in the background indefinitely … (e.g., dev servers, file watchers,
+    tunnels)". Its description also says a backgrounded command notifies the model
+    when it finishes. No tool streams a running command's output to the model or wakes
+    it on a line of output, the way Claude Code's Monitor does (CC§8); `schedule`'s
+    `TimerCondition` only cancels a timer early when a message arrives.
+  - `python3 -m http.server` with `IsDaemon:true`: `PreToolUse` carries the args
+    as sent (`"IsDaemon":true`, typed), the command is a direct child of agy, the
+    turn's `Stop` says `fullyIdle:true`, the footer shows "1 task(s) · /tasks" and a
+    line "● [time] <command> running", and `ListBackgroundTasks {cascadeId}` answers
+    `{tasks:[{conversationId, task:{taskId:"<conversation id>/task-<stepIdx>",
+    toolName:"run_command", toolSummary, description:"<command>", startTime,
+    stepIndex, logUri, isDaemon:true}}]}` (a plain backgrounded command: the same
+    without `isDaemon`; no task: `{}`). No hook comes while it runs.
+  - The same with no `IsDaemon` (`sleep 25`): `Stop` says `fullyIdle:false`; when it
+    ends, `PostToolUse` with the same `stepIdx`, then a turn agy starts by itself on a
+    `<SYSTEM_MESSAGE>` "Task id … finished with result", then `Stop` with
+    `fullyIdle:true`. A daemon that exits by itself (`sleep 10` with `IsDaemon:true`)
+    gives the same `PostToolUse` and the same turn.
+  - `manage_task {Action:"kill", TaskId}` on a daemon: `Pre`/`PostToolUse` for
+    `manage_task` with `error:""`, the process gone, `ListBackgroundTasks` empty; no
+    `PostToolUse` for the `run_command`. Without `toolSummary` the call is valid; with
+    it, it fails tool validation and no hook fires.
+  - `/tasks` opens a list ("Agent Backgrounded", the command and "running"; keys
+    "enter View output  k Kill Task  x Remove Task From List"). `k` killed the daemon:
+    the process was gone and `ListBackgroundTasks` empty within 3 s, and no hook came
+    in the next 30 s, nor with the next turn.
+  - After `/clear` the footer showed no task while the daemon kept running, and
+    `ListBackgroundTasks` with the old conversation id still listed it. Ending agy
+    (Ctrl+C twice) ended it.
+  - The status line and title scripts (§11) get `task_count`, the conversation's
+    background tasks, left out when there are none. With a daemon started: `working`
+    without it, `working` with `task_count:1`, then `idle` with it. A `k` in `/tasks`
+    ran the scripts again 0.3 s later, `idle` with no `task_count`.
+  - Without `--dangerously-skip-permissions` the daemon's `PreToolUse` comes before
+    the ask (`tool_use`, `tool_confirmation_pending:true`). Declined with `4`: the next
+    title input is `idle` with no `task_count`, and no other hook comes (no
+    `PostToolUse`, no `Stop`). Allowed with `1`: `working` with no `task_count`, then
+    `Stop`, then `idle` with `task_count:1`; the count came only after the turn ended.
 
 ## §14 Asks in the terminal and the keys that answer them
 
