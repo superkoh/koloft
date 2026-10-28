@@ -37,6 +37,12 @@ const wins = [...document.querySelectorAll('.win[data-film]')]
 const winOfFrame = new Map()
 const narrow = matchMedia('(max-width: 700px)')
 
+function frameAt(marks, at) {
+  if (typeof at === 'number') return at
+  const [, name, offset] = /^([a-z-]+)([+-]\d+)?$/.exec(at) ?? []
+  return name in marks ? marks[name] + Number(offset ?? 0) : Infinity
+}
+
 function camAt(win, i) {
   if (narrow.matches && win.dataset.phoneCrop) return win.dataset.phoneCrop
   const cams = (win.cams ??= JSON.parse(win.dataset.cam || '[]')).filter((c) => c.at <= i)
@@ -70,7 +76,7 @@ function mount(win) {
   frame.title = win.dataset.title || 'Koloft, recorded'
   frame.setAttribute('aria-hidden', 'true')
   frame.tabIndex = -1
-  frame.src = `${DEMO}?film=${win.dataset.film}&from=${win.dataset.from || 0}`
+  frame.src = `${DEMO}?film=${win.dataset.film}&from=${encodeURIComponent(win.dataset.from || 0)}`
   win.append(frame)
   winOfFrame.set(frame.contentWindow, win)
   win.cues = JSON.parse(win.dataset.cues || '[]').map((cue) => {
@@ -155,6 +161,12 @@ addEventListener('message', (e) => {
   const d = e.data
   if (!win || !d) return
   if (!win.classList.contains('ready')) {
+    const marks = d.marks || {}
+    for (const cue of win.cues) {
+      cue.at = frameAt(marks, cue.at)
+      cue.to = frameAt(marks, cue.to)
+    }
+    win.cams = JSON.parse(win.dataset.cam || '[]').map((c) => ({ ...c, at: frameAt(marks, c.at) }))
     win.classList.add('ready')
     win.playing = d.koloftFrame !== undefined
     sync(win)
