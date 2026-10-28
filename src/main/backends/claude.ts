@@ -29,6 +29,7 @@ import type { RemoteSync } from '../remote/sync'
 import {
   AGENT_DROP_NAME,
   REQUEST_NAME,
+  errorText,
   replyJson,
   tabSpokenFor,
   type AgentReply
@@ -906,6 +907,14 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
+    try {
+      return await this.resumeTab(req)
+    } catch (error) {
+      return { ok: false, code: 'backend', message: errorText(error) }
+    }
+  }
+
+  private async resumeTab(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const sid = req?.sessionId
     const asked = req?.cwd
     if (
