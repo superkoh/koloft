@@ -379,8 +379,6 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   (real Meta account, macOS) the upper rule carries a title, `── Voice input (⌥ + v to
   start) ────…`, and an empty box can show a hint after `❯`, such as `Press Ctrl+O to
   expand collapsed tool output`.
-- What a slash command prints (`/usage`, `/status`, …) is drawn on the screen only; the
-  session log holds none of it (1.4.9, fake model).
 - **An Esc and the Enter after it, read in one go, are Alt+Enter: the Enter adds a line
   and the command is not sent.** Measured 2026-10-25, muse 1.4.11
   (`Muse Code 1.4.11 (1.4.11-R6667.1)`), Docker, `--provider echo`, a python pty
@@ -582,3 +580,19 @@ in the model request.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`) and the
 butler's to-do method, which names the files each agent reads.
+
+## §19 What a slash command prints
+
+- **It is drawn on the screen only; no store Koloft can read holds it.** First seen on
+  1.4.9 (fake model): the session log held none of `/usage` or `/status`. Rechecked
+  2026-10-26 on `Muse Code 1.4.13 (1.4.13-R6996.1)`, Docker (`koloft-muse-probe` image,
+  Linux), `muse --provider echo --trust-workspace` in a python pty (120×40, the screen
+  read through `pyte`): one prompt, then `/status`, `/usage` and `/help`, each typed, then
+  Esc and Enter as separate writes. `/status` drew a box (MODEL, WORKSPACE, ACCESS, USAGE,
+  CONTEXT, SESSION, ACTIVITY), `/usage` a "Session usage" box, `/help` a panel under the
+  input box. None of their words were in the session's `session.jsonl`, in the MSP view
+  store `sessions/.msp-view-g6/<id>/` (its journal and snapshots), or in what
+  `muse serve --provider echo` returned for `session/read` and `view/page {limit: 1000}`;
+  the prompt and its echoed reply were in every one of them.
+- **`/diff` is not a Muse command.** Typed the same way, it went to the model as a prompt:
+  a `userMessage` "/diff" and the reply "echo: /diff".
