@@ -893,8 +893,8 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   suffix. **Hosted by CC's resident process (claude daemon), it does NOT die with the
   window** (measured alive nearly two days, waiting for an answer).
 - **The copy inherits the parent tab's hook settings**, so every report it sends claims
-  the parent tab's identity; its SessionStart carries `source=fork` (single live
-  sample, 2026-08-20); **its self-stop fires SessionEnd reason=`prompt_input_exit`**
+  the parent tab's identity; its SessionStart carries `source=fork` (2026-08-20; again
+  on the `/background` move below, and 3 of 3 `/fork` runs on 2.1.311); **its self-stop fires SessionEnd reason=`prompt_input_exit`**
   (the job_stop_self path, read from CC source) — the same reason a person's `/exit`
   gives.
 
@@ -906,7 +906,9 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   `--all` — `claude agents --help`, 2.1.281, 2026-09-24) plus `ps -p <pid>`. ⚠️
   Measured: `claude agents --json` stdout is polluted by statusline output ahead of the
   JSON — parse from the first `[`. On 2026-09-24 (CC 2.1.281) `~/.claude/jobs/` did not
-  exist on the dev Mac; where 2.1.281 keeps this state is not measured.
+  exist on the dev Mac; where 2.1.281 keeps this state is not measured. On 2.1.311 a
+  `/fork` makes `~/.claude/jobs/<jobId>/` again, and `timeline.jsonl` only appears after
+  the copy's first turn (next block but one).
 - **One-step attach exists: `claude attach <id>`** (added in 2.1.251 per the changelog,
   alongside `logs / stop / respawn / rm` in `claude --help`). Measured on this Mac,
   2026-09-18, CC 2.1.276, and unchanged on 2.1.281 (2026-09-24) — `claude attach --help`
@@ -914,8 +916,43 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   Open the background session in this terminal. ← returns to agent view, Ctrl+Z drops
   back to your shell. The session keeps running either way.` The changelog also says a
   direct `--resume` of a running background session is refused with a message naming
-  `claude attach <id>` (not re-measured). `claude --resume <id> --fork-session` still
-  makes ANOTHER copy, it is not a takeover.
+  `claude attach <id>` (the version it names is not recorded here; never measured); on
+  2.1.311 it is not refused but turned into an attach (next block). `claude --resume <id> --fork-session` still makes ANOTHER copy, it is not a
+  takeover.
+- **What a `/fork` copy looks like from outside** (2026-10-27, CC 2.1.311, 3 runs:
+  a throwaway `HOME`, a local fake Messages API behind `ANTHROPIC_BASE_URL` and a
+  fake key from `apiKeyHelper`, the interactive TUI driven in a python pty, a logging
+  hook on SessionStart / UserPromptSubmit / Stop / SessionEnd in user settings):
+  - Typing `/fork` after one finished turn prints `session waiting for a prompt ·
+    <first 8 hex of the new id>`; the window keeps the original session.
+  - The copy gets its own registry file at once: `kind: "bg"`, plus a `jobId` (those
+    same 8 hex), its own `pid`, `procStart` and `messagingSocketPath`; `name` starts as
+    the first prompt's text. The window's entry stays `kind: "interactive"`.
+  - `~/.claude/jobs/<jobId>/` appears with `state.json`, `parent-transcript.jsonl` and
+    `tmp/` (`timeline.jsonl` only after the copy's first turn); its transcript is a
+    normal `~/.claude/projects/<cwd slug>/<new id>.jsonl`.
+  - Its SessionStart carries `source: "fork"` with the new id and the extra keys
+    `seconds_since_last_response`, `context_tokens`, `prompt_cache_likely_expired`,
+    `estimated_cache_write_usd` (3 of 3 runs).
+  - `claude agents --json` (no TTY, exit 0, ~1 s) lists **both** the window's session
+    and the copy. Keys: `pid, cwd, kind, startedAt, sessionId, name, status`, and on
+    the copy also `id` (= `jobId`) and `state`. `kind` is `"interactive"` for the
+    window and `"background"` for the copy; the copy's `state` read `blocked` while it
+    waited for its first prompt and `working` after a turn had finished, with `status:
+    "idle"` both times — so `state` did not follow the finished turn, and `status` is
+    the busy / idle reading. `--cwd <dir>` and `--all` gave the same two rows here (nothing
+    had finished). No statusline was configured, so no text came before the `[`.
+  - `claude attach <jobId>` in a second pty shows the copy's conversation full screen;
+    a prompt typed there runs in the copy (its hooks fire under the copy's id, its
+    registry `name` follows). No new registry file appears for the attach. Closing that
+    pty (SIGHUP) leaves the copy running and listed.
+  - **`claude --resume <copy's full id>` while the copy runs becomes the attach**: the
+    process's command line reads `claude attach <jobId>` within 12 s, no second
+    registry entry appears, and a prompt typed there runs in the copy.
+  - The copy is hosted by a transient daemon (`daemon.log`: `origin=transient`, `bg
+    claimed-spare <jobId> (slash)`), whose control socket is
+    `/tmp/cc-daemon-<uid>/<hash>/control.sock`, one per `HOME`. `claude daemon stop
+    --any` ended it and the copy (`bg settled <jobId> (killed)`).
 - **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
   CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
   new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
@@ -938,7 +975,9 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
 - **Interactive sessions have NO re-entry guard**: resuming an already-running normal
   session is not blocked — the same session can be written by two processes at once
   (measured loss, 2026-08-20). The "already running … split-brain" refusal belongs to
-  claude remote-control, not to resume.
+  claude remote-control, not to resume. This is about a session open in a window; a
+  running background copy is attached instead on 2.1.311 (above). Resuming a session
+  that is open in another window was not measured again on 2.1.311.
 - **On a cwd change CC relocates the transcript wholesale**:
   `relocateSessionTranscript` → `fs.rename` (with `{replace:true}` in newer storage);
   the old file keeps a `relocated` record (§2). On 2.1.238 **an existing target was
@@ -976,7 +1015,8 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   `--tools ''`, so no Agent tool exists there to fork.
 
 Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading; the two
-background-move bullets as dated above. Koloft dependents: the fork gate and session_id
+background-move bullets and the `/fork` copy probe (2026-10-27, CC 2.1.311) as dated
+above. Koloft dependents: the fork gate and session_id
 extraction in `src/main/hooks.ts`'s injected script (marked `CC§5`);
 `src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
 never wrote a transcript.
@@ -1895,7 +1935,11 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli' | 'sdk-cli'`,
   `nameSource: 'derived' | 'user' | 'auto'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
-  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them.
+  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. A daemon-hosted
+  session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
+- **A `/fork` copy writes one too, with `kind: "bg"` and a `jobId`** (2026-10-27, CC
+  2.1.311, §5), so a live entry for an id can belong to a background copy that
+  `claude --resume` would attach to rather than run twice.
 - **A `claude -p` run writes an entry too** (`kind: "interactive"`, `entrypoint:
   "sdk-cli"`, busy then idle, removed on exit). For `claude -p --resume <id>` of a
   `/rename`d session, on 2.1.309 the entry takes the session's title with `nameSource:
