@@ -30,12 +30,15 @@ function cwdFromBody(body: string, hostname: string): string | undefined {
 
 export class OscBodies {
   private carry = ''
+  private carryIsHeadOnly = false
 
-  constructor(private readonly carryMax: number = OSC_CARRY_MAX) {}
+  constructor(private readonly keepHeadOfLongBodies = false) {}
 
   push(chunk: string): string[] {
     const s = this.carry + chunk
+    const headOnly = this.carryIsHeadOnly
     this.carry = ''
+    this.carryIsHeadOnly = false
     const found: string[] = []
     let i = 0
     while (i < s.length) {
@@ -57,7 +60,7 @@ export class OscBodies {
           break
         }
         if (c === ESC) {
-          if (j + 1 >= s.length) return this.hold(s.slice(esc), found)
+          if (j + 1 >= s.length) return this.hold(s.slice(esc), found, headOnly && esc === 0)
           if (s[j + 1] === '\\') {
             end = j
             termLen = 2
@@ -70,16 +73,20 @@ export class OscBodies {
           i = j
           continue
         }
-        return this.hold(s.slice(esc), found)
+        return this.hold(s.slice(esc), found, headOnly && esc === 0)
       }
-      found.push(s.slice(esc + 2, end))
+      found.push(s.slice(esc + 2, headOnly && esc === 0 ? OSC_CARRY_MAX : end))
       i = end + termLen
     }
     return found
   }
 
-  private hold(partial: string, found: string[]): string[] {
-    this.carry = partial.length <= this.carryMax ? partial : ''
+  private hold(partial: string, found: string[], headOnly = false): string[] {
+    if (!headOnly && partial.length <= OSC_CARRY_MAX) this.carry = partial
+    else if (this.keepHeadOfLongBodies) {
+      this.carry = partial.slice(0, OSC_CARRY_MAX) + (partial.endsWith(ESC) ? ESC : '')
+      this.carryIsHeadOnly = true
+    }
     return found
   }
 }

@@ -30,11 +30,9 @@ function fields(body: string): Record<string, string> {
   )
 }
 
-// AGY§10
-const DONE_FRAME_CARRIES_THE_WHOLE_REPLY_MAX = 256 * 1024
-
 export class ProgramStatusParser {
-  private bodies = new OscBodies(DONE_FRAME_CARRIES_THE_WHOLE_REPLY_MAX)
+  // AGY§10
+  private bodies = new OscBodies(true)
 
   push(chunk: string): { asked: boolean; states: ProgramStatus[] } {
     let asked = false
