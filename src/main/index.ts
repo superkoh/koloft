@@ -1984,8 +1984,10 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 let probeAllInFlight: Promise<AccountView[]> | null = null
 let probeOnceTheRendererIsUp: LaunchUsageProbe = null
 
-function probeSignInFolderAccounts(): Promise<unknown> {
-  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()])
+function probeSignInFolderAccounts(): Promise<void> {
+  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
+    () => undefined
+  )
 }
 
 function probeAllForPanel(): Promise<AccountView[]> {
@@ -2017,6 +2019,11 @@ function probeAllForPanel(): Promise<AccountView[]> {
   }
   void round.then(release, release)
   return round
+}
+
+const LAUNCH_PROBES: Record<NonNullable<LaunchUsageProbe>, () => Promise<unknown>> = {
+  everyAccount: probeAllForPanel,
+  signInFoldersOnly: probeSignInFolderAccounts
 }
 
 async function addAccount(
@@ -2373,12 +2380,17 @@ async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
   return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
 
+let agyProbeRound: Promise<void> | null = null
+
 function probeAgyAccounts(): Promise<void> {
-  return Promise.all(
+  agyProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'agy-home' && a.enabled)
       .map((a) => probeAgyAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    agyProbeRound = null
+  })
+  return agyProbeRound
 }
 
 // AGY§6
@@ -5274,10 +5286,10 @@ function registerIpc(): void {
   ipcMain.handle(CH.attention.list, () => attention.list())
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
-    const launchProbe = probeOnceTheRendererIsUp
-    probeOnceTheRendererIsUp = null
-    if (launchProbe === 'everyAccount') void probeAllForPanel().catch(() => {})
-    if (launchProbe === 'signInFoldersOnly') void probeSignInFolderAccounts().catch(() => {})
+    if (probeOnceTheRendererIsUp) {
+      void LAUNCH_PROBES[probeOnceTheRendererIsUp]().catch(() => {})
+      probeOnceTheRendererIsUp = null
+    }
     const activeAsleep = restoreOpenTabs()
     cronRunner?.onRendererReady()
     const active = activeAsleep ?? activeTabBeforeReload

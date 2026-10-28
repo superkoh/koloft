@@ -425,7 +425,7 @@ describe('launchUsageProbe — what opening Koloft reads before any tab starts',
       expect(launchUsageProbe([meta({ kind })])).toBe('signInFoldersOnly')
   })
 
-  it('never reads a metered Claude account on launch, as that read is a billed request', () => {
+  it('reads a metered Claude account on launch only beside a subscription account, as that read is a billed request', () => {
     expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'codex-home' })])).toBe(
       'signInFoldersOnly'
     )
