@@ -67,15 +67,31 @@ describe('store: claude → shell revert, only after a session actually bound', 
     expect(t.sessionId).toBeUndefined()
   })
 
-  it('keeps a tab whose agent exited unexpectedly as that agent, dead, when its session leaves the list', () => {
+  it('keeps a tab whose agent exited unexpectedly as that agent, dead, with the row and workspace it had, when its session leaves the list', () => {
     const s = useStore.getState()
+    const row = { id: 'sid-end1', title: 'My run', worktree: 'main', cwd: '/w', running: true }
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        {
+          workspace: { path: '/w', missing: false, isGit: true, hasHistory: true },
+          rows: [{ ...row, invalidCwd: false, mtime: 0, backendId: 'codex', host: 'local' }]
+        }
+      ]
+    })
     s.addTab({ id: 'end1', kind: 'codex', title: 'My run', cwd: '/w', alive: true })
     s.setSessions([session('end1')])
-    s.keepEndedTab('end1')
+    s.keepEndedTab('end1', 'exited (code 1)')
     s.setTabAlive('end1', true)
     s.setSessions([])
     const t = useStore.getState().tabs.find((x) => x.id === 'end1')!
-    expect(t).toMatchObject({ kind: 'codex', title: 'My run', alive: false, ended: true })
+    expect(t).toMatchObject({
+      kind: 'codex',
+      title: 'My run',
+      alive: false,
+      sessionId: 'sid-end1',
+      ended: { note: 'exited (code 1)', wsPath: '/w', row }
+    })
   })
 
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {

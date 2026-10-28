@@ -15,7 +15,9 @@ import {
   type LoginProgress,
   type LeftoverProcess,
   type MachineState,
+  type CreateTabOptions,
   type SessionInfo,
+  type SessionRow,
   type TabKind,
   type Settings,
   type ReleaseNotes,
@@ -31,7 +33,7 @@ import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot, workspaceOfRow } from './sessionRows'
-import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerRows'
+import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -64,7 +66,13 @@ export interface Tab {
   asleep?: true
   ghost?: string
   wakeOverdue?: true
-  ended?: true
+  ended?: TabEnded
+}
+
+export interface TabEnded {
+  note: string
+  row?: SessionRow
+  wsPath?: string
 }
 
 export interface OpenFile {
@@ -180,7 +188,7 @@ interface AppState {
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
-  keepEndedTab: (id: string) => void
+  keepEndedTab: (id: string, note: string) => void
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
@@ -275,9 +283,11 @@ const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
 const restarting = new Set<string>()
 const restartedPtys = new Set<string>()
+const launchOptions = new Map<string, CreateTabOptions>()
 const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
+const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -304,6 +314,10 @@ function killTerminalsOf(tabId: string): string[] {
     window.api.terminal.kill(id)
   }
   return ids
+}
+
+export function rememberLaunch(tabId: string, opts: CreateTabOptions): void {
+  launchOptions.set(tabId, opts)
 }
 
 export function tabEverBound(tabId: string): boolean {
@@ -363,7 +377,7 @@ function panelStateMoved(
   }
 }
 
-function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
+function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   const parked = workbenchParked.get(oldId)
   if (parked) {
     workbenchParked.delete(oldId)
@@ -371,9 +385,12 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
   }
   rekeyOwner(oldId, newId)
   window.api.tabs.moved(oldId, newId)
+  const launch = launchOptions.get(oldId)
+  launchOptions.delete(oldId)
+  if (launch) launchOptions.set(newId, launch)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
-  lastSessionId.set(newId, sessionId)
+  if (sessionId) lastSessionId.set(newId, sessionId)
 }
 
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
@@ -655,6 +672,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       everBoundSession.delete(id)
       lastSessionId.delete(id)
+      launchOptions.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
       const openFiles = { ...s.openFiles }
@@ -730,12 +748,20 @@ export const useStore = create<AppState>((set, get) => ({
       if (!cur || cur.alive === alive || cur.asleep || cur.ended) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
-  keepEndedTab: (id) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) =>
-        t.id === id ? { ...t, alive: false, ended: true, resuming: undefined } : t
-      )
-    })),
+  keepEndedTab: (id, note) =>
+    set((s) => {
+      const sessionId = boundSessionId(s, id) ?? lastSessionId.get(id)
+      const at = everyWorkspaceRows(s)
+        .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
+        .find(({ row }) => row.id === id || row.id === sessionId)
+      return {
+        tabs: s.tabs.map((t) =>
+          t.id === id
+            ? { ...t, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
+            : t
+        )
+      }
+    }),
   setTabAsleep: (id) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -851,6 +877,27 @@ export const useStore = create<AppState>((set, get) => ({
         .finally(() => restarting.delete(oldId))
     }
     if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
+    const launch = launchOptions.get(oldId)
+    if (tab.ended && launch) {
+      restarting.add(oldId)
+      void window.api.terminal
+        .create(launch)
+        .then((res) => {
+          if (!res.ok) return get().showToast(RELAUNCH_REFUSED_NOTICE)
+          if (!get().tabs.some((x) => x.id === oldId)) return window.api.terminal.kill(res.id)
+          set((s) => ({
+            tabs: s.tabs.map((x) =>
+              x.id === oldId ? { ...x, id: res.id, cwd: res.cwd, alive: true, ended: undefined } : x
+            ),
+            activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
+            ...panelStateMoved(s, oldId, res.id)
+          }))
+          tabStateMoved(oldId, res.id)
+        })
+        .catch((e) => get().showToast(ipcErrorText(e)))
+        .finally(() => restarting.delete(oldId))
+      return
+    }
     restarting.add(oldId)
     void window.api.sessions
       .list()
