@@ -6,7 +6,7 @@
     <title>Several accounts, one pool — Koloft</title>
     <meta
       name="description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/accounts/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Several accounts, one pool — Koloft" />
     <meta
       property="og:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta property="og:url" content="__SITE_URL__/accounts/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
     <meta
       name="twitter:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="stylesheet" href="../style.css" />
@@ -172,15 +172,18 @@
             budget)
           </li>
           <li>
-            Claude sessions you open one after another spread over your accounts, instead of piling
-            onto one (Codex sessions do not spread this way)
+            sessions you open one after another spread over your accounts, instead of piling onto
+            one: an account that already has a session open and not idle, or one still starting, is
+            passed over unless it has clearly more room left. Claude, Codex, Muse and Antigravity
+            sessions all pick this way
           </li>
-          <li>if no account can be read, Koloft picks the next one in order</li>
+          <li>if no Claude account can be read, Koloft picks the next one in order</li>
           <li>
             a session that starts again (you click its row, restart it, or quit and reopen Koloft)
             stays on the account it ran on, whatever the agent. It moves to another account only
             when one of that account's limits (5 hours, 7 days) is past 95%, or that account is
-            being told to wait (rate-limited). An API key or custom endpoint is not kept this way.
+            being told to wait (rate-limited). A Claude API key or custom endpoint is not kept this
+            way.
           </li>
         </ul>
 
@@ -224,9 +227,12 @@
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. If this
           Mac has no <code>codex</code> yet, the dialog says so and the same tab runs its official
           installer first, then signs in. New Codex sessions start on the least-used Codex account,
-          and skip one that has hit its limit while another is free. Settings and the
-          <code>Account usage</code> panel show each account's use for each limit Codex reports
-          (such as 5 hours and a week), its credits, and the resets it has saved, like
+          and skip one that has hit its limit while another is free. An account with no reading yet
+          (one just added, say) is used only when no account with a reading has room. When every
+          account has a reading and all are at their limit, the session runs on the one that resets
+          first, and a message says so. Settings and the <code>Account usage</code> panel show each
+          account's use for each limit Codex reports (such as 5 hours and a week), its credits, and
+          the resets it has saved, like
           <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
@@ -244,8 +250,8 @@
           account signed in with Meta shows how much of its <code>5h</code> and
           <code>7d</code> allowance is used, in Settings and in the
           <code>Account usage</code> panel; an API key account just says <code>Signed in</code>. New
-          Muse sessions pick their account the way Codex sessions do: the least-used one, taking
-          turns when none has been read.
+          Muse sessions pick their account the way Codex sessions do; an API key account counts as
+          one with no reading.
         </p>
 
         <h2>Antigravity</h2>
@@ -259,11 +265,11 @@
           shared by every account. Or <code>Paste Gemini API key</code>: the key goes into your
           Keychain and is handed to <code>agy</code> when a session starts. An account signed in
           with Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used,
-          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions take
-          turns between your accounts. The session runs in agy's full-screen mode, which does not
-          flicker, unless your own agy settings file names another mode. Switching to the other
-          mode, inline, in agy's <code>/config</code> only removes that setting, so it lasts until
-          the next launch.
+          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions pick
+          their account the way Codex sessions do; an API key account counts as one with no reading.
+          The session runs in agy's full-screen mode, which does not flicker, unless your own agy
+          settings file names another mode. Switching to the other mode, inline, in agy's
+          <code>/config</code> only removes that setting, so it lasts until the next launch.
         </p>
 
         <h2 id="usage">What your sessions cost</h2>
