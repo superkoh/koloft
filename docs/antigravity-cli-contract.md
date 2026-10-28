@@ -1194,3 +1194,40 @@ fake Gemini server with MCP servers that logged their start.
   and `<A>/.mcp.json` were not. In `-p` this held with A out of `trustedWorkspaces`.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).
+
+## §31 Skills
+
+2026-10-27, agy 1.4.8 (build `5447777392656384`, the manifest's `linux_arm64.json`),
+Docker `--network none`, fake Gemini server, `--gemini_dir=<gd>`, a test skill
+`<name>/SKILL.md` (frontmatter `name`, `description`; a codeword in the body) put in one
+folder at a time. `agy --gemini_dir=<gd> -p /skills --output-format json` lists them
+with no model call (`command.data.skills[{name, description, path, builtin,
+model_invocable}]`); `agy -p "hi"` showed what the model gets.
+
+- **Loaded from** `<gd>/config/skills/`, `<gd>/antigravity-cli/skills/`,
+  `<gd>/skills/` and `<workspace>/.agents/skills/` (also `_agents/skills`,
+  `.agent/skills`). Not from `<workspace>/.gemini/skills/`, `~/.agents/skills/`, or
+  `~/.gemini/config/skills` when `--gemini_dir` points elsewhere.
+  `<gd>/antigravity-cli/builtin/skills/` is wiped and rebuilt at start. No flag or
+  environment variable adds a folder; a `skills.json` (`{"entries":[{"path":…}]}`) in
+  `<gd>/config/` can name one.
+- **The model gets a list**, in the system instruction's `<skills>` block, one line each:
+  `- <name> (<absolute path to SKILL.md>): <description>`, with "If a skill seems
+  relevant to your current task, you MUST read its `SKILL.md`". The body is not sent;
+  the model reads the file with `read_file`, and did, in `<gd>/config/skills/`,
+  `<gd>/antigravity-cli/skills/` and `<workspace>/.agents/skills/`. A user typing
+  `/<name>` gets the body sent inline.
+- **A symlinked skill is listed but cannot be read**: a linked skill folder, a linked
+  `skills` folder and a linked `SKILL.md` were all listed, and every `read_file` of one
+  was refused in `-p` ("a tool required the "read_file" permission that headless mode
+  cannot prompt for, so it was auto-denied") — agy checks where the link points, and
+  that was outside `<gd>` and the workspace. A real file inside
+  `<gd>/antigravity-cli/skills/` was read. `<gd>/skills/` and a `skills.json` folder
+  outside `<gd>` were refused the same way.
+- agy's own changelog says `agy plugin validate` warns when a skill's body is over 24
+  KB; what agy itself does with a longer one was not probed.
+- The macOS build 1.4.8 (same build number, `darwin_arm64.json`) in a tart VM on
+  macOS 26.6.2, same day and method: `-p /skills` listed
+  `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
+  its line, and `read_file` of it succeeded.
+- Not probed: what the interactive TUI does where `-p` refused a read.

@@ -6,7 +6,7 @@ import { shq } from '@shared/shellQuote'
 import { REMOTE_ENV_LINES, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 
 export const CLAUDE_AUTH_ENV_VARS = [
@@ -53,6 +53,13 @@ export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
 export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
+
+export function koloftSkillLine(skillsDir: string, machineDir: string | undefined): string {
+  const dir = `${skillsDir}/${KOLOFT_SKILL}`
+  if (!machineDir) return `rm -rf "${dir}"`
+  const copy = `"${dir}/SKILL.md.k$$"`
+  return `mkdir -p "${dir}" && cp "${machineDir}/${AGENT_PLUGIN_DIR}${KOLOFT_SKILL_FILE}" ${copy} && mv -f ${copy} "${dir}/SKILL.md"`
+}
 
 export function buildMachinePackage(
   base: string,

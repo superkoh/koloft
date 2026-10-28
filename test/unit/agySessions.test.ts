@@ -399,6 +399,25 @@ describe('AgySessions launch', () => {
     expect(after.permissions).toBeUndefined()
   })
 
+  // AGY§31
+  it("puts the koloft skill as a real file in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on", async () => {
+    const skillHere = (): string =>
+      path.join(picked!.home, 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+    agentTools = true
+    await launch()
+    expect(fs.lstatSync(skillHere()).isFile()).toBe(true)
+    expect(fs.readFileSync(skillHere(), 'utf8')).toMatch(/^---\nname: koloft\n/)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const fromPackage = '/agent-plugin/skills/koloft/SKILL.md'
+    expect(machine.launches[0].program.run).toContain(fromPackage)
+    agentTools = false
+    await launch()
+    expect(fs.existsSync(skillHere())).toBe(false)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    expect(machine.launches[1].program.run).not.toContain(fromPackage)
+    expect(machine.launches[1].program.run).toContain('rm -rf "$A/antigravity-cli/skills/koloft"')
+  })
+
   // AGY§9 AGY§24
   it('refuses to resume a conversation another agy process holds open, and resumes one whose lock nobody holds', async () => {
     storedMember(A)

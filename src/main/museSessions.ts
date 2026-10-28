@@ -684,8 +684,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    if (env.XDG_CONFIG_HOME)
-      placeKoloftSkill(env.XDG_CONFIG_HOME, agent ? agentSkillMarkdown() : undefined)
+    if (env.XDG_CONFIG_HOME) placeKoloftSkill(env.XDG_CONFIG_HOME, !!agent)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
       ...(role ? [role] : [])
