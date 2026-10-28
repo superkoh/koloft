@@ -59,6 +59,7 @@ import {
   pickerDialog,
   processAlive,
   readCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
   settingsOnDisk,
@@ -1968,6 +1969,45 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
       await sendFailingChecks(page)
       await expectOnePromptFromTheChecks(() => codexPrompts(env))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting it there turns it off again', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const now = Math.floor(Date.now() / 1000)
+      const id = randomUUID()
+      const rollout = path.join(env.launchEnv.CODEX_HOME!, 'sessions', `${id}.json`)
+      fs.writeFileSync(
+        rollout,
+        JSON.stringify({
+          id,
+          cwd: fs.realpathSync(env.workspaces.a),
+          path: null,
+          name: null,
+          preview: 'started in a plain terminal',
+          createdAt: now,
+          updatedAt: now,
+          cliVersion: '0.161.0',
+          source: 'cli',
+          threadSource: 'user',
+          ephemeral: false,
+          status: { type: 'notLoaded' },
+          turns: []
+        })
+      )
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(true)
+      fs.unlinkSync(rollout)
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

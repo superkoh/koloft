@@ -25,6 +25,7 @@ import {
   openMenu,
   processAlive,
   readAllCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
@@ -797,6 +798,42 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Antigravity', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8
+  test('an agy conversation started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting its .db there turns it off again', async ({
+    env
+  }) => {
+    installAgy(env)
+    fs.mkdirSync(ownersApp(env), { recursive: true })
+    fs.writeFileSync(
+      path.join(ownersApp(env), 'settings.json'),
+      JSON.stringify({
+        trustedWorkspaces: [fs.realpathSync(env.workspaces.a)],
+        modelProvider: 'gemini'
+      })
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const printed = execFileSync(
+        process.execPath,
+        [FAKE_AGY, '-p', 'started in a plain terminal', '--output-format', 'json'],
+        {
+          cwd: env.workspaces.a,
+          env: { ...env.launchEnv, PWD: env.workspaces.a, GEMINI_API_KEY: 'fake-gemini-key' }
+        }
+      ).toString()
+      const id = (JSON.parse(printed) as { conversation_id: string }).conversation_id
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(true)
+      fs.unlinkSync(path.join(ownersApp(env), 'conversations', `${id}.db`))
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

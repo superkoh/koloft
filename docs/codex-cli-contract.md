@@ -1083,6 +1083,17 @@ gone. `thread/archive` on another moved it from the `archived: false` list to th
 dropped it from both. Every page was read (`nextCursor` to the end), so a thread missing
 from a finished listing is gone, not just old.
 
+**A new session's rollout appears at its first turn, and another app-server lists it at
+once.** Checked 2026-10-27 with codex-cli 0.162.0, a Node client on two `codex
+app-server`s in one throwaway `CODEX_HOME` (no login, the model provider pointed at a
+closed local port): `thread/start` wrote nothing under `sessions/`; `turn/start` created
+`sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` (and the day folders) within 2 ms, even
+though the turn then failed; the second app-server's `thread/list` held the thread
+0.25 s later, and dropped it 0.3 s after the file was deleted. Later writes to the
+rollout touch only that file. So a watch on the default home's `sessions/` that lists
+when a rollout file appears or goes sees every new or deleted session, and a turn
+appended to a known rollout needs no listing.
+
 **But "ok" above means no error, not the turns: a home reads a thread's turns only
 once its own sqlite has loaded that thread.** Checked 2026-10-11 on Codex CLI 0.162.1
 and 0.161.0 alike (so not a change of 0.162): in the layout Koloft makes (a default

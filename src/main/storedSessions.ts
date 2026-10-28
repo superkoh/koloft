@@ -526,6 +526,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return this.refreshing
   }
 
+  async refreshHistoryStartedNow(): Promise<void> {
+    await this.refreshing
+    return this.refreshHistory()
+  }
+
   private async readHistory(): Promise<void> {
     if (this.shuttingDown) return
     if (!this.binary) {

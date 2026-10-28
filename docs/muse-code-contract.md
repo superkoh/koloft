@@ -174,6 +174,18 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   other sessions stayed. Muse has no way of its own to delete or archive a session: no
   such subcommand in `muse --help`, and no such `session/*` method in `muse schema
   generate-ts`.
+- What changes under `museHome/sessions/` while a new session starts (2026-10-27, Muse
+  1.4.13 in Docker, `muse exec --provider echo` with a recursive `fs.watch` on that
+  folder and a `muse serve` client listing every 250 ms): the session's folder and its
+  `session.jsonl` appeared 0.3 s after the start; `session/list` held the session 2.1 s
+  after the start. The same start also wrote, much of it going again within the run:
+  `.session.lock`, `.session.jsonl.permission-init`, `cli-<uuid>.log`, `cron.db` and
+  `cron.db-journal`, an `approval-review/` folder and
+  `subagent/<child>/{.session.lock,session.jsonl}` inside the session's folder, plus
+  `.msp-view-g6/<sessionId>/` (snapshot, `HEAD.json` and `.tmp` files rewritten many
+  times) and `.msp-maintenance-owner.lock` at the top. Removing the session's folder
+  reported only the folder and its `.session.lock` on Linux. So only the top-level
+  `session.jsonl` appearing, or a session or date folder going, says the list changed.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits
