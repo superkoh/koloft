@@ -3659,6 +3659,8 @@ app.on('before-quit', (e) => {
   resetQuitGuard()
 })
 
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
+
 function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
   const dirs = playwrightBin ? `${ptyMgr.shimDir}:${playwrightBin}` : ptyMgr.shimDir
