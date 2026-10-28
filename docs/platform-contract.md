@@ -1189,6 +1189,13 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
   Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
   child in the probe.
+- **`kill()` is one SIGHUP and nothing after it.** A pty program that ignores SIGHUP
+  keeps running with its terminal gone. Measured 2026-10-28 (Electron 43.8.1, node-pty
+  1.1.0, macOS 27.0) in the e2e app: a Workbench shell that `exec`ed a script with
+  `trap '' HUP` was still alive 20 s after its tab closed. The pty's pid leads its own
+  process group, so `kill -9 -<pid>` reaches it and whatever it started in that group;
+  a job an interactive shell put in a group of its own is not in it. macOS `pgrep` has
+  no session-id filter (`-s`), so the whole session cannot be listed that way.
 
 ## §30 git
 

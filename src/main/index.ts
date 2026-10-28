@@ -2355,7 +2355,7 @@ async function probeMuseAccount(name: string): Promise<void> {
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
       fs.mkdirSync(dir, { recursive: true })
-      const limits = await readMuseQuota(serve.binary, serve.env, dir)
+      const limits = await readMuseQuota(serve.binary, serve.env, dir, ptyMgr)
       usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
     }
   } catch {
