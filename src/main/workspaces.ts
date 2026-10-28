@@ -83,16 +83,18 @@ export interface LiveSession {
   relocated?: boolean
 }
 
-export interface UsedFolder {
-  cwd: string
-  sessions: number
-  mtime: number
+function addUse(into: Map<string, DiscoveredFolder>, at: string, use: DiscoveredFolder): void {
+  const prev = into.get(at)
+  if (prev) {
+    prev.sessions += use.sessions
+    prev.mtime = Math.max(prev.mtime, use.mtime)
+  } else into.set(at, { path: at, sessions: use.sessions, mtime: use.mtime })
 }
 
 export interface WorkspaceManagerDeps {
   additionalRows?(workspacePath: string): (BackendSessionRow & { backendId: BackendId })[]
   additionalMembers?(): Set<string>
-  additionalFolders?(): Promise<UsedFolder[]>
+  additionalFolders?(): Promise<DiscoveredFolder[]>
   projectsRoot: string
   loadLayout(): LayoutV6
   saveLayout(layout: LayoutV6): void
@@ -366,37 +368,38 @@ export class WorkspaceManager {
 
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
+    const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
+    const used = await Promise.all([
+      this.claudeUsedFolders(),
+      this.deps.additionalFolders?.() ?? []
+    ])
+    const byCwd = new Map<string, DiscoveredFolder>()
+    for (const use of used.flat()) {
+      const wt = use.path.indexOf(wtMark)
+      addUse(byCwd, wt === -1 ? use.path : use.path.slice(0, wt), use)
+    }
+    const there = await Promise.all([...byCwd.keys()].map((cwd) => dirExists(cwd)))
     const byRoot = new Map<string, DiscoveredFolder>()
-    const others = this.deps.additionalFolders?.() ?? Promise.resolve([])
-    const used = [...(await this.claudeUsedFolders()), ...(await others)]
-    for (const { cwd, sessions, mtime } of used) {
-      if (!(await dirExists(cwd))) continue
-      const root = this.deps.projectInfo(cwd).root
+    for (const [i, use] of [...byCwd.values()].entries()) {
+      if (!there[i]) continue
+      const root = this.deps.projectInfo(use.path).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
-      const prev = byRoot.get(root)
-      if (prev) {
-        prev.sessions += sessions
-        prev.mtime = Math.max(prev.mtime, mtime)
-      } else {
-        byRoot.set(root, { path: root, sessions, mtime })
-      }
+      addUse(byRoot, root, use)
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
   }
 
   // CC§2
-  private async claudeUsedFolders(): Promise<UsedFolder[]> {
+  private async claudeUsedFolders(): Promise<DiscoveredFolder[]> {
     const stats = new Map<string, { size: number; mtimeMs: number }>()
-    const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
     const projects = this.deps.projectsRoot
-    const used: UsedFolder[] = []
+    const used: DiscoveredFolder[] = []
     for (const slug of await this.listProjectSlugs(projects)) {
       const files = await this.listJsonl(projects, slug, stats)
       const cwd = await this.readFirstCwd(projects, slug, files, stats)
       if (!cwd) continue
-      const wt = cwd.indexOf(wtMark)
       used.push({
-        cwd: wt === -1 ? cwd : cwd.slice(0, wt),
+        path: cwd,
         sessions: files.length,
         mtime: Math.max(...files.map((f) => f.mtime))
       })

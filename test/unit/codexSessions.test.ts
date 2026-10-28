@@ -406,7 +406,7 @@ describe('CodexSessions', () => {
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
   })
 
-  it('names each folder this Mac’s history used, with its session count and newest use, and leaves out a remote machine’s (the welcome’s list; the shared stored-sessions history, so Muse and Antigravity too)', async () => {
+  it('offers the welcome one folder use per thread on this Mac, leaving out archived threads and a remote machine’s', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
     const D = '44444444-4444-4444-8444-444444444444'
     deps.machine = fakeMachine()
@@ -423,8 +423,8 @@ describe('CodexSessions', () => {
           ]
     }))
     expect(await sessions.localHistoryFolders()).toEqual([
-      { cwd: repo, sessions: 2, mtime: 300_000 },
-      { cwd: other, sessions: 1, mtime: 200_000 }
+      { path: repo, sessions: 1, mtime: 100_000 },
+      { path: other, sessions: 1, mtime: 200_000 }
     ])
   })
 

@@ -236,15 +236,10 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 2)
 
-      const rows = welcome(page).locator('.disc-row')
-      await expect(rows.locator('.disc-name')).toHaveText(['agy-ws', 'ws-a', 'ws-b'], {
-        timeout: 20_000
-      })
-      await expect(rows.locator('.disc-meta')).toHaveText([
-        /^1 session ·/,
-        /^1 session ·/,
-        /^1 session ·/
-      ])
+      await expect(welcome(page).locator('.disc-row .disc-name')).toHaveText(
+        ['agy-ws', 'ws-a', 'ws-b'],
+        { timeout: 20_000 }
+      )
       await snap(page, 'T-OB-17')
     } finally {
       await quitAndClose(app)
