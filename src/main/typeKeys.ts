@@ -11,9 +11,11 @@ export async function typeKeys(write: (data: string) => void, keys: string[]): P
   }
 }
 
+const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
+
 // CC§18 CODEX§23
 export function bracketedPaste(text: string): string {
-  return `\x1b[200~${text}\x1b[201~`
+  return `\x1b[200~${text.replace(CONTROLS_THAT_COULD_END_A_PASTE, '')}\x1b[201~`
 }
 
 // CC§18

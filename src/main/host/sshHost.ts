@@ -578,7 +578,7 @@ printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%
 
 const SAVE_PICK = `d="$HOME/.koloft/picks"
 mkdir -p "$d" && cd "$d" || exit 1
-find . -name '*.png' -mtime +0 -exec rm -f {} + 2>/dev/null
+find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
 cat > "$1.part" && mv -f "$1.part" "$1" && printf '%s/%s' "$(pwd -P)" "$1"`
 
 const RESIZE_SETTLE_MS = 200

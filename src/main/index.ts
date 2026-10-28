@@ -340,7 +340,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
-import { pickElement, pickText, savePickHere, stopPick } from './elementPick'
+import { pickElement, pickText, stopPick } from './elementPick'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -1223,6 +1223,16 @@ let discordConnected = false
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+
+async function savePickOnThisMac(png: Buffer): Promise<string> {
+  const dir = path.join(app.getPath('userData'), 'picks')
+  await fs.promises.mkdir(dir, { recursive: true })
+  pruneStale(dir, PICKS_KEPT_MS, true)
+  const file = path.join(dir, `${crypto.randomUUID()}.png`)
+  await fs.promises.writeFile(file, png)
+  return file
+}
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
 // CODEX§3 CODEX§20 MUSE§5
@@ -5739,15 +5749,14 @@ function registerIpc(): void {
     const guest = webContents.fromId(id)
     if (!guest || guest.getType() !== 'webview') return null
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
-    const picked = await pickElement(guest).catch(() => null)
+    const picked = await pickElement(guest)
     if (!picked) return null
-    const name = `${tabId}-${Date.now()}.png`
     const machine = machineOfTab(tabId)
     const picture = picked.png
       ? await (
           machine
-            ? hosts.machine(machine).savePick(name, picked.png)
-            : savePickHere(path.join(app.getPath('userData'), 'picks'), name, picked.png)
+            ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
+            : savePickOnThisMac(picked.png)
         ).catch(() => null)
       : null
     return pickText(picked, picture)

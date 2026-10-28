@@ -740,6 +740,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
     it drop its own frame for that iframe (measured: `frame.isDetached()` came back
     undefined, the frame gone from `page.frames()`); kept from the client, its frame
     still evaluated afterwards.
+  - The guest can attach to its own target the same way (`Target.attachToTarget
+    {targetId: <its own id>, flatten: true}` from its root session): inspect mode, DOM and
+    CSS work in that session (measured the same day, e2e BP-01). Iframes attached from
+    that session kept a Playwright client's own iframe frame alive (BP-08), which the
+    root-session attach above did not; that their announcements land on that session
+    rather than the root one is inferred from this, not read off the wire.
   - `Page.captureScreenshot` from the guest's root session draws the iframe's area
     transparent (a clip on a red button inside it came back all 0,0,0,0), also with
     `captureBeyondViewport`. The guest's own `webContents.capturePage(rect)`, with

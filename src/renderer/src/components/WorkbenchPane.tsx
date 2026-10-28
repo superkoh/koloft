@@ -623,13 +623,16 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
   const activeGuestId = useCallback(
-    () => guestId(activeWebId ? els.current.get(activeWebId) : undefined),
-    [activeWebId]
+    () => (activeWebId ? guestIdOf(activeWebId) : 0),
+    [activeWebId, guestIdOf]
   )
+  const pickBlocked =
+    gh.sendBlocked ?? (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
   const pick = useElementPick(
     session?.tabId ?? null,
     activeGuestId,
     visible ? activeWebId : null,
+    pickBlocked,
     onReturnFocus
   )
 
@@ -1331,10 +1334,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             if (activeTab?.url) onExternalOpen(activeTab.url)
           }}
           picking={pick.picking}
-          pickBlocked={
-            gh.sendBlocked ??
-            (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
-          }
+          pickBlocked={pickBlocked}
           onPick={pick.togglePick}
           actions={
             <>

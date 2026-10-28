@@ -1,9 +1,11 @@
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
 import { describe, it, expect } from 'vitest'
-import { cssValue, elementLabel, pickText, savePickHere } from '../../src/main/elementPick'
-import { hiddenFromClients, holdDebugger, openOwnSession } from '../../src/main/guestDebugger'
+import { cssValue, elementLabel, pickText } from '../../src/main/elementPick'
+import {
+  closeOwnSession,
+  hiddenFromClients,
+  holdDebugger,
+  openOwnSession
+} from '../../src/main/guestDebugger'
 
 const picked = {
   url: 'http://127.0.0.1:5173/cart',
@@ -96,20 +98,6 @@ describe('the element label', () => {
   })
 })
 
-describe('the pick picture saved on this Mac', () => {
-  it('is written under the folder and a picture older than a day is deleted', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picks-'))
-    const old = path.join(dir, 'old.png')
-    fs.writeFileSync(old, 'x')
-    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-    fs.utimesSync(old, twoDaysAgo, twoDaysAgo)
-    const file = await savePickHere(dir, 'tab-1.png', Buffer.from('png'))
-    expect(file).toBe(path.join(dir, 'tab-1.png'))
-    expect(fs.readFileSync(file, 'utf8')).toBe('png')
-    expect(fs.existsSync(old)).toBe(false)
-  })
-})
-
 function fakeGuest(): {
   wc: Parameters<typeof holdDebugger>[0]
   attaches: () => number
@@ -161,6 +149,26 @@ describe('a session Koloft opens on a guest for itself', () => {
         targetInfo: { targetId: 'FRAME-1' }
       })
     ).toBe(false)
+  })
+
+  it('is forgotten once its detach is announced, and that announcement still reaches no client', async () => {
+    const listeners = new Set<(...a: unknown[]) => void>()
+    const wc = {
+      debugger: {
+        sendCommand: async (method: string) =>
+          method === 'Target.attachToTarget' ? { sessionId: 'S-9' } : {},
+        on: (_: string, f: (...a: unknown[]) => void) => listeners.add(f),
+        off: (_: string, f: (...a: unknown[]) => void) => listeners.delete(f)
+      }
+    } as unknown as Parameters<typeof openOwnSession>[0]
+    await openOwnSession(wc, 'PAGE-9')
+    await closeOwnSession(wc, 'S-9')
+    expect(hiddenFromClients('Overlay.inspectNodeRequested', {}, 'S-9')).toBe(true)
+    const announced = ['Target.detachedFromTarget', { sessionId: 'S-9' }] as const
+    for (const f of [...listeners]) f({}, ...announced)
+    expect(hiddenFromClients(...announced)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(hiddenFromClients('Overlay.inspectNodeRequested', {}, 'S-9')).toBe(false)
   })
 })
 

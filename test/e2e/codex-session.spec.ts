@@ -7,10 +7,12 @@ import {
   BROWSER,
   PICKED_LABEL,
   PICK_PAGE,
+  isPng,
   newWebTab,
   openBrowser,
   openPickPage,
-  pickIntoSession
+  pickIntoSession,
+  picturePath
 } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
 import {
@@ -1980,9 +1982,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       const [prompt] = fromPick()
       expect(prompt).toContain('Element picked in the Workbench browser')
       expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
-      const picture = /^Picture: (.+)$/m.exec(prompt)?.[1] ?? ''
+      const picture = picturePath(prompt)
       expect(picture.startsWith(path.join(env.userData, 'picks'))).toBe(true)
-      expect(fs.existsSync(picture)).toBe(true)
+      expect(isPng(picture)).toBe(true)
     } finally {
       await quitAndClose(app)
       await server.close()

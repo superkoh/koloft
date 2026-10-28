@@ -7,11 +7,13 @@ import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
   addressValue,
   BROWSER,
+  isPng,
   newWebTab,
   openPickPage,
   PICKED_LABEL,
   PICK_PAGE,
   pickIntoSession,
+  picturePath,
   typeInAddressBar
 } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
@@ -481,10 +483,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect.poll(fromPick, { timeout: 90_000 }).toHaveLength(1)
       const [prompt] = fromPick()
       expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
-      const picture = /^Picture: (.+)$/m.exec(prompt)?.[1] ?? ''
+      const picture = picturePath(prompt)
       const picks = fs.realpathSync(path.join(machineHome(env), '.koloft', 'picks'))
       expect(path.dirname(picture)).toBe(picks)
-      expect([...fs.readFileSync(picture).subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+      expect(isPng(picture)).toBe(true)
       const localPicks = path.join(env.userData, 'picks')
       expect(fs.existsSync(localPicks) ? fs.readdirSync(localPicks) : [], localPicks).toEqual([])
     } finally {

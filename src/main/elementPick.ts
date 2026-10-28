@@ -1,10 +1,8 @@
-import fs from 'fs'
-import path from 'path'
 import type { WebContents } from 'electron'
-import { holdDebugger, openOwnSession } from './guestDebugger'
+import { closeOwnSession, holdDebugger, openOwnSession } from './guestDebugger'
+import { within } from './within'
 
 const HTML_KEPT_CHARS = 4000
-const PICKS_KEPT_MS = 24 * 60 * 60 * 1000
 // PLATFORM§9
 const A_CAPTURE_ANSWERS_WITHIN_MS = 10_000
 
@@ -82,7 +80,6 @@ export function elementLabel(node: { localName: string; attributes?: string[] })
 
 // CC§18 CODEX§23
 export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null): string {
-  const round = (n: number): number => Math.round(n)
   const html =
     p.html.length > HTML_KEPT_CHARS
       ? `${p.html.slice(0, HTML_KEPT_CHARS)}… ${p.html.length - HTML_KEPT_CHARS} more characters`
@@ -91,44 +88,18 @@ export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null):
     const v = cssValue(p.css, name)
     return v === undefined ? [] : [`${name}: ${v};`]
   })
+  const { x, y, width, height } = p.box
   return [
     'Element picked in the Workbench browser',
     `Page: ${p.url}${p.title ? ` ("${p.title}")` : ''}`,
     ...(p.frame ? [`Inside the frame: ${p.frame}`] : []),
-    `Element: ${p.label}, ${round(p.box.width)} × ${round(p.box.height)} px at (${round(p.box.x)}, ${round(p.box.y)})`,
+    `Element: ${p.label}, ${Math.round(width)} × ${Math.round(height)} px at (${Math.round(x)}, ${Math.round(y)})`,
     ...(picture ? [`Picture: ${picture}`] : []),
     'HTML:',
     html,
     'CSS (computed):',
     ...css
   ].join('\n')
-}
-
-export async function savePickHere(dir: string, name: string, png: Buffer): Promise<string> {
-  await fs.promises.mkdir(dir, { recursive: true })
-  const oldest = Date.now() - PICKS_KEPT_MS
-  for (const old of await fs.promises.readdir(dir)) {
-    const file = path.join(dir, old)
-    const st = await fs.promises.stat(file).catch(() => null)
-    if (st && st.mtimeMs < oldest) await fs.promises.rm(file, { force: true })
-  }
-  const file = path.join(dir, name)
-  await fs.promises.writeFile(file, png)
-  return file
-}
-
-const stops = new Map<number, () => void>()
-
-export function stopPick(guestId: number): void {
-  stops.get(guestId)?.()
-}
-
-function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms)
-  })
-  return Promise.race([work, late]).finally(() => clearTimeout(timer))
 }
 
 interface Frame {
@@ -138,39 +109,47 @@ interface Frame {
   parent: Frame | null
 }
 
-type Send = (method: string, params: object, frame: Frame) => Promise<unknown>
-
-function sender(wc: WebContents): Send {
-  return (method, params, frame) =>
-    frame.session
-      ? wc.debugger.sendCommand(method, params, frame.session)
-      : wc.debugger.sendCommand(method, params)
+function send(
+  wc: WebContents,
+  frame: Frame,
+  method: string,
+  params: object = {}
+): Promise<unknown> {
+  return wc.debugger.sendCommand(method, params, frame.session)
 }
 
 // PLATFORM§16
-async function framesOf(wc: WebContents): Promise<Frame[]> {
-  const { targetInfo } = (await wc.debugger.sendCommand('Target.getTargetInfo')) as {
-    targetInfo: { targetId: string }
-  }
-  const { targetInfos } = (await wc.debugger.sendCommand('Target.getTargets')) as {
-    targetInfos: { targetId: string; type: string; url: string; parentId?: string }[]
-  }
-  const frames: Frame[] = [
-    { session: '', targetId: targetInfo.targetId, url: wc.getURL(), parent: null }
+async function openFrames(wc: WebContents, frames: Frame[]): Promise<void> {
+  const [{ targetInfo }, { targetInfos }] = (await Promise.all([
+    wc.debugger.sendCommand('Target.getTargetInfo'),
+    wc.debugger.sendCommand('Target.getTargets')
+  ])) as [
+    { targetInfo: { targetId: string } },
+    { targetInfos: { targetId: string; type: string; url: string; parentId?: string }[] }
   ]
+  const session = await openOwnSession(wc, targetInfo.targetId)
+  frames.push({ session, targetId: targetInfo.targetId, url: wc.getURL(), parent: null })
   for (let i = 0; i < frames.length; i++) {
-    for (const t of targetInfos) {
-      if (t.type !== 'iframe' || t.parentId !== frames[i].targetId) continue
-      const session = await openOwnSession(wc, t.targetId)
-      frames.push({ session, targetId: t.targetId, url: t.url, parent: frames[i] })
-    }
+    const parent = frames[i]
+    const children = targetInfos.filter(
+      (t) => t.type === 'iframe' && t.parentId === parent.targetId
+    )
+    const opened = await Promise.all(
+      children.map((t) =>
+        openOwnSession(wc, t.targetId, frames[0].session).then(
+          (s) => ({ session: s, targetId: t.targetId, url: t.url, parent }),
+          () => null
+        )
+      )
+    )
+    for (const frame of opened) if (frame) frames.push(frame)
   }
-  return frames
 }
 
 function nodeToPick(
   wc: WebContents,
-  frames: Frame[]
+  frames: Frame[],
+  stopped: Promise<null>
 ): Promise<{ frame: Frame; node: number } | null> {
   return new Promise((resolve) => {
     const d = wc.debugger
@@ -180,7 +159,6 @@ function nodeToPick(
       wc.off('before-input-event', onKey)
       wc.off('did-start-navigation', onNavigate)
       wc.off('destroyed', onGone)
-      stops.delete(wc.id)
       resolve(picked)
     }
     const onMessage = (
@@ -190,7 +168,7 @@ function nodeToPick(
       sessionId?: string
     ): void => {
       if (method !== 'Overlay.inspectNodeRequested' || !params.backendNodeId) return
-      const frame = frames.find((f) => f.session === (sessionId ?? ''))
+      const frame = frames.find((f) => f.session === sessionId)
       if (frame) done({ frame, node: params.backendNodeId })
     }
     const onKey = (e: Electron.Event, input: Electron.Input): void => {
@@ -202,26 +180,24 @@ function nodeToPick(
       if (details.isMainFrame && !details.isSameDocument) done(null)
     }
     const onGone = (): void => done(null)
-    stops.set(wc.id, onGone)
     d.on('message', onMessage as never)
     d.once('detach', onGone)
     wc.on('before-input-event', onKey)
     wc.on('did-start-navigation', onNavigate as never)
     wc.once('destroyed', onGone)
+    void stopped.then(onGone)
   })
 }
 
-async function frameOffset(send: Send, frame: Frame): Promise<{ x: number; y: number }> {
+async function frameOffset(wc: WebContents, frame: Frame): Promise<{ x: number; y: number }> {
   if (!frame.parent) return { x: 0, y: 0 }
-  const { backendNodeId } = (await send(
-    'DOM.getFrameOwner',
-    { frameId: frame.targetId },
-    frame.parent
-  )) as { backendNodeId: number }
-  const { model } = (await send('DOM.getBoxModel', { backendNodeId }, frame.parent)) as {
+  const { backendNodeId } = (await send(wc, frame.parent, 'DOM.getFrameOwner', {
+    frameId: frame.targetId
+  })) as { backendNodeId: number }
+  const { model } = (await send(wc, frame.parent, 'DOM.getBoxModel', { backendNodeId })) as {
     model: { content: number[] }
   }
-  const above = await frameOffset(send, frame.parent)
+  const above = await frameOffset(wc, frame.parent)
   return { x: model.content[0] + above.x, y: model.content[1] + above.y }
 }
 
@@ -231,7 +207,7 @@ async function picture(
   root: Frame,
   box: PickedElement['box']
 ): Promise<Buffer | null> {
-  const { cssLayoutViewport: view } = (await sender(wc)('Page.getLayoutMetrics', {}, root)) as {
+  const { cssLayoutViewport: view } = (await send(wc, root, 'Page.getLayoutMetrics')) as {
     cssLayoutViewport: { clientWidth: number; clientHeight: number }
   }
   const left = Math.max(0, box.x)
@@ -247,39 +223,36 @@ async function picture(
       width: Math.round((right - left) * zoom),
       height: Math.round((bottom - top) * zoom)
     }),
-    A_CAPTURE_ANSWERS_WITHIN_MS
+    A_CAPTURE_ANSWERS_WITHIN_MS,
+    'capture'
   ).catch(() => null)
   return image && !image.isEmpty() ? image.toPNG() : null
 }
 
 async function readPick(
   wc: WebContents,
-  frames: Frame[],
+  root: Frame,
   frame: Frame,
   backendNodeId: number
 ): Promise<PickedElement> {
-  const send = sender(wc)
-  const { outerHTML } = (await send('DOM.getOuterHTML', { backendNodeId }, frame)) as {
-    outerHTML: string
-  }
-  const { node } = (await send('DOM.describeNode', { backendNodeId }, frame)) as {
-    node: { localName: string; attributes?: string[] }
-  }
-  await send('DOM.getDocument', { depth: 0 }, frame)
-  const { nodeIds } = (await send(
-    'DOM.pushNodesByBackendIdsToFrontend',
-    { backendNodeIds: [backendNodeId] },
-    frame
-  )) as { nodeIds: number[] }
-  const { computedStyle } = (await send(
-    'CSS.getComputedStyleForNode',
-    { nodeId: nodeIds[0] },
-    frame
-  )) as { computedStyle: { name: string; value: string }[] }
-  const { model } = (await send('DOM.getBoxModel', { backendNodeId }, frame)) as {
-    model: { border: number[] }
-  }
-  const offset = await frameOffset(send, frame)
+  await send(wc, frame, 'CSS.enable')
+  const [{ outerHTML }, { node }, { model }, { nodeIds }] = (await Promise.all([
+    send(wc, frame, 'DOM.getOuterHTML', { backendNodeId }),
+    send(wc, frame, 'DOM.describeNode', { backendNodeId }),
+    send(wc, frame, 'DOM.getBoxModel', { backendNodeId }),
+    send(wc, frame, 'DOM.getDocument', { depth: 0 }).then(() =>
+      send(wc, frame, 'DOM.pushNodesByBackendIdsToFrontend', { backendNodeIds: [backendNodeId] })
+    )
+  ])) as [
+    { outerHTML: string },
+    { node: { localName: string; attributes?: string[] } },
+    { model: { border: number[] } },
+    { nodeIds: number[] }
+  ]
+  const { computedStyle } = (await send(wc, frame, 'CSS.getComputedStyleForNode', {
+    nodeId: nodeIds[0]
+  })) as { computedStyle: { name: string; value: string }[] }
+  const offset = await frameOffset(wc, frame)
   const q = model.border
   const box = { x: q[0] + offset.x, y: q[1] + offset.y, width: q[2] - q[0], height: q[5] - q[1] }
   return {
@@ -290,44 +263,56 @@ async function readPick(
     box,
     html: outerHTML,
     css: Object.fromEntries(computedStyle.map((c) => [c.name, c.value])),
-    png: await picture(wc, frames[0], box)
+    png: await picture(wc, root, box)
   }
 }
 
-export async function pickElement(wc: WebContents): Promise<PickedElement | null> {
-  stopPick(wc.id)
+async function runPick(wc: WebContents, stopped: Promise<null>): Promise<PickedElement | null> {
   const release = holdDebugger(wc)
-  const send = sender(wc)
-  let frames: Frame[] = []
+  const frames: Frame[] = []
   try {
-    frames = await framesOf(wc)
-    for (const frame of frames) {
-      await send('DOM.enable', {}, frame)
-      await send('CSS.enable', {}, frame)
-      await send('Overlay.enable', {}, frame)
-    }
-    const picked = nodeToPick(wc, frames)
-    for (const frame of frames)
-      await send(
-        'Overlay.setInspectMode',
-        { mode: 'searchForNode', highlightConfig: HIGHLIGHT },
-        frame
-      )
-    const got = await picked
-    if (!got) return null
-    return await readPick(wc, frames, got.frame, got.node)
+    await openFrames(wc, frames)
+    await Promise.all(
+      frames.map(async (frame) => {
+        await send(wc, frame, 'DOM.enable')
+        await send(wc, frame, 'Overlay.enable')
+        await send(wc, frame, 'Overlay.setInspectMode', {
+          mode: 'searchForNode',
+          highlightConfig: HIGHLIGHT
+        })
+      })
+    )
+    const got = await nodeToPick(wc, frames, stopped)
+    return got && (await readPick(wc, frames[0], got.frame, got.node))
   } finally {
     if (!wc.isDestroyed()) {
-      for (const frame of frames) {
-        await send('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }, frame).catch(
-          () => {}
-        )
-        if (frame.session)
-          await wc.debugger
-            .sendCommand('Target.detachFromTarget', { sessionId: frame.session })
-            .catch(() => {})
-      }
+      const [root, ...children] = frames
+      await Promise.all(children.map((f) => closeOwnSession(wc, f.session, root.session)))
+      if (root) await closeOwnSession(wc, root.session)
     }
     release()
+  }
+}
+
+const picks = new Map<number, { stop: () => void; finished: Promise<void> }>()
+
+export function stopPick(guestId: number): void {
+  picks.get(guestId)?.stop()
+}
+
+export async function pickElement(wc: WebContents): Promise<PickedElement | null> {
+  const before = picks.get(wc.id)
+  let stop = (): void => {}
+  const stopped = new Promise<null>((resolve) => (stop = () => resolve(null)))
+  let finish = (): void => {}
+  const pick = { stop, finished: new Promise<void>((resolve) => (finish = resolve)) }
+  picks.set(wc.id, pick)
+  before?.stop()
+  try {
+    await before?.finished
+    return await runPick(wc, stopped)
+  } finally {
+    finish()
+    if (picks.get(wc.id) === pick) picks.delete(wc.id)
   }
 }

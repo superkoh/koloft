@@ -364,17 +364,32 @@ export async function openPickPage(
   return guest
 }
 
-export async function clickInPickMode(page: Page, guest: Page, selector: string): Promise<void> {
+export async function startPick(page: Page): Promise<void> {
   const button = page.locator(BROWSER.pickButton)
   await expect(button).toBeEnabled({ timeout: 60_000 })
   await button.click()
   await expect(button).toHaveAttribute('aria-pressed', 'true')
   await page.waitForTimeout(INSPECT_MODE_SETTLES_MS)
+}
+
+export async function clickPicked(page: Page, guest: Page, selector: string): Promise<void> {
   const box = await guest.locator(selector).boundingBox()
   if (!box) throw new Error(`${selector} has no box`)
   await guest.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await guest.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
-  await expect(button).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+  await expect(page.locator(BROWSER.pickButton)).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 20_000
+  })
+}
+
+export async function typeAfterThePick(page: Page, typedAfter: string): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')), {
+      timeout: 20_000
+    })
+    .toBe(true)
+  await page.keyboard.type(typedAfter)
+  await page.keyboard.press('Enter')
 }
 
 export async function pickIntoSession(
@@ -383,14 +398,20 @@ export async function pickIntoSession(
   selector: string,
   typedAfter: string
 ): Promise<void> {
-  await clickInPickMode(page, guest, selector)
-  await expect
-    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')), {
-      timeout: 20_000
-    })
-    .toBe(true)
-  await page.keyboard.type(typedAfter)
-  await page.keyboard.press('Enter')
+  await startPick(page)
+  await clickPicked(page, guest, selector)
+  await typeAfterThePick(page, typedAfter)
+}
+
+export function picturePath(prompt: string): string {
+  return /^Picture: (.+)$/m.exec(prompt)?.[1] ?? ''
+}
+
+export function isPng(file: string): boolean {
+  return fs
+    .readFileSync(file)
+    .subarray(0, 4)
+    .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
 }
 
 export async function pictureCentre(
