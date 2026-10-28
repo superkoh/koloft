@@ -8,7 +8,7 @@ import type {
   TabKind,
   WorkspaceRows
 } from '@shared/types'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
@@ -123,6 +123,17 @@ export function rowStateClass(
     default:
       return 'st-idle'
   }
+}
+
+export function rowActivityLine(
+  shownCls: string,
+  session?: Pick<SessionInfo, 'lastAction' | 'asking' | 'turnOver'>
+): string | undefined {
+  if (!session || !shownCls.startsWith('st-') || shownCls === 'st-pending') return undefined
+  if (shownCls === 'st-approval' && session.asking) return session.asking
+  const did = session.lastAction
+  if (!did || shownCls === 'st-working' || did === PLAN_READY) return did
+  return `Last: ${did}`
 }
 
 export function sessionsNeedYou(n: number): string {

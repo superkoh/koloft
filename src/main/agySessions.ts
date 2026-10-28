@@ -97,6 +97,7 @@ import {
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
+import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -854,7 +855,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     switch (hook.event) {
       case 'PreToolUse': {
         const call = record(input.toolCall)
-        run.lastTool = { name: String(call.name ?? ''), args: record(call.args) }
+        const tool = { name: String(call.name ?? ''), args: record(call.args) }
+        run.lastTool = tool
+        const did = agyToolDid(tool.name, (key) => argOf(tool.args, key))
+        if (did) this.deps.events(run.tabId, { type: 'did', what: did })
         return
       }
       case 'PostToolUse':
@@ -1054,7 +1058,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             approval: {
               id: askId,
               command: pending.target,
-              reason: pending.kind === 'file' ? 'Write this file' : undefined
+              reason: pending.kind === 'file' ? 'Write this file' : undefined,
+              ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
             }
           })
     }
@@ -1076,8 +1081,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         }
       }
     }
-    const target = tool && (argOf(tool.args, 'CommandLine') ?? argOf(tool.args, 'TargetFile'))
-    return { approval: { id, command: target ?? status.msg } }
+    const commandLine = tool && argOf(tool.args, 'CommandLine')
+    const file = tool && !commandLine ? argOf(tool.args, 'TargetFile') : undefined
+    return {
+      approval: { id, command: commandLine ?? file ?? status.msg, ...(file ? { file } : {}) }
+    }
   }
 
   // AGY§19
@@ -1099,7 +1107,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const askId = `plan:${id}:${plan}`
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan' }
+      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
   }

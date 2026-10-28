@@ -20,6 +20,8 @@ export interface CodexApproval {
   id: string | number
   command?: string
   reason?: string
+  file?: string
+  plan?: true
 }
 
 export interface CodexQuestion extends Question {
@@ -30,7 +32,7 @@ const YES = /^(y|yes|ok|okay|approve|1)[.!]?$/i
 const NO = /^(n|no|deny|3)[.!]?$/i
 const REFUSAL = /^(no|deny)\b/i
 
-function questionsOf(p: AskPayload): Question[] {
+export function questionsOf(p: AskPayload): Question[] {
   const raw = p.tool_input?.questions
   if (!Array.isArray(raw)) return []
   return raw.flatMap((q) => {

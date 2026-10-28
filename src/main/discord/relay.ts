@@ -558,6 +558,10 @@ export class DiscordRelay {
     return ask && claudeDialog(ask.payload)
   }
 
+  openPayload(tab: string): AskPayload | undefined {
+    return this.openAsk(tab)?.payload
+  }
+
   private release(tab: string, hook: string, output: unknown = {}): void {
     if (!fs.existsSync(this.hookFile(tab, hook, ASK_SUFFIX))) return
     try {

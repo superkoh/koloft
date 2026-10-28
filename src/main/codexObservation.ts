@@ -1,4 +1,5 @@
-import type { BackgroundItem } from '@shared/types'
+import { PLAN_READY, type BackgroundItem } from '@shared/types'
+import { codexItemDid, codexPlanReady } from './rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
@@ -221,6 +222,7 @@ export class CodexObservation {
   private lastTouched?: string
   private lastWritten?: string
   private liveWrites = 0
+  private planReady = false
   private queued = new Set<string>()
   unsubscribed = false
   turns = new TurnLog()
@@ -343,6 +345,7 @@ export class CodexObservation {
       this.touched.clear()
       this.lastTouched = this.lastWritten = undefined
       this.liveWrites = 0
+      this.planReady = false
       this.pricedThrough = this.longContextSurchargeUsd = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
@@ -392,6 +395,14 @@ export class CodexObservation {
       this.publishActivity()
     } else if (ownedChild) {
       return
+    } else if (method === 'item/started' || method === 'item/completed') {
+      const did =
+        method === 'item/started'
+          ? codexItemDid(item)
+          : (codexPlanReady(item) ?? (item.status === 'completed' ? codexItemDid(item) : undefined))
+      if (!did) return
+      this.planReady = did === PLAN_READY
+      this.emit({ type: 'did', what: did })
     } else if (method === 'thread/status/changed') {
       this.status(p.status)
     } else if (method === 'turn/started') {
@@ -401,6 +412,10 @@ export class CodexObservation {
       this.unanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
+      if (this.planReady) {
+        this.planReady = false
+        this.emit({ type: 'did', what: undefined })
+      }
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)

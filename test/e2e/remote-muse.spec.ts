@@ -206,6 +206,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
       await runIn(page, centerTerm(page), '/approve')
       await expect(row).toHaveClass(/\bst-approval\b/)
+      await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
       const tabId = await row.getAttribute('data-tab-id')
       await page.evaluate(
         ([id, key]) => window.api.terminal.write(id!, key!),

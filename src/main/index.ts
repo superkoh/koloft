@@ -63,7 +63,8 @@ import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
+import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
@@ -558,6 +559,7 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
+const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -596,6 +598,7 @@ const sessionBackends = new SessionBackends({
     awayDigest?.prompted(tabId)
   },
   bound: (tabId, key, idleCompaction) => {
+    claudeAsks.delete(tabId)
     if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
@@ -605,7 +608,11 @@ const sessionBackends = new SessionBackends({
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
-  asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
+  asked: (tabId, ask) => {
+    claudeAsks.set(tabId, ask)
+    discordRelay?.onAsk(tabId, ask)
+    sendToRenderer(CH.sessions.update, onSessionsChanged())
+  },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
@@ -614,6 +621,14 @@ const sessionBackends = new SessionBackends({
 })
 sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
+sessionBackends.askingOf = (tabId) => {
+  if (tracker.statusOf(tabId) !== 'approval') return undefined
+  const owner = storedOwnerOf(tabId)
+  const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
+  if (stored) return storedAskLine(stored)
+  const ask = discordRelay?.openPayload(tabId) ?? claudeAsks.get(tabId)
+  return ask && claudeAskLine(ask)
+}
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
@@ -2855,6 +2870,7 @@ app.whenReady().then(() => {
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
+    if (t.prev === 'approval') claudeAsks.delete(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
@@ -3292,6 +3308,7 @@ app.whenReady().then(() => {
     asksChanged: (tabId) => {
       ptyMgr.wakeReady(tabId)
       void buttons.check(tabId)
+      sendToRenderer(CH.sessions.update, onSessionsChanged())
     },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
 import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
 import { AttentionTracker } from '../../src/main/attention'
-import type { AttentionKind, BackgroundItem } from '../../src/shared/types'
+import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -552,6 +552,41 @@ describe('CodexObservation', () => {
       lastWritten: '/repo/notes.txt',
       liveWrites: 1
     })
+  })
+
+  it('says on the row what the session itself last started, a ready plan until the next turn starts, and nothing from another thread', () => {
+    const f = fixture()
+    const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    f.bind()
+    f.server('item/started', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server(
+      'item/started',
+      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/started', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
+    f.server('item/started', {
+      item: { type: 'commandExecution', id: 'raw', command: "/bin/zsh -lc 'rm -rf build'" }
+    })
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { type: 'plan', id: 't-plan', text: '1. a\n2. b' } }
+    })
+    expect(did()).toEqual([
+      'Ran npm test',
+      'Edited foo.ts',
+      'Read a.md',
+      'Ran rm -rf build',
+      PLAN_READY
+    ])
+    f.server('turn/started', { turn: { id: 'next' } })
+    expect(did().at(-1)).toBeUndefined()
+    f.server('turn/started', { turn: { id: 'another' } })
+    expect(did()).toHaveLength(6)
+    f.observer.receive('server', {
+      method: 'item/started',
+      params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
+    })
+    expect(did()).toHaveLength(6)
   })
 
   it('ignores a declined patch and a shell command that only writes through the shell', () => {

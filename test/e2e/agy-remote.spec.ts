@@ -73,6 +73,10 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
       const { id } = await boundRemoteAgy(page)
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
+      await runIn(page, centerTerm(page), '/write remote-notes.txt')
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Wrote remote-notes.txt', {
+        timeout: 60_000
+      })
     } finally {
       await quitAndClose(app)
     }

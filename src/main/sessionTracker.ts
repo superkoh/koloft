@@ -18,6 +18,7 @@ import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, touchedItem } from './touchedFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
+import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
 import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
@@ -1060,6 +1061,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
+    t.info.lastAction = undefined
     t.caughtUp = false
     t.meter = new UsageMeter()
     t.subagentFiles = new Map()
@@ -1561,6 +1563,8 @@ export class SessionTracker extends SessionRuntime {
             t.openTools.delete(t.openTools.keys().next().value as string)
           t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
         }
+        if (liveNow && mainThread)
+          t.info.lastAction = claudeToolDid(b.name, b.input ?? {}) ?? t.info.lastAction
         const labelField = TASK_LABEL_FIELD[b.name]
         const label = labelField ? b.input?.[labelField] : undefined
         if (typeof label === 'string') {

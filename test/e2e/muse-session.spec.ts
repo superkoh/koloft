@@ -101,6 +101,32 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  test('C2: a live Muse row says under its branch what Muse last did, Last: once the turn is over, and in amber the question it asks until it is answered', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      const row = museRows(page)
+      const line = row.locator('.ws-tab-act')
+      await runIn(page, centerTerm(page), '/write muse-notes.txt')
+      await expect(line).toHaveText('Last: Wrote muse-notes.txt')
+      await runIn(page, centerTerm(page), '/ask')
+      await expect(row).toHaveClass(/\bst-approval\b/)
+      await expect(line).toHaveText('Asks: Which colour?')
+      await page.keyboard.press('Enter')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(line).toHaveText('Last: Wrote muse-notes.txt')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§10
   test("answering 2 Quit to Muse's trust question before any session opened puts you back on the folder page, and never opens the butler", async ({
     env
