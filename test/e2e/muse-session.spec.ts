@@ -161,6 +161,39 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§13
+  test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-muse-login-fails'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Muse' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.',
+        { timeout: 20_000 }
+      )
+      await expect(dialog.locator('.acct-login-tail')).toHaveText(
+        'Error: the device code expired before it was approved'
+      )
+      await expect(page.locator('.term-island > .wb-bar')).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^work$/ })).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^e2e-muse$/ })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('/clear keeps the tab and moves it to a new session; the cleared one leaves the list for Restore session, which resumes it with muse resume', async ({
     env
   }) => {

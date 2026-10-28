@@ -724,6 +724,46 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§5
+  test('a Sign in with Google tab closed with its Cancel before agy is signed in brings Settings ▸ Accounts back saying the sign-in did not complete, with no row left for the new account', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      await page.locator('.acct-add input[type="text"]').fill('fresh')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Antigravity sign in: fresh', {
+        timeout: 20_000
+      })
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'You are currently not signed in',
+        { timeout: 20_000 }
+      )
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Sign in to Antigravity', {
+        timeout: 20_000
+      })
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.'
+      )
+      await expect(page.locator('.acct-name', { hasText: /^fresh$/ })).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^e2e-agy$/ })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§3
   test('with no agy on this Mac, Sign in with Google in Settings ▸ Accounts says it installs it first, then one terminal tab runs the official installer and goes straight on to agy on the new account’s own folder', async ({
     env

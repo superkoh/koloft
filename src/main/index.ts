@@ -62,6 +62,7 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
+import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -396,6 +397,7 @@ import type {
   CodexLimits,
   CodexResetOutcome,
   SignInResult,
+  SignInFailure,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -2124,7 +2126,38 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
+interface HomeSignInTab {
+  kind: SignInFolderKind
+  name: string
+  again: boolean
+  output: SignInOutput
+}
+const signInPtys = new Map<string, HomeSignInTab>()
+let signInFailure: SignInFailure | null = null
+
+function setSignInFailure(f: SignInFailure | null): void {
+  signInFailure = f
+  sendToRenderer(CH.accounts.signInFailure, f)
+}
+
+function forgetAccount(name: string, kind: AccountKind): void {
+  removeAccountMeta(name, kind)
+  usageViews.delete(viewKey(name, kind))
+  picker.forget(kind, name)
+  pushAccounts()
+}
+
+async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
+  await probeHomeAccount[s.kind](s.name)
+  if (findAccount(s.name, s.kind)?.status === 'ok') return
+  if (!s.again) forgetAccount(s.name, s.kind)
+  setSignInFailure({
+    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    name: s.name,
+    again: s.again,
+    tail: s.output.tail()
+  })
+}
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
@@ -2185,18 +2218,19 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
   const signIn = (quotedBinary: string): string =>
-    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+    `${MARK_OUTPUT_START} && ${assignments.join(' ')} exec ${quotedBinary} ${args}`
   const tab = homeShellTab(
     login.binary
       ? signIn(shq(login.binary))
       : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
   )
-  signInPtys.set(tab.tabId, { kind, name })
+  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
@@ -2772,6 +2806,7 @@ app.whenReady().then(() => {
     // CC§12
     if (sleepers.has(d.id)) return
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
@@ -2823,10 +2858,10 @@ app.whenReady().then(() => {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
     }
-    const signedIn = signInPtys.get(e.id)
-    if (signedIn) {
+    const signingIn = signInPtys.get(e.id)
+    if (signingIn) {
       signInPtys.delete(e.id)
-      void probeHomeAccount[signedIn.kind](signedIn.name)
+      void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
@@ -5357,10 +5392,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
-    removeAccountMeta(name, kind)
-    usageViews.delete(viewKey(name, kind))
-    picker.forget(kind, name)
-    pushAccounts()
+    forgetAccount(name, kind)
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
@@ -5385,6 +5417,8 @@ function registerIpc(): void {
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
+  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
   ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)

@@ -4,7 +4,12 @@ import { accountToSignInAgain } from '@shared/accountUsage'
 import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
-import { AddAccountDialog, LoginDialog, SignInDialog } from './settings/AccountsPane'
+import {
+  AddAccountDialog,
+  LoginDialog,
+  SignInDialog,
+  SignInFailedDialog
+} from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
 // CC§9 CODEX§15 MUSE§1 AGY§2
@@ -147,12 +152,14 @@ export function AssistSetup({
         </>
       )}
       {login && <LoginDialog />}
-      {signIn && (
+      {signIn ? (
         <SignInDialog
           backend={signIn.backend}
           again={signIn.again}
           onClose={() => setSignIn(null)}
         />
+      ) : (
+        <SignInFailedDialog />
       )}
       {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
     </div>
