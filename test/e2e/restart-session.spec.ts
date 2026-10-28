@@ -31,6 +31,7 @@ const SHIM_REGISTRATION_SETTLE_MS = 2000
 const OLD_PTY_REVERT_CAN_TRAIL_RELAUNCH_MS = 5000
 const TITLE_SAMPLE_INTERVAL_MS = 150
 const SHELL_COMMAND_NOT_FOUND_TOAST = 'exit code 127'
+const RESTART_COOLDOWN_OUTLASTED_MS = 1500
 
 function hasMalformedResume(calls: ClaudeCall[]): boolean {
   return calls.some((c) => {
@@ -694,6 +695,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
 
         writeClaudeWrapper(env, wrapper)
+        await page.waitForTimeout(RESTART_COOLDOWN_OUTLASTED_MS)
         await triggerRestart(app)
         const calls = await waitForCalls(env, 2)
         await expect(row.locator('.ws-tab-sub')).not.toHaveText(ENDED_ROW_NOTE, { timeout: 20_000 })

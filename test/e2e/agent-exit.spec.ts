@@ -73,17 +73,13 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
     }
   })
 
-  test('a tab the user closes logs nothing; a Claude that dies before it starts keeps a row whose Close ends it for good', async ({
+  test('a Claude that dies before it starts keeps a row whose Close ends it for good; a tab the user closes logs nothing', async ({
     env
   }) => {
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await startSessionIn(page, 'ws-a')
-      await sendShortcut(app, 'shortcut:close-tab')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/, { timeout: 20_000 })
-
       fs.writeFileSync(env.claudeExitFile, '1')
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-b' }))
       await page.locator('.menu .mi', { hasText: /^New session/ }).click()
@@ -102,6 +98,15 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
       await page.locator('.menu .mi', { hasText: /^Close/ }).click()
       await expect(kept).toHaveCount(0, { timeout: 20_000 })
       await expect.poll(() => termIds(page)).toHaveLength(0)
+
+      fs.rmSync(env.claudeExitFile)
+      await startSessionIn(page, 'ws-a')
+      const closed = wsRows(page, 'ws-a')
+      await expect(closed).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await openMenu(page, closed)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(closed).toHaveClass(/\bcold\b/, { timeout: 20_000 })
+      await expect(closed.locator('.ws-tab-sub')).toHaveText('main')
       expect(loggedExits(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)

@@ -809,6 +809,7 @@ export async function closeKeptTab(page: Page, row: Locator): Promise<void> {
   await expect(row.locator('.ws-tab-sub', { hasText: ENDED_ROW_NOTE })).toHaveCount(0, {
     timeout: 20_000
   })
+  await expect(row.and(page.locator('.ws-tab:not(.cold)'))).toHaveCount(0, { timeout: 20_000 })
 }
 
 export async function closeMenu(page: Page): Promise<void> {
