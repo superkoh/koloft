@@ -339,6 +339,44 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
+  // CC§9
+  test('a resume that the person ends at Claude’s folder-trust question says Claude closed before the session started, keeping the exit code', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Declined resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Declined resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+      await waitForCalls(env, 1)
+      await expect
+        .poll(
+          async () => {
+            const tab = (await termIds(page)).find((t) => !before.has(t))
+            return tab ? terminalText(page, tab) : ''
+          },
+          { timeout: 15_000 }
+        )
+        .toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude closed before the session started (exit code 1)',
+        { timeout: 20_000 }
+      )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   // CC§11
   test('a cold row whose session another live claude process still runs is not resumed: a notice says so and no claude starts', async ({
     env

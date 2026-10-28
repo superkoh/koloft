@@ -59,6 +59,7 @@ import {
   pickerDialog,
   processAlive,
   readCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
   settingsOnDisk,
@@ -621,13 +622,10 @@ test.describe('Codex sessions through the real method chooser, process transport
         )
       const preset = statusOverride(first.argv)
       expect(preset).toBeDefined()
-      expect(JSON.parse(preset!.slice('tui.status_line='.length))).toEqual(
-        expect.arrayContaining([
-          'context-used',
-          'git-branch',
-          'model-with-reasoning',
-          'current-dir'
-        ])
+      const items: string[] = JSON.parse(preset!.slice('tui.status_line='.length))
+      expect(items.slice(0, 3)).toEqual(['context-used', 'five-hour-limit', 'weekly-limit'])
+      expect(items).toEqual(
+        expect.arrayContaining(['git-branch', 'model-with-reasoning', 'current-dir'])
       )
       expect(codexCalls(env).map((call) => statusOverride(call.argv))).toEqual([
         preset,
@@ -1093,7 +1091,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       const page = await app.firstWindow()
       await waitBooted(page)
       await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Codex closed before the session started (exit code 3)',
+        { timeout: 20_000 }
+      )
       await expect.poll(() => termIds(page)).toHaveLength(0)
       await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
@@ -1757,7 +1758,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§14
-  test('a scheduled job set to run in Codex starts Codex with its task, model and thinking level, never asking, and counts as running once Codex binds', async ({
+  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, never asking, and counts as running once Codex binds', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -1780,14 +1781,13 @@ test.describe('Codex sessions through the real method chooser, process transport
       await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
       await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
       await dlg.locator('[aria-label="What to run"]').fill(TASK)
-      await dlg.locator('.chip', { hasText: 'Other…' }).click()
-      await dlg.locator('input[aria-label="Model name"]').fill('gpt-5.5')
+      await dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click()
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
       await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
       await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
       await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-5.5 · high`)
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-6-luna · high`)
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 
       await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
@@ -1797,7 +1797,7 @@ test.describe('Codex sessions through the real method chooser, process transport
         '-s',
         'danger-full-access',
         '-m',
-        'gpt-5.5',
+        'gpt-6-luna',
         '-c',
         'model_reasoning_effort="high"',
         TASK
@@ -1969,6 +1969,45 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
       await sendFailingChecks(page)
       await expectOnePromptFromTheChecks(() => codexPrompts(env))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting it there turns it off again', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const now = Math.floor(Date.now() / 1000)
+      const id = randomUUID()
+      const rollout = path.join(env.launchEnv.CODEX_HOME!, 'sessions', `${id}.json`)
+      fs.writeFileSync(
+        rollout,
+        JSON.stringify({
+          id,
+          cwd: fs.realpathSync(env.workspaces.a),
+          path: null,
+          name: null,
+          preview: 'started in a plain terminal',
+          createdAt: now,
+          updatedAt: now,
+          cliVersion: '0.161.0',
+          source: 'cli',
+          threadSource: 'user',
+          ephemeral: false,
+          status: { type: 'notLoaded' },
+          turns: []
+        })
+      )
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(true)
+      fs.unlinkSync(rollout)
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

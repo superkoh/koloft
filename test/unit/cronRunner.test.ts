@@ -1589,6 +1589,33 @@ describe('CronRunner.save — the same rules the form uses', () => {
     expect(again.ok && 'autoClose' in again.job).toBe(false)
   })
 
+  it('saves an Antigravity job without a thinking level its model would exit on, and keeps one it takes', () => {
+    const h = makeHarness([])
+    const pro = h.runner.save({ ...BASE, backend: 'agy', effort: 'medium' })
+    expect(pro.ok && 'effort' in pro.job).toBe(false)
+    const flash = h.runner.save({
+      ...BASE,
+      backend: 'agy',
+      model: 'gemini-3.6-flash',
+      effort: 'medium'
+    })
+    expect(flash.ok && flash.job.effort).toBe('medium')
+    const named = h.runner.save({
+      ...BASE,
+      backend: 'agy',
+      model: 'gemini-3.1-pro-high',
+      effort: 'high'
+    })
+    expect(named.ok && named.job.effort).toBe('high')
+  })
+
+  it('starts an Antigravity job saved before with a thinking level its model would exit on without that level', async () => {
+    const h = makeHarness([makeJob({ backend: 'agy', effort: 'xhigh' })])
+    await h.runner.runNow('j1')
+    expect(h.launches).toHaveLength(1)
+    expect(h.launches[0].effort).toBeUndefined()
+  })
+
   it('trims the name and the task before it saves them', () => {
     const h = makeHarness([])
     const res = h.runner.save({ ...BASE, name: '  Nightly report \n', task: '  hello  ' })

@@ -4,22 +4,37 @@ import { shq } from '@shared/shellQuote'
 import type { ProjectInfo } from '@shared/types'
 import { gitProbes, type GitOut } from './resumePlan'
 
-export type ClosingTree = ProjectInfo & { branches: string[] }
+export type ClosingTree = ProjectInfo & { branches: string[]; gitFileGone?: true }
 
 const MOST_COMMITS_LISTED = 20
 const DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS = 10 * 60_000
 
+// PLATFORM§30
+async function headOfItsOwn(
+  git: GitOut,
+  info: ProjectInfo
+): Promise<{ head: string | null; gitFileGone?: true }> {
+  const insideAnotherCheckout = async () =>
+    !!(await git(info.treeRoot, ['rev-parse', '--show-prefix']))?.trim()
+  const headOf = () => git(info.treeRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  const [inside, head] = await Promise.all([insideAnotherCheckout(), headOf()])
+  if (!inside) return { head }
+  await git(info.root, ['worktree', 'repair', barePath(info.treeRoot)])
+  if (await insideAnotherCheckout()) return { head: null, gitFileGone: true }
+  return { head: await headOf() }
+}
+
 export async function closingTree(git: GitOut, info: ProjectInfo): Promise<ClosingTree | null> {
   if (!info.worktreeName) return null
   const named = `worktree-${path.basename(info.treeRoot)}`
-  const [head, hasNamed] = await Promise.all([
-    git(info.treeRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+  const [{ head, gitFileGone }, hasNamed] = await Promise.all([
+    headOfItsOwn(git, info),
     gitProbes(git).branchExists(info.root, named)
   ])
   const branches = new Set<string>()
   if (head?.trim()) branches.add(head.trim())
   if (hasNamed) branches.add(named)
-  return { ...info, branches: [...branches] }
+  return { ...info, branches: [...branches], ...(gitFileGone && { gitFileGone }) }
 }
 
 export type MergedHeads = (dir: string, branch: string) => Promise<string[] | null>
@@ -79,6 +94,11 @@ async function whatIsLeftIn(
   merged: MergedHeads | undefined,
   deletedFilesLoseNothing: boolean
 ): Promise<{ left: string[]; onlyDeletedFiles: boolean }> {
+  if (tree.gitFileGone)
+    return {
+      left: [`git could not read ${tree.treeRoot}: its .git file is gone.`],
+      onlyDeletedFiles: false
+    }
   const [status, commits] = await Promise.all([
     git(tree.treeRoot, ['status', '--porcelain=v1', '--untracked-files=all']),
     commitsNotHeld(git, tree.treeRoot, ['HEAD', ...tree.branches], tree.branches, merged)
