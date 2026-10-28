@@ -53,7 +53,6 @@ when it works. That is what "judged against" means.
 
 - **Jump to the turn behind a hunk** — from a hunk in the Changes view to the agent turn
   that produced it.
-- **Point the agent at things** — pick an element in the Workbench browser (#217).
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
 - **Branching sessions** — fork a session from the sidebar (#219).
