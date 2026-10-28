@@ -113,6 +113,24 @@ describe('claudeTrustsFolder stops looking up at the top of the git repo', () =>
     trustOnly(outer)
     expect(claudeTrustsFolder(file, worktree)).toBe(true)
   })
+
+  it('says no for a submodule, or a worktree whose main repo is gone, under a trusted repo: a .git file with no readable commondir is its own top', () => {
+    const repo = path.join(tmp, 'repo')
+    const submodule = path.join(repo, 'sub')
+    const moduleGitDir = path.join(repo, '.git', 'modules', 'sub')
+    fs.mkdirSync(moduleGitDir, { recursive: true })
+    fs.mkdirSync(submodule)
+    fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+    const orphan = path.join(repo, 'orphan')
+    fs.mkdirSync(orphan)
+    fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(tmp, 'gone', '.git')}\n`)
+    trustOnly(repo)
+
+    expect(claudeTrustsFolder(file, submodule)).toBe(false)
+    expect(claudeTrustsFolder(file, orphan)).toBe(false)
+    trustOnly(submodule)
+    expect(claudeTrustsFolder(file, submodule)).toBe(true)
+  })
 })
 
 // CC§22

@@ -306,6 +306,25 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ).toBe(true)
     })
 
+    // CC§9
+    it('on the machine too, a submodule or a worktree whose main repo is gone, under a trusted repo, is not trusted: a .git file with no readable commondir is its own top', async () => {
+      putNodeOnMachine()
+      const submodule = path.join(repo, 'sub')
+      fs.mkdirSync(path.join(repo, '.git', 'modules', 'sub'), { recursive: true })
+      fs.mkdirSync(submodule, { recursive: true })
+      fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+      const orphan = path.join(repo, 'orphan')
+      fs.mkdirSync(orphan)
+      fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(home, 'gone', '.git')}\n`)
+      fs.writeFileSync(
+        path.join(home, '.claude.json'),
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+
+      expect(await machine().trustsFolder(keyed(submodule))).toBe(false)
+      expect(await machine().trustsFolder(keyed(orphan))).toBe(false)
+    })
+
     it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
       const put = (file: string, text: string): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
