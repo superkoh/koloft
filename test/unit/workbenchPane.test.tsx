@@ -52,10 +52,18 @@ vi.mock('../../src/renderer/src/components/BrowserGuest', async (orig) => ({
     return null
   }
 }))
-const CHANGESET = { git: {}, numstat: {}, base: null, rootMissing: false, watchDead: false }
+const CHANGESET = {
+  git: {},
+  numstat: {},
+  base: null,
+  rootMissing: false,
+  watchDead: false,
+  firstReadFailed: false,
+  reread: () => {}
+}
 vi.mock('../../src/renderer/src/components/gitChangeSet', async (orig) => ({
   ...(await orig<object>()),
-  useGitChangeSet: () => ({ ...CHANGESET, reread: () => {} }),
+  useGitChangeSet: () => CHANGESET,
   useWatchlessRefresh: () => {}
 }))
 
