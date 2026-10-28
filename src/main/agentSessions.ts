@@ -416,6 +416,7 @@ export interface SessionVerbDeps {
   butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
+  bound(tabId: string, ms: number): Promise<boolean>
   asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
@@ -999,6 +1000,8 @@ export function sessionVerb(d: SessionVerbDeps): {
         `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`
       )
     await d.press(tab, [text, '\r'])
+    // AGY§8
+    await d.bound(tab, until - Date.now())
     return `Typed into ${t.name}.`
   }
 

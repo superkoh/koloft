@@ -192,6 +192,7 @@ function harness(
       return `${r.id}-tab`
     },
     ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
+    bound: async () => true,
     asking: (tabId) => conducting.asking?.includes(tabId) ?? false,
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })

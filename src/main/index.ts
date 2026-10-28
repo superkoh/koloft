@@ -1667,7 +1667,9 @@ const sessionDeps: SessionVerbDeps = {
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
+  // AGY§8
+  ready: (tabId, ms, turnEnded) => tabReady(tabId, ms, turnEnded, true),
+  bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
@@ -4813,15 +4815,25 @@ function showsPromptBeforeBind(tabId: string): boolean {
   return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
-function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+function tabReady(
+  tabId: string,
+  ms: number,
+  turnEnded: boolean,
+  typableBeforeBind = false
+): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
     () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+      (typableBeforeBind && showsPromptBeforeBind(tabId)) ||
+      (!!sessionOfTab(tabId)?.sessionId &&
+        tracker.statusOf(tabId) !== undefined &&
+        (!turnEnded || tracker.turnOver(tabId))),
     ms
   )
+}
+
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
 function registerSlashCommands(): void {
