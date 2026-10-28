@@ -1093,7 +1093,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       const page = await app.firstWindow()
       await waitBooted(page)
       await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Codex closed before the session started (exit code 3)',
+        { timeout: 20_000 }
+      )
       await expect.poll(() => termIds(page)).toHaveLength(0)
       await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)

@@ -303,6 +303,11 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+export function tabEverBound(tabId: string): boolean {
+  return lastSessionId.has(tabId)
+}
+
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (

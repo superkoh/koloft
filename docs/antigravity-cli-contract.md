@@ -242,7 +242,9 @@ Nothing ran against Google's real servers.
   `initializing`, about 0.3 s after launch, while the question is still up; the
   first run, at once, carries `""` and `authenticating`. So which conversation the
   process holds is known before the answer. "No, exit" then exits and records no
-  trust; "Yes" opens the history. The id arrives at the same 0.3 s on the colour
+  trust (exit code 0, about 0.3 s after Enter, or 2 s after Esc; it leaves its own
+  screen, so nothing of it stays on the terminal — agy 1.4.7 on Linux in Docker,
+  2026-10-26); "Yes" opens the history. The id arrives at the same 0.3 s on the colour
   screen (no `onboarding.json`; `initializing`), on the sign-in screen (no
   `modelProvider`, no token; still `authenticating`), with `-c` on the trust screen,
   and with the folder trusted. An id with no stored conversation keeps
