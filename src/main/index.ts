@@ -480,7 +480,7 @@ import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
 import { todoVerb } from './agentTodo'
-import { claudeJsonPath } from './claudeTrust'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
   PROJECT_MCP_FILE,
@@ -1444,11 +1444,12 @@ async function mcpServersNow(): Promise<McpServer[]> {
     textOrNull(museSettings),
     textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
   ])
+  const claudeFolders = [...local, conductorFolder(app.getPath('userData'))].map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
   return [
-    ...claudeServers(claudeJson, projectFiles, [
-      ...local,
-      conductorFolder(app.getPath('userData'))
-    ]),
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
     ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])

@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import {
   acceptClaudeTrust,
+  claudeProjectKey,
   claudeTrustsFolder,
   isTrustedByClaude,
   markClaudeOnboarded
@@ -111,6 +112,27 @@ describe('claudeTrustsFolder stops looking up at the top of the git repo', () =>
     expect(claudeTrustsFolder(file, worktree)).toBe(false)
     trustOnly(outer)
     expect(claudeTrustsFolder(file, worktree)).toBe(true)
+  })
+})
+
+// CC§22
+describe('claudeProjectKey names the ~/.claude.json projects entry Claude Code keeps a folder’s local MCP servers under', () => {
+  it('a folder inside a repo and a linked worktree of it share the main checkout’s key; a plain folder keeps its own', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-projkey-')))
+    const repo = path.join(tmp, 'repo')
+    const worktree = path.join(tmp, 'wt')
+    const admin = path.join(repo, '.git', 'worktrees', 'wt')
+    fs.mkdirSync(path.join(repo, 'sub'), { recursive: true })
+    fs.mkdirSync(admin, { recursive: true })
+    fs.mkdirSync(worktree, { recursive: true })
+    fs.writeFileSync(path.join(admin, 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${admin}\n`)
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+
+    expect(claudeProjectKey(path.join(repo, 'sub'))).toBe(repo)
+    expect(claudeProjectKey(worktree)).toBe(repo)
+    expect(claudeProjectKey(path.join(tmp, 'plain', 'sub'))).toBe(path.join(tmp, 'plain', 'sub'))
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })
 
