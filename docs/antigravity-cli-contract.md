@@ -685,6 +685,44 @@ only downloaded the public release.
 - A subagent is a child conversation: a summaries row with `parent_conversation_id`,
   `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
   turn.
+- **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
+  network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
+  tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
+  MaxIterations?, ExactTiming?, TimerCondition?}`: a one-shot timer or a cron, run as a
+  background task whose id is `<conversation id>/task-<stepIdx of the call>`. The call
+  returns at once ("Tool is running as a background task with task id: …"); the footer
+  shows "1 task(s)" and a line "● [time] 25s timer running".
+  - `PreToolUse` carries `toolCall {name:"schedule", args}` and `stepIdx`.
+    `PostToolUse` for it comes only when the task ends: a timer when it fires, a cron
+    after its last firing (`MaxIterations`), with the same `stepIdx`.
+  - Each firing starts a turn by itself: `PreInvocation` (`invocationNum` 0), one model
+    request whose last content is a `<SYSTEM_MESSAGE>` "[Message] … sender=<task id>
+    priority=MESSAGE_PRIORITY_HIGH content=<Prompt>", then `Stop`. No `SessionStart`.
+  - While a timer or a plain cron waits, every `Stop` says `fullyIdle:false` (a 25 s
+    timer; a `* * * * *` cron with `MaxIterations` 2, both firings); the `Stop` after
+    the last firing says `true`. A cron with `IsDaemon:true` gives `fullyIdle:true` on
+    every `Stop`, the one that set it up included, while it keeps firing every minute.
+  - `manage_task {Action:"kill", TaskId:"<task id>"}` cancels it ("Task … cancelled."):
+    `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
+    the `schedule` ever comes. The short id `task-2`, sent from the conversation that
+    set it, cancels it the same way. A malformed id fails with a non-empty `error`.
+    After `/clear`, `task-2` sent from the new conversation came back to the model as
+    "Tool execution was canceled", with a `PreToolUse` and no `PostToolUse`.
+  - A `CronExpression` agy cannot read ("not a cron") fails at once: `PostToolUse` for
+    the `schedule` comes right after its `PreToolUse`, with `error` "invalid
+    CronExpression …".
+  - After `/clear` the screen and footer show no task, yet a daemon cron and a 45 s
+    one-shot timer both went on to fire a turn in the old conversation, their hooks
+    (the timer's `PostToolUse` too) carrying the old conversation id.
+  - A message the user typed did not cancel a timer set with `TimerCondition:"any"`:
+    the `Stop` after it still said `fullyIdle:false`.
+  - It lives in the process: killed and resumed with `-c`, agy showed the conversation
+    but nothing fired in the next 150 s and the footer listed no task.
+  - The Connect API's `ListBackgroundTasks {cascadeId}` lists it while it waits
+    (`toolName:"schedule"`, `description:"Timer: 25s, Prompt: …"`) and returns `{}` once
+    it has ended.
+  - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
+    cancelling a task from the TUI's `/tasks`; the macOS build.
 
 ## §14 Asks in the terminal and the keys that answer them
 

@@ -33,6 +33,16 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
+const STANDING_CRON = {
+  name: 'schedule',
+  args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
+}
+const LOTS_OF_CRON_FIRINGS = 8000
+const TIMER = { name: 'schedule', args: { DurationSeconds: 1800, Prompt: 'Look again' } }
+const killTask = (TaskId: string): Record<string, unknown> => ({
+  name: 'manage_task',
+  args: { Action: 'kill', TaskId }
+})
 
 let home: string
 let repo: string
@@ -746,6 +756,52 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
+
+  it('keeps a tab that set a standing cron, which agy reports fully idle, from closing as idle until the cron has fired for the last time', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('keeps holding the tab for a timer after /clear moves it on, since the timer still fires in the old conversation, and lets go once it has', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: TIMER, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('lets go of a standing cron agy killed, by its full or its short task id, and not after a kill that failed', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 5 })
+    hook(id, 'PostToolUse', {
+      stepIdx: 8,
+      error: 'no such task',
+      toolCall: killTask(`${A}/task-2`)
+    })
+    hook(id, 'PostToolUse', { stepIdx: 9, error: '', toolCall: killTask(`${A}/task-2`) })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { stepIdx: 10, error: '', toolCall: killTask('task-5') })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
 })
 
 describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
@@ -1082,6 +1138,50 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(
       vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
     ).toEqual([])
+  })
+
+  it('attaching to a conversation tmux still runs there holds the tab for a standing cron set before the restart, however long ago, and not for one killed before it', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    const line = (event: string, input: Record<string, unknown>): string =>
+      JSON.stringify({ event, input: { conversationId: A, ...input } }) + '\n'
+    fs.writeFileSync(
+      old,
+      line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 }) +
+        line('PostToolUse', { stepIdx: 4, error: '', toolCall: killTask(`${A}/task-2`) }) +
+        line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }) +
+        line('Stop', { fullyIdle: true }).repeat(LOTS_OF_CRON_FIRINGS) +
+        line('Stop', { fullyIdle: true })
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    fs.appendFileSync(old, line('PostToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }))
+    sessions.followMirrors('devbox')
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('a finished remote tab that never scheduled anything is not held once /clear moves it on', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      old,
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle: true } }) + '\n'
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    fs.appendFileSync(old, JSON.stringify({ conversation_id: B, agent_state: 'idle' }) + '\n')
+    sessions.followMirrors('devbox')
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(false)
   })
 
   it('attaching to a conversation tmux still runs there while it waits for an approval shows it waiting for that approval again', async () => {

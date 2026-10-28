@@ -2432,3 +2432,34 @@ lines of `test/unit/sessionRoute.real.test.ts`.
   "koloft里…为什么session list前没有展示agent对应的icon" went to rule 8 or 5 (7 of 10)
   or rule 3 (1 of 10), where the prompt without it gave rule 6 in 10 of 10.
 
+## 32. No wake-up after the turn ends
+
+2026-10-26, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
+`codex exec --ephemeral --ignore-user-config -s read-only` in an empty folder, the
+owner's login, `gpt-6.1-sol`, told to call no tool:
+
+- The request itself was not captured on this route (it goes to OpenAI). On the API-key
+  route the request's tool list was read at a fake Responses server (section 16):
+  `exec_command, write_stdin, request_user_input, apply_patch, view_image, get_goal,
+  create_goal, update_goal, tool_search, web_search`, none of which schedules anything.
+- Asked for every tool it can call, the model listed `functions.wait`,
+  `request_user_input`, `request_user_input_async`, `exec`, `apply_patch`,
+  `create_goal`, `get_goal`, `update_goal`, `exec_command`, `write_stdin`,
+  `view_image`, the MCP resource tools, `request_plugin_install`, `clock__curr_time`,
+  `image_gen__imagegen`, `web__run`, `clock.sleep` and the `collaboration.*` agent tools,
+  and answered that none of them starts a turn after the current one has ended (its own
+  account of its tools, not read from the request).
+- Asked to quote them, it gave `clock.sleep` as "Pause execution for a specified
+  duration. The sleep ends early when new input arrives for the active turn. Returns the
+  elapsed wall-clock time." with `duration_ms` from 1 to 43200000; and
+  `collaboration.followup_task` as sending a task to "an existing non-root target agent",
+  never to the thread itself. A Codex wait therefore runs inside the turn, which stays
+  open, so the tab reads as working; there is no wake-up to keep a finished tab for, the
+  way Claude Code's `/loop` (CC§8) or Muse's `cron_create` (MUSE§9) leave one.
+- `codex features list` on that build shows `sleep_tool` stable and on, and
+  `in_app_local_automation` stable and on; the binary's only other traces of
+  scheduling are thread-source labels ("Scheduled follow-ups", "Scheduled automations")
+  and a prompt line telling the model to prefer `clock.sleep` "over automations". No
+  app-server method or model tool that makes an automation was found in its strings;
+  what makes one in the Codex desktop app was not probed.
+
