@@ -180,7 +180,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
-  stateBeforeBind?: ProgramStatus
+  statesBeforeBind?: ProgramStatus[]
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -192,6 +192,16 @@ interface AgyRun extends StoredRun {
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
+}
+
+function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
+  let kept = held
+  for (const status of arrived) {
+    const last = kept.at(-1)
+    if (status.state === 'idle') kept = [status]
+    else if (last?.state !== status.state || last.kind !== status.kind) kept = [...kept, status]
+  }
+  return kept
 }
 
 // AGY§1 AGY§3
@@ -870,9 +880,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
     // AGY§10
-    const before = run.stateBeforeBind
-    run.stateBeforeBind = undefined
-    if (before) this.emitState(run, before)
+    const before = run.statesBeforeBind ?? []
+    run.statesBeforeBind = undefined
+    if (run.stopping) return
+    const replayed = before.length > 1 && before[0].state === 'idle' ? before.slice(1) : before
+    for (const status of replayed) this.emitState(run, status)
   }
 
   // AGY§12
@@ -969,7 +981,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
     if (!run.info) {
-      run.stateBeforeBind = states[states.length - 1]
+      run.statesBeforeBind = sinceThePrompt(run.statesBeforeBind ?? [], states)
       this.deps.pty.wakeReady(tabId)
       return
     }
@@ -979,7 +991,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && run.stateBeforeBind?.state === 'idle'
+    return !!run && !run.info && !run.explicitStop && run.statesBeforeBind?.at(-1)?.state === 'idle'
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
