@@ -439,6 +439,7 @@ export class CodexObservation {
       }
       this.waitingForInput = false
       this.markBackgroundCommands(this.threadId)
+      // CODEX§32
       this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
       this.publishActivity()
       const finished = this.turns.open()

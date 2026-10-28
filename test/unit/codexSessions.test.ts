@@ -206,7 +206,7 @@ beforeEach(() => {
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
-    agent: { enabled: () => false, answer: vi.fn() },
+    agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
       picked: vi.fn(async () => false),
@@ -482,6 +482,23 @@ describe('CodexSessions', () => {
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
     await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
+  })
+
+  it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
+    const seen: string[][] = []
+    vi.mocked(deps.pickHome).mockImplementation(() => {
+      seen.push(sessions.launchedSessions().map((s) => s.account ?? ''))
+      return { account: 'work', home: '/homes/work' }
+    })
+    const [first] = await Promise.all([
+      sessions.launch({ kind: 'codex', cwd: repo }),
+      sessions.launch({ kind: 'codex', cwd: repo })
+    ])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    const closing = sessions.stop(first.id)
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work'])
+    await closing
   })
 
   // CODEX§15
@@ -926,15 +943,16 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§17
-  it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
+  it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
-    deps.agent = { enabled: () => true, answer }
+    deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
     expect(hint).toContain('koloft session new -w')
+    expect(transports[0].options.skillRoots).toEqual(['/koloft/plugin/skills'])
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     const requestDir = /\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
@@ -972,7 +990,7 @@ describe('CodexSessions', () => {
 
   // ADR-0029
   it('a conductor with agent tools on is told its role but never the helper rules, which would have it do work itself', async () => {
-    deps.agent = { enabled: () => true, answer: vi.fn() }
+    deps.agent = { enabled: () => true, answer: vi.fn(), skillsFolder: () => undefined }
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, role: 'ROLE-TEXT' })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
@@ -994,11 +1012,12 @@ describe('CodexSessions', () => {
     expect(fs.readFileSync(said, 'utf8')).toBe('把侧栏修好')
   })
 
-  it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
+  it('with agent tools off, a Codex tab gets neither the koloft command, the Koloft hint nor the koloft skill', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(
       transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))
     ).toBe(false)
+    expect(transports[0].options.skillRoots).toBeUndefined()
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     expect(fs.existsSync(path.join(shimDir, 'koloft'))).toBe(false)
   })

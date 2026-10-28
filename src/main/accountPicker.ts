@@ -2,14 +2,15 @@ import type {
   AccountKind,
   AccountMeta,
   AccountView,
+  BackendId,
   SessionInfo,
   UsageSnapshot
 } from '@shared/types'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
   accountLine,
-  codexBackAt,
-  codexWalled,
   fableExhausted,
+  homeRoom,
   keepsResumedSession,
   resetElapsed,
   usableAccounts
@@ -85,9 +86,10 @@ function bannerFor(
   return accountLine(name, parts, { at: u.at, nowMs })
 }
 
-export function codexAllLimitedNotice(a: AccountView): string | undefined {
-  if (!a.limits || !codexWalled(a.limits)) return undefined
-  return `Every Codex account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(codexBackAt(a.limits))}).`
+export function allLimitedNotice(a: AccountView, backend: BackendId): string | undefined {
+  const room = homeRoom(a, Math.floor(Date.now() / 1000))
+  if (!room?.walled) return undefined
+  return `Every ${BACKEND_LABEL[backend]} account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(room.backAt)}).`
 }
 
 function fallbackTag(a: AccountMeta): string {

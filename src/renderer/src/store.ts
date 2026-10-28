@@ -1,5 +1,5 @@
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
+import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -303,6 +303,11 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+export function tabEverBound(tabId: string): boolean {
+  return lastSessionId.has(tabId)
+}
+
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
@@ -363,6 +368,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
     workbenchParked.set(newId, parked)
   }
   rekeyOwner(oldId, newId)
+  window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   lastSessionId.set(newId, sessionId)
@@ -784,21 +790,28 @@ export const useStore = create<AppState>((set, get) => ({
         )
       }))
       window.api.terminal.kill(oldId, true)
+      const failed = (why?: string): void => {
+        if (why && get().tabs.some((x) => x.id === oldId)) get().showToast(why)
+        set((s) => ({
+          tabs: s.tabs.map((x) =>
+            x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+          )
+        }))
+      }
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {
           if (!res.ok) {
             const main =
               res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
-            if (main) {
-              get().setResumeDialog({
-                kind: 'escape',
-                target: { backendId: backend, id: resumeId, title },
-                worktreeName: basename(cwd),
-                cwd: main
-              })
-            }
-            throw new Error(res.code)
+            if (!main) return failed(resumeFailureMessage(res))
+            get().setResumeDialog({
+              kind: 'escape',
+              target: { backendId: backend, id: resumeId, title },
+              worktreeName: basename(cwd),
+              cwd: main
+            })
+            return failed()
           }
           if (!get().tabs.some((x) => x.id === oldId)) {
             window.api.terminal.kill(res.id)
@@ -825,13 +838,7 @@ export const useStore = create<AppState>((set, get) => ({
           restarting.add(res.id)
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })
-        .catch(() => {
-          set((s) => ({
-            tabs: s.tabs.map((x) =>
-              x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
-            )
-          }))
-        })
+        .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
     if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)

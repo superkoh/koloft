@@ -1107,6 +1107,7 @@ export interface KoloftApi {
   }
   tabs: {
     list(): Promise<TabInventoryReply>
+    moved(oldTabId: string, newTabId: string): void
     onKilledByMain(cb: (tabId: string) => void): () => void
     onSlept(cb: (tabId: string) => void): () => void
   }

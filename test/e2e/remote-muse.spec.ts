@@ -22,8 +22,8 @@ import {
   agentRow,
   centerTerm,
   closeActiveTab,
-  gitCommitAll,
-  gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   newSessionInWith,
   openMenu,
   runIn,
@@ -228,14 +228,13 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
-  test('E-RM-05: a scheduled Muse job on a remote workspace runs muse on the machine in its own worktree made there by git, trusted for that run', async ({
+  test('E-RM-05: a scheduled Muse job on a remote workspace runs muse on the machine in its own worktree made there by git, with the ignored files .worktreeinclude lists copied in there, trusted for that run', async ({
     env
   }) => {
     const TASK = 'nightly check'
     installFakeRemote(env)
     fs.writeFileSync(path.join(remoteDir(env), 'README.md'), '# proj\n')
-    gitInit(remoteDir(env))
-    gitCommitAll(remoteDir(env))
+    gitRepoWithAnIncludedEnv(remoteDir(env))
     const { app, page } = await launchWithMuseThere(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -257,6 +256,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         true
       )
       expect(fs.existsSync(path.join(call.cwd, '.git'))).toBe(true)
+      expect(fs.readFileSync(path.join(call.cwd, '.env'), 'utf8')).toBe(INCLUDED_ENV)
     } finally {
       await quitAndClose(app)
     }

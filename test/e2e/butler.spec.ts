@@ -2,8 +2,21 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  launchApp,
+  quitAndClose
+} from './helpers/app'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   butlerHelperRows,
   butlerRow,
@@ -26,6 +39,7 @@ import {
   settingsOnDisk,
   startSessionIn,
   switchToRow,
+  terminalText,
   waitBooted,
   resumedId,
   waitForAllCalls,
@@ -54,6 +68,9 @@ const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
+const SHORT_BIND_DEADLINE_MS = 5_000
+const DEADLINE_FIRED_SETTLE_MS = 1_500
+const A_HELPER_HAS_IT_SQUEEZED = '(FromKoloft:)Theowneraskedforsomething'
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
@@ -176,6 +193,22 @@ function seedNote(env: E2EEnv, scope: string, text: string): void {
 function peerLines(env: E2EEnv): string {
   const f = path.join(env.home, 'fake-claude-peer.jsonl')
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
+}
+
+const AGY_EVERYWHERE = {
+  assist: { on: true, backend: 'agy' },
+  sessionMethods: {
+    defaultBackend: 'agy',
+    enabled: { claude: true, codex: true, muse: true, agy: true }
+  }
+}
+
+async function askInPalette(app: ElectronApplication, page: Page, words: string): Promise<void> {
+  await sendShortcut(app, 'shortcut:command-palette')
+  const ask = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
+  await expect(ask).toBeFocused()
+  await ask.fill(words)
+  await page.keyboard.press('Enter')
 }
 
 async function launched(
@@ -457,6 +490,74 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(readAllCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§8
+  test('an Antigravity butler opened from the sidebar with nothing to say stays open past the start deadline, and its first message binds it', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await expectNoToastAtAnyMomentOfAWindow(page)
+      await expect(butlerRow(page)).not.toHaveClass(/\bcold\b/)
+
+      await runIn(page, centerTerm(page), 'hello')
+      await expect(butlerRow(page)).toHaveClass(/st-(working|waiting)/, { timeout: 60_000 })
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§8
+  test('what ⌘P hands on to an Antigravity butler opened from the sidebar long before is typed into it as its first prompt, which binds it, and the helper starts', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { app, page, close } = await launched(env, AGY_EVERYWHERE)
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await expectNoToastAtAnyMomentOfAWindow(page)
+
+      await askInPalette(app, page, 'turn on dark mode')
+      await expect(butlerHelperRows(page)).toHaveCount(1, { timeout: 60_000 })
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
+      expect((await terminalText(page, butlerTab)).replace(/\s+/g, '')).toContain(
+        A_HELPER_HAS_IT_SQUEEZED
+      )
+      await expect(butlerRow(page)).toHaveAttribute('data-tab-id', butlerTab)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§5 AGY§8
+  test('an Antigravity butler opened from the sidebar that is stuck on a setup screen is closed at the start deadline as "did not start", with nothing said to it', async ({
+    env
+  }) => {
+    installAgy(env)
+    fs.writeFileSync(path.join(env.home, 'fake-agy-stuck-in-setup'), '')
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      await expect(page.locator('.toast', { hasText: 'Alfred did not start.' })).toBeVisible({
+        timeout: SHORT_BIND_DEADLINE_MS * 3
+      })
+      expect(butlerSessionOnDisk(env)?.sessionIds ?? []).toEqual([])
     } finally {
       await close()
     }

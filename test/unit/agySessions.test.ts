@@ -33,6 +33,16 @@ const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
 const LISTED_TITLE_READ_SETTLES_MS = 300
+const STANDING_CRON = {
+  name: 'schedule',
+  args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
+}
+const LOTS_OF_CRON_FIRINGS = 8000
+const TIMER = { name: 'schedule', args: { DurationSeconds: 1800, Prompt: 'Look again' } }
+const killTask = (TaskId: string): Record<string, unknown> => ({
+  name: 'manage_task',
+  args: { Action: 'kill', TaskId }
+})
 
 let home: string
 let repo: string
@@ -185,6 +195,7 @@ beforeEach(() => {
     }),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
+    wakeReady: vi.fn(),
     kill: vi.fn(),
     clearResumeIntent: vi.fn()
   })
@@ -350,6 +361,18 @@ describe('AgySessions launch', () => {
     expect(created).toEqual([])
   })
 
+  it('counts each tab on the account it runs on, from the moment it starts opening, and says so when every account is at its limit', async () => {
+    const seen: (string | undefined)[][] = []
+    sessions['deps'].pickHome = () => {
+      seen.push(sessions.launchedSessions().map((s) => s.account))
+      return { ...picked!, notice: 'Every Antigravity account is at its limit' }
+    }
+    await Promise.all([launch(), launch()])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    expect(sessions['deps'].error).toHaveBeenCalledWith('Every Antigravity account is at its limit')
+  })
+
   it("writes the folder into agy's own trust list only when Koloft was told to trust it", async () => {
     await launch()
     expect(sessions.trustsFolder(repo)).toBe(false)
@@ -386,6 +409,25 @@ describe('AgySessions launch', () => {
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
     const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
     expect(after.permissions).toBeUndefined()
+  })
+
+  // AGY§31
+  it("puts the koloft skill as a real file in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on", async () => {
+    const skillHere = (): string =>
+      path.join(picked!.home, 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+    agentTools = true
+    await launch()
+    expect(fs.lstatSync(skillHere()).isFile()).toBe(true)
+    expect(fs.readFileSync(skillHere(), 'utf8')).toMatch(/^---\nname: koloft\n/)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const fromPackage = '/agent-plugin/skills/koloft/SKILL.md'
+    expect(machine.launches[0].program.run).toContain(fromPackage)
+    agentTools = false
+    await launch()
+    expect(fs.existsSync(skillHere())).toBe(false)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    expect(machine.launches[1].program.run).not.toContain(fromPackage)
+    expect(machine.launches[1].program.run).toContain('rm -rf "$A/antigravity-cli/skills/koloft"')
   })
 
   // AGY§9 AGY§24
@@ -490,6 +532,19 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     say(id, state('working'))
     expect(sessions.list()[0]).toMatchObject({ sessionId: agySessionKey(A), nativeSessionId: A })
     expect(events('bound')).toHaveLength(1)
+  })
+
+  // AGY§5 AGY§8
+  it('before its first prompt it tells whether it shows the prompt or a setup screen, and once bound it no longer says so', async () => {
+    const { id } = await launch()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('blocked', ':kind=question'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('idle'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+    title(id, { conversation_id: A })
+    say(id, state('working'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
   })
 
   it('binds on its own from the title log, without waiting for a status frame', async () => {
@@ -731,6 +786,52 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     expect(sessions.list()[0].background![0]).toMatchObject({ kind: 'agent', state: 'working' })
     hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('keeps a tab that set a standing cron, which agy reports fully idle, from closing as idle until the cron has fired for the last time', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('keeps holding the tab for a timer after /clear moves it on, since the timer still fires in the old conversation, and lets go once it has', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: TIMER, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('lets go of a standing cron agy killed, by its full or its short task id, and not after a kill that failed', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 5 })
+    hook(id, 'PostToolUse', {
+      stepIdx: 8,
+      error: 'no such task',
+      toolCall: killTask(`${A}/task-2`)
+    })
+    hook(id, 'PostToolUse', { stepIdx: 9, error: '', toolCall: killTask(`${A}/task-2`) })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { stepIdx: 10, error: '', toolCall: killTask('task-5') })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
   })
 })
 
@@ -1068,6 +1169,50 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(
       vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
     ).toEqual([])
+  })
+
+  it('attaching to a conversation tmux still runs there holds the tab for a standing cron set before the restart, however long ago, and not for one killed before it', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    const line = (event: string, input: Record<string, unknown>): string =>
+      JSON.stringify({ event, input: { conversationId: A, ...input } }) + '\n'
+    fs.writeFileSync(
+      old,
+      line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 }) +
+        line('PostToolUse', { stepIdx: 4, error: '', toolCall: killTask(`${A}/task-2`) }) +
+        line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }) +
+        line('Stop', { fullyIdle: true }).repeat(LOTS_OF_CRON_FIRINGS) +
+        line('Stop', { fullyIdle: true })
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    fs.appendFileSync(old, line('PostToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }))
+    sessions.followMirrors('devbox')
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('a finished remote tab that never scheduled anything is not held once /clear moves it on', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      old,
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle: true } }) + '\n'
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    fs.appendFileSync(old, JSON.stringify({ conversation_id: B, agent_state: 'idle' }) + '\n')
+    sessions.followMirrors('devbox')
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(false)
   })
 
   it('attaching to a conversation tmux still runs there while it waits for an approval shows it waiting for that approval again', async () => {

@@ -60,6 +60,7 @@ import {
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
+import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -125,13 +126,7 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import {
-  formatRemoteKey,
-  hostOf,
-  isAbsoluteOnHost,
-  isRemoteKey,
-  parseRemoteKey
-} from '@shared/remoteKey'
+import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -236,7 +231,7 @@ import { probeAccount, shouldSkipFable } from './usageProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  codexAllLimitedNotice,
+  allLimitedNotice,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -481,7 +476,7 @@ import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
 import { todoVerb } from './agentTodo'
-import { claudeJsonPath } from './claudeTrust'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
   PROJECT_MCP_FILE,
@@ -532,7 +527,7 @@ import {
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -1400,7 +1395,7 @@ function machineTreeIo(cwd: string): TreeIo {
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
     keyed: (listed) => pinnedKeyOn(host, listed),
-    onThisMac: false
+    machine
   }
 }
 
@@ -1466,11 +1461,12 @@ async function mcpServersNow(): Promise<McpServer[]> {
     textOrNull(museSettings),
     textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
   ])
+  const claudeFolders = [...local, conductorFolder(app.getPath('userData'))].map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
   return [
-    ...claudeServers(claudeJson, projectFiles, [
-      ...local,
-      conductorFolder(app.getPath('userData'))
-    ]),
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
     ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
@@ -1546,17 +1542,17 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
-    return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
+    return codexPicker.peek(accountViews()) ? undefined : 'every Codex account is at its limit'
   },
   muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
-    return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+    return musePicker.peek(accountViews()) ? undefined : 'there is no usable Muse account'
   },
   agy: async () => {
     if (!agySessions || !(await agySessions.availability()).available)
       return 'Antigravity is not available on this Mac'
-    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
+    return agyPicker.peek(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
 }
 
@@ -1661,12 +1657,19 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (inOrder) =>
+  closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
-      for (const target of inOrder)
-        await closeSessionFully(target).catch((error) =>
-          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
-        )
+      for (const target of inOrder) {
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
+          tell(`${target.title}: ${String(error)}`)
+          return false
+        })
+        if (!closed) return
+      }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
@@ -2092,13 +2095,17 @@ function pickCodexHome(
   resumeSessionId?: string
 ): { account: string; home: string; notice?: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
+  const picked = codexPicker.pick(
+    views,
+    sessionAccounts?.of('codex', resumeSessionId),
+    codexSessions?.launchedSessions()
+  )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
+  return { account: picked.name, home, notice: allLimitedNotice(picked, 'codex') }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2232,7 +2239,11 @@ function museHomeFor(name: string): string {
 // ADR-0030 MUSE§13
 function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const views = accountViews()
-  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  const picked = musePicker.pick(
+    views,
+    sessionAccounts?.of('muse', resumeSessionId),
+    museSessions?.launchedSessions()
+  )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
@@ -2240,7 +2251,8 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
     picked && {
       account: picked.name,
       env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now())
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'muse')
     }
   )
 }
@@ -2304,6 +2316,7 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
+const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
 function ownersGemini(): string {
@@ -2324,13 +2337,25 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
-  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
+function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+  const views = accountViews()
+  const picked = onlyAsking
+    ? agyPicker.peek(views)
+    : agyPicker.pick(
+        views,
+        sessionAccounts?.of('agy', resumeSessionId),
+        agySessions?.launchedSessions()
+      )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+    void probeAgyAccounts()
   return (
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now())
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'agy')
     }
   )
 }
@@ -2339,6 +2364,7 @@ function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
 async function probeAgyAccount(name: string): Promise<void> {
   const acct = findAccount(name, 'agy-home')
   if (!acct) return
+  agyProbedAt.set(name, Date.now())
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
@@ -2949,7 +2975,8 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
+        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -3056,6 +3083,8 @@ app.whenReady().then(() => {
       })
       .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
+  for (const stored of [codexSessions, museSessions, agySessions])
+    if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>
@@ -3185,6 +3214,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3309,6 +3339,7 @@ app.whenReady().then(() => {
     answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
@@ -3678,6 +3709,8 @@ app.on('before-quit', (e) => {
   closeAllDirWatchers()
   resetQuitGuard()
 })
+
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
 
 function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
@@ -4496,7 +4529,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
 const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
@@ -4526,25 +4559,33 @@ async function whatClosingWouldLose(
   ]
 }
 
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+}
+
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
-): Promise<void> {
+  info = projectInfoFor(target.treeRoot),
+  tell = tellTheOwner
+): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
-    return
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
-    return
+    tell(
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
+    )
+    return false
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
@@ -4554,6 +4595,7 @@ async function closeSessionFully(
     Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
   )
   void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
 async function removeUntouchedWorktree(
@@ -4748,8 +4790,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
-function couldNotStart(title: string): string {
-  return `Could not start “${title}” — click it to try again.`
+function couldNotStart(title: string, reason?: string): string {
+  return `Could not start “${title}” — ${reason || 'click it to try again.'}`
 }
 
 // CC§11
@@ -4779,7 +4821,9 @@ async function resumeRow(
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action
   })
-  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
+  if (!res.ok) {
+    return { ok: false, error: couldNotStart(row.title, res.code === 'backend' ? res.message : '') }
+  }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -4789,6 +4833,10 @@ async function resumeRow(
   }
   sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
+}
+
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
@@ -4902,6 +4950,7 @@ function butlerDestination(): Destination {
       const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
     typeCommand: async (tabId, command) => {
@@ -5222,6 +5271,12 @@ function registerIpc(): void {
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
+  ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
+    if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
+    ptyMgr.moveOwner(oldTabId, newTabId)
+    for (const wc of webContents.getAllWebContents())
+      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+  })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
   ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
@@ -6024,7 +6079,7 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
   )

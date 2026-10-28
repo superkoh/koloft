@@ -35,7 +35,7 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
-const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 export const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_MUSE_ACCOUNT = 'e2e-muse'
@@ -327,6 +327,19 @@ export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
 
 export function ownersGemini(env: E2EEnv): string {
   return path.join(env.home, '.gemini')
+}
+
+export function agyTranscriptOf(env: E2EEnv, conversationId: string): string {
+  const file = path.join(
+    ownersGemini(env),
+    'antigravity-cli',
+    'brain',
+    conversationId,
+    '.system_generated',
+    'logs',
+    'transcript.jsonl'
+  )
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
 
 // AGY§4 AGY§5

@@ -15,6 +15,7 @@ import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicke
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
+import { removeTree } from '../../src/main/sessionClose'
 
 const MACHINE = 'devbox'
 let home: string
@@ -306,6 +307,25 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ).toBe(true)
     })
 
+    // CC§9
+    it('on the machine too, a submodule or a worktree whose main repo is gone, under a trusted repo, is not trusted: a .git file with no readable commondir is its own top', async () => {
+      putNodeOnMachine()
+      const submodule = path.join(repo, 'sub')
+      fs.mkdirSync(path.join(repo, '.git', 'modules', 'sub'), { recursive: true })
+      fs.mkdirSync(submodule, { recursive: true })
+      fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+      const orphan = path.join(repo, 'orphan')
+      fs.mkdirSync(orphan)
+      fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(home, 'gone', '.git')}\n`)
+      fs.writeFileSync(
+        path.join(home, '.claude.json'),
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+
+      expect(await machine().trustsFolder(keyed(submodule))).toBe(false)
+      expect(await machine().trustsFolder(keyed(orphan))).toBe(false)
+    })
+
     it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
       const put = (file: string, text: string): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -433,11 +453,12 @@ describe('freshness of a checkout on the machine', () => {
   })
 })
 
-const unreachable = async (): Promise<BytesResult> => ({
-  code: 255,
+const sshFails = (code: number | null, stderr: string) => async (): Promise<BytesResult> => ({
+  code,
   stdout: Buffer.alloc(0),
-  stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+  stderr
 })
+const unreachable = sshFails(255, 'ssh: connect to host devbox port 22: Operation timed out')
 
 describe("Claude's folder trust on the machine", () => {
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
@@ -470,6 +491,14 @@ describe('a remote Workbench while the ssh link is down', () => {
     linkDown = true
 
     await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
+  })
+
+  it('refuses a session start with ssh’s reason when the machine is out of reach, but not when it only needs someone to sign in, which the session tab is for, nor when ssh is merely slow', async () => {
+    await expect(machine(unreachable).reachOrThrow()).rejects.toThrow('Operation timed out')
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
+    await expect(machine(needsPassword).reachOrThrow()).resolves.toBeUndefined()
+    await expect(machine(sshFails(null, '')).reachOrThrow()).resolves.toBeUndefined()
+    await expect(machine().reachOrThrow()).resolves.toBeUndefined()
   })
 })
 
@@ -811,4 +840,22 @@ describe('the utility terminal on the machine', () => {
     expect(printed.status).toBe(0)
     expect(fs.readFileSync(realLog, 'utf8')).toBe('-p hi there\n')
   })
+})
+
+it('a worktree git cannot delete on the machine is reported in git’s words, with the commands to run on that machine', async () => {
+  const tree = path.join(repo, '.claude', 'worktrees', 'w')
+  git('worktree', 'add', '-q', '-b', 'worktree-w', tree)
+  const readOnly = path.join(tree, 'build', 'ro')
+  fs.mkdirSync(readOnly, { recursive: true })
+  fs.writeFileSync(path.join(readOnly, 'out.o'), 'x')
+  fs.chmodSync(readOnly, 0o555)
+  const problem = await removeTree(machine().gitOut, {
+    root: keyed(repo),
+    treeRoot: keyed(tree),
+    worktreeName: 'w',
+    branches: ['worktree-w']
+  })
+  fs.chmodSync(readOnly, 0o755)
+  expect(problem).toContain(`failed to delete '${tree}': Permission denied`)
+  expect(problem).toContain(`run on ${MACHINE}: chmod -R u+w '${tree}' && rm -rf '${tree}'`)
 })

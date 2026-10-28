@@ -19,7 +19,10 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
           { onlyIn: '/work/shop', text: JSON.stringify({ mcpServers: { notion: {} } }) },
           { onlyIn: '/work/blog', text: null }
         ],
-        ['/work/shop', '/work/blog']
+        [
+          { folder: '/work/shop', projectKey: '/work/shop' },
+          { folder: '/work/blog', projectKey: '/work/blog' }
+        ]
       )
     ).toEqual([
       { name: 'linear', backend: 'claude' },
@@ -28,6 +31,19 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ])
     expect(claudeServers(null, [], [])).toEqual([])
     expect(claudeServers('not json', [], [])).toEqual([])
+  })
+
+  // CC§22
+  it('Claude: a folder whose projects key is another folder (inside a repository) gets the servers kept under that key, not those left under its own path, which Claude Code does not load there', () => {
+    const claudeJson = JSON.stringify({
+      projects: {
+        '/work/mono': { mcpServers: { jira: {} } },
+        '/work/mono/app': { mcpServers: { notion: {} } }
+      }
+    })
+    expect(
+      claudeServers(claudeJson, [], [{ folder: '/work/mono/app', projectKey: '/work/mono' }])
+    ).toEqual([{ name: 'jira', backend: 'claude', onlyIn: '/work/mono/app' }])
   })
 
   // MUSE§18 AGY§30

@@ -8,10 +8,14 @@ import { spawn, spawnSync } from 'child_process'
 import {
   accountEnv,
   buildMachinePackage,
+  claudeTabSpec,
   killSessionCmd,
+  koloftSkillLine,
   launchLine,
+  machineToolProgram,
   tabScript,
   writeTabPackage,
+  type ClaudeTab,
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
@@ -136,16 +140,23 @@ async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
   return pred()
 }
 
-const spec = (over: Partial<TabSpec> = {}): TabSpec => ({
-  tabId: 'T',
-  tmuxName: 'k-sess1',
-  machineName: 'm-0000000000000000',
-  cwd: '/tmp',
-  banner: 'koloft: bravo',
-  settings: { hooks: {} },
-  claudeArgs: ['--session-id', 'sess1'],
+const spec = ({
+  settings = { hooks: {} },
+  claudeArgs = ['--session-id', 'sess1'],
+  agentPlugin,
+  program,
   ...over
-})
+}: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
+  const tab = {
+    tabId: 'T',
+    tmuxName: 'k-sess1',
+    machineName: 'm-0000000000000000',
+    cwd: '/tmp',
+    banner: 'koloft: bravo',
+    ...over
+  }
+  return program ? { ...tab, program } : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin })
+}
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
   const pkg = buildMachinePackage(path.join(r.dir, 'pkg'), files)
@@ -421,6 +432,27 @@ function claudeEnvOf(s: TabSpec): Record<string, string> {
   return b.env()
 }
 
+describe('the koloft skill a Codex or Antigravity tab keeps in its home on the machine', () => {
+  it('is copied whole from the machine package while agent tools are on, replacing an older copy, and removed once they are off', () => {
+    const root = mkroot('skill')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    const installed = path.join(skills, 'koloft', 'SKILL.md')
+    buildMachinePackage(root, { 'agent-plugin/skills/koloft/SKILL.md': 'NEW' })
+    const pkg = fs.readdirSync(root).find((n) => n.startsWith('m-'))!
+    fs.renameSync(path.join(root, pkg), machineDir)
+    fs.mkdirSync(path.dirname(installed), { recursive: true })
+    fs.writeFileSync(installed, 'OLD')
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    expect(run(koloftSkillLine(skills, machineDir))).toBe(0)
+    expect(fs.readFileSync(installed, 'utf8')).toBe('NEW')
+    expect(fs.readdirSync(path.dirname(installed))).toEqual(['SKILL.md'])
+    expect(run(koloftSkillLine(skills, undefined))).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+  })
+})
+
 describe('U-TAB-*: the tab script on the machine', () => {
   it('falls back to the workspace root when the recorded directory is gone, so a resume into a removed worktree still opens', () => {
     const root = mkroot('root')
@@ -486,16 +518,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
   it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
-      program: {
-        name: 'muse',
-        run: museRunLines({
+      program: machineToolProgram(
+        'muse',
+        museRunLines({
           tabId: 'T',
           account: "o'brien",
           args: ['--approval-judge', 'off', 'say hi'],
           trust: []
         }),
-        files: { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
-      }
+        { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      )
     })
     const b = box(s)
     const own = path.join(b.home, '.config', 'muse')

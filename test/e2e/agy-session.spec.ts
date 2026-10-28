@@ -8,6 +8,7 @@ import {
   UNPACKAGED_BUILD_AGY_SVC,
   agyCalls,
   agySessionCalls as sessionCalls,
+  agyTranscriptOf as transcriptOf,
   installAgy,
   ownersGemini,
   seedSettings,
@@ -24,6 +25,7 @@ import {
   openMenu,
   processAlive,
   readAllCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
@@ -67,18 +69,6 @@ const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
-
-function transcriptOf(env: E2EEnv, conversationId: string): string {
-  const file = path.join(
-    ownersApp(env),
-    'brain',
-    conversationId,
-    '.system_generated',
-    'logs',
-    'transcript.jsonl'
-  )
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-}
 
 async function startAgy(page: Page, env: E2EEnv): Promise<AgyCall> {
   const before = sessionCalls(env).length
@@ -632,6 +622,64 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level', async ({
+    env
+  }) => {
+    const TASK = '/daily-report now'
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill(TASK)
+      const chip = (text: string): Locator =>
+        dlg.locator('.chip', { hasText: new RegExp(`^${text}$`) })
+      const thinking = dlg.locator('.chip', {
+        hasText: /^(Same as usual|Low|Medium|High|Extra high|Max)$/
+      })
+
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'High'])
+      await chip('Gemini 4 Argon').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'Medium', 'High'])
+      await chip('Medium').click()
+      await chip('Gemini 3.1 Pro').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'High'])
+      await expect(dlg.locator('.chip.on', { hasText: /^Same as usual$/ })).toHaveCount(1)
+      await chip('Gemini 4 Argon').click()
+      await expect(dlg.locator('.chip.on', { hasText: /^Medium$/ })).toHaveCount(1)
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gemini-4-argon · medium`)
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(sessionCalls(env)[0].argv.slice(2)).toEqual([
+        '--model',
+        'gemini-4-argon',
+        '--effort',
+        'medium',
+        '--dangerously-skip-permissions',
+        '-i',
+        TASK
+      ])
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§6
   test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, and a pasted Gemini API key adds an account kept in the Keychain, UNVERIFIED until agy onboarding is done', async ({
     env
@@ -752,6 +800,42 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Antigravity', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8
+  test('an agy conversation started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting its .db there turns it off again', async ({
+    env
+  }) => {
+    installAgy(env)
+    fs.mkdirSync(ownersApp(env), { recursive: true })
+    fs.writeFileSync(
+      path.join(ownersApp(env), 'settings.json'),
+      JSON.stringify({
+        trustedWorkspaces: [fs.realpathSync(env.workspaces.a)],
+        modelProvider: 'gemini'
+      })
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const printed = execFileSync(
+        process.execPath,
+        [FAKE_AGY, '-p', 'started in a plain terminal', '--output-format', 'json'],
+        {
+          cwd: env.workspaces.a,
+          env: { ...env.launchEnv, PWD: env.workspaces.a, GEMINI_API_KEY: 'fake-gemini-key' }
+        }
+      ).toString()
+      const id = (JSON.parse(printed) as { conversation_id: string }).conversation_id
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(true)
+      fs.unlinkSync(path.join(ownersApp(env), 'conversations', `${id}.db`))
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }
