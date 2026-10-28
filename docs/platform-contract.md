@@ -1151,10 +1151,11 @@ inferred, not checked.
   133 of 300 (same, 8 CPU burners), 40 of 300 (30 ms apart) and 3 of 300 (100 ms apart).
   Measured 2026-10-22 (Node 24.13.0 under vitest, macOS 27.0) with a throwaway probe on
   `watchJsonDrops`. So a reader that must keep write order reads one drop at a time, in
-  event order; the drop's own `ts` is whole seconds and cannot sort them. A sweep that
-  finds several the watch missed sorts them by file mtime instead: drops written back to
-  back with `writeWholeBeforeVisible` came back in write order from an mtime sort in
-  every run of `toolShim.test.ts` (2026-10-28, Node 24.13.0, macOS 27.0, APFS).
+  event order; the drop's own `ts` is whole seconds and cannot sort them. File mtime
+  can: 1000 rounds of 12 drops written back to back in one process (write a `.tmp`,
+  rename it into place) gave 11,000 neighbour pairs with no tie and none out of order.
+  Measured 2026-10-28 (Node 24.13.0, macOS 27.0, APFS in the temp folder) with a
+  throwaway probe that stat'ed each drop after the round.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 - **A session's two start notes can go unreported.** With the launch line typed about

@@ -44,50 +44,73 @@ export type InWriteOrder = (name: string) => boolean
 
 const noDropInWriteOrder: InWriteOrder = () => false
 
-function readNamedDrop(
-  dir: string,
-  name: string,
-  handlerFor: DropHandlerFor,
-  after: Promise<void> = Promise.resolve()
-): Promise<void> {
-  if (!name.endsWith('.json')) return after
+function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): Promise<void> {
+  if (!name.endsWith('.json')) return Promise.resolve()
   const handle = handlerFor(name)
-  if (!handle) return after
+  if (!handle) return Promise.resolve()
   const full = path.join(dir, name)
-  const read = (): Promise<void> => readJsonDrop(full, 0, (obj) => handle(obj, full))
-  return after.then(read, read)
+  return readJsonDrop(full, 0, (obj) => handle(obj, full))
 }
 
-type ReadAfterEarlierDrops = (name: string, handlerFor: DropHandlerFor) => void
-
-function oneAtATime(dir: string): ReadAfterEarlierDrops {
-  let earlierDrops = Promise.resolve()
-  return (name, handlerFor) => {
-    earlierDrops = readNamedDrop(dir, name, handlerFor, earlierDrops)
-  }
-}
-
-function sweepJsonDrops(
+async function readInWriteOrder(
   dir: string,
   handlerFor: DropHandlerFor,
-  inWriteOrder: InWriteOrder,
-  inOrder: ReadAfterEarlierDrops
-): void {
-  fs.readdir(dir, async (err, names) => {
-    if (err) return
-    for (const name of names) if (!inWriteOrder(name)) void readNamedDrop(dir, name, handlerFor)
-    const ordered = names.filter((name) => name.endsWith('.json') && inWriteOrder(name))
-    const written = await Promise.all(
-      ordered.map((name) =>
+  inWriteOrder: InWriteOrder
+): Promise<void> {
+  const names = await fs.promises.readdir(dir)
+  const written = await Promise.all(
+    names
+      .filter((name) => name.endsWith('.json') && inWriteOrder(name) && handlerFor(name))
+      .map((name) =>
         fs.promises.stat(path.join(dir, name)).then(
           (st) => ({ name, at: st.mtimeMs }),
           () => null
         )
       )
-    )
-    // PLATFORM§28
-    for (const { name } of written.flatMap((w) => (w ? [w] : [])).sort((a, b) => a.at - b.at))
-      inOrder(name, handlerFor)
+  )
+  // PLATFORM§28
+  for (const { name } of written.flatMap((w) => (w ? [w] : [])).sort((a, b) => a.at - b.at))
+    await readNamedDrop(dir, name, handlerFor)
+}
+
+function onePassAtATime(
+  dir: string,
+  handlerFor: DropHandlerFor,
+  inWriteOrder: InWriteOrder
+): () => void {
+  const eachOnce = oncePerName(handlerFor)
+  let running = false
+  let wantedAgain = false
+  const pass = (): void => {
+    if (running) {
+      wantedAgain = true
+      return
+    }
+    running = true
+    readInWriteOrder(dir, eachOnce, inWriteOrder)
+      .catch(() => {})
+      .finally(() => {
+        running = false
+        if (wantedAgain) {
+          wantedAgain = false
+          pass()
+        }
+      })
+  }
+  return pass
+}
+
+function sweepJsonDrops(
+  dir: string,
+  sweepFor: DropHandlerFor,
+  inWriteOrder: InWriteOrder,
+  passInWriteOrder: () => void
+): void {
+  fs.readdir(dir, (err, names) => {
+    if (err) return
+    for (const name of names)
+      if (name.endsWith('.json') && !inWriteOrder(name)) void readNamedDrop(dir, name, sweepFor)
+    passInWriteOrder()
   })
 }
 
@@ -95,14 +118,15 @@ function watchWith(
   dir: string,
   handlerFor: DropHandlerFor,
   inWriteOrder: InWriteOrder,
-  inOrder: ReadAfterEarlierDrops
+  passInWriteOrder: () => void
 ): fs.FSWatcher | null {
   try {
     return fs.watch(dir, (_event, filename) => {
       if (!filename) return
       const name = filename.toString()
+      if (!name.endsWith('.json')) return
       // PLATFORM§28
-      if (inWriteOrder(name)) inOrder(name, handlerFor)
+      if (inWriteOrder(name)) passInWriteOrder()
       else void readNamedDrop(dir, name, handlerFor)
     })
   } catch {
@@ -115,7 +139,7 @@ export function watchJsonDrops(
   handlerFor: DropHandlerFor,
   inWriteOrder: InWriteOrder = noDropInWriteOrder
 ): fs.FSWatcher | null {
-  return watchWith(dir, handlerFor, inWriteOrder, oneAtATime(dir))
+  return watchWith(dir, handlerFor, inWriteOrder, onePassAtATime(dir, handlerFor, inWriteOrder))
 }
 
 // PLATFORM§28
@@ -127,11 +151,11 @@ export function watchAndSweepJsonDrops(
   sweepFor: DropHandlerFor = handlerFor,
   inWriteOrder: InWriteOrder = noDropInWriteOrder
 ): fs.FSWatcher | null {
-  const inOrder = oneAtATime(dir)
-  const watcher = watchWith(dir, handlerFor, inWriteOrder, inOrder)
+  const passInWriteOrder = onePassAtATime(dir, handlerFor, inWriteOrder)
+  const watcher = watchWith(dir, handlerFor, inWriteOrder, passInWriteOrder)
   if (watcher) {
     const sweep = setInterval(
-      () => sweepJsonDrops(dir, sweepFor, inWriteOrder, inOrder),
+      () => sweepJsonDrops(dir, sweepFor, inWriteOrder, passInWriteOrder),
       SWEEP_FOR_A_LOST_DROP_MS
     ).unref()
     watcher.on('close', () => clearInterval(sweep))
