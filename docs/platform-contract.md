@@ -1256,6 +1256,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **A half-removed tree can lose its `.git` file first** (seen once in 42 kills of
+  `git worktree remove --force` on git 2.x, 2026-10-24; not again in 186 kills at
+  100–220 ms on git 2.54.0, 2026-10-26). Git run inside that folder then reads the
+  parent checkout around it: `git rev-parse --show-prefix` prints the folder's path
+  inside the parent (`.claude/worktrees/<name>/`) where a worktree's own top prints an
+  empty line, `symbolic-ref HEAD` names the parent's branch, and `status` lists the
+  parent's changes. `git worktree remove [--force]` refuses it (`validation failed,
+  cannot remove working tree: '<path>/.git' does not exist`) and `git worktree list`
+  marks it `prunable`. **`git worktree repair <path>`, run in the parent, writes the
+  `.git` file back but exits non-zero** (`repair: .git file broken: <path>`); afterwards
+  `status` lists the deleted files as ` D` and `git worktree remove --force` removes the
+  folder and its registration. Once the registration under `.git/worktrees/<name>` is
+  gone too, `repair` cannot write the file back. (Measured 2026-10-26
+  with the `.git` file deleted by hand, on git 2.54.0 macOS and git 2.39.5 Debian 12 in
+  Docker, on a throwaway repo.)
 - **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
   or pruned, and only then**: a repo with none has no such folder, `git worktree add`
   creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock
