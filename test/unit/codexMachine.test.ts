@@ -195,4 +195,44 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
     )
     expect(toTui.map((f) => f.method ?? f.id)).toEqual(['account/login/completed'])
   })
+
+  it('passes on nothing from the machine while paused for a TUI that is behind, and everything once resumed', async () => {
+    const A_FRAME_WOULD_HAVE_ARRIVED_MS = 300
+    const machine = await machineServer()
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-home-'))
+    const toTui: Frame[] = []
+    const upstream = new MachineCodexUpstream(
+      {
+        connect: () =>
+          spawn(process.execPath, [FAKE_CODEX, 'app-server', 'proxy', '--sock', machine.sock], {
+            stdio: 'pipe',
+            env: { ...process.env, HOME: home, CODEX_HOME: home }
+          }),
+        login: { params: async () => undefined, refreshed: async () => ({}) as never },
+        macCwd: '/Users/someone',
+        machineCwd: () => '/home/someone/proj',
+        stopServer: async () => {},
+        maxFrameBytes: 1 << 20,
+        report: () => {}
+      },
+      ({ parse }) => toTui.push(parse()),
+      (error) => {
+        throw error
+      }
+    )
+    stops.push(() => upstream.stop(), machine.close)
+    upstream.write(JSON.stringify({ id: 1, method: 'initialize', params: {} }))
+    await vi.waitFor(() => expect(machine.got.map((f) => f.method)).toEqual(['initialize']))
+
+    upstream.pause()
+    machine.send({ id: 1, result: {} })
+    machine.send({ method: 'thread/started', params: {} })
+    await new Promise((r) => setTimeout(r, A_FRAME_WOULD_HAVE_ARRIVED_MS))
+    expect(toTui).toEqual([])
+
+    upstream.resume()
+    await vi.waitFor(() =>
+      expect(toTui.map((f) => f.method ?? f.id)).toEqual([1, 'thread/started'])
+    )
+  })
 })

@@ -51,6 +51,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
  if(mode==='unread') {process.stdout.write('{"id":"plugin-list-1","result":not json}\\n');out({id:f.id,result:{}});return;}
+ if(mode==='burst') {for(let i=0;i<f.params.count;i++) out({method:'burst',params:{i,pad:'x'.repeat(f.params.bytes)}});return;}
  if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
@@ -475,6 +476,50 @@ describe('Codex TUI transport', () => {
     const first = nextFrame(socket)
     socket.send(JSON.stringify({ id: 'start', method: 'initialize', params: {} }))
     expect(await first).toMatchObject({ id: 'start' })
+  })
+
+  it('a TUI that reads slower than a burst of replies far over the size limit together, as the Codex TUI asking for its 24 MB plugin list several times at once, keeps its connection and gets every reply', async () => {
+    const FRAME_LIMIT = 256 * 1024
+    const REPLY_BYTES = 200 * 1024
+    const REPLIES = 8
+    const BURST_REACHES_KOLOFT_MS = 500
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      maxFrameBytes: FRAME_LIMIT,
+      onFrame: () => {},
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    let closed = false
+    const seen: number[] = []
+    const allOrClosed = new Promise<void>((resolve) => {
+      socket.on('close', () => {
+        closed = true
+        resolve()
+      })
+      socket.on('message', (bytes) => {
+        const frame = JSON.parse(bytes.toString()) as CodexFrame
+        if (seen.push((frame.params as { i: number }).i) === REPLIES) resolve()
+      })
+    })
+    socket.pause()
+    socket.send(
+      JSON.stringify({
+        id: 2,
+        method: 'thread/read',
+        params: { mode: 'burst', count: REPLIES, bytes: REPLY_BYTES }
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, BURST_REACHES_KOLOFT_MS))
+    socket.resume()
+    await allOrClosed
+    expect(closed).toBe(false)
+    expect(seen).toEqual([...Array(REPLIES).keys()])
+    expect(errors).toEqual([])
   })
 
   it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {

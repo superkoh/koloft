@@ -27,6 +27,8 @@ export interface CodexUpstream {
   readonly ready: Promise<void>
   readonly limit: number
   write(raw: string | Buffer): void
+  pause(): void
+  resume(): void
   stop(): Promise<void>
 }
 
@@ -265,6 +267,14 @@ class CodexProcess implements CodexUpstream {
     this.child.stdin.write('\n')
   }
 
+  pause(): void {
+    this.child.stdout.pause()
+  }
+
+  resume(): void {
+    this.child.stdout.resume()
+  }
+
   stop(): Promise<void> {
     if (!this.stopping)
       this.stopping = this.stopOwnedProcesses().catch((error) => {
@@ -418,6 +428,7 @@ export async function createCodexTransport(
   let stopping: Promise<void> | undefined
   const pending: Buffer[] = []
   let pendingBytes = 0
+  let readingPausedForTheTui = false
   const own = new Map<string, PendingRequest>()
   const report = (error: Error): void => {
     try {
@@ -475,11 +486,18 @@ export async function createCodexTransport(
     const raw = questionThatWaitsForTheOwner(read)
     observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
-      if (client.bufferedAmount > upstream.limit * 2)
-        throw new Error('Codex output queue exceeds the size limit')
-      client.send(raw, { binary: false }, (error) => {
+      const tui = client
+      tui.send(raw, { binary: false }, (error) => {
         if (error) fail(error)
+        else if (readingPausedForTheTui && tui.bufferedAmount <= upstream.limit) {
+          readingPausedForTheTui = false
+          upstream.resume()
+        }
       })
+      if (!readingPausedForTheTui && tui.bufferedAmount > upstream.limit) {
+        readingPausedForTheTui = true
+        upstream.pause()
+      }
     } else if (!accepted) {
       pendingBytes += raw.length
       if (pendingBytes > upstream.limit * 2)
