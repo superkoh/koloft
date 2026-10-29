@@ -3,7 +3,12 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_ENV_LINES, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
+import {
+  REMOTE_ENV_LINES,
+  TMUX_PASSES_THE_PANE_TITLE_ON,
+  onATerminalEvenWhenSshGaveNone,
+  remoteShCommand
+} from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
@@ -126,12 +131,17 @@ export interface ClaudeTab {
   claudeArgs: string[]
 }
 
+// PLATFORM§35
+const TITLE_ON_A_TMUX_ALREADY_RUNNING = TMUX_PASSES_THE_PANE_TITLE_ON.map(
+  (option) => `tmux -L koloft set -gq ${option} 2>/dev/null\n`
+).join('')
+
 export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
   ...tab,
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: claudeFirstRun(tab),
+    beforeTmux: claudeFirstRun(tab) + TITLE_ON_A_TMUX_ALREADY_RUNNING,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName

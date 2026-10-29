@@ -15,6 +15,8 @@ const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
 const ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE = 512
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
+// CC§4 PLATFORM§35
+const MODE_SWITCHES_TMUX_SENDS_AFTER_THE_TITLE = /\x1b\[\?[0-9;]*[hl]/g
 
 function printedLines(s: string): string[] {
   return stripTerminalCodes(s)
@@ -24,7 +26,7 @@ function printedLines(s: string): string[] {
 }
 
 function nothingOrTheResumeHint(between: string): boolean {
-  if (between === '') return true
+  if (between.replace(MODE_SWITCHES_TMUX_SENDS_AFTER_THE_TITLE, '') === '') return true
   const lines = printedLines(between)
   return (
     lines.length === 2 &&

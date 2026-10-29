@@ -35,6 +35,7 @@ import {
   showBrowse,
   waitPanelAttached
 } from './helpers/workbench'
+import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
@@ -126,6 +127,8 @@ function mirroredSaidFiles(env: E2EEnv): string[] {
     .map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
 }
 const RUN_FOLDERS = 'proj/.claude/worktrees'
+const REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS = 20_000
+const A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS = 8000
 const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
 const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
   'set -e',
@@ -904,6 +907,48 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: 30_000
         })
         .toBe(' · folder removed')
+    })
+  })
+
+  // CC§4 PLATFORM§35
+  test('E-SSH-33: /exit in a Claude Code worktree session on the machine lets its row and tab go as soon as Claude Code starts removing the worktree there through real tmux, while the removal still runs, and the worktree and its branch are gone once it ends', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(
+        lab,
+        'kuser',
+        `${COMMIT_THE_PROJECT} && printf '${REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS}' > ../fake-claude-remove-ms`
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await expect
+        .poll(async () => (await wsMenuTexts(page, 'kt-key')).join(' | '), { timeout: 60_000 })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, 'kt-key')
+      await worktreeDialog(page).locator('input').fill('leaving')
+      await page.keyboard.press('Enter')
+      const row = rowsWithSub(page, 'kt-key', 'leaving')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const there = (what: string): boolean =>
+        runOnTarget(lab, 'kuser', `${what} && echo yes || echo no`).trim() === 'yes'
+      const folder = (): boolean => there('test -d proj/.claude/worktrees/leaving')
+      const branch = (): boolean =>
+        there('git -C proj rev-parse -q --verify refs/heads/worktree-leaving >/dev/null')
+      expect(branch()).toBe(true)
+
+      await row.click()
+      await page.evaluate(([id]) => window.api.terminal.write(id, '/exit\r'), [tabId] as const)
+      await expect(row).toHaveCount(0, { timeout: A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS })
+      expect(folder()).toBe(true)
+
+      await expect
+        .poll(folder, { timeout: REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS + 30_000 })
+        .toBe(false)
+      expect(branch()).toBe(false)
+      await expect(row).toHaveCount(0)
     })
   })
 
