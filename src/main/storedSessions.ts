@@ -5,6 +5,7 @@ import type {
   BackendSessionInfo,
   BackendSessionRow,
   CreateTabOptions,
+  DiscoveredFolder,
   LaunchPermission,
   ProjectInfo,
   SessionResumeRequest
@@ -15,6 +16,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
@@ -27,12 +29,15 @@ import {
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
 import type { HoldScript } from './hooks'
+import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
+// MUSE§5 CODEX§2 AGY§8
+const NEW_SESSION_LIST_LAG_MS = 30_000
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -59,6 +64,11 @@ export interface HistoryEntry {
   createdAt?: number
   updatedAt?: number
   cliVersion?: string
+}
+
+export interface HistoryListing<H extends HistoryEntry> {
+  entries: { key: string; entry: H; archived: boolean }[]
+  listedHosts: string[]
 }
 
 export interface StoredRun {
@@ -109,6 +119,9 @@ export interface SessionsWithStore {
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
+  workspacesFor(cwds: string[]): string[]
+  localHistoryFolders(): Promise<DiscoveredFolder[]>
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -125,6 +138,7 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer?(tabId: string, reply: string): Promise<string | undefined | false>
   deliver?(tabId: string, text: string): Promise<boolean>
+  showsPromptBeforeBind?(tabId: string): boolean
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
@@ -142,6 +156,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
+  protected listedAt = new Map<string | undefined, number>()
+  private lastRunAt = new Map<string, number>()
   private places = new Map<string, Place>()
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
@@ -150,10 +166,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
-  private listed = false
   private launchingKeys = new Set<string>()
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
+  private starting = new Set<LaunchedSession>()
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
@@ -205,7 +221,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     throw new Error(stillOld)
   }
 
-  protected abstract listHistory(): Promise<{ key: string; entry: H; archived: boolean }[]>
+  protected abstract listHistory(): Promise<HistoryListing<H>>
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
   protected abstract untestedNotice(version: string): string
 
@@ -221,6 +237,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   protected runDetails(_run: R): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
     return {}
+  }
+
+  protected launchAccount(_prepared: P): string | undefined {
+    return undefined
   }
 
   protected degradedDetails(): BackendSessionInfo['details'] {
@@ -325,6 +345,16 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   list(): BackendSessionInfo[] {
     return [...this.runs.values()].flatMap((r) => (r.info ? [{ ...r.info }] : []))
   }
+  launchedSessions(): LaunchedSession[] {
+    const running = [...this.runs.values()]
+      .filter((r) => !r.stopping)
+      .map((r) => ({
+        tabId: r.tabId,
+        account: this.runDetails(r).pickedAccount,
+        status: r.info?.status
+      }))
+    return [...running, ...this.starting]
+  }
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
   }
@@ -369,6 +399,41 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
     return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
   }
+  hasHistoryOn(host: string): boolean {
+    for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
+    return false
+  }
+  async localHistoryFolders(): Promise<DiscoveredFolder[]> {
+    if (this.refreshing || !this.listedAt.has(undefined)) await this.refreshHistory()
+    return [...this.history].flatMap(([key, t]) =>
+      hostOfKey(key) || this.archivedIds.has(key)
+        ? []
+        : [{ path: t.cwd, sessions: 1, mtime: this.mtimeOf(t) }]
+    )
+  }
+  private mtimeOf(t: H): number {
+    return (t.updatedAt ?? t.createdAt ?? 0) * 1000
+  }
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
+    const scope = this.rowScope()
+    return (id, host) => {
+      const key = this.keyOf(id, host)
+      const entry = this.history.get(key)
+      const member = this.store.getMember(key)
+      const workspace =
+        member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
+      const title = entry ? this.titleOf(key, entry) : member?.title
+      return workspace && title !== undefined ? { workspace, title } : undefined
+    }
+  }
+  private titleOf(key: string, t: H): string {
+    return (
+      this.store.nameOfLeftMember(key) ||
+      t.name ||
+      t.preview?.slice(0, 100) ||
+      PLACEHOLDER_TITLES[this.id]
+    )
+  }
   members(): Set<string> {
     return new Set([
       ...this.store.listMembers().map((m) => m.key),
@@ -376,11 +441,20 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     ])
   }
 
-  rows(workspace: string): BackendSessionRow[] {
-    const scope: RowScope = {
+  private rowScope(): RowScope {
+    return {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       remotePlaces: new Map()
     }
+  }
+
+  workspacesFor(cwds: string[]): string[] {
+    const scope = this.rowScope()
+    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
+  }
+
+  rows(workspace: string): BackendSessionRow[] {
+    const scope = this.rowScope()
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
@@ -388,6 +462,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
+      if (this.gone(m.key, m.updatedAt)) continue
       const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
         title: m.title,
@@ -443,12 +518,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
+      title: this.titleOf(key, t),
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
       invalidCwd: place.missing,
-      mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
+      mtime: this.mtimeOf(t),
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
         : {})
@@ -480,6 +555,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return this.refreshing
   }
 
+  async refreshHistoryStartedNow(): Promise<void> {
+    await this.refreshing
+    return this.refreshHistory()
+  }
+
   private async readHistory(): Promise<void> {
     if (this.shuttingDown) return
     if (!this.binary) {
@@ -490,9 +570,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       }
     }
     if (this.shuttingDown) return
-    let entries: { key: string; entry: H; archived: boolean }[]
+    let listing: HistoryListing<H>
+    const startedAt = Date.now()
     try {
-      entries = await this.listHistory()
+      listing = await this.listHistory()
     } catch (error) {
       this.noteBinaryGone(error)
       this.historyError = error instanceof Error ? error : new Error(String(error))
@@ -500,14 +581,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     const seen = new Map<string, H>()
     const archivedIds = new Set<string>()
-    for (const { key, entry, archived } of entries) {
+    for (const { key, entry, archived } of listing.entries) {
       seen.set(key, entry)
       if (archived) archivedIds.add(key)
     }
     this.history = seen
     this.places.clear()
     this.archivedIds = archivedIds
-    this.listed = true
+    for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
     this.historyError = undefined
     this.changed()
   }
@@ -529,7 +610,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   threadGone(key: string): boolean {
-    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+    return !this.refreshing && this.gone(key, this.store.getMember(key)?.updatedAt ?? 0)
+  }
+
+  // CODEX§15 MUSE§5 AGY§8
+  private gone(key: string, boundAt: number): boolean {
+    if (this.history.has(key)) return false
+    const listedAt = this.listedAt.get(hostOfKey(key))
+    const lastLive = Math.max(boundAt, this.lastRunAt.get(key) ?? 0)
+    return (
+      listedAt !== undefined &&
+      lastLive < listedAt - NEW_SESSION_LIST_LAG_MS &&
+      !this.readsRunning(key)
+    )
   }
 
   launchedBypassingChecks(tabId: string): boolean {
@@ -634,23 +727,30 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
     const prepared = this.prepare(opts)
-    let freshWorktree = false
-    if (opts.worktreeResourceId) {
-      const saved = this.store.getResource(opts.worktreeResourceId)
-      if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
-        throw new Error('Invalid worktree recovery request.')
-      resource = await this.worktrees.rebuild(saved.id)
-      cwd = resource.worktreePath
-    } else if (opts.worktree) {
-      resource = await this.worktrees.create(workspace, opts.worktree)
-      cwd = resource.worktreePath
-      freshWorktree = !opts.scheduled
-    } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
-      resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
+    const starting = { tabId: '', account: this.launchAccount(prepared) }
+    this.starting.add(starting)
+    let run: R
+    try {
+      let freshWorktree = false
+      if (opts.worktreeResourceId) {
+        const saved = this.store.getResource(opts.worktreeResourceId)
+        if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
+          throw new Error('Invalid worktree recovery request.')
+        resource = await this.worktrees.rebuild(saved.id)
+        cwd = resource.worktreePath
+      } else if (opts.worktree) {
+        resource = await this.worktrees.create(workspace, opts.worktree)
+        cwd = resource.worktreePath
+        freshWorktree = !opts.scheduled
+      } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
+        resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
+      }
+      this.assertStarting()
+      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
+      this.runs.set(run.tabId, run)
+    } finally {
+      this.starting.delete(starting)
     }
-    this.assertStarting()
-    const run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
-    this.runs.set(run.tabId, run)
     this.changed()
     this.warnUntestedVersion(available)
     return { id: run.tabId, cwd }
@@ -704,7 +804,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
+      leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
+    if (old && old !== key) this.lastRunAt.set(old, now)
     try {
       this.store.upsertMember({
         id: entry.id,
@@ -714,6 +816,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         title:
           run.launchName ||
           (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
+          leftName ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||
@@ -722,7 +825,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
         ...(run.permission !== 'default' ? { permission: run.permission } : {}),
-        ...(this.keepsItsOwnTitle && (run.launchName || m?.named) ? { named: true as const } : {})
+        ...(this.keepsItsOwnTitle && (run.launchName || m?.named || leftName)
+          ? { named: true as const }
+          : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
@@ -791,8 +896,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         async () => !resource || this.dirThere(resource.worktreePath)
       )
     ) {
-      if (!resource) throw new ResumeRefused('rebuild-failed')
-      resource = await this.worktrees.rebuild(resource.id).catch(() => {
+      resource = await (
+        resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
+      ).catch(() => {
         throw new ResumeRefused('rebuild-failed')
       })
       cwd = resource.worktreePath
@@ -843,6 +949,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
             sessionId: run.info?.sessionId
           })
         this.runs.delete(tabId)
+        if (run.info) this.lastRunAt.set(run.info.sessionId, Date.now())
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
             this.removeMember(run.info.sessionId)

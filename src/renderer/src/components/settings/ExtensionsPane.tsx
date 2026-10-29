@@ -51,8 +51,9 @@ export function ExtensionsPane(): JSX.Element {
           <small>
             A session&apos;s agent can open and drive pages here instead of launching a browser of
             its own. Connected tools drive this Browser right away; nothing is asked. They get the
-            pages you can see, signed in as you. Turning this off disconnects anything connected
-            right now.
+            pages you can see, signed in as you. Claude Code sessions on another machine (over SSH)
+            can drive it too, but never open this Mac&apos;s files or its local web servers. Turning
+            this off disconnects anything connected right now.
           </small>
         </div>
         <Switch

@@ -1,3 +1,4 @@
+import dns from 'dns'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -16,6 +17,10 @@ vi.mock('electron', () => ({
 
 interface FakeGuest {
   isDestroyed(): boolean
+  getURL(): string
+  loadURL: ReturnType<typeof vi.fn>
+  once(event: string, fn: () => void): void
+  destroy(): void
   debugger: {
     attach: ReturnType<typeof vi.fn>
     detach: ReturnType<typeof vi.fn>
@@ -32,7 +37,7 @@ interface FakeGuest {
   emit(event: string, ...args: unknown[]): void
 }
 
-function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGuest {
+function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } = {}): FakeGuest {
   const listeners = new Map<string, Set<(...a: never[]) => void>>()
   let attached = false
   let release = (): void => {}
@@ -40,8 +45,19 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
     if (!listeners.has(event)) listeners.set(event, new Set())
     listeners.get(event)?.add(fn)
   }
+  const onDestroyed: (() => void)[] = []
+  let destroyed = false
   const guest: FakeGuest = {
-    isDestroyed: () => false,
+    isDestroyed: () => destroyed,
+    getURL: () => opts.url ?? 'http://x/a',
+    loadURL: vi.fn(async () => {}),
+    once: (event, fn) => {
+      if (event === 'destroyed') onDestroyed.push(fn)
+    },
+    destroy: () => {
+      destroyed = true
+      for (const fn of onDestroyed) fn()
+    },
     reload: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     debugger: {
@@ -87,7 +103,7 @@ function makeDeps(): Harness {
     session: SESSION,
     strip: [{ targetId: 'bt1', url: 'http://x/a', title: 'A', guestId: 11 }],
     sessionForTab: () => h.session,
-    mount: vi.fn(async () => 11),
+    mount: vi.fn(async (_s: string, tabId: string) => Number(tabId.replace('bt', '1'))),
     create: vi.fn(async (_s: string, url: string) => ({
       targetId: 'bt2',
       url,
@@ -263,6 +279,181 @@ describe('a tab whose session went away (§4.4)', () => {
       'the tab has no running session'
     )
     expect(deps.create).not.toHaveBeenCalled()
+  })
+})
+
+describe("a session on another machine never reaches this Mac's files or local servers through the Workbench browser", () => {
+  const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
+  const NAME_FOR_THE_MAC = 'http://mac-server.test/'
+  const REFUSED = 'cannot reach files or local servers of the Mac'
+  const errorOf = (reply: Record<string, unknown>): string =>
+    String((reply.error as { message?: string } | undefined)?.message ?? '')
+
+  beforeEach(() => {
+    vi.spyOn(dns.promises, 'lookup').mockImplementation((async (host: string) =>
+      host === 'mac-server.test'
+        ? [{ address: '127.0.0.1', family: 4 }]
+        : [{ address: '93.184.216.34', family: 4 }]) as never)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  async function attachedTo(c: Conn, url: string): Promise<string> {
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    const targetId = listed.targetInfos.find((t) => t.url === url)?.targetId ?? ''
+    return ((await c.cmd('Target.attachToTarget', { targetId })).result as { sessionId: string })
+      .sessionId
+  }
+
+  const NOTES = 'file:///Users/me/notes.html'
+
+  it('refuses to open, navigate to, upload or drag in a Mac file, or open a server on the Mac, however the address is written; web pages still work', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const guest = fakeGuest(11)
+    const c = await registered()
+
+    for (const url of [
+      MAC_FILE,
+      'fi\tle:///etc/hosts',
+      '\u0001file:///etc/hosts',
+      'FILE:/etc/hosts',
+      'http://127.0.0.1:8888/tree',
+      'http://localhost:3000/',
+      NAME_FOR_THE_MAC
+    ])
+      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toContain(REFUSED)
+    expect(deps.create).not.toHaveBeenCalled()
+
+    const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    for (const [method, params] of [
+      ['Page.navigate', { url: MAC_FILE }],
+      ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
+      ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
+      ['Page.navigate', { url: 'http://[::1]:5173/' }],
+      ['Page.navigate', { url: NAME_FOR_THE_MAC }],
+      ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
+      ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
+      ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
+      ['DOM.getFileInfo', { objectId: 'file-1' }],
+      ['Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/Users/me/Library' }],
+      [
+        'Input.dispatchDragEvent',
+        { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
+      ]
+    ] as const) {
+      expect(errorOf(await c.cmd(method, params, sid))).toContain(REFUSED)
+    }
+    const sent = (): string[] =>
+      guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
+    for (const method of [
+      'Page.navigate',
+      'Fetch.continueRequest',
+      'DOM.setFileInputFiles',
+      'DOM.getFileInfo',
+      'Page.setDownloadBehavior'
+    ])
+      expect(sent()).not.toContain(method)
+
+    await c.cmd('Page.navigate', { url: 'https://example.com/' }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
+      url: 'https://example.com/'
+    })
+    c.ws.close()
+    await until(() => !relay.relayAttached(TAB), 'the client to go')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it('opens a page it asks for blank first and fences it before loading the address, so even its first load is fenced', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    await c.cmd('Target.createTarget', { url: 'https://example.com/' })
+    expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
+    expect(relay.guestDrivenFromAnotherMachine(12)).toBe(true)
+    expect(made.loadURL).toHaveBeenCalledWith('https://example.com/')
+  })
+
+  it('keeps a page fenced after the client lets go of it, until the page is closed', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const guest = fakeGuest(11)
+    const c = await registered()
+    await attachedTo(c, 'http://x/a')
+    await c.cmd('Target.detachFromTarget', { sessionId: 'KOLOFT-1' })
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it('remembers every site a fenced page opened, so its workers stay fenced after the page leaves; an opaque origin is never one of them', () => {
+    relay.notePageOpenedForAMachine('https://evil.example/wait')
+    relay.notePageOpenedForAMachine('about:blank')
+    expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(true)
+    expect(relay.originDrivenFromAnotherMachine('https://example.com')).toBe(false)
+    expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
+  })
+
+  it('never shows it, or lets it attach to, a tab on a Mac file or local server, even before the strip has caught up', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    fakeGuest(11)
+    fakeGuest(13, { url: NOTES })
+    fakeGuest(14, { url: NOTES })
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
+      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 }
+    ])
+    const c = await registered()
+    await c.cmd('Target.setDiscoverTargets', { discover: true })
+
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a', 'http://x/before'])
+    const lagging = listed.targetInfos[1]?.targetId ?? ''
+    expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(REFUSED)
+
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: NOTES, title: 'notes', guestId: 14 },
+      { targetId: 'bt5', url: 'file:///Users/me/new.html', title: 'new', guestId: 15 }
+    ])
+    await c.cmd('Browser.getVersion')
+    expect(JSON.stringify(c.events)).not.toContain('file:')
+    expect(c.events.map((e) => e.method)).toContain('Target.targetDestroyed')
+  })
+
+  it("a session on this Mac still opens this Mac's files", async () => {
+    const guest = fakeGuest(11)
+    const c = await registered()
+    const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+    await c.cmd('Page.navigate', { url: MAC_FILE }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', { url: MAC_FILE })
+  })
+})
+
+describe("a tab's endpoint made for its machine (each new ssh forward)", () => {
+  it('turns the old address away and sends off a client still on it, so an address read off a port another account took after the link dropped opens nothing', async () => {
+    const old = relay.relayEndpoint(TAB)
+    const onOld = await registered()
+    const renewed = relay.renewRelayEndpointOnMachine(TAB)
+    expect(renewed).not.toBe(old)
+    expect(relay.relayEndpoint(TAB)).toBe(renewed)
+    expect(await closedReason(onOld)).toBe('the ssh forward to the machine was made again')
+
+    const stale = new WebSocket(old)
+    sockets.push(stale)
+    const reason = await new Promise<string>((resolve) =>
+      stale.on('close', (_code, r) => resolve(String(r)))
+    )
+    expect(reason).toBe('unknown endpoint')
+    expect(await (await registered()).cmd('Browser.getVersion')).toHaveProperty('result')
   })
 })
 

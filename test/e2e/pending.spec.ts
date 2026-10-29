@@ -1,9 +1,11 @@
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
   gitInit,
+  killSession,
   menuItemTexts,
   openMenu,
   openPicker,
@@ -11,6 +13,7 @@ import {
   processAlive,
   sendShortcut,
   snap,
+  staysOnTheFolderPageNotTheButler,
   waitForCalls
 } from './helpers/p1'
 
@@ -109,9 +112,34 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     try {
       await startMainSession(app, page)
       await waitForCalls(env, 1)
-      await expect(page.locator('.toast-msg')).toContainText('exit code 1', { timeout: 20_000 })
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude closed before the session started (exit code 1)',
+        { timeout: 20_000 }
+      )
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('a session you watch that leaves while still starting puts you back on its folder page, and never opens the butler', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.home, 'fake-claude-hang'), '')
+
+    const { app, page } = await launch(env)
+    try {
+      await startMainSession(app, page)
+      const pending = page.locator('.ws .ws-tab.st-pending')
+      await expect(pending).toHaveClass(/\bactive\b/, { timeout: 20_000 })
+      const [call] = await waitForCalls(env, 1)
+
+      killSession(call.pid, env)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
     } finally {
       await app.close().catch(() => {})
     }

@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
 import { HomeAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
-import { codexAllLimitedNotice } from '../../src/main/accountPicker'
+import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
 
@@ -121,8 +121,92 @@ describe('picking a Codex account', () => {
     const soon = account('soon', { limits: walledUntil(1_900_000_000) })
     const picked = picker.pick([late, soon])
     expect(picked?.name).toBe('soon')
-    expect(codexAllLimitedNotice(picked!)).toMatch(/soon.*\d\d:\d\d/)
-    expect(codexAllLimitedNotice(account('light', { limits: used(0.25) }))).toBeUndefined()
+    expect(allLimitedNotice(picked!, 'codex')).toMatch(/Every Codex account.*soon.*\d\d:\d\d/)
+    expect(allLimitedNotice(account('light', { limits: used(0.25) }), 'codex')).toBeUndefined()
+  })
+
+  it('steers clear of an account a live session already runs on, the way Claude Code accounts are picked', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const on = (name: string, status?: 'working' | 'idle') => [
+      { tabId: 't', account: name, status }
+    ]
+    const pool = [account('a', { limits: used(0.2) }), account('b', { limits: used(0.22) })]
+    expect(picker.pick(pool, undefined, on('a'))?.name).toBe('b')
+    expect(picker.pick(pool, undefined, on('B', 'working'))?.name).toBe('a')
+    expect(picker.pick(pool, undefined, on('a', 'idle'))?.name).toBe('a')
+    const far = [account('a', { limits: used(0.1) }), account('b', { limits: used(0.6) })]
+    expect(picker.pick(far, undefined, on('a'))?.name).toBe('a')
+    const unmeasured = [account('a'), account('b')]
+    expect(picker.pick(unmeasured, undefined, on('a'))?.name).toBe('b')
+  })
+
+  it('takes turns between accounts used about the same, instead of starting every session on one; only asking which one it would be does not move the turn', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const pool = [account('a', { limits: used(0.3) }), account('b', { limits: used(0.32) })]
+    expect(picker.peek(pool)?.name).toBe('a')
+    expect(picker.peek(pool)?.name).toBe('a')
+    expect([picker.pick(pool)?.name, picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual([
+      'a',
+      'b',
+      'a'
+    ])
+  })
+
+  it('an account whose limit has already reset is not treated as used up, even before it is measured again', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const pastReset = account('past', {
+      limits: { windows: [{ minutes: 300, used: 1, resetsAt: 1_000 }], at: 1 }
+    })
+    expect(picker.pick([pastReset, account('unmeasured')])?.name).toBe('past')
+    expect(allLimitedNotice(pastReset, 'codex')).toBeUndefined()
+  })
+
+  it('when every account is used up, one whose reset time is unknown is not taken for the first to reset', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const unknown = account('unknown', { limits: used(1) })
+    const soon = account('soon', {
+      limits: { windows: [{ minutes: 300, used: 1, resetsAt: 1_900_000_000 }], at: 1 }
+    })
+    expect(picker.pick([unknown, soon])?.name).toBe('soon')
+  })
+})
+
+// AGY§23
+describe('picking an Antigravity account by the quota /usage reports', () => {
+  const agy = (name: string, quota: AccountView['quota']): AccountView =>
+    account(name, { kind: 'agy-home', quota })
+
+  it('picks the account with the most quota left, and leaves a used-up one', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('full', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 1_900_000_000 }]),
+      agy('busy', [{ label: 'Gemini Models · 5h', used: 0.7 }]),
+      agy('light', [
+        { label: 'Gemini Models · 5h', used: 0.1 },
+        { label: 'Gemini Models · 7d', used: 0.2 }
+      ])
+    ]
+    expect(picker.pick(pool)?.name).toBe('light')
+  })
+
+  it('a resumed session leaves an account whose quota is used up', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('same', [{ label: 'Gemini Models · 7d', used: 1, resetsAt: 1_900_000_000 }]),
+      agy('other', [{ label: 'Gemini Models · 7d', used: 0.4 }])
+    ]
+    expect(picker.pick(pool, 'same')?.name).toBe('other')
+  })
+
+  it('when every account is used up, starts on the one that resets soonest and says so', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('late', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 2_000_000_000 }]),
+      agy('soon', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 1_900_000_000 }])
+    ]
+    const picked = picker.pick(pool)
+    expect(picked?.name).toBe('soon')
+    expect(allLimitedNotice(picked!, 'agy')).toMatch(/Every Antigravity account.*soon/)
   })
 
   it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {
@@ -140,7 +224,7 @@ describe('picking a Codex account', () => {
 })
 
 describe('prepareCodexHome', () => {
-  it('links the shared config.toml into a new home so settings and folder trust stay one, and never replaces a file already there', () => {
+  it('links the shared config.toml into a new home so settings and folder trust stay one', () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'shared.toml')
     fs.writeFileSync(shared, 'model = "gpt-5"\n')
@@ -148,12 +232,29 @@ describe('prepareCodexHome', () => {
     prepareCodexHome(home, shared)
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
     expect(fs.readFileSync(shared, 'utf8')).toBe('model = "gpt-5"\n')
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
 
+  // CODEX§27
+  it('links a home that has a config.toml of its own too: its folder trust tables move into the shared file, each folder once, and its other settings stay only in a kept copy beside the link', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'shared.toml')
+    fs.writeFileSync(shared, 'model = "gpt-5"\n\n[projects."/both"]\ntrust_level = "trusted"\n')
     const own = path.join(dir, 'homes', 'own')
     fs.mkdirSync(own, { recursive: true })
-    fs.writeFileSync(path.join(own, 'config.toml'), 'model = "o3"\n')
+    const ownText =
+      'model = "o3"\n\n[projects."/both"]\ntrust_level = "trusted"\n\n' +
+      '[tui]\nscreen_reader_detection_done = true\n\n' +
+      '[projects."/only-here"]\ntrust_level = "trusted"\n\n' +
+      '[projects."/only-here"]\ntrust_level = "trusted"\n'
+    fs.writeFileSync(path.join(own, 'config.toml'), ownText)
     prepareCodexHome(own, shared)
-    expect(fs.lstatSync(path.join(own, 'config.toml')).isSymbolicLink()).toBe(false)
+    expect(fs.readlinkSync(path.join(own, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe(
+      'model = "gpt-5"\n\n[projects."/both"]\ntrust_level = "trusted"\n\n' +
+        '[projects."/only-here"]\ntrust_level = "trusted"\n'
+    )
+    expect(fs.readFileSync(path.join(own, 'config.toml.before-shared'), 'utf8')).toBe(ownText)
     fs.rmSync(dir, { recursive: true, force: true })
   })
 

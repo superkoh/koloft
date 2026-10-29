@@ -117,6 +117,10 @@ export interface TabFacts {
 
 export type CallerTab = { tabId: string } | 'another-instance' | 'unknown'
 
+export function tabSpokenFor(tabId: string, facts: TabFacts): string {
+  return facts.util && facts.ownerTabId ? facts.ownerTabId : tabId
+}
+
 export function callerTab(
   tabId: string,
   tab: (id: string) => TabFacts | undefined,
@@ -124,7 +128,7 @@ export function callerTab(
 ): CallerTab {
   const facts = tab(tabId)
   if (!facts) return anotherLiveInstanceOwns(tabId, alive) ? 'another-instance' : 'unknown'
-  return { tabId: facts.util && facts.ownerTabId ? facts.ownerTabId : tabId }
+  return { tabId: tabSpokenFor(tabId, facts) }
 }
 
 export interface AgentRequestDeps {

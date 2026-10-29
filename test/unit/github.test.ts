@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { GithubLookup, parseOpenCounts } from '../../src/main/github'
+import { checkSummary, GithubLookup, listTodoPulls, parseOpenCounts } from '../../src/main/github'
 import { GH_SIGNED_OUT, type Gh, type GhResult } from '../../src/main/prChecks'
 import type { GithubInfo } from '@shared/types'
 
@@ -453,6 +453,81 @@ describe('GithubLookup.openItems', () => {
   })
 })
 
+describe('GithubLookup.mergedHeads', () => {
+  const ghAnswering =
+    (r: Partial<GhResult>, asked: string[][] = []): Gh =>
+    async (args) => {
+      asked.push(args)
+      return { code: 0, stdout: '[]', stderr: '', missing: false, ...r }
+    }
+
+  it('names the head commit of each merged pull request from the branch', async () => {
+    const asked: string[][] = []
+    const gh = ghAnswering(
+      {
+        stdout: JSON.stringify([
+          { headRefName: 'fix/login', headRefOid: SHA },
+          { headRefName: 'fix/login', headRefOid: 7 }
+        ])
+      },
+      asked
+    )
+    expect(await make({ gh }).mergedHeads(root, 'fix/login')).toEqual([SHA])
+    expect(asked).toEqual([
+      [
+        'pr',
+        'list',
+        '--repo',
+        'acme/widgets',
+        '--state',
+        'merged',
+        '--head',
+        'fix/login',
+        '--json',
+        'headRefName,headRefOid'
+      ]
+    ])
+  })
+
+  it('a repository not on GitHub has no merged pull request, and gh is never asked', async () => {
+    stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
+    const asked: string[][] = []
+    expect(await make({ gh: ghAnswering({}, asked) }).mergedHeads(root, 'x')).toEqual([])
+    expect(asked).toHaveLength(0)
+  })
+
+  it('a gh that fails or is missing cannot say', async () => {
+    const heads = (r: Partial<GhResult>): Promise<string[] | null> =>
+      make({ gh: ghAnswering(r) }).mergedHeads(root, 'x')
+    expect(await heads({ code: GH_SIGNED_OUT, stdout: '' })).toBeNull()
+    expect(await heads({ code: null, missing: true, stdout: '' })).toBeNull()
+  })
+
+  it('by branch: one list of the repository’s merged pull requests names each branch’s head commits; a failed gh cannot say', async () => {
+    const asked: string[][] = []
+    const gh = ghAnswering(
+      {
+        stdout: JSON.stringify([
+          { headRefName: 'fix/login', headRefOid: SHA },
+          { headRefName: 'fix/login', headRefOid: 'b'.repeat(40) },
+          { headRefName: 'docs', headRefOid: 7 }
+        ])
+      },
+      asked
+    )
+    expect(await make({ gh }).mergedHeadsByBranch(root)).toEqual(
+      new Map([['fix/login', [SHA, 'b'.repeat(40)]]])
+    )
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toEqual(
+      expect.arrayContaining(['--state', 'merged', '--repo', 'acme/widgets'])
+    )
+    expect(
+      await make({ gh: ghAnswering({ code: GH_SIGNED_OUT, stdout: '' }) }).mergedHeadsByBranch(root)
+    ).toBeNull()
+  })
+})
+
 describe('parseOpenCounts', () => {
   it('reads the totals gh prints for a repo it can see', () => {
     expect(
@@ -499,5 +574,87 @@ describe('the e2e fixture seam', () => {
     expect(await gh.target(root, 'pr')).toBe('https://github.com/acme/widgets/pull/42')
     expect((await gh.info(path.join(tmp, 'elsewhere'))).now).toBeNull()
     expect(calls()).toHaveLength(0)
+  })
+})
+
+describe('the open pull requests koloft todo lists', () => {
+  const ok = (stdout: string): GhResult => ({ code: 0, stdout, stderr: '', missing: false })
+  const PR = {
+    number: 41,
+    title: 'Bump vite',
+    author: { login: 'alice' },
+    reviewRequests: [{ login: 'bob' }, { slug: 'web-team' }],
+    headRefName: 'bump-vite',
+    isCrossRepository: false,
+    isDraft: false,
+    changedFiles: 2,
+    createdAt: '2026-10-17T00:00:00Z',
+    closingIssuesReferences: [{ number: 12 }],
+    statusCheckRollup: [
+      { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SKIPPED' }
+    ]
+  }
+
+  it('reads who opened each one, whom it asks to review, its checks, size and the issues it closes, and who the account is', async () => {
+    const asked: string[][] = []
+    const gh: Gh = async (args) => {
+      asked.push(args)
+      return args[0] === 'api' ? ok('alice\n') : ok(JSON.stringify([PR]))
+    }
+    expect(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' })).toEqual({
+      state: 'ok',
+      me: 'alice',
+      closesUnknown: false,
+      pulls: [
+        {
+          number: 41,
+          title: 'Bump vite',
+          author: 'alice',
+          reviewers: ['bob', 'web-team'],
+          branch: 'bump-vite',
+          draft: false,
+          checks: 'passing',
+          files: 2,
+          closes: [12],
+          openedAt: '2026-10-17T00:00:00Z'
+        }
+      ]
+    })
+    expect(asked.find((a) => a[0] === 'pr')).toEqual(
+      expect.arrayContaining(['--repo', 'octo/shop'])
+    )
+  })
+
+  // PLATFORM§61
+  it('with a gh too old to know which issues a pull request closes, lists them again without that and says so', async () => {
+    const gh: Gh = async (args) => {
+      if (args[0] === 'api') return ok('alice')
+      if (args.at(-1)?.includes('closingIssuesReferences'))
+        return {
+          code: 1,
+          stdout: '',
+          stderr: 'Unknown JSON field: "closingIssuesReferences"',
+          missing: false
+        }
+      return ok(JSON.stringify([{ ...PR, closingIssuesReferences: undefined }]))
+    }
+    expect(await listTodoPulls(gh, { owner: 'octo', repo: 'shop' })).toMatchObject({
+      state: 'ok',
+      closesUnknown: true,
+      pulls: [{ number: 41, closes: [] }]
+    })
+  })
+
+  it('sums up checks as failing when any failed, running while any is unfinished, passing when all are done, none when there are none', () => {
+    expect(checkSummary([])).toBe('none')
+    expect(
+      checkSummary([
+        { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
+        { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: '' }
+      ])
+    ).toBe('failing')
+    expect(checkSummary([{ __typename: 'StatusContext', state: 'PENDING' }])).toBe('running')
+    expect(checkSummary([{ __typename: 'StatusContext', state: 'SUCCESS' }])).toBe('passing')
   })
 })

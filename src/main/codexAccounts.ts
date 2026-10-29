@@ -1,13 +1,14 @@
 import fs from 'fs'
 import path from 'path'
-import {
-  RESUME_KEEPS_ACCOUNT_UP_TO,
-  codexBackAt,
-  codexHeaviest,
-  codexWalled,
-  usableAccounts
-} from '@shared/accountUsage'
+import { RESUME_KEEPS_ACCOUNT_UP_TO, homeRoom, usableAccounts } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
+import { joinProjectTables } from './codexTrust'
+import {
+  SCORE_PER_LIVE_SESSION,
+  liveSessionsPerAccount,
+  type LaunchedSession
+} from './accountPicker'
+import { EPS } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -32,6 +33,7 @@ export function codexHomes(userData: string): string[] {
 
 const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions', 'skills', 'rules']
 const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
+const SPLIT_CONFIG_KEPT_AS = 'config.toml.before-shared'
 
 function newerThan(a: string, b: string): boolean {
   const there = fs.statSync(b, { throwIfNoEntry: false })
@@ -72,10 +74,12 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
       fs.symlinkSync(theirs, own)
   }
   const config = path.join(home, 'config.toml')
-  try {
-    fs.lstatSync(config)
-    return
-  } catch {}
+  const existing = fs.lstatSync(config, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) return
+  if (existing) {
+    joinProjectTables(sharedConfig, fs.readFileSync(config, 'utf8'))
+    fs.renameSync(config, path.join(home, SPLIT_CONFIG_KEPT_AS))
+  }
   fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
   fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
   fs.symlinkSync(sharedConfig, config)
@@ -141,23 +145,39 @@ export class HomeAccountPicker {
 
   constructor(private kind: SignInFolderKind) {}
 
-  pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
+  pick(
+    accounts: AccountView[],
+    resumedOn?: string,
+    launched: LaunchedSession[] = []
+  ): AccountView | undefined {
     const pool = usableAccounts(accounts, [this.kind])
     if (pool.length === 0) return undefined
-    const same = pool.find((a) => a.name === resumedOn)
-    if (
-      same &&
-      (!same.limits ||
-        (!codexWalled(same.limits) && codexHeaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO))
+    const nowSec = Math.floor(Date.now() / 1000)
+    const rooms = pool.map((a) => ({ a, room: homeRoom(a, nowSec) }))
+    const same = rooms.find(({ a }) => a.name === resumedOn)
+    if (same && (!same.room || (!same.room.walled && same.room.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
+      return same.a
+    const live = liveSessionsPerAccount(launched, undefined)
+    const open = rooms.filter(({ room }) => room && !room.walled)
+    const ranked = (open.length > 0 ? open : rooms.filter(({ room }) => !room)).map(
+      ({ a, room }) => ({
+        a,
+        score: (room?.used ?? 0) + (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
+      })
     )
-      return same
-    const measured = pool.filter((a) => a.limits && !codexWalled(a.limits))
-    if (measured.length > 0)
-      return measured.reduce((best, a) =>
-        codexHeaviest(a.limits!) < codexHeaviest(best.limits!) ? a : best
-      )
-    const unmeasured = pool.filter((a) => !a.limits)
-    if (unmeasured.length > 0) return unmeasured[this.turn++ % unmeasured.length]
-    return pool.reduce((best, a) => (codexBackAt(a.limits!) < codexBackAt(best.limits!) ? a : best))
+    if (ranked.length > 0) {
+      const least = Math.min(...ranked.map((r) => r.score))
+      const finalists = ranked.filter((r) => r.score <= least + EPS)
+      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
+    }
+    const backAt = ({ room }: (typeof rooms)[number]): number => room?.backAt || Infinity
+    return rooms.reduce((best, r) => (backAt(r) < backAt(best) ? r : best)).a
+  }
+
+  peek(accounts: AccountView[]): AccountView | undefined {
+    const turn = this.turn
+    const picked = this.pick(accounts)
+    this.turn = turn
+    return picked
   }
 }

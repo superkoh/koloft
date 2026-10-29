@@ -77,6 +77,26 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     }
   })
 
+  test('a click on the pinned Changes tab leaves the caret in the session terminal, so the next typed line reaches the session, while a click on a web tab takes it to the panel', async ({
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    await agentOpen(page, 'http://127.0.0.1:1/alpha')
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('tui')
+
+    await wbTabs(page).nth(0).click()
+    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+    expect(await focusOwner(page)).toBe('tui')
+    await page.keyboard.type('/answer looks good')
+    await page.keyboard.press('Enter')
+    await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
+
+    await wbTabs(page).nth(1).click()
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('panel')
+  })
+
   test('WB-T03: an agent re-open brings its existing tab back to the front', async ({ page }) => {
     await startSessionIn(page, 'ws-a')
     await agentOpen(page, 'http://127.0.0.1:1/alpha')
@@ -447,6 +467,56 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     }, WORKBENCH)
     expect(shape.handleLast).toBe(true)
     expect(shape.dragCancelled).toBe(true)
+  })
+
+  test('WB-T26: a web tab that opens while the pointer is over the strip keeps its place and width there, so a click aimed before its title shortens still lands on the tab, and it narrows once the pointer leaves', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const srv = await startEchoServer()
+    try {
+      const longTitle = 'A page title long enough to fill the whole tab'
+      const shortTitle = 'A'
+      const url = srv.page(
+        '/late-title',
+        `<!doctype html><html><head><title>${longTitle}</title></head><body>late</body></html>`
+      )
+      await startSessionIn(page, 'ws-a')
+      await runIn(page, centerTerm(page), `/open-later ${url}`)
+      await expect(centerTerm(page)).toContainText('armed open', { timeout: 30_000 })
+      const files = page.locator(WORKBENCH.tabFiles)
+      await files.hover()
+
+      fs.writeFileSync(path.join(env.home, 'go-open'), '')
+      const webTab = wbTabs(page).nth(1)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(longTitle, { timeout: 30_000 })
+      const guest = await guestByUrl(app, '/late-title')
+
+      await files.click()
+      await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+      const held = (await webTab.boundingBox())!
+      const aim = { x: held.x + held.width / 2, y: held.y + held.height / 2 }
+      await page.mouse.move(aim.x, aim.y)
+
+      await guest.evaluate((t) => {
+        document.title = t
+      }, shortTitle)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(shortTitle)
+      const titled = (await webTab.boundingBox())!
+      expect(titled.x).toBeCloseTo(held.x, 0)
+      expect(titled.width).toBeCloseTo(held.width, 0)
+
+      await page.mouse.click(aim.x, aim.y)
+      await expect(wbActiveTab(page)).toHaveText(shortTitle)
+      await expect(wbTabs(page)).toHaveCount(2)
+
+      await centerTerm(page).hover()
+      await expect.poll(async () => (await webTab.boundingBox())!.width).toBeLessThan(held.width)
+    } finally {
+      await srv.close()
+    }
   })
 })
 

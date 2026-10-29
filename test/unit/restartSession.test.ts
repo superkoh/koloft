@@ -99,7 +99,8 @@ beforeEach(() => {
           killed.push(id)
           order.push('kill')
         }
-      }
+      },
+      tabs: { moved: () => {} }
     }
   }
   useStore.setState({
@@ -455,7 +456,7 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 })
 
 describe('restartActiveSession: no-op guards', () => {
-  it('does nothing on a terminal that never ran claude', async () => {
+  it('does nothing, and says nothing, on a terminal that never ran claude', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'plain1',
@@ -471,9 +472,10 @@ describe('restartActiveSession: no-op guards', () => {
     expect(killed).toEqual([])
     expect(created).toEqual([])
     expect(useStore.getState().tabs).toHaveLength(1)
+    expect(useStore.getState().toast).toBe(null)
   })
 
-  it('does nothing on a claude tab whose session has not bound yet (an empty id included), and works once it does', async () => {
+  it('kills nothing on a claude tab whose session has not bound yet (an empty id included) and says there is nothing to restart yet, and works once it does', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'late1',
@@ -487,6 +489,8 @@ describe('restartActiveSession: no-op guards', () => {
     await settle()
     expect(created).toEqual([])
     expect(killed).toEqual([])
+    expect(probed).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
 
     s.setSessions([session('late1', { sessionId: '' })])
     s.restartActiveSession()
@@ -537,7 +541,7 @@ describe('restartActiveSession: no-op guards', () => {
     expect(created).toEqual([{ sessionId: 'sid-MAIN', cwd: '/w/repo' }])
   })
 
-  it('stays a silent no-op when the tracker has no session for the tab either', async () => {
+  it('stays a silent no-op on a plain terminal when the tracker has no session for the tab either', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'none1',
@@ -553,6 +557,7 @@ describe('restartActiveSession: no-op guards', () => {
 
     expect(created).toEqual([])
     expect(killed).toEqual([])
+    expect(useStore.getState().toast).toBe(null)
   })
 
   it('does nothing when there is no active tab', () => {
@@ -1005,6 +1010,88 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     expect(probed).toEqual(['sid-GONE'])
     expect(killed).toEqual([])
     expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_DEAD)
+  })
+
+  it('refuses a session tab that has no conversation id at all yet — agy before its first prompt — with the same toast, and the next press works once it has one', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate12',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+    nextPty = { id: 'gate12b', cwd: '/w' }
+
+    s.restartActiveSession()
+    await settle()
+
+    expect(probed).toEqual([])
+    expect(killed).toEqual([])
+    expect(created).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
+
+    mainTrackerSessions = [session('gate12', { backendId: 'agy', sessionId: 'sid-AGY' })]
+    useStore.getState().restartActiveSession()
+    await settle()
+    expect(created).toEqual([{ sessionId: 'sid-AGY', cwd: '/w' }])
+  })
+
+  it('words the no-id refusal dead when that session tab exits while the tracker is asked', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate13',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+
+    s.restartActiveSession()
+    useStore.getState().setTabAlive('gate13', false)
+    await settle()
+
+    expect(killed).toEqual([])
+    expect(useStore.getState().toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_DEAD)
+  })
+
+  it('says nothing when the no-id tab is closed while the tracker is asked', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate14',
+      kind: 'agy',
+      title: 'Antigravity',
+      cwd: '/w',
+      alive: true
+    })
+
+    s.restartActiveSession()
+    useStore.getState().removeTab('gate14')
+    await settle()
+
+    expect(useStore.getState().toast).toBe(null)
+  })
+
+  it('says nothing either when a tab with an id but no conversation is closed while the probe is out', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate15',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
+    s.setSessions([session('gate15', { sessionId: 'sid-SHUT' })])
+    transcriptOnDisk = false
+    probeGate = gate()
+
+    s.restartActiveSession()
+    useStore.getState().removeTab('gate15')
+    probeGate.open()
+    await settle()
+
+    expect(probed).toEqual(['sid-SHUT'])
+    expect(useStore.getState().toast).toBe(null)
   })
 })
 

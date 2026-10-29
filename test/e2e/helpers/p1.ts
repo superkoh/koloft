@@ -156,6 +156,17 @@ export function gitCommitAll(dir: string): void {
   )
 }
 
+export const INCLUDED_ENV = 'PORT=3000\n'
+
+// CC§3
+export function gitRepoWithAnIncludedEnv(dir: string): void {
+  gitInit(dir)
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n.env\n')
+  fs.writeFileSync(path.join(dir, '.worktreeinclude'), '.env\n')
+  gitCommitAll(dir)
+  fs.writeFileSync(path.join(dir, '.env'), INCLUDED_ENV)
+}
+
 // CC§3
 export function gitWorktreeAdd(repo: string, name: string): string {
   assertFixtureDir('gitWorktreeAdd', repo)
@@ -417,6 +428,19 @@ export async function landsOnTheButler(page: Page): Promise<void> {
   await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
 }
 
+const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
+
+export async function staysOnTheFolderPageNotTheButler(
+  page: Page,
+  env: E2EEnv,
+  wsName: string
+): Promise<void> {
+  await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
+  await expect(page.locator('.w-empty .big')).toHaveText(wsName)
+  await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+  expect(readAllCalls(env).length - readCalls(env).length).toBe(0)
+}
+
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }
@@ -492,7 +516,7 @@ export async function openWorktreeSession(page: Page, wsName: string): Promise<L
 export async function startSessionIn(
   page: Page,
   wsName: string,
-  opts: { remote?: boolean; method?: 'Claude' | 'Codex' } = {}
+  opts: { remote?: boolean; method?: AgentName } = {}
 ): Promise<void> {
   const rows = wsRows(page, wsName)
   const before = await rows.count()
@@ -779,6 +803,20 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
+}
+
+export async function wsMenuTexts(page: Page, wsName: string): Promise<string[]> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const items = await menuItemTexts(page)
+  await closeMenu(page)
+  return items
+}
+
+export async function restoreOffered(page: Page, wsName: string): Promise<boolean> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const greyed = await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()
+  await closeMenu(page)
+  return greyed === 0
 }
 
 export function gitMark(page: Page, wsName: string): Locator {

@@ -15,7 +15,7 @@ import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
 import {
@@ -74,6 +74,7 @@ import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_SKILLS,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
   agyLogName,
@@ -85,6 +86,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
+import { keepKoloftSkillIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -101,6 +103,7 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   type HistoryEntry,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -111,13 +114,15 @@ const exec = promisify(execFile)
 export interface AgyHomePick {
   account: string
   home: string
+  banner?: string
+  notice?: string
 }
 
 export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
-  pickHome(resumeSessionId?: string): AgyHomePick | undefined
+  pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
   browserEndpoint(tabId: string): string
@@ -175,6 +180,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
+  promptBeforeBind?: boolean
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -182,6 +188,9 @@ interface AgyRun extends StoredRun {
   liveWrites: number
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
+  schedules?: Set<string>
+  daemons?: Map<string, { item: BackgroundItem; shown: boolean }>
+  countsTasks?: boolean
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -201,7 +210,6 @@ const AGY: CliSpec = {
 }
 
 // AGY§3
-const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000
 const TICK_MS = 500
 // AGY§17
 const COMPACTION_SHOWS_AFTER_MS = 500
@@ -215,6 +223,9 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
+const SERVER_LABEL_CHARS = 160
+// AGY§13
+const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"IsDaemon"']
 
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
@@ -263,6 +274,24 @@ function readText(file: string): string | undefined {
     return fs.readFileSync(file, 'utf8')
   } catch {
     return undefined
+  }
+}
+
+const LOG_TAIL_READ_ON_ATTACH_BYTES = 256 * 1024
+
+function logTail(file: string): { size: number; text: string } {
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = fs.fstatSync(fd).size
+      const buf = Buffer.alloc(Math.min(size, LOG_TAIL_READ_ON_ATTACH_BYTES))
+      fs.readSync(fd, buf, 0, buf.length, size - buf.length)
+      return { size, text: buf.toString('utf8') }
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return { size: 0, text: '' }
   }
 }
 
@@ -368,7 +397,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
     const key = parseRemoteKey(dir)
     if (!key) return agyTrustsFolder(picked.home, dir)
@@ -382,14 +411,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       )
   }
 
-  protected async listHistory(): Promise<
-    { key: string; entry: HistoryEntry; archived: boolean }[]
-  > {
+  protected async listHistory(): Promise<HistoryListing<HistoryEntry>> {
     const local = await listAgyConversations(this.gemini)
     const { remote } = this.deps
     const hosts = remote.hosts()
     for (const host of this.remoteHistory.keys())
-      if (!hosts.includes(host)) this.remoteHistory.delete(host)
+      if (!hosts.includes(host)) {
+        this.remoteHistory.delete(host)
+        this.listedAt.delete(host)
+      }
+    const listedHosts: string[] = []
     // AGY§8
     await Promise.all(
       hosts
@@ -404,14 +435,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             host,
             historyEntries(rows).map((e) => ({ ...e, cwd: remote.keyed(host, e.cwd) }))
           )
+          listedHosts.push(host)
         })
     )
-    return [
-      ...local.map((entry) => ({ key: agySessionKey(entry.id), entry, archived: false })),
-      ...[...this.remoteHistory].flatMap(([host, entries]) =>
-        entries.map((entry) => ({ key: agySessionKey(entry.id, host), entry, archived: false }))
-      )
-    ]
+    return {
+      entries: [
+        ...local.map((entry) => ({ key: agySessionKey(entry.id), entry, archived: false })),
+        ...[...this.remoteHistory].flatMap(([host, entries]) =>
+          entries.map((entry) => ({ key: agySessionKey(entry.id, host), entry, archived: false }))
+        )
+      ],
+      listedHosts
+    }
   }
 
   async transcriptExists(key: string): Promise<boolean> {
@@ -444,7 +479,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0030
     const pick = this.deps.pickHome(opts.resumeSessionId)
     if (!pick) throw new Error(NO_USABLE_ACCOUNT.agy)
+    if (pick.notice) this.deps.error(pick.notice)
     return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
+  }
+
+  protected launchAccount({ pick }: AgyLaunch): string {
+    return pick.account
   }
 
   protected runDetails(run: AgyRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
@@ -491,13 +531,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const gemini = this.gemini
     // AGY§4
     prepareAgyHome(pick.home, gemini)
+    // AGY§31
+    keepKoloftSkillIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     mergeAgySettings(pick.home, gemini, {
       trust: freshWorktree || opts.trustFolder || assist ? trust : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: !!agent
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -509,6 +552,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'agy',
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
         agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
       }
@@ -536,6 +580,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         rows: opts.rows,
         executable: binary,
         argv,
+        // AGY§27
+        banner: pick.banner,
         processEnv: {
           ...env,
           PWD: cwd,
@@ -609,20 +655,22 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       (d, i, all) => all.indexOf(d) === i
     )
     const m = remote.machineName()
+    const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
       trust: trusted ? trust : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),
       statusLine: this.deps.builtInStatusLine(pick.account)
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: agentTools
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
     const instructions = [
-      ...(this.deps.agent.enabled(true) ? [koloftPrompt('agy')] : []),
+      ...(agentTools ? [koloftPrompt('agy')] : []),
       ...(opts.role ? [opts.role] : [])
     ].join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
@@ -630,7 +678,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       tabId,
       cwd,
       resumeId,
-      banner: `[Koloft] Antigravity account: ${pick.account}`,
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
@@ -640,6 +687,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       program: agyTab({
         tabId,
         account: pick.account,
+        banner: pick.banner,
         args: [
           `--csrf_token=${randomBytes(24).toString('hex')}`,
           ...agyArgs(opts, resumeId, permission)
@@ -648,7 +696,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         hooks: agyJsonText(hooks),
         onboarding: readText(agyOnboardingFile(pick.home)),
         token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
-        start: instructions ? sessionStartOutput(instructions) : undefined
+        start: instructions ? sessionStartOutput(instructions) : undefined,
+        skillFromMachine: agentTools ? m : undefined
       }),
       portOffset: resource ? portOffset(resource.worktreeName) : undefined
     })
@@ -672,7 +721,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       mirror,
       (attachTo && attachedLog(mirror, attachTo)) || agyLogName(tabId)
     )
-    const alreadyThere = attachTo ? (fs.statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) : 0
+    const alreadyThere = attachTo ? logTail(logFile) : { size: 0, text: '' }
     const run: AgyRun = {
       tabId: handle.id,
       cwd,
@@ -684,12 +733,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
-      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),
+      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
     }
-    if (attachTo) setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, attachTo))
+    if (attachTo)
+      setImmediate(() => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop || run.stopping) return
+        this.bindTo(run, attachTo)
+        this.showLastState(run, alreadyThere.text)
+      })
     void remote.nextPull(where.host)
     return run
   }
@@ -722,6 +776,59 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     for (const run of this.runs.values()) if (!run.explicitStop && !run.remote) run.log.read()
   }
 
+  // AGY§11 AGY§13
+  private settleDaemons(
+    run: AgyRun,
+    { conversationId, agentState, taskCount }: AgyTitleState
+  ): void {
+    if (taskCount !== undefined) run.countsTasks = true
+    if (agentState !== 'idle' || !run.daemons?.size) return
+    if (run.api) return this.askDaemons(run)
+    const mine = [...run.daemons].filter(([id]) => id.startsWith(`${conversationId}/`))
+    if (!taskCount && run.countsTasks)
+      return this.dropDaemons(
+        run,
+        mine.map(([id]) => id)
+      )
+    for (const [, daemon] of mine) daemon.shown = true
+    this.publishBackground(run)
+  }
+
+  // AGY§13 AGY§16
+  private askDaemons(run: AgyRun): void {
+    const asked = [...run.daemons!.keys()]
+    const conversations = new Set(asked.map((id) => id.split('/')[0]))
+    void Promise.all([...conversations].map((id) => run.api!.backgroundTaskIds(id)))
+      .then((lists) => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+        const live = new Set(lists.flatMap((ids) => [...ids]))
+        for (const id of asked) {
+          const daemon = run.daemons?.get(id)
+          if (daemon && live.has(id)) daemon.shown = true
+        }
+        this.dropDaemons(
+          run,
+          asked.filter((id) => !live.has(id))
+        )
+        this.publishBackground(run)
+      })
+      .catch(() => undefined)
+  }
+
+  private dropDaemons(run: AgyRun, ids: string[]): void {
+    let dropped = false
+    for (const id of ids) if (run.daemons?.delete(id)) dropped = true
+    if (dropped) this.publishBackground(run)
+  }
+
+  private publishBackground(run: AgyRun): void {
+    const servers = [...(run.daemons?.values() ?? [])].flatMap((d) => (d.shown ? [d.item] : []))
+    this.deps.events(run.tabId, {
+      type: 'background-changed',
+      items: [...(run.background ? [run.background] : []), ...servers]
+    })
+  }
+
   // AGY§29
   followMirrors(host: string): void {
     for (const run of this.runs.values())
@@ -750,12 +857,38 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§11 AGY§12
+  private showLastState(run: AgyRun, earlierLog: string): void {
+    let last: ProgramStatus | undefined
+    for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
+      if (!read) continue
+      if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      last = remoteStatus(run, read) ?? last
+      if (last) run.shown = last.state
+    }
+    if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    this.replayTasks(run)
+  }
+
+  // AGY§11 AGY§13
+  private replayTasks(run: AgyRun): void {
+    for (const line of (readText(run.log.file) ?? '').split('\n')) {
+      const turnOver = line.includes('"conversation_id"') && line.includes('"idle"')
+      if (!turnOver && !TASK_LINE_MARKS.some((mark) => line.includes(mark))) continue
+      const read = agyLogLine(line)
+      if (read && 'hook' in read) this.trackTasks(run, read.hook)
+      else if (read) this.settleDaemons(run, read.title)
+    }
+  }
+
+  // AGY§11 AGY§12
   private onLogLine(run: AgyRun, line: string): void {
     const read = agyLogLine(line)
     if (!read) return
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
-    if ('hook' in read) this.onHook(run, read.hook)
-    else this.onTitle(run, read.title)
+    if ('hook' in read) {
+      this.trackTasks(run, read.hook)
+      this.onHook(run, read.hook)
+    } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
     if (status && status.state !== run.shown) {
       run.shown = status.state
@@ -771,6 +904,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
+    this.settleDaemons(run, state)
     if (state.title && state.title !== before?.title) {
       run.givenTitle = undefined
       this.retitle(run.info, state.title)
@@ -794,6 +928,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    if (run.daemons?.size) this.publishBackground(run)
+    if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
   }
 
@@ -813,6 +949,37 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       case 'Stop':
         return this.onStop(run, input)
     }
+  }
+
+  // AGY§13
+  private trackTasks(run: AgyRun, hook: AgyHook): void {
+    if (run.explicitStop || run.stopping) return
+    const { event, input, conversationId } = hook
+    const call = record(input.toolCall)
+    const args = record(call.args)
+    const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+    if (call.name === 'run_command' && args.IsDaemon === true) {
+      if (event === 'PreToolUse') {
+        const label =
+          argOf(args, 'CommandLine')?.slice(0, SERVER_LABEL_CHARS) ?? 'Background command'
+        const item: BackgroundItem = { id: taskId, kind: 'server', label, state: 'waiting' }
+        ;(run.daemons ??= new Map()).set(taskId, { item, shown: false })
+      } else if (event === 'PostToolUse') this.dropDaemons(run, [taskId])
+      return
+    }
+    if (call.name !== 'schedule' && call.name !== 'manage_task') return
+    const schedules = (run.schedules ??= new Set())
+    const before = schedules.size
+    if (call.name === 'schedule') {
+      if (event === 'PreToolUse') schedules.add(taskId)
+      else if (event === 'PostToolUse') schedules.delete(taskId)
+    } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
+      const killed = argOf(args, 'TaskId') ?? ''
+      const id = killed.includes('/') ? killed : `${conversationId}/${killed}`
+      schedules.delete(id)
+      this.dropDaemons(run, [id])
+    }
+    if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
   }
 
   // AGY§8 AGY§12
@@ -855,10 +1022,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.background = busy
       ? { id: 'agy-background', kind: 'agent', label: 'Background work', state: 'working' }
       : undefined
-    this.deps.events(run.tabId, {
-      type: 'background-changed',
-      items: run.background ? [run.background] : []
-    })
+    this.publishBackground(run)
   }
 
   // AGY§10
@@ -870,8 +1034,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const run = this.runs.get(tabId)
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
-    if (!run.info) return
+    if (!run.info) {
+      run.promptBeforeBind = states[states.length - 1].state === 'idle'
+      this.deps.pty.wakeReady(tabId)
+      return
+    }
     for (const status of states) this.emitState(run, status)
+  }
+
+  // AGY§8 AGY§10
+  showsPromptBeforeBind(tabId: string): boolean {
+    const run = this.runs.get(tabId)
+    return !!run && !run.info && !run.explicitStop && !!run.promptBeforeBind
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
@@ -895,7 +1069,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
     const t = await tokenTotals(file).catch(() => undefined)
     if (!t) return
-    const tokens = { inTok: t.input, outTok: t.output, cacheReadTok: t.cacheRead, cacheWriteTok: 0 }
+    const tokens = {
+      inTok: t.input,
+      outTok: t.output,
+      cacheReadTok: t.cacheRead,
+      cacheWriteTok: 0,
+      cacheWrite1hTok: 0
+    }
     const model = run.title?.model
     const pricing = model ? resolvePricing(model) : undefined
     const used = run.title?.contextUsed

@@ -4,10 +4,11 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
+import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
   chooseBackend,
-  gitCommitAll,
-  gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   menuItemTexts,
   newSessionInWith,
   openMenu,
@@ -31,7 +32,7 @@ import {
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 
 test.setTimeout(180_000)
 
@@ -122,6 +123,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
     env
   }) => {
+    seedSettings(env, { skipPermissions: false })
     installCodexOnFakeRemote(env)
     const { app, page } = await launchWithRemote(env)
     try {
@@ -158,7 +160,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // ADR-0039 CODEX§16
-  test('E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft; and when its ssh line drops, the next prompt still gets its answer', async ({
+  test("E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft, and Koloft's Codex home there holds the koloft skill; and when its ssh line drops, the next prompt still gets its answer", async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -190,6 +192,12 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
           timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS
         })
         .toEqual(['0'])
+      expect(
+        fs.readFileSync(
+          path.join(machineHome(env), '.koloft', 'codex-home', 'skills', 'koloft', 'SKILL.md'),
+          'utf8'
+        )
+      ).toMatch(/^---\nname: koloft\n/)
 
       const turnsDone = async (): Promise<number> =>
         (await terminalText(page, tabId)).split('Codex done').length - 1
@@ -214,14 +222,14 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
-  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, and its server the port offset of that name', async ({
+  // CODEX§11
+  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine with the ignored files .worktreeinclude lists copied in there, its server the port offset of that name, with skip permission prompts on, approvals and the sandbox off, and its screen on this Mac the same status line as a local tab, limits left included', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
     fs.mkdirSync(remoteDir(env), { recursive: true })
     fs.writeFileSync(path.join(remoteDir(env), 'README.md'), '# proj\n')
-    gitInit(remoteDir(env))
-    gitCommitAll(remoteDir(env))
+    gitRepoWithAnIncludedEnv(remoteDir(env))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -243,12 +251,14 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'rc-tree')
       expect(fs.existsSync(path.join(tree, '.git'))).toBe(true)
+      expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
       expect(machineServers(env)[0]).toMatchObject({
         cwd: fs.realpathSync(tree),
         portOffset: String(portOffset('rc-tree'))
       })
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
-      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
+      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a never -s danger-full-access')
+      expect(tuiCalls(env)[0].argv).toContain(STATUS_LINE_CONFIG)
     } finally {
       await quitAndClose(app)
     }
@@ -333,9 +343,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§11 CODEX§16
-  test('E-RC-04: a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
+  test('E-RC-04: with skip permission prompts off, a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
     env
   }) => {
+    seedSettings(env, { skipPermissions: false })
     installCodexOnFakeRemote(env)
     fs.mkdirSync(remoteDir(env), { recursive: true })
     const codexHome = path.join(machineHome(env), '.koloft', 'codex-home')
@@ -349,6 +360,27 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await addRemoteWorkspace(page, env)
       await startRemoteCodex(page, env)
       expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§8
+  test('E-RC-07: with the built-in status line off, a Codex session there gets no status line from Koloft on its app-server on the machine or its screen on this Mac, so the screen shows the one in the owner’s own config.toml here', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { statuslineBuiltin: false })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const statusLine = (argv: string[]): string[] =>
+        argv.filter((a) => a.startsWith('tui.status_line='))
+      expect(tuiCalls(env)).toHaveLength(1)
+      expect(statusLine(tuiCalls(env)[0].argv)).toEqual([])
+      expect(server.argv).toContain(CODEX_ASKS_AND_WAITS)
+      expect(statusLine(server.argv)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

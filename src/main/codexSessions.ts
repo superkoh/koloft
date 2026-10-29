@@ -8,7 +8,8 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   HostId,
-  CodexResetOutcome
+  CodexResetOutcome,
+  LaunchPermission
 } from '@shared/types'
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -63,12 +64,14 @@ import {
   type KoloftHook
 } from './codexLaunchConfig'
 import {
+  CODEX_DISCORD_SAID_ENV,
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
   codexHoldHook,
+  discordSaidFile,
   HOLD_TAB_ENV,
   NOTICE_ENV,
   noticeFile,
@@ -83,6 +86,7 @@ import {
   type ListedHook
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
+import { mapAtMost } from './mapAtMost'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -103,6 +107,7 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import {
   StoredSessions,
   hostOfKey,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -118,6 +123,11 @@ export const CODEX_TAB_ENV = {
 } as const
 
 const sourceKinds = ['cli', 'vscode', 'appServer']
+
+// CODEX§15
+const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
+const rolloutOnThisMac = (listedPath: string): boolean =>
+  rolloutFiles(listedPath).some((f) => fs.existsSync(f))
 
 async function* everyPage(
   rpc: CodexRpc,
@@ -135,6 +145,33 @@ async function* everyPage(
     if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
     if (cursor) cursors.add(cursor)
   } while (cursor)
+}
+
+const THREADS_CHECKED_AT_ONCE = 8
+
+// CODEX§24
+const CODEX_OWN_BLOCK =
+  /<\/?(environment_context|cwd|shell|current_date|timezone|INSTRUCTIONS)>|AGENTS\.md instructions for /
+
+// CODEX§24
+async function saidInThread(
+  rpc: CodexRpc,
+  hit: { id: string; snippet: string },
+  searchTerm: string
+): Promise<string | undefined> {
+  const unchecked = CODEX_OWN_BLOCK.test(hit.snippet) ? undefined : hit.snippet
+  try {
+    const occurrences = record(
+      await rpc.request('thread/searchOccurrences', { threadId: hit.id, searchTerm, limit: 1 })
+    )
+    const first = record(Array.isArray(occurrences.data) ? occurrences.data[0] : undefined)
+    if (typeof first.snippet === 'string') return first.snippet
+    const turns = record(await rpc.request('thread/turns/list', { threadId: hit.id, limit: 1 }))
+    const indexed = Array.isArray(turns.data) && turns.data.length > 0
+    return indexed ? undefined : unchecked
+  } catch {
+    return unchecked
+  }
 }
 
 interface ListedThread {
@@ -184,12 +221,14 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
+  builtInStatusLine(): boolean
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
   agent: {
     enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+    skillsFolder(): string | undefined
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
     picked(cwd: string): Promise<boolean>
@@ -257,7 +296,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
     // CODEX§5
-    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG)
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(CODEX_ASKS_AND_WAITS)
       .catch(() => {})
       .then(() => {
         removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
@@ -489,12 +528,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  protected async listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
+  protected async listHistory(): Promise<HistoryListing<CodexThread>> {
     const local = await this.withRpc(undefined, (rpc) => listThreads(rpc))
     const onMachines = [...this.history].flatMap(([key, entry]) =>
       hostOfKey(key) ? [{ key, entry, archived: this.archivedIds.has(key) }] : []
     )
-    return [...this.listedOn(undefined, local), ...onMachines]
+    return { entries: [...this.listedOn(undefined, local), ...onMachines], listedHosts: [] }
   }
 
   private listedOn(
@@ -535,6 +574,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   private async readMachineHistory(machine: string): Promise<void> {
+    const startedAt = Date.now()
     const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
     if (sshLinkBroke(home)) throw new Error(problemOf(home))
     const threads =
@@ -547,6 +587,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.history.set(key, entry)
       if (archived) this.archivedIds.add(key)
     }
+    if (home.code === 0) this.listedAt.set(machine, startedAt)
+    else this.listedAt.delete(machine)
     this.changed()
   }
 
@@ -578,26 +620,38 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§24
-  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+  async searchSnippets(
+    term: string,
+    signal?: AbortSignal
+  ): Promise<{ id: string; snippet: string }[]> {
     if (!(await this.availability()).available) return []
-    return this.searchSharedHome(term).catch(() => [])
+    return this.searchSharedHome(term, signal).catch(() => [])
   }
 
-  // CODEX§15
-  private searchSharedHome(term: string): Promise<{ id: string; snippet: string }[]> {
+  // CODEX§15 CODEX§24
+  private searchSharedHome(
+    term: string,
+    signal?: AbortSignal
+  ): Promise<{ id: string; snippet: string }[]> {
     return this.withRpc(undefined, async (rpc) => {
       const found: { id: string; snippet: string }[] = []
       const params = { searchTerm: term, archived: false, sourceKinds }
       for await (const value of everyPage(rpc, 'thread/search', params)) {
+        if (signal?.aborted) return []
         const item = record(value)
         const thread = userThread(item.thread)
         if (thread)
           found.push({
-            id: codexSessionKey(thread.id),
+            id: thread.id,
             snippet: typeof item.snippet === 'string' ? item.snippet : ''
           })
       }
-      return found
+      const said = await mapAtMost(found, THREADS_CHECKED_AT_ONCE, async (hit) => {
+        if (signal?.aborted) return undefined
+        const snippet = await saidInThread(rpc, hit, term)
+        return snippet === undefined ? undefined : { id: codexSessionKey(hit.id), snippet }
+      })
+      return said.filter((h): h is { id: string; snippet: string } => !!h)
     })
   }
 
@@ -606,14 +660,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     if (this.archivedIds.has(key)) return false
     const machine = hostOfKey(key)
     const listed = machine ? undefined : this.history.get(key)?.path
-    if (listed && fs.existsSync(listed)) return true
+    if (listed && rolloutOnThisMac(listed)) return true
     const id = this.nativeId(key)
     const file = await this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       return userThread(reply.thread)?.path
     })
     if (!file) return false
-    return machine ? this.machineDeps().fileExists(keyedOn(machine, file)!) : fs.existsSync(file)
+    if (!machine) return rolloutOnThisMac(file)
+    const m = this.machineDeps()
+    const found = await Promise.all(
+      rolloutFiles(file).map((f) => m.fileExists(keyedOn(machine, f)!))
+    )
+    return found.includes(true)
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
@@ -622,6 +681,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   openQuestion(tabId: string): CodexQuestion | undefined {
     return this.runs.get(tabId)?.observer.openQuestion()
+  }
+
+  questionWentUnanswered(tabId: string): boolean {
+    return !!this.runs.get(tabId)?.observer.questionWentUnanswered()
   }
 
   turnsOf(key: string, n: number): Turn[] | undefined {
@@ -637,12 +700,21 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
+  // CODEX§11
+  protected permissionOf(opts: CreateTabOptions): LaunchPermission {
+    return opts.resumeSessionId ? (opts.permission ?? 'default') : super.permissionOf(opts)
+  }
+
   protected prepare(opts: CreateTabOptions): CodexLaunch {
-    // CODEX§15 ADR-0030
+    // CODEX§15 CODEX§18 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     if (picked.notice) this.deps.error(picked.notice)
     return { picked, binary: this.binary!, processEnv: this.processEnv }
+  }
+
+  protected launchAccount({ picked }: CodexLaunch): string {
+    return picked.account
   }
 
   protected async startRun(
@@ -713,8 +785,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
       ...(role ? [role] : [])
     ]
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]
+    const builtInStatusLine = this.deps.builtInStatusLine()
     const processOptions: CodexProcessOptions = {
       binary,
       env,
@@ -724,7 +797,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said,
-          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) })
+          ...(this.deps.hookRegDir && {
+            [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId),
+            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId)
+          })
         }),
         ...(holdHere && {
           [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,
@@ -734,7 +810,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       },
       cwd,
       configOverrides: [
-        STATUS_LINE_CONFIG,
+        ...(builtInStatusLine ? [STATUS_LINE_CONFIG] : []),
         ...browser,
         ...gitNetwork,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
@@ -772,8 +848,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...processOptions.configOverrides!,
         ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
       ]
+      const skills = agent && !machine ? agent.skillsFolder() : undefined
       transport = await this.startTransport({
         ...processOptions,
+        ...(skills && { skillRoots: [skills] }),
         ...(machine && {
           upstream: (frame, failure) =>
             new MachineCodexUpstream(
@@ -797,8 +875,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         transport.url,
         '-C',
         barePath(cwd),
-        '-c',
-        STATUS_LINE_CONFIG,
+        ...(builtInStatusLine ? ['-c', STATUS_LINE_CONFIG] : []),
         '-c',
         NO_UPDATE_NOTICE_AT_START,
         ...(opts.resumeSessionId ? [] : launchFlags),
@@ -939,7 +1016,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { userZdotdir, open, agent }
+      { backend: 'codex', userZdotdir, open, agent }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }

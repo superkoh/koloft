@@ -38,6 +38,11 @@ export class Hosts<Machine extends Host> {
     return key ? this.machine(key.host) : this.local
   }
 
+  machineOf(p: string): Machine | undefined {
+    const key = parseRemoteKey(p)
+    return key ? this.machine(key.host) : undefined
+  }
+
   machine(name: string): Machine {
     let host = this.machines.get(name)
     if (!host) this.machines.set(name, (host = this.makeSsh(name)))

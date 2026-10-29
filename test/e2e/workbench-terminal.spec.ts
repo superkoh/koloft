@@ -1,8 +1,22 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Page } from '@playwright/test'
-import type { E2EEnv } from './helpers/env'
+import {
+  E2E_AGY_ACCOUNT,
+  E2E_CODEX_ACCOUNT,
+  E2E_MUSE_ACCOUNT,
+  addAgyAccount,
+  addCodexAccount,
+  addMuseAccount,
+  installCodex,
+  installMuse,
+  seededAccount,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import { codexCalls, startLocalSession } from './helpers/codex'
 import {
   centerTerm,
   clickAppMenuItem,
@@ -68,6 +82,8 @@ function withShimsAheadOfSystemOpen(env: E2EEnv, cmd: string): string {
 
 const leaveTimeToSwitchSessionBeforeOpenLands = 'sleep 3; '
 const ESC_KEY_CODE = 27
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 async function sessionWithShell(app: ElectronApplication, page: Page, ws: string): Promise<void> {
   await startSessionIn(page, ws)
@@ -287,6 +303,138 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await runIn(page, panelTerm(page), 'claude -p "x"')
       const calls = await waitForCalls(env, 2)
       expect(calls[1].argv).toContain('-p')
+    })
+
+    // ADR-0030
+    test('T-WT-05b: codex exec, muse exec and agy -p in a terminal tab run on the account Koloft picks from Settings ▸ Accounts, not on the Mac’s own login', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      addCodexAccount(env, '{}')
+      addMuseAccount(env)
+      addAgyAccount(env)
+      fs.writeFileSync(
+        path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli', 'settings.json'),
+        JSON.stringify({ modelProvider: 'gemini' })
+      )
+      const recorders = path.join(env.home, 'recorders')
+      fs.mkdirSync(recorders)
+      const recorder = (name: string, check: string): void =>
+        fs.writeFileSync(
+          path.join(recorders, name),
+          `#!/bin/sh\nif ${check}; then echo WT05B_${name}_OK; else echo WT05B_${name}_BAD; fi\n`,
+          { mode: 0o755 }
+        )
+      recorder(
+        'codex',
+        `[ "$CODEX_HOME" = '${path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)}' ]`
+      )
+      recorder(
+        'muse',
+        `[ "$XDG_CONFIG_HOME" = '${path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT)}' ] && [ "$TBH_CREDENTIAL_BACKEND" = file ]`
+      )
+      recorder(
+        'agy',
+        `[ "$1" = '--gemini_dir=${path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)}' ] && [ "$WSL_INTEROP" = koloft ] && [ "$GEMINI_API_KEY" = fake-gemini-key ]`
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await sessionWithShell(app, page, 'ws-a')
+        await runIn(
+          page,
+          panelTerm(page),
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+        )
+        for (const name of ['codex', 'muse', 'agy'])
+          await expect(panelTerm(page)).toContainText(`WT05B_${name}_OK`, { timeout: 25_000 })
+        await expect(panelTerm(page)).not.toContainText('_BAD')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('T-WT-05c: with every account of that agent at its limit, codex exec, muse exec and agy -p in a terminal tab each say so on a line of their own, then still run', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installCodex(env, JSON.stringify({ usedPercent: 100 }))
+      installMuse(env)
+      fs.writeFileSync(
+        path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+        JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      )
+      fs.writeFileSync(
+        path.join(env.home, 'fake-muse-quota.json'),
+        JSON.stringify({ current: 100, weekly: 100 })
+      )
+      const agy = path.join(env.fakeBin, 'agy')
+      fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-agy.js'), agy)
+      env.launchEnv.KOLOFT_AGY_CMD = agy
+      const agyApp = path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli')
+      fs.mkdirSync(path.join(agyApp, 'cache'), { recursive: true })
+      fs.writeFileSync(
+        path.join(agyApp, 'cache', 'onboarding.json'),
+        JSON.stringify({ onboardingComplete: true })
+      )
+      fs.writeFileSync(path.join(agyApp, 'antigravity-oauth-token'), 'fake')
+      const accounts = (
+        JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')) as {
+          accounts: unknown[]
+        }
+      ).accounts
+      seedSettings(env, {
+        hintsOff: true,
+        accounts: [...accounts, seededAccount(E2E_AGY_ACCOUNT, 'agy-home')]
+      })
+      const resetsTomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-usage.json'),
+        JSON.stringify({
+          groups: [
+            {
+              name: 'Gemini Models',
+              buckets: [
+                {
+                  id: 'gemini-5h',
+                  name: 'Five Hour Limit Remaining',
+                  window: '5h',
+                  remaining_fraction: 0,
+                  reset_time: resetsTomorrow
+                }
+              ]
+            }
+          ]
+        })
+      )
+      const recorders = path.join(env.home, 'recorders')
+      fs.mkdirSync(recorders)
+      for (const name of ['codex', 'muse', 'agy'])
+        fs.writeFileSync(path.join(recorders, name), `#!/bin/sh\necho WT05C_${name}_RAN\n`, {
+          mode: 0o755
+        })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await page.evaluate(() => window.api.accounts.probe())
+        await startSessionIn(page, 'ws-a', { method: 'Claude' })
+        await openSessionTerminal(app, page)
+        await runIn(
+          page,
+          panelTerm(page),
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+        )
+        for (const name of ['codex', 'muse', 'agy'] as const) {
+          await expect(panelTerm(page)).toContainText(`WT05C_${name}_RAN`, { timeout: 25_000 })
+          await expect(panelTerm(page)).toContainText(
+            `Every ${BACKEND_LABEL[name]} account is at its limit`
+          )
+        }
+      } finally {
+        await quitAndClose(app)
+      }
     })
 
     test('T-WT-06: Esc pressed in a shell reaches the shell, not the panel’s Esc ladder', async ({
@@ -569,6 +717,69 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(panelTerm(page)).toContainText('WT16_BEFORE_RESTART', { timeout: 25_000 })
       await runIn(page, panelTerm(page), 'echo WT16_ALIVE_$$')
       await expect(panelTerm(page)).toContainText(`WT16_ALIVE_${pid}`, { timeout: 25_000 })
+    })
+
+    for (const backend of ['claude', 'codex'] as const)
+      test(`T-WT-18: after ⇧⌘R in a ${backend} tab, koloft open typed in the tab’s shell still opens the file in that tab’s Workbench`, async ({
+        env
+      }) => {
+        test.setTimeout(300_000)
+        fs.writeFileSync(path.join(env.workspaces.a, 'wt18.md'), 'WT18_FILE_BODY\n')
+        if (backend === 'codex') installCodex(env)
+        seedSettings(env, { hintsOff: true })
+        const launches = (): number =>
+          backend === 'codex' ? codexCalls(env).length : readCalls(env).length
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await startLocalSession(page, env, backend)
+          await openSessionTerminal(app, page)
+          await panelShellPid(page, 'WT18')
+
+          await sendShortcut(app, 'shortcut:restart-session')
+          await expect.poll(launches, { timeout: 40_000 }).toBe(2)
+          await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: 60_000
+          })
+
+          await runIn(page, panelTerm(page), 'koloft open wt18.md')
+          await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('wt18.md', {
+            timeout: 30_000
+          })
+          await expect(page.locator(WORKBENCH.readingBody)).toContainText('WT18_FILE_BODY')
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+
+    test('T-WT-19: after ⇧⌘R, a tab whose shell still runs never goes to sleep for being idle, while an ordinary tab left idle after it does', async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await sessionWithShell(app, page, 'ws-a')
+        await waitForCalls(env, 1)
+        await panelShellPid(page, 'WT19')
+        await sendShortcut(app, 'shortcut:restart-session')
+        const restarted = (await waitForCalls(env, 2))[1]
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+        await startSessionIn(page, 'ws-b')
+        const ordinary = (await waitForCalls(env, 3))[2]
+        await startSessionIn(page, 'ws-b')
+        await expect.poll(() => processAlive(ordinary.pid), { timeout: 60_000 }).toBe(false)
+
+        expect(processAlive(restarted.pid)).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
     })
   })
 

@@ -1,5 +1,5 @@
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
+import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -63,6 +63,7 @@ export interface Tab {
   jobId?: string
   asleep?: true
   ghost?: string
+  wakeOverdue?: true
 }
 
 export interface OpenFile {
@@ -302,11 +303,17 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+export function tabEverBound(tabId: string): boolean {
+  return lastSessionId.has(tabId)
+}
+
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
     s.activeTabId === tabId &&
     isSessionKind(leaving?.kind) &&
+    !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
   )
@@ -361,6 +368,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
     workbenchParked.set(newId, parked)
   }
   rekeyOwner(oldId, newId)
+  window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
   lastSessionId.set(newId, sessionId)
@@ -376,6 +384,25 @@ function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+}
+
+// CC§9
+const A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS = 2000
+const wakeQuietTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function noteWakingOutput(tabId: string): void {
+  clearTimeout(wakeQuietTimers.get(tabId))
+  wakeQuietTimers.set(
+    tabId,
+    setTimeout(() => {
+      wakeQuietTimers.delete(tabId)
+      useStore.setState((s) =>
+        s.tabs.some((t) => t.id === tabId && t.ghost && !t.wakeOverdue)
+          ? { tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, wakeOverdue: true } : t)) }
+          : s
+      )
+    }, A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS)
+  )
 }
 
 function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
@@ -731,6 +758,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (restarting.has(tab.id)) return
     const oldId = tab.id
     const liveClaude = !!sess?.alive && !!sess.sessionId
+    const sayNoConversation = (live: boolean): void => {
+      if (!get().tabs.some((x) => x.id === oldId)) return
+      get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+    }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
       const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
@@ -744,7 +775,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (!hasTranscript) {
         restarting.delete(oldId)
-        get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+        sayNoConversation(live)
         return
       }
       if (!get().tabs.some((x) => x.id === oldId)) {
@@ -759,21 +790,28 @@ export const useStore = create<AppState>((set, get) => ({
         )
       }))
       window.api.terminal.kill(oldId, true)
+      const failed = (why?: string): void => {
+        if (why && get().tabs.some((x) => x.id === oldId)) get().showToast(why)
+        set((s) => ({
+          tabs: s.tabs.map((x) =>
+            x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+          )
+        }))
+      }
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {
           if (!res.ok) {
             const main =
               res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
-            if (main) {
-              get().setResumeDialog({
-                kind: 'escape',
-                target: { backendId: backend, id: resumeId, title },
-                worktreeName: basename(cwd),
-                cwd: main
-              })
-            }
-            throw new Error(res.code)
+            if (!main) return failed(resumeFailureMessage(res))
+            get().setResumeDialog({
+              kind: 'escape',
+              target: { backendId: backend, id: resumeId, title },
+              worktreeName: basename(cwd),
+              cwd: main
+            })
+            return failed()
           }
           if (!get().tabs.some((x) => x.id === oldId)) {
             window.api.terminal.kill(res.id)
@@ -800,13 +838,7 @@ export const useStore = create<AppState>((set, get) => ({
           restarting.add(res.id)
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })
-        .catch(() => {
-          set((s) => ({
-            tabs: s.tabs.map((x) =>
-              x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
-            )
-          }))
-        })
+        .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
     if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
@@ -816,8 +848,9 @@ export const useStore = create<AppState>((set, get) => ({
       .then((live) => {
         restarting.delete(oldId)
         const bound = live.find((s) => s.tabId === oldId && s.sessionId)
-        if (!bound) return
-        void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        if (bound) return void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        const now = get().tabs.find((x) => x.id === oldId)
+        if (now && isSessionKind(now.kind)) sayNoConversation(now.alive)
       })
       .catch(() => restarting.delete(oldId))
   },
@@ -841,7 +874,7 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           return {
             ...t,
-            ...(woken ? { ghost: undefined } : {}),
+            ...(woken ? { ghost: undefined, wakeOverdue: undefined } : {}),
             ...(bound ? { resuming: undefined } : {})
           }
         }

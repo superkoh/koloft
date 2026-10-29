@@ -5,7 +5,7 @@ import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
 import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
-import { assertSafeNames, tabPushed, type MachinePackage } from './launch'
+import { assertSafeNames, koloftSkillLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import {
@@ -33,7 +33,7 @@ import {
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
 // ADR-0039
-const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
+export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
 
 export function codexMachineInstance(userData: string): string {
   return crypto.createHash('sha256').update(userData).digest('hex').slice(0, 12)
@@ -98,7 +98,7 @@ export function ownerWordsLines(ownerWords: string): string {
     .join('')
 }
 
-// ADR-0039 CODEX§16
+// ADR-0039 CODEX§16 CODEX§17
 export function codexTabScript(s: CodexTabSpec): string {
   assertSafeNames(s.tabId, s.instance, s.machineName, ...Object.keys(s.env))
   const exports = Object.entries(s.env)
@@ -118,6 +118,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
+  const skill = `${koloftSkillLine('$H/skills', s.agentTools ? '$M' : undefined)}\n`
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
@@ -125,7 +126,7 @@ sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"
 mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.instance)}" || exit 3
-cd ${shq(s.cwd)} || exit 3
+${skill}cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".*
 ${ownerWords}${LOGIN_PATH_TOO}

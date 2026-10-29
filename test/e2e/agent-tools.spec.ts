@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
@@ -12,6 +13,7 @@ import {
   centerTerm,
   chooseBackend,
   gitInit,
+  killSession,
   newSessionInWith,
   notesOnDisk,
   notesPath,
@@ -545,6 +547,115 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('koloft session close <child> whose worktree git cannot delete tells the caller that started it, in git’s own words, with the commands that finish it; once they ran, closing again works', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupGitFixture(env)
+    fs.appendFileSync(path.join(fx.clone, '.git', 'info', 'exclude'), 'node_modules/\n')
+    const app = await launchApp(env)
+    const readOnly = path.join(fx.clone, '.claude', 'worktrees', 'kid', 'node_modules', 'ro')
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('parent')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const callerTabId = await rows.getAttribute('data-tab-id')
+      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      await expect(rows).toHaveCount(2, { timeout: 60_000 })
+      const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
+      await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const childTabId = await child.getAttribute('data-tab-id')
+      fs.mkdirSync(readOnly, { recursive: true })
+      fs.writeFileSync(path.join(readOnly, 'pkg.js'), 'ignored')
+      fs.chmodSync(readOnly, 0o555)
+
+      expect(await koloftInSession(page, `session close ${childTabId}`)).toBe('0')
+      const callerGot = (): string => {
+        const file = path.join(env.home, 'fake-claude-peer.jsonl')
+        if (!fs.existsSync(file)) return ''
+        const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+        return lines.map((l) => JSON.parse(l).message.content).join('\n')
+      }
+      await expect.poll(callerGot, { timeout: 60_000 }).toContain('Permission denied')
+      expect(callerGot()).toContain('(From Koloft:) Koloft could not finish closing kid.')
+      await expect(rows).toHaveCount(2)
+
+      execFileSync('/bin/sh', ['-c', /run: (.*)/.exec(callerGot())?.[1] ?? 'false'])
+      expect(await koloftInSession(page, 'session close kid')).toBe('0')
+      await expect(rows).toHaveCount(1, { timeout: 30_000 })
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-kid').trim()).toBe('')
+    } finally {
+      if (fs.existsSync(readOnly)) fs.chmodSync(readOnly, 0o755)
+      await quitAndClose(app)
+    }
+  })
+
+  test('koloft session close also stops the background program the session left running and closes the ended session it started, worktree and branch too', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const fx = setupGitFixture(env)
+    const pidFile = path.join(env.home, 'left-running.pid')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('parent')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const callerTabId = await rows.getAttribute('data-tab-id')
+      const parentTree = path.join(fx.clone, '.claude', 'worktrees', 'parent')
+      await expect.poll(() => fs.existsSync(path.join(parentTree, 'NOTES.md'))).toBe(true)
+      fs.rmSync(path.join(parentTree, 'NOTES.md'))
+
+      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      await expect(rows).toHaveCount(2, { timeout: 60_000 })
+      const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
+      await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kid = readCalls(env).find((c) => c.argv.includes('kid'))!
+      expect(await koloftInSession(page, `session stop ${kid.sessionId}`)).toBe('0')
+      await expect(child).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const kidTree = path.join(fx.clone, '.claude', 'worktrees', 'kid')
+      expect(fs.existsSync(kidTree)).toBe(true)
+
+      const parentSession = readCalls(env)[0].sessionId
+      await runIn(
+        page,
+        centerTerm(page),
+        `/sh CLAUDE_CODE_SESSION_ID=${parentSession} nohup '${process.execPath}' -e 'setTimeout(()=>{},6e5)' '${env.home}' >/dev/null 2>&1 & echo $! > '${pidFile}'`
+      )
+      await expect
+        .poll(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8'))
+        .toBeTruthy()
+      const leftRunning = Number(fs.readFileSync(pidFile, 'utf8'))
+      expect(processAlive(leftRunning)).toBe(true)
+
+      expect(await koloftInSession(page, 'session close')).toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain(
+        'Also closing the ended sessions it started:'
+      )
+      await expect(rows).toHaveCount(0, { timeout: 60_000 })
+      await expect.poll(() => fs.existsSync(kidTree), { timeout: 30_000 }).toBe(false)
+      await expect.poll(() => fs.existsSync(parentTree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-*').trim()).toBe('')
+      await expect.poll(() => processAlive(leftRunning), { timeout: 30_000 }).toBe(false)
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
+      await quitAndClose(app)
+    }
+  })
+
   test('koloft session close <a session that went to sleep> closes its tab too, not only its row', async ({
     env
   }) => {
@@ -649,6 +760,39 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     const { argv } = (await waitForCalls(env, 1))[0]
     const prompt = argv[argv.indexOf('--append-system-prompt-file') + 1]
     expect(fs.readFileSync(prompt, 'utf8')).toContain('koloft session new -w')
+  })
+
+  // CODEX§17
+  test('a Codex session gets the koloft skill through its app-server, from a folder outside the Codex home it shares with the owner’s own codex', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startLocalSession(page, env, 'codex')
+      const sent = fs
+        .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              direction: string
+              frame: { method?: string; params?: { extraRoots?: string[] } }
+            }
+        )
+        .filter((e) => e.direction === 'client')
+        .map((e) => e.frame)
+      const [root] = sent.find((f) => f.method === 'skills/extraRoots/set')!.params!.extraRoots!
+      expect(root.startsWith(env.launchEnv.CODEX_HOME!)).toBe(false)
+      expect(fs.readFileSync(path.join(root, 'koloft', 'SKILL.md'), 'utf8')).toMatch(
+        /^---\nname: koloft\n/
+      )
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('with agent tools off in Settings, koloft in a new session is refused, and the session starts without Koloft’s prompt', async ({

@@ -276,7 +276,7 @@ export function Onboarding({
 
         {step === 1 && (
           <>
-            <div className="big">Koloft runs Claude Code — and Codex, if you have it.</div>
+            <div className="big">Koloft runs Claude Code, Codex, Muse and Antigravity.</div>
             <div className="quiet">
               Pick a <b>folder</b>. Koloft shows every <b>session</b> in it. Each session gets a
               side panel, the <b>Workbench</b>: the files the agent changed, a browser, a shell.
@@ -293,8 +293,8 @@ export function Onboarding({
           <>
             <div className="big">Pick your first workspace.</div>
             <div className="quiet">
-              You have used Claude Code in these folders before. Pin the ones you want in the
-              sidebar.
+              You have used Claude Code, Codex, Muse or Antigravity in these folders before. Pin the
+              ones you want in the sidebar.
             </div>
             <div className="disc-list">
               {found.map((f) => (
@@ -376,10 +376,10 @@ export function Onboarding({
               ))}
             </div>
             <div className="quiet">
-              Claude Code runs most steps without asking, so its light seldom turns amber: Koloft
-              starts it with permission prompts skipped (Settings ▸ Accounts), and without that it
-              starts in auto mode. To be asked before each step, turn that switch off and pick
-              manual with ⇧Tab in the session.
+              With Skip permission prompts on (Settings ▸ Accounts), Koloft starts every new session
+              with those prompts skipped, so a light seldom turns amber. With it off, each agent
+              asks as its own settings say: Claude Code starts in auto mode, so to be asked before
+              each step pick manual with ⇧Tab in the session.
             </div>
             <div className="quiet">
               When Koloft is in the background, a light turning amber or green also sends a

@@ -85,6 +85,7 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -92,9 +93,16 @@ import {
 
 const exec = promisify(execFile)
 
+export interface MuseHomePick {
+  account: string
+  env: Record<string, string>
+  banner?: string
+  notice?: string
+}
+
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
+  pickHome(resumeSessionId?: string): MuseHomePick | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
@@ -131,6 +139,7 @@ export interface MuseRemoteDeps {
 interface MuseLaunch {
   binary: string
   account: string
+  banner?: string
   env: NodeJS.ProcessEnv
 }
 
@@ -443,32 +452,38 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return { binary: 'ssh', env: this.env, over: (args) => machine.museServe(args) }
   }
 
-  protected async listHistory(): Promise<
-    { key: string; entry: MuseHistoryEntry; archived: boolean }[]
-  > {
+  protected async listHistory(): Promise<HistoryListing<MuseHistoryEntry>> {
     const remote = this.deps.remote
     const hosts = remote?.hosts() ?? []
+    const listedHosts: string[] = []
     const [sessions] = await Promise.all([
       listMuseSessions(this.serveOptions()),
       ...hosts
         .filter((host) => remote!.connected(host))
         .map(async (host) => {
           const listed = await listMuseSessions(this.serveOn(host)).catch(() => undefined)
-          if (listed)
-            this.remoteHistory.set(
-              host,
-              listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
-            )
+          if (!listed) return
+          this.remoteHistory.set(
+            host,
+            listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
+          )
+          listedHosts.push(host)
         })
     ])
     for (const host of this.remoteHistory.keys())
-      if (!hosts.includes(host)) this.remoteHistory.delete(host)
-    return [
-      ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
-      ...[...this.remoteHistory].flatMap(([host, entries]) =>
-        entries.map((entry) => ({ key: museSessionKey(entry.id, host), entry, archived: false }))
-      )
-    ]
+      if (!hosts.includes(host)) {
+        this.remoteHistory.delete(host)
+        this.listedAt.delete(host)
+      }
+    return {
+      entries: [
+        ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
+        ...[...this.remoteHistory].flatMap(([host, entries]) =>
+          entries.map((entry) => ({ key: museSessionKey(entry.id, host), entry, archived: false }))
+        )
+      ],
+      listedHosts
+    }
   }
 
   async transcriptExists(key: string): Promise<boolean> {
@@ -502,7 +517,17 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
-    return { binary: this.binary!, account: picked.account, env: { ...this.env, ...picked.env } }
+    if (picked.notice) this.deps.error(picked.notice)
+    return {
+      binary: this.binary!,
+      account: picked.account,
+      banner: picked.banner,
+      env: { ...this.env, ...picked.env }
+    }
+  }
+
+  protected launchAccount(launch: MuseLaunch): string {
+    return launch.account
   }
 
   protected runDetails(run: MuseRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
@@ -572,7 +597,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§17
-  private async startRemoteRun(ctx: StartContext, { account, env }: MuseLaunch): Promise<MuseRun> {
+  private async startRemoteRun(
+    ctx: StartContext,
+    { account, banner, env }: MuseLaunch
+  ): Promise<MuseRun> {
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
@@ -586,6 +614,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       fallbackCwd: workspace !== cwd ? workspace : undefined,
       resumeSessionId: resumeId,
       account: { name: account, auth: () => this.credentialFor(account, env, host) },
+      banner,
       args: this.museArgv(opts, approvalFlags(permission), false),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
@@ -645,7 +674,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private async startLocalRun(
     ctx: StartContext,
-    { binary, account, env }: MuseLaunch
+    { binary, account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     // ADR-0026 MUSE§10
@@ -661,8 +690,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    if (env.XDG_CONFIG_HOME)
-      placeKoloftSkill(env.XDG_CONFIG_HOME, agent ? agentSkillMarkdown() : undefined)
+    if (env.XDG_CONFIG_HOME) placeKoloftSkill(env.XDG_CONFIG_HOME, !!agent)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
       ...(role ? [role] : [])
@@ -690,6 +718,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         rows: opts.rows,
         executable: binary,
         argv,
+        // MUSE§1
+        banner,
         processEnv: {
           ...env,
           PATH: pathWithDirFirst(env.PATH, tools.dir),
@@ -729,6 +759,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'muse',
         open,
         agent,
         drop: (name) =>
@@ -1035,10 +1066,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const hook = museHook(line)
       if (hook) this.onHook(run, hook)
     } else if (line.t === 'log' && typeof line.payloadType === 'string') {
+      const aNewerStateCameFirst = Number(line.seq) < run.lastSeq
       this.onLogRecord(run, {
         payloadType: line.payloadType,
         payload: record(line.payload),
-        atMs: Date.now()
+        atMs: aNewerStateCameFirst ? 0 : Date.now()
       })
     }
   }
@@ -1122,6 +1154,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.jobs.clear()
     this.holdForJobs(run)
     run.endedTurns.clear()
+    run.touched.clear()
+    run.liveWrites = 0
     run.log = undefined
     this.bind(
       run,

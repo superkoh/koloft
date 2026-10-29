@@ -16,17 +16,23 @@ import {
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  openSessionTerminal,
   openWorktreeSession,
+  panelShellPid,
+  panelTerm,
   processAlive,
   readCalls,
   resumedId,
   runClaudeElsewhere,
   runIn,
   seedJsonl,
+  sendShortcut,
   setNextSessionTitle,
   snap,
   startSessionIn,
   switchToRow,
+  terminalText,
+  termIds,
   waitBooted,
   waitForCalls,
   wsRows
@@ -46,6 +52,8 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 const BIND_LATER_THAN_THE_QUIT_MS = 15_000
+const QUITS_WITHIN_MS = 30_000
+const CLOSED_PROGRAM_ENDS_WITHIN_MS = 20_000
 
 function openTabsOnDisk(env: E2EEnv): unknown {
   try {
@@ -163,6 +171,65 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     ).toHaveLength(0)
     await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(row).toHaveClass(/\bcold\b/)
+  })
+
+  test('Koloft still quits, within seconds, when a program in one of its tabs ignores the hangup signal, and that program does not outlive it', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const ignoresHangup = path.join(env.home, 'ignores-hangup.sh')
+    fs.writeFileSync(ignoresHangup, "trap '' HUP\nwhile :; do sleep 1; done\n")
+    const app = await launchApp(env)
+    let pid = 0
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await openSessionTerminal(app, page)
+      pid = await panelShellPid(page, 'HANGUP')
+      await runIn(page, panelTerm(page), `exec sh '${ignoresHangup}'`)
+      await expect
+        .poll(() => execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))
+        .toContain(ignoresHangup)
+
+      const closed = app.waitForEvent('close', { timeout: QUITS_WITHIN_MS })
+      await page.evaluate(() => window.api.app.approveQuit()).catch(() => {})
+      await closed
+      expect(processAlive(pid)).toBe(false)
+    } finally {
+      await quitAndClose(app).catch(() => {})
+      if (pid) killSession(pid, env)
+    }
+  })
+
+  test('closing a tab whose program ignores the hangup signal still ends that program within seconds, while Koloft keeps running', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const ignoresHangup = path.join(env.home, 'ignores-hangup.sh')
+    fs.writeFileSync(ignoresHangup, "trap '' HUP\nwhile :; do sleep 1; done\n")
+    let pid = 0
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openSessionTerminal(app, page)
+      pid = await panelShellPid(page, 'CLOSEHUP')
+      await runIn(page, panelTerm(page), `exec sh '${ignoresHangup}'`)
+      await expect
+        .poll(() => execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))
+        .toContain(ignoresHangup)
+
+      await panelTerm(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(panelTerm(page)).toHaveCount(0, { timeout: 20_000 })
+      await expect
+        .poll(() => processAlive(pid), { timeout: CLOSED_PROGRAM_ENDS_WITHIN_MS })
+        .toBe(false)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+    } finally {
+      if (pid) killSession(pid, env)
+    }
   })
 
   test('T-LIFE-16: /compact restarts the session in place, the row does not move, and it ends done, not working', async ({
@@ -296,6 +363,80 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(mask).toHaveCount(0, { timeout: 30_000 })
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/\bactive\b/)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('a cold row whose resume stops at Claude asking whether to trust its folder lifts the resume mask to show that question, and once answered the session binds in that tab', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Untrusted resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Untrusted resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+
+      const masks = page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
+      await expect(masks.first()).toBeVisible({ timeout: 10_000 })
+      const calls = await waitForCalls(env, 1)
+      expect(resumedId(calls[0])).toBe(id)
+      await expect(masks).toHaveCount(0, { timeout: 15_000 })
+      const tab = (await termIds(page)).find((t) => !before.has(t))!
+      expect(await terminalText(page, tab)).toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row).toHaveAttribute('data-tab-id', tab)
+      expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('a resume that the person ends at Claude’s folder-trust question says Claude closed before the session started, keeping the exit code', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Declined resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Declined resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+      await waitForCalls(env, 1)
+      await expect
+        .poll(
+          async () => {
+            const tab = (await termIds(page)).find((t) => !before.has(t))
+            return tab ? terminalText(page, tab) : ''
+          },
+          { timeout: 15_000 }
+        )
+        .toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Claude closed before the session started (exit code 1)',
+        { timeout: 20_000 }
+      )
     } finally {
       await app.close().catch(() => {})
     }

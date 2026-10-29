@@ -58,7 +58,9 @@ import {
   consumeRestoreExit,
   tabEvictedNotice,
   panelTabId,
-  panelIsOpen
+  panelIsOpen,
+  noteWakingOutput,
+  tabEverBound
 } from './store'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
@@ -74,6 +76,7 @@ import {
   PREVIEW_CARD_WIDTH_PX,
   previewCardFits,
   relTime,
+  rowLookups,
   selectionRoot,
   sessionsNeedYou,
   waitingTabs,
@@ -155,7 +158,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
-const CENTER_TERMINAL_MAX_COLS = 120
+const CENTER_TERMINAL_MAX_COLS = 140
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -995,7 +998,7 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
+        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id)))
       }
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
@@ -1105,9 +1108,15 @@ export default function App(): JSX.Element {
     setNotesFocusWs(notesWs)
     setNotesFocus(0)
   }
-  const welcomeRunning = (welcomeWs?.rows ?? []).filter((r) => r.running).length
+  const runningWelcomeIds = useStore(
+    useShallow((s) => {
+      const look = rowLookups(s.sessions, s.tabs, [])
+      return (welcomeWs?.rows ?? []).filter((r) => look.running(r)).map((r) => r.id)
+    })
+  )
+  const welcomeRunning = runningWelcomeIds.length
   const recentRows = (welcomeWs?.rows ?? [])
-    .filter((r) => !r.running && !r.pending)
+    .filter((r) => !runningWelcomeIds.includes(r.id) && !r.pending)
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, RECENT_MAX)
 
@@ -1668,13 +1677,16 @@ export default function App(): JSX.Element {
                       key={t.ghost}
                       className="term-wrap"
                       style={{
-                        display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
+                        display:
+                          (t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue
+                            ? 'block'
+                            : 'none'
                       }}
                       onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
-                        active={t.id === shown.id || t.ghost === shown.id}
+                        active={(t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue}
                         scrollbar={false}
                         focusSignal={tuiFocus}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
@@ -1686,13 +1698,13 @@ export default function App(): JSX.Element {
                     className="term-wrap"
                     style={{
                       display: t.id === shown.id ? 'block' : 'none',
-                      visibility: t.ghost ? 'hidden' : undefined
+                      visibility: t.ghost && !t.wakeOverdue ? 'hidden' : undefined
                     }}
                     onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
-                      active={t.id === shown.id && !t.ghost}
+                      active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                       scrollbar={false}
                       maxCols={CENTER_TERMINAL_MAX_COLS}
                       onUserInput={
@@ -1704,9 +1716,14 @@ export default function App(): JSX.Element {
                       onRepainted={() => {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
+                      onOutput={
+                        t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
+                      }
                     />
-                    {/* CODEX§9 MUSE§10 */}
-                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 AGY§5 */}
+                    {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
+                      <ResumingMask title={t.title} />
+                    )}
                   </div>
                 ])}
                 {switching && activeTab && (

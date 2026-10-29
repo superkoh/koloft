@@ -17,6 +17,14 @@ export function mirrorAgyGemini(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'agy-gemini')
 }
 
+export function mirrorCodexHome(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'codex-home')
+}
+
+export function mirrorMuseHome(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'muse')
+}
+
 export function machinePackageBase(userData: string): string {
   return path.join(userData, 'remote', 'pkg')
 }
@@ -32,5 +40,12 @@ export function remoteMachineDir(machineName: string): string {
 export const REMOTE_HOOK_DIR = `${REMOTE_HOME}/hook-sessions`
 export function remotePtsFile(tabId: string): string {
   return `${REMOTE_HOME}/tabs/${tabId}.pts`
+}
+export const REMOTE_TABS_DIR = `${REMOTE_HOME}/tabs`
+export function remoteBrowserAddressFile(tabId: string): string {
+  return `${REMOTE_TABS_DIR}/${tabId}.cdp`
+}
+export function browserForwardFile(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'browser-forward.json')
 }
 export const dq = (s: string): string => `"${s}"`

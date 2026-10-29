@@ -1,8 +1,8 @@
-import { isSessionKind, type SessionBackend } from './agentUi'
-import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
+import { isSessionKind, resumeFailureMessage, type SessionBackend } from './agentUi'
+import type { ResumePlan, SessionResumeRequest } from '@shared/types'
 import { basename } from '@shared/preview'
 import { markRestoreLaunch, useStore, type Tab } from './store'
-import { workspaceOfRow } from './sessionRows'
+import { rowLookups, workspaceOfRow } from './sessionRows'
 
 export interface ResumeTarget {
   backendId: SessionBackend
@@ -75,14 +75,6 @@ export function mayBeRunningElsewhere(mtime: number, now: number): boolean {
   return now - mtime < RUNNING_ELSEWHERE_MS
 }
 
-export function resumeFailureMessage(
-  code: Extract<SessionResumeResult, { ok: false }>['code'],
-  message?: string
-): string {
-  if (code === 'backend') return message || 'Resume failed'
-  return code === 'cwd-missing' ? 'Folder is gone — cannot resume here' : 'Resume failed'
-}
-
 const inFlight = new Set<string>()
 const restoreIds = new Set<string>()
 
@@ -129,7 +121,7 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
         return
       }
       releaseResume(target.id)
-      st.showToast(resumeFailureMessage(res.code, 'message' in res ? res.message : undefined))
+      st.showToast(resumeFailureMessage(res))
       return
     }
     st.addTab({
@@ -148,8 +140,15 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
   }
 }
 
+function liveTabBoundTo(sessionId: string): string | undefined {
+  const { sessions, tabs } = useStore.getState()
+  return rowLookups(sessions, tabs, []).boundTabOf(sessionId)
+}
+
 export async function resumeSession(target: ResumeTarget): Promise<void> {
   if (inFlight.has(target.id)) return
+  const boundAheadOfItsRow = target.wake ? undefined : liveTabBoundTo(target.id)
+  if (boundAheadOfItsRow) return useStore.getState().activateTab(boundAheadOfItsRow)
   inFlight.add(target.id)
   if (target.restore) restoreIds.add(target.id)
   if (!target.wake) useStore.getState().setResumeLaunch({ id: target.id, title: target.title })

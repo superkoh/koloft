@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
+import type { BackendId } from '@shared/types'
 import { writeAgentShim } from './agentShim'
 import { ownedByThisRun } from './leftovers'
 import { oncePerName, watchAndSweepJsonDrops, type DropHandlerFor } from './jsonDrops'
@@ -23,6 +24,7 @@ export interface ToolShim {
 export function startToolShim(
   deps: ToolShimDeps,
   opts: {
+    backend: BackendId
     userZdotdir?: string
     open: (target: string) => void
     agent?: (dir: string, name: string, raw: unknown) => void
@@ -39,19 +41,20 @@ export function startToolShim(
     if (deps.gitBin) fs.symlinkSync(path.join(deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     fs.symlinkSync(deps.ghWrapper, path.join(shim.shimDir, 'gh'))
     const { agent } = opts
-    if (agent) writeAgentShim(shim.shimDir, shim.requestDir)
+    if (agent) writeAgentShim(shim.shimDir, shim.requestDir, opts.backend)
     const opens = oncePerName(() => openDropHandler(opts.open))
     const dropped = opts.drop && oncePerName(opts.drop)
-    const drops = watchAndSweepJsonDrops(
-      shim.requestDir,
-      (name) => {
-        if (name.startsWith('req-'))
-          return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
-        if (name.startsWith('res-')) return null
-        return dropped?.(name) ?? opens(name)
-      },
-      (name) => dropped?.(name) ?? null
+    const isOpenDrop = (name: string): boolean =>
+      !name.startsWith('req-') && !name.startsWith('res-') && !opts.drop?.(name)
+    const requests = oncePerName((name) =>
+      agent ? (obj): void => agent(shim.requestDir, name, obj) : null
     )
+    const handlerFor: DropHandlerFor = (name) => {
+      if (name.startsWith('req-')) return requests(name)
+      if (name.startsWith('res-')) return null
+      return dropped?.(name) ?? opens(name)
+    }
+    const drops = watchAndSweepJsonDrops(shim.requestDir, handlerFor, undefined, isOpenDrop)
     return {
       shim,
       release: () => {

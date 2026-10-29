@@ -4,6 +4,7 @@ import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseNewSessionArgs,
+  sessionSays,
   sessionVerb,
   THAT_IS_YOU,
   workspaceVerb,
@@ -11,7 +12,10 @@ import {
   type PinnedWorkspace,
   type Target
 } from '../../src/main/agentSessions'
-import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
+
+const OLDER_A_HELPER_HAS_IT =
+  '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
@@ -76,6 +80,7 @@ interface Conducting {
   asking?: string[]
   worktrees?: string[]
   busy?: boolean
+  leftOf?: Record<string, string[]>
 }
 
 function harness(
@@ -91,6 +96,7 @@ function harness(
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
+  closeFails: ((text: string) => void)[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
   pressed: { tabId: string; keys: string[] }[]
@@ -111,6 +117,7 @@ function harness(
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
+  const closeFails: ((text: string) => void)[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
   const pressed: { tabId: string; keys: string[] }[] = []
@@ -161,11 +168,15 @@ function harness(
     },
     startedSessions,
     closable: () => [...sessions, ...cold],
-    whatIsLeft: async () => left,
-    closeSoon: (target) => {
-      closed.push(target.sessionId)
+    whatIsLeft: async (target) => conducting.leftOf?.[target.sessionId] ?? left,
+    closeSoon: (inOrder, tellStarter) => {
+      closed.push(...inOrder.map((target) => target.sessionId))
+      closeFails.push((text) => tellStarter(inOrder[0], text))
     },
     isButler: (tabId) => !!conducting.scopes?.[tabId],
+    speaksForTheOwner: (tabId) =>
+      !!conducting.scopes?.[tabId] ||
+      sessions.find((s) => s.tabId === tabId)?.cwd === BUTLER_FOLDER,
     butlerFolder: () => BUTLER_FOLDER,
     butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
@@ -222,6 +233,7 @@ function harness(
     launched,
     queued,
     closed,
+    closeFails,
     reads,
     lines,
     pressed,
@@ -458,7 +470,7 @@ describe('koloft session new', () => {
   })
 
   // ADR-0031
-  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report, the butler’s wrapper or the Assist wrapper older transcripts hold), and a Codex child the words of the session that started it', async () => {
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report, the butler’s wrapper, the note Koloft opens a butler with for a ⌘P request, in its older wording too, or the Assist wrapper older transcripts hold), and a Codex child the words of the session that started it', async () => {
     const { verb, launched } = harness(
       [
         session('me', 'claude'),
@@ -480,6 +492,8 @@ describe('koloft session new', () => {
               said: [
                 { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
                 { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 },
+                { who: 'owner', text: A_HELPER_HAS_IT, at: 2 },
+                { who: 'owner', text: OLDER_A_HELPER_HAS_IT, at: 2 },
                 {
                   who: 'owner',
                   text: "(From Assist, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is Assist's and is not the owner's decision:) Then «the slow one».",
@@ -571,7 +585,44 @@ describe('koloft session new', () => {
     expect(reply.text).toContain(`koloft session list --workspace "${OTHER_WS}"`)
   })
 
-  it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share, a missing folder and a remote workspace', async () => {
+  it('--workspace starts a Claude sibling in a remote workspace, found by its folder name, its machine:path or its ssh key, and the caller is told its tab id and koloft session send, since SendMessage reaches no session on another machine', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    for (const ref of ['api', 'box:/srv/api', 'ssh://box/srv/api']) {
+      const reply = await verb(['new', '--workspace', ref, '--', 'go'], from('me'))
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toContain('koloft session send new-tab')
+      expect(reply.text).not.toContain('SendMessage')
+    }
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual(
+      Array(3).fill(['claude', 'ssh://box/srv/api'])
+    )
+    expect(launched[0].firstPrompt).toContain('koloft session send me-session')
+  })
+
+  it('--workspace starts a Codex, Muse or Antigravity sibling in a remote workspace too, reached by its tab id; an Antigravity one there takes no --name', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, launched } = harness([session('me', 'claude')])
+    for (const backend of ['codex', 'muse', 'agy']) {
+      const reply = await verb(
+        ['new', '--backend', backend, '--workspace', REMOTE, '--', 'go'],
+        from('me')
+      )
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toContain('koloft session send new-tab')
+    }
+    const named = await verb(
+      ['new', '--backend', 'agy', '--name', 'x', '--workspace', REMOTE, '--', 'go'],
+      from('me')
+    )
+    expect(named.exit).toBe(EXIT_USAGE)
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
+      ['codex', REMOTE],
+      ['muse', REMOTE],
+      ['agy', REMOTE]
+    ])
+  })
+
+  it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share and a missing folder', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     const unknown = await verb(['new', '--workspace', 'nope', '--', 'go'], from('me'))
     expect(unknown.exit).not.toBe(0)
@@ -580,8 +631,9 @@ describe('koloft session new', () => {
     const shared = await verb(['new', '--workspace', 'site', '--', 'go'], from('me'))
     expect(shared.exit).not.toBe(0)
     expect(shared.text).toContain('/old/site')
-    for (const ref of ['gone', 'api', 'box:/srv/api', 'ssh://box/srv/api'])
-      expect((await verb(['new', '--workspace', ref, '--', 'go'], from('me'))).exit).not.toBe(0)
+    const missing = await verb(['new', '--workspace', 'gone', '--', 'go'], from('me'))
+    expect(missing.exit).not.toBe(0)
+    expect(missing.text).toContain('missing')
     expect(launched).toEqual([])
   })
 
@@ -669,6 +721,26 @@ describe('koloft session send', () => {
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain('SendMessage')
     expect(lines).toEqual([])
+  })
+
+  it('a Claude session reaches a Claude session on another machine with koloft session send, typed into it there, and that one reaches it back on its message line, since SendMessage reaches no session on another machine', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, lines, pressed } = harness([
+      ...sessions(),
+      session('far', 'claude', {
+        title: 'Far planner',
+        host: 'ssh',
+        remote: { host: 'box' },
+        cwd: REMOTE,
+        treeRoot: REMOTE
+      })
+    ])
+    const listed = await verb(['list', '--workspace', REMOTE], from('cc'))
+    expect(listed.text).toContain('Far planner · Claude · idle · id: far-session')
+    expect((await verb(['send', 'Far planner', 'hi'], from('cc'))).exit).toBe(0)
+    expect((await verb(['send', 'Planner', 'Done'], from('far'))).exit).toBe(0)
+    expect(pressed.map((p) => p.tabId)).toEqual(['far'])
+    expect(lines.map((l) => l.tabId)).toEqual(['cc'])
   })
 
   it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
@@ -809,6 +881,49 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['me-session', 'cx-session'])
   })
 
+  it('a close that fails is also told, as from Koloft, to the open session that started the closed one, whether the session closed itself or its starter closed it; a closed starter is not started again for it', async () => {
+    const h = harness(
+      [
+        session('me', 'claude', { title: 'Lead' }),
+        session('kid', 'claude', { sessionId: 'kid-id', title: 'Fix docs' }),
+        session('new-tab', 'claude', { title: 'Docs fixer' }),
+        session('orphan', 'claude', { sessionId: 'orphan-id', title: 'Left alone' })
+      ],
+      {},
+      [],
+      {
+        sidebar: sidebar([
+          [WS, [row('planner-id', { title: 'Planner' }), row('me-session', { running: true })]]
+        ])
+      }
+    )
+    h.startedSessions.started('kid', 'me-session')
+    h.startedSessions.bound('kid', 'kid-id')
+    h.startedSessions.started('orphan', 'planner-id')
+    h.startedSessions.bound('orphan', 'orphan-id')
+    await h.verb(['new', '--', 'go'], from('me'))
+
+    await h.verb(['close'], from('kid'))
+    await h.verb(['close', 'Docs fixer'], from('me'))
+    await h.verb(['close'], from('orphan'))
+    await h.verb(['close'], from('me'))
+    const [kidFails, fixerFails, orphanFails, meFails] = h.closeFails
+    kidFails('Fix docs: its worktree stayed.')
+    fixerFails('Docs fixer: its worktree stayed.')
+    orphanFails('Left alone: its worktree stayed.')
+    meFails('Lead: its worktree stayed.')
+
+    const toMe = (text: string): string | null =>
+      expect.objectContaining({ tabId: 'me', line: expect.stringContaining(text) })
+    await vi.waitFor(() =>
+      expect(h.lines).toEqual([
+        toMe('(From Koloft:) Fix docs: its worktree stayed.'),
+        toMe('(From Koloft:) Docs fixer: its worktree stayed.')
+      ])
+    )
+    expect(h.resumed).toEqual([])
+  })
+
   it('closes a session it started with koloft session new, by its title, quoted or not, or tab id, while it is open', async () => {
     const { verb, closed } = harness([
       session('me', 'claude'),
@@ -884,6 +999,53 @@ describe('koloft session close', () => {
     expect(closed).toEqual([])
     expect((await verb(['close', 'Old run'], from('me'))).exit).toBe(0)
     expect(closed).toEqual(['cold-session'])
+  })
+
+  it('closes, after it, the ended sessions it started and theirs (one in its own worktree goes with it), and names the ones it leaves: still open, or holding work closing would lose', async () => {
+    const ended = (id: string, title: string, treeRoot = `${WS}/.claude/worktrees/${id}`) => ({
+      sessionId: id,
+      backendId: 'codex' as const,
+      title,
+      treeRoot
+    })
+    const { verb, closed, startedSessions } = harness(
+      [session('me', 'claude'), session('busy-tab', 'muse', { title: 'Still working' })],
+      {},
+      [],
+      {
+        leftOf: {
+          'dirty-session': ['Changes not committed:\n?? draft.md'],
+          'same-tree-session': ['The session "me title" is still open.']
+        }
+      },
+      [
+        ended('done-session', 'Done helper'),
+        ended('grand-session', 'Its helper'),
+        ended('dirty-session', 'Dirty helper'),
+        ended('under-dirty-session', 'Under dirty'),
+        ended('same-tree-session', 'In my tree', WS)
+      ]
+    )
+    const child = (tab: string, sessionId: string, parent: string): void => {
+      startedSessions.started(tab, parent)
+      startedSessions.bound(tab, sessionId)
+    }
+    child('done-tab', 'done-session', 'me-session')
+    child('grand-tab', 'grand-session', 'done-session')
+    child('dirty-tab', 'dirty-session', 'me-session')
+    child('under-dirty-tab', 'under-dirty-session', 'dirty-session')
+    child('busy-tab', 'busy-tab-session', 'me-session')
+    child('same-tree-tab', 'same-tree-session', 'me-session')
+
+    const reply = await verb(['close'], from('me'))
+    expect(reply.exit).toBe(0)
+    expect(closed).toEqual(['me-session', 'done-session', 'same-tree-session', 'grand-session'])
+    expect(reply.text).toContain(
+      'Also closing the ended sessions it started: "Done helper", "In my tree", "Its helper".'
+    )
+    expect(reply.text).toContain('"Dirty helper":\nChanges not committed:\n?? draft.md')
+    expect(reply.text).toContain('Left these sessions it started open: "Still working".')
+    expect(reply.text).not.toContain('Under dirty')
   })
 
   it('closes nothing and lists what is left when something is not committed or not pushed', async () => {
@@ -1118,6 +1280,59 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
+    ])
+  })
+
+  it('a helper in the butler’s own folder passes the owner’s word on the way the butler does, to any workspace session, a Claude one too; what it says to the butler or to another helper stays its own', async () => {
+    const helper = session('helper', 'claude', {
+      sessionId: 'helper-id',
+      title: 'Sort out to-dos',
+      cwd: BUTLER_FOLDER
+    })
+    const other = session('other', 'codex', {
+      sessionId: 'other-id',
+      title: 'Look into logs',
+      cwd: BUTLER_FOLDER
+    })
+    const h = harness(
+      [...live, helper, other],
+      {},
+      [],
+      conducting({
+        sidebar: [
+          ...rows,
+          {
+            workspace: { path: BUTLER_FOLDER, missing: false, isGit: false, hasHistory: true },
+            rows: [
+              row('other-id', {
+                title: 'Look into logs',
+                cwd: BUTLER_FOLDER,
+                backendId: 'codex',
+                running: true
+              })
+            ]
+          }
+        ]
+      })
+    )
+    h.startedSessions.started('helper', 'cond-id')
+    expect((await h.verb(['send', 'fix-login', 'merge it'], from('helper'))).exit).toBe(0)
+    expect((await h.verb(['send', 'cond-id', 'Done: 3 merged.'], from('helper'))).exit).toBe(0)
+    expect((await h.verb(['send', 'other-id', 'what did you find?'], from('helper'))).exit).toBe(0)
+    expect(h.queued.map((q) => q.text)).toEqual([sessionSays(helper, 'what did you find?')])
+    expect(h.lines).toEqual([
+      {
+        tabId: 'fix',
+        line: crossSessionLine('prompting', ownerSays('merge it'), 'koloft-session-1')
+      },
+      {
+        tabId: 'butler',
+        line: crossSessionLine(
+          'prompting',
+          sessionSays(helper, 'Done: 3 merged.'),
+          'koloft-session-2'
+        )
+      }
     ])
   })
 

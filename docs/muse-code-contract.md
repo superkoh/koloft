@@ -38,6 +38,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
   none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
   approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
+- **No model names without a login.** The models come from the provider's catalog
+  (`GET /muse-code/models` on the fake server; "failed to fetch model catalog", §13),
+  and this Mac has no Meta login, so which ids a real account gets is **not probed
+  yet**. `muse model-profile show <model>` (1.4.11, Docker, 2026-10-26) answers for any
+  name, `nope-model` too, so it names nothing; its help gives `muse-spark-1.3` as the
+  example, and `muse-spark-1.2` and `muse-spark-1.3` (with `-internal` and
+  `-contributor` forms) are the only `muse-spark-*` strings in the binary.
 - `-c KEY=JSON` sets one setting for the run; an unknown key refuses the run.
   `-c run.developer_prompt="…"` reaches the model, but only until `/clear` (macOS
   measured: the second session's request carried no developer prompt). Koloft hands
@@ -51,6 +58,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - The installer (`curl -fsSL https://dev.meta.ai/install.sh | bash`) puts a launcher
   script at `~/.local/bin/muse`. It ends with `exec "$binary" "$@"`, so the process a
   terminal spawns becomes the muse binary itself and keeps its PID.
+- **The TUI draws inline, with no alternate screen and no screen clear**, so a line
+  printed before muse starts stays on row 0 above its banner and input box (2026-10-25,
+  1.4.13 in the `koloft-muse-probe` Docker image, `--provider echo`, a python pty
+  answering the terminal's queries, output replayed into `@xterm/headless`; inside a
+  tmux pane too, PLATFORM§35).
 
 ## §2 Where Muse keeps its data
 
@@ -74,6 +86,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- **Tokens per model call** (2026-10-19, Muse Code 1.4.9 Linux arm64, `muse exec` in
+  Docker against a fake model server, numbers checked against what it sent): one
+  `runtime.session` record with `payload.kind == "run"` and `payload.event.kind ==
+  "model_completed"` per call, with `payload.event.model` and `payload.event.usage
+  {input_tokens, output_tokens, cached_tokens, cache_read_tokens, cache_write_tokens,
+  reasoning_tokens}`; `payload.run_id` is the turn. Per call, not running totals. The
+  same numbers are written again as `payload.event.kind == "goal_usage_attribution"`
+  (`record.usage_family: "provider"`), so reading both doubles the total. A subagent's
+  calls are only in its own `subagent/<child>/session.jsonl`.
 - Muse's own list cannot carry a name Koloft gives (checked 2026-10-22 on 1.4.9 in
   Docker, echo provider, a pty-driven TUI and `muse serve`): `session/list` gives
   `title` = the first prompt and `name` = the made-up name; `/rename Docs cleanup`
@@ -124,6 +145,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   running TUI). Without it Koloft binds a resumed tab only at its first prompt.
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
+- A fresh TUI writes its file at launch, before any prompt, so its session exists from
+  the start (unlike AGY§8). 2026-10-26, muse 1.4.11 in Docker (`koloft-muse-probe-1411`),
+  `--provider echo --trust-workspace`, a pty driver that answered the terminal's
+  queries and typed nothing for 8 s: the registry file and
+  `sessions/<date>/<id>/.session.lock` were both there.
 - On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
   file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.
@@ -142,6 +168,24 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   session is missing from the list for 3–5 s. `path` is the session's own
   `session.jsonl` (§2): checked 2026-10-20 on Muse 1.4.9 in Docker, by `session/list`
   after a `muse exec --provider echo` run.
+- A deleted session leaves `session/list` at once (2026-10-24, Muse 1.4.13 in Docker,
+  three `muse exec --provider echo` runs, a Node client on `muse serve`): removing a
+  session's folder, or only its `session.jsonl`, dropped it from the next listing; the
+  other sessions stayed. Muse has no way of its own to delete or archive a session: no
+  such subcommand in `muse --help`, and no such `session/*` method in `muse schema
+  generate-ts`.
+- What changes under `museHome/sessions/` while a new session starts (2026-10-27, Muse
+  1.4.13 in Docker, `muse exec --provider echo` with a recursive `fs.watch` on that
+  folder and a `muse serve` client listing every 250 ms): the session's folder and its
+  `session.jsonl` appeared 0.3 s after the start; `session/list` held the session 2.1 s
+  after the start. The same start also wrote, much of it going again within the run:
+  `.session.lock`, `.session.jsonl.permission-init`, `cli-<uuid>.log`, `cron.db` and
+  `cron.db-journal`, an `approval-review/` folder and
+  `subagent/<child>/{.session.lock,session.jsonl}` inside the session's folder, plus
+  `.msp-view-g6/<sessionId>/` (snapshot, `HEAD.json` and `.tmp` files rewritten many
+  times) and `.msp-maintenance-owner.lock` at the top. Removing the session's folder
+  reported only the folder and its `.session.lock` on Linux. So only the top-level
+  `session.jsonl` appearing, or a session or date folder going, says the list changed.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits
@@ -165,6 +209,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
+  `first line\nsecond line\nthird line` written in one go, with or without
+  bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
+  all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
+  python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
+  macOS.
 
 ## §8 Shell commands inside Muse (macOS)
 
@@ -232,6 +282,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
   `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
   `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
+- **`UserPromptSubmit`'s stdin is compact JSON with non-ASCII text left as UTF-8.**
+  2026-10-28, muse 1.4.14 (`koloft-muse-probe-1411`, which updated itself), Docker,
+  `muse exec --provider echo --trust-workspace "[Discord] 你好 \"a\" <b> é<TAB>x"`, the hook
+  given through `TBH_MANAGED_HOOKS_PATH`, one run: the hook read
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx"` — only the quote and the tab escaped, as
+  Node's `JSON.stringify` does.
 - Tool shapes (fake model): `write_file` and `edit_file` → `PostToolUse.tool_response
   {filePath, structuredPatch:[{lines:["+…","-…"], oldStart, oldLines, newStart,
   newLines}]}`; `bash` with `yield_time_ms` that outlives it → `tool_response` holds
@@ -321,6 +377,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   folder's real path.
 - An entry another program wrote first is honoured (no question), and muse keeps the
   other entries when it adds one (it rewrites the file pretty-printed).
+- "2 Quit" (↓ then Enter), or Esc, exits with code 0 within 0.3 s, erases the
+  question from the screen and writes nothing to `trust.json` (Muse Code 1.4.13 on
+  Linux in Docker, `--provider echo`, 2026-10-26; macOS not probed yet).
 - `--trust-workspace` trusts the folder for that run only and saves nothing.
 - `muse resume <id>` asks the same question when the folder has no decision, and
   writes no live-registry file (§4) until it is answered, so nothing tells which
@@ -345,8 +404,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   (real Meta account, macOS) the upper rule carries a title, `── Voice input (⌥ + v to
   start) ────…`, and an empty box can show a hint after `❯`, such as `Press Ctrl+O to
   expand collapsed tool output`.
-- What a slash command prints (`/usage`, `/status`, …) is drawn on the screen only; the
-  session log holds none of it (1.4.9, fake model).
+- **An Esc and the Enter after it, read in one go, are Alt+Enter: the Enter adds a line
+  and the command is not sent.** Measured 2026-10-25, muse 1.4.11
+  (`Muse Code 1.4.11 (1.4.11-R6667.1)`), Docker, `--provider echo`, a python pty
+  (120×40), the screen read through `pyte`: `/usage` (its menu shows "/usage  Show session
+  usage" under the `❯` row), then `ESC` and CR in one write 0.3 s later, closed the menu
+  and left the box as two rows, `❯ /usage` and an empty one, in 3 of 3 tries; a lone CR
+  3 s later ran it (3 of 3, the "Session usage" panel), and so did one 2 s later (3 of
+  3). `ESC` then CR in two writes
+  0.3 s apart ran it at once (2 of 2). So a box can hold empty rows under the `❯` row.
 
 ## §12 Handing muse instructions
 
@@ -386,6 +452,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
+- `auth set --provider meta --api-key-stdin` does not check the key: a made-up one
+  exited 0 with "credentials saved for provider meta" and was written to `auth.json`
+  (0600) as `{schema_version, providers: {meta: {api_key}}}`. `account/read` then
+  answered `{state: "apiKey", label: "stored key"}`, and with `META_API_KEY` set
+  `{state: "envKey", label: "META_API_KEY"}`; `usage/read` answered `{}` either way
+  (1.4.14, Linux arm64, Docker, `TBH_CREDENTIAL_BACKEND=file`, 2026-10-28). That a wrong
+  stored key then ends the launch the way a rejected `META_API_KEY` does (below) is
+  inferred, not checked.
 - How much of a Meta account's quota is used showed only inside a live session: the
   TUI's `/usage` draws a box (screen only, §11), while a fresh `muse serve` answers
   `usage/read` with nothing in it and `muse exec --json` prints no usage record
@@ -398,7 +472,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   is closed. In the first second or two after start the box has only the session lines;
   typed again a moment later it has the Subscription block (1.4.10, real Meta account,
   macOS, 2026-10). An API-key account (`account/read` state `apiKey`) shows no
-  Subscription block (inferred from the box's layout, not checked: no API key on hand).
+  Subscription block (inferred from the box's layout, not checked: no real API key on hand).
 - `muse schema generate-ts --experimental` lists `usage/read` and `usage/changed` with
   `SubscriptionUsage {tier, window {usedPercent, resetsAtMs, windowDurationMins},
   weekly {usedPercent, resetsAtMs}, observedAtMs}`, the window described as "the
@@ -516,3 +590,49 @@ server of the opening note and with `--provider echo`; October 2026.
   machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
   with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
   tmux 3.3a, through Koloft, October 2026).
+
+## §18 MCP servers and a project's instruction files
+
+2026-10-23, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec` against a fake model
+server (`--base-url`, `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`); each MCP server a
+tiny stdio server that logged its start; marker words in instruction files, looked for
+in the model request.
+
+- **No `mcp list`:** `muse mcp` has only `login` and `logout`.
+- **Everywhere:** `mcpServers` in `<config>/muse/settings.json` (`{"schema_version":1,
+  "mcpServers":{"<name>":{"type":"stdio","command","args"}}}`) started in every folder.
+- **One project:** `mcpServers` in `<workspace>/.mcp.json`, and only in a trusted
+  workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
+  untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
+  `<A>/.agents/settings.json` were not read.
+- **Which folders' `.mcp.json`:** the workspace's and every folder above it up to the
+  nearest one holding `.git` (a folder, or the file of a linked worktree), that one
+  included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, a repository inside another did not reach the outer one, and
+  `--trust-workspace` for the cwd alone was enough for the files above it to load.
+  Measured 2026-10-28, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec --provider
+  echo --trust-workspace`, MCP servers that logged their start.
+- **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
+  scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
+  only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because
+  AGENTS.md takes precedence"). `MUSE.md` is never read. `<config>/muse/AGENTS.md` is
+  read everywhere, as `scope="user"`.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`) and the
+butler's to-do method, which names the files each agent reads.
+
+## §19 What a slash command prints
+
+- **It is drawn on the screen only; no store Koloft can read holds it.** First seen on
+  1.4.9 (fake model): the session log held none of `/usage` or `/status`. Rechecked
+  2026-10-26 on `Muse Code 1.4.13 (1.4.13-R6996.1)`, Docker (`koloft-muse-probe` image,
+  Linux), `muse --provider echo --trust-workspace` in a python pty (120×40, the screen
+  read through `pyte`): one prompt, then `/status`, `/usage` and `/help`, each typed, then
+  Esc and Enter as separate writes. `/status` drew a box (MODEL, WORKSPACE, ACCESS, USAGE,
+  CONTEXT, SESSION, ACTIVITY), `/usage` a "Session usage" box, `/help` a panel under the
+  input box. None of their words were in the session's `session.jsonl`, in the MSP view
+  store `sessions/.msp-view-g6/<id>/` (its journal and snapshots), or in what
+  `muse serve --provider echo` returned for `session/read` and `view/page {limit: 1000}`;
+  the prompt and its echoed reply were in every one of them.
+- **`/diff` is not a Muse command.** Typed the same way, it went to the model as a prompt:
+  a `userMessage` "/diff" and the reply "echo: /diff".

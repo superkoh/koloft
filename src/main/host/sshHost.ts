@@ -38,7 +38,10 @@ import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
+  claudeTabSpec,
   killSessionCmd,
+  machineToolProgram,
+  renameSessionCmd,
   resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
@@ -58,6 +61,7 @@ import { launchMode } from '../remote/sync'
 import {
   backgroundOptions,
   ensureControlDir,
+  machineOutOfReach,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -85,7 +89,7 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, type SkillFs } from '../skillList'
-import { worktreeNameAround } from '../resumePlan'
+import { worktreeNameAround, type GitOut } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -111,6 +115,7 @@ export interface MuseMachineLaunch {
   fallbackCwd?: string
   resumeSessionId?: string
   account: { name: string; auth(): string }
+  banner?: string
   args: string[]
   trust: string[]
   trustIf?: string
@@ -169,28 +174,43 @@ export function machineClaudeArgs(
   }
 }
 
-const TRUST_CWD_JS = [
+const CLAUDE_TRUST_JS = [
   'const fs=require("fs"),path=require("path");',
   'const [f,d]=process.argv.slice(1);',
+  'let top=null;',
+  'for(let x=d;;x=path.dirname(x)){',
+  'let s;try{s=fs.lstatSync(path.join(x,".git"))}catch(e){}',
+  'if(s&&(s.isDirectory()||s.isFile())){top=x;if(s.isFile())try{',
+  'const l=fs.readFileSync(path.join(x,".git"),"utf8").split("\\n").find((l)=>l.startsWith("gitdir:"));',
+  'const g=path.resolve(x,l.slice(7).trim());',
+  'top=path.dirname(path.resolve(g,fs.readFileSync(path.join(g,"commondir"),"utf8").trim()));',
+  'try{top=fs.realpathSync(top)}catch(e){}',
+  '}catch(e){top=x}break}',
+  'if(path.dirname(x)===x)break}',
+  'const trusted=(p)=>{',
+  'const ok=(x)=>p[x]&&p[x].hasTrustDialogAccepted===true;',
+  'if(top!==null&&d!==top&&!d.startsWith(top.endsWith("/")?top:top+"/"))return ok(d);',
+  'for(let x=d;;x=path.dirname(x)){',
+  'if(ok(x))return true;',
+  'if(x===top||path.dirname(x)===x)return false}};'
+].join('')
+
+const TRUST_CWD_JS = [
+  CLAUDE_TRUST_JS,
   'let j={};',
   'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
   'const p=(j.projects=j.projects||{});',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)break}',
+  'if(trusted(p))process.exit(0);',
   'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
   'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
   'fs.renameSync(f+".koloft",f)'
 ].join('')
 
 const TRUSTED_JS = [
-  'const fs=require("fs"),path=require("path");',
-  'const [f,d]=process.argv.slice(1);',
+  CLAUDE_TRUST_JS,
   'let p={};',
   'try{p=JSON.parse(fs.readFileSync(f,"utf8")).projects||{}}catch(e){}',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)process.exit(1)}'
+  'process.exit(trusted(p)?0:1)'
 ].join('')
 
 const NOT_TRUSTED = 1
@@ -617,17 +637,18 @@ export class SshHost implements Host {
     })
   }
 
-  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
-    return this.runGit(GIT, root, args, timeoutMs)
-  }
+  gitOut: GitOut = (root, args, timeoutMs, onFailure) =>
+    this.runGit(GIT, root, args, timeoutMs, onFailure)
 
   private async runGit(
     script: string,
     root: string,
     args: string[],
-    timeoutMs?: number
+    timeoutMs?: number,
+    onFailure?: (stderr: string) => void
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
+    if (r.code !== 0) onFailure?.(r.stderr)
     return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 
@@ -708,6 +729,11 @@ export class SshHost implements Host {
     const r = await this.testDir(dir)
     if (sshLinkBroke(r)) throw new Error(problemOf(r))
     return r.code === 0
+  }
+
+  async reachOrThrow(): Promise<void> {
+    const r = await this.sh('true', [])
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
   }
 
   async makeDir(dir: string): Promise<boolean> {
@@ -894,6 +920,10 @@ export class SshHost implements Host {
     return kill
   }
 
+  async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
+    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
+  }
+
   async answerAgent(requestId: string, reply: string): Promise<void> {
     await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
@@ -960,20 +990,19 @@ export class SshHost implements Host {
           fallbackCwd: bareOrNot(spec.fallbackCwd),
           banner: '',
           portOffset: spec.portOffset,
-          settings: {},
           ownerWords: spec.ownerWords,
-          claudeArgs: [],
-          program: {
-            name: 'muse',
-            run: museRunLines({
+          program: machineToolProgram(
+            'muse',
+            museRunLines({
               tabId,
               account: spec.account.name,
+              banner: spec.banner,
               args: spec.args,
               trust: spec.trust.map((p) => this.bare(p)),
               trustIf: bareOrNot(spec.trustIf)
             }),
             files
-          }
+          )
         })
         return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
       },
@@ -1087,11 +1116,9 @@ export class SshHost implements Host {
           tmuxName,
           machineName: pkg.name,
           cwd: this.bare(spec.cwd),
-          banner: spec.banner,
+          banner: '',
           env: spec.env,
           portOffset: spec.portOffset,
-          settings: {},
-          claudeArgs: [],
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1102,6 +1129,7 @@ export class SshHost implements Host {
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
     await this.sshReady()
+    await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
@@ -1131,20 +1159,27 @@ export class SshHost implements Host {
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd,
-          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? '',
-          env: account?.env,
-          portOffset: worktree ? portOffset(worktree) : undefined,
-          settings: d.hookSettings(tabId, machineDir, agentTools),
-          ownerWords: spec.ownerWords,
-          agentPlugin: agentTools,
-          claudeArgs
-        })
+        writeTabPackage(
+          tabDir,
+          claudeTabSpec(
+            {
+              tabId,
+              tmuxName,
+              machineName: pkg.name,
+              cwd,
+              fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
+              banner: account?.banner ?? '',
+              env: account?.env,
+              portOffset: worktree ? portOffset(worktree) : undefined,
+              ownerWords: spec.ownerWords
+            },
+            {
+              settings: d.hookSettings(tabId, machineDir, agentTools),
+              agentPlugin: agentTools,
+              claudeArgs
+            }
+          )
+        )
         return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,

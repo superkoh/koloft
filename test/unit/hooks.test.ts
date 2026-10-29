@@ -32,7 +32,7 @@ import {
   handoverPreamble,
   withHandover
 } from '../../src/main/handover'
-import { FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 
@@ -568,6 +568,7 @@ describe('injected hook script', () => {
       for (const notPersonal of [
         report,
         `${FROM_KOLOFT}origin/main moved from abc1234 to def5678, with 1 new commit: "fix: x".`,
+        A_HELPER_HAS_IT,
         '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed</summary>\n</task-notification>',
         '<agent-message from="fix-agent">\nDone: the fix is on its branch.\n</agent-message>'
       ]) {
@@ -650,6 +651,9 @@ describe('injected hook script', () => {
       )
       const notice = `${FROM_KOLOFT}The session "Fix docs" changed files you changed too: a.ts.`
       expect(remindedQuote(codexPrompt(notice), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      expect(remindedQuote(codexPrompt(A_HELPER_HAS_IT), 'UserPromptSubmit')).toBe(
         'find out why the test fails'
       )
       expect(remindedQuote(codexPrompt('A'), 'UserPromptSubmit')).toBe(
@@ -1009,8 +1013,15 @@ describe('injected hook script', () => {
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
-    const runAsk = (tab: string): ReturnType<typeof spawn> =>
-      spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const runAsk = (tab: string, givesUpAfterS?: number): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: {
+          ...process.env,
+          SECONDS: '7200',
+          ...(givesUpAfterS && { KOLOFT_ASK_GIVES_UP_AFTER_S: String(givesUpAfterS) })
+        }
+      })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
       child.stdout!.on('data', (c) => (out += c))
@@ -1034,8 +1045,10 @@ describe('injected hook script', () => {
       expect(local[0].matcher).toBe('*')
       expect(local[0].hooks[0].command).toMatch(/ ask$/)
       expect(local[0].hooks[0].timeout).toBe(3600)
-      const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', undefined, dq, 'record-only')
-        .hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
+      const remote = machineHookSettings('tabC2', '$HOME/.koloft/m', false, false).hooks as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >
       expect(remote.PermissionRequest[0].hooks[0].command).toMatch(/ asked$/)
       expect(remote.PermissionRequest[0].hooks[0]).not.toHaveProperty('timeout')
     })
@@ -1054,7 +1067,7 @@ describe('injected hook script', () => {
     })
 
     // CC§14
-    it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
+    it('ended by claude (the person answered "No" at the Mac), it removes its question file and records nothing, even with a large SECONDS in the environment claude hands it', async () => {
       markAnswerable(regDir, 'tabA2', true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
@@ -1062,6 +1075,37 @@ describe('injected hook script', () => {
       child.kill('SIGTERM')
       await closed
       expect(hookFiles('tabA2')).toEqual([])
+      expect(fs.existsSync(path.join(regDir, 'tabA2.status.jsonl'))).toBe(false)
+    })
+
+    // CC§14
+    it('given up on its own with no answer, it leaves the dialog on screen with no output, removes its question file and records the question in the status log, as a tab that does not wait would', async () => {
+      markAnswerable(regDir, 'tabA3', true)
+      const child = runAsk('tabA3', 2)
+      const printed = feed(child, ask)
+      await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA3'))).toBe(true))
+      expect(await printed).toBe('')
+      expect(child.exitCode).toBe(0)
+      expect(hookFiles('tabA3')).toEqual([])
+      expect(readStatusLog('tabA3')).toEqual([
+        { tabId: 'tabA3', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
+    })
+
+    // CC§14
+    it('an answer Koloft writes just as the hook gives up is still printed, and the question is not recorded', async () => {
+      markAnswerable(regDir, 'tabA4', true)
+      const child = runAsk('tabA4', 2)
+      const printed = feed(child, ask)
+      const askFile = askOf(child, 'tabA4')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(false), {
+        interval: 20,
+        timeout: 5000
+      })
+      fs.writeFileSync(path.join(regDir, `tabA4.${child.pid}.answer.json`), '{"late":true}')
+      expect(await printed).toBe('{"late":true}')
+      expect(fs.existsSync(path.join(regDir, 'tabA4.status.jsonl'))).toBe(false)
     })
 
     // CC§14
@@ -1132,17 +1176,14 @@ describe('injected hook script', () => {
   describe('U-HOOK-2: settings for a tab running on another machine', () => {
     const machine = remoteMachineDir('m-abc123')
     const build = (): Record<string, unknown> =>
-      hookSettings(
-        `${machine}/hook.sh`,
-        REMOTE_HOOK_DIR,
-        'tabR',
-        {
+      hookSettings(`${machine}/hook.sh`, REMOTE_HOOK_DIR, 'tabR', {
+        statusLine: {
           type: 'command',
           command: dq(`${machine}/run.sh`),
           padding: 0
         },
-        dq
-      )
+        quote: dq
+      })
 
     const commands = (s: Record<string, unknown>): string[] =>
       Object.values(s.hooks as Record<string, { hooks: { command: string }[] }[]>).flatMap((g) =>

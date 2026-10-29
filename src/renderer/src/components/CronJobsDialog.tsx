@@ -29,13 +29,17 @@ import {
   oncePassed,
   whenLine
 } from '@shared/cronHistory'
+import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
 import {
+  effortOf,
   emptyFields,
+  modelValue,
   permissionAfterSwitch,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
   validate,
+  toModelFields,
   type JobFields,
   type WhenKind
 } from '../cronForm'
@@ -66,20 +70,16 @@ const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
 const AFTER_HINT =
   'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
 
-const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
-  { value: '', label: 'Default' },
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'other', label: 'Other…' }
-]
-
-const MODEL_CHIPS_OF: Record<BackendId, typeof MODEL_CHIPS> = {
-  claude: MODEL_CHIPS,
-  codex: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
-  muse: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
-  agy: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
-}
+const MODEL_CHIPS_OF = Object.fromEntries(
+  SESSION_BACKENDS.map((b) => [
+    b,
+    [
+      { value: '', label: 'Default' },
+      ...NAMED_MODELS[b].map((m) => ({ value: m.id, label: m.label })),
+      { value: 'other', label: 'Other…' }
+    ]
+  ])
+) as Record<BackendId, { value: string; label: string }[]>
 
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
   { value: '', label: 'Same as usual' },
@@ -243,12 +243,7 @@ export function CronJobsDialog({
       ...scheduleToFields(job.schedule),
       name: job.name,
       task: job.task,
-      model: !job.model
-        ? ''
-        : job.model === 'fable' || job.model === 'opus' || job.model === 'sonnet'
-          ? job.model
-          : 'other',
-      modelOther: job.model && !['fable', 'opus', 'sonnet'].includes(job.model) ? job.model : '',
+      ...toModelFields(f.backend, job.model),
       effort: job.effort ?? '',
       permission: job.permission,
       autoClose: job.autoClose === true
@@ -420,10 +415,12 @@ export function CronJobsDialog({
   const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
-  const modelChips = MODEL_CHIPS_OF[fields.backend]
+  const efforts = effortsFor(fields.backend, modelValue(fields))
+  const effortChips = EFFORT_CHIPS.filter((c) => c.value === '' || efforts.includes(c.value))
+  const effort = effortOf(fields)
 
   const permissionHint =
-    (fields.backend !== 'codex' && settings.skipPermissions
+    (settings.skipPermissions
       ? 'Today that means: skips all permission checks (your Accounts setting).'
       : `Today that means: ${label} asks before risky steps, like your other sessions.`) +
     ' ' +
@@ -457,7 +454,7 @@ export function CronJobsDialog({
                     patch({
                       backend: b,
                       permission: permissionAfterSwitch(fields, b),
-                      ...(MODEL_CHIPS_OF[b].some((c) => c.value === fields.model)
+                      ...(fields.model === 'other' || namedModel(b, fields.model)
                         ? {}
                         : { model: '' })
                     })
@@ -641,7 +638,7 @@ export function CronJobsDialog({
       <span className="flabel">Model</span>
       <div className="fcol">
         <div className="chips">
-          {modelChips.map((c) => (
+          {MODEL_CHIPS_OF[fields.backend].map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.model === c.value ? ' on' : '')}
@@ -671,10 +668,10 @@ export function CronJobsDialog({
       <span className="flabel">Thinking</span>
       <div className="fcol">
         <div className="chips">
-          {EFFORT_CHIPS.map((c) => (
+          {effortChips.map((c) => (
             <button
               key={c.label}
-              className={'chip' + (fields.effort === c.value ? ' on' : '')}
+              className={'chip' + (effort === c.value ? ' on' : '')}
               onClick={() => patch({ effort: c.value })}
             >
               {c.label}

@@ -14,9 +14,12 @@ import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { CODEX_REPLY_LANGUAGE_HOOKS, codexHoldHook } from '../../src/main/hooks'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
+import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
+import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
+import { keyedOn } from '@shared/remoteKey'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -27,7 +30,14 @@ const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   update: vi.fn(),
   rpcHomes: [] as (string | undefined)[],
-  rpcOptions: [] as CodexProcessOptions[]
+  rpcOptions: [] as CodexProcessOptions[],
+  crashLeftoverMarkers: [] as string[]
+}))
+vi.mock('../../src/main/leftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/leftovers')>()),
+  endCodexAppServersLeftByACrash: async (marker: string) => {
+    mocks.crashLeftoverMarkers.push(marker)
+  }
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -87,6 +97,11 @@ const REPLY_LANGUAGE_ENV = {
   KOLOFT_CODEX_SAID: expect.stringMatching(/\/said$/)
 }
 
+const RESERVED_TAB_PLAYWRIGHT_ENV = {
+  PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+  PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
+}
+
 const REPLY_LANGUAGE_LISTED = CODEX_REPLY_LANGUAGE_HOOKS.map(({ event, command }) => ({
   key: `/<session-flags>/config.toml:${event}:0:0`,
   eventName: event.charAt(0).toLowerCase() + event.slice(1),
@@ -114,6 +129,22 @@ function hookListing(trustStatus: string, listed = REPLY_LANGUAGE_LISTED) {
 const historyOrTrustedHooks = async (method: string) =>
   method === 'hooks/list' ? hookListing('trusted') : { data: [], nextCursor: null }
 
+type MachineDeps = NonNullable<CodexSessionDeps['machine']>
+
+function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
+  return {
+    instance: 'test',
+    ready: async () => {},
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
+    sshArgs: () => [],
+    machinePackage: () => ({}) as never,
+    tabDir: () => directory,
+    fileExists: async () => false,
+    keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
+    ...overrides
+  }
+}
+
 function addMember(id = A, cwd = repo, worktreeResourceId?: string) {
   sessions.store.upsertMember({
     id,
@@ -139,6 +170,7 @@ beforeEach(() => {
   transports = []
   mocks.rpcHomes.length = 0
   mocks.rpcOptions.length = 0
+  mocks.crashLeftoverMarkers.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     const request = vi.fn(async () => ({}))
@@ -170,10 +202,11 @@ beforeEach(() => {
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: vi.fn(() => true),
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
-    agent: { enabled: () => false, answer: vi.fn() },
+    agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
       picked: vi.fn(async () => false),
@@ -304,6 +337,97 @@ describe('CodexSessions', () => {
     expect(sessions.threadGone(unlisted)).toBe(true)
   })
 
+  // CODEX§15 MUSE§5 AGY§8
+  it('a remembered session leaves the sessions list once a finished listing left its thread out, and comes back once listed again; an archived one stays for its unarchive hint, and so do one bound under half a minute ago and one that ran after that listing (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    addMember(A)
+    addMember(B)
+    sessions.store.upsertMember({
+      id: C,
+      key: codexSessionKey(C),
+      workspacePath: repo,
+      cwd: repo,
+      title: 'Just bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+    const { id: tab } = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, D)
+    sessions.store.updateMember(codexSessionKey(D), { updatedAt: 1 })
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [{ id: B, cwd: repo }] : []
+    }))
+    await sessions.refreshHistory()
+    const shown = () =>
+      sessions
+        .rows(repo)
+        .map((row) => row.id)
+        .sort()
+    const stays = [B, C, D].map((id) => codexSessionKey(id))
+    expect(shown()).toEqual(stays)
+    await sessions.stop(tab)
+    await sessions.refreshHistory()
+    expect(shown()).toEqual(stays)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: [{ id: params.archived ? B : A, cwd: repo }]
+    }))
+    await sessions.refreshHistory()
+    expect(shown()).toEqual([A, B, C, D].map((id) => codexSessionKey(id)))
+  })
+
+  // CODEX§16
+  it("a remembered session on a remote machine stays through a listing of this Mac alone and while the machine shows no Codex home, and leaves once that machine's own listing left it out", async () => {
+    let homeThere = false
+    deps.machine = fakeMachine({
+      run: async () => ({ code: homeThere ? 0 : 1, stdout: '', stderr: '' })
+    })
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const key = codexSessionKey(A, 'box')
+    sessions.store.upsertMember({
+      id: A,
+      key,
+      workspacePath: remoteRepo,
+      cwd: remoteRepo,
+      title: 'Saved',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    mocks.request.mockImplementation(async () => ({ data: [] }))
+    await sessions.refreshHistory()
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    homeThere = true
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo)).toEqual([])
+    homeThere = false
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+  })
+
+  it('offers the welcome one folder use per thread on this Mac, leaving out archived threads and a remote machine’s', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    deps.machine = fakeMachine()
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: D, cwd: '/srv/repo', updatedAt: 900 }]
+    }))
+    await sessions.refreshMachineHistory('box', true)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived
+        ? [{ id: B, cwd: repo, updatedAt: 300 }]
+        : [
+            { id: A, cwd: repo, updatedAt: 100 },
+            { id: C, cwd: other, createdAt: 200 }
+          ]
+    }))
+    expect(await sessions.localHistoryFolders()).toEqual([
+      { path: repo, sessions: 1, mtime: 100_000 },
+      { path: other, sessions: 1, mtime: 200_000 }
+    ])
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',
@@ -382,6 +506,23 @@ describe('CodexSessions', () => {
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
+  it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
+    const seen: string[][] = []
+    vi.mocked(deps.pickHome).mockImplementation(() => {
+      seen.push(sessions.launchedSessions().map((s) => s.account ?? ''))
+      return { account: 'work', home: '/homes/work' }
+    })
+    const [first] = await Promise.all([
+      sessions.launch({ kind: 'codex', cwd: repo }),
+      sessions.launch({ kind: 'codex', cwd: repo })
+    ])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    const closing = sessions.stop(first.id)
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work'])
+    await closing
+  })
+
   // CODEX§15
   it('lists history from the default home every account home shares, tells a thread has a transcript from the file its listing named without asking Codex, and reads a thread whose listed file is not written yet on that same app-server', async () => {
     const written = path.join(directory, 'rollout-a.jsonl')
@@ -411,6 +552,34 @@ describe('CodexSessions', () => {
     expect(mocks.rpcHomes).toEqual([undefined])
   })
 
+  // CODEX§15
+  it('a thread whose rollout Codex compressed to .jsonl.zst still has a transcript, on this Mac and on a remote machine, though its listing still names the .jsonl', async () => {
+    const listed = path.join(directory, 'rollout-a.jsonl')
+    const read = path.join(directory, 'rollout-b.jsonl')
+    fs.writeFileSync(listed + '.zst', '')
+    fs.writeFileSync(read + '.zst', '')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: B, cwd: repo, path: read } }
+      return params.archived ? { data: [] } : { data: [{ id: A, cwd: repo, path: listed }] }
+    })
+    await sessions.refreshHistory()
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
+
+    const onMachine = new Set<string>()
+    deps.machine = fakeMachine({
+      fileExists: async (file) => onMachine.has(file),
+      keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}`
+    })
+    mocks.request.mockImplementation(async () => ({
+      thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
+    }))
+    const remote = codexSessionKey(B, 'box')
+    expect(await sessions.transcriptExists(remote)).toBe(false)
+    onMachine.add(keyedOn('box', '/srv/rollout-b.jsonl.zst')!)
+    expect(await sessions.transcriptExists(remote)).toBe(true)
+  })
+
   // CODEX§24
   it('a search offers the threads of the given workspaces but no archived one, and asks thread/search once, in the default home every account shares', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
@@ -426,6 +595,7 @@ describe('CodexSessions', () => {
                 { id: C, cwd: other, name: 'Elsewhere' }
               ]
             }
+      if (method !== 'thread/search') return { data: [] }
       return {
         data: [
           { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
@@ -461,6 +631,45 @@ describe('CodexSessions', () => {
 
     mocks.request.mockRejectedValue(new Error('state database locked'))
     expect(await sessions.searchSnippets('parser')).toEqual([])
+  })
+
+  // CODEX§24
+  it("a thread found only by the environment block Codex adds itself is left out, a thread where the person or the model said the term shows that line, and a thread Codex has not indexed yet, or could not check, keeps its thread/search hit unless that hit is one of Codex's own blocks", async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    const E = '55555555-5555-4555-8555-555555555555'
+    const environment = '... /repo</cwd> <shell>zsh</shell> <current_date>2026-10-25 ...'
+    const searched: Record<string, string> = {
+      [A]: environment,
+      [B]: environment,
+      [C]: 'switch the login shell to zsh',
+      [D]: environment,
+      [E]: 'zsh history is gone'
+    }
+    const said: Record<string, string[]> = { [B]: ['... so I reran it in ZSH and it passed'] }
+    const indexedTurns: Record<string, unknown[]> = { [A]: [{ id: 'turn' }], [B]: [{ id: 'turn' }] }
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/search')
+        return {
+          data: Object.entries(searched).map(([id, snippet]) => ({
+            snippet,
+            thread: { id, cwd: repo }
+          })),
+          nextCursor: null
+        }
+      if (method === 'thread/searchOccurrences') {
+        if (params.threadId === E) throw new Error(`thread not loaded: ${E}`)
+        return { data: (said[params.threadId] ?? []).map((snippet) => ({ snippet })) }
+      }
+      if (method === 'thread/turns/list') return { data: indexedTurns[params.threadId] ?? [] }
+      return { data: [] }
+    })
+
+    expect(await sessions.searchSnippets('zsh')).toEqual([
+      { id: codexSessionKey(B), snippet: '... so I reran it in ZSH and it passed' },
+      { id: codexSessionKey(C), snippet: 'switch the login shell to zsh' },
+      { id: codexSessionKey(E), snippet: 'zsh history is gone' }
+    ])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
@@ -563,6 +772,51 @@ describe('CodexSessions', () => {
     await expect(
       backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
+  })
+
+  it('a session in a deleted .claude/worktrees folder Koloft has no record of, even one reached through a symlink, is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is; a rebuild that fails records nothing', async () => {
+    const gitIn = (dir: string, ...args: string[]) =>
+      execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+        encoding: 'utf8'
+      }).trim()
+    gitIn(repo, 'init', '-q')
+    gitIn(repo, 'commit', '-q', '--allow-empty', '-m', 'base')
+    const worktree = path.join(repo, '.claude', 'worktrees', 'lost')
+    gitIn(repo, 'worktree', 'add', '-q', '-b', 'worktree-lost', worktree)
+    gitIn(worktree, 'commit', '-q', '--allow-empty', '-m', 'work')
+    const branchTip = gitIn(repo, 'rev-parse', 'worktree-lost')
+    const linked = path.join(directory, 'linked')
+    fs.symlinkSync(repo, linked)
+    const sessionCwd = path.join(linked, '.claude', 'worktrees', 'lost')
+    addMember(A, sessionCwd)
+    gitIn(repo, 'worktree', 'lock', worktree)
+    fs.rmSync(worktree, { recursive: true })
+    const backend = storedBackend(
+      sessions,
+      { dirExists: dirExistsSync, occupantOf: () => null, ...gitProbes(localGitOut) },
+      { runningElsewhere: async () => false } as never
+    )
+    const key = codexSessionKey(A)
+
+    await expect(backend.resumePlan(key)).resolves.toMatchObject({
+      action: 'rebuild',
+      branch: 'worktree-lost'
+    })
+    await expect(
+      backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
+    ).resolves.toEqual({ ok: false, code: 'rebuild-failed' })
+    expect(sessions.store.listResources()).toEqual([])
+    gitIn(repo, 'worktree', 'unlock', worktree)
+
+    const resumed = await backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
+    expect(resumed).toMatchObject({ ok: true, cwd: worktree })
+    expect(gitIn(worktree, 'rev-parse', 'HEAD')).toBe(branchTip)
+    bind(0, A, worktree, 1, 'thread/resume')
+    expect(sessions.findRow(key)?.worktreeState).toMatchObject({
+      worktreePath: worktree,
+      worktreeBranch: 'worktree-lost',
+      managed: false
+    })
   })
 
   it('a restarting session reads as running from the old run stopping until the new one starts, and cold again, with the sidebar told, when the new one fails', async () => {
@@ -703,7 +957,7 @@ describe('CodexSessions', () => {
       JSON.stringify({ openId: 'drop-1', path: path.join(repo, 'report.html'), url: '', cwd: repo })
     )
     await expect
-      .poll(() => vi.mocked(deps.events).mock.calls)
+      .poll(() => vi.mocked(deps.events).mock.calls, { timeout: 5000 })
       .toContainEqual([launched.id, { type: 'open', target: path.join(repo, 'report.html') }])
     await sessions.stop(launched.id)
     expect(fs.existsSync(shimDir)).toBe(false)
@@ -711,15 +965,16 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§17
-  it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
+  it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, is given Koloft's skills folder, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
-    deps.agent = { enabled: () => true, answer }
+    deps.agent = { enabled: () => true, answer, skillsFolder: () => '/koloft/plugin/skills' }
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
     expect(hint).toContain('koloft session new -w')
+    expect(transports[0].options.skillRoots).toEqual(['/koloft/plugin/skills'])
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     const requestDir = /\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
@@ -757,7 +1012,7 @@ describe('CodexSessions', () => {
 
   // ADR-0029
   it('a conductor with agent tools on is told its role but never the helper rules, which would have it do work itself', async () => {
-    deps.agent = { enabled: () => true, answer: vi.fn() }
+    deps.agent = { enabled: () => true, answer: vi.fn(), skillsFolder: () => undefined }
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, role: 'ROLE-TEXT' })
     const hint = transports[0].options.configOverrides?.find((c) =>
       c.startsWith('developer_instructions=')
@@ -779,11 +1034,12 @@ describe('CodexSessions', () => {
     expect(fs.readFileSync(said, 'utf8')).toBe('把侧栏修好')
   })
 
-  it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
+  it('with agent tools off, a Codex tab gets neither the koloft command, the Koloft hint nor the koloft skill', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(
       transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))
     ).toBe(false)
+    expect(transports[0].options.skillRoots).toBeUndefined()
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     expect(fs.existsSync(path.join(shimDir, 'koloft'))).toBe(false)
   })
@@ -947,12 +1203,12 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      ...RESERVED_TAB_PLAYWRIGHT_ENV
     })
   })
 
   // CODEX§26 PLATFORM§17 ADR-0029
-  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
+  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
     const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
@@ -967,7 +1223,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(on.configOverrides).toEqual(
@@ -988,7 +1244,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(conductor.configOverrides).toEqual(expect.arrayContaining([...on.configOverrides!]))
@@ -999,7 +1255,7 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      ...RESERVED_TAB_PLAYWRIGHT_ENV
     })
   })
 
@@ -1101,6 +1357,37 @@ describe('CodexSessions', () => {
     expect(checker.cwd).toBe(repo)
     expect(mocks.request).toHaveBeenCalledWith('hooks/list', { cwds: [repo] }, '/homes/work')
     expect(mocks.close).toHaveBeenCalled()
+  })
+
+  async function launchWithBuiltInStatusLine(...switches: boolean[]): Promise<void> {
+    for (const on of switches) {
+      vi.mocked(deps.builtInStatusLine).mockReturnValue(on)
+      await sessions.launch({ kind: 'codex', cwd: repo })
+    }
+  }
+
+  // CODEX§8
+  it("with the built-in status line off, neither a Codex tab's app-server nor its TUI is handed Koloft's status line, so Codex shows the owner's own", async () => {
+    const statusLine = (values: readonly string[]): string[] =>
+      values.filter((v) => v.startsWith('tui.status_line='))
+    await launchWithBuiltInStatusLine(false, true)
+
+    const [off, on] = transports.map((t) => t.options.configOverrides!)
+    const [offArgv, onArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(statusLine(off)).toEqual([])
+    expect(statusLine(offArgv)).toEqual([])
+    expect(statusLine(on)).toHaveLength(1)
+    expect(statusLine(onArgv)).toEqual(statusLine(on))
+    expect(onArgv[onArgv.indexOf(statusLine(on)[0]) - 1]).toBe('-c')
+  })
+
+  // CODEX§5
+  it("the mark Koloft looks for to end a Codex app-server left by a crash is on every tab's app-server, with the built-in status line on or off", async () => {
+    await launchWithBuiltInStatusLine(false, true)
+
+    expect(mocks.crashLeftoverMarkers).toHaveLength(1)
+    for (const { options } of transports)
+      expect(options.configOverrides).toContain(mocks.crashLeftoverMarkers[0])
   })
 
   // ADR-0043 CODEX§27 CODEX§30
@@ -1222,6 +1509,38 @@ describe('CodexSessions', () => {
     expect(sessions.launchedBypassingChecks(again.id)).toBe(true)
     expect(vi.mocked(deps.pty.create).mock.calls[2][0].argv).not.toContain('-a')
     expect(transports[2].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
+  })
+
+  // CODEX§11
+  it('with skip permission prompts on, a new thread starts with approvals and the sandbox off, while a resume keeps the permission its thread started with, which Codex restores itself', async () => {
+    let skip = false
+    deps.skipPermissions = () => skip
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, A)
+    await sessions.stop(asking.id)
+
+    skip = true
+    const skipping = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(vi.mocked(deps.pty.create).mock.calls[1][0].argv!.slice(-4)).toEqual([
+      '-a',
+      'never',
+      '-s',
+      'danger-full-access'
+    ])
+    expect(sessions.launchedBypassingChecks(skipping.id)).toBe(true)
+    bind(1, B)
+    await sessions.stop(skipping.id)
+
+    const stillAsking = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillAsking.id)).toBe(false)
+    expect(transports[2].options.configOverrides).not.toContain('approval_policy="never"')
+
+    skip = false
+    const stillSkipping = await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillSkipping.id)).toBe(true)
+    expect(transports[3].options.configOverrides).toEqual(
       expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
     )
   })

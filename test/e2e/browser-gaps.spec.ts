@@ -1149,6 +1149,10 @@ test.describe('Workbench browser cases between the other browser specs: agent op
 
         await agentOpen(page, server.localhostUrl('/a'))
         await expect(openTabs(page)).toHaveCount(1, { timeout: 40_000 })
+        await expect(
+          openTabs(page).first().locator(BROWSER.tabLabel),
+          'the tab has narrowed to the page title, so a click on it cannot land on its close button'
+        ).toHaveText('Page A', { timeout: 40_000 })
 
         await openTabs(page).first().click()
         await expect.poll(() => server.count('/a'), { timeout: 40_000 }).toBe(1)

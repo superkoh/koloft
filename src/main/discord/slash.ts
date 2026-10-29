@@ -112,6 +112,7 @@ export function commandKeys(text: string, backend: BackendId | undefined): strin
 
 const SCREEN_LINES_IN_A_RESULT = 40
 
+// CODEX§21 MUSE§19
 function screenShot(lines: string[] | undefined): string | undefined {
   const shown = withoutBlankEdges(lines ?? [])
   if (!shown.length) return undefined

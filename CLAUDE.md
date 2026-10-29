@@ -157,8 +157,8 @@ Working principles:
   - **How to see it in the shipped app** — what to click in an installed build, and
     for a changed screen or page a screenshot you took of it; or "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
-    never a check you could still run. Below high, it is not offered for merge: it
-    says what would make it high.
+    never a check you could still run. Below high, it is not offered for merge: do
+    what makes it high first.
   - **Hand-test before merging** — no, or yes: the one step only a person can do, and
     why no suite, sandbox or dev build you drove could do it.
 
@@ -191,9 +191,14 @@ Working principles:
   `model: 'opus'` — writing code, running tests, reading and searching code,
   design drafts, review along the way. Only the independent check of what the owner
   will decide on (the plan, design or audit report above) goes to `model: 'fable'`:
-  a Fable agent costs about 2.5 times an Opus one. Fan out by slices of work, never one agent per
+  a Fable agent costs about 2.5 times an Opus one. Its brief opens with the line
+  `Never consult the advisor tool.`, before the shell-rule block: a helper inherits
+  the session's advisor, which is Fable too, so asking it re-reads the whole check at
+  full Fable price; without the line 3 of 3 Fable checks asked it, with it 0 of 3.
+  Fan out by slices of work, never one agent per
   finding — a handful per phase — and say how many before launching. Every brief and
-  every Workflow step prompt starts with the shell-rule block below, word for word:
+  every Workflow step prompt starts with the shell-rule block below, word for word
+  (a Fable check's right after its advisor line):
   an Explore agent never sees this file, and agents whose brief lacked the block
   were refused 2–3 times as often. An agent
   writes only patches or code, in a scratchpad folder of its own.
@@ -236,8 +241,8 @@ Working principles:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
-  - One plain command per Bash call, absolute paths. No loop, $(…) or shell
-    variable whose value lands in a command's arguments; no env -u or HOME=.
+  - One plain command per Bash call, absolute paths. No loop, $(…)/`…` or shell
+    variable whose value lands in an argument; no env -u or HOME=.
   - Also refused: a path outside the worktree inside a chain, a cd outside then
     git, a shell name or builtin as an argument (grep -n "source" f, bash
     --version, docker … sh -c), python3 - or sh <file> whose text names git
@@ -245,15 +250,15 @@ Working principles:
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
     node -e, sed -i, perl -pi or cat >.
-  - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
-    zsh prints "no matches found", the command never runs; the tool may
-    still report success.
+  - Quote every glob, ? and sed ;: --include='*.ts', 'a?n=1', '1,8p;9,20p'.
+    Unquoted, it never runs (zsh: "no matches found"); the tool may still
+    report success.
   - Quote a spaced path: '/a b', never /a\ b.
-  - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
+  - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - Grep or read only paths you saw; else grep -rl 'word' src.
   - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
-  - grep is ugrep and fails on {0,N} spans: use /usr/bin/grep -o -E, N ≤ 255.
+  - {0,N} spans: grep (ugrep) fails; /usr/bin/grep -o -E fails above 255 too.
   - Findings go in your final message; the harness refuses report files.
   ```
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
@@ -279,7 +284,7 @@ Working principles:
   → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  Claude Code, Codex and platform contract ledgers, the ADRs, and the roadmap),
+  contract ledgers, the ADRs, and the roadmap),
   never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather

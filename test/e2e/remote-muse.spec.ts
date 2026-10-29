@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { E2E_MUSE_ACCOUNT, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -22,12 +22,14 @@ import {
   agentRow,
   centerTerm,
   closeActiveTab,
-  gitCommitAll,
-  gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
+  killSession,
   newSessionInWith,
   openMenu,
   runIn,
   switchToRow,
+  terminalText,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -73,7 +75,7 @@ async function startRemoteMuse(page: Page, env: E2EEnv): Promise<MachineMuseCall
 }
 
 test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux with the real wrapper and hooks on the machine', () => {
-  test('E-RM-01: a Muse session starts on the machine with the account Koloft picked, carried there, and its light follows working to waiting through the tmux passthrough', async ({
+  test('E-RM-01: a Muse session starts on the machine with the account Koloft picked, carried there and named above Muse’s screen, and its light follows working to waiting through the tmux passthrough', async ({
     env
   }) => {
     const { app, page } = await launchWithMuseThere(env)
@@ -88,6 +90,9 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         credentials: 'file'
       })
       expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT}`
+      )
       const row = remoteRows(page)
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
       machineFile(env, 'fake-muse-delay', '1500')
@@ -150,6 +155,35 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toBe(3)
       expect(machineMuseCalls(env)[2].argv.slice(-2)).toEqual(['resume', cleared.sessionId])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Muse that dies on the machine leaves its tab saying it ended with its exit code until Enter, then Koloft says it ended unexpectedly and its row stays with the “exited” mark', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      const tabId = (await row.getAttribute('data-tab-id')) ?? ''
+
+      killSession(call.pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toMatch(/stopped with exit code [1-9]/)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect(
+        page.locator('.toast', { hasText: /^Muse session ended unexpectedly \(exit code [1-9]/ })
+      ).toBeVisible()
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
+      await expect(row).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }
@@ -224,14 +258,13 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
-  test('E-RM-05: a scheduled Muse job on a remote workspace runs muse on the machine in its own worktree made there by git, trusted for that run', async ({
+  test('E-RM-05: a scheduled Muse job on a remote workspace runs muse on the machine in its own worktree made there by git, with the ignored files .worktreeinclude lists copied in there, trusted for that run', async ({
     env
   }) => {
     const TASK = 'nightly check'
     installFakeRemote(env)
     fs.writeFileSync(path.join(remoteDir(env), 'README.md'), '# proj\n')
-    gitInit(remoteDir(env))
-    gitCommitAll(remoteDir(env))
+    gitRepoWithAnIncludedEnv(remoteDir(env))
     const { app, page } = await launchWithMuseThere(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -253,6 +286,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         true
       )
       expect(fs.existsSync(path.join(call.cwd, '.git'))).toBe(true)
+      expect(fs.readFileSync(path.join(call.cwd, '.env'), 'utf8')).toBe(INCLUDED_ENV)
     } finally {
       await quitAndClose(app)
     }

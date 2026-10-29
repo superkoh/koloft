@@ -1,5 +1,6 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -43,6 +44,7 @@ interface CreateArgs {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   remoteHost?: string
+  banner?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -53,6 +55,34 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
+
+const HANGUP_GRACE_SECONDS = 10
+const KILL_IF_STILL_OURS = `k=$1
+s=$2
+shift 2
+sleep "$s"
+for p in "$@"; do
+  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
+done`
+
+// PLATFORM§41
+function killLaterIfStillOurs(pids: number[]): void {
+  if (!pids.length) return
+  spawn(
+    '/bin/sh',
+    [
+      '-c',
+      KILL_IF_STILL_OURS,
+      'sh',
+      String(process.pid),
+      String(HANGUP_GRACE_SECONDS),
+      ...pids.map(String)
+    ],
+    { detached: true, stdio: 'ignore' }
+  )
+    .on('error', () => {})
+    .unref()
+}
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -98,6 +128,7 @@ export class PtyManager extends EventEmitter {
   agentDir?: string
 
   private ptys = new Map<string, PtyHandle>()
+  private running = new Set<pty.IPty>()
   private readyWaiters = new Map<string, Set<() => void>>()
   private typing = new Map<string, Promise<void>>()
   private counter = 0
@@ -217,6 +248,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
+    this.track(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -243,7 +275,10 @@ export class PtyManager extends EventEmitter {
     )
 
     const cwdParser = args.util ? new OscCwdParser() : undefined
-    proc.onData((data) => {
+    let banner = args.banner ? `${args.banner}\r\n` : ''
+    proc.onData((output) => {
+      const data = banner + output
+      banner = ''
       watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
@@ -362,11 +397,22 @@ export class PtyManager extends EventEmitter {
   kill(id: string): void {
     const h = this.ptys.get(id)
     if (h) {
-      try {
-        h.proc.kill()
-      } catch {}
+      this.hangUp(h.proc)
       this.ptys.delete(id)
     }
+  }
+
+  // PLATFORM§29
+  hangUp(proc: pty.IPty): void {
+    try {
+      proc.kill()
+    } catch {}
+    killLaterIfStillOurs([proc.pid])
+  }
+
+  track(proc: pty.IPty): void {
+    this.running.add(proc)
+    proc.onExit(() => this.running.delete(proc))
   }
 
   get(id: string): PtyHandle | undefined {
@@ -384,6 +430,15 @@ export class PtyManager extends EventEmitter {
   clearResumeIntent(id: string): void {
     const h = this.ptys.get(id)
     if (h) h.resumeSessionId = undefined
+  }
+
+  moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void {
+    for (const h of this.list()) if (h.ownerTabId === oldOwnerTabId) h.ownerTabId = newOwnerTabId
+  }
+
+  // PLATFORM§41
+  killWhatOutlivesTheQuit(): void {
+    killLaterIfStillOurs([...this.running].map((proc) => proc.pid))
   }
 
   killUtilOrphans(): void {

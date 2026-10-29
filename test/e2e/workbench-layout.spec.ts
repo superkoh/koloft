@@ -49,6 +49,16 @@ async function layoutState(page: Page): Promise<'T1' | 'T2' | 'T3'> {
   })
 }
 
+async function waitColumnRiseInOver(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator(WORKBENCH.column)
+        .evaluate((el) => el.getAnimations().every((a) => a.playState === 'finished'))
+    )
+    .toBe(true)
+}
+
 async function relaunch(
   app: ElectronApplication,
   env: E2EEnv
@@ -100,6 +110,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     await startSessionIn(page, 'ws-a')
     if ((await layoutState(page)) !== 'T2') await workbenchIcon(page).click()
     await expect.poll(() => layoutState(page)).toBe('T2')
+    await waitColumnRiseInOver(page)
     const open = (await workbenchIcon(page).boundingBox())!
     const strip = (await page.locator(WORKBENCH.tabStrip).boundingBox())!
     const plus = (await page.locator(WORKBENCH.newTab).boundingBox())!

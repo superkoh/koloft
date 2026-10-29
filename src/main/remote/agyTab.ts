@@ -5,7 +5,7 @@ import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { remoteShCommand } from './install'
-import type { TabSpec } from './launch'
+import { koloftSkillLine, machineToolProgram, type TabProgram } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
@@ -55,10 +55,9 @@ export interface AgyMachineLaunch {
   tabId: string
   cwd: string
   resumeId?: string
-  banner: string
   env: Record<string, string>
   portOffset?: number
-  program: AgyProgram
+  program: TabProgram
 }
 
 export interface AgyMachinePlan {
@@ -73,18 +72,21 @@ export interface AgyMachinePlan {
 export interface AgyTabSpec {
   tabId: string
   account: string
+  banner?: string
   args: string[]
   settings: string
   hooks: string
   onboarding?: string
   token?: string
   start?: string
+  skillFromMachine?: string
 }
 
-export type AgyProgram = NonNullable<TabSpec['program']>
+// AGY§31
+export const AGY_SKILLS = `${AGY_APP_DIR}/skills`
 
 // AGY§4 AGY§5 AGY§6
-export function agyTab(s: AgyTabSpec): AgyProgram {
+export function agyTab(s: AgyTabSpec): TabProgram {
   const own = `$A/${AGY_APP_DIR}`
   const link = (rel: string): string =>
     `[ "$(readlink "$A/${rel}")" = "$G/${rel}" ] || { rm -rf "$A/${rel}"; ln -s "$G/${rel}" "$A/${rel}"; }`
@@ -92,6 +94,8 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `[ -f "$T.${file}" ] && { [ -f "${target}" ] || mv "$T.${file}" "${target}"; rm -f "$T.${file}"; }`
   const exported = [AGY_LOG_ENV, NOTICE_ENV, ...(s.start ? [AGY_START_ENV] : [])]
   const run = [
+    // PLATFORM§35
+    ...(s.banner ? [`printf '%s\\n' ${shq(s.banner)}`] : []),
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,
     `mkdir -p "${own}/cache" "$A/config" "${REMOTE_HOOK_DIR}" && chmod 700 "${REMOTE_HOME}/agy"`,
     ...SHARED_FOLDERS.map((d) => `mkdir -p "$G/${d}"; ${link(d)}`),
@@ -99,6 +103,7 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
     seed('auth.json', `${own}/antigravity-oauth-token`),
+    koloftSkillLine(`$A/${AGY_SKILLS}`, s.skillFromMachine && remoteMachineDir(s.skillFromMachine)),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
@@ -107,17 +112,13 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
   ]
   const file = (name: string): string => `${s.tabId}.${name}`
-  return {
-    name: 'agy',
-    run: run.map((line) => `  ${line}\n`).join(''),
-    files: {
-      [file('settings.json')]: s.settings,
-      [file('hooks.json')]: s.hooks,
-      ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
-      ...(s.token ? { [file('auth.json')]: s.token } : {}),
-      ...(s.start ? { [file('start.json')]: s.start } : {})
-    }
-  }
+  return machineToolProgram('agy', run.map((line) => `  ${line}\n`).join(''), {
+    [file('settings.json')]: s.settings,
+    [file('hooks.json')]: s.hooks,
+    ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
+    ...(s.token ? { [file('auth.json')]: s.token } : {}),
+    ...(s.start ? { [file('start.json')]: s.start } : {})
+  })
 }
 
 const CONFIG_SPLIT = '\u0001'
@@ -160,7 +161,7 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
   return remoteShCommand(
-    `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { printf '[]'; exit 0; }
+    `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { echo "Koloft's files are not on this machine yet." >&2; exit 1; }
 exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
     [machineName, TOP_LEVEL_ROWS]
   )

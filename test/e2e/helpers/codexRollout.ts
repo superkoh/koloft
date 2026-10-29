@@ -4,15 +4,17 @@ import type { E2EEnv } from './env'
 
 const ROLLOUT_THREAD_ID = /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/
 
-// CODEX§11
-export function lastCodexTurnPermissions(env: E2EEnv, sessionId: string): Record<string, unknown> {
+export function codexRolloutText(env: E2EEnv, sessionId: string): string {
   const root = path.join(env.home, '.codex', 'sessions')
   const rollout = fs
     .readdirSync(root, { recursive: true, encoding: 'utf8' })
     .find((f) => sessionId.endsWith(ROLLOUT_THREAD_ID.exec(f)?.[1] ?? '-'))
-  if (!rollout) return {}
-  const turn = fs
-    .readFileSync(path.join(root, rollout), 'utf8')
+  return rollout ? fs.readFileSync(path.join(root, rollout), 'utf8') : ''
+}
+
+// CODEX§11
+export function lastCodexTurnPermissions(env: E2EEnv, sessionId: string): Record<string, unknown> {
+  const turn = codexRolloutText(env, sessionId)
     .split('\n')
     .filter((line) => line.includes('"turn_context"'))
     .map(

@@ -2,8 +2,21 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  launchApp,
+  quitAndClose
+} from './helpers/app'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   butlerHelperRows,
   butlerRow,
@@ -17,15 +30,20 @@ import {
   notesOnDisk,
   notesPath,
   openMenu,
+  processAlive,
   readAllCalls,
   runIn,
   seedJsonl,
   sendShortcut,
+  setNextSessionTitle,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
+  terminalText,
   waitBooted,
   resumedId,
   waitForAllCalls,
+  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -48,6 +66,11 @@ const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 const BUTLER_ROLE_OPENS = "You are Alfred, the owner's butler in Koloft"
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const SHORT_BIND_DEADLINE_MS = 5_000
+const DEADLINE_FIRED_SETTLE_MS = 1_500
+const A_HELPER_HAS_IT_SQUEEZED = '(FromKoloft:)Theowneraskedforsomething'
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
@@ -172,6 +195,22 @@ function peerLines(env: E2EEnv): string {
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
 
+const AGY_EVERYWHERE = {
+  assist: { on: true, backend: 'agy' },
+  sessionMethods: {
+    defaultBackend: 'agy',
+    enabled: { claude: true, codex: true, muse: true, agy: true }
+  }
+}
+
+async function askInPalette(app: ElectronApplication, page: Page, words: string): Promise<void> {
+  await sendShortcut(app, 'shortcut:command-palette')
+  const ask = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
+  await expect(ask).toBeFocused()
+  await ask.fill(words)
+  await page.keyboard.press('Enter')
+}
+
 async function launched(
   env: E2EEnv,
   seed: Record<string, unknown> = {}
@@ -292,6 +331,37 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await expect(wsRows(page, 'ws-b')).toHaveCount(0)
       await helperRow.click()
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Alfred')
+    } finally {
+      await close()
+    }
+  })
+
+  test('a to-do helper in the butler’s folder ends the way the to-do method says: it reports to the butler, then koloft session close takes its tab and row away for good', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      const tabId = await butlerTabId(page, env)
+      const butler = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === tabId
+      )!
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/koloft session new -- sort out the to-dos\r'),
+        tabId
+      )
+      const helperRow = butlerHelperRows(page)
+      await expect(helperRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const helperTab = (await helperRow.getAttribute('data-tab-id'))!
+      await switchToRow(page, helperRow)
+      expect((await koloftRun(page, 'todo')).exit).toBe(0)
+      expect((await koloftRun(page, `session send ${butler.sessionId} Done: 2.`)).exit).toBe(0)
+      await expect.poll(() => peerLines(env), { timeout: 60_000 }).toContain('Done: 2.')
+      expect((await koloftRun(page, 'session close')).exit).toBe(0)
+      await expect(helperRow).toHaveCount(0, { timeout: 30_000 })
+      expect(
+        (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === helperTab)
+      ).toBe(false)
     } finally {
       await close()
     }
@@ -425,6 +495,74 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  // AGY§8
+  test('an Antigravity butler opened from the sidebar with nothing to say stays open past the start deadline, and its first message binds it', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await expectNoToastAtAnyMomentOfAWindow(page)
+      await expect(butlerRow(page)).not.toHaveClass(/\bcold\b/)
+
+      await runIn(page, centerTerm(page), 'hello')
+      await expect(butlerRow(page)).toHaveClass(/st-(working|waiting)/, { timeout: 60_000 })
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§8
+  test('what ⌘P hands on to an Antigravity butler opened from the sidebar long before is typed into it as its first prompt, which binds it, and the helper starts', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { app, page, close } = await launched(env, AGY_EVERYWHERE)
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await expectNoToastAtAnyMomentOfAWindow(page)
+
+      await askInPalette(app, page, 'turn on dark mode')
+      await expect(butlerHelperRows(page)).toHaveCount(1, { timeout: 60_000 })
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
+      expect((await terminalText(page, butlerTab)).replace(/\s+/g, '')).toContain(
+        A_HELPER_HAS_IT_SQUEEZED
+      )
+      await expect(butlerRow(page)).toHaveAttribute('data-tab-id', butlerTab)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§5 AGY§8
+  test('an Antigravity butler opened from the sidebar that is stuck on a setup screen is closed at the start deadline as "did not start", with nothing said to it', async ({
+    env
+  }) => {
+    installAgy(env)
+    fs.writeFileSync(path.join(env.home, 'fake-agy-stuck-in-setup'), '')
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      await expect(page.locator('.toast', { hasText: 'Alfred did not start.' })).toBeVisible({
+        timeout: SHORT_BIND_DEADLINE_MS * 3
+      })
+      expect(butlerSessionOnDisk(env)?.sessionIds ?? []).toEqual([])
+    } finally {
+      await close()
+    }
+  })
+
   test('the butler lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace', async ({
     env
   }) => {
@@ -489,6 +627,84 @@ test.describe('The butler: one global session at the top of the sessions list, k
         'runs on another machine'
       )
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+    } finally {
+      await close()
+      killFakeRemote(env)
+    }
+  })
+
+  test('the butler’s koloft todo prints how to sort out the to-dos, each workspace and the sessions waiting on the owner; koloft todo note keeps a workspace’s to-do note in Koloft’s settings; a session in a workspace is refused koloft todo', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openButler(page)
+      const todo = await koloftSays(page, 'todo')
+      expect(todo).toContain('SORTING OUT THE TO-DOS')
+      expect(todo).toContain(`ws-a · ${env.workspaces.a} · `)
+      expect(todo).toContain('no to-do note yet')
+      expect(todo).toContain(`Open, finished its turn:\n- "`)
+      expect(todo).toMatch(
+        new RegExp(
+          `" · Claude · ${env.workspaces.a} · local · last active .* · closing it deletes no worktree\\n`
+        )
+      )
+
+      expect(await koloftSays(page, 'todo note ws-a -- "Issues assigned to me."')).toContain(
+        'Saved the to-do note'
+      )
+      expect(Object.values(settingsOnDisk(env).todoNotes as Record<string, string>)).toEqual([
+        'Issues assigned to me.'
+      ])
+      expect(await koloftSays(page, 'todo note ws-a')).toContain('Issues assigned to me.')
+
+      await switchToRow(page, wsRows(page, 'ws-a'))
+      expect(await koloftRun(page, 'todo')).toEqual({
+        text: expect.stringContaining('only the butler and the helpers'),
+        exit: 1
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test('koloft todo lists a session whose tab went to sleep as open and asleep, never leaving it out as working', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const { page, close } = await launched(env)
+    try {
+      setNextSessionTitle(env, 'Napping')
+      await startSessionIn(page, 'ws-a')
+      const [napping] = await waitForCalls(env, 1)
+      await openButler(page)
+      await expect.poll(() => processAlive(napping.pid), { timeout: 40_000 }).toBe(false)
+      expect(await koloftSays(page, 'todo')).toMatch(
+        /Open, asleep: .*\n- "Napping" · Claude · .* · closing it deletes no worktree\n/
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  test('for a workspace on another machine, koloft todo lists its instruction files and koloft todo file reads one over the connection Koloft already has', async ({
+    env
+  }) => {
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    fs.mkdirSync(remoteDir(env), { recursive: true })
+    fs.writeFileSync(path.join(remoteDir(env), 'AGENTS.md'), 'Needs decision (@octo): marks it.')
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      await expect
+        .poll(async () => koloftSays(page, 'todo'), { timeout: 60_000 })
+        .toMatch(/proj · .* · no to-do note yet · files: AGENTS\.md/)
+      expect(await koloftSays(page, `todo file ${REMOTE_WS_NAME} AGENTS.md`)).toContain(
+        'Needs decision (@octo): marks it.'
+      )
     } finally {
       await close()
       killFakeRemote(env)

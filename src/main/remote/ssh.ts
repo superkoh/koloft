@@ -1,4 +1,4 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import fs from 'fs'
 
 // PLATFORM§3
@@ -62,6 +62,14 @@ const NEEDS_SOMEONE_TO_SIGN_IN =
   /Permission denied|Host key verification failed|Too many authentication failures|passphrase/i
 // PLATFORM§34
 const SHELL_PRINTS_AT_LOGIN = /unexpected tag|protocol version mismatch|is your shell clean/i
+
+export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
+  return (
+    r.code === SSH_LINK_BROKE_EXIT &&
+    !NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr) &&
+    !r.stderr.includes(MASTER_FULL)
+  )
+}
 
 export function problemOf(r: { code: number | null; stderr: string }): string {
   if (r.stderr.includes(MASTER_FULL))
@@ -136,6 +144,26 @@ export function runSsh(
     ...r,
     stdout: r.stdout.toString('utf8')
   }))
+}
+
+export function runMasterCommand(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): Promise<RunResult> {
+  return run('ssh', [...sshOptions(opts.controlDir, true), ...op, host], 10_000)
+}
+
+// PLATFORM§41
+export function masterCommandOutlivingKoloft(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): void {
+  spawn('ssh', [...sshOptions(opts.controlDir, true), ...op, host], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref()
 }
 
 export function runSshBytes(

@@ -54,7 +54,8 @@ let created: {
 let started: number
 let agentTools: boolean
 let endpoint: string
-let picked: { account: string; env: Record<string, string> } | undefined
+let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
+let shown: string[]
 let assist: { role: string } | undefined
 let skipPermissions: boolean
 let servers: Set<string>
@@ -145,6 +146,7 @@ beforeEach(() => {
   agentTools = false
   endpoint = ''
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
+  shown = []
   assist = undefined
   skipPermissions = false
   servers = new Set()
@@ -180,7 +182,7 @@ beforeEach(() => {
     projectInfo: (p) => ({ root: repo, treeRoot: p }),
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
-    error: vi.fn(),
+    error: vi.fn((message: string) => void shown.push(message)),
     openShimRoot: path.join(home, 'muse-open'),
     pickHome: () => picked,
     playwrightBin: tools,
@@ -269,11 +271,14 @@ describe('MuseSessions launch', () => {
     ])
   })
 
-  it('hands the Workbench browser to a tab that can drive it', async () => {
+  it("hands the Workbench browser to a tab that can drive it, with playwright-cli's snapshots and screenshots kept in a folder of the tab under the temp folder, out of the workspace", async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].env).toMatchObject({ KOLOFT_BROWSER_CDP: endpoint })
+    expect(created[0].env).toMatchObject({
+      KOLOFT_BROWSER_CDP: endpoint,
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
+    })
     expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
   })
 
@@ -287,6 +292,14 @@ describe('MuseSessions launch', () => {
     expect(created[0].env.TBH_CREDENTIAL_BACKEND).toBe('file')
     picked = undefined
     await expect(launch()).rejects.toThrow(/No Muse account/)
+  })
+
+  it('says so when every Muse account is at its limit and the session starts anyway on the first to reset', async () => {
+    await launch()
+    expect(shown).toEqual([])
+    picked = { account: 'work', env: {}, notice: 'Every Muse account is at its limit' }
+    await launch()
+    expect(shown).toEqual(['Every Muse account is at its limit'])
   })
 
   it("puts the tab's own open, gh and playwright-cli commands first on muse's PATH, in place of Koloft's shim", async () => {
@@ -815,7 +828,7 @@ describe('reading the Muse screen before typing into it', () => {
   const STATUS = '  fake-model · high · ~/ws · Auto-review'
 
   // MUSE§11
-  it('takes typing only while the input box shows between the last two rules, whatever hint it holds, with or without background tasks listed under it, and not while an approval box takes its place', () => {
+  it('takes typing only while the input box shows between the last two rules, whatever hint it holds, with an empty line under a draft or not, with or without background tasks listed under it, and not while an approval box takes its place', () => {
     expect(museShowsItsInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
     expect(
       museShowsItsInputBox([`── Voice input (⌥ + v to start) ${RULE}`, '❯ ', RULE, STATUS])
@@ -826,6 +839,7 @@ describe('reading the Muse screen before typing into it', () => {
     expect(
       museShowsItsInputBox([RULE, '❯ Press Ctrl+O to expand collapsed tool output', RULE, STATUS])
     ).toBe(true)
+    expect(museShowsItsInputBox([RULE, '❯ /usage', '', RULE, STATUS])).toBe(true)
     expect(
       museShowsItsInputBox([
         '◇ Calling tools (1s · esc to interrupt)',
@@ -939,6 +953,30 @@ describe('a Muse session on a remote machine', () => {
     pulled()
   }
 
+  const wrote = (sessionId: string, file: string): Record<string, unknown> => ({
+    t: 'hook',
+    event: 'PostToolUse',
+    input: {
+      session_id: sessionId,
+      tool_name: 'write_file',
+      tool_response: { filePath: file, structuredPatch: [{ lines: ['+x'] }] }
+    }
+  })
+
+  const compactStarts = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'runtime.command.accepted',
+    payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+  })
+
+  const compactEnds = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'context.compact.manual.outcome',
+    payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+  })
+
   async function boundRemote(): Promise<string> {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
     mirror(id, { t: 'bound', sessionId: A })
@@ -1005,15 +1043,7 @@ describe('a Muse session on a remote machine', () => {
         event: 'UserPromptSubmit',
         input: { session_id: A, prompt: 'go', turn_id: 't1' }
       },
-      {
-        t: 'hook',
-        event: 'PostToolUse',
-        input: {
-          session_id: A,
-          tool_name: 'write_file',
-          tool_response: { filePath: 'src/a.ts', structuredPatch: [{ lines: ['+x'] }] }
-        }
-      },
+      wrote(A, 'src/a.ts'),
       {
         t: 'hook',
         event: 'Stop',
@@ -1022,6 +1052,50 @@ describe('a Muse session on a remote machine', () => {
     )
     await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
     expect(events('files-changed')[0]).toMatchObject({ lastWritten: `${KEY}/src/a.ts` })
+  })
+
+  it('after /clear the files the old session wrote leave the tab, so the new session’s first write reports only its own file', async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, wrote(A, 'src/a.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(1))
+    mirror(id, { t: 'hook', event: 'SessionStart', input: { session_id: B, source: 'clear' } })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(B))
+    mirror(id, wrote(B, 'src/b.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(2))
+    expect(events('files-changed')[1]).toMatchObject({
+      files: [expect.objectContaining({ src: `${KEY}/src/b.ts` })],
+      liveWrites: 1
+    })
+  })
+
+  // MUSE§9
+  it("shows /compact as working from the log lines the wrapper mirrors, as a local tab does from muse's own log, until its outcome arrives", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    mirror(id, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    mirror(id, compactEnds(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  // MUSE§9 MUSE§17
+  it("never lets a /compact's end that the mirror brought late roll back the next turn the terminal already showed working", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null }, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    say(id, osc('state=working:app=muse:seq=2'))
+    mirror(id, compactEnds(1), {
+      t: 'log',
+      seq: 1,
+      payloadType: 'session.name.changed',
+      payload: { new_name: 'After compact', source: 'user' }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('After compact'))
+    expect(runtime.statusOf(id)).toBe('working')
   })
 
   it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { routeFor, dedupKey, canOpenExternally } from '@shared/browserRoute'
+import { routeFor, dedupKey, canOpenExternally, folderFileOf } from '@shared/browserRoute'
 
 describe('routeFor — the §05B routing table', () => {
   it('sends http(s) to the Browser from every source, localhost included', () => {
@@ -196,6 +196,36 @@ describe('routeFor — the §05B routing table', () => {
         reason: 'unsupported-target'
       })
     }
+  })
+})
+
+describe("folderFileOf — an address-bar entry read as a file in the session's folder", () => {
+  it('resolves a relative entry inside a local folder and a remote one, keeping ?… and #… aside', () => {
+    expect(folderFileOf('index.html', '/w/wt')).toEqual({ path: '/w/wt/index.html', suffix: '' })
+    expect(folderFileOf('docs/a.html', '/w/wt')).toEqual({ path: '/w/wt/docs/a.html', suffix: '' })
+    expect(folderFileOf('./x.md', '/w/wt')).toEqual({ path: '/w/wt/x.md', suffix: '' })
+    expect(folderFileOf('index.html?x=1#a', '/w/wt')).toEqual({
+      path: '/w/wt/index.html',
+      suffix: '?x=1#a'
+    })
+    expect(folderFileOf('docs/a.html', 'ssh://box/srv/app')).toEqual({
+      path: 'ssh://box/srv/app/docs/a.html',
+      suffix: ''
+    })
+  })
+
+  it('refuses a path that climbs out of the folder, on this Mac and on a remote machine', () => {
+    expect(folderFileOf('../x.md', '/w/wt')).toBeNull()
+    expect(folderFileOf('a/../../x', '/w/wt')).toBeNull()
+    expect(folderFileOf('../../../etc/passwd', 'ssh://box/srv/app')).toBeNull()
+    expect(folderFileOf('.', '/w/wt')).toBeNull()
+  })
+
+  it('leaves a URL, an absolute or home path, a search with a space, an empty entry and a missing folder to the usual routing', () => {
+    for (const entry of ['https://x', 'localhost:5173', '/abs', '~/x', 'react hooks', '  ']) {
+      expect(folderFileOf(entry, '/w/wt')).toBeNull()
+    }
+    expect(folderFileOf('index.html', null)).toBeNull()
   })
 })
 

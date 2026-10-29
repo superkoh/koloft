@@ -31,7 +31,8 @@ function fields(body: string): Record<string, string> {
 }
 
 export class ProgramStatusParser {
-  private bodies = new OscBodies()
+  // AGY§10
+  private bodies = new OscBodies(true)
 
   push(chunk: string): { asked: boolean; states: ProgramStatus[] } {
     let asked = false

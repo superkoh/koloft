@@ -28,6 +28,7 @@ import {
 } from './helpers/p1'
 import { answerFileDialog } from './helpers/workbench'
 import { setupGitFixture } from './helpers/gitFixture'
+import { messagingOf } from '../../src/shared/sessionBackend'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -90,6 +91,21 @@ function butlerFolder(env: E2EEnv): string {
 function codexWireText(env: E2EEnv): string {
   const f = path.join(env.home, 'fake-codex-wire.jsonl')
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
+}
+
+function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse'): string {
+  const claude = backend === 'claude'
+  const root = path.join(env.userData, claude ? 'hook-sessions' : `${backend}-open`)
+  if (!fs.existsSync(root)) return ''
+  return fs
+    .readdirSync(root)
+    .flatMap((name) =>
+      claude ? (name.endsWith('.said') ? [name] : []) : [path.join(name, 'said')]
+    )
+    .map((name) => path.join(root, name))
+    .filter((file) => fs.existsSync(file))
+    .map((file) => fs.readFileSync(file, 'utf8'))
+    .join('\n')
 }
 
 function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
@@ -459,7 +475,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
   for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
     const { install, busy } = keepsBusy[backend]
-    test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
+    test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, which is never saved as the owner's words, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
       env
     }) => {
       test.setTimeout(180_000)
@@ -494,8 +510,15 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         await expect
           .poll(() => sent(first), { timeout: 60_000 })
           .toContain('Theownertypedthisin⌘P:turnondarkmode')
-        await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+        if (messagingOf(backend, false) === 'typed')
+          await expect
+            .poll(async () => (await terminalText(page, butlerTab)).replace(/\s+/g, ''), {
+              timeout: 60_000
+            })
+            .toContain('(Fromthesession"')
+        await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        if (backend !== 'agy') expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line + '\r'),
           [butlerTab, busy]
@@ -514,7 +537,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
           .toContain('Theownertypedthisin⌘P:anddimthesidebartoo')
         await expect(butlerRow(page)).toHaveClass(BUSY_ROW)
         expect(await sent(butlerTab)).toContain(
-          '(FromKoloft:theowneraskedforsomething,andKolofthandsittoahelperofyours'
+          '(FromKoloft:)Theowneraskedforsomething,andKolofthandsittoahelperofyours'
         )
       } finally {
         await quitAndClose(app)

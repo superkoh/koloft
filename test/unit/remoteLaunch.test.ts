@@ -8,10 +8,14 @@ import { spawn, spawnSync } from 'child_process'
 import {
   accountEnv,
   buildMachinePackage,
+  claudeTabSpec,
   killSessionCmd,
+  koloftSkillLine,
   launchLine,
+  machineToolProgram,
   tabScript,
   writeTabPackage,
+  type ClaudeTab,
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
@@ -136,16 +140,23 @@ async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
   return pred()
 }
 
-const spec = (over: Partial<TabSpec> = {}): TabSpec => ({
-  tabId: 'T',
-  tmuxName: 'k-sess1',
-  machineName: 'm-0000000000000000',
-  cwd: '/tmp',
-  banner: 'koloft: bravo',
-  settings: { hooks: {} },
-  claudeArgs: ['--session-id', 'sess1'],
+const spec = ({
+  settings = { hooks: {} },
+  claudeArgs = ['--session-id', 'sess1'],
+  agentPlugin,
+  program,
   ...over
-})
+}: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
+  const tab = {
+    tabId: 'T',
+    tmuxName: 'k-sess1',
+    machineName: 'm-0000000000000000',
+    cwd: '/tmp',
+    banner: 'koloft: bravo',
+    ...over
+  }
+  return program ? { ...tab, program } : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin })
+}
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
   const pkg = buildMachinePackage(path.join(r.dir, 'pkg'), files)
@@ -243,12 +254,12 @@ describe('U-LINE-*: the launch line', () => {
     expect(r.calls()).toBe(4)
   })
 
-  it('a start that failed holds the tab open until Enter, so its reason can be read', async () => {
+  it('a session that failed to start or ended with an error holds the tab open until Enter, so its reason can be read', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
     r.fail(4, 7)
     const live = typeLineLive(r, st.line())
-    expect(await until(() => live.out().includes('did not start (exit 7)'))).toBe(true)
+    expect(await until(() => live.out().includes('exit code 7'))).toBe(true)
     expect(live.out()).toContain('press Enter to close')
     await new Promise((res) => setTimeout(res, 300))
     expect(live.running()).toBe(true)
@@ -313,7 +324,7 @@ interface Box {
   run(...args: string[]): { status: number | null; stdout: string }
 }
 
-function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
+function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}): Box {
   const home = mkroot('tabhome')
   const bin = path.join(home, '.local', 'bin')
   const logs = path.join(home, 'logs')
@@ -336,9 +347,10 @@ printf '%s\\n' "$@" >> ${JSON.stringify(path.join(logs, 'tmux'))}
 printf 'tmux %s\\n' "$*" >> ${JSON.stringify(path.join(logs, 'order'))}
 conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
+case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
-grep -q 'default-shell /bin/sh' "$conf" && exec sh -c "$last"
-exec "$SHELL" -c "$last"
+if grep -q 'default-shell /bin/sh' "$conf"; then sh -c "$last"; else "$SHELL" -c "$last"; fi
+exit 0
 `,
     { mode: 0o755 }
   )
@@ -365,7 +377,7 @@ printf '%s\\n' "$@" > "$L/argv.$n"
 printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
-exit 0
+exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
   )
@@ -421,6 +433,27 @@ function claudeEnvOf(s: TabSpec): Record<string, string> {
   return b.env()
 }
 
+describe('the koloft skill a Codex or Antigravity tab keeps in its home on the machine', () => {
+  it('is copied whole from the machine package while agent tools are on, replacing an older copy, and removed once they are off', () => {
+    const root = mkroot('skill')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    const installed = path.join(skills, 'koloft', 'SKILL.md')
+    buildMachinePackage(root, { 'agent-plugin/skills/koloft/SKILL.md': 'NEW' })
+    const pkg = fs.readdirSync(root).find((n) => n.startsWith('m-'))!
+    fs.renameSync(path.join(root, pkg), machineDir)
+    fs.mkdirSync(path.dirname(installed), { recursive: true })
+    fs.writeFileSync(installed, 'OLD')
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    expect(run(koloftSkillLine(skills, machineDir))).toBe(0)
+    expect(fs.readFileSync(installed, 'utf8')).toBe('NEW')
+    expect(fs.readdirSync(path.dirname(installed))).toEqual(['SKILL.md'])
+    expect(run(koloftSkillLine(skills, undefined))).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+  })
+})
+
 describe('U-TAB-*: the tab script on the machine', () => {
   it('falls back to the workspace root when the recorded directory is gone, so a resume into a removed worktree still opens', () => {
     const root = mkroot('root')
@@ -467,7 +500,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
-  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's koloft first on its PATH, told which tab it runs in", () => {
+  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
     const b = box(spec({ agentPlugin: true }))
     expect(b.run().status).toBe(0)
     const m = `${b.home}/.koloft/m-0000000000000000`
@@ -479,23 +512,23 @@ describe('U-TAB-*: the tab script on the machine', () => {
       '--append-system-prompt-file',
       `${m}/agent-plugin/koloft-prompt.md`
     ])
-    expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
+    expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
-      program: {
-        name: 'muse',
-        run: museRunLines({
+      program: machineToolProgram(
+        'muse',
+        museRunLines({
           tabId: 'T',
           account: "o'brien",
           args: ['--approval-judge', 'off', 'say hi'],
           trust: []
         }),
-        files: { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
-      }
+        { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      )
     })
     const b = box(s)
     const own = path.join(b.home, '.config', 'muse')
@@ -528,6 +561,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       TBH_CREDENTIAL_BACKEND: 'file',
       TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
     })
+    expect(b.env().PATH).not.toContain('claude-bin')
     expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
       '{"providers":{}}'
     )
@@ -605,6 +639,19 @@ describe('U-TAB-*: the tab script on the machine', () => {
     )
     expect(b.run().status).toBe(0)
     expect(b.env().GEMINI_API_KEY).toBeUndefined()
+  })
+
+  it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
+    const failed = box(spec(), { claudeExit: 3 }).run()
+    expect(failed.status).toBe(3)
+    expect(failed.stdout).toMatch(/the last screen\n$/)
+    const clean = box(spec()).run()
+    expect(clean.status).toBe(0)
+    expect(clean.stdout).not.toContain('the last screen')
+  })
+
+  it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
+    expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

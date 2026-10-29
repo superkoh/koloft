@@ -86,7 +86,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    closes its tab kills it), `-trust-question` (holds a session id: resuming that id, it
+    asks CC's folder-trust question before it binds; ↓ then Enter answers yes, deletes
+    the file and starts, Enter alone exits 1), `-bg-ms` (how long `/bg-reported`'s background work runs,
     5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
     SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
     failure line and leaves the worktree).
@@ -282,7 +284,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
   `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
-  `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
+  `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`, and `KOLOFT_TEST_MACHINE_FILE` (JSON
+  `{pressure, load1, backgroundWork}` read in place of the Mac's own numbers) pointing at a
+  roomy `<home>/machine-reading.json`, so the developer Mac's own load never reaches a
+  test; a spec wanting a busy Mac points it at a file of its own (machine-room). The
+  hand-test sandbox drops it and reads the real Mac.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
@@ -290,11 +296,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
-  (real-window layer), `KOLOFT_TEST_MACHINE_FILE` (JSON `{pressure, load1,
-  backgroundWork}` read in place of the Mac's own numbers), the session timing knobs
+  (real-window layer), `KOLOFT_TEST_PRESENCE_FILE`
+  (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
+  without it a test run counts the owner as away, so Discord posts as before),
+  `KOLOFT_AWAY_DIGEST_MS` (how long the away digest gathers before it goes to the
+  butler), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
-  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE` and `KOLOFT_TEST_MACHINE_FILE` are
-  read on every use, so a spec may rewrite them after launch.
+  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
+  `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
   `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
@@ -332,9 +341,9 @@ hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with 
 its symbols.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
-the question, the outcomes as options. Only the butler's own question reaches the
-owner's Discord, as a card in its channel (discord-flow); a session's question shows
-only at the Mac. The card carries text only, so name what to look at, or have the
+the question, the outcomes as options. Only the questions of the butler and of the
+helpers in its folder reach the owner's Discord, as cards in its channel
+(discord-flow); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
 butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
 owner answers, check their step in a log or file yourself.
 

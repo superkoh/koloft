@@ -25,8 +25,10 @@ import {
   openWorktreeSession,
   processAlive,
   readCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
+  staysOnTheFolderPageNotTheButler,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -100,11 +102,33 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
-  // MUSE§13
-  test('a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere', async ({
+  // MUSE§10
+  test("answering 2 Quit to Muse's trust question before any session opened puts you back on the folder page, and never opens the butler", async ({
     env
   }) => {
     installMuse(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(page.locator('.term-wrap:visible')).toContainText('Do you trust this workspace?')
+      await runIn(page, centerTerm(page), '2')
+      await expect(museRows(page)).toHaveCount(0, { timeout: 30_000 })
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
+      expect(museCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
+  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel as soon as Koloft opens, with no Claude subscription account and nothing clicked, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
@@ -118,7 +142,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect(page.locator('.tbu .tbu-fill:not(.cold)')).toHaveCount(1)
       await page.locator('.tbu').click()
       const pop = page.locator('.tbu-pop')
       await expect(pop.locator('.tbu-pop-head', { hasText: /^Muse$/ })).toBeVisible()
@@ -127,6 +151,44 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('7%')
       expect(museCalls(env)).toEqual([])
       expect(await page.evaluate(() => window.api.sessions.list())).toEqual([])
+      await page.keyboard.press('Escape')
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
+  test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-muse-login-fails'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Muse' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.',
+        { timeout: 20_000 }
+      )
+      await expect(dialog.locator('.acct-login-tail')).toHaveText(
+        'Error: the device code expired before it was approved'
+      )
+      await expect(page.locator('.term-island > .wb-bar')).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^work$/ })).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^e2e-muse$/ })).toBeVisible()
     } finally {
       await quitAndClose(app)
     }
@@ -273,6 +335,55 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  test('a Muse session whose .claude/worktrees folder was deleted and whose worktree Koloft has no record of is rebuilt there from its branch on a click, for the same session', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    let app = await launchApp(env)
+    let first: MuseCall
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await dialog.locator('input').fill('muse-lost')
+      await chooseBackend(page, 'Muse')
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      first = museCalls(env)[0]
+      await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      fs.writeFileSync(path.join(first.cwd, 'kept.txt'), 'committed on the branch')
+      gitCommitAll(first.cwd)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(museRows(page)).toHaveClass(/cold/)
+    } finally {
+      await quitAndClose(app)
+    }
+    const storeFile = path.join(env.userData, 'muse-sessions.json')
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    store.resources = {}
+    for (const member of Object.values<{ worktreeResourceId?: string }>(store.members))
+      delete member.worktreeResourceId
+    fs.writeFileSync(storeFile, JSON.stringify(store))
+    fs.rmSync(first.cwd, { recursive: true, force: true })
+
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await museRows(page).click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      await expect(museRows(page)).toHaveClass(/st-waiting|st-idle/)
+      expect(museCalls(env)[1]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+      expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
+        'committed on the branch'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§9
   test("a subagent and a command left running in the background show breathing green with ↻ only while Muse's hooks and session log say they run, and a rename in Muse retitles the row", async ({
     env
@@ -366,6 +477,41 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await museRows(page).click()
       await expect.poll(() => museCalls(env).length).toBe(2)
       expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§2
+  test('/exit typed inside Muse leaves the list for Restore session under the name given with /rename, and the session brought back from there keeps that name', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(museRows(page)).toContainText('keep me')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(museRows(page)).toContainText('docs cleanup')
+      await runIn(page, centerTerm(page), '/exit')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(museRows(page)).toHaveCount(0)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      const row = history.getByRole('button').filter({ hasText: 'docs cleanup' })
+      await expect(row).toHaveCount(1)
+      await row.click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(museRows(page)).toContainText('docs cleanup')
     } finally {
       await quitAndClose(app)
     }
@@ -492,6 +638,52 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§5
+  test('a Muse session started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting its folder there turns it off again', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const sessions = path.join(env.home, '.local', 'share', 'muse', 'sessions')
+      const id = '01a17db8-7cda-7722-8212-7f60790ea9c8'
+      const listed = path.join(sessions, 'fake', `${id}.json`)
+      const at = new Date()
+      const p2 = (n: number): string => String(n).padStart(2, '0')
+      const folder = path.join(
+        sessions,
+        String(at.getFullYear()),
+        p2(at.getMonth() + 1),
+        p2(at.getDate()),
+        id
+      )
+      fs.mkdirSync(path.dirname(listed), { recursive: true })
+      fs.writeFileSync(
+        listed,
+        JSON.stringify({
+          id,
+          cwd: fs.realpathSync(env.workspaces.a),
+          title: 'started in a plain terminal',
+          createdAt: at.toISOString(),
+          updatedAt: at.toISOString(),
+          items: []
+        })
+      )
+      fs.mkdirSync(folder, { recursive: true })
+      fs.writeFileSync(path.join(folder, 'session.jsonl'), '{}\n')
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 20_000 }).toBe(true)
+      fs.unlinkSync(listed)
+      fs.rmSync(folder, { recursive: true })
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 20_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

@@ -10,10 +10,11 @@ import type {
   DiscordSettings
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
-import { butlerRole } from '@shared/agentGuide'
+import { butlerRole, TODO_NOTICE } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
+import { FROM_KOLOFT } from '../crossSessionMessage'
 import { realpathSafe } from '../projectInfo'
 
 export interface ButlerLaunch {
@@ -45,6 +46,8 @@ export interface ButlerDeps {
   kill(tabId: string): void
   rowsChanged(): void
   toast(text: string): void
+  notice(text: string): Promise<boolean>
+  showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
 
@@ -67,6 +70,7 @@ export class Butler {
   private stopping = new Set<string>()
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
+  private waitingForWords: string | undefined
 
   constructor(private d: ButlerDeps) {
     this.discord = d.load()
@@ -174,7 +178,8 @@ export class Butler {
     if (sessionIds.length === s.sessionIds.length && keepLast) return
     this.changeSession(() => ({
       sessionIds,
-      ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {})
+      ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
+      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {})
     }))
   }
 
@@ -207,7 +212,10 @@ export class Butler {
 
   startFresh(): Promise<ConductorOpenResult> {
     this.stopResident()
-    this.changeSession((s) => ({ sessionIds: s.sessionIds }))
+    this.changeSession(({ lastSessionKey, ...kept }) => {
+      void lastSessionKey
+      return kept
+    })
     return this.open()
   }
 
@@ -225,9 +233,13 @@ export class Butler {
     this.d.save(this.discord)
   }
 
-  open(firstPrompt?: string): Promise<ConductorOpenResult> {
+  async open(firstPrompt?: string): Promise<ConductorOpenResult> {
     this.opening ??= this.openNow(firstPrompt).finally(() => (this.opening = undefined))
-    return this.opening
+    const opened = await this.opening
+    // AGY§8
+    if (opened.ok && firstPrompt && this.firstWordsComing(opened.tabId))
+      void this.d.notice(firstPrompt)
+    return opened
   }
 
   private launchFor(backend: BackendId): ButlerLaunch {
@@ -256,6 +268,8 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
+    let resumedOld = false
+    let started = false
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -268,22 +282,51 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
+      resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
-      else tabId = await this.d.start({ ...launch, firstPrompt })
+      else {
+        started = true
+        tabId = await this.d.start({ ...launch, firstPrompt })
+      }
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
+    if (resumedOld && key !== undefined) this.tellOfTodo(key)
     this.resident = tabId
+    // AGY§8
+    if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
+      this.waitingForWords = tabId
     this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
   }
 
+  firstWordsComing(tabId: string): boolean {
+    if (tabId !== this.waitingForWords) return false
+    this.waitingForWords = undefined
+    this.armDeadline(tabId, this.d.butler().name)
+    return true
+  }
+
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  private tellOfTodo(key: string): void {
+    void this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`).then((told) => {
+      if (told && !this.session.knowsTodo?.includes(key))
+        this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+    })
+  }
+
   private armDeadline(tabId: string, title: string): void {
+    clearTimeout(this.deadlines.get(tabId))
     const timer = setTimeout(() => {
       this.deadlines.delete(tabId)
       if (this.resident !== tabId) return
+      // AGY§8 AGY§10
+      if (this.d.showsPromptBeforeBind(tabId)) {
+        this.waitingForWords = tabId
+        return
+      }
       this.stopResident()
       this.d.toast(`${title} did not start.`)
     }, this.d.bindDeadlineMs)
@@ -300,6 +343,7 @@ export class Butler {
   }
 
   private forgetTab(tabId: string): void {
+    if (tabId === this.waitingForWords) this.waitingForWords = undefined
     clearTimeout(this.deadlines.get(tabId))
     this.deadlines.delete(tabId)
   }
@@ -310,10 +354,16 @@ export class Butler {
       this.resident = tabId
     }
     this.forgetTab(tabId)
-    this.changeSession((s) => ({
-      sessionIds: s.sessionIds.includes(key) ? s.sessionIds : [...s.sessionIds, key],
-      lastSessionKey: key
-    }))
+    this.changeSession((s) =>
+      s.sessionIds.includes(key)
+        ? { ...s, lastSessionKey: key }
+        : {
+            ...s,
+            sessionIds: [...s.sessionIds, key],
+            lastSessionKey: key,
+            knowsTodo: [...(s.knowsTodo ?? []), key]
+          }
+    )
   }
 
   onPtyExit(tabId: string): void {

@@ -3,15 +3,23 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { record } from './codexObservation'
 import {
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from './crossSessionMessage'
+import {
   HOLD_FILE,
   HOLD_TAB_ENV,
+  JSON_STRING_BODY,
   KEEP_GOING_FOR_THE_NOTICE_FN,
+  LANGUAGE_FNS,
   NOTICE_ENV,
   NOTICE_THIS_TURN,
+  QUOTED_NOTE_BYTES,
   QUOTED_PROMPT_BYTES,
-  REPLY_LANGUAGE_AFTER_QUOTE,
-  REPLY_LANGUAGE_BEFORE_QUOTE,
+  STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
+  TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE,
   type HoldEvent,
   type HoldScript
 } from './hooks'
@@ -28,9 +36,23 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-// AGY§12 ADR-0031
+const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS]
+  .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
+  .join(' ')
+
+// AGY§12
+const LAST_REPLY_FN = `last_reply() {
+  tail -n ${TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE} "$tp" 2>/dev/null |
+    LC_ALL=C grep -F '"type":"PLANNER_RESPONSE"' |
+    LC_ALL=C sed -n -E 's/.*"type":"PLANNER_RESPONSE"[^{]*"content":"${JSON_STRING_BODY}".*/\\1/p' |
+    LC_ALL=C grep . | tail -n 1 |
+    head -c ${QUOTED_NOTE_BYTES} | whole_chars
+}`
+
+// AGY§12 AGY§16 ADR-0028 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
+[ "$1" != PreInvocation ] || [ -n "$BASH_VERSION" ] || exec bash "$0" "$@"
 event="$1"
 input="$(cat)"
 log="$${AGY_LOG_ENV}"
@@ -38,6 +60,9 @@ notice="$${NOTICE_ENV}"
 turn=""; [ -n "$notice" ] && turn="$notice${NOTICE_THIS_TURN}"
 ${TAKE_NOTICE_FN}
 ${KEEP_GOING_FOR_THE_NOTICE_FN}
+${LANGUAGE_FNS}
+${LAST_REPLY_FN}
+${STALE_PR_STATUS_FN}
 if [ "$event" = "Stop" ]; then
   keep_going_for_the_notice && exit 0
   [ -n "$turn" ] && rm -f "$turn"
@@ -47,8 +72,8 @@ case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
-    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
-    [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F ${NOT_THE_OWNERS_WORDS} | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
+    [ -n "$said" ] && said="$(reply_language_words "$said" last_reply)"
     if [ -n "$turn" ]; then
       case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
       [ -f "$notice" ] && take_notice >> "$turn"
@@ -56,6 +81,8 @@ case "$event" in
     told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
+  # AGY§12 PLATFORM§36
+  PostToolUse) case "$input" in *'gh pr '*) stale_pr_status "$(printf '%s' "$input" | tr -d '\\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"${JSON_STRING_BODY}".*/\\1/p')" ;; esac ;;
 esac
 exit 0
 `
@@ -154,6 +181,7 @@ export interface AgyTitleState {
   title?: string
   contextUsed?: number
   model?: string
+  taskCount?: number
 }
 
 // AGY§9 AGY§11
@@ -170,7 +198,8 @@ function titleState(r: Record<string, unknown>): AgyTitleState | undefined {
         ? r.conversation_title
         : undefined,
     contextUsed: typeof context.used_percentage === 'number' ? context.used_percentage : undefined,
-    model: typeof model.id === 'string' ? model.id : undefined
+    model: typeof model.id === 'string' ? model.id : undefined,
+    taskCount: typeof r.task_count === 'number' ? r.task_count : undefined
   }
 }
 

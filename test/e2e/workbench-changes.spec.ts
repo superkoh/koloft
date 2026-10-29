@@ -3,9 +3,10 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, type E2EEnv } from './helpers/env'
+import { installCodex, installMuse, trustInMuse, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
+  type AgentName,
   boundSessionId,
   centerTerm,
   clickAppMenuItem,
@@ -70,6 +71,30 @@ const blockOf = (page: Page, rel: string): Locator =>
   page.locator(`${CV.block}[data-path="${rel}"]`)
 const stream = (page: Page): Locator => page.locator(CV.stream)
 
+const GIT_KILLED_AFTER_MS = 3000
+
+function hangStatusReadsWhileFlagged(
+  env: E2EEnv,
+  root: string
+): { hangFromNowOn: string; hung: string } {
+  const hangFromNowOn = path.join(env.home, 'git-status-hangs')
+  const hung = path.join(env.home, 'git-status-hung')
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'git'),
+    `#!/usr/bin/env bash\n` +
+      `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${root}" ]; then\n` +
+      `  case " $* " in\n` +
+      `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
+      `  esac\n` +
+      `fi\n` +
+      `exec "${realGit}" "$@"\n`,
+    { mode: 0o755 }
+  )
+  env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+  return { hangFromNowOn, hung }
+}
+
 async function shownPaths(page: Page): Promise<string[]> {
   return (await rows(page).evaluateAll((els) =>
     els.map((e) => (e as HTMLElement).dataset.path ?? '')
@@ -133,8 +158,8 @@ async function pickChip(
   await expect(filesMenu(page)).toHaveCount(0)
 }
 
-async function openChanges(page: Page, ws = 'ws-a'): Promise<void> {
-  await startSessionIn(page, ws)
+async function openChanges(page: Page, ws = 'ws-a', method?: AgentName): Promise<void> {
+  await startSessionIn(page, ws, { method })
   await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
   await showChanges(page)
 }
@@ -484,18 +509,17 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     const room = await list.evaluate((el) => el.scrollHeight - el.clientHeight)
     expect(room).toBeGreaterThan(0)
 
-    const topRoundedPastSubpixelNoise = async (): Promise<number> => {
-      const box = await total.boundingBox()
-      if (!box)
-        throw new Error('the summary header left the screen — it must survive every scroll offset')
-      return Math.round(box.y)
-    }
-    const before = await topRoundedPastSubpixelNoise()
+    const topInPanelSoTheIslandRiseInMovesBothAlike = (): Promise<number> =>
+      total.evaluate((el) => {
+        const panel = el.closest('.wb-panel')!.getBoundingClientRect()
+        return Math.round(el.getBoundingClientRect().y - panel.y)
+      })
+    const before = await topInPanelSoTheIslandRiseInMovesBothAlike()
     await list.evaluate((el) => {
       el.scrollTop = el.scrollHeight
     })
     expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
-    expect(await topRoundedPastSubpixelNoise()).toBe(before)
+    expect(await topInPanelSoTheIslandRiseInMovesBothAlike()).toBe(before)
   })
 
   test('a directory split by its subdirectory leaves no orphaned rows — across a poll, or a session switch', async ({
@@ -779,20 +803,37 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     }
   })
 
-  test("after /clear the Ownership filter's session choice no longer lists the files the old session wrote", async ({
-    page,
-    env
-  }) => {
-    const fx = setupChangeFixture(env.workspaces.a)
-    await openChanges(page)
-    await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
-    await pickChip(page, 'Ownership', 'session')
-    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
+  for (const agent of ['Claude', 'Muse'] as const)
+    test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
+      env
+    }) => {
+      const fx = setupChangeFixture(env.workspaces.a)
+      if (agent === 'Muse') {
+        installMuse(env)
+        trustInMuse(env, env.workspaces.a)
+      }
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await openChanges(page, 'ws-a', agent === 'Muse' ? agent : undefined)
+        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
+        await pickChip(page, 'Ownership', 'session')
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes.ts'])
 
-    await runIn(page, centerTerm(page), '/clear')
+        await runIn(page, centerTerm(page), '/clear')
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
 
-    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
-  })
+        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes-b.ts'])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
     page,
@@ -1178,22 +1219,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     test.setTimeout(180_000)
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const hangFromNowOn = path.join(env.home, 'git-status-hangs')
-    const hung = path.join(env.home, 'git-status-hung')
-    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-    fs.writeFileSync(
-      path.join(env.fakeBin, 'git'),
-      `#!/usr/bin/env bash\n` +
-        `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${fx.root}" ]; then\n` +
-        `  case " $* " in\n` +
-        `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
-        `  esac\n` +
-        `fi\n` +
-        `exec "${realGit}" "$@"\n`,
-      { mode: 0o755 }
-    )
-    const GIT_KILLED_AFTER_MS = 3000
-    env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+    const { hangFromNowOn, hung } = hangStatusReadsWhileFlagged(env, fx.root)
     await app.close().catch(() => {})
     const next = await launchApp(env)
     try {
@@ -1213,6 +1239,38 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
       expect(await rows(page).allInnerTexts()).toEqual(good)
       await expect(badge(page)).toHaveText('2 files')
+    } finally {
+      await next.close().catch(() => {})
+    }
+  })
+
+  test('a git status that hangs on the very first read shows the retry banner once git is killed, and Retry reads the change set again', async ({
+    app,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const { hangFromNowOn } = hangStatusReadsWhileFlagged(env, fx.root)
+    fs.writeFileSync(hangFromNowOn, '')
+    await app.close().catch(() => {})
+    const next = await launchApp(env)
+    try {
+      const page = await next.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await openChanges(page)
+      const banner = page.locator(CV.banner)
+      await expect(banner).toContainText('Repo too large or git unresponsive — retry.', {
+        timeout: 30_000
+      })
+      await expect(page.locator(CV.empty)).toHaveCount(0)
+
+      fs.rmSync(hangFromNowOn)
+      await banner.getByRole('button', { name: 'Retry' }).click()
+      await waitStream(page, 2)
+      await expect(badge(page)).toHaveText('2 files')
+      await expect(banner).toHaveCount(0)
     } finally {
       await next.close().catch(() => {})
     }

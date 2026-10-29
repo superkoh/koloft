@@ -377,7 +377,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                 ]
               }
             ],
-            isBlocking: true,
+            isBlocking: false,
             autoResolutionMs: null
           }
         })
@@ -445,22 +445,40 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
         return
       }
+      const said = (thread) =>
+        thread.turns
+          .flatMap((turn) => turn.items)
+          .map((item) =>
+            item.type === 'agentMessage'
+              ? item.text
+              : (item.content ?? []).map((c) => c.text).join(' ')
+          )
+          .filter(Boolean)
+      // CODEX§24
       if (method === 'thread/search') {
         const term = String(p.searchTerm).toLowerCase()
-        const said = (thread) =>
-          thread.turns
-            .flatMap((turn) => turn.items)
-            .map((item) =>
-              item.type === 'agentMessage'
-                ? item.text
-                : (item.content ?? []).map((c) => c.text).join(' ')
-            )
-            .find((text) => text?.toLowerCase().includes(term))
+        const environment = (thread) =>
+          `<environment_context> <cwd>${thread.cwd}</cwd> <shell>zsh</shell> </environment_context>`
         const data = (p.archived ? [] : savedThreads()).flatMap((thread) => {
-          const snippet = said(thread)
+          const snippet = [environment(thread), ...said(thread)].find((text) =>
+            text.toLowerCase().includes(term)
+          )
           return snippet ? [{ snippet, thread }] : []
         })
         result(id, { data, nextCursor: null, backwardsCursor: null })
+        return
+      }
+      if (method === 'thread/searchOccurrences') {
+        const term = String(p.searchTerm).toLowerCase()
+        const thread = load(p.threadId)
+        const snippet = thread && said(thread).find((text) => text.toLowerCase().includes(term))
+        result(id, { data: snippet ? [{ snippet }] : [], nextCursor: null })
+        return
+      }
+      if (method === 'thread/turns/list') {
+        const thread = load(p.threadId)
+        if (!thread) error(id, 'Thread not found')
+        else result(id, { data: thread.turns, nextCursor: null })
         return
       }
       if (method === 'thread/read') {
@@ -573,6 +591,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           origins: {},
           layers: []
         })
+        return
+      }
+      if (method === 'account/read' && flag('fake-codex-account-read-fails')) {
+        append('fake-codex-account-read-failures.jsonl', { codexHome, signedIn: !!signIn() })
+        error(id, 'stream disconnected before completion')
         return
       }
       if (method === 'account/read') {
@@ -811,6 +834,14 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
+      // CODEX§20
+      const givesUpMs = Number(read('fake-codex-question-gives-up-ms')) || 0
+      if (givesUpMs && !frame.params.isBlocking)
+        setTimeout(() => {
+          if (question?.id !== frame.id) return
+          ws.send(JSON.stringify({ id: frame.id, result: { answers: {} } }))
+          question = undefined
+        }, givesUpMs)
     } else if (frame.method === 'item/completed' && /^(koloft|sh)-/.test(frame.params.item.id)) {
       const { aggregatedOutput, exitCode, id } = frame.params.item
       const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')

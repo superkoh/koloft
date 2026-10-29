@@ -5,6 +5,10 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp } from './app'
 import { agyCalls, installCodex, type AgyCall, type E2EEnv } from './env'
 import { encodeCwd, killSession, terminalText, termIds, waitBooted } from './p1'
+import {
+  PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
+  PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
+} from '../../../src/main/remote/playwrightCli'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -106,6 +110,17 @@ export function dropTabLinkWhileItsSessionDies(env: E2EEnv, pid: number): void {
   killSession(pid, env)
 }
 
+export function tmuxClientsOf(tmuxName: string): number[] {
+  const lines = execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split('\n')
+  const named = new RegExp(`fake-tmux\\.js .*-[st] ${tmuxName}(\\s|$)`)
+  return lines.filter((l) => named.test(l)).map((l) => Number(l.trim().split(/\s+/)[0]))
+}
+
+export function dropTabLinkWhileItsSessionLives(env: E2EEnv, tmuxName: string): void {
+  fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
+  for (const pid of tmuxClientsOf(tmuxName)) process.kill(pid, 'SIGKILL')
+}
+
 export function healConnection(env: E2EEnv): void {
   fs.rmSync(path.join(stateDir(env), 'hb-fail'), { force: true })
 }
@@ -202,6 +217,23 @@ export function installFakeRemote(env: E2EEnv): void {
     path.join(nodeWhereEnsureShLooksSoItNeverReachesForCurlOrSudo, 'node'),
     `#!/bin/sh\nexec ${JSON.stringify(nodeBin)} "$@"\n`
   )
+  const playwrightCliTheWrapperFindsSoItNeverReachesForNpm = path.dirname(
+    path.join(
+      machine,
+      '.koloft',
+      PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME,
+      PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER
+    )
+  )
+  fs.mkdirSync(path.dirname(playwrightCliTheWrapperFindsSoItNeverReachesForNpm), {
+    recursive: true
+  })
+  // PLATFORM§62
+  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true, recursive: true })
+  fs.symlinkSync(
+    path.dirname(require.resolve('@playwright/cli/package.json')),
+    playwrightCliTheWrapperFindsSoItNeverReachesForNpm
+  )
 
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state
 }
@@ -218,7 +250,9 @@ export function installRemoteAgy(env: E2EEnv): void {
 }
 
 export function machineAgyCalls(env: E2EEnv): AgyCall[] {
-  return agyCalls(env, machineHome(env)).filter((c) => !c.argv.includes('-p'))
+  return agyCalls(env, machineHome(env)).filter(
+    (c) => !c.argv.includes('-p') && !c.argv.includes('--version')
+  )
 }
 
 export async function agyReady(page: Page): Promise<void> {

@@ -50,6 +50,7 @@ import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -82,9 +83,18 @@ export interface LiveSession {
   relocated?: boolean
 }
 
+function addUse(into: Map<string, DiscoveredFolder>, at: string, use: DiscoveredFolder): void {
+  const prev = into.get(at)
+  if (prev) {
+    prev.sessions += use.sessions
+    prev.mtime = Math.max(prev.mtime, use.mtime)
+  } else into.set(at, { path: at, sessions: use.sessions, mtime: use.mtime })
+}
+
 export interface WorkspaceManagerDeps {
   additionalRows?(workspacePath: string): (BackendSessionRow & { backendId: BackendId })[]
   additionalMembers?(): Set<string>
+  additionalFolders?(): Promise<DiscoveredFolder[]>
   projectsRoot: string
   loadLayout(): LayoutV6
   saveLayout(layout: LayoutV6): void
@@ -234,9 +244,6 @@ export class WorkspaceManager {
   }
 
   start(): void {
-    try {
-      fs.mkdirSync(this.deps.projectsRoot, { recursive: true })
-    } catch {}
     this.watchRoots()
     this.scheduleRescan()
   }
@@ -257,6 +264,21 @@ export class WorkspaceManager {
   searchableRows(): SearchCandidate[] {
     return [...this.allRowsCache].flatMap(([workspacePath, rows]) =>
       rows.map((row) => ({ row, workspacePath, file: this.transcriptFileById.get(row.id) }))
+    )
+  }
+
+  transcriptFiles(): { file: string; workspace: string }[] {
+    return [...this.transcriptFileById].flatMap(([id, file]) => {
+      const workspace = this.wsBySession.get(id)
+      return workspace ? [{ file, workspace }] : []
+    })
+  }
+
+  sessionPlaces(): Map<string, SessionPlace> {
+    return new Map(
+      [...this.allRowsCache].flatMap(([workspace, rows]) =>
+        rows.map((r) => [r.id, { workspace, title: r.title }] as const)
+      )
     )
   }
 
@@ -344,32 +366,45 @@ export class WorkspaceManager {
     }))
   }
 
-  // CC§2
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
-    const byRoot = new Map<string, DiscoveredFolder>()
-    const stats = new Map<string, { size: number; mtimeMs: number }>()
     const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
-    const projects = this.deps.projectsRoot
-    for (const slug of await this.listProjectSlugs(projects)) {
-      const files = await this.listJsonl(projects, slug, stats)
-      let cwd = await this.readFirstCwd(projects, slug, files, stats)
-      if (!cwd) continue
-      const wt = cwd.indexOf(wtMark)
-      if (wt !== -1) cwd = cwd.slice(0, wt)
-      if (!(await dirExists(cwd))) continue
-      const root = this.deps.projectInfo(cwd).root
+    const used = await Promise.all([
+      this.claudeUsedFolders(),
+      this.deps.additionalFolders?.() ?? []
+    ])
+    const byCwd = new Map<string, DiscoveredFolder>()
+    for (const use of used.flat()) {
+      const wt = use.path.indexOf(wtMark)
+      addUse(byCwd, wt === -1 ? use.path : use.path.slice(0, wt), use)
+    }
+    const there = await Promise.all([...byCwd.keys()].map((cwd) => dirExists(cwd)))
+    const byRoot = new Map<string, DiscoveredFolder>()
+    for (const [i, use] of [...byCwd.values()].entries()) {
+      if (!there[i]) continue
+      const root = this.deps.projectInfo(use.path).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
-      const mtime = Math.max(...files.map((f) => f.mtime))
-      const prev = byRoot.get(root)
-      if (prev) {
-        prev.sessions += files.length
-        prev.mtime = Math.max(prev.mtime, mtime)
-      } else {
-        byRoot.set(root, { path: root, sessions: files.length, mtime })
-      }
+      addUse(byRoot, root, use)
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
+  }
+
+  // CC§2
+  private async claudeUsedFolders(): Promise<DiscoveredFolder[]> {
+    const stats = new Map<string, { size: number; mtimeMs: number }>()
+    const projects = this.deps.projectsRoot
+    const used: DiscoveredFolder[] = []
+    for (const slug of await this.listProjectSlugs(projects)) {
+      const files = await this.listJsonl(projects, slug, stats)
+      const cwd = await this.readFirstCwd(projects, slug, files, stats)
+      if (!cwd) continue
+      used.push({
+        path: cwd,
+        sessions: files.length,
+        mtime: Math.max(...files.map((f) => f.mtime))
+      })
+    }
+    return used
   }
 
   private isConductorFolder(dir: string): boolean {
@@ -985,6 +1020,7 @@ export class WorkspaceManager {
 
   private watchRoot(root: string): void {
     try {
+      fs.mkdirSync(root, { recursive: true })
       const watcher = fs.watch(root, (_event, filename) => {
         if (!filename) return
         if (

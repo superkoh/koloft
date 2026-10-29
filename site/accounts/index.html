@@ -6,7 +6,7 @@
     <title>Several accounts, one pool — Koloft</title>
     <meta
       name="description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/accounts/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Several accounts, one pool — Koloft" />
     <meta
       property="og:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta property="og:url" content="__SITE_URL__/accounts/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
     <meta
       name="twitter:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="stylesheet" href="../style.css" />
@@ -96,20 +96,20 @@
           official installer, then signs in.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 690; --ar-phone: 765 / 1000">
+        <figure class="shot" style="--ar: 1322 / 729; --ar-phone: 765 / 1046">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone4.webp"
+                srcset="../img/h-settings-accounts-phone5.webp"
                 width="765"
-                height="1000"
+                height="1046"
               />
               <img
-                src="../img/h-settings-accounts-pane4.webp"
+                src="../img/h-settings-accounts-pane5.webp"
                 width="1322"
-                height="690"
-                alt="Koloft's Settings, Accounts page: the Skip permission prompts and Prefer accounts with fable allowance switches, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+                height="729"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions, the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
           </div>
@@ -118,10 +118,15 @@
           </figcaption>
         </figure>
         <p>
-          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Claude
-          Code, Muse or Antigravity session Koloft starts runs without asking for permission, here
-          or on a machine. A permission setting given to one launch (a scheduled job's, say) still
-          wins. A Codex session you start keeps Codex's own approval settings.
+          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Muse
+          session Koloft starts, and a Claude Code or Antigravity session it starts on one of your
+          accounts, runs without asking for permission, here or on a machine. So does a new Codex
+          session. It starts with <code class="nowrap">-a never -s danger-full-access</code>: it
+          never asks for permission (Codex's own trust question for a folder it has not seen still
+          comes first), and it runs outside Codex's sandbox (the box Codex runs commands in), so it
+          may write anywhere and use the network. With the switch off, a Codex session follows
+          Codex's own approval settings. A Codex session you resume keeps what it started with. A
+          permission setting given to one launch (a scheduled job's, say) still wins.
         </p>
 
         <h2>Claude</h2>
@@ -167,15 +172,18 @@
             budget)
           </li>
           <li>
-            Claude sessions you open one after another spread over your accounts, instead of piling
-            onto one (Codex sessions do not spread this way)
+            sessions you open one after another spread over your accounts, instead of piling onto
+            one: an account that already has a session open and not idle, or one still starting, is
+            passed over unless it has clearly more room left. Claude, Codex, Muse and Antigravity
+            sessions all pick this way
           </li>
-          <li>if no account can be read, Koloft picks the next one in order</li>
+          <li>if no Claude account can be read, Koloft picks the next one in order</li>
           <li>
             a session that starts again (you click its row, restart it, or quit and reopen Koloft)
             stays on the account it ran on, whatever the agent. It moves to another account only
             when one of that account's limits (5 hours, 7 days) is past 95%, or that account is
-            being told to wait (rate-limited). An API key or custom endpoint is not kept this way.
+            being told to wait (rate-limited). A Claude API key or custom endpoint is not kept this
+            way.
           </li>
         </ul>
 
@@ -219,9 +227,12 @@
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. If this
           Mac has no <code>codex</code> yet, the dialog says so and the same tab runs its official
           installer first, then signs in. New Codex sessions start on the least-used Codex account,
-          and skip one that has hit its limit while another is free. Settings and the
-          <code>Account usage</code> panel show each account's use for each limit Codex reports
-          (such as 5 hours and a week), its credits, and the resets it has saved, like
+          and skip one that has hit its limit while another is free. An account with no reading yet
+          (one just added, say) is used only when no account with a reading has room. When every
+          account has a reading and all are at their limit, the session runs on the one that resets
+          first, and a message says so. Settings and the <code>Account usage</code> panel show each
+          account's use for each limit Codex reports (such as 5 hours and a week), its credits, and
+          the resets it has saved, like
           <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
@@ -239,8 +250,8 @@
           account signed in with Meta shows how much of its <code>5h</code> and
           <code>7d</code> allowance is used, in Settings and in the
           <code>Account usage</code> panel; an API key account just says <code>Signed in</code>. New
-          Muse sessions pick their account the way Codex sessions do: the least-used one, taking
-          turns when none has been read.
+          Muse sessions pick their account the way Codex sessions do; an API key account counts as
+          one with no reading.
         </p>
 
         <h2>Antigravity</h2>
@@ -254,12 +265,71 @@
           shared by every account. Or <code>Paste Gemini API key</code>: the key goes into your
           Keychain and is handed to <code>agy</code> when a session starts. An account signed in
           with Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used,
-          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions take
-          turns between your accounts. The session runs in agy's full-screen mode, which does not
-          flicker, unless your own agy settings file names another mode. Switching to the other
-          mode, inline, in agy's <code>/config</code> only removes that setting, so it lasts until
-          the next launch.
+          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions pick
+          their account the way Codex sessions do; an API key account counts as one with no reading.
+          The session runs in agy's full-screen mode, which does not flicker, unless your own agy
+          settings file names another mode. Switching to the other mode, inline, in agy's
+          <code>/config</code> only removes that setting, so it lasts until the next launch.
         </p>
+
+        <h2 id="usage">What your sessions cost</h2>
+        <p>
+          The little bars say how much room an account has left. Settings ▸ Usage says something
+          else: what your sessions would have cost if you paid the API (the pay-per-use price) for
+          every token (a small piece of text a model reads or writes). A subscription is not billed
+          per token, so the page calls it "a yardstick, not a bill". Typing "usage", "cost" or
+          "spend" in <kbd>⌘P</kbd> opens it too.
+        </p>
+        <figure class="shot" style="--ar: 1322 / 808; --ar-phone: 790 / 1078">
+          <div class="frame">
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/w-settings-usage-phone.webp"
+                width="790"
+                height="1078"
+              />
+              <img
+                src="../img/w-settings-usage.webp"
+                width="1322"
+                height="808"
+                loading="lazy"
+                alt="Koloft's Settings, Usage page: 30 days picked, $216 and 13 sessions, one bar per day, and the bar for today hovered: Claude Code $3.22, Codex $2.25, Antigravity CLI $1.68. Below, By day, newest first: Today, Yesterday and the day before, each with its sessions and cost."
+              />
+            </picture>
+          </div>
+          <figcaption>Settings ▸ Usage: one bar per day, and today's split by agent</figcaption>
+        </figure>
+        <ul class="dash">
+          <li>
+            Pick how far back: <code>7 days</code>, <code>30 days</code>, <code>90 days</code> or
+            <code>All</code>. The page shows the total, how many sessions, and one bar per day.
+            Hover a bar, or move to it with Tab, to see that day split by agent. A session that ran
+            on several days counts on each of those days.
+          </li>
+          <li>
+            Below the bars, a list by <code>Day</code>, <code>Session</code>,
+            <code>Workspace</code> or <code>Model</code>. A Codex, Muse or Antigravity row wears a
+            <code>CODEX</code>, <code>MUSE</code> or <code>ANTIGRAVITY</code> badge (Session and
+            Model lists). A row from another machine wears <code>SSH</code> (Session and Workspace
+            lists).
+          </li>
+          <li>
+            It counts Claude Code, Codex, Muse and Antigravity sessions, on this Mac and in your
+            <a href="../remote/">remote folders</a>, from the files each agent already keeps, so
+            days from before you updated Koloft count too. A Claude Code session counts only in a
+            folder that is in Koloft's sidebar.
+          </li>
+          <li>
+            A model Koloft has no price for, such as Muse's, shows its tokens and
+            <code>no price</code>.
+          </li>
+          <li>
+            A Codex, Muse or Antigravity session in a folder that is not in the sidebar still
+            counts, under its project's name when Koloft knows where it ran, and under
+            <code>Other</code> when it does not.
+          </li>
+        </ul>
 
         <h2 id="assist">Assist and your butler</h2>
         <p>
@@ -335,7 +405,8 @@
             When the session tab you are looking at goes away (you close it, it exits, or it
             crashes), Koloft shows your butler, opening it if it was not open, once the butler is
             set up. Closing the butler's own tab does not open it again; Koloft shows the newest
-            open tab.
+            open tab. A new session that ends before it ever started (you answer "No, exit" to its
+            trust question, say) leaves you on its folder's page, or on the newest open tab.
           </li>
           <li>
             Like any session it goes to sleep after a quiet half hour, unless it has a Discord
@@ -343,8 +414,9 @@
           </li>
           <li>
             You can also talk to it from your phone, once it has a Discord channel (see
-            <a href="../discord/">discord</a>), and from <kbd>⌘P</kbd> (see
-            <a href="../sessions/#find">find any session</a>).
+            <a href="../discord/">discord</a>). With Assist on, what you type in <kbd>⌘P</kbd> that
+            Koloft cannot do by itself goes to a helper of your butler, which reports back to it
+            (see <a href="../sessions/#find">find any session</a>).
           </li>
         </ul>
 
@@ -356,13 +428,25 @@
         <ul class="dash">
           <li>list every session in every folder, open or closed, and list your folders</li>
           <li>
-            start a session in a folder on this Mac, in a worktree of its own when the folder is a
-            git repo; or start a helper in its own folder for a side job, which hangs under its row
-            and reports back
+            start a session in a folder on this Mac or in a
+            <a href="../remote/">remote folder</a>, in a worktree of its own when the folder is a
+            git repo; or start a helper in its own folder for a job outside your projects, which
+            hangs under its row and reports back
+          </li>
+          <li>
+            sort out your to-dos: say "sort out my to-dos" and it gathers the sessions waiting on
+            you, your open pull requests and each project's to-dos. The first time, it asks you once
+            per project where that project's to-dos are kept. Then a helper named "Sort out to-dos"
+            (in your language) asks you about them one at a time, in Koloft or on
+            <a href="../discord/">Discord</a>. The one exception: sessions whose work is done come
+            up together, as one question: close them all, ask one by one, or leave them for now
           </li>
           <li>
             hear a session's reply: when it hands work to a session, or answers its question, Koloft
-            passes that session's reply back to it the moment the turn ends
+            passes that session's reply back to it the moment the turn ends. With a Discord channel
+            bound, while you are away it also hears when a session in your folders finishes, waits
+            for you or stops by surprise, and writes to you there only if you are needed (see
+            <a href="../discord/#your-sessions">your sessions on Discord</a>)
           </li>
           <li>read, message, resume and stop sessions, and run a slash command in them</li>
           <li>
@@ -380,13 +464,17 @@
           </li>
           <li>
             use GitHub with <code>koloft gh</code>, naming the repository each time (see
-            <a href="../agents/#gh">what <code>koloft gh</code> refuses</a>)
+            <a href="../agents/#gh">what <code>koloft gh</code> refuses</a>); a plain
+            <code>gh</code> in its own folder works as <code>koloft gh</code>
           </li>
-          <li>send you files and pictures of pages on <a href="../discord/">Discord</a></li>
+          <li>
+            send you files and pictures of pages on <a href="../discord/">Discord</a> (not
+            <a href="../discord/#at-the-mac">while you use Koloft</a>, unless it is answering what
+            you sent from Discord)
+          </li>
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
-          <li>start a session in a <a href="../remote/">remote folder</a></li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
             close a session on another machine
@@ -395,8 +483,10 @@
         </ul>
         <p>
           It has no tool limits of its own: it follows your <code>Skip permission prompts</code>
-          setting like any session. It is told that work belonging to a project goes to that
-          project's sessions, and to ask you before deleting or undoing anything.
+          setting like any session. It is told to only talk with you and pass messages, and not to
+          do a task itself unless you tell it to ("do not start a session, do it yourself"): project
+          work goes to a session in that project's folder, anything else to a helper. It is also
+          told to ask you before deleting or undoing anything.
         </p>
         <p>
           It reaches every kind of session the same way, with <code>koloft session send</code>,
@@ -481,10 +571,11 @@
             account in Koloft instead
           </li>
           <li>
-            a Codex session's sandbox (the box Codex works in) may reach the network in a picked
-            folder, so it can push there. In another folder a session you start stays offline unless
-            Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
-            <a href="../agents/">agents</a>)
+            with <code>Skip permission prompts</code> off, a Codex session's sandbox may reach the
+            network in a picked folder, so it can push there; in another folder a session you start
+            stays offline unless Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
+            <a href="../agents/">agents</a>). With it on, a new Codex session has no sandbox at all
+            (see above)
           </li>
           <li>
             a pick works when the folder's remote is an SSH address too (<code class="nowrap"

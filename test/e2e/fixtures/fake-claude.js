@@ -533,13 +533,48 @@ function startupTurn() {
   process.stdout.write(`\r\n[fake-claude] session ${sessionId} ready in ${cwd}\r\n> `)
 }
 
-const startDelay = delayMs()
-if (startDelay > 0) {
-  process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
-  setTimeout(startupTurn, startDelay)
-} else {
-  startupTurn()
+function startAfterDelay() {
+  const startDelay = delayMs()
+  if (startDelay > 0) {
+    process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
+    setTimeout(startupTurn, startDelay)
+  } else {
+    startupTurn()
+  }
 }
+
+// CC§9
+async function askTrustThenStart(question) {
+  let trusted = false
+  const draw = () =>
+    process.stdout.write(
+      '\r\nQuick safety check: Is this a project you created or one you trust?\r\n' +
+        `${trusted ? ' ' : '❯'} No, exit\r\n${trusted ? '❯' : ' '} Yes, I trust this folder\r\n`
+    )
+  draw()
+  for (;;) {
+    const key = await keyOnTheDialog()
+    if (key.includes('\x1b[B') || key.includes('\x1b[A')) trusted = !trusted
+    if (key.includes('\r')) break
+    draw()
+  }
+  if (!trusted) process.exit(1)
+  fs.rmSync(question, { force: true })
+  startAfterDelay()
+}
+
+function asksTrustFor(file) {
+  try {
+    return fs.readFileSync(file, 'utf8').trim() === resumeId
+  } catch {
+    return false
+  }
+}
+
+const trustQuestion = path.join(home, 'fake-claude-trust-question')
+if (resumeId && asksTrustFor(trustQuestion))
+  setImmediate(() => void askTrustThenStart(trustQuestion))
+else startAfterDelay()
 
 let waitingHook = null
 // CC§14
@@ -742,8 +777,6 @@ rl.on('line', (line) => {
 // CC§1
 function compact(trigger, firstRecord, lastRecord) {
   fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
-  if (trigger === 'manual')
-    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
   fireHook('start', {
     session_id: sessionId,
     transcript_path: transcript,

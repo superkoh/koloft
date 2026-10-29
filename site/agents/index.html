@@ -189,11 +189,19 @@
             <code>koloft session close</code> — close itself, or any session started under it with
             <code class="nowrap">session new</code> (by it, by one it started, and so on down the
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
-            had one. When you ask, it may also close any other session on this Mac that has ended
-            (an open one is refused: stop it first). Koloft says no, and lists what is left, while:
+            had one. The ended sessions it started are closed with it, and so are the ones those
+            started; Koloft names any it left (still open, or holding work). When you ask, it may
+            also close any other session on this Mac that has ended (an open one is refused: stop it
+            first). Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
-              <li>a commit is not on the remote yet</li>
+              <li>
+                a commit is not on the remote yet
+                <span class="why"
+                  >(unless GitHub shows they are the last commits of a pull request that was merged,
+                  as after a squash merge that deleted the branch)</span
+                >
+              </li>
               <li>another open session uses that worktree</li>
             </ul>
           </li>
@@ -219,8 +227,10 @@
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
           at the top of that folder's list (see
-          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
-          started in a remote folder this way.
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). The folder may be a
+          <a href="../remote/">remote folder</a>: the session then runs on that machine, and a
+          Claude Code session there is reached with <code class="nowrap">session send</code>, since
+          Claude's own messages between sessions stay on one machine.
         </p>
         <p>
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
@@ -250,19 +260,19 @@
           <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">
+        <figure class="shot" style="--ar: 1322 / 691; --ar-phone: 736 / 744">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/i-settings-extensions-phone2.webp"
-                width="710"
-                height="590"
+                srcset="../img/i-settings-extensions-phone3.webp"
+                width="736"
+                height="744"
               />
               <img
-                src="../img/i-settings-extensions.webp"
+                src="../img/i-settings-extensions3.webp"
                 width="1322"
-                height="661"
+                height="691"
                 loading="lazy"
                 alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
               />
@@ -324,7 +334,9 @@
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
           Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
           the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets the
-          network and Playwright's cache folder, for that session only.
+          network and Playwright's cache folder, for that session only. A session started with
+          <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
+          this.
         </p>
 
         <h3>What to expect</h3>
@@ -357,7 +369,8 @@
                 <td>pages it can see</td>
                 <td>
                   That session's tabs only. Each session has its own address, reachable only from
-                  this Mac, behind a path no one can guess.
+                  this Mac, behind a path no one can guess. A Claude Code session on a remote folder
+                  also reaches it from that machine, through Koloft's ssh link.
                 </td>
               </tr>
               <tr>
@@ -380,6 +393,35 @@
           </table>
         </div>
 
+        <h3 id="remote-browser">Claude Code on a remote folder</h3>
+        <p>
+          A Claude Code session on a <a href="../remote/">remote folder</a> can drive its web tabs
+          too, through Koloft's own ssh link to that machine. There it works only through
+          <code>playwright-cli</code>, not Playwright MCP tools. Koloft puts
+          <code>playwright-cli</code> on the machine with <code>npm</code> (Node's package tool) the
+          first time the session runs it (see
+          <a href="../remote/#installs">what Koloft installs there</a>), and it finds the address on
+          its own each time it runs.
+        </p>
+        <ul class="dash">
+          <li>
+            The web tabs live on your Mac, so from the machine it can never open a file of your Mac,
+            upload one, or open a web server running on your Mac (<code>localhost</code>,
+            <code>127.0.0.1</code>, or any address that is your Mac). It is told:
+            <code
+              >a session on another machine cannot reach files or local servers of the Mac Koloft
+              runs on</code
+            >. A web server it starts on the machine shows only at an address your Mac can reach
+            (the machine's own name or IP address), never as <code>localhost</code>.
+          </li>
+          <li>A web tab it has used keeps these limits for you too, until you close it.</li>
+          <li>
+            With the switch off, while Koloft is not connected to the machine, or when the machine's
+            ssh server does not allow port forwarding, <code>playwright-cli</code> says why and
+            cannot reach the web tabs.
+          </li>
+        </ul>
+
         <h3>If you run tools another way (Claude Code)</h3>
         <ul class="dash">
           <li>
@@ -395,10 +437,9 @@
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>
-            <s class="struck">the browser in remote folders</s>
+            <s class="struck">the browser for Codex, Muse and Antigravity in remote folders</s>
             <span class="why"
-              >(a session on another machine has the koloft command, but not the web tabs,
-              yet)</span
+              >(they have the koloft command there, but cannot drive the web tabs yet)</span
             >
           </li>
         </ul>

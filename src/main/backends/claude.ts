@@ -26,7 +26,14 @@ import { publicClaudeSession } from '../host/hosts'
 import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
-import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
+import {
+  AGENT_DROP_NAME,
+  REQUEST_NAME,
+  errorText,
+  replyJson,
+  tabSpokenFor,
+  type AgentReply
+} from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
 import {
   dq,
@@ -70,7 +77,7 @@ import {
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
-import { copyWorktreeIncludes } from '../sessionWorktrees'
+import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
   dirExistsSync,
@@ -125,7 +132,7 @@ async function rebuildWorktree(
     baseRef: string
   },
   git: GitOut,
-  onThisMac: boolean
+  machine: ScriptRunner | undefined
 ): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
@@ -137,7 +144,7 @@ async function rebuildWorktree(
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
   if ((await git(root, args)) === null) return false
-  if (onThisMac) await copyWorktreeIncludes(root, spec.worktreePath)
+  await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
 
@@ -185,7 +192,7 @@ export class ClaudeBackend implements SessionBackend {
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
-  agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
+  agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -583,7 +590,9 @@ export class ClaudeBackend implements SessionBackend {
     const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
-    const tabId = typeof r.tabId === 'string' ? r.tabId : ''
+    const asked = typeof r.tabId === 'string' ? r.tabId : ''
+    const facts = this.d.pty.get(asked)
+    const tabId = facts ? tabSpokenFor(asked, facts) : asked
     if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(
       machine,
@@ -593,9 +602,14 @@ export class ClaudeBackend implements SessionBackend {
     return other && this.d.pty.get(other) ? other : undefined
   }
 
+  private fromOwnWorkbenchShell(raw: unknown): boolean {
+    const { tabId } = (raw ?? {}) as { tabId?: unknown }
+    return typeof tabId === 'string' && !!this.d.pty.get(tabId)?.util
+  }
+
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
     const tabId = this.callerOnMachine(machine, raw)
-    if (!tabId || !this.agentReply) return
+    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) return
     void this.agentReply(tabId, raw).then((reply) =>
       this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
     )
@@ -652,6 +666,7 @@ export class ClaudeBackend implements SessionBackend {
       transcriptPath: movedFile,
       cwd: info.cwd
     })
+    this.renameMachineTmuxAfterMove(report.tabId, report.sessionId)
     if (
       heldBeforeStartup &&
       transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
@@ -660,6 +675,20 @@ export class ClaudeBackend implements SessionBackend {
       this.d.workspaces()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
     }
     return true
+  }
+
+  // ADR-0044
+  private renameMachineTmuxAfterMove(tabId: string, sessionId: string): void {
+    const remote = this.d.tracker.remoteOf(tabId)
+    if (!remote) return
+    const from = remote.tmuxName
+    const to = tmuxSessionName(sessionId)
+    void this.d.hosts
+      .machine(remote.host)
+      .renameTmuxSession(tabId, from, to)
+      .then((renamed) => {
+        if (renamed && remote.tmuxName === from) this.d.tracker.setRemoteTmuxName(tabId, to)
+      })
   }
 
   // CC§1
@@ -878,6 +907,14 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
+    try {
+      return await this.resumeTab(req)
+    } catch (error) {
+      return { ok: false, code: 'backend', message: errorText(error) }
+    }
+  }
+
+  private async resumeTab(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const sid = req?.sessionId
     const asked = req?.cwd
     if (
@@ -908,7 +945,7 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, hostGit(host), !home))
+          !(await rebuildWorktree(plan, hostGit(host), this.d.hosts.machineOf(home ?? asked)))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
@@ -1106,15 +1143,12 @@ export function machineHookSettings(
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  const settings = hookSettings(
-    `${machineDir}/hook.sh`,
-    REMOTE_HOOK_DIR,
-    tabId,
-    remoteStatusLine,
-    dq,
-    'record-only',
-    holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
-  )
+  const settings = hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, {
+    statusLine: remoteStatusLine,
+    quote: dq,
+    dialogs: 'record-only',
+    hold: holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
+  })
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
   return settings

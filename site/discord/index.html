@@ -132,13 +132,15 @@ your Mac
           the bot's token, nothing connects.
         </p>
 
-        <h2>Set it up</h2>
+        <h2 id="set-up">Set it up</h2>
         <p>
           Open Settings ▸ Discord and click <code>Set up with Alfred</code> (the button carries your
-          butler's name). Your butler starts a helper session in its own folder, which opens the
-          Discord website in its Workbench browser and does each step it can; you sign in, type your
-          password and pass the "I am human" checks. Already have a bot? It can use it too. The
-          steps are:
+          butler's name), or, with Assist on, type "set up Discord" in <kbd>⌘P</kbd>. Koloft starts
+          a helper of your butler. It needs a Workbench browser, which only Claude Code and Codex
+          have: it runs on your butler's agent if that is one of them, and on Claude Code if not.
+          The helper opens the Discord website in its browser and does each step it can; you sign
+          in, type your password and pass the "I am human" checks. Already have a bot? It can use it
+          too. The steps are:
         </p>
         <ol>
           <li>
@@ -174,7 +176,7 @@ your Mac
           steps that are done are skipped.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 789; --ar-phone: 788 / 1180">
+        <figure class="shot" style="--ar: 1322 / 781; --ar-phone: 788 / 1180">
           <div class="frame">
             <picture>
               <source
@@ -184,9 +186,9 @@ your Mac
                 height="1180"
               />
               <img
-                src="../img/r-discord-settings3.webp"
+                src="../img/r-discord-settings4.webp"
                 width="1322"
-                height="789"
+                height="781"
                 loading="lazy"
                 alt="Koloft's Settings, Discord page: a Set up with Alfred button, under Let Alfred set up Discord; your Discord account, You are sam; status, Connected as koloft-bot; server, The bot is in Tidewatch; and the channel, Alfred · Butler on #global, with Unbind and Change channel…"
               />
@@ -229,22 +231,59 @@ your Mac
           <span class="nowrap">"[Discord]"</span> in front. It gets a ⏳ while it waits its turn,
           and a ✅ once it is in. If the butler is not open, your first message starts it; the ⏳
           stays until it is ready. Files you attach are saved on your Mac for 7 days, and the butler
-          is told where they are. Everything your butler writes back comes to the channel, and while
-          it works the channel shows the bot typing.
+          is told where they are. Its answer to what you wrote comes back to the channel, and while
+          it works on it the channel shows the bot typing.
         </p>
         <p>
           When your butler asks you something, its card reads
           <code>❓ Alfred is waiting for you.</code>, with a button per option when the question has
-          options.
+          options. Once the question is answered, by a button, a typed reply or at the Mac, the card
+          loses its buttons and says how it ended, like <code>✅ Answered: 2</code>,
+          <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code>
         </p>
 
-        <h3>Your sessions</h3>
+        <h3 id="at-the-mac">While you use Koloft</h3>
         <p>
-          Your sessions do not post to Discord. When your butler hands a session work, Koloft hands
-          the session's reply back to the butler once its turn ends, and the butler tells you. A
-          session's question shows only at the Mac: ask your butler what it is waiting on, and tell
-          it what to pick. It reads the session's screen and answers, or presses the keys, as you
-          would at the Mac. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+          While you use Koloft (you typed, clicked, scrolled or moved the mouse in Koloft's window
+          in the last 5 minutes, and the screen is not locked), Discord stays quiet: you see your
+          butler in Koloft. Your butler does not post its replies to things you did not send from
+          Discord, and the bot does not type. A question it asks on its own waits, and comes to the
+          channel when you leave (the screen locks, or 5 minutes go by with no input in Koloft) if
+          it is still open. After the screen locks, you count as away until you use Koloft again.
+          Write from Discord and the answer still comes back there, questions included. If a
+          question was waiting when you write, its card comes first, and Koloft tells you your
+          message was not delivered: answer the question, then send your message again. A note that
+          your butler could not reach a session shows in Koloft, not in Discord. Password and code
+          cards (below) always come to Discord.
+        </p>
+
+        <h3 id="your-sessions">Your sessions</h3>
+        <p>
+          Sessions in your folders do not post to Discord. When your butler hands a session work,
+          Koloft hands the session's reply back to the butler once its turn ends, and the butler
+          tells you. A question from a session in one of your folders shows only at the Mac: ask
+          your butler what it is waiting on, and tell it what to pick. It reads the session's screen
+          and answers, or presses the keys, as you would at the Mac. See
+          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+        </p>
+        <p>
+          While you are away, Koloft tells your butler about your sessions, on your Mac and on
+          remote folders. When one finishes its turn, waits for an answer or an OK, or stops by
+          surprise, Koloft waits at least half a minute to gather what else happens, then sends it
+          all in one quiet message: which session, its folder, and, for a finished turn, the start
+          of its reply. Your butler decides whether you need to know, and writes to you in the
+          channel only if you do. Its answer to that message is not posted, and the bot does not
+          type. Left out: your butler's own helpers, a turn whose reply already went back to whoever
+          started the session, and a turn that only reports (see
+          <a href="../sessions/#red-dots">red dots</a>).
+        </p>
+        <p>
+          A helper your butler started in its own folder is different: its questions come to the
+          channel, titled with its name and <code>(Alfred's helper)</code>. Like the butler's own,
+          they wait while you use Koloft. Press a button or type a reply to answer one. Once you
+          answer one of a helper's cards by typing, that helper's questions come right away until
+          its turn ends; after that they wait again while you use Koloft. When cards from your
+          butler and a helper both wait, a typed reply answers the one posted last.
         </p>
 
         <h3 id="secrets">Passwords and codes</h3>
@@ -294,7 +333,8 @@ your Mac
         <p>
           A plain message that starts with <code>/</code>, with no file attached, is typed into your
           butler the same way. A command waits until the butler's turn ends, for up to 10 minutes.
-          What it printed comes back to the channel.
+          What it printed comes back to the channel. While your butler's own question card waits, a
+          command is not typed: Koloft asks you to answer the question first.
         </p>
 
         <h3>Files and pictures out</h3>
@@ -309,6 +349,11 @@ your Mac
           <code>koloft discord shot &lt;HTML file or web address&gt;</code>. Koloft opens the page
           out of sight and takes a picture of the whole page; a page taller than one picture comes
           as several, top to bottom, at most 10.
+        </p>
+        <p>
+          While you <a href="#at-the-mac">use Koloft</a>, your butler cannot send files or pictures,
+          unless it is answering what you sent from Discord. It is told to show the file or page in
+          the Workbench instead.
         </p>
 
         <p>
@@ -333,11 +378,25 @@ your Mac
             <tbody>
               <tr>
                 <td>butler replies</td>
-                <td>Every reply your butler writes, whole, and its own question cards.</td>
+                <td>
+                  Every reply your butler writes, whole, and its own question cards; while you use
+                  Koloft, only its answers to what you sent from Discord. Never its answer to
+                  Koloft's quiet message about your sessions.
+                </td>
+              </tr>
+              <tr>
+                <td>helper questions</td>
+                <td>
+                  The question cards of the helpers your butler started in its own folder, held
+                  while you use Koloft like the butler's.
+                </td>
               </tr>
               <tr>
                 <td>files and pictures</td>
-                <td>What your butler sends with <code>koloft discord send</code> or shot.</td>
+                <td>
+                  What your butler sends with <code>koloft discord send</code> or shot; while you
+                  use Koloft, only when it answers what you sent from Discord.
+                </td>
               </tr>
               <tr>
                 <td>🔑 cards</td>
@@ -355,11 +414,17 @@ your Mac
               </tr>
               <tr>
                 <td>typing</td>
-                <td>While your butler works, a typing signal every 8 seconds.</td>
+                <td>
+                  While your butler works on what you sent, or while you are away, a typing signal
+                  every 8 seconds; none while it reads Koloft's quiet message about your sessions.
+                </td>
               </tr>
               <tr>
                 <td>errors</td>
-                <td>A short note when something goes wrong.</td>
+                <td>
+                  A short note when something goes wrong; while you use Koloft, a note that your
+                  butler could not reach a session shows in Koloft instead.
+                </td>
               </tr>
             </tbody>
           </table>

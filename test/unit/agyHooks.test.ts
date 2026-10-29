@@ -15,6 +15,7 @@ import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
+import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
@@ -66,26 +67,47 @@ const logged = (): ReturnType<typeof agyLogLine>[] =>
     .filter(Boolean)
     .map((l) => agyLogLine(l))
 
-function transcriptWith(...prompts: string[]): string {
-  const file = path.join(dir, 'transcript_full.jsonl')
-  const lines = prompts.flatMap((p, i) => [
-    JSON.stringify({
-      step_index: 2 * i,
-      type: 'USER_INPUT',
-      content: `<USER_REQUEST>\n${p}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: now.\n</ADDITIONAL_METADATA>`
-    }),
-    JSON.stringify({ step_index: 2 * i + 1, type: 'PLANNER_RESPONSE', content: 'ok' })
-  ])
+const ownerSays = (words: string): Record<string, unknown> => ({
+  source: 'USER_EXPLICIT',
+  type: 'USER_INPUT',
+  status: 'DONE',
+  content: `<USER_REQUEST>\n${words}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: now.\n</ADDITIONAL_METADATA>`
+})
+
+const modelSays = (content: string, toolCalls?: unknown[]): Record<string, unknown> => ({
+  source: 'MODEL',
+  type: 'PLANNER_RESPONSE',
+  status: 'DONE',
+  created_at: '2026-10-24T14:42:34Z',
+  input_tokens: 10,
+  cache_read_tokens: 0,
+  output_tokens: 5,
+  content,
+  ...(toolCalls && { tool_calls: toolCalls })
+})
+
+function transcriptOf(...steps: Record<string, unknown>[]): string {
+  const file = path.join(dir, `transcript_full.${fs.readdirSync(dir).length}.jsonl`)
+  const lines = steps.map((step, i) => JSON.stringify({ step_index: i, ...step }))
   fs.writeFileSync(file, lines.join('\n') + '\n')
   return file
 }
 
-const quoteBeforeModelCall = (transcriptPath: string): string | undefined => {
-  const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath })
-  if (!out) return undefined
-  const message = JSON.parse(out).injectSteps[0].ephemeralMessage as string
-  return /«(.*)»/s.exec(message)![1]
+const transcriptWith = (...prompts: string[]): string =>
+  transcriptOf(...prompts.flatMap((p) => [ownerSays(p), modelSays('ok')]))
+
+const toldBeforeModelCall = (transcriptPath: string, command?: string): string | undefined => {
+  const input = JSON.stringify({ conversationId: 'c1', transcriptPath })
+  const out = run(command ?? commandFor('PreInvocation'), input, { KOLOFT_AGY_LOG: log })
+  return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
 }
+
+const quoteBeforeModelCall = (transcriptPath: string): string | undefined => {
+  const told = toldBeforeModelCall(transcriptPath)
+  return told && /«(.*)»/s.exec(told)![1]
+}
+
+const writesIn = (lang: string): RegExp => new RegExp(`^The user writes ${lang}\\. `)
 
 describe('the hook script agy runs for every hook (AGY§12)', () => {
   it('runs the plain events from a flat list and the tool events behind a "*" matcher, as agy reads them', () => {
@@ -133,8 +155,94 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   // ADR-0031
   it("before each model call quotes the owner's newest message from the transcript agy names, already this turn's", () => {
     expect(
-      quoteBeforeModelCall(transcriptWith('first words', '第二句 "quoted"\n\nnext line'))
-    ).toBe('第二句 "quoted" next line')
+      quoteBeforeModelCall(transcriptWith('first words', 'la segunda "quoted"\n\nnext line'))
+    ).toBe('la segunda "quoted" next line')
+  })
+
+  // ADR-0031
+  it('a Chinese, Japanese or Korean message has its language named instead of quoted; a message in any other language is quoted', () => {
+    expect(toldBeforeModelCall(transcriptWith('先别改代码'))).toMatch(writesIn('Chinese'))
+    expect(toldBeforeModelCall(transcriptWith('まだ変えないで'))).toMatch(writesIn('Japanese'))
+    expect(toldBeforeModelCall(transcriptWith('아직 바꾸지 마'))).toMatch(writesIn('Korean'))
+    expect(quoteBeforeModelCall(transcriptWith('hold off on code, check this'))).toBe(
+      'hold off on code, check this'
+    )
+    expect(quoteBeforeModelCall(transcriptWith('no toques el código'))).toBe('no toques el código')
+  })
+
+  // ADR-0031 AGY§12
+  it("when the model's last note to the user is not in the owner's named language, the reminder quotes that note back and says so; a note in that language, or too short to tell, gets the plain reminder", () => {
+    const english = 'Now the `since` field and "safeJson", near the end of /src/main/a.ts.'
+    const writeFile = [
+      {
+        name: 'write_to_file',
+        args: { TargetFile: '/w/a.md', content: 'some words in "English" here' }
+      }
+    ]
+    expect(
+      toldBeforeModelCall(transcriptOf(ownerSays('先别改代码'), modelSays(english, writeFile)))
+    ).toBe(
+      `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
+    )
+    expect(
+      toldBeforeModelCall(
+        transcriptOf(ownerSays('先别改代码'), modelSays(english), modelSays('', writeFile))
+      )
+    ).toMatch(/^Your last note to the user, «Now the/)
+    for (const fine of [
+      transcriptOf(ownerSays('先别改代码'), modelSays(english), modelSays('接着改启动参数。')),
+      transcriptOf(ownerSays('先别改代码'), modelSays('OK, `npm test`.')),
+      transcriptOf(ownerSays('先别改代码'), modelSays('', writeFile))
+    ])
+      expect(toldBeforeModelCall(fine)).toMatch(writesIn('Chinese'))
+    const long = 'This note keeps going on in English '.repeat(20)
+    const cut = /«(.*?)»/s.exec(
+      toldBeforeModelCall(transcriptOf(ownerSays('先别改代码'), modelSays(long)))!
+    )![1]
+    expect(long.startsWith(cut) && cut.length > 100 && cut.length <= 150).toBe(true)
+    expect(
+      quoteBeforeModelCall(transcriptOf(ownerSays('look at the failing test'), modelSays(english)))
+    ).toBe('look at the failing test')
+  })
+
+  // ADR-0031
+  it("names the owner's language the same way on a machine whose sh is not bash, as dash is on Debian, and answers every other event there as before", () => {
+    const transcript = transcriptOf(
+      ownerSays('先别改代码'),
+      modelSays('Let me run the tests first.')
+    )
+    expect(toldBeforeModelCall(transcript, `/bin/dash ${scripts.hook} PreInvocation`)).toMatch(
+      /^Your last note to the user, «Let me run the tests first\.», is not in Chinese\./
+    )
+    const start = path.join(dir, 'start.json')
+    fs.writeFileSync(start, 'START')
+    const underDash = (event: string): string =>
+      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: 'c1' }), {
+        KOLOFT_AGY_LOG: log,
+        KOLOFT_AGY_START: start
+      })
+    expect(underDash('SessionStart')).toBe('START')
+    expect(underDash('Stop')).toBe('')
+    expect(logged().map((l) => l && 'hook' in l && l.hook.event)).toEqual([
+      'PreInvocation',
+      'SessionStart',
+      'Stop'
+    ])
+  })
+
+  // ADR-0031
+  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
+    expect(
+      quoteBeforeModelCall(
+        transcriptWith(
+          'mira primero la barra lateral',
+          `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
+          `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
+          A_HELPER_HAS_IT,
+          '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
+        )
+      )
+    ).toBe('mira primero la barra lateral')
   })
 
   it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end, or at the next turn’s first call when a turn ended with no Stop', () => {
@@ -183,20 +291,20 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
     const task = withHandover(
       handoverPreamble({ name: 'Global-conductor', id: 'abc-123', label: 'Claude' }),
-      '评估管家的权限范围'
+      'revisa los permisos del mayordomo'
     )
-    expect(quoteBeforeModelCall(transcriptWith(task))).toBe('评估管家的权限范围')
+    expect(quoteBeforeModelCall(transcriptWith(task))).toBe('revisa los permisos del mayordomo')
     const translated = withHandover(
       'Koloft 启动了你，因为会话 "Global-conductor" 让它这样做。完成后运行: koloft session send abc-123 "<your result>"',
-      '先别改代码'
+      'no toques el código'
     )
-    expect(quoteBeforeModelCall(transcriptWith(translated))).toBe('先别改代码')
+    expect(quoteBeforeModelCall(transcriptWith(translated))).toBe('no toques el código')
   })
 
   // ADR-0031
   it('quotes at most 300 bytes, cut only between whole characters, and says nothing without a transcript', () => {
     for (let pad = 0; pad < 6; pad++) {
-      for (const body of ['中文'.repeat(100), '😀é'.repeat(80)]) {
+      for (const body of ['ภาษา'.repeat(50), '😀é'.repeat(80)]) {
         const text = 'x'.repeat(pad) + body
         const quote = quoteBeforeModelCall(transcriptWith(text))!
         expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
@@ -245,6 +353,50 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(
       hook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command', args: {} } })
     ).toBe('')
+  })
+})
+
+// PLATFORM§36 AGY§12
+describe('after a gh pr command the status line asks GitHub again', () => {
+  let cached: string
+  const mtime = (): number => fs.statSync(cached).mtimeMs
+  const OLDER_THAN_THE_CACHE_TTL = Date.now() - 30_000
+
+  beforeEach(() => {
+    const cache = path.join(dir, '.cache', 'ccstatusline', 'git-review')
+    fs.mkdirSync(cache, { recursive: true })
+    cached = path.join(cache, 'git-review-a.json')
+    fs.writeFileSync(cached, '')
+  })
+
+  const ran = (commandLine: string, lastUserInput: string, sh = runWithSh(scripts.hook)): void => {
+    const input = JSON.stringify({
+      conversationId: 'c1',
+      error: '',
+      lastUserInput,
+      stepIdx: 3,
+      toolCall: {
+        args: { CommandLine: commandLine, WaitMsBeforeAsync: 5000, toolSummary: 'run it' },
+        name: 'run_command'
+      }
+    }).replace(/[<>&]/g, (c) => `\\u00${c.charCodeAt(0).toString(16)}`)
+    run(`${sh} PostToolUse`, input, { HOME: dir })
+  }
+
+  it('a gh pr command that changes a PR, sent as agy escapes it, marks the cached PR status stale', () => {
+    ran('git push -u origin x && gh pr create --title "Fix \\"it\\"" --fill', 'open it')
+    expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+  })
+
+  it('does the same on a machine whose sh is dash', () => {
+    ran('gh pr merge 89 --squash', 'merge it', `/bin/dash ${scripts.hook}`)
+    expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+  })
+
+  it("only the command that ran counts: the owner's words naming gh pr leave the cache alone", () => {
+    const before = mtime()
+    ran('ls -la', 'please run gh pr create when done')
+    expect(mtime()).toBe(before)
   })
 })
 

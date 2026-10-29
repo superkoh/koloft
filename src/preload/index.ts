@@ -28,6 +28,7 @@ import type {
   SessionInfo,
   SessionSearchHits,
   SpawnedTab,
+  UsageRead,
   CronState,
   MachineState,
   DiscordStatus,
@@ -36,6 +37,7 @@ import type {
   GitAccountView,
   GitLoginProgress,
   LoginProgress,
+  SignInFailure,
   Settings,
   UpdateProgress,
   UpdateCheckResult,
@@ -113,6 +115,7 @@ const api: KoloftApi = {
   },
   tabs: {
     list: () => ipcRenderer.invoke(CH.tabs.list),
+    moved: (oldTabId, newTabId) => ipcRenderer.send(CH.tabs.moved, oldTabId, newTabId),
     onKilledByMain: (cb) => {
       const handler = (_e: unknown, tabId: string): void => cb(tabId)
       ipcRenderer.on(CH.tab.killedByMain, handler)
@@ -434,6 +437,14 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.settings.update, handler)
     }
   },
+  usage: {
+    read: () => ipcRenderer.invoke(CH.usage.read),
+    onChanged: (cb) => {
+      const handler = (_e: unknown, read: UsageRead): void => cb(read)
+      ipcRenderer.on(CH.usage.changed, handler)
+      return () => ipcRenderer.removeListener(CH.usage.changed, handler)
+    }
+  },
   accounts: {
     list: () => ipcRenderer.invoke(CH.accounts.list),
     add: (name, kind, secret, endpoint) =>
@@ -444,6 +455,13 @@ const api: KoloftApi = {
     startLogin: (name, reauth) => ipcRenderer.invoke(CH.accounts.startLogin, name, reauth),
     cancelLogin: () => ipcRenderer.send(CH.accounts.cancelLogin),
     signIn: (kind, name, again) => ipcRenderer.invoke(CH.accounts.signIn, kind, name, again),
+    signInFailure: () => ipcRenderer.invoke(CH.accounts.signInFailure),
+    dismissSignInFailure: () => ipcRenderer.send(CH.accounts.dismissSignInFailure),
+    onSignInFailure: (cb) => {
+      const handler = (_e: unknown, f: SignInFailure | null): void => cb(f)
+      ipcRenderer.on(CH.accounts.signInFailure, handler)
+      return () => ipcRenderer.removeListener(CH.accounts.signInFailure, handler)
+    },
     codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)

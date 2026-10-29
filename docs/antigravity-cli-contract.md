@@ -26,7 +26,8 @@ inside the desktop login session so the Keychain works. A bullet measured only o
 - a **terminal**: a pty driver that answers the TUI's queries (DA1, DA2, DECRQM, OSC
   11, OSC 7501, XTVERSION, cursor position), or tmux 3.3a where a bullet names it.
 
-Nothing ran against Google's real servers.
+Nothing ran against Google's real servers, except the one `agy update` §3 names, which
+only downloaded the public release.
 
 ## §1 The command line
 
@@ -118,6 +119,18 @@ Nothing ran against Google's real servers.
   `{"success":true,"message":"Update successful, restart CLI to use"}`.
   `agy update` prints `Checking for updates… Found new version… Update successful!
   Please restart agy.` and exits 0.
+- `agy update` on 1.3.6 at `~/.local/bin/agy`, run by its name from `PATH` as a plain
+  user, with the network on (2026-10-26, Linux arm64 Docker): it fetched the current
+  release, 1.4.7, in about 3 seconds, asked for no password and read nothing from
+  stdin; the next `agy --version` printed `1.4.7`. `AGY_CLI_DISABLE_AUTO_UPDATE=true`
+  does not stop it: the same run with it set updated just the same. The same binary in a folder the
+  user cannot write (`/usr/local/bin`, owned by another user) printed `Error: directory
+  /usr/local/bin is not fully accessible (readable: true, writable: false)`, exited 1
+  and stayed 1.3.6.
+- The installer takes only `-d`/`--dir`: no flag or variable picks a version, it
+  always installs what the manifest names (read 2026-10-26). Run as a plain user while
+  an unwritable `/usr/local/bin/agy` 1.3.6 was on `PATH`, it put 1.4.7 at
+  `~/.local/bin/agy` and exited 0 (same container, same day).
 - Only `AGY_CLI_DISABLE_AUTO_UPDATE=true` turns it off (log: `Auto-update disabled via
   environment variable`). `1`, `TRUE`, `True`, `yes` and `on` do not. No
   `settings.json` key does.
@@ -235,6 +248,21 @@ Nothing ran against Google's real servers.
   replaces `modelProvider` (§6).
 - Trust is keyed by the folder path as given in `PWD`, not its real path: a symlinked
   folder is saved as the link path.
+- **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
+  Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
+  `trustedWorkspaces` shows the same trust screen, but the title script already runs
+  with `conversation_id` = that id (and `conversation_title`), `agent_state`
+  `initializing`, about 0.3 s after launch, while the question is still up; the
+  first run, at once, carries `""` and `authenticating`. So which conversation the
+  process holds is known before the answer. "No, exit" then exits and records no
+  trust (exit code 0, about 0.3 s after Enter, or 2 s after Esc; it leaves its own
+  screen, so nothing of it stays on the terminal — agy 1.4.7 on Linux in Docker,
+  2026-10-26); "Yes" opens the history. The id arrives at the same 0.3 s on the colour
+  screen (no `onboarding.json`; `initializing`), on the sign-in screen (no
+  `modelProvider`, no token; still `authenticating`), with `-c` on the trust screen,
+  and with the folder trusted. An id with no stored conversation keeps
+  `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
@@ -368,6 +396,12 @@ Nothing ran against Google's real servers.
   - Another process can read it, and a live conversation's db, mid-turn
     (`sqlite3 -readonly`, Node `node:sqlite` with `readOnly:true`).
   - A `-p` run's row has the run's cwd in `workspace_uris`.
+  - A deleted conversation keeps its row (2026-10-24, agy 1.3.6 in Docker, a fake
+    Gemini server, three `-p` runs): with `conversations/<id>.db` and `brain/<id>/`
+    removed, the row stayed with its `step_count`, also after another `-p` run; `-p
+    --conversation <id>` then warned `conversation "<id>" not found` and started a new
+    conversation. So the row alone does not say the conversation is still there; its
+    `.db` does.
 - **`conversations/<id>.db`** (about 450 KB): tables `steps(idx, step_type, status,
   step_payload, …)`, `trajectory_meta`, `gen_metadata`, `executor_metadata`,
   `parent_references`, `trajectory_metadata_blob`, `battle_mode_infos`. Payloads are
@@ -379,6 +413,16 @@ Nothing ran against Google's real servers.
   - The user's words are `USER_INPUT.content`, still wrapped as in §2; the reply is
     `PLANNER_RESPONSE.content`; tool results are `GENERIC.content`. Tokens are on
     `PLANNER_RESPONSE` lines.
+  - What the token fields hold (2026-10-19, agy 1.3.6, `agy -p` against a fake model
+    server, two calls checked against what it sent): `input_tokens =
+    promptTokenCount − cachedContentTokenCount` (cached already taken out, unlike
+    CODEX§13), `output_tokens = candidatesTokenCount + thoughtsTokenCount`,
+    `cache_read_tokens = cachedContentTokenCount`. No line names the model: the
+    model each call used is only in `conversations/<id>.db`, table `gen_metadata`,
+    one protobuf row per call in `PLANNER_RESPONSE` order (not keyed by
+    `step_index`), `modelVersion` at field path `[1, 19]`; `executor_metadata` holds
+    the configured model at `[10, 1, 28]`. The title call leaves no `PLANNER_RESPONSE`
+    line and no `gen_metadata` row.
   - `replace_file_content` results hold a unified diff:
     `[diff_block_start]\n@@ -1,5 +1,6 @@\n-l1\n+X1\n l3\n…[diff_block_end]`, with up to
     3 unchanged lines around the change, so added and removed lines can be counted.
@@ -496,9 +540,11 @@ Nothing ran against Google's real servers.
   current_usage{input_tokens, output_tokens, cache_creation_input_tokens,
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
-  `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
-  - `agent_state`: `authenticating` (start), `idle`, `working`, `tool_use` (an ask is
-    open), `reviewing` (an artifact is waiting for review, §19).
+  `conversation_title`, `tool_confirmation_pending` (seen on macOS), and `task_count`
+  (1.4.7, while background tasks run, §13).
+  - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
+    conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
+    is open), `reviewing` (an artifact is waiting for review, §19).
   - `conversation_title` is `null` until `/rename` or a resume pick, even after the
     summaries row has its made-up title.
   - `transcript_path` points to `<geminiDir>/antigravity/brain/…`, beside
@@ -543,6 +589,17 @@ Nothing ran against Google's real servers.
   | `PostToolUse` | after the tool really ran (not when denied); for a background command, when it ends | `toolCall`, `stepIdx`, `error:""`; no output, no diff |
   | `Stop` | end of the agent loop | `executionNum`, `terminationReason` (`NO_TOOL_CALL`, `TERMINAL_CUSTOM_HOOK` after `/compact`, `ERROR`), `fullyIdle` (false while a subagent runs), `error` |
 
+- **What a `PostToolUse` hook sees of a `run_command`.** 1.4.7 Linux arm64 in Docker,
+  fake Gemini server, `-p` then `-c -p`, `--dangerously-skip-permissions`, hook entry
+  `/bin/sh <file>` (dash), 2026-10-25: stdin is one compact line holding
+  `"toolCall":{"args":{"CommandLine":"<cmd>","WaitMsBeforeAsync":…,"toolSummary":…},"name":"run_command"}`
+  and also `lastUserInput`, the prompt as typed, so words the user wrote show up in
+  every tool event of that turn. Inside `CommandLine`, `<`, `>` and `&` arrive as
+  JSON `\u` escapes (`\u` then `003c`, `003e`, `0026`), so `&&` never shows as such,
+  and quotes as `\"`; spaces stay as they are. The hook's
+  `$HOME` was the one agy was launched with (a file the hook touched under it changed).
+  The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway tart
+  VM, `/bin/sh` being bash there) gave the same stdin and the same `$HOME`.
 - `PermissionRequest`, `Notification`, `UserPromptSubmit` and `SessionEnd` are
   ignored and never fire. **No hook fires while agy waits for the user**; an ask shows
   only as `PreToolUse` just before it, the 7501 `blocked` frame (§10), `tool_use` in
@@ -571,6 +628,22 @@ Nothing ran against Google's real servers.
     whole.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
+  - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
+    arm64 in Docker, fake Gemini server answering text plus a `run_command` and then
+    text, `-p` and two `-c -p` turns, `--dangerously-skip-permissions`, 2026-10-24:
+    before every model call `transcript_full.jsonl` already holds every earlier step,
+    the last call's `PLANNER_RESPONSE` too, so the words the model wrote beside a tool
+    call are there before the call after that tool. That line reads
+    `{"step_index":…,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":…,"input_tokens":…,"cache_read_tokens":…,"output_tokens":…,"content":"<text>","tool_calls":[…]}`,
+    in that order, with no `{` before `content`. stdin also carries `lastUserInput`, the
+    prompt as typed, unwrapped. After a tool call the ephemeral message reaches the
+    model appended to that call's `functionResponse.output` after a blank line, not as a
+    content of its own. A hook entry `/bin/sh <file>` runs under dash there (Debian
+    12). The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway
+    tart VM) gave the same line shape, order and timing and the same texts at the
+    fake server; its transcript also saves each injected message as a step
+    `{"source":"SYSTEM_SDK","type":"EPHEMERAL_MESSAGE"}` (the Linux transcript was not
+    looked at for this).
 - **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
   that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
   --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
@@ -613,6 +686,90 @@ Nothing ran against Google's real servers.
 - A subagent is a child conversation: a summaries row with `parent_conversation_id`,
   `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
   turn.
+- **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
+  network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
+  tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
+  MaxIterations?, ExactTiming?, TimerCondition?}`: a one-shot timer or a cron, run as a
+  background task whose id is `<conversation id>/task-<stepIdx of the call>`. The call
+  returns at once ("Tool is running as a background task with task id: …"); the footer
+  shows "1 task(s)" and a line "● [time] 25s timer running".
+  - `PreToolUse` carries `toolCall {name:"schedule", args}` and `stepIdx`.
+    `PostToolUse` for it comes only when the task ends: a timer when it fires, a cron
+    after its last firing (`MaxIterations`), with the same `stepIdx`.
+  - Each firing starts a turn by itself: `PreInvocation` (`invocationNum` 0), one model
+    request whose last content is a `<SYSTEM_MESSAGE>` "[Message] … sender=<task id>
+    priority=MESSAGE_PRIORITY_HIGH content=<Prompt>", then `Stop`. No `SessionStart`.
+  - While a timer or a plain cron waits, every `Stop` says `fullyIdle:false` (a 25 s
+    timer; a `* * * * *` cron with `MaxIterations` 2, both firings); the `Stop` after
+    the last firing says `true`. A cron with `IsDaemon:true` gives `fullyIdle:true` on
+    every `Stop`, the one that set it up included, while it keeps firing every minute.
+  - `manage_task {Action:"kill", TaskId:"<task id>"}` cancels it ("Task … cancelled."):
+    `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
+    the `schedule` ever comes. The short id `task-2`, sent from the conversation that
+    set it, cancels it the same way. A malformed id fails with a non-empty `error`.
+    After `/clear`, `task-2` sent from the new conversation came back to the model as
+    "Tool execution was canceled", with a `PreToolUse` and no `PostToolUse`.
+  - A `CronExpression` agy cannot read ("not a cron") fails at once: `PostToolUse` for
+    the `schedule` comes right after its `PreToolUse`, with `error` "invalid
+    CronExpression …".
+  - After `/clear` the screen and footer show no task, yet a daemon cron and a 45 s
+    one-shot timer both went on to fire a turn in the old conversation, their hooks
+    (the timer's `PostToolUse` too) carrying the old conversation id.
+  - A message the user typed did not cancel a timer set with `TimerCondition:"any"`:
+    the `Stop` after it still said `fullyIdle:false`.
+  - It lives in the process: killed and resumed with `-c`, agy showed the conversation
+    but nothing fired in the next 150 s and the footer listed no task.
+  - The Connect API's `ListBackgroundTasks {cascadeId}` lists it while it waits
+    (`toolName:"schedule"`, `description:"Timer: 25s, Prompt: …"`) and returns `{}` once
+    it has ended.
+  - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
+    cancelling a task from the TUI's `/tasks`; the macOS build.
+- **Daemon commands, and no Monitor.** 1.4.7 Linux arm64 in Docker with no network, a
+  fake Gemini server, the TUI in tmux with `--dangerously-skip-permissions`, every hook
+  logged, `ps` and `ListBackgroundTasks` read every few seconds, 2026-10-28.
+  - The tool list that build sent was `read_file`, `run_command`, `manage_task`,
+    `send_message`, `schedule`, `invoke_subagent`, `define_subagent`,
+    `manage_subagents`, `write_file`, `edit_file`, `search_web`, `ask_question`.
+    `run_command` takes `{CommandLine, WaitMsBeforeAsync, toolSummary, IsDaemon?}`;
+    `IsDaemon` is described as "long-running support processes that are meant to keep
+    running in the background indefinitely … (e.g., dev servers, file watchers,
+    tunnels)". Its description also says a backgrounded command notifies the model
+    when it finishes. No tool streams a running command's output to the model or wakes
+    it on a line of output, the way Claude Code's Monitor does (CC§8); `schedule`'s
+    `TimerCondition` only cancels a timer early when a message arrives.
+  - `python3 -m http.server` with `IsDaemon:true`: `PreToolUse` carries the args
+    as sent (`"IsDaemon":true`, typed), the command is a direct child of agy, the
+    turn's `Stop` says `fullyIdle:true`, the footer shows "1 task(s) · /tasks" and a
+    line "● [time] <command> running", and `ListBackgroundTasks {cascadeId}` answers
+    `{tasks:[{conversationId, task:{taskId:"<conversation id>/task-<stepIdx>",
+    toolName:"run_command", toolSummary, description:"<command>", startTime,
+    stepIndex, logUri, isDaemon:true}}]}` (a plain backgrounded command: the same
+    without `isDaemon`; no task: `{}`). No hook comes while it runs.
+  - The same with no `IsDaemon` (`sleep 25`): `Stop` says `fullyIdle:false`; when it
+    ends, `PostToolUse` with the same `stepIdx`, then a turn agy starts by itself on a
+    `<SYSTEM_MESSAGE>` "Task id … finished with result", then `Stop` with
+    `fullyIdle:true`. A daemon that exits by itself (`sleep 10` with `IsDaemon:true`)
+    gives the same `PostToolUse` and the same turn.
+  - `manage_task {Action:"kill", TaskId}` on a daemon: `Pre`/`PostToolUse` for
+    `manage_task` with `error:""`, the process gone, `ListBackgroundTasks` empty; no
+    `PostToolUse` for the `run_command`. Without `toolSummary` the call is valid; with
+    it, it fails tool validation and no hook fires.
+  - `/tasks` opens a list ("Agent Backgrounded", the command and "running"; keys
+    "enter View output  k Kill Task  x Remove Task From List"). `k` killed the daemon:
+    the process was gone and `ListBackgroundTasks` empty within 3 s, and no hook came
+    in the next 30 s, nor with the next turn.
+  - After `/clear` the footer showed no task while the daemon kept running, and
+    `ListBackgroundTasks` with the old conversation id still listed it. Ending agy
+    (Ctrl+C twice) ended it.
+  - The status line and title scripts (§11) get `task_count`, the conversation's
+    background tasks, left out when there are none. With a daemon started: `working`
+    without it, `working` with `task_count:1`, then `idle` with it. A `k` in `/tasks`
+    ran the scripts again 0.3 s later, `idle` with no `task_count`.
+  - Without `--dangerously-skip-permissions` the daemon's `PreToolUse` comes before
+    the ask (`tool_use`, `tool_confirmation_pending:true`). Declined with `4`: the next
+    title input is `idle` with no `task_count`, and no other hook comes (no
+    `PostToolUse`, no `Stop`). Allowed with `1`: `working` with no `task_count`, then
+    `Stop`, then `idle` with `task_count:1`; the count came only after the turn ended.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -814,6 +971,19 @@ Nothing ran against Google's real servers.
 - `--effort low|medium|high|xhigh|max`, but each model allows fewer (3.1 Pro: low and
   high; `xhigh` exits 1). It becomes `thinkingBudget`: low 1024 (Pro) / 1000 (Flash),
   high −1.
+- 1.4.7 (2026-10-26, Linux arm64 in Docker, `--network none`, fake Gemini server, one
+  `agy -p` per model and effort, exit code and request read): `agy models` adds
+  `gemini-4-argon-{high,medium,low}` (14 rows, the rest as above). Every model refuses
+  `xhigh` and `max` before any request, exit 1, `error: invalid model selection
+  (--model "<m>" --effort "<e>"): <base> has no "<e>" effort (available: …)`.
+  `gemini-3.1-pro` (also the default, `--model` left out) takes low and high, not
+  medium; `gemini-4-argon`, `gemini-3.8-flash` and `gemini-3.6-flash` take low, medium
+  and high. `gemini-3.7-flash` was not run; that it takes the three its `agy models`
+  ids name, as every model run did, is inferred, not checked. Argon sends `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`, `MEDIUM` with no
+  `--effort`) instead of `thinkingBudget`; Flash with no `--effort` is medium (4000).
+  An id that names its effort (`gemini-3.1-pro-high`, `gemini-4-argon-low`) runs with
+  no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
+  --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
   gives `no model configuration is available for this account`, and the real shape
   is not probed.
@@ -944,6 +1114,24 @@ Nothing ran against Google's real servers.
 - (1.4.2, same setup) `"agentMode": "auto"` in `settings.json` or `--mode auto` on the
   API-key route: no banner, no warning, every ask as in default; the log says `auto
   mode is unavailable, falling back to default`.
+- **Allow rules** (1.4.7, build `1.4.7-5900205422411776`, Linux arm64 from the
+  manifest, sha512 checked, Docker, tmux, fake Gemini server, default mode,
+  2026-10-24). On `koloft open x` the ask reads "2. Yes, and always allow in this
+  conversation for commands that start with 'koloft' / 3. Yes, and always allow for
+  commands that start with 'koloft' (Persist to settings.json)"; `3` writes
+  `"permissions":{"allow":["command(koloft)"]}` into the `--gemini_dir` folder's
+  `antigravity-cli/settings.json`. With `"permissions":{"allow":["command(git
+  status)","command(koloft)"]}` written there before launch, `koloft open x` and
+  `koloft session send <id> "hello there, run the tests"` ran with no ask, and agy kept
+  both rules when it rewrote the file. Still asked: `ls /`, `koloft open x && ls /`
+  (the ask names `ls`), `koloft open x; touch …` (names `touch`), `koloft open $(touch
+  …)`, `koloftx open x`, `koloft open x | sh`, and `/work/bin/koloft open x` (the rule
+  matches the command's first word as typed, not the binary it finds). The macOS
+  build (1.4.7 darwin arm64, sha512 checked, a throwaway tart VM with no screen, run
+  under `expect` answering the terminal queries, same fake server and
+  `WSL_INTEROP`) did the same: asked with no rule; with the rule, `koloft open x` and
+  `koloft session send abc "hello there"` ran with no ask, while `pwd` and `koloft
+  open x; touch …` asked.
 
 ## §27 Terminal modes
 
@@ -964,6 +1152,11 @@ Nothing ran against Google's real servers.
   file. On a fresh conversation the prompt box sits right under the banner and
   reaches the bottom rows once the transcript fills the screen. On exit the screen
   holds only the "Resume with -c" lines.
+- In the default inline mode, with onboarding done, a line printed before agy starts
+  stays on row 0 above its banner, directly and inside a tmux pane; the first-run colour
+  picker, by contrast, opened on the alternate screen (seen on 1.3.6). (Linux 1.4.7 from the manifest,
+  sha512 checked, Docker, API-key route, a python pty answering the queries, output
+  replayed into `@xterm/headless`, 2026-10-25).
 
 ## §28 Telemetry
 
@@ -1032,3 +1225,62 @@ Nothing ran against Google's real servers.
   `refresh_token` used from two machines: not probed (no real account).
 - The slim lab image has no `jq`, `python`, `xz` or `gawk`: scripts that run there are
   `sh` with `sed` and `printf`.
+
+## §30 MCP servers, everywhere and in one project
+
+2026-10-23, agy 1.3.6, Docker, `agy --gemini_dir=<dir> mcp add …`, then `agy -p` against a
+fake Gemini server with MCP servers that logged their start.
+
+- **`agy mcp add`** (no scope flag) writes only `<geminiDir>/config/mcp_config.json`:
+  `{"mcpServers":{"<name>":{"command","args":[…],"env":{…},"disabled":false}}}` (an HTTP
+  one has `serverUrl` and `headers`); `agy mcp disable` sets `"disabled": true`. `agy mcp
+  list` shows only that file.
+- **One project:** `<workspace>/.agents/mcp_config.json` (same shape) and
+  `<workspace>/.agents/plugins/<p>/mcp_config.json` (named `<p>_<server>`) were loaded in
+  folder A and not in folder B; `<A>/.gemini/mcp_config.json`, `<A>/.gemini/settings.json`
+  and `<A>/.mcp.json` were not. In `-p` this held with A out of `trustedWorkspaces`.
+- **Which folders' `.agents/mcp_config.json`:** the workspace's and every folder above it
+  up to the nearest one holding `.git` (a folder, or the file of a linked worktree), that
+  one included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, nor a repository inside another the outer one. Measured
+  2026-10-28, agy 1.4.9 (the manifest's `linux_arm64.json`), Docker, `agy -p` against a
+  fake Gemini server, MCP servers that logged their start.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).
+
+## §31 Skills
+
+2026-10-27, agy 1.4.8 (build `5447777392656384`, the manifest's `linux_arm64.json`),
+Docker `--network none`, fake Gemini server, `--gemini_dir=<gd>`, a test skill
+`<name>/SKILL.md` (frontmatter `name`, `description`; a codeword in the body) put in one
+folder at a time. `agy --gemini_dir=<gd> -p /skills --output-format json` lists them
+with no model call (`command.data.skills[{name, description, path, builtin,
+model_invocable}]`); `agy -p "hi"` showed what the model gets.
+
+- **Loaded from** `<gd>/config/skills/`, `<gd>/antigravity-cli/skills/`,
+  `<gd>/skills/` and `<workspace>/.agents/skills/` (also `_agents/skills`,
+  `.agent/skills`). Not from `<workspace>/.gemini/skills/`, `~/.agents/skills/`, or
+  `~/.gemini/config/skills` when `--gemini_dir` points elsewhere.
+  `<gd>/antigravity-cli/builtin/skills/` is wiped and rebuilt at start. No flag or
+  environment variable adds a folder; a `skills.json` (`{"entries":[{"path":…}]}`) in
+  `<gd>/config/` can name one.
+- **The model gets a list**, in the system instruction's `<skills>` block, one line each:
+  `- <name> (<absolute path to SKILL.md>): <description>`, with "If a skill seems
+  relevant to your current task, you MUST read its `SKILL.md`". The body is not sent;
+  the model reads the file with `read_file`, and did, in `<gd>/config/skills/`,
+  `<gd>/antigravity-cli/skills/` and `<workspace>/.agents/skills/`. A user typing
+  `/<name>` gets the body sent inline.
+- **A symlinked skill is listed but cannot be read**: a linked skill folder, a linked
+  `skills` folder and a linked `SKILL.md` were all listed, and every `read_file` of one
+  was refused in `-p` ("a tool required the "read_file" permission that headless mode
+  cannot prompt for, so it was auto-denied") — agy checks where the link points, and
+  that was outside `<gd>` and the workspace. A real file inside
+  `<gd>/antigravity-cli/skills/` was read. `<gd>/skills/` and a `skills.json` folder
+  outside `<gd>` were refused the same way.
+- agy's own changelog says `agy plugin validate` warns when a skill's body is over 24
+  KB; what agy itself does with a longer one was not probed.
+- The macOS build 1.4.8 (same build number, `darwin_arm64.json`) in a tart VM on
+  macOS 26.6.2, same day and method: `-p /skills` listed
+  `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
+  its line, and `read_file` of it succeeded.
+- Not probed: what the interactive TUI does where `-p` refused a read.

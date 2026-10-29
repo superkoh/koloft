@@ -38,11 +38,18 @@ const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
 const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 
+export interface ExtraPull {
+  from: string
+  to: string
+  flags: string[]
+  failsQuietly?: boolean
+}
+
 export interface RemoteTarget {
   host: string
   mirrorProjectsRoot: string
   mirrorHookDir: string
-  extraPulls?: { from: string; to: string; flags: string[] }[]
+  extraPulls?: ExtraPull[]
   paths: string[]
   hasTabs: boolean
   busy: boolean
@@ -56,6 +63,7 @@ export interface RemoteSyncDeps {
   onLeft?(host: string, sessionIds: string[]): void
   onHooksPulled?(host: string): void
   onConnected?(host: string): void
+  onConnectedRound?(host: string): void
 }
 
 interface HostState {
@@ -331,10 +339,16 @@ export class RemoteSync {
           HOOK_FLAGS
         )
         const pulls = [transcripts, hooks]
-        for (const [i, extra] of extras.entries())
-          pulls.push(
-            await pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
+        for (const [i, extra] of extras.entries()) {
+          const r = await pull(
+            `extra ${extra.from}`,
+            mirrors.extras[i],
+            extra.from,
+            extra.to,
+            extra.flags
           )
+          if (!extra.failsQuietly) pulls.push(r)
+        }
         const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)
@@ -348,6 +362,7 @@ export class RemoteSync {
         this.deps.onChange(host)
       }
       if (!before.connected && st.connected) this.deps.onConnected?.(host)
+      if (st.connected) this.deps.onConnectedRound?.(host)
     } finally {
       st.running = false
       for (const done of waiting) done()

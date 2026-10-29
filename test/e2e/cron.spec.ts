@@ -4,10 +4,15 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  installCodexOnFakeRemote,
   installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
+  machineAgyCalls,
   machineHome,
+  machineMuseCalls,
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
@@ -215,7 +220,9 @@ const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
+const TUI_GIVES_UP_ON_A_QUESTION_MS = 1_500
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
+const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -792,6 +799,50 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M33 in Codex: with "Close it" on, a Codex run whose question goes unanswered past the time the TUI would let it go still asks you; once you pick an answer and its turn ends, it closes', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-question-gives-up-ms'),
+      String(TUI_GIVES_UP_ON_A_QUESTION_MS)
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { agent: 'Codex', name: 'Colour check', task: 'ask me a colour' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Colour check')
+
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveClass(/st-approval/, { timeout: 60_000 })
+      await page.waitForTimeout(TUI_GIVES_UP_ON_A_QUESTION_MS * 2)
+      await expect(row).toHaveClass(/st-approval/)
+      expect((await histLines(page)).some((line) => line.state.startsWith('Done'))).toBe(false)
+      expect(await tabDisplays(page)).toHaveLength(1)
+
+      const tabId = await row.getAttribute('data-tab-id')
+      await closeCron(page)
+      await row.click()
+      await page.evaluate((t) => window.api.terminal.write(t!, '2'), tabId)
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Done — closed itself')
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('BB-M07: the clock fires on its own, and takes nothing from you', async ({ env }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)
@@ -830,7 +881,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   test('BB-M32: an after-each-run job starts its next run only once the wait has passed since the last run closed itself, and skips nothing meanwhile', async ({
     env
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(360_000)
     gitInit(env.workspaces.a)
     env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
     const app = await launchApp(env)
@@ -848,14 +899,19 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await clickRunNow(page, 'Push issues')
       await waitNewCall(env, 0)
       await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .poll(async () => (await histLines(page))[0]?.state, {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
         .toBe('Done — closed itself')
       const closedAt = Date.now()
 
       await waitNewCall(env, 1, EVERY_MINUTE_DUE_PLUS_TICK_MS)
       expect(Date.now() - closedAt).toBeGreaterThanOrEqual(ONE_MINUTE_LESS_THE_POLL_LAG_MS)
-      const states = (await histLines(page)).map((l) => l.state)
-      expect(new Set(states)).toEqual(new Set(['Done — closed itself']))
+      await expect
+        .poll(async () => (await histLines(page)).map((l) => l.state), {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
+        .toEqual(['Done — closed itself', 'Done — closed itself'])
     } finally {
       await app.close().catch(() => {})
     }
@@ -1331,6 +1387,83 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  const REMOTE_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    freshLaunches: (env: E2EEnv) => number
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        gitInit(remoteDir(env))
+      },
+      freshLaunches: (env) => codexCalls(env).filter((c) => c.method === 'thread/start').length
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        gitInit(remoteDir(env))
+      },
+      freshLaunches: (env) => machineMuseCalls(env).filter((c) => !c.argv.includes('resume')).length
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      freshLaunches: (env) => machineAgyCalls(env).length
+    }
+  ]
+  for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
+    test(`BB-M08 in ${agent} on a remote workspace: a run left open at quit comes back as the open run, so Run now skips it`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await createJob(first.page, dlg, { agent, name: 'Remote report', task: 'look around' })
+          await clickRunNow(first.page, 'Remote report')
+          await waitTurnStopSoTheTranscriptExistsBeforeClose(first.page, 'Remote report')
+        } finally {
+          await quitAndClose(first.app)
+        }
+        expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
+        expect(freshLaunches(env)).toBe(1)
+
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await openCron(page, REMOTE_WS_NAME)
+          await expect(card(page, 'Remote report').locator('.job-last')).toContainText(
+            'done — waiting for you',
+            { timeout: 90_000 }
+          )
+
+          await clickRunNow(page, 'Remote report')
+          await expect(toastMsg(page)).toHaveText(
+            '⏰ Remote report skipped: the last run is still open'
+          )
+          await expect
+            .poll(async () => (await histLines(page)).map((l) => l.state), { timeout: 20_000 })
+            .toEqual(['Done — waiting for you', 'Skipped — the last run was still open'])
+          expect(freshLaunches(env)).toBe(1)
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
+  }
+
   test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine', async ({
     env
   }) => {
@@ -1375,6 +1508,94 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       killFakeRemote(env)
     }
   })
+
+  const REMOTE_CLOSE_IT_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    ranIn: (env: E2EEnv) => string[]
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        gitInit(remoteDir(env))
+      },
+      ranIn: (env) =>
+        codexCalls(env)
+          .filter((c) => c.method === 'thread/start')
+          .map((c) => c.effectiveCwd)
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        gitInit(remoteDir(env))
+      },
+      ranIn: (env) =>
+        machineMuseCalls(env)
+          .filter((c) => !c.argv.includes('resume'))
+          .map((c) => c.cwd)
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      ranIn: (env) => machineAgyCalls(env).map((c) => c.cwd)
+    }
+  ]
+  for (const { agent, setUp, ranIn } of REMOTE_CLOSE_IT_AGENTS) {
+    test(`BB-M19 in ${agent}: a remote job set to "Close it" closes for good once its turn ends: tab, row, and on a git folder its worktree and branch on the machine`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      const repo = fs.existsSync(path.join(remoteDir(env), '.git'))
+      const branches = (): string => (repo ? runGit(remoteDir(env), 'branch', '--list') : '')
+      const branchesBefore = branches()
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+          timeout: 20_000
+        })
+        const dlg = await openCron(page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Remote report', task: 'look around' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Remote report')
+
+        await expect.poll(() => ranIn(env).length, { timeout: 120_000 }).toBe(1)
+        const [cwd] = ranIn(env)
+        expect(readCalls(env)).toEqual([])
+        const wt = repo ? path.basename(cwd) : ''
+        if (repo) expect(cwd).toBe(runTree(remoteDir(env), wt))
+        else expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(remoteDir(env)))
+
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+          .toBe('Done — closed itself')
+        await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+        await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
+        if (repo) await expect.poll(() => fs.existsSync(cwd), { timeout: 30_000 }).toBe(false)
+        await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+        expect(fs.existsSync(remoteDir(env))).toBe(true)
+        expect(branches()).toBe(branchesBefore)
+        expect((await histLines(page))[0]).toMatchObject({
+          state: 'Done — closed itself',
+          wt: wt ? ` · ${wt}` : '',
+          folder: ''
+        })
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('BB-M13: the workspace forecast row shows the nearest next run', async ({ env }) => {
     const now = new Date()

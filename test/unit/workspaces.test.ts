@@ -176,7 +176,7 @@ afterEach(() => {
 describe('WorkspaceManager: isGit', () => {
   it('flags each pinned workspace by its own .git marker', async () => {
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).workspace).toEqual({
       path: repo,
       missing: false,
@@ -269,7 +269,7 @@ describe('WorkspaceManager: freshness stamping', () => {
       freshness: () => ({ ...base, behind })
     })
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).workspace.freshness?.behind).toBe(7)
     expect(latest(plain).workspace.freshness?.behind).toBe(7)
   })
@@ -279,7 +279,7 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
   it('an external jsonl stays invisible until its session is bound once', async () => {
     writeJsonl(repo, 'ext-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).rows).toEqual([])
     expect(layout.panels['ext-1']).toBeUndefined()
 
@@ -294,7 +294,7 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
     own('first-1')
     bindings.set('first-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).rows).toEqual([])
 
     writeJsonl(repo, 'first-1')
@@ -370,7 +370,7 @@ describe('WorkspaceManager: what a rescan asks git', () => {
     await withFailingGitOnPath(async (gitCalls) => {
       const listed = (): string[] => gitCalls().filter((l) => l.includes('worktree list'))
       mgr.start()
-      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+      await mgr.firstScan
       await rescanned()
       expect(listed()).toEqual([`-C ${repo} worktree list --porcelain`])
 
@@ -802,7 +802,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
       additionalMembers: () => members
     })
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     const state: SessionWorkbenchState = {
       open: true,
       tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
@@ -862,7 +862,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     own('fresh-1')
     bindings.set('fresh-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(layout.panels['fresh-1']).toEqual(SEEDED)
     expect(dropped).toEqual([])
 
@@ -944,7 +944,7 @@ describe('WorkspaceManager: conductor sessions stay out of the workspace lists',
     bindings.set('cond-now', 'cond-tab')
     mgr.start()
     mgr.launchStarted('cond-tab', repo)
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['plain-1'])
     expect(latest(repo).workspace.hasHistory).toBe(false)
@@ -970,7 +970,7 @@ describe('WorkspaceManager: restore from history (D5)', () => {
     own('owned-1')
     bindings.set('bound-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['hist-new', 'hist-old'])
     expect(mgr.historyRows(path.join(root, 'never-pinned'))).toEqual([])
@@ -981,7 +981,7 @@ describe('WorkspaceManager: restore from history (D5)', () => {
   it('finds an unowned row for the resume planner (the sidebar never showed it)', async () => {
     writeJsonl(repo, 'ext-9')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(latest(repo).rows).toEqual([])
     expect(mgr.findRow('ext-9')).toMatchObject({ id: 'ext-9', cwd: repo })
@@ -1238,6 +1238,27 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     ])
   })
 
+  it('offers the folders Codex, Muse and Antigravity used too, counted with Claude’s, a worktree under its repo even once removed', async () => {
+    const a = path.join(root, 'a')
+    fs.mkdirSync(path.join(a, '.git'), { recursive: true })
+    writeJsonl(a, 'a-1')
+    setMtime(a, 'a-1', 1000)
+    const x = path.join(root, 'x')
+    fs.mkdirSync(x)
+    mgr = remoteMgr({
+      additionalFolders: async () => [
+        { path: a, sessions: 1, mtime: 3000_000 },
+        { path: path.join(a, '.claude', 'worktrees', 'gone'), sessions: 1, mtime: 500_000 },
+        { path: x, sessions: 1, mtime: 2000_000 }
+      ]
+    })
+
+    expect(await mgr.discover()).toEqual([
+      { path: a, sessions: 3, mtime: 3000_000 },
+      { path: x, sessions: 1, mtime: 2000_000 }
+    ])
+  })
+
   it('offers at most 8 folders, newest first', async () => {
     for (let i = 0; i < 9; i++) {
       const dir = path.join(root, 'p' + i)
@@ -1349,7 +1370,7 @@ describe('remote workspace: pinning', () => {
       layout.workspaces = [{ path: RKEY }]
       mgr = remoteMgr()
       mgr.start()
-      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+      await mgr.firstScan
       const ws = latest(RKEY).workspace
       expect(ws.missing).toBe(false)
       expect(ws.isGit).toBe(false)
@@ -1404,6 +1425,20 @@ describe('remote workspace: reading the mirror', () => {
     expect(row.id).toBe('abc')
     expect(row.invalidCwd).toBe(false)
     expect(row.cwd).toBe(RPATH)
+  })
+
+  it('finds a mirrored transcript whose folder a pull brings after start, on a machine with no mirror yet, with no other rescan', async () => {
+    own('first-1')
+    bindings.set('first-1', 'tab-1')
+    mgr = remoteMgr()
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(RKEY).rows).toEqual([])
+
+    writeMirrorJsonl('first-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['first-1']), {
+      timeout: 5000
+    })
   })
 
   it('offers a search every Claude row of every pinned workspace, listed or removed, local or mirrored, with the transcript it came from', async () => {

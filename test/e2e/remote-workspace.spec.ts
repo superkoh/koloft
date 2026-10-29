@@ -4,18 +4,30 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
+import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
+import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   type E2EEnv,
+  E2E_CLAUDE_ACCOUNT,
+  installAgy,
   installCodex,
   installFakeGh,
+  installMuse,
   seedNoClaudeAccountButStillSetUp,
+  seedSettings,
   setGithubFixture,
   writeGitIdentity
 } from './helpers/env'
 import {
   addRemoteWorkspace,
+  agyReady,
+  boundRemoteAgy,
   breakConnection,
   healConnection,
+  installCodexOnFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -30,7 +42,9 @@ import {
   liveTmuxSessions
 } from './helpers/remote'
 import {
+  type AgentName,
   agentRow,
+  agentShell,
   auxIcon,
   boundSessionId,
   centerTerm,
@@ -41,6 +55,7 @@ import {
   gitInit,
   layoutOnDisk,
   menuItemTexts,
+  newSessionInWith,
   oneStillRunning,
   openMenu,
   openSessionTerminal,
@@ -58,6 +73,7 @@ import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
   WORKBENCH,
+  artifactBody,
   browseRow,
   claudePrompts,
   commentOnFirstHunk,
@@ -66,10 +82,14 @@ import {
   sendFailingChecks,
   openInBrowse,
   rowMenu,
-  showBrowse
+  showBrowse,
+  wbActiveTab
 } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
+const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
+const A_REFUSED_LOAD_SETTLES_MS = 3000
+const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
@@ -89,6 +109,36 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
   await wsRows(page, REMOTE_WS_NAME).first().click()
   await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 }
+
+const OTHER_AGENTS_ON_THE_MACHINE: {
+  id: string
+  label: AgentName
+  install: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}[] = [
+  { id: 'E-RW-38', label: 'Codex', install: installCodexOnFakeRemote },
+  {
+    id: 'E-RW-39',
+    label: 'Muse',
+    install: (env: E2EEnv): void => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+  },
+  {
+    id: 'E-RW-40',
+    label: 'Antigravity',
+    install: (env: E2EEnv): void => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    bound: async (page: Page) => {
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      return boundRemoteAgy(page)
+    }
+  }
+]
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -245,6 +295,56 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(panelTerm(page)).toContainText('RW02_ON_42', { timeout: 60_000 })
       await runIn(page, panelTerm(page), 'claude')
       await expect(panelTerm(page)).toContainText('not an agent surface', { timeout: 25_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${agent.id}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        fs.writeFileSync(path.join(remoteDir(env), 'shown.md'), `# shown for ${agent.label}\n`)
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'koloft open shown.md')
+        await expect(artifactBody(page)).toContainText(`shown for ${agent.label}`, {
+          timeout: 60_000
+        })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  test('after ⇧⌘R on a Claude Code tab on the machine, koloft open typed in its Workbench shell still shows the file in that tab’s Workbench', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'after-restart.md'), '# shown after restart\n')
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      await openSessionTerminal(app, page)
+
+      await sendShortcut(app, 'shortcut:restart-session')
+      await waitForCalls(env, 2, 90_000)
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+
+      await runIn(page, panelTerm(page), 'koloft open after-restart.md')
+      await expect(artifactBody(page)).toContainText('shown after restart', { timeout: 60_000 })
     } finally {
       await quitAndClose(app)
     }
@@ -638,6 +738,38 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test("a file name typed in a remote tab's address bar opens the file on the machine in a file tab, a page as its source, and a path that climbs out of the session's folder searches instead", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    env.extraArgs.push(hostResolverSwitch(['duckduckgo.com']))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>typed on the machine</h1>\n')
+      fs.writeFileSync(path.join(path.dirname(dir), 'outside.html'), '<h1>outside</h1>\n')
+
+      await openRemoteSessionWorkbench(page, env)
+      await newWebTab(page)
+      await typeInAddressBar(page, 'page.html')
+      await expect(wbActiveTab(page)).toContainText('page.html', {
+        timeout: 30_000
+      })
+      await expect(artifactBody(page).locator('.code-body')).toContainText('typed on the machine', {
+        timeout: 30_000
+      })
+
+      await newWebTab(page)
+      await typeInAddressBar(page, '../outside.html')
+      await expect
+        .poll(() => addressValue(page), { timeout: 30_000 })
+        .toMatch(/duckduckgo\.com\/\?q=.*outside\.html/)
+      await expect(page.locator(WORKBENCH.tab, { hasText: 'outside.html' })).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CC§5
   test('E-RW-28: a remote turn that ends while its reported background work still runs shows breathing green with ↻ until the work drains', async ({
     env
@@ -693,6 +825,32 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await rows.first().click()
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('restarting a remote Claude Code session once no Claude account can be used says why, and starts no new claude on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await row.click()
+      const launches = (await waitForCalls(env, 1)).length
+      await page.evaluate(
+        (name) => window.api.accounts.toggle(name, 'apikey', false),
+        E2E_CLAUDE_ACCOUNT
+      )
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude, {
+        timeout: 60_000
+      })
+      expect(await waitForCalls(env, launches)).toHaveLength(launches)
     } finally {
       await quitAndClose(app)
     }
@@ -807,6 +965,81 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(secret).toBeVisible({ timeout: 30_000 })
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  // PLATFORM§33
+  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there but never opens a file or a local server of the Mac, and switching browser control off takes the address away", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const tabId = (await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id'))!
+      const address = path.join(machineHome(env), '.koloft', 'tabs', `${tabId}.cdp`)
+      await expect
+        .poll(() => (fs.existsSync(address) ? fs.readFileSync(address, 'utf8') : ''), {
+          timeout: 30_000
+        })
+        .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
+
+      const title = `remote-${Date.now().toString(36)}`
+      const url = server
+        .page('/remote', `<title>${title}</title><body>from the machine</body>`)
+        .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      const onTheMac = server.page('/mac-only', '<title>mac-only-server</title>')
+      const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
+      const unwrapped = async (command: string): Promise<string> =>
+        (await run(command)).replace(/\n/g, '')
+      expect(await unwrapped('command -v playwright-cli')).toMatch(
+        /\.koloft\/m-[0-9a-f]+\/claude-bin\/playwright-cli/
+      )
+      expect(await unwrapped(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
+      await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+
+      const macFile = path.join(env.home, 'only-on-the-mac.html')
+      fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
+      const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
+      const refused = 'cannot reach files or local servers of the Mac'
+      expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
+      expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
+      await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
+      await run(
+        `playwright-cli eval "() => { location.href = '${onTheMac.replace('127.0.0.1', 'localhost')}' }"`
+      )
+      expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
+      expect(
+        lastStep(
+          await unwrapped(
+            `playwright-cli eval "() => fetch('${onTheMac}', { mode: 'no-cors' }).then(() => 'reached', () => 'blocked')"`
+          )
+        )
+      ).toContain('blocked')
+      await run(`playwright-cli eval "() => { window.open('${onTheMac}') }"`)
+      expect(lastStep(await unwrapped(`playwright-cli tab-new file://${macFile}`))).toContain(
+        refused
+      )
+      await page.locator(BROWSER.drivenTab).first().click()
+      await run('playwright-cli close')
+      await typeInAddressBar(page, `file://${macFile}`)
+      await page.waitForTimeout(A_REFUSED_LOAD_SETTLES_MS)
+      const titles = await app.evaluate(({ webContents }) =>
+        Promise.all(
+          webContents.getAllWebContents().map((w) => w.executeJavaScript('document.title'))
+        )
+      )
+      expect(titles).not.toContain('only-on-the-mac')
+      expect(titles).not.toContain('mac-only-server')
+
+      await page.evaluate(() => window.api.settings.set({ browserControl: false }))
+      await expect.poll(() => fs.existsSync(address), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 })

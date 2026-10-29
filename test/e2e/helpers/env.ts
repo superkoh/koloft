@@ -35,9 +35,9 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
-const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
-const E2E_CODEX_ACCOUNT = 'e2e-codex'
+export const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_MUSE_ACCOUNT = 'e2e-muse'
 export const E2E_AGY_ACCOUNT = 'e2e-agy'
 export const UNPACKAGED_BUILD_AGY_SVC = 'koloft-dev-agy-home'
@@ -130,6 +130,9 @@ export function setupE2EEnv(): E2EEnv {
 
   const fileDialogFile = path.join(home, 'file-dialog-answers')
 
+  const roomyMachineNotTheDevMacsOwnLoad = path.join(home, 'machine-reading.json')
+  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1, load1: 0 }))
+
   const workspaces = {
     a: makeWorkspace(home, 'ws-a', {
       'README.md': '# Workspace A\n\nkoloft-e2e-alpha marker for ws-a.\n',
@@ -180,6 +183,7 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_CDP_LOG: path.join(home, 'cdp-log.txt'),
     KOLOFT_EXTERNAL_OPENS_FILE: externalOpens,
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
+    KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
     KOLOFT_DOM_RENDERER: '1',
     ELECTRON_RENDERER_URL: undefined
@@ -318,8 +322,24 @@ export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
     .map((line) => JSON.parse(line) as AgyCall)
 }
 
+export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
+  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
+
 export function ownersGemini(env: E2EEnv): string {
   return path.join(env.home, '.gemini')
+}
+
+export function agyTranscriptOf(env: E2EEnv, conversationId: string): string {
+  const file = path.join(
+    ownersGemini(env),
+    'antigravity-cli',
+    'brain',
+    conversationId,
+    '.system_generated',
+    'logs',
+    'transcript.jsonl'
+  )
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
 
 // AGY§4 AGY§5

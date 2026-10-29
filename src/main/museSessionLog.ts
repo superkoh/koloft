@@ -40,7 +40,7 @@ export type LogRecord = { payloadType: string; payload: Record<string, unknown>;
 
 const MICROSECONDS_PER_MS = 1000
 
-const logRecord = (line: string): LogRecord | undefined => {
+export const logRecord = (line: string): LogRecord | undefined => {
   try {
     const r = record(JSON.parse(line))
     return typeof r.payload_type === 'string'
@@ -66,9 +66,16 @@ export function lastCompletedText(stdout: string): string | null {
   return text
 }
 
+const NAME_CHANGED = 'session.name.changed'
+const QUEUED = 'inbox_item_queued'
+const MANUAL_COMPACT = 'context.compact.manual'
+const MANUAL_COMPACT_OUTCOME = `${MANUAL_COMPACT}.outcome`
+
+export const REMOTE_LOG_MARKS: readonly string[] = [NAME_CHANGED, QUEUED, MANUAL_COMPACT]
+
 // MUSE§2
 export const museNameOf = (r: LogRecord): string | undefined =>
-  r.payloadType === 'session.name.changed' && typeof r.payload.new_name === 'string'
+  r.payloadType === NAME_CHANGED && typeof r.payload.new_name === 'string'
     ? r.payload.new_name
     : undefined
 
@@ -78,9 +85,9 @@ export const renamedTo = (r: LogRecord): string | undefined =>
 
 // MUSE§3 MUSE§9
 export const startsATurnByItself = (r: LogRecord): boolean =>
-  r.payloadType === 'runtime.session' && record(r.payload.event).kind === 'inbox_item_queued'
+  r.payloadType === 'runtime.session' && record(r.payload.event).kind === QUEUED
 
-const runEvent = (r: LogRecord, kind: string): Record<string, unknown> | undefined => {
+export const runEvent = (r: LogRecord, kind: string): Record<string, unknown> | undefined => {
   const event = record(r.payload.event)
   return r.payloadType === 'runtime.session' &&
     r.payload.kind === 'run' &&
@@ -102,12 +109,10 @@ export const turnEndedIn = (r: LogRecord): string | undefined =>
 
 // MUSE§9
 export const compactionStarts = (r: LogRecord): boolean =>
-  r.payloadType === 'runtime.command.accepted' &&
-  r.payload.command_kind === 'context.compact.manual'
+  r.payloadType === 'runtime.command.accepted' && r.payload.command_kind === MANUAL_COMPACT
 
 // MUSE§9
-export const compactionEnds = (r: LogRecord): boolean =>
-  r.payloadType === 'context.compact.manual.outcome'
+export const compactionEnds = (r: LogRecord): boolean => r.payloadType === MANUAL_COMPACT_OUTCOME
 
 // MUSE§9
 export function firedJob(r: LogRecord): string | undefined {
@@ -124,7 +129,7 @@ export function firedJob(r: LogRecord): string | undefined {
 export function finishedWork(r: LogRecord): string | undefined {
   const event = record(r.payload.event)
   return r.payloadType === 'runtime.session' &&
-    event.kind === 'inbox_item_queued' &&
+    event.kind === QUEUED &&
     record(event.source).source === 'background_task_terminal' &&
     typeof event.registered_work_id === 'string'
     ? event.registered_work_id

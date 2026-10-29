@@ -165,7 +165,7 @@ const machineTreeIo: TreeIo = {
   exists: async (p) => fs.existsSync(barePath(p)),
   real: (p) => p,
   keyed: (listed) => `ssh://${MACHINE}${listed}`,
-  onThisMac: false
+  machine: undefined
 }
 
 async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
@@ -203,10 +203,11 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: () => true,
     browserEndpoint: () => '',
     openShimRoot: path.join(home, 'codex-open'),
     playwrightBin: path.join(home, 'commands', 'bin'),
-    agent: { enabled: () => true, answer: () => {} },
+    agent: { enabled: () => true, answer: () => {}, skillsFolder: () => undefined },
     gitAccounts: {
       configEnv: (env) => env,
       picked: async () => false,

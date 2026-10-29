@@ -34,7 +34,8 @@ export const CH = {
     dirtyTabs: 'workbench:dirtyTabs'
   },
   tabs: {
-    list: 'tabs:list'
+    list: 'tabs:list',
+    moved: 'tabs:moved'
   },
   tab: {
     killedByMain: 'tab:killedByMain',
@@ -60,6 +61,10 @@ export const CH = {
   },
   session: {
     relocated: 'session:relocated'
+  },
+  usage: {
+    read: 'usage:read',
+    changed: 'usage:changed'
   },
   cron: {
     list: 'cron:list',
@@ -223,6 +228,8 @@ export const CH = {
     startLogin: 'accounts:start-login',
     cancelLogin: 'accounts:cancel-login',
     signIn: 'accounts:sign-in',
+    signInFailure: 'accounts:sign-in-failure',
+    dismissSignInFailure: 'accounts:dismiss-sign-in-failure',
     codexUseReset: 'accounts:codex-use-reset',
     loginProgress: 'accounts:login-progress',
     update: 'accounts:update'

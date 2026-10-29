@@ -194,14 +194,18 @@ your Mac                     the other machine
             your Mac talks to that server over ssh. The server is signed in with the Codex account
             picked on your Mac: no login is stored on the machine. If ssh drops or the Mac sleeps,
             the running turn keeps going there, and the tab reconnects by itself. Closing the tab
-            ends the server; a click on the row resumes the same conversation on a new one. In a
-            folder the machine trusts, a shell command runs in Codex's sandbox: it may write inside
-            the folder, not outside it. A sandbox or approval setting in the account's own Codex
-            settings still wins. Some machines block that sandbox with AppArmor (a Linux guard on
-            what programs may do); a plain Ubuntu 24.04 does. There, the tab says so before Codex
-            starts and names the fix: load an AppArmor profile on that machine that allows userns
-            (user namespaces) for <code>/usr/bin/bwrap</code> (needs root). The session still
-            starts, but until then each command Codex runs in that sandbox fails.
+            ends the server; a click on the row resumes the same conversation on a new one. With
+            <a href="../accounts/">Skip permission prompts</a> on, a new Codex session there runs
+            with no sandbox and never asks, as on your Mac, whatever the account's own Codex
+            settings say. With it off, in a folder the machine trusts, a shell command runs in
+            Codex's sandbox: it may write inside the folder, not outside it, and a sandbox or
+            approval setting in the account's own Codex settings still wins. Some machines block
+            that sandbox with AppArmor (a Linux guard on what programs may do); a plain Ubuntu 24.04
+            does. There, the tab says so before Codex starts (with the switch on too) and names the
+            fix: load an AppArmor profile on that machine that allows userns (user namespaces) for
+            <code>/usr/bin/bwrap</code> (needs root). The session still starts. With the switch off,
+            each command Codex runs in that sandbox fails until then; with it on, there is no
+            sandbox to block.
           </li>
           <li>
             The agent gets the <code>koloft</code> command there too, a moment slower, since each
@@ -224,7 +228,7 @@ your Mac                     the other machine
           </li>
         </ul>
 
-        <h3>What Koloft installs there</h3>
+        <h3 id="installs">What Koloft installs there</h3>
         <ul class="dash">
           <li>
             <code>bash</code>, <code>tmux</code>, <code>rsync</code>, <code>python3</code> (for
@@ -238,12 +242,17 @@ your Mac                     the other machine
             the same version as your Mac's, with <code>npm</code> (Node's package tool), Node first
           </li>
           <li>
-            if the <code>claude</code> or <code>muse</code> there is older than this Koloft needs,
-            it gets the tool's own update before the session starts; if that does not bring it up to
-            date, the session does not start and the tab asks you to run the update yourself
+            if the <code>claude</code>, <code>muse</code> or <code>agy</code> there is older than
+            this Koloft needs, it gets the tool's own update before the session starts; if that does
+            not bring it up to date, the session does not start and the tab asks you to run the
+            update yourself
           </li>
           <li>
             <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB, once)
+          </li>
+          <li>
+            <code>playwright-cli</code>, with <code>npm</code>, the first time a Claude Code session
+            there runs it (about 20 MB, once)
           </li>
           <li>
             the sign-in tool (Git Credential Manager), if the machine has none, when you add a
@@ -295,8 +304,8 @@ your Mac                     the other machine
           <li>Images and PDFs (document files) from the machine do not show a preview.</li>
           <li>An agent's <code>open &lt;url&gt;</code> does not reach the Workbench.</li>
           <li>
-            The agent cannot drive your web tabs. See
-            <a href="../agents/">Agents can use Koloft too</a>.
+            Only a Claude Code session there can drive your web tabs; Codex, Muse and Antigravity
+            cannot yet. See <a href="../agents/#remote-browser">Agents can use Koloft too</a>.
           </li>
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
@@ -305,15 +314,6 @@ your Mac                     the other machine
           <li>
             <kbd>⌥⏎</kbd> search finds a remote Codex session by its title only, not by what was
             said in it. A remote Muse session is the same while its machine is not connected.
-          </li>
-          <li>
-            The files a <code>.worktreeinclude</code> names are not copied into a worktree made on
-            the machine.
-          </li>
-          <li>
-            Your butler, and <code>koloft session new --workspace</code> from another session,
-            cannot start a session in a remote folder. A session already on the machine can start
-            one there.
           </li>
         </ul>
 

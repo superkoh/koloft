@@ -49,12 +49,14 @@ const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(
   cwd: string,
   args: string[],
-  timeoutMs = GIT_CALL_TIMEOUT_MS
+  timeoutMs = GIT_CALL_TIMEOUT_MS,
+  onFailure?: (stderr: string) => void
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout) =>
+    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout, stderr) => {
+      if (err) onFailure?.(String(stderr))
       resolve(err ? null : stdout)
-    )
+    })
   })
 }
 

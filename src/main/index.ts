@@ -26,14 +26,20 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museSessions'
+import {
+  MuseSessions,
+  museShowsItsInputBox,
+  type MuseHomePick,
+  type MuseRemoteDeps
+} from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
-import { sharedProcessTable } from './processTable'
-import { AgySessions } from './agySessions'
+import { sharedProcessTable, type ProcessTable } from './processTable'
+import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
+  agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
@@ -54,8 +60,10 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
-import { museConfigHome } from './museSessionLog'
+import { museConfigHome, museHome } from './museSessionLog'
+import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
+import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -101,7 +109,7 @@ import {
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml } from './dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -119,23 +127,29 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import {
-  formatRemoteKey,
-  hostOf,
-  isAbsoluteOnHost,
-  isRemoteKey,
-  parseRemoteKey
-} from '@shared/remoteKey'
+import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
   backgroundOptions,
+  masterCommandOutlivingKoloft,
+  runMasterCommand,
   runSsh,
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { BrowserTunnels } from './remote/browserTunnel'
+import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
+import {
+  ENSURE_CODEX_SH,
+  ENSURE_SH,
+  TMUX_CONF,
+  UTIL_BASH_LOGIN,
+  UTIL_BASH_LOGIN_FILE,
+  UTIL_SH,
+  remoteShCommand
+} from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
@@ -143,6 +157,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
+  CLAUDE_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -150,6 +165,7 @@ import {
   type MachinePackage
 } from './remote/launch'
 import {
+  browserForwardFile,
   machinePackageBase,
   mirrorAgyGemini,
   mirrorHookDir,
@@ -158,16 +174,11 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
-import {
-  oncePerName,
-  readJsonDrop,
-  watchAndSweepJsonDrops,
-  watchJsonDrops,
-  writeWholeBeforeVisible
-} from './jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   AGY_STATUSLINE_JS,
   bundlePath,
@@ -215,7 +226,7 @@ import { probeAccount, shouldSkipFable } from './usageProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  codexAllLimitedNotice,
+  allLimitedNotice,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -279,7 +290,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor, realpathSafe } from './projectInfo'
+import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -304,6 +315,12 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
+  relayEndpointOnMachine,
+  renewRelayEndpointOnMachine,
+  guestDrivenFromAnotherMachine,
+  originDrivenFromAnotherMachine,
+  notePageOpenedForAMachine,
+  openForMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -326,9 +343,12 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -347,7 +367,13 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS } from '@shared/accountUsage'
+import {
+  ACCOUNT_KINDS_OF,
+  AUTO_PROBE_MS,
+  launchLine,
+  launchUsageProbe,
+  type LaunchUsageProbe
+} from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -372,6 +398,7 @@ import type {
   CodexLimits,
   CodexResetOutcome,
   SignInResult,
+  SignInFailure,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -450,6 +477,19 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
+import { todoVerb } from './agentTodo'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
+import {
+  AGY_PROJECT_MCP_FILE,
+  PROJECT_MCP_FILE,
+  claudeServers,
+  codexServers,
+  foldersUpToRepoTop,
+  foldersUpToRoot,
+  jsonServers,
+  type ConfigText,
+  type McpServer
+} from './mcpServers'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
@@ -471,10 +511,12 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
+import { isHandsOn, Presence } from './presence'
+import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -484,11 +526,12 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
+  type MergedHeads,
   type TidyResult
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -544,11 +587,13 @@ const sessionBackends = new SessionBackends({
     newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    sessionCommand.turnEnded(tabId, turn)
+    const handedOff = sessionCommand.turnEnded(tabId, turn)
+    awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
   prompted: (tabId) => {
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
+    awayDigest?.prompted(tabId)
   },
   bound: (tabId, key, idleCompaction) => {
     if (!idleCompaction) attention.bound(tabId, key)
@@ -650,11 +695,35 @@ tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
-async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer(CH.sessions.leftovers, next)
+const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
+const closedSessionsStoppedUntil = new Map<string, number>()
+async function stopLeftoversOfClosedSessions(
+  found: Record<string, LeftoverProcess[]>
+): Promise<void> {
+  const now = Date.now()
+  for (const [sessionId, until] of closedSessionsStoppedUntil) {
+    if (until < now) closedSessionsStoppedUntil.delete(sessionId)
+    else if (found[sessionId]) {
+      const stopped = await Promise.all(found[sessionId].map((p) => stopLeftover(sessionId, p.pid)))
+      found[sessionId] = found[sessionId].filter((_, i) => !stopped[i])
+      if (!found[sessionId].length) delete found[sessionId]
+    }
+  }
+}
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+): Promise<void> {
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -696,6 +765,7 @@ const attention = new AttentionTracker((pending, event) => {
   sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
+  awayDigest?.marked()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -877,6 +947,22 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
+const presence = new Presence({
+  now: Date.now,
+  macIdleSeconds: () => powerMonitor.getSystemIdleTime()
+})
+const AWAY_CHECKED_EVERY_MS = 30_000
+function handsOnKoloft(_e: unknown, input: { type: string }): void {
+  if (isHandsOn(input.type)) presence.handsOn()
+}
+function ownerAway(): boolean {
+  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (BACKGROUND_TEST) return true
+  return presence.away()
+}
+
 function windowFocused(): boolean {
   try {
     return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
@@ -1047,6 +1133,15 @@ let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
+const browserTunnels = new BrowserTunnels({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
+  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
+  endpointOnMachine: relayEndpointOnMachine,
+  renewEndpointOnMachine: renewRelayEndpointOnMachine
+})
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
@@ -1070,12 +1165,14 @@ function machinePackage(): MachinePackage {
     [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
+    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
@@ -1108,6 +1205,7 @@ let butler: Butler | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordTyping: ButlerTyping | null = null
+let awayDigest: AwayDigest | null = null
 let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
@@ -1280,7 +1378,7 @@ function machineTreeIo(cwd: string): TreeIo {
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
     keyed: (listed) => pinnedKeyOn(host, listed),
-    onThisMac: false
+    machine
   }
 }
 
@@ -1319,6 +1417,58 @@ function butlerSide(tabId: string): boolean {
     !!butler?.isButlerTab(tabId) ||
     sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
   )
+}
+
+function textOrNull(file: string): Promise<string | null> {
+  return fs.promises.readFile(file, 'utf8').catch(() => null)
+}
+
+async function mcpServersNow(): Promise<McpServer[]> {
+  const folders = [
+    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    conductorFolder(app.getPath('userData'))
+  ]
+  const walks = await Promise.all(
+    folders.map(async (onlyIn) => ({
+      onlyIn,
+      toRoot: foldersUpToRoot(onlyIn),
+      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
+    }))
+  )
+  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
+    Promise.all(
+      walks.flatMap((w) =>
+        w[walk].map(async (folder) => ({
+          onlyIn: w.onlyIn,
+          text: await textOrNull(path.join(folder, file))
+        }))
+      )
+    )
+  const museSettings = path.join(
+    museConfigHome(museSessions?.defaultEnv ?? process.env),
+    'muse',
+    'settings.json'
+  )
+  const [claudeJson, projectFiles, museProjectFiles, agyProjectFiles, codexToml, muse, agy] =
+    await Promise.all([
+      textOrNull(claudeJsonPath()),
+      inFolders(PROJECT_MCP_FILE, 'toRoot'),
+      inFolders(PROJECT_MCP_FILE, 'toRepoTop'),
+      inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
+      textOrNull(codexSharedConfig()),
+      textOrNull(museSettings),
+      textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+    ])
+  const claudeFolders = folders.map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
+  return [
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
+    ...codexServers(codexToml),
+    ...jsonServers('muse', [{ text: muse }, ...museProjectFiles]),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -1390,17 +1540,17 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
-    return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
+    return codexPicker.peek(accountViews()) ? undefined : 'every Codex account is at its limit'
   },
   muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
-    return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+    return musePicker.peek(accountViews()) ? undefined : 'there is no usable Muse account'
   },
   agy: async () => {
     if (!agySessions || !(await agySessions.availability()).available)
       return 'Antigravity is not available on this Mac'
-    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
+    return agyPicker.peek(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
 }
 
@@ -1505,9 +1655,22 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (target) =>
-    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  closeSoon: (inOrder, tellStarter) =>
+    setTimeout(async () => {
+      for (const target of inOrder) {
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
+          tell(`${target.title}: ${String(error)}`)
+          return false
+        })
+        if (!closed) return
+      }
+    }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  speaksForTheOwner: butlerSide,
   butlerFolder: () => conductorFolder(app.getPath('userData')),
   butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
@@ -1539,12 +1702,14 @@ const sessionDeps: SessionVerbDeps = {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!channelId) return void sendToRenderer(CH.cron.toast, text)
-    discordRelay?.say(channelId, `⚠ ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
+    else sendToRenderer(CH.cron.toast, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && butler?.channelOfTab(callerTab)
+    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, { tell: tellCaller }),
   screen: screenOf
@@ -1569,6 +1734,7 @@ const agentRequests = new AgentRequests({
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
+      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
@@ -1613,6 +1779,35 @@ const agentRequests = new AgentRequests({
           ? { ok: true, out: onMachine.stdout }
           : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
       }
+    }),
+    todo: todoVerb({
+      allowed: butlerSide,
+      sidebar: () => workspaceMgr?.rows() ?? [],
+      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+      sessions: () => allSessions().filter((s) => !s.butler),
+      asking: asksTheOwner,
+      asleep: (sessionId) => !!sleepingTabOf(sessionId),
+      workLeft: async (row, merged) => {
+        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+        return tree ? whatIsLeft(hostGitOut, tree, merged) : null
+      },
+      worktrees: sessionDeps.worktrees,
+      repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
+      pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
+      notes: () => loadSettings().todoNotes,
+      saveNote: (key, text) => {
+        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+        if (!text) delete todoNotes[key]
+        commitSettings({ todoNotes })
+      },
+      projectFiles: async (wsPath) =>
+        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+      readText: (file) => hosts.of(file).readText(file),
+      servers: mcpServersNow,
+      butlerFolder: sessionDeps.butlerFolder,
+      now: Date.now
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -1652,19 +1847,66 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => UtilTerminalPick | undefined
+> = {
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
+  agy: () => {
+    const picked = terminalPickOf(pickAgyHome())
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+  }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
+}
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
   if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -1801,7 +2043,13 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
-let probeOnceTheRendererIsUp = false
+let probeOnceTheRendererIsUp: LaunchUsageProbe = null
+
+function probeSignInFolderAccounts(): Promise<void> {
+  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
+    () => undefined
+  )
+}
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
@@ -1810,9 +2058,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
       (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
     )
     await Promise.all([
-      probeCodexAccounts(),
-      probeMuseAccounts(),
-      probeAgyAccounts(),
+      probeSignInFolderAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -1834,6 +2080,11 @@ function probeAllForPanel(): Promise<AccountView[]> {
   }
   void round.then(release, release)
   return round
+}
+
+const LAUNCH_PROBES: Record<NonNullable<LaunchUsageProbe>, () => Promise<unknown>> = {
+  everyAccount: probeAllForPanel,
+  signInFoldersOnly: probeSignInFolderAccounts
 }
 
 async function addAccount(
@@ -1876,6 +2127,15 @@ async function addAccount(
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
 }
 
+function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  const acct = findAccount(name, kind)
+  if (!acct) return
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status === acct.status) return
+  upsertAccountMeta({ ...acct, status })
+  if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
+}
+
 const codexPicker = new HomeAccountPicker('codex-home')
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
@@ -1887,15 +2147,24 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; notice?: string } | undefined {
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
+  const picked = codexPicker.pick(
+    views,
+    sessionAccounts?.of('codex', resumeSessionId),
+    codexSessions?.launchedSessions()
+  )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'codex')
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -1904,8 +2173,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   const key = viewKey(name, 'codex-home')
   try {
     const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
-    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    foldHomeSignIn(name, 'codex-home', r.signedIn)
     usageViews.set(key, {
       limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
     })
@@ -1937,7 +2205,42 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
+interface HomeSignInTab {
+  kind: SignInFolderKind
+  name: string
+  again: boolean
+  output: SignInOutput
+}
+const signInPtys = new Map<string, HomeSignInTab>()
+let signInFailure: SignInFailure | null = null
+
+function setSignInFailure(f: SignInFailure | null): void {
+  signInFailure = f
+  sendToRenderer(CH.accounts.signInFailure, f)
+}
+
+function forgetAccount(name: string, kind: AccountKind): void {
+  removeAccountMeta(name, kind)
+  usageViews.delete(viewKey(name, kind))
+  picker.forget(kind, name)
+  pushAccounts()
+}
+
+async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
+  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
+    () => false
+  )
+  const account = findAccount(s.name, s.kind)
+  if (!probeAnswered || !account || account.status === 'ok') return
+  if (!s.again) forgetAccount(s.name, s.kind)
+  setSignInFailure({
+    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    name: s.name,
+    again: s.again,
+    tail: s.output.tail()
+  })
+}
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
@@ -1998,18 +2301,25 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
+  // PLATFORM§63
   const signIn = (quotedBinary: string): string =>
-    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
   const tab = homeShellTab(
-    login.binary
-      ? signIn(shq(login.binary))
-      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+    `${MARK_OUTPUT_START}; ` +
+      (login.binary
+        ? signIn(shq(login.binary))
+        : installThen(
+            BACKEND_OF_SIGN_IN_FOLDER[kind],
+            signIn,
+            process.env.KOLOFT_TEST_TOOL_INSTALLER
+          ))
   )
-  signInPtys.set(tab.tabId, { kind, name })
+  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
@@ -2028,15 +2338,25 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(
-  resumeSessionId?: string
-): { account: string; env: Record<string, string> } | undefined {
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
-  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  const picked = musePicker.pick(
+    views,
+    sessionAccounts?.of('muse', resumeSessionId),
+    museSessions?.launchedSessions()
+  )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
+  }
 }
 
 async function museServeFor(
@@ -2056,14 +2376,12 @@ async function probeMuseAccount(name: string): Promise<void> {
   museProbedAt.set(name, Date.now())
   try {
     const signIn = await museSignIn(serve)
-    const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
-    if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
+    foldHomeSignIn(name, 'muse-home', signIn !== 'none')
     if (signIn !== 'subscription') usageViews.delete(key)
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
       fs.mkdirSync(dir, { recursive: true })
-      const limits = await readMuseQuota(serve.binary, serve.env, dir)
+      const limits = await readMuseQuota(serve.binary, serve.env, dir, ptyMgr)
       usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
     }
   } catch {
@@ -2100,6 +2418,7 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
+const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
 function ownersGemini(): string {
@@ -2120,20 +2439,38 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): { account: string; home: string } | undefined {
-  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
-  return picked && { account: picked.name, home: agyHomeFor(picked.name) }
+function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+  const views = accountViews()
+  const picked = onlyAsking
+    ? agyPicker.peek(views)
+    : agyPicker.pick(
+        views,
+        sessionAccounts?.of('agy', resumeSessionId),
+        agySessions?.launchedSessions()
+      )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+    void probeAgyAccounts()
+  return (
+    picked && {
+      account: picked.name,
+      home: agyHomeFor(picked.name),
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'agy')
+    }
+  )
 }
 
 // AGY§5 AGY§6
 async function probeAgyAccount(name: string): Promise<void> {
   const acct = findAccount(name, 'agy-home')
   if (!acct) return
+  agyProbedAt.set(name, Date.now())
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
-  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-  if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  foldHomeSignIn(name, 'agy-home', signedIn)
   const key = viewKey(name, 'agy-home')
   if (signedIn && !apiKey) {
     const quota = await agyUsage(home)
@@ -2152,12 +2489,17 @@ async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
   return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
 
+let agyProbeRound: Promise<void> | null = null
+
 function probeAgyAccounts(): Promise<void> {
-  return Promise.all(
+  agyProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'agy-home' && a.enabled)
       .map((a) => probeAgyAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    agyProbeRound = null
+  })
+  return agyProbeRound
 }
 
 // AGY§6
@@ -2324,6 +2666,7 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
+  mainWindow.webContents.on('input-event', handsOnKoloft)
   // PLATFORM§10
   let pressedInHost = false
   mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
@@ -2394,6 +2737,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  presence.macLastUsed()
   protocol.handle('koloft-file', async (request) => {
     const url = new URL(request.url)
     const filePath = decodeURIComponent(url.pathname)
@@ -2432,8 +2776,10 @@ app.whenReady().then(() => {
 
   sweepStaleGitRequestDirs(pidAlive)
   const gitRequestDir = newGitRequestDir()
-  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } =
-    setupShim(gitRequestDir)
+  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
+    gitRequestDir,
+    conductorFolder(app.getPath('userData'))
+  )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
@@ -2442,10 +2788,7 @@ app.whenReady().then(() => {
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
-  if (watchOpenRequests(openDir)) {
-    ptyMgr.openDir = openDir
-    sweepOpenRequests(openDir)
-  }
+  if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
 
   ptyMgr.cdpDir = cdpEnvDir()
@@ -2555,6 +2898,7 @@ app.whenReady().then(() => {
     // CC§12
     if (sleepers.has(d.id)) return
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
@@ -2599,16 +2943,17 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
+    awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
     }
-    const signedIn = signInPtys.get(e.id)
-    if (signedIn) {
+    const signingIn = signInPtys.get(e.id)
+    if (signingIn) {
       signInPtys.delete(e.id)
-      void probeHomeAccount[signedIn.kind](signedIn.name)
+      void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
@@ -2648,9 +2993,10 @@ app.whenReady().then(() => {
     sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
-  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
+  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     discordRelay?.toolDone(tabId, call)
-  )
+    void askButtons?.check(tabId)
+  })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
@@ -2664,10 +3010,12 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
+    const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
+    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+    if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting'))
+    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
@@ -2719,7 +3067,9 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2727,7 +3077,8 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
+        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -2834,12 +3185,20 @@ app.whenReady().then(() => {
       })
       .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
+  for (const stored of [codexSessions, museSessions, agySessions])
+    if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>
         stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
       ),
     additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
+    additionalFolders: async () =>
+      (
+        await Promise.all(
+          storedSessions().map((stored) => stored.localHistoryFolders().catch(() => []))
+        )
+      ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
     saveLayout,
@@ -2962,6 +3321,8 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
+    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3010,7 +3371,10 @@ app.whenReady().then(() => {
   })
   discordTyping = new ButlerTyping({
     link,
-    channelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    channelOf: (tabId) =>
+      discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
+        ? butlerNow.channelOfTab(tabId)
+        : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
@@ -3025,7 +3389,8 @@ app.whenReady().then(() => {
       if (!discordRelay) return STILL_STARTING
       return discordRelay.answerSession(tabId, reply)
     },
-    respond: (i, body) => link.respond(i, body)
+    respond: (i, body) => link.respond(i, body),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
   const secrets = new SecretAsks({
@@ -3057,6 +3422,7 @@ app.whenReady().then(() => {
       return Buffer.from(await res.arrayBuffer())
     },
     owner: () => butlerNow.owner(),
+    ownerAway,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3073,15 +3439,24 @@ app.whenReady().then(() => {
         : []
     },
     butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    askChannelOf: (tabId) => (butlerSide(tabId) ? butlerNow.channel()?.channelId : undefined),
+    helperTitle: (tabId) =>
+      butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
+    askPlaced: (card, at) => buttons.placed(card, at),
+    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+    },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
@@ -3099,6 +3474,33 @@ app.whenReady().then(() => {
     attachmentsDir
   })
   discordRelay.watchAsks()
+  const relay = discordRelay
+  awayDigest = new AwayDigest({
+    away: ownerAway,
+    lastHandsAt: () => presence.lastHandsAt(),
+    reachable: () => discordConnected && !!butlerNow.channel(),
+    marks: () => attention.list(),
+    butlerSide,
+    judging: (tabId) => newsJudge.judging(tabId),
+    sessionOf: (mark) => {
+      const s = sessionOfTab(mark.tabId)
+      const workspace = sessionBackends.workspaceOfTab(mark.tabId)
+      return {
+        title: s?.title ?? mark.title,
+        sessionId: s?.sessionId ?? mark.sessionId,
+        workspace: workspace && path.basename(workspace)
+      }
+    },
+    butlerBusy: () => {
+      const tab = butlerNow.liveTab()
+      return relay.delivering() || (!!tab && !relay.takesCommand(tab))
+    },
+    tell: (text) => relay.tellQuietly(butlerDestination(), text),
+    now: Date.now,
+    gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
+  })
+  const digest = awayDigest
+  setInterval(() => digest.marked(), AWAY_CHECKED_EVERY_MS).unref()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3109,9 +3511,10 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set([
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
+        ...codexMachines
       ])
       const busy = new Set(
         allSessions().flatMap((s) => {
@@ -3123,17 +3526,22 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
-        ...(agySessions?.usesHost(t.host)
-          ? {
-              extraPulls: [
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
                 {
                   from: AGY_REMOTE_BRAIN,
                   to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
                   flags: AGY_BRAIN_FLAGS
                 }
               ]
-            }
-          : {}),
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -3150,7 +3558,14 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
-    onConnected: (host) => void freshness?.machineUp(host)
+    onConnected: (host) => void freshness?.machineUp(host),
+    onConnectedRound: (host) =>
+      void browserTunnels.sync(
+        host,
+        ptyTabIds()
+          .filter((id) => remoteHostOfTab(id) === host)
+          .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
+      )
   })
   ptyMgr.on('typed', (tabId: string) => {
     const host = machineOfTab(tabId)
@@ -3265,6 +3680,7 @@ app.whenReady().then(() => {
   // PLATFORM§7
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    contents.on('input-event', handsOnKoloft)
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (!(input.meta || input.control)) return
@@ -3294,6 +3710,11 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
+  powerMonitor.on('lock-screen', () => {
+    presence.screenLocked()
+    awayDigest?.marked()
+    discordRelay?.checkHeld()
+  })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
@@ -3304,9 +3725,7 @@ app.whenReady().then(() => {
   createWindow()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
-  const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  probeOnceTheRendererIsUp = capsuleShownSoLaunchProbeIsNotBilledForNothing()
+  probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -3350,7 +3769,10 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
-  if (!quitCommitted) rememberOpenTabs()
+  if (!quitCommitted) {
+    rememberOpenTabs()
+    browserTunnels.cancelOnQuit()
+  }
   quitCommitted = true
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
@@ -3393,6 +3815,8 @@ app.on('before-quit', (e) => {
   resetQuitGuard()
 })
 
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
+
 function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
   const dirs = playwrightBin ? `${ptyMgr.shimDir}:${playwrightBin}` : ptyMgr.shimDir
@@ -3402,26 +3826,13 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(openDir, () => (obj, full) => handleOpenRequest(obj as OpenDrop, full))
-}
-
-const OPEN_REQUEST_STILL_WANTED_MS = 60_000
-function sweepOpenRequests(openDir: string): void {
-  fs.readdir(openDir, (err, names) => {
-    if (err) return
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(openDir, name)
-      fs.stat(full, (e, st) => {
-        if (e) return
-        if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
-        } else {
-          fs.rm(full, { force: true }, () => {})
-        }
-      })
-    }
-  })
+  const handle = (obj: unknown, full: string): void => handleOpenRequest(obj as OpenDrop, full)
+  return watchAndSweepJsonDrops(
+    openDir,
+    () => handle,
+    undefined,
+    () => true
+  )
 }
 
 // ADR-0009
@@ -3823,6 +4234,10 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
+  if (guestDrivenFromAnotherMachine(from.id)) {
+    if (driver) void openForMachine(driver, url, relayDeps().create).catch(() => {})
+    return true
+  }
   if (driver) void cdpOp('create', driver, { url })
   return driver !== null
 }
@@ -3836,6 +4251,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     return
   }
   const decision = routeFor(url, 'user')
+  if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
   if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
@@ -3870,21 +4286,25 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-async function directoryTarget(url: string): Promise<string | null> {
-  let target: string
+function localFilePath(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.host && u.host !== 'localhost') return null
-    target = decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-  try {
-    return (await fs.promises.stat(target)).isDirectory() ? target : null
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
 }
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(target)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -3953,17 +4373,20 @@ function setupBrowserPartition(): void {
   ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
-    const dir = await directoryTarget(request.url)
-    if (dir) {
-      const entries = (await fs.promises.readdir(dir, { withFileTypes: true })).map((e) => ({
+    const target = localFilePath(request.url)
+    if (target && (await isDirectory(target))) {
+      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(dir, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
-    return ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    try {
+      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    } catch (err) {
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
+    }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   // PLATFORM§14
@@ -3986,9 +4409,21 @@ function setupBrowserPartition(): void {
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
   })
-  // PLATFORM§39
+  // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) })
+    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+      return callback({ cancel: true })
+    const guest = details.webContentsId
+    const fenced =
+      guest !== undefined
+        ? guestDrivenFromAnotherMachine(guest)
+        : details.initiatorOrigin !== undefined &&
+          originDrivenFromAnotherMachine(details.initiatorOrigin)
+    if (!fenced) return callback({})
+    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
+      notePageOpenedForAMachine(details.url)
+    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -4182,7 +4617,8 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
+const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
   return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
@@ -4207,32 +4643,47 @@ async function whatClosingWouldLose(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
+}
+
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
 }
 
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
-): Promise<void> {
+  info = projectInfoFor(target.treeRoot),
+  tell = tellTheOwner
+): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
-    return
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
-    return
+    tell(
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
+    )
+    return false
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
 async function removeUntouchedWorktree(
@@ -4259,6 +4710,7 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
 const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -4266,9 +4718,13 @@ async function whatClosingTheRunWouldLose(
   worktree?: string
 ): Promise<string[]> {
   if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked = codexSessions?.questionWentUnanswered(tabId)
+    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
+    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
+  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -4312,7 +4768,12 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
+  const result = await tidyTree(
+    hostGitOut,
+    info,
+    (d) => hosts.of(d).dirExistsOrThrow(d),
+    mergedHeads
+  )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
   return result
@@ -4417,8 +4878,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
-function couldNotStart(title: string): string {
-  return `Could not start “${title}” — click it to try again.`
+function couldNotStart(title: string, reason?: string): string {
+  return `Could not start “${title}” — ${reason || 'click it to try again.'}`
 }
 
 // CC§11
@@ -4448,7 +4909,9 @@ async function resumeRow(
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action
   })
-  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
+  if (!res.ok) {
+    return { ok: false, error: couldNotStart(row.title, res.code === 'backend' ? res.message : '') }
+  }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -4458,6 +4921,10 @@ async function resumeRow(
   }
   sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
+}
+
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
@@ -4571,6 +5038,7 @@ function butlerDestination(): Destination {
       const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
     typeCommand: async (tabId, command) => {
@@ -4609,13 +5077,10 @@ function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
-// AGY§8
-const A_HELPER_HAS_IT =
-  '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
-
 async function startHelper(
   task: (butler: SessionInfo) => ButlerHelperTask
 ): Promise<ConductorOpenResult> {
+  // AGY§8
   const opened = await butler?.open(A_HELPER_HAS_IT)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
@@ -4894,6 +5359,12 @@ function registerIpc(): void {
     CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
+  ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
+    if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
+    ptyMgr.moveOwner(oldTabId, newTabId)
+    for (const wc of webContents.getAllWebContents())
+      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+  })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
   ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
@@ -4912,8 +5383,8 @@ function registerIpc(): void {
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {
-      probeOnceTheRendererIsUp = false
-      void probeAllForPanel().catch(() => {})
+      void LAUNCH_PROBES[probeOnceTheRendererIsUp]().catch(() => {})
+      probeOnceTheRendererIsUp = null
     }
     const activeAsleep = restoreOpenTabs()
     cronRunner?.onRendererReady()
@@ -5000,10 +5471,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
-    removeAccountMeta(name, kind)
-    usageViews.delete(viewKey(name, kind))
-    picker.forget(kind, name)
-    pushAccounts()
+    forgetAccount(name, kind)
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
@@ -5028,6 +5496,8 @@ function registerIpc(): void {
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
+  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
   ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
@@ -5305,6 +5775,39 @@ function registerIpc(): void {
     },
     send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          geminiDir: ownersGemini()
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
+      ])
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
+    },
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
+  })
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
+
   ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)
@@ -5663,7 +6166,7 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
   )

@@ -8,6 +8,8 @@ const { spawnSync } = require('child_process')
 const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
 const STATUS_ON = `${ESC}]7501;?:states=`
+const MODEL = 'fake-model'
+const TOKENS_PER_REPLY = { input_tokens: 2000, cache_read_tokens: 500, output_tokens: 500 }
 const argv = process.argv.slice(2)
 const home = process.env.HOME
 const museHome = path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'muse')
@@ -118,6 +120,9 @@ else if (argv[0] === 'auth') {
     storeKey(key)
     process.stdout.write('credentials saved for provider meta\n')
   })
+} else if (argv[0] === 'login' && fs.existsSync(file('fake-muse-login-fails'))) {
+  process.stdout.write('Error: the device code expired before it was approved\n')
+  process.exit(1)
 } else if (argv[0] === 'login') {
   process.stdout.write('Open this page to sign in: https://auth.example/device  code: FAKE-CODE\n')
   storeKey('fake-login')
@@ -295,7 +300,7 @@ function tui() {
   const inputBox = () => {
     const rule = '─'.repeat(40)
     process.stdout.write(
-      `${rule}\r\n❯\r\n${rule}\r\n  fake-model · ${path.basename(process.cwd())}\r\n`
+      `${rule}\r\n❯\r\n${rule}\r\n  ${MODEL} · ${path.basename(process.cwd())}\r\n`
     )
   }
   const commit = (turnId, text) => {
@@ -306,6 +311,12 @@ function tui() {
       recordedAt: now()
     })
     save(session)
+    // MUSE§2
+    logRecord(session.id, 'runtime.session', {
+      kind: 'run',
+      run_id: turnId,
+      event: { kind: 'model_completed', model: MODEL, usage: TOKENS_PER_REPLY }
+    })
     logRecord(session.id, 'runtime.session', {
       kind: 'run',
       run_id: turnId,
@@ -555,6 +566,7 @@ function tui() {
   let asking = !trusted()
   const line = (text) => {
     if (asking) {
+      if (text === '2') process.exit(0)
       asking = false
       const t = fs.existsSync(trustFile) ? JSON.parse(fs.readFileSync(trustFile, 'utf8')) : {}
       t.schema_version = 1
@@ -594,6 +606,7 @@ function tui() {
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
@@ -606,14 +619,16 @@ function tui() {
         blocked(ch === '\n' ? '\r' : ch)
         continue
       }
-      if (ch === '\r' || ch === '\n') {
+      // MUSE§7
+      if (ch === '\r' || (ch === '\n' && enterArrivesAsLineFeed)) {
         const done = typed
         typed = ''
         line(done.trim())
       } else if (ch === '\x7f') typed = typed.slice(0, -1)
-      else if (ch >= ' ') typed += ch
+      else if (ch >= ' ' || ch === '\n') typed += ch
     }
   })
   process.on('SIGHUP', () => process.exit(0))
+  process.stdout.on('error', () => process.exit(0))
   if (!asking) start()
 }

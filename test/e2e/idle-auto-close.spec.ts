@@ -132,6 +132,70 @@ test('an idle session goes to sleep quietly, its needs-you mark unseen and kept:
   }
 })
 
+// CC§9
+test('a session that wakes into Claude asking whether to trust its folder shows that question within seconds instead of its old screen, and the answer typed into it lets the session carry on in that tab', async ({
+  env
+}) => {
+  test.setTimeout(120_000)
+  env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+  env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS)
+  seedSettings(env, { hintsOff: true })
+
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await waitBooted(page)
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
+
+    setNextSessionTitle(env, 'Asks trust A')
+    await startSessionIn(page, 'ws-a')
+    const [a] = await waitForCalls(env, 1)
+    setNextSessionTitle(env, 'Open B')
+    await startSessionIn(page, 'ws-b')
+    await waitForCalls(env, 2)
+
+    await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
+    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
+    await expect(row('Asks trust A')).toHaveClass(/\bst-idle\b/)
+    const before = new Set(await termIds(page))
+
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), a.sessionId)
+    await row('Asks trust A').click()
+    const calls = await waitForCalls(env, 3)
+    expect(resumedId(calls[2])).toBe(a.sessionId)
+    let woken = ''
+    await expect
+      .poll(async () => (woken = (await termIds(page)).find((id) => !before.has(id)) ?? ''))
+      .not.toBe('')
+    await expect
+      .poll(
+        () =>
+          page.evaluate((id) => {
+            const terms = (window as unknown as { __koloftTerms: Record<string, Terminal> })
+              .__koloftTerms
+            const wrap = terms[id]?.element?.closest('.term-wrap') as HTMLElement | null
+            return !!wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden'
+          }, woken),
+        { timeout: 15_000 }
+      )
+      .toBe(true)
+    expect(await terminalText(page, woken)).toContain('Quick safety check')
+    await expect.poll(() => focusOwner(page)).toBe('tui')
+
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(row('Asks trust A')).toHaveAttribute('data-tab-id', woken, { timeout: 30_000 })
+    await page.keyboard.type('/answer after trusting')
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(() => terminalText(page, woken), { timeout: 30_000 })
+      .toContain('answered: after trusting')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
 test('a Keep running session never goes to sleep for being idle, while an ordinary one beside it does, needs-you mark and all', async ({
   env
 }) => {

@@ -6,7 +6,7 @@ import { shq } from '@shared/shellQuote'
 import { REMOTE_ENV_LINES, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 
 export const CLAUDE_AUTH_ENV_VARS = [
@@ -51,7 +51,15 @@ export interface MachinePackage {
 
 export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
+export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
+
+export function koloftSkillLine(skillsDir: string, machineDir: string | undefined): string {
+  const dir = `${skillsDir}/${KOLOFT_SKILL}`
+  if (!machineDir) return `rm -rf "${dir}"`
+  const copy = `"${dir}/SKILL.md.k$$"`
+  return `mkdir -p "${dir}" && cp "${machineDir}/${AGENT_PLUGIN_DIR}${KOLOFT_SKILL_FILE}" ${copy} && mv -f ${copy} "${dir}/SKILL.md"`
+}
 
 export function buildMachinePackage(
   base: string,
@@ -72,7 +80,8 @@ export function buildMachinePackage(
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
       const executable =
-        rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR) || rel.startsWith(SESSION_BIN_DIR)
+        rel.endsWith('.sh') ||
+        [UTIL_BIN_DIR, SESSION_BIN_DIR, CLAUDE_BIN_DIR].some((bin) => rel.startsWith(bin))
       fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')
@@ -99,12 +108,48 @@ export interface TabSpec {
   banner: string
   env?: Record<string, string>
   portOffset?: number
-  settings: Record<string, unknown>
   ownerWords?: string
+  program: TabProgram
+}
+
+export interface TabProgram {
+  run: string
+  beforeEnsure: string
+  ensureTool?: 'muse' | 'agy'
+  beforeTmux: string
+  files: Record<string, string>
+}
+
+export interface ClaudeTab {
+  settings: Record<string, unknown>
   agentPlugin?: boolean
   claudeArgs: string[]
-  program?: { name: 'muse' | 'agy'; run: string; files: Record<string, string> }
 }
+
+export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
+  ...tab,
+  program: {
+    run: claudeRun(tab.tabId, c),
+    beforeEnsure: '',
+    beforeTmux: claudeFirstRun(tab),
+    files: {
+      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
+      [`${tab.tabId}.tmux`]: tab.tmuxName
+    }
+  }
+})
+
+export const machineToolProgram = (
+  name: 'muse' | 'agy',
+  run: string,
+  files: Record<string, string>
+): TabProgram => ({
+  run,
+  beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
+  ensureTool: name,
+  beforeTmux: 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n',
+  files
+})
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
@@ -113,12 +158,13 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
-function claudeRun(spec: TabSpec): string {
-  const T = tabPath(spec.tabId)
-  return `  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}\n`
+function claudeRun(tabId: string, c: ClaudeTab): string {
+  const T = tabPath(tabId)
+  return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
+  exec claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}\n`
 }
 
-function claudeFirstRun(spec: TabSpec): string {
+function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)
   return `${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
@@ -137,15 +183,15 @@ fi
 `
 }
 
+const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
+
 export function tabScript(spec: TabSpec): string {
   assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
   const T = tabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   const program = spec.program
   // PLATFORM§35
-  const attachTo = program
-    ? `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
-    : `'${spec.tmuxName}'`
+  const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -156,24 +202,34 @@ if [ "$1" = run ]; then
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${program ? program.run : claudeRun(spec)}fi
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
+  (
+${program.run}  )
+  c=$?
+  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
+  echo $c > "${T}.exit"
+  exit
+fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
-[ "$1" = attach ] && exec tmux -L koloft attach -d -t ${attachTo}
-${program ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${program ? ` ${program.name}` : ''} || exit $?
+exited() {
+  c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
+  [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
+  [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
+  rm -f "${T}.env"; exit $c
+}
+[ "$1" = attach ] && { tmux -L koloft attach -d -t ${attachTo}; exited; }
+${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}"
-${program ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
-c=$?
-rm -f "${T}.env"
-exit $c
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen"
+${program.beforeTmux}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+exited
 `
 }
 
 export function writeTabPackage(dir: string, spec: TabSpec): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const files = spec.program?.files ?? { [`${spec.tabId}.json`]: JSON.stringify(spec.settings) }
-  for (const [name, text] of Object.entries(files))
+  for (const [name, text] of Object.entries(spec.program.files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })
   if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(dir, spec.tabId), spec.ownerWords)
@@ -245,7 +301,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
     `${tabPushed(s)}a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
-    `[ "$c" = 0 ] || { echo "[Koloft] the session did not start (exit $c) — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
+    `[ "$c" = 0 ] || { echo "[Koloft] the session on the machine stopped with exit code $c — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
   )
@@ -279,4 +335,11 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
 export function killSessionCmd(tmuxName: string): string {
   assertSafeNames(tmuxName)
   return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
+}
+
+export function renameSessionCmd(tabId: string, from: string, to: string): string {
+  assertSafeNames(tabId, from, to)
+  return remoteShCommand(
+    `tmux -L koloft rename-session -t ${from} ${to} && printf %s ${to} > "${tabPath(tabId)}.tmux"`
+  )
 }

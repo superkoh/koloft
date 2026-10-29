@@ -37,6 +37,7 @@ export type CodexUpstreamFactory = (
 
 export interface CodexTransportOptions extends CodexProcessOptions {
   upstream?: CodexUpstreamFactory
+  skillRoots?: string[]
   onFrame(direction: 'client' | 'server', frame: CodexFrame): void
   observes?(direction: 'client' | 'server', head: CodexFrameHead): boolean
   onDisconnect?(): void
@@ -115,6 +116,17 @@ export function readFrame(line: Buffer): ReadFrame | undefined {
   if (!text.trim()) return undefined
   parsed = parseFrame(text)
   return { raw: line, head: headOf(parsed), parse }
+}
+
+// CODEX§20
+function questionThatWaitsForTheOwner({ raw, head, parse }: ReadFrame): Buffer {
+  if (head.method !== 'item/tool/requestUserInput') return raw
+  const frame = parse()
+  const params = frame.params as Record<string, unknown> | undefined
+  if (!params || (params.isBlocking === true && params.autoResolutionMs == null)) return raw
+  return Buffer.from(
+    JSON.stringify({ ...frame, params: { ...params, isBlocking: true, autoResolutionMs: null } })
+  )
 }
 
 function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
@@ -443,16 +455,24 @@ export async function createCodexTransport(
     report(error)
     void stop().catch(report)
   }
+  const request = (
+    method: string,
+    params: unknown,
+    timeoutMs = DEFAULT_TIMEOUT
+  ): Promise<unknown> =>
+    sendRequest(own, `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`, method, params, timeoutMs, (raw) =>
+      upstream.write(raw)
+    )
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
   const upstream = upstreamOf((read) => {
-    const { raw, head } = read
-    const { replyTo } = head
+    const { replyTo } = read.head
     // CODEX§1
     if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
       settleRequest(own, replyTo, read.parse)
       return
     }
+    const raw = questionThatWaitsForTheOwner(read)
     observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
       if (client.bufferedAmount > upstream.limit * 2)
@@ -488,6 +508,11 @@ export async function createCodexTransport(
           observe('client', read)
           // CODEX§1
           upstream.write(line)
+          // CODEX§17
+          if (read.head.method === 'initialized' && options.skillRoots)
+            request('skills/extraRoots/set', { extraRoots: options.skillRoots }).catch((err) =>
+              console.error('[koloft] Codex did not take the koloft skill:', err)
+            )
         } catch (error) {
           fail(asError(error))
         }
@@ -518,19 +543,7 @@ export async function createCodexTransport(
     })
     await fs.chmod(socketPath, 0o600)
     // CODEX§9
-    return {
-      url: `unix://${socketPath}`,
-      stop,
-      request: (method, params, timeoutMs = DEFAULT_TIMEOUT) =>
-        sendRequest(
-          own,
-          `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`,
-          method,
-          params,
-          timeoutMs,
-          (raw) => upstream.write(raw)
-        )
-    }
+    return { url: `unix://${socketPath}`, stop, request }
   } catch (error) {
     await stop().catch(report)
     throw error
@@ -541,6 +554,8 @@ const METHODS_A_SIDE_CONNECTION_MAY_SEND_NEVER_A_TURN = [
   'thread/list',
   // CODEX§24
   'thread/search',
+  'thread/searchOccurrences',
+  'thread/turns/list',
   'thread/read',
   'thread/loaded/list',
   'account/read',
