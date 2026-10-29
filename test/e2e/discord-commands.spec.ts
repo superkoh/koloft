@@ -79,7 +79,9 @@ async function butlerTab(page: Page): Promise<string> {
 }
 
 async function butlerShownWorkingOnItsOpeningTurn(fake: FakeDiscord): Promise<void> {
-  await expect.poll(() => fake.typing).toContain(CHANNEL)
+  await expect
+    .poll(() => fake.typing, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    .toContain(CHANNEL)
 }
 
 async function connected(
