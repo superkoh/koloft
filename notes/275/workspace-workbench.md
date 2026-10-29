@@ -38,7 +38,7 @@ Workbench button on the right edge still shows but greyed out (`aria-disabled={!
 At most 8 tabs of each kind (`PERSISTED_TAB_CAP`, `workbenchState.ts:3`).
 
 **Where it is kept.** In memory, by the session tab's id: `workbench[tabId]`,
-`workbenchOpen[tabId]` (`store.ts:123`, `:353-358` moves the keys when the tab id
+`workbenchOpen[tabId]` (`store.ts:124`, `:353-358` moves the keys when the tab id
 changes). On disk, by the **session id** bound to the tab: `writeWorkbench` sends
 `{ open, tabs }` for `boundSessionId(s, tabId)` (`store.ts:510-516`) to main, which stores
 it in `layout.json` under `panels[sessionId]` (`workspaces.ts:523-535`, `layout.ts:11`) —
@@ -81,16 +81,35 @@ does not change here.
 
 | Tab | In it? | Why |
 |---|---|---|
-| Files (with its changed-files view) | **yes**, rooted at the workspace folder (the main checkout) | It is the always-there first tab of every Workbench (`emptyTabSet`, `workbenchTabs.ts:57-58`), and `fileTreeRoot` already falls back to the welcome workspace's folder today (`App.tsx:1318-1322`). No new code to have it. Named difference: a worktree session's Files shows its worktree; this one shows the main folder. |
+| Files (with its changed-files view) | **yes**, rooted at the workspace folder (the main checkout) | It is the always-there first tab of every Workbench (`emptyTabSet`, `workbenchTabs.ts:57-58`), and `fileTreeRoot` already falls back to the welcome workspace's folder today (`App.tsx:1318-1322`). No new code to have it. Named differences: a worktree session's Files shows its worktree, this one shows the main folder; and the two session-only items are hidden — the "This session wrote" ownership filter (`FilesView.tsx:398-404`, it would always be empty) and the right-click "mention this file in the session" (`:840-844`, there is no session to paste into). |
 | File tabs | **yes** | A file clicked in Files opens as a file tab; same code. |
 | Web tabs | **yes** | The issue and PR lists, and any page the user opens with "+" or the address bar. The GitHub button in the tab strip works too: it needs only the folder (`useWorkbenchGithub(visible, treeRoot, session, …)`, `workbenchGithub.tsx:110-118`); with no session, its "send failing checks to the session" item has no session to paste into (`pasteTab = session?.tabId ?? null`, `:133`) and is left off. |
 | Terminal (shell) | **no** (recommended; see Question 1) | A Workbench shell is tied to a session tab: its folder is read from that tab (`store.ts:1095-1099`), it is tagged `ownerTabId`, it keeps that tab from closing on its own (`heldTabs`, `src/main/index.ts:686-692`), and it ends with that tab. A workspace row never closes, so a shell there would need a new rule for when it ends. The "+" menu shows "Terminal" greyed out, the way it does for a stopped session (`canTerminal={!sessionCold}`, `WorkbenchPane.tsx:1296`; the workspace key counts as live, so this needs its own check). |
 
 **No agent drives it.** `koloft open`, a link clicked in a session's terminal, and an
 agent's browser keep going to that **session's** Workbench, never to the workspace's: the
-workspace Workbench has no session (`tabForSession` never returns it). A link clicked while
-the welcome page is up still goes to the page overlay, as today (`openWebPage`,
-`store.ts:1320-1327`) — see Out of scope.
+workspace Workbench has no session (`tabForSession` never returns it).
+
+**Links.** A link clicked in a file preview **inside** the workspace Workbench opens as a
+web tab in that same Workbench: the preview already passes its owner
+(`openWebPage(href, tabId)`, `ArtifactPane.tsx:519`, `:524`), and `openWebPage` uses that
+owner when it is the workspace key instead of looking at `activeTabId` (today it reads
+only `activeTabId`, `store.ts:1320-1327`, which is empty on the welcome page, so the link
+would fall to the page overlay). Any other link clicked while the welcome page is up (e.g.
+in the note's preview) still goes to the page overlay, as today — see Out of scope.
+
+**Other cases.**
+- A workspace whose folder was deleted ("missing") has no git mark, so no panel and no
+  rows (`isGit && !missing`, `WorkspaceSidebar.tsx:516`), and its row cannot be selected
+  (`:483-485`); it never gets a welcome page or a Workbench.
+- A folder that is not a git repo, or a repo not on github.com: the panel has no GitHub
+  part, so no rows; the workspace Workbench still opens (Files, web tabs), and its GitHub
+  button stays hidden as in a session's (`setGithubBtn(visible && !!info)`,
+  `workbenchGithub.tsx:120-123`).
+- Two workspaces: each has its own Workbench; selecting the other row swaps the right side
+  the way switching session tabs does.
+- The Workbench's hover preview card (`WorkbenchPreview`, `App.tsx:1871`) works for the
+  workspace key; its "documents" list is empty, because that list is the session's.
 
 ### Clicking "12 open issues"
 
@@ -107,7 +126,8 @@ click "12 open issues" in the panel of workspace W
    │  whatever session was on screen keeps running — the page says "1 running"
    ├─ W's Workbench opens
    └─ a web tab shows https://github.com/<owner>/<repo>/issues
-      (an open tab with that page is reused, not doubled)
+      (an open tab with that page is reused, not doubled — `openTab`
+       matches by `dedupKey`; inferred, not checked after a sign-in redirect)
 ```
 
 This is the owner's "always in that workspace's Workbench": it leaves the session view
@@ -116,9 +136,10 @@ even when the user was in a session of W. That is the one change a user meets th
 
 - The URL comes from main, `window.api.github.target(W, 'issues' | 'pulls')`, so a private
   repo goes through `github.com/login?return_to=…` when Koloft's browser is not signed in
-  (`src/main/github.ts:275-290`, `docs/platform-contract.md` §32). `'issues'` is a new
-  `GithubTarget` (`src/shared/types.ts`) and must be added to the IPC whitelist in
-  `src/main/index.ts`. A `null` answer opens nothing, as the Workbench GitHub button does.
+  (`target()`, `src/main/github.ts:382-397`; the redirect, `src/shared/githubUrl.ts:99`;
+  `docs/platform-contract.md` §32). `'issues'` is a new `GithubTarget`
+  (`src/shared/types.ts`) and must be added to the IPC whitelist
+  (`src/main/index.ts:6124`). A `null` answer opens nothing, as the Workbench GitHub button does.
 - A remote workspace whose machine is offline: the two rows are greyed out, like Pull and
   Fetch (`offline`, `FreshnessPopover.tsx:449`, `:493`, `:513`), because `target()` may have
   to read the remote's `git config` over the dead link when its 5-minute cache is out.
@@ -147,7 +168,11 @@ even when the user was in a session of W. That is the one change a user meets th
   (`sanitizeSessionWorkbench`) as `panels`, so the same 8-per-kind cap. No version bump:
   `migrateLayout` for version 6 already carries an optional field the same way (`resident`,
   `layoutMigrate.ts:186-197`), and it must read the new one there too or it is dropped on
-  load. The entry goes when the workspace is removed (`unpin`, `workspaces.ts:670`).
+  load. The entry goes when the workspace is removed (`unpin`, `workspaces.ts:670`), and
+  the renderer drops the in-memory keys (`workbench`, `workbenchOpen`, `workbenchFetched`,
+  `workbenchWidths`) at the same time — today only `removeTab` drops them
+  (`store.ts:649-672`), so without this a workspace added back in the same run would show
+  its old tabs.
 - **After quitting the app**: the tabs are still there (as a session's are). Terminal tabs
   never are.
 - **Downgrade** (inferred, not checked): an older Koloft drops the unknown field on its
@@ -192,7 +217,7 @@ this change it would read:
 - No tab moves out of any session's Workbench; `panels` is not touched.
 - The first click on a count opens the workspace Workbench and its list.
 
-### Code (inferred, not checked: about +130 / −15 lines under `src/`)
+### Code (inferred, not checked: about +160 / −20 lines under `src/`)
 
 | File | Change |
 |---|---|
@@ -201,10 +226,30 @@ this change it would read:
 | `src/main/layoutMigrate.ts` | read `workspacePanels` for version 6 |
 | `src/main/workspaces.ts` | `workspaceWorkbenchState(path)`, `setWorkspaceWorkbenchState(path, state)` (pinned paths only); drop it in `unpin` |
 | `src/main/index.ts` + `src/preload/index.ts` + `ipcChannels.ts` | two IPC calls for the above; `'issues'` in the `target` whitelist |
-| `src/renderer/src/store.ts` | a workspace key `ws:<path>`: `workbenchAllowed`, `ensureWorkbench`, `writeWorkbench` read and write it through the new calls instead of `boundSessionId`; `openWorkspaceList(path, what)` = select workspace, open its Workbench, `openWorkbenchTarget` the URL |
-| `src/renderer/src/App.tsx` | `panelTab` falls back to the workspace key when no tab is shown and the welcome page is up; `liveTabs` includes it; `panelReady` is true for it (today it needs a bound session, `:1289-1290`), so the Workbench button and ⇧⌘B work |
+| `src/renderer/src/store.ts` | a workspace key `ws:<path>`, accepted everywhere a session tab with a bound session is checked today: `workbenchAllowed`, `whenWorkbenchFetched` (without it the action is parked and then thrown away, because `bindParkedWorkbench` keeps only ids in `s.tabs`, `:479-500`), `ensureWorkbench` and `writeWorkbench` (read and write through the new calls instead of `boundSessionId`), `panelTabId` (`:450-453`), `setWorkbenchFull` (checks `activeTabId`, `:1041-1043`); `openWebPage` uses a workspace-key owner it is given; drop the key's maps when the workspace is removed; `openWorkspaceList(path, what)` = select workspace, open its Workbench, `openWorkbenchTarget` the URL |
+| `src/renderer/src/App.tsx` | `panelTab` falls back to the workspace key when no tab is shown and the welcome page is up; `liveTabs` includes it; `panelReady` is true for it (today it needs a bound session, `:1289-1290`); `panelActionTab` (`:196-203`, also behind full width, the browser tab keys, find file and the palette's "toggle Workbench") accepts it, so ⇧⌘B and the other Workbench keys work |
 | `src/renderer/src/components/WorkbenchPane.tsx` | "Terminal" greyed for the workspace key |
+| `src/renderer/src/components/FilesView.tsx` | hide "This session wrote" and "mention in session" when there is no session |
 | `src/renderer/src/components/FreshnessPopover.tsx` | the counts line becomes two `.tbu-act` rows; click → close panel → `openWorkspaceList` |
+
+## Questions for the owner
+
+1. **Build the workspace Workbench as designed?**
+   - **A. (Recommended) Yes: Files + file tabs + web pages, no shell.** About +160/−20
+     lines (inferred, not checked). A click on a count leaves the session the user was in
+     (it keeps running; its row is one click away), because the list always opens in the
+     workspace's Workbench.
+   - **B. Same, plus a shell tab in the workspace folder.** A workspace row never closes,
+     so the shell needs its own end rule (it would run until the workspace is removed or
+     Koloft quits); about +40 more lines (inferred, not checked).
+   - **C. Web pages only, no Files tab.** Not smaller: every Workbench is built with Files
+     as its fixed first tab (`emptyTabSet`), so removing it for the workspace adds code.
+2. **Should the numbers on the sidebar row open the lists too?**
+   - **Yes (recommended).** A click on the row already selects the workspace, so a click on
+     "12" also opens its list in that workspace's Workbench, the same place the panel's
+     button uses. About +10 lines in `WorkspaceSidebar.tsx` and one more e2e step; the
+     numbers are small (10.5 px) targets, and a near miss only selects the row.
+   - **No.** They stay plain text; the lists open from the git panel only. No extra code.
 
 ## Facts used
 
@@ -236,8 +281,9 @@ this change it would read:
 
 ## Out of scope
 
-- A link clicked while the welcome page is up (e.g. in the note's preview) keeps going to
-  the page overlay; sending it to the workspace Workbench is a separate choice.
+- A link clicked while the welcome page is up, outside the workspace Workbench (e.g. in the
+  note's preview), keeps going to the page overlay; sending it to the workspace Workbench
+  is a separate choice.
 - A shell in the workspace Workbench (Question 1, option B).
 - Whether the sidebar row's own numbers are clickable (Question 2).
 - A list of issues drawn by Koloft itself (the New Worktree Session dialog already lists
