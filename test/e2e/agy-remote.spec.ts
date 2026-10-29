@@ -274,7 +274,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       )
       const agy = await boundRemoteAgy(page)
 
-      await startSessionIn(page, 'ws-a')
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
       let sender = ''
       await expect
         .poll(async () => {
