@@ -3,7 +3,13 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import type { BackendId } from '@shared/types'
 import { writeAgentShim } from './agentShim'
-import { OPEN_SHIM_FOLDER, ownedByThisRun, removeFoldersLeftByEndedRuns } from './leftovers'
+import {
+  CODEX_TMP_DIR,
+  OPEN_REQUEST_FOLDER,
+  OPEN_SHIM_FOLDER,
+  ownedByThisRun,
+  removeFoldersLeftByEndedRuns
+} from './leftovers'
 import { oncePerName, watchAndSweepJsonDrops, type DropHandlerFor } from './jsonDrops'
 import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim, type OpenShim } from './openShimScript'
@@ -20,8 +26,6 @@ export interface ToolShim {
   release(): void
 }
 
-const rootsSweptThisRun = new Set<string>()
-
 // CODEX§12 MUSE§8
 export function startToolShim(
   deps: ToolShimDeps,
@@ -33,10 +37,8 @@ export function startToolShim(
     drop?: DropHandlerFor
   }
 ): ToolShim {
-  if (!rootsSweptThisRun.has(deps.openShimRoot)) {
-    rootsSweptThisRun.add(deps.openShimRoot)
-    removeFoldersLeftByEndedRuns(deps.openShimRoot, OPEN_SHIM_FOLDER)
-  }
+  removeFoldersLeftByEndedRuns(deps.openShimRoot, OPEN_SHIM_FOLDER)
+  removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, OPEN_REQUEST_FOLDER)
   const shim = writeOpenShim(deps.openShimRoot, ownedByThisRun(randomUUID()), opts.userZdotdir)
   try {
     fs.symlinkSync(
