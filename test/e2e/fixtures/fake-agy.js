@@ -528,7 +528,6 @@ function conversationRecord(id, fields = {}) {
     userConfigs: {},
     lockFd: null,
     executions: 0,
-    tasks: 0,
     totals: { input: 0, output: 0, cacheRead: 0, lastInput: 0 },
     ...fields
   }
@@ -802,6 +801,7 @@ function statusInput() {
   const c = conversation
   const t = c?.totals ?? { input: 0, output: 0, cacheRead: 0, lastInput: 0 }
   const used = Math.round(((t.lastInput + t.cacheRead) / CONTEXT_WINDOW_SIZE) * 10000) / 100
+  const taskCount = tasksOf(c?.id).length
   return {
     agent_state: term.agentState,
     context_window: {
@@ -827,7 +827,7 @@ function statusInput() {
     session_id: c?.id ?? '',
     terminal_width: process.stdout.columns || 80,
     tool_confirmation_pending: Boolean(pendingAsk),
-    ...(tasksOf(c?.id).length ? { task_count: tasksOf(c?.id).length } : {}),
+    ...(taskCount ? { task_count: taskCount } : {}),
     transcript_path: c
       ? path.join(
           geminiDir,
@@ -1489,10 +1489,9 @@ async function backgroundScenario(turn, command) {
     name: 'run_command',
     args,
     run: (stepIdx, toolCall) => {
-      const task = ++c.tasks
       const tasksDir = path.join(brainDir(c.id), '.system_generated', 'tasks')
       ensureDir(tasksDir)
-      const logFile = path.join(tasksDir, `task-${task}.log`)
+      const logFile = path.join(tasksDir, `task-${stepIdx}.log`)
       fs.writeFileSync(logFile, '')
       const taskId = `${c.id}/task-${stepIdx}`
       backgroundTasks.set(taskId, {

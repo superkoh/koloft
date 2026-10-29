@@ -124,7 +124,6 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
-  // AGY§9
   // AGY§11 AGY§13
   test('a command agy leaves running in the background on the machine shows on its row breathing green with ↻, named by its command line, until it ends', async ({
     env
@@ -155,6 +154,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§9
   test("closing the remote tab ends agy's tmux session there; its row stays, cold, and clicking it resumes the same conversation on the machine, whose resuming mask lifts once the tab binds to it", async ({
     env
   }) => {

@@ -173,6 +173,12 @@ interface AgyAsk {
   plan?: string
 }
 
+interface AgyCommand {
+  item: BackgroundItem
+  shown: boolean
+  ran?: boolean
+}
+
 interface AgyRun extends StoredRun {
   account: string
   pid?: number
@@ -189,7 +195,7 @@ interface AgyRun extends StoredRun {
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
   schedules?: Set<string>
-  commands?: Map<string, { item: BackgroundItem; shown: boolean; ran?: boolean }>
+  commands?: Map<string, AgyCommand>
   countsTasks?: boolean
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
@@ -297,6 +303,11 @@ function logTail(file: string): { size: number; text: string } {
 
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
+}
+
+// AGY§13
+function commandsOf(run: AgyRun, conversationId: string): [string, AgyCommand][] {
+  return [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
 // AGY§11 AGY§12
@@ -784,7 +795,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (taskCount !== undefined) run.countsTasks = true
     if (agentState !== 'idle' || !run.commands?.size) return
     if (run.api) return this.askCommands(run)
-    const mine = [...run.commands].filter(([id]) => id.startsWith(`${conversationId}/`))
+    const mine = commandsOf(run, conversationId)
     if (!taskCount && run.countsTasks)
       return this.dropCommands(
         run,
@@ -817,13 +828,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§12 AGY§13
   private sortAnswered(run: AgyRun, conversationId: string, input: Record<string, unknown>): void {
-    const mine = [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
-    if (input.invocationNum !== 0) for (const [, command] of mine) command.ran = true
-    else
+    const mine = commandsOf(run, conversationId)
+    if (input.invocationNum !== 0) {
+      for (const [, command] of mine) command.ran = true
+    } else {
+      const declined = mine.filter(([, command]) => !command.ran)
       this.dropCommands(
         run,
-        mine.flatMap(([id, command]) => (command.ran ? [] : [id]))
+        declined.map(([id]) => id)
       )
+    }
   }
 
   private dropCommands(run: AgyRun, ids: string[]): void {
@@ -834,10 +848,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   private publishBackground(run: AgyRun): void {
     const commands = [...(run.commands?.values() ?? [])].flatMap((c) => (c.shown ? [c.item] : []))
-    const named = commands.some((item) => item.kind === 'command')
     this.deps.events(run.tabId, {
       type: 'background-changed',
-      items: [...(run.background && !named ? [run.background] : []), ...commands]
+      items: [...(run.background ? [run.background] : []), ...commands]
     })
   }
 
@@ -967,18 +980,21 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private trackTasks(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
     const { event, input, conversationId } = hook
+    if (event === 'PreInvocation') return this.sortAnswered(run, conversationId, input)
     const call = record(input.toolCall)
     const args = record(call.args)
     const taskId = `${conversationId}/task-${String(input.stepIdx)}`
-    if (event === 'PreInvocation') return this.sortAnswered(run, conversationId, input)
     if (call.name === 'run_command') {
       if (event === 'PreToolUse') {
         const label =
           argOf(args, 'CommandLine')?.slice(0, COMMAND_LABEL_CHARS) ?? 'Background command'
-        const item: BackgroundItem =
-          args.IsDaemon === true
-            ? { id: taskId, kind: 'server', label, state: 'waiting' }
-            : { id: taskId, kind: 'command', label, state: 'working' }
+        const item: BackgroundItem = {
+          id: taskId,
+          label,
+          ...(args.IsDaemon === true
+            ? { kind: 'server', state: 'waiting' }
+            : { kind: 'command', state: 'working' })
+        }
         ;(run.commands ??= new Map()).set(taskId, { item, shown: false })
       } else if (event === 'PostToolUse') this.dropCommands(run, [taskId])
       return
@@ -1033,7 +1049,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (run.api) this.endCompaction(run)
       else this.deps.events(run.tabId, { type: 'compacted' })
     }
-    const busy = input.fullyIdle === false
+    const namedCommandRuns = [...(run.commands?.values() ?? [])].some(
+      (command) => command.ran && command.item.kind === 'command'
+    )
+    const busy = input.fullyIdle === false && !namedCommandRuns
     if (busy === !!run.background) return
     run.background = busy
       ? { id: 'agy-background', kind: 'agent', label: 'Background work', state: 'working' }
