@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   agySessionCalls,
   installAgy,
@@ -78,12 +78,8 @@ async function butlerTab(page: Page): Promise<string> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.tabId ?? ''
 }
 
-async function butlersOpeningTurnDone(page: Page): Promise<void> {
-  const done = async (): Promise<boolean> => {
-    const tab = await butlerTab(page)
-    return (await pendingAttention(page)).some((e) => e.tabId === tab && e.kind === 'turn-done')
-  }
-  await expect.poll(done, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBe(true)
+async function butlerShownWorkingOnItsOpeningTurn(fake: FakeDiscord): Promise<void> {
+  await expect.poll(() => fake.typing).toContain(CHANNEL)
 }
 
 async function connected(
@@ -104,7 +100,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   }) => {
     seedConductor(env)
     const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
+    const { app } = await connected(env, fake)
     try {
       await expect
         .poll(() => fake.commands.map((c) => c.name).sort())
@@ -113,7 +109,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         Object.fromEntries(fake.commands.map((c) => [c.name, (c.options ?? []).map((o) => o.name)]))
       ).toEqual({ run: ['command'], clear: [], compact: ['focus'] })
 
-      await butlersOpeningTurnDone(page)
+      await butlerShownWorkingOnItsOpeningTurn(fake)
       const asked = fake.interact(OWNER, 'run', { command: '/context' })
       await expect
         .poll(() => replyTo(fake, asked))
