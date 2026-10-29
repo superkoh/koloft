@@ -794,7 +794,10 @@ only downloaded the public release.
   same `3`, words and Enter sent in one burst worked too. With two questions the box reads
   "Question 1/2" ("→ Next · enter Select"); a digit, or a write-in and its Enter, moves to
   "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
-  `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`.
+  `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
+  `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
+  not tried.
 
 ## §15 Typing into it
 

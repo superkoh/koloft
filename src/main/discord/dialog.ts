@@ -163,10 +163,7 @@ export function hookAnswer(p: AskPayload, reply: string): Record<string, unknown
   const input = p.tool_input ?? {}
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
-    const lines = text
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
+    const lines = replyLines(text)
     const isLabel = qs.some((q) =>
       q.options.some((o) => o.label.toLowerCase() === lines[0]?.toLowerCase())
     )
@@ -214,7 +211,7 @@ export function codexKeyFor(reply: string): string | undefined {
   return undefined
 }
 
-function labelsOf(raw: unknown): Option[] {
+export function labelsOf(raw: unknown): Option[] {
   return (Array.isArray(raw) ? raw : []).flatMap((o) => {
     const x = (o ?? {}) as { label?: unknown; description?: unknown }
     if (typeof o === 'string') return [{ label: o }]
@@ -266,7 +263,7 @@ export const NO_OWN_WORDS =
 const ONE_LINE_PER_PICK = 'Reply with one line per question: the number or the name of one option.'
 
 export function howToAnswer(q: Asked): string {
-  const ownWords = q.questions.every((x) => x.ownWords)
+  const ownWords = q.questions.some((x) => x.ownWords)
   if (q.questions.length > 1) return ownWords ? ONE_LINE_PER_QUESTION : ONE_LINE_PER_PICK
   return ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
 }
@@ -275,36 +272,27 @@ export function cannotAnswer(q: Asked): string {
   return q.questions.length === 1 && !q.questions[0]?.ownWords ? NO_OWN_WORDS : howToAnswer(q)
 }
 
-export const takesAnAnswer = (label: string, q: Asked): string =>
-  q.questions.length > 1
-    ? `this ${label} dialog asks ${q.questions.length} questions: reply with one line for each, in order.`
-    : `this ${label} question takes the number or the name of one option.`
-
 export type QuestionAnswer = { pick: number } | { words: string }
 
-function pickOf(q: Question, line: string): number | undefined {
+function answerTo(q: Question, line: string): QuestionAnswer | undefined {
   const pick = /^\d+$/.test(line)
     ? Number(line)
     : q.options.findIndex((o) => o.label.toLowerCase() === line.toLowerCase()) + 1
-  return pick >= 1 && pick <= q.options.length ? pick : undefined
+  if (pick >= 1 && pick <= q.options.length) return { pick }
+  return q.ownWords && line ? { words: line } : undefined
 }
 
-function answerTo(q: Question, line: string): QuestionAnswer | undefined {
-  const pick = pickOf(q, line)
-  if (pick) return { pick }
-  return q.ownWords && line ? { words: line } : undefined
+function replyLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
 }
 
 // CODEX§20 MUSE§11 AGY§14
 export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | undefined {
-  const text = reply.trim()
-  const lines =
-    q.questions.length === 1
-      ? [text]
-      : text
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean)
+  const all = replyLines(reply)
+  const lines = q.questions.length === 1 ? [all.join(' ')] : all
   if (lines.length !== q.questions.length) return undefined
   const answers = q.questions.map((x, i) => answerTo(x, lines[i]))
   return answers.every((a): a is QuestionAnswer => a !== undefined) ? answers : undefined
@@ -316,7 +304,7 @@ export interface AnswerKeys {
   submit(answers: QuestionAnswer[]): string[]
 }
 
-// CODEX§20
+// CODEX§20 MUSE§11
 const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
   ...keysFor([...q.options.map(() => 'Down'), 'Tab']),
   ...typedPieces(text),
@@ -324,23 +312,19 @@ const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
 ]
 
 // MUSE§11
-export function museReviewKeys(answers: QuestionAnswer[]): string[] {
+function museReviewKeys(answers: QuestionAnswer[]): string[] {
   return answers.length > 1 || answers.some((a) => 'words' in a) ? ['\r'] : []
 }
 
-// AGY§14
-export const AGY_ANSWER_KEYS: AnswerKeys = {
-  pick: (n) => [String(n)],
-  words: (q, text) => [String(q.options.length + 1), ...typedPieces(text), '\r'],
-  submit: () => []
-}
-
 // CODEX§20 MUSE§11 AGY§14
-export const ANSWER_KEYS: Record<BackendId, AnswerKeys | undefined> = {
-  claude: undefined,
+export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
   codex: { pick: (n) => [String(n)], words: noteUnderNoneOfTheAbove, submit: () => [] },
   muse: { pick: (n) => [String(n), '\r'], words: noteUnderNoneOfTheAbove, submit: museReviewKeys },
-  agy: AGY_ANSWER_KEYS
+  agy: {
+    pick: (n) => [String(n)],
+    words: (q, text) => [String(q.options.length + 1), ...typedPieces(text), '\r'],
+    submit: () => []
+  }
 }
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {

@@ -634,17 +634,15 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
       backendOf: () => 'codex',
       pendingQuestion: () => question
     })
-    expect(await relay.answerSession(MANAGED, 'Purple')).toBe(
-      'this Codex dialog asks 2 questions: reply with one line for each, in order.'
-    )
-    expect(await relay.answerSession(MANAGED, 'Purple\nHuge')).toContain('one line for each')
+    expect(await relay.answerSession(MANAGED, 'Purple')).toBe(ONE_LINE_PER_QUESTION)
+    expect(await relay.answerSession(MANAGED, 'Purple\nHuge')).toBe(ONE_LINE_PER_QUESTION)
     expect(writes).toEqual([])
     expect(await relay.answerSession(MANAGED, 'Purple\nlarge')).toBeUndefined()
     expect(writes.map((w) => w.data)).toEqual(['\x1b[B', '\x1b[B', '\t', 'Purple', '\r', '2'])
   })
 
   // MUSE§11
-  it('a Muse question takes the owner’s own words as a note under "None of the above", and its review page shows when more than one question or any note was given, so Koloft presses one more Enter then', async () => {
+  it('a Muse question takes the owner’s own words as a note under "None of the above", a reply of several lines typed as one, and its review page shows when more than one question or any note was given, so Koloft presses one more Enter then', async () => {
     const colours = [{ label: 'Red' }, { label: 'Blue' }]
     const one = { question: 'Which colour?', options: colours, ownWords: true as const }
     let question: CodexQuestion = { id: 'u1', questions: [one] }
@@ -658,7 +656,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
       return writes.map((w) => w.data)
     }
     expect(await pressed('2')).toEqual(['2', '\r'])
-    expect(await pressed('A ripe mango')).toEqual([
+    expect(await pressed('A ripe\nmango')).toEqual([
       '\x1b[B',
       '\x1b[B',
       '\t',

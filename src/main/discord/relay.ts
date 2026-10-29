@@ -42,7 +42,6 @@ import {
   howToAnswer,
   isAskedCall,
   questionAnswers,
-  takesAnAnswer,
   type AnswerKeys,
   type CodexApproval,
   type CodexQuestion,
@@ -64,7 +63,7 @@ export const answerItFirst = (name: string): string =>
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 
 const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
-  backend && ANSWER_KEYS[backend]
+  backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
 
 // MUSE§7 AGY§15
 const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
@@ -620,7 +619,7 @@ export class DiscordRelay {
       const question = this.d.pendingQuestion(tab)
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
       const answers = questionAnswers(question, reply)
-      if (!answers) return takesAnAnswer(label, question)
+      if (!answers) return howToAnswer(question)
       await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return undefined
     }
@@ -678,7 +677,7 @@ export class DiscordRelay {
     void this.d.answerInPlace(tab, m.content).then((inPlace) => {
       if (inPlace === false) return this.answerOpenByKeys(tab, m, open, keys)
       this.codexAsks.delete(tab)
-      if (inPlace) this.say(m.channelId, 'questions' in open ? cannotAnswer(open) : inPlace, m.id)
+      if (inPlace) this.say(m.channelId, inPlace, m.id)
       else this.d.answered(tab, m.content)
     })
     return true

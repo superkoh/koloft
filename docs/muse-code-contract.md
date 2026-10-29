@@ -410,7 +410,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   "free_text":"None of the above","note":"A ripe mango, please"}]}`. With two questions
   ("1 of 2", "←/→ to switch question"), `2` Enter moved to question 2, and its digit Enter
   or its note led to the same review page, whose Enter sent both answers (`selected_label`
-  for a pick). One question answered `2` Enter showed no review page and sent
+  for a pick); a note on question 1 (Down, Down, Tab, words, Enter) moved to question 2 the
+  same way. One question answered `2` Enter showed no review page and sent
   `{"id":"fruit","selected_label":"Banana"}` at once. Keys were sent by `tmux send-keys`,
   some in one burst (`Down Down Tab <words> Enter`), all taken. So the review page shows
   when the dialog has more than one question or any note, and Koloft presses one more

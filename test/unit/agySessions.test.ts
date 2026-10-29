@@ -988,9 +988,8 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
       },
       { question: 'Which size?', options: [{ label: 'Small' }], ownWords: true }
     ])
-    expect(await sessions.answer(id, 'banana')).toBe(
-      'this Antigravity dialog asks 2 questions: reply with one line for each, in order.'
-    )
+    expect(await sessions.answer(id, 'banana')).toBe(false)
+    expect(sent('HandleCascadeUserInteraction')).toEqual([])
     expect(await sessions.answer(id, 'banana\nMedium, please')).toBeUndefined()
     expect(sent('HandleCascadeUserInteraction')).toEqual([
       {
@@ -1011,33 +1010,75 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.type).not.toHaveBeenCalled()
   })
 
-  it("answers a question by keys when the API does not answer, reading the options from the tool call: the option's digit, or the write-in row's digit, the owner's words and Enter", async () => {
+  it('reads a question from the tool call when the API does not answer, and leaves it open for the keys the relay presses', async () => {
     const id = await boundTab()
-    const ask = async (): Promise<void> => {
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: { questions: [{ question: 'Which fruit?', options: ['Apple', 'Banana'] }] }
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
+    const open = {
+      id: expect.any(String),
+      questions: [
+        {
+          question: 'Which fruit?',
+          options: [{ label: 'Apple' }, { label: 'Banana' }],
+          ownWords: true
+        }
+      ]
+    }
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(await sessions.answer(id, 'A ripe mango')).toBe(false)
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  // AGY§14
+  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+    const id = await boundTab()
+    const asked = async (multi: boolean): Promise<void> => {
       hook(id, 'PreToolUse', {
         toolCall: {
           name: 'ask_question',
-          args: { questions: [{ question: 'Which fruit?', options: ['Apple', 'Banana'] }] }
+          args: {
+            questions: [
+              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
+            ]
+          }
         }
       })
       await hooksTaken(id)
-      say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
+      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
     }
-    await ask()
-    expect(sessions.openQuestion(id)?.questions).toEqual([
-      {
-        question: 'Which fruit?',
-        options: [{ label: 'Apple' }, { label: 'Banana' }],
-        ownWords: true
+    await asked(true)
+    expect(sessions.openQuestion(id)).toBeUndefined()
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(await sessions.answer(id, '1')).toBe(false)
+
+    say(id, state('working'))
+    apiAnswers = true
+    trajectory = waitingStep({
+      askQuestion: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [
+              { id: '1', text: 'Apple' },
+              { id: '2', text: 'Banana' }
+            ],
+            isMultiSelect: true
+          }
+        ]
       }
-    ])
-    expect(await sessions.answer(id, '2')).toBeUndefined()
-    await ask()
-    expect(await sessions.answer(id, 'A ripe mango')).toBeUndefined()
-    expect(pty.type.mock.calls).toEqual([
-      [id, ['2']],
-      [id, ['3', 'A ripe mango', '\r']]
-    ])
+    })
+    await asked(false)
+    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
+    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(pty.write).not.toHaveBeenCalled()
   })
 
   it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {

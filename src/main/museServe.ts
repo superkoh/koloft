@@ -4,7 +4,7 @@ import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
 import { record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
-import type { Question } from './discord/dialog'
+import { labelsOf, type Question } from './discord/dialog'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
 const LIST_PAGE = 200
@@ -194,17 +194,7 @@ export function museAsk(reply: unknown): MuseAsk {
 // MUSE§11
 function museQuestion(q: Record<string, unknown>): Question[] {
   if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return []
-  const options = (Array.isArray(q.options) ? q.options : []).flatMap((raw) => {
-    const o = record(raw)
-    return typeof o.label === 'string'
-      ? [
-          {
-            label: o.label,
-            ...(typeof o.description === 'string' && { description: o.description })
-          }
-        ]
-      : []
-  })
+  const options = labelsOf(q.options)
   return options.length ? [{ question: q.question, options, ownWords: true }] : []
 }
 

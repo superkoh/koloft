@@ -74,7 +74,7 @@ export interface PendingInteraction {
   stepIndex: number
   kind: 'command' | 'file' | 'question'
   target?: string
-  questions?: { question: string; options: { id: string; text: string }[] }[]
+  questions?: { question: string; options: { id: string; text: string }[]; multiSelect?: true }[]
 }
 
 const WAITING = 'CORTEX_STEP_STATUS_WAITING'
@@ -106,7 +106,8 @@ function pendingOf(trajectory: Record<string, unknown>): PendingInteraction | un
         options: (Array.isArray(r.options) ? r.options : []).map((o) => {
           const opt = record(o)
           return { id: String(opt.id ?? ''), text: typeof opt.text === 'string' ? opt.text : '' }
-        })
+        }),
+        ...(r.isMultiSelect === true && { multiSelect: true as const })
       }
     })
   }
@@ -215,10 +216,10 @@ export class AgyApi {
     answers: QuestionAnswer[]
   ): Promise<void> {
     const responses = (pending.questions ?? []).map(({ question, options }, i) => {
-      const a = answers[i]
-      return a && 'pick' in a
-        ? { question, selectedOptionIds: [options[a.pick - 1]?.id] }
-        : { question, writeInResponse: a?.words }
+      const a = answers[i]!
+      return 'pick' in a
+        ? { question, selectedOptionIds: [options[a.pick - 1]!.id] }
+        : { question, writeInResponse: a.words }
     })
     await this.call('HandleCascadeUserInteraction', {
       cascadeId: conversationId,
