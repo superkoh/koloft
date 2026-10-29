@@ -9,6 +9,7 @@ import {
   INCLUDED_ENV,
   killSession,
   newSessionInWith,
+  oneStillRunning,
   openWorktreeSession,
   runIn,
   sendShortcut,
@@ -35,6 +36,7 @@ import {
 test.afterEach(({ env }) => killFakeRemote(env))
 
 const TURN_LONGER_THAN_A_MIRROR_PULL_MS = '5000'
+const BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S = 15
 
 const accountFolder = (env: E2EEnv): string =>
   path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
@@ -123,6 +125,36 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§9
+  // AGY§11 AGY§13
+  test('a command agy leaves running in the background on the machine shows on its row breathing green with ↻, named by its command line, until it ends', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(
+        page,
+        centerTerm(page),
+        `/bg sleep ${BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S}`
+      )
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        `command · sleep ${BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S} · working`
+      )
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test("closing the remote tab ends agy's tmux session there; its row stays, cold, and clicking it resumes the same conversation on the machine, whose resuming mask lifts once the tab binds to it", async ({
     env
   }) => {

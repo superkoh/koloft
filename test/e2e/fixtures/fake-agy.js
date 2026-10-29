@@ -762,6 +762,7 @@ let typed = ''
 let pasteBuffer = null
 let trustCursor = 0
 const queue = []
+const backgroundTasks = new Map()
 const term = {
   statusOn: process.env.AGY_CLI_OSC7501 === 'on',
   statusOff: process.env.AGY_CLI_OSC7501 === 'off',
@@ -826,6 +827,7 @@ function statusInput() {
     session_id: c?.id ?? '',
     terminal_width: process.stdout.columns || 80,
     tool_confirmation_pending: Boolean(pendingAsk),
+    ...(tasksOf(c?.id).length ? { task_count: tasksOf(c?.id).length } : {}),
     transcript_path: c
       ? path.join(
           geminiDir,
@@ -840,6 +842,9 @@ function statusInput() {
     version: VERSION,
     workspace: { current_dir: workspace, project_dir: workspace }
   }
+}
+function tasksOf(conversationId) {
+  return [...backgroundTasks.values()].filter((task) => task.conversationId === conversationId)
 }
 function runScripts() {
   if (printMode) return
@@ -1489,13 +1494,19 @@ async function backgroundScenario(turn, command) {
       ensureDir(tasksDir)
       const logFile = path.join(tasksDir, `task-${task}.log`)
       fs.writeFileSync(logFile, '')
+      const taskId = `${c.id}/task-${stepIdx}`
+      backgroundTasks.set(taskId, {
+        conversationId: c.id,
+        task: { taskId, toolName: 'run_command', description: cmd, stepIndex: stepIdx }
+      })
       runShell(modelShell(), cmd, runCommandEnv(c, stepIdx, toolCall), logFile).then(() => {
+        backgroundTasks.delete(taskId)
         fireHook('PostToolUse', c.id, { error: '', stepIdx, toolCall })
         enqueueSelfTurn(c, `Background work finished: ${cmd}`)
       })
       return {
         background: true,
-        content: `Command is running as a background task with task id: ${c.id}/task-${task}. Use manage_task to check on it. Logs at ${pathToFileURL(logFile).href}`
+        content: `Command is running as a background task with task id: ${taskId}. Use manage_task to check on it. Logs at ${pathToFileURL(logFile).href}`
       }
     }
   })
@@ -2123,6 +2134,10 @@ const API_METHODS = {
   RetrieveUserQuotaSummary: (body, res) => reply(res, 200, { response: {} }),
   GetUserStatus: (body, res) => reply(res, 200, { userStatus: {} }),
   GetModelStatuses: (body, res) => reply(res, 200, {}),
+  ListBackgroundTasks: (body, res) => {
+    const tasks = tasksOf(body.cascadeId)
+    reply(res, 200, tasks.length ? { tasks } : {})
+  },
   GetCascadeTrajectory: (body, res) => {
     if (!conversationExists(body.cascadeId)) return notFound(res, body.cascadeId)
     reply(res, 200, {

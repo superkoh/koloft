@@ -800,7 +800,34 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a plain background command or an ask still open is not one", async () => {
+  it("names each command agy left running in the background after its turn, in place of the plain Background work, until it ends; one that finished inside the turn or was declined, so agy's own task list lacks it, never shows", async () => {
+    apiAnswers = true
+    const id = await boundTab()
+    const run = (CommandLine: string): Record<string, unknown> => ({
+      name: 'run_command',
+      args: { CommandLine, WaitMsBeforeAsync: 500, toolSummary: 'Probe command' }
+    })
+    hook(id, 'PreToolUse', { toolCall: run('sleep 45; echo done'), stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: run('echo fast'), stepIdx: 4 })
+    hook(id, 'PostToolUse', { toolCall: run('echo fast'), stepIdx: 4, error: '' })
+    hook(id, 'PreToolUse', { toolCall: run('rm -rf build'), stepIdx: 6 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-2` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-2`, kind: 'command', label: 'sleep 45; echo done', state: 'working' }
+      ])
+    )
+    hook(id, 'PostToolUse', { toolCall: run('sleep 45; echo done'), stepIdx: 2, error: '' })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ label: 'Background work' }])
+    )
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a command still asking, which agy's list lacks, is not one", async () => {
     apiAnswers = true
     const id = await boundTab()
     const listed = (...steps: number[]): void => {
@@ -823,7 +850,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
     await hooksTaken(id)
     expect(sessions.list()[0].background).toBeUndefined()
-    listed(2, 4, 6)
+    listed(2, 4)
     await turnOver(A, 1)
     await vi.waitFor(() =>
       expect(sessions.list()[0].background).toEqual([
@@ -1267,30 +1294,51 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(await runtime.stillWorking(id)).toBe(false)
   })
 
-  it('a remote tab, with no task list to ask, shows a daemon once a turn-over title counts tasks and drops it once one counts none; on an agy that never sends task_count it keeps it', async () => {
+  it('a remote tab, with no task list to ask, shows a daemon and names a plain background command once a turn-over title counts tasks, drops them once one counts none, and never shows a command that was declined, which no model call follows; on an agy that never sends task_count it keeps them', async () => {
     const background = (tabId: string): unknown =>
       sessions.list().find((s) => s.tabId === tabId)?.background
-    const pre = (conversationId: string): unknown => ({
+    const pre = (
+      conversationId: string,
+      stepIdx = 2,
+      toolCall = daemon('npm run dev')
+    ): unknown => ({
       event: 'PreToolUse',
-      input: { conversationId, stepIdx: 2, toolCall: daemon('npm run dev') }
+      input: { conversationId, stepIdx, toolCall }
     })
+    const modelCall = (conversationId: string, invocationNum: number): unknown => ({
+      event: 'PreInvocation',
+      input: { conversationId, invocationNum }
+    })
+    const plain = { name: 'run_command', args: { CommandLine: 'sleep 45', WaitMsBeforeAsync: 500 } }
+    const declined = { name: 'run_command', args: { CommandLine: 'rm -rf build' } }
     const counting = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
     mirrored(counting, [
       { event: 'SessionStart', input: { conversationId: A } },
+      modelCall(A, 0),
       pre(A),
       { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
     ])
     expect(background(counting)).toBeUndefined()
-    mirrored(counting, [{ conversation_id: A, agent_state: 'idle', task_count: 1 }])
+    mirrored(counting, [
+      modelCall(A, 1),
+      pre(A, 4, plain),
+      modelCall(A, 2),
+      { event: 'Stop', input: { conversationId: A, fullyIdle: false } },
+      modelCall(A, 0),
+      pre(A, 8, declined),
+      { conversation_id: A, agent_state: 'idle', task_count: 2 }
+    ])
     expect(background(counting)).toEqual([
-      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' },
+      { id: `${A}/task-4`, kind: 'command', label: 'sleep 45', state: 'working' }
     ])
     mirrored(counting, [{ conversation_id: A, agent_state: 'idle' }])
-    expect(background(counting)).toBeUndefined()
+    expect(background(counting)).toMatchObject([{ label: 'Background work' }])
     const older = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
     mirrored(older, [
       { event: 'SessionStart', input: { conversationId: B } },
       pre(B),
+      modelCall(B, 1),
       { conversation_id: B, agent_state: 'idle' }
     ])
     expect(background(older)).toEqual([
@@ -1311,10 +1359,12 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     fs.writeFileSync(
       path.join(mirror, 'pty-old.agy.jsonl'),
       line('PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
         titled(1) +
         JSON.stringify({ conversation_id: A, agent_state: 'idle' }) +
         '\n' +
         line('PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 6 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
         line('Stop', { fullyIdle: true }) +
         titled(1)
     )

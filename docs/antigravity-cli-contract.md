@@ -770,6 +770,35 @@ only downloaded the public release.
     title input is `idle` with no `task_count`, and no other hook comes (no
     `PostToolUse`, no `Stop`). Allowed with `1`: `working` with no `task_count`, then
     `Stop`, then `idle` with `task_count:1`; the count came only after the turn ended.
+- **Plain background commands, one after another, and a decline between them.** 1.4.7
+  Linux arm64 in Docker with no network, a fake Gemini server, the TUI in tmux in the
+  default approval mode (every command asked, `1` to allow, `4` to decline), every hook
+  and every title-script input logged, `ps` and `ListBackgroundTasks` read every 10 s,
+  2026-10-29.
+  - `run_command {CommandLine:"sleep 45; echo P-DONE", WaitMsBeforeAsync:500}` and, a
+    turn later, a `sleep 70` one: each turn's `Stop` says `fullyIdle:false`, then the
+    title input is `idle` with `task_count:1`, then `task_count:2`.
+    `ListBackgroundTasks` lists both (`toolName:"run_command"`, `description` the
+    command line as sent, `stepIndex` the `PreToolUse`'s `stepIdx`). When the first
+    ends: its `PostToolUse` (same `stepIdx`), the title scripts run again with
+    `task_count:1`, and the list holds only the second; when that ends, a title input
+    with no `task_count` and `{}`.
+  - A command that finishes inside `WaitMsBeforeAsync` (`echo fast-one`) gets its
+    `PostToolUse` before the turn's `Stop` (`fullyIdle:true`) and never shows in
+    `ListBackgroundTasks` or `task_count`.
+  - In every turn, after an allowed command's `PreToolUse` comes a `PreInvocation`
+    with `invocationNum` 1 (the model reading the result) before the `Stop`; each new
+    turn, typed or started by agy itself, opens with `invocationNum` 0. A declined
+    command (`echo declined-one`) gets its `PreToolUse` and nothing after it in that
+    turn: no `PreInvocation`, no `PostToolUse` ever, no `Stop`, and it is in neither
+    `task_count` (still 2) nor `ListBackgroundTasks`.
+  - With nothing declined, a plain command ending starts a turn by itself
+    (`PreInvocation` `invocationNum` 0, `Stop` `fullyIdle:true`), as with
+    `--dangerously-skip-permissions`. When the last thing in the conversation was a
+    declined command ("Interrupted · What should Antigravity CLI do instead?"), the two
+    commands ending started no turn: their `PostToolUse` and the title scripts came, no
+    model request and no `Stop` in the next 40 s. A decline followed by a typed prompt
+    that ran a command left that next command's ending its turn as usual.
 
 ## §14 Asks in the terminal and the keys that answer them
 
