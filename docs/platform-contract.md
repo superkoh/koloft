@@ -1518,6 +1518,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
   ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
   ssh lab.)
+- **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
+  the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
+  opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection
+  closed by UNKNOWN port 65535`), because the bastion closes the hop at once. Machine
+  frozen so it answers nothing (`docker pause`), master up: ssh never returns on its own
+  — still hung at 60 s, when the probe killed it (§33's no-connect-phase rule) — so
+  Koloft's own 10 s timeout in `runSshBytes` is what ends it. (2026-10-29, OpenSSH_10.3p1
+  on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a ProxyJump bastion, Koloft's
+  `sshOptions` with BatchMode, the e2e Docker ssh lab image, a scratch node script timing
+  `spawnSync`.)
 
 ## §34 rsync
 

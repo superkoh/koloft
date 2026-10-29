@@ -24,6 +24,7 @@ let createFails: boolean
 let createRefuses: ResumeFailure | null
 let mainTrackerSessions: SessionInfo[]
 let transcriptOnDisk: boolean
+let noAccount: string | null
 let probeFails: boolean
 let probed: string[]
 
@@ -68,6 +69,7 @@ beforeEach(() => {
   createRefuses = null
   mainTrackerSessions = []
   transcriptOnDisk = true
+  noAccount = null
   probeFails = false
   probed = []
   probeGate = null
@@ -84,6 +86,7 @@ beforeEach(() => {
             : Promise.resolve(transcriptOnDisk)
           return probeGate ? probeGate.promise.then(() => answer) : answer
         },
+        noAccountToResume: () => Promise.resolve(noAccount),
         resume: (req: ResumeReq) => {
           created.push(req)
           order.push('create')
@@ -806,6 +809,29 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     expect(after.tabs.map((t) => t.id)).toEqual(['gate1'])
     expect(after.tabs[0].alive).toBe(true)
     expect(after.toast).toBe(CONFIRMED_COPY_NO_CONVERSATION_LIVE)
+  })
+
+  it('keeps the running session when no account of its agent can be used: nothing killed, nothing spawned, the reason in a toast, and the next press works once one can', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'acct1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.setSessions([session('acct1', { backendId: 'codex', sessionId: 'codex:local:thread-acct' })])
+    noAccount = 'No Codex account in Koloft can be used.'
+    nextPty = { id: 'acct2', cwd: '/w' }
+
+    s.restartActiveSession()
+    await settle()
+
+    expect(killed).toEqual([])
+    expect(created).toEqual([])
+    const after = useStore.getState()
+    expect(after.tabs).toMatchObject([{ id: 'acct1', alive: true }])
+    expect(after.tabs[0].respawning).toBeUndefined()
+    expect(after.toast).toBe('No Codex account in Koloft can be used.')
+
+    noAccount = null
+    useStore.getState().restartActiveSession()
+    await settle()
+    expect(created).toEqual([{ sessionId: 'codex:local:thread-acct', cwd: '/w' }])
   })
 
   it('has not killed anything while the probe is still in flight', async () => {
