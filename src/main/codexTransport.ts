@@ -478,15 +478,17 @@ export async function createCodexTransport(
     observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
       // CODEX§1
-      if (client.bufferedAmount === 0) tuiTookAFrameAt = Date.now()
+      if (client.bufferedAmount === 0) tuiTookAFrameAt = performance.now()
       else if (
         client.bufferedAmount > upstream.limit * 2 &&
-        Date.now() - tuiTookAFrameAt > TUI_STALLED_AFTER_MS
+        performance.now() - tuiTookAFrameAt > TUI_STALLED_AFTER_MS
       )
-        throw new Error('Codex output queue exceeds the size limit')
+        throw new Error(
+          `the Codex TUI took none of its output for ${TUI_STALLED_AFTER_MS / 1000} s while more than the size limit waited for it`
+        )
       client.send(raw, { binary: false }, (error) => {
         if (error) fail(error)
-        else tuiTookAFrameAt = Date.now()
+        else tuiTookAFrameAt = performance.now()
       })
     } else if (!accepted) {
       pendingBytes += raw.length
@@ -505,6 +507,7 @@ export async function createCodexTransport(
     wss.handleUpgrade(req, socket, head, (ws) => {
       accepted = true
       client = ws
+      tuiTookAFrameAt = performance.now()
       ws.on('error', fail)
       ws.on('message', (bytes, binary) => {
         try {

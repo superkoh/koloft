@@ -65,7 +65,8 @@ Schema availability is distinguished from behavior actually seen on the wire.
   `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
   marketplace), and three came within about 75 seconds. A home with no login gets
   `{"marketplaces":[],…}` (101 bytes). On 2026-10-29 (0.162.0, a ChatGPT-signed-in
-  `CODEX_HOME` in the e2e case `discord-real-smoke.spec.ts:801`, measured with a log in
+  `CODEX_HOME` in the real-model e2e case where a reopened Codex Alfred gets a Claude
+  helper's report, measured with a log in
   `createCodexTransport`) a TUI resuming a thread asked four times as it opened; each
   reply was 24,187,552 bytes and three reached Koloft within 60 ms, faster than the TUI
   took them off its socket, so more than 64 MB waited to be sent to it at once.

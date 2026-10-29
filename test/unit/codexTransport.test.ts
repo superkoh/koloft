@@ -536,18 +536,17 @@ describe('Codex TUI transport', () => {
     expect(errors).toEqual([])
   })
 
-  it('a TUI that takes nothing for 30 s while far behind loses its connection, so a hung TUI cannot hold Codex output in memory for ever', async () => {
+  it('a TUI that has taken nothing for 30 s while far behind loses its connection when Codex sends it more', async () => {
     const { errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
     burst(2, BURST_REPLIES)
     await vi.waitFor(() => expect(burstReachedKoloft()).toBe(BURST_REPLIES))
-    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + TUI_STALLED_AFTER_MS + 1000 })
+    const now = performance.now()
+    const later = vi.spyOn(performance, 'now').mockReturnValue(now + TUI_STALLED_AFTER_MS + 1000)
     try {
       burst(3, 1)
-      await vi.waitFor(() =>
-        expect(errors.map((e) => e.message)).toContain('Codex output queue exceeds the size limit')
-      )
+      await vi.waitFor(() => expect(errors.map((e) => e.message).join()).toMatch(/took none/))
     } finally {
-      vi.useRealTimers()
+      later.mockRestore()
     }
   })
 
