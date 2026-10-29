@@ -705,7 +705,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       }
     })
 
-    test('T16: with no Claude account usable, restart says why and leaves the running claude alone', async ({
+    test('T17: with no Claude account usable, restart says why and leaves the running claude alone', async ({
       env
     }) => {
       test.setTimeout(180_000)
