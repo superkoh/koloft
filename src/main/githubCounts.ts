@@ -1,6 +1,8 @@
 import type { WorkspaceGithub } from '@shared/types'
+import { coalesce } from './gitStatus'
 
 const RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS = 60_000
+const ONE_SWEEP_AT_A_TIME = 'github-counts-sweep'
 const STARTUP_DELAY_MS = 3_000
 
 export interface GithubCountsDeps {
@@ -15,9 +17,6 @@ function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): b
 
 export class GithubCountsSweep {
   private cache = new Map<string, WorkspaceGithub>()
-  private sweeping = false
-  private askedWhileSweeping = false
-
   constructor(private deps: GithubCountsDeps) {}
 
   start(): void {
@@ -29,20 +28,8 @@ export class GithubCountsSweep {
     return this.cache.get(wsPath)
   }
 
-  async sweep(): Promise<void> {
-    if (this.sweeping) {
-      this.askedWhileSweeping = true
-      return
-    }
-    this.sweeping = true
-    try {
-      do {
-        this.askedWhileSweeping = false
-        await this.sweepOnce()
-      } while (this.askedWhileSweeping)
-    } finally {
-      this.sweeping = false
-    }
+  sweep(): Promise<void> {
+    return coalesce(ONE_SWEEP_AT_A_TIME, () => this.sweepOnce())
   }
 
   private async sweepOnce(): Promise<void> {
