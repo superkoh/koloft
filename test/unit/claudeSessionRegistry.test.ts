@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
+  MACHINE_REGISTRY_SH,
   claudePeerNames,
   messagingSocketOf,
+  newestSocketOnMachine,
   runningClaudePid,
   whenMessagingSocket
 } from '../../src/main/claudeSessionRegistry'
@@ -121,5 +124,36 @@ describe("claude's own session registry: the socket a session takes messages on"
     )
     const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
     expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
+  })
+})
+
+// CC§11
+describe('the registry of a claude on another machine, read through ssh', () => {
+  const readOnMachine = (home: string): string =>
+    execFileSync('sh', ['-c', MACHINE_REGISTRY_SH], {
+      env: { ...process.env, HOME: home }
+    }).toString()
+
+  it('gives the socket of the newest entry for the session, since a hard-killed claude leaves its entry behind', () => {
+    const sessions = path.join(dir, '.claude', 'sessions')
+    fs.mkdirSync(sessions, { recursive: true })
+    const write = (pid: number, sessionId: string, startedAt: number): void =>
+      fs.writeFileSync(
+        path.join(sessions, `${pid}.json`),
+        JSON.stringify(
+          { pid, sessionId, startedAt, messagingSocketPath: `/tmp/cc-socks/${pid}.sock` },
+          null,
+          2
+        )
+      )
+    write(60, SID, 1793283072615)
+    write(41, SID, 1793280000000)
+    write(77, 'another-session', 1793290000000)
+    fs.writeFileSync(path.join(sessions, '60.0123abcd.key'), 'not json')
+    expect(newestSocketOnMachine(readOnMachine(dir), SID)).toBe('/tmp/cc-socks/60.sock')
+  })
+
+  it('finds nothing on a machine where claude never ran', () => {
+    expect(newestSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
   })
 })

@@ -723,7 +723,7 @@ describe('koloft session send', () => {
     expect(lines).toEqual([])
   })
 
-  it('a Claude session reaches a Claude session on another machine with koloft session send, typed into it there, and that one reaches it back on its message line, since SendMessage reaches no session on another machine', async () => {
+  it('a Claude session reaches a Claude session on another machine with koloft session send, on that one’s message line there, and that one reaches it back on its own, since SendMessage reaches no session on another machine', async () => {
     const REMOTE = 'ssh://box/srv/api'
     const { verb, lines, pressed } = harness([
       ...sessions(),
@@ -739,8 +739,8 @@ describe('koloft session send', () => {
     expect(listed.text).toContain('Far planner · Claude · idle · id: far-session')
     expect((await verb(['send', 'Far planner', 'hi'], from('cc'))).exit).toBe(0)
     expect((await verb(['send', 'Planner', 'Done'], from('far'))).exit).toBe(0)
-    expect(pressed.map((p) => p.tabId)).toEqual(['far'])
-    expect(lines.map((l) => l.tabId)).toEqual(['cc'])
+    expect(pressed).toEqual([])
+    expect(lines.map((l) => l.tabId)).toEqual(['far', 'cc'])
   })
 
   it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
@@ -1350,45 +1350,19 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     }
     expect(lines).toHaveLength(1)
     expect(queued).toHaveLength(1)
-    expect((await verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe('Typed into api-fix.')
+    expect((await verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe('Sent to api-fix.')
   })
 
-  it('send types into a Claude session on another machine at once when its turn has ended; while it is busy it answers at once, types when the turn ends, and reports to the conductor a turn that never does', async () => {
-    const turnEnds: ((ended: boolean) => void)[] = []
-    const busy = harness(
-      live,
-      {},
-      [],
-      conducting({
-        ready: (_tab, turnEnded, ms) =>
-          !turnEnded || (ms > 0 && new Promise<boolean>((resolve) => turnEnds.push(resolve)))
-      })
-    )
+  it('send to a Claude session on another machine goes to its message socket like a local one, at once even while its turn runs, and types nothing into its terminal', async () => {
+    const busy = harness(live, {}, [], conducting({ ready: (_tab, turnEnded) => !turnEnded }))
     expect(await busy.verb(['send', 'api-fix', 'hi'], from('butler'))).toMatchObject({
       exit: 0,
-      text: 'Will deliver when api-fix is ready.'
+      text: 'Sent to api-fix.'
     })
+    expect(busy.lines).toEqual([
+      { tabId: 'api', line: crossSessionLine('prompting', ownerSays('hi'), 'koloft-session-1') }
+    ])
     expect(busy.pressed).toEqual([])
-    await vi.waitFor(() => expect(turnEnds).toHaveLength(1))
-    turnEnds[0](true)
-    await vi.waitFor(() =>
-      expect(busy.pressed).toEqual([{ tabId: 'api', keys: [ownerSays('hi'), '\r'] }])
-    )
-    await busy.verb(['send', 'api-fix', 'again'], from('butler'))
-    await vi.waitFor(() => expect(turnEnds).toHaveLength(2))
-    turnEnds[1](false)
-    await vi.waitFor(() =>
-      expect(busy.undelivered).toEqual([
-        { callerTab: 'butler', name: 'api-fix', why: expect.stringContaining('stayed busy') }
-      ])
-    )
-    expect(busy.pressed).toHaveLength(1)
-    expect(busy.lines).toEqual([])
-
-    const idle = harness(live, {}, [], conducting())
-    expect((await idle.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
-      'Typed into api-fix.'
-    )
   })
 
   it('send to a closed session answers at once, resumes it and sends once it is ready; one that never gets ready is reported to the conductor', async () => {
@@ -1914,6 +1888,10 @@ describe('a conductor given a session name with spaces and no quotes', () => {
       {
         tabId: 'fix',
         line: crossSessionLine('prompting', ownerSays('fix the tests'), 'koloft-session-1')
+      },
+      {
+        tabId: 'api',
+        line: crossSessionLine('prompting', ownerSays('go on'), 'koloft-session-2')
       }
     ])
     expect(h.queued).toEqual([
@@ -1925,10 +1903,7 @@ describe('a conductor given a session name with spaces and no quotes', () => {
     expect(keys.text).toBe(
       'Pressed Down Enter in Check the docs. See what it shows now with koloft session screen "Check the docs".'
     )
-    expect(h.pressed).toEqual([
-      { tabId: 'api', keys: [ownerSays('go on'), '\r'] },
-      { tabId: 'cx', keys: ['\x1b[B', '\r'] }
-    ])
+    expect(h.pressed).toEqual([{ tabId: 'cx', keys: ['\x1b[B', '\r'] }])
   })
 
   it('stop, screen, resume, read and close take every word before -- or --last as the name', async () => {

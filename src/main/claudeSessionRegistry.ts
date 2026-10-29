@@ -156,6 +156,41 @@ export function whenMessagingSocket(
   })
 }
 
+// CC§11
+export const MACHINE_REGISTRY_SH = `for f in "$HOME"/.claude/sessions/*.json; do [ -f "$f" ] && cat "$f" && printf '\\0'; done; :`
+
+// CC§11
+export function newestSocketOnMachine(registry: string, sessionId: string): string | null {
+  let newest: { at: number; socket: string } | null = null
+  for (const text of registry.split('\0')) {
+    let entry: { sessionId?: unknown; startedAt?: unknown; messagingSocketPath?: unknown }
+    try {
+      entry = JSON.parse(text)
+    } catch {
+      continue
+    }
+    if (entry.sessionId !== sessionId || typeof entry.messagingSocketPath !== 'string') continue
+    const at = typeof entry.startedAt === 'number' ? entry.startedAt : 0
+    if (!newest || at > newest.at) newest = { at, socket: entry.messagingSocketPath }
+  }
+  return newest?.socket ?? null
+}
+
+const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
+
+export async function whenMessagingSocketOnMachine(
+  sessionId: string,
+  ms: number,
+  readRegistry: () => Promise<string>
+): Promise<string | null> {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const socket = newestSocketOnMachine(await readRegistry(), sessionId)
+    if (socket || Date.now() >= deadline) return socket
+    await new Promise((r) => setTimeout(r, REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS))
+  }
+}
+
 export function claudePeerNames(
   dir = REGISTRY_DIR,
   startOf = processStartUtc

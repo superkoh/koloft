@@ -137,7 +137,8 @@ import {
   runMasterCommand,
   runSsh,
   runSshBytes,
-  sshOptions
+  sshOptions,
+  writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
@@ -490,7 +491,12 @@ import {
   type ConfigText,
   type McpServer
 } from './mcpServers'
-import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
+import {
+  MACHINE_REGISTRY_SH,
+  claudeShowsAPanel,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+} from './claudeSessionRegistry'
 import {
   asPeerName,
   GLOBAL_SCOPE,
@@ -1582,9 +1588,23 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
-  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
+  const host = tracker.remoteOf(tabId)?.host
+  if (host) await loginEnvReady()
+  const socket = !sessionId
+    ? null
+    : host
+      ? await whenMessagingSocketOnMachine(sessionId, ms, async () => {
+          const r = await runSsh(host, remoteShCommand(MACHINE_REGISTRY_SH), {
+            controlDir: remoteControlDir
+          })
+          return r.stdout
+        })
+      : await whenMessagingSocket(sessionId, ms)
   if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-  await writeLineInTurn(socket, line)
+  if (!host) return writeLineInTurn(socket, line)
+  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
+    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
+  )
 }
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
