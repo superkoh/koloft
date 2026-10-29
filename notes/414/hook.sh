@@ -1,0 +1,5 @@
+ev="$1"
+ts="$(date +%s.%N)"
+input="$(cat)"
+mkdir -p "$HOME/.koloft/hook-sessions"
+printf '{"t":%s,"event":"%s","input":%s}\n' "$ts" "$ev" "${input:-null}" >> "$HOME/.koloft/hook-sessions/probe.jsonl"
