@@ -4,6 +4,7 @@ import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
 import { record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
+import type { Question } from './discord/dialog'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
 const LIST_PAGE = 200
@@ -170,7 +171,7 @@ export function museHistory(items: unknown, n: number): Turn[] {
 
 export interface MuseAsk {
   approval?: { id: string; command?: string }
-  question?: { id: string; question: string; options: { label: string; description?: string }[] }
+  question?: { id: string; questions: Question[] }
 }
 
 const commandOf = (args: Record<string, unknown>): string | undefined =>
@@ -183,10 +184,16 @@ export function museAsk(reply: unknown): MuseAsk {
   if (typeof approval.approvalId === 'string')
     return { approval: { id: approval.approvalId, command: commandOf(record(approval.rawArgs)) } }
   const input = record(Array.isArray(r.userInputs) ? r.userInputs[0] : undefined)
-  const questions = Array.isArray(input.questions) ? input.questions.map(record) : []
-  const q = questions[0]
-  if (typeof input.userInputId !== 'string' || questions.length !== 1) return {}
-  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return {}
+  const raw = Array.isArray(input.questions) ? input.questions.map(record) : []
+  const questions = raw.flatMap(museQuestion)
+  if (typeof input.userInputId !== 'string' || !raw.length || questions.length !== raw.length)
+    return {}
+  return { question: { id: input.userInputId, questions } }
+}
+
+// MUSE§11
+function museQuestion(q: Record<string, unknown>): Question[] {
+  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return []
   const options = (Array.isArray(q.options) ? q.options : []).flatMap((raw) => {
     const o = record(raw)
     return typeof o.label === 'string'
@@ -198,9 +205,7 @@ export function museAsk(reply: unknown): MuseAsk {
         ]
       : []
   })
-  return options.length
-    ? { question: { id: input.userInputId, question: q.question, options } }
-    : {}
+  return options.length ? [{ question: q.question, options, ownWords: true }] : []
 }
 
 // MUSE§5

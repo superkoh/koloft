@@ -2,6 +2,7 @@ import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { record } from './codexObservation'
+import type { QuestionAnswer } from './discord/dialog'
 
 const exec = promisify(execFile)
 
@@ -208,18 +209,23 @@ export class AgyApi {
   }
 
   // AGY§16
-  async pick(
+  async answer(
     conversationId: string,
     pending: PendingInteraction,
-    optionIds: string[]
+    answers: QuestionAnswer[]
   ): Promise<void> {
-    const question = pending.questions?.[0]?.question ?? ''
+    const responses = (pending.questions ?? []).map(({ question, options }, i) => {
+      const a = answers[i]
+      return a && 'pick' in a
+        ? { question, selectedOptionIds: [options[a.pick - 1]?.id] }
+        : { question, writeInResponse: a?.words }
+    })
     await this.call('HandleCascadeUserInteraction', {
       cascadeId: conversationId,
       interaction: {
         trajectoryId: pending.trajectoryId,
         stepIndex: pending.stepIndex,
-        askQuestion: { responses: [{ question, selectedOptionIds: optionIds }] }
+        askQuestion: { responses }
       }
     })
   }

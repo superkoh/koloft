@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
+import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
 import { keysFor, typedPieces } from '../typeKeys'
@@ -22,7 +23,11 @@ export interface CodexApproval {
   reason?: string
 }
 
-export interface CodexQuestion extends Question {
+export interface Asked {
+  questions: Question[]
+}
+
+export interface CodexQuestion extends Asked {
   id: string | number
 }
 
@@ -112,15 +117,21 @@ export function claudeDialog(p: AskPayload): DialogView {
 }
 
 export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
-  return 'options' in a
-    ? { text: questionText(a), choices: optionChoices(a) }
-    : { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
+  if (!('questions' in a)) return { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
+  const [only, ...more] = a.questions
+  return {
+    text: a.questions.map(questionText).join('\n\n'),
+    choices: only && !more.length ? optionChoices(only) : []
+  }
 }
+
+export const ONE_LINE_PER_QUESTION =
+  'Reply with one line per question: a number or your own answer.'
 
 export function askHow(p: AskPayload): string {
   if (p.tool_name === 'AskUserQuestion')
     return questionsOf(p).length > 1
-      ? 'Reply with one line per question: a number or your own answer.'
+      ? ONE_LINE_PER_QUESTION
       : 'Reply with a number or your own answer.'
   return planOf(p) === undefined
     ? 'Reply yes or no.'
@@ -219,21 +230,30 @@ function labelsOf(raw: unknown): Option[] {
 }
 
 // CODEX§20
-export function codexQuestionOf(method: string, p: Record<string, unknown>): Question | undefined {
+export function codexQuestionOf(method: string, p: Record<string, unknown>): Asked | undefined {
   if (method === 'item/tool/requestUserInput') {
-    const qs = Array.isArray(p.questions) ? p.questions : []
-    const q = (qs[0] ?? {}) as { question?: unknown; options?: unknown; isOther?: unknown }
-    const options = labelsOf(q.options)
-    return qs.length === 1 && typeof q.question === 'string' && options.length
-      ? { question: q.question, options, ...(q.isOther === true && { ownWords: true as const }) }
-      : undefined
+    const raw = Array.isArray(p.questions) ? p.questions : []
+    const questions = raw.flatMap((x) => {
+      const q = (x ?? {}) as { question?: unknown; options?: unknown; isOther?: unknown }
+      const options = labelsOf(q.options)
+      return typeof q.question === 'string' && options.length
+        ? [
+            {
+              question: q.question,
+              options,
+              ...(q.isOther === true && { ownWords: true as const })
+            }
+          ]
+        : []
+    })
+    return raw.length && questions.length === raw.length ? { questions } : undefined
   }
   if (method !== 'mcpServer/elicitation/request' || p.mode !== 'form') return undefined
   const schema = (p.requestedSchema ?? {}) as { properties?: Record<string, { enum?: unknown }> }
   const fields = Object.values(schema.properties ?? {})
   const options = labelsOf(fields[0]?.enum)
   return fields.length === 1 && typeof p.message === 'string' && options.length
-    ? { question: p.message, options }
+    ? { questions: [{ question: p.message, options }] }
     : undefined
 }
 
@@ -243,18 +263,91 @@ export const PICK_OR_OWN_WORDS =
 export const NO_OWN_WORDS =
   'Tap a button, or reply with the number or the name of one option. To answer in your own words, answer it at the Mac.'
 
-// CODEX§20
-export function ownWordsKeys(q: Question, reply: string): string[] | undefined {
+const ONE_LINE_PER_PICK = 'Reply with one line per question: the number or the name of one option.'
+
+export function howToAnswer(q: Asked): string {
+  const ownWords = q.questions.every((x) => x.ownWords)
+  if (q.questions.length > 1) return ownWords ? ONE_LINE_PER_QUESTION : ONE_LINE_PER_PICK
+  return ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
+}
+
+export function cannotAnswer(q: Asked): string {
+  return q.questions.length === 1 && !q.questions[0]?.ownWords ? NO_OWN_WORDS : howToAnswer(q)
+}
+
+export const takesAnAnswer = (label: string, q: Asked): string =>
+  q.questions.length > 1
+    ? `this ${label} dialog asks ${q.questions.length} questions: reply with one line for each, in order.`
+    : `this ${label} question takes the number or the name of one option.`
+
+export type QuestionAnswer = { pick: number } | { words: string }
+
+function pickOf(q: Question, line: string): number | undefined {
+  const pick = /^\d+$/.test(line)
+    ? Number(line)
+    : q.options.findIndex((o) => o.label.toLowerCase() === line.toLowerCase()) + 1
+  return pick >= 1 && pick <= q.options.length ? pick : undefined
+}
+
+function answerTo(q: Question, line: string): QuestionAnswer | undefined {
+  const pick = pickOf(q, line)
+  if (pick) return { pick }
+  return q.ownWords && line ? { words: line } : undefined
+}
+
+// CODEX§20 MUSE§11 AGY§14
+export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | undefined {
   const text = reply.trim()
-  if (!q.ownWords || !text) return undefined
-  return [...keysFor([...q.options.map(() => 'Down'), 'Tab']), ...typedPieces(text), '\r']
+  const lines =
+    q.questions.length === 1
+      ? [text]
+      : text
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+  if (lines.length !== q.questions.length) return undefined
+  const answers = q.questions.map((x, i) => answerTo(x, lines[i]))
+  return answers.every((a): a is QuestionAnswer => a !== undefined) ? answers : undefined
+}
+
+export interface AnswerKeys {
+  pick(n: number): string[]
+  words(q: Question, text: string): string[]
+  submit(answers: QuestionAnswer[]): string[]
 }
 
 // CODEX§20
-export function codexOptionKey(q: Question, reply: string): string | undefined {
-  const text = reply.trim()
-  const pick = /^\d+$/.test(text)
-    ? Number(text)
-    : q.options.findIndex((o) => o.label.toLowerCase() === text.toLowerCase()) + 1
-  return pick >= 1 && pick <= q.options.length ? String(pick) : undefined
+const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
+  ...keysFor([...q.options.map(() => 'Down'), 'Tab']),
+  ...typedPieces(text),
+  '\r'
+]
+
+// MUSE§11
+export function museReviewKeys(answers: QuestionAnswer[]): string[] {
+  return answers.length > 1 || answers.some((a) => 'words' in a) ? ['\r'] : []
+}
+
+// AGY§14
+export const AGY_ANSWER_KEYS: AnswerKeys = {
+  pick: (n) => [String(n)],
+  words: (q, text) => [String(q.options.length + 1), ...typedPieces(text), '\r'],
+  submit: () => []
+}
+
+// CODEX§20 MUSE§11 AGY§14
+export const ANSWER_KEYS: Record<BackendId, AnswerKeys | undefined> = {
+  claude: undefined,
+  codex: { pick: (n) => [String(n)], words: noteUnderNoneOfTheAbove, submit: () => [] },
+  muse: { pick: (n) => [String(n), '\r'], words: noteUnderNoneOfTheAbove, submit: museReviewKeys },
+  agy: AGY_ANSWER_KEYS
+}
+
+export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
+  return [
+    ...answers.flatMap((a, i) =>
+      'pick' in a ? keys.pick(a.pick) : keys.words(q.questions[i]!, a.words)
+    ),
+    ...keys.submit(answers)
+  ]
 }
