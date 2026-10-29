@@ -614,7 +614,7 @@ function removalMs() {
 }
 
 // CC§4
-const CLAUDE_PRINTS_THE_LINE_THIS_LONG_AFTER_ITS_EMPTY_TITLE_MS = 10
+const CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS = 50
 
 // CC§4
 function removeWorktree(then) {
@@ -638,7 +638,7 @@ function removeWorktree(then) {
   setTimeout(() => {
     process.stdout.write(`${resumeHint}Removing worktree…\r\n`)
     setTimeout(remove, removalMs())
-  }, CLAUDE_PRINTS_THE_LINE_THIS_LONG_AFTER_ITS_EMPTY_TITLE_MS)
+  }, CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS)
 }
 
 let worktreeChoicePending = false
