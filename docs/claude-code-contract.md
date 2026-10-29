@@ -155,8 +155,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
 - **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
   Stop, Notification) included, not only SessionStart/SessionEnd. (Inferred, not
   checked.)
-- **A hook cannot read the running claude's version from its env; only the Bash
-  tool's shell can.** Inside a Bash tool call `CLAUDE_CODE_EXECPATH` is the binary
+- **A hook's env has the running claude's version only inside `AI_AGENT`, which ends
+  in `_harness` there and in `_agent` in the Bash tool's shell.** Inside a Bash tool call `CLAUDE_CODE_EXECPATH` is the binary
   (on a native install inside `…/versions/<version>`, so its basename is the version)
   and `AI_AGENT=claude-code_X-Y-Z_agent`. Seen 2026-09-24 on CC 2.1.281 with `env`
   inside a Bash tool call: `CLAUDE_CODE_EXECPATH=/Users/…/.local/share/claude/versions/2.1.281`,
@@ -164,9 +164,6 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `AI_AGENT=claude-code_X-Y-Z_harness`: measured 2026-10-28 on 2.1.311 and 2.1.312 with
   a command hook that logs its env, in an interactive pty run (6 runs); the binary sets
   `_harness` for its own process and `_agent` only for children it starts as the agent.
-  So Koloft's hook script does not try to read the version. A resumed session's
-  transcript tail still shows the version of the older claude that wrote it, so only the
-  live process tells the truth (inferred, not checked).
 - **A brand-new claude prints its login and onboarding links before its SessionStart
   hook fires**, so a user can click a link before the session is bound. (Inferred, not
   checked.)
