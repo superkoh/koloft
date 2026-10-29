@@ -291,7 +291,6 @@ export class MachineCodexUpstream implements CodexUpstream {
   private own = new Map<string, (frame: CodexFrame | undefined) => void>()
   private loginCompleted?: () => void
   private retryMs = RECONNECT_FIRST_MS
-  private paused = false
 
   constructor(
     private o: MachineUpstreamOptions,
@@ -313,16 +312,6 @@ export class MachineCodexUpstream implements CodexUpstream {
       return
     }
     this.sendSigningInAfterInitialized(line)
-  }
-
-  pause(): void {
-    this.paused = true
-    this.ws?.pause()
-  }
-
-  resume(): void {
-    this.paused = false
-    this.ws?.resume()
   }
 
   private sendSigningInAfterInitialized(line: string | Buffer): boolean {
@@ -492,7 +481,6 @@ export class MachineCodexUpstream implements CodexUpstream {
     ws.on('open', () => {
       opened = true
       this.ws = ws
-      if (this.paused) ws.pause()
       this.connecting = false
       this.retryMs = RECONNECT_FIRST_MS
       const join = this.tuiJoined ? this.rejoin() : Promise.resolve().then(() => this.release())

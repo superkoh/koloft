@@ -8,7 +8,7 @@ import type { CodexFrame } from '../../src/main/codexTransport'
 
 const PROCESS_SAMPLE_MS = 1000
 process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
-const { CodexRpc, codexEnvironment, createCodexTransport } =
+const { CodexRpc, codexEnvironment, createCodexTransport, TUI_STALLED_AFTER_MS } =
   await import('../../src/main/codexTransport')
 type CodexRpc = InstanceType<typeof CodexRpc>
 
@@ -478,48 +478,77 @@ describe('Codex TUI transport', () => {
     expect(await first).toMatchObject({ id: 'start' })
   })
 
-  it('a TUI that reads slower than a burst of replies far over the size limit together, as the Codex TUI asking for its 24 MB plugin list several times at once, keeps its connection and gets every reply', async () => {
-    const FRAME_LIMIT = 256 * 1024
-    const REPLY_BYTES = 200 * 1024
-    const REPLIES = 8
-    const BURST_REACHES_KOLOFT_MS = 500
+  const BURST_FRAME_LIMIT = 256 * 1024
+  const BURST_REPLY_BYTES = 200 * 1024
+  const BURST_REPLIES = 8
+
+  async function tuiThatStopsReading(): Promise<{
+    socket: WebSocket
+    errors: Error[]
+    burst(id: number, count: number): void
+    burstReachedKoloft(): number
+  }> {
     const errors: Error[] = []
+    let reached = 0
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
-      maxFrameBytes: FRAME_LIMIT,
-      onFrame: () => {},
+      maxFrameBytes: BURST_FRAME_LIMIT,
+      onFrame: (direction, frame) => {
+        if (direction === 'server' && frame.method === 'burst') reached++
+      },
       onError: (error) => errors.push(error)
     })
     cleanups.push(() => transport.stop())
     const socket = await connect(transport.url)
     await handshake(socket)
-    let closed = false
-    const seen: number[] = []
-    const allOrClosed = new Promise<void>((resolve) => {
-      socket.on('close', () => {
-        closed = true
-        resolve()
-      })
-      socket.on('message', (bytes) => {
-        const frame = JSON.parse(bytes.toString()) as CodexFrame
-        if (seen.push((frame.params as { i: number }).i) === REPLIES) resolve()
-      })
-    })
     socket.pause()
-    socket.send(
-      JSON.stringify({
-        id: 2,
-        method: 'thread/read',
-        params: { mode: 'burst', count: REPLIES, bytes: REPLY_BYTES }
-      })
+    return {
+      socket,
+      errors,
+      burst: (id, count) =>
+        socket.send(
+          JSON.stringify({
+            id,
+            method: 'thread/read',
+            params: { mode: 'burst', count, bytes: BURST_REPLY_BYTES }
+          })
+        ),
+      burstReachedKoloft: () => reached
+    }
+  }
+
+  // CODEX§1
+  it('a TUI that reads slower than a burst of replies far over the size limit together, as the Codex TUI asking for its plugin list several times at once, keeps its connection and gets every reply', async () => {
+    const { socket, errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    const seen: number[] = []
+    socket.on('message', (bytes) =>
+      seen.push(((JSON.parse(bytes.toString()) as CodexFrame).params as { i: number }).i)
     )
-    await new Promise((resolve) => setTimeout(resolve, BURST_REACHES_KOLOFT_MS))
-    socket.resume()
-    await allOrClosed
-    expect(closed).toBe(false)
-    expect(seen).toEqual([...Array(REPLIES).keys()])
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() =>
+      expect(burstReachedKoloft() === BURST_REPLIES || errors.length > 0).toBe(true)
+    )
     expect(errors).toEqual([])
+    socket.resume()
+    await vi.waitFor(() => expect(seen).toHaveLength(BURST_REPLIES))
+    expect(seen).toEqual([...Array(BURST_REPLIES).keys()])
+    expect(errors).toEqual([])
+  })
+
+  it('a TUI that takes nothing for 30 s while far behind loses its connection, so a hung TUI cannot hold Codex output in memory for ever', async () => {
+    const { errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() => expect(burstReachedKoloft()).toBe(BURST_REPLIES))
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + TUI_STALLED_AFTER_MS + 1000 })
+    try {
+      burst(3, 1)
+      await vi.waitFor(() =>
+        expect(errors.map((e) => e.message)).toContain('Codex output queue exceeds the size limit')
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {

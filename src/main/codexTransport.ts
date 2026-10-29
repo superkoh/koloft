@@ -27,8 +27,6 @@ export interface CodexUpstream {
   readonly ready: Promise<void>
   readonly limit: number
   write(raw: string | Buffer): void
-  pause(): void
-  resume(): void
   stop(): Promise<void>
 }
 
@@ -48,6 +46,7 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 
 const DEFAULT_TIMEOUT = 15_000
 export const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
+export const TUI_STALLED_AFTER_MS = 30_000
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -267,14 +266,6 @@ class CodexProcess implements CodexUpstream {
     this.child.stdin.write('\n')
   }
 
-  pause(): void {
-    this.child.stdout.pause()
-  }
-
-  resume(): void {
-    this.child.stdout.resume()
-  }
-
   stop(): Promise<void> {
     if (!this.stopping)
       this.stopping = this.stopOwnedProcesses().catch((error) => {
@@ -428,7 +419,7 @@ export async function createCodexTransport(
   let stopping: Promise<void> | undefined
   const pending: Buffer[] = []
   let pendingBytes = 0
-  let readingPausedForTheTui = false
+  let tuiTookAFrameAt = 0
   const own = new Map<string, PendingRequest>()
   const report = (error: Error): void => {
     try {
@@ -486,18 +477,17 @@ export async function createCodexTransport(
     const raw = questionThatWaitsForTheOwner(read)
     observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
-      const tui = client
-      tui.send(raw, { binary: false }, (error) => {
+      // CODEX§1
+      if (client.bufferedAmount === 0) tuiTookAFrameAt = Date.now()
+      else if (
+        client.bufferedAmount > upstream.limit * 2 &&
+        Date.now() - tuiTookAFrameAt > TUI_STALLED_AFTER_MS
+      )
+        throw new Error('Codex output queue exceeds the size limit')
+      client.send(raw, { binary: false }, (error) => {
         if (error) fail(error)
-        else if (readingPausedForTheTui && tui.bufferedAmount <= upstream.limit) {
-          readingPausedForTheTui = false
-          upstream.resume()
-        }
+        else tuiTookAFrameAt = Date.now()
       })
-      if (!readingPausedForTheTui && tui.bufferedAmount > upstream.limit) {
-        readingPausedForTheTui = true
-        upstream.pause()
-      }
     } else if (!accepted) {
       pendingBytes += raw.length
       if (pendingBytes > upstream.limit * 2)
