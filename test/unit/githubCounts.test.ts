@@ -52,4 +52,26 @@ describe('GithubCountsSweep', () => {
     expect(s.sweep.get('/a')).toBeUndefined()
     expect(s.pushes()).toBe(2)
   })
+
+  it('a sweep asked for while one is still out runs again once that one ends, so a new account pick is not lost', async () => {
+    let answer: WorkspaceGithub | null = null
+    let release = (): void => {}
+    const firstAnswerHeld = new Promise<void>((r) => (release = r))
+    let calls = 0
+    const sweep = new GithubCountsSweep({
+      workspaces: () => [{ path: '/a', missing: false }],
+      openCounts: async () => {
+        const seen = answer
+        if (++calls === 1) await firstAnswerHeld
+        return seen
+      },
+      onChange: () => {}
+    })
+    const first = sweep.sweep()
+    answer = KOLOFT
+    const second = sweep.sweep()
+    release()
+    await Promise.all([first, second])
+    expect(sweep.get('/a')).toEqual(KOLOFT)
+  })
 })

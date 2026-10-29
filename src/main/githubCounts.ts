@@ -16,6 +16,7 @@ function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): b
 export class GithubCountsSweep {
   private cache = new Map<string, WorkspaceGithub>()
   private sweeping = false
+  private askedWhileSweeping = false
 
   constructor(private deps: GithubCountsDeps) {}
 
@@ -29,24 +30,34 @@ export class GithubCountsSweep {
   }
 
   async sweep(): Promise<void> {
-    if (this.sweeping) return
+    if (this.sweeping) {
+      this.askedWhileSweeping = true
+      return
+    }
     this.sweeping = true
     try {
-      const live = this.deps.workspaces().filter((ws) => !ws.missing)
-      const answers = await Promise.all(
-        live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
-      )
-      let changed = false
-      live.forEach((ws, i) => {
-        const next = answers[i] ?? undefined
-        if (same(this.cache.get(ws.path), next)) return
-        changed = true
-        if (next) this.cache.set(ws.path, next)
-        else this.cache.delete(ws.path)
-      })
-      if (changed) this.deps.onChange()
+      do {
+        this.askedWhileSweeping = false
+        await this.sweepOnce()
+      } while (this.askedWhileSweeping)
     } finally {
       this.sweeping = false
     }
+  }
+
+  private async sweepOnce(): Promise<void> {
+    const live = this.deps.workspaces().filter((ws) => !ws.missing)
+    const answers = await Promise.all(
+      live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
+    )
+    let changed = false
+    live.forEach((ws, i) => {
+      const next = answers[i] ?? undefined
+      if (same(this.cache.get(ws.path), next)) return
+      changed = true
+      if (next) this.cache.set(ws.path, next)
+      else this.cache.delete(ws.path)
+    })
+    if (changed) this.deps.onChange()
   }
 }
