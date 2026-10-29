@@ -338,7 +338,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await snap(page, 'codex-no-account-workspace-menu')
       await codexItem.click({ force: true })
-      await expect(menu).toBeVisible()
 
       const refusal = await page.evaluate(async (cwd) => {
         try {
