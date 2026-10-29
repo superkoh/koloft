@@ -129,6 +129,7 @@ function mirroredSaidFiles(env: E2EEnv): string[] {
 const RUN_FOLDERS = 'proj/.claude/worktrees'
 const REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS = 20_000
 const A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS = 8000
+const A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS = 6000
 const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
 const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
   'set -e',
@@ -947,8 +948,20 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect
         .poll(folder, { timeout: REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS + 30_000 })
         .toBe(false)
-      expect(branch()).toBe(false)
-      await expect(row).toHaveCount(0)
+      await expect.poll(branch, { timeout: 10_000 }).toBe(false)
+      await expect
+        .poll(() => there("tmux -L koloft ls -F '#S' | grep -q ."), { timeout: 30_000 })
+        .toBe(false)
+      const failed = page.locator('.toast .toast-msg', {
+        hasText: /Claude Code did not remove the worktree/
+      })
+      const running = wsGroup(page, 'kt-key').locator('.ws-tab:not(.cold)')
+      for (let waited = 0; waited < A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS; waited += 250) {
+        expect(await failed.count()).toBe(0)
+        expect(await row.count()).toBe(0)
+        expect(await running.count()).toBe(0)
+        await page.waitForTimeout(250)
+      }
     })
   })
 

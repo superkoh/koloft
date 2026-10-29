@@ -654,11 +654,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
   })
 
-  it('a reconnect attaches to the running session and installs nothing', () => {
+  // CC§4 PLATFORM§35
+  it('a reconnect turns on the pane title for a tmux started by an older Koloft, attaches to the running session and installs nothing', () => {
     const b = box(spec())
     const res = b.run('attach')
     expect(res.status).toBe(0)
-    expect(b.tmux()).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux()).toEqual([
+      ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
+      ...['set', '-gq', 'set-titles-string', '#{pane_title}'],
+      ...['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1']
+    ])
     expect(b.ensured()).toBe(false)
   })
 

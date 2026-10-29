@@ -749,7 +749,7 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
   }
   if (!exit.watch.started(data)) return
   const session = tracker.infoOf(tabId)
-  const removalOutlivesKoloftsQuit = !!machineOfTab(tabId)
+  const removalOutlivesKoloftsQuit = hostOfTab(tabId) === 'ssh'
   exit.leaving = {
     sessionId: session?.sessionId,
     ...(!removalOutlivesKoloftsQuit && {
