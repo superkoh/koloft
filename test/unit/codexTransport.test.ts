@@ -83,6 +83,15 @@ async function connect(url: string): Promise<WebSocket> {
   return socket
 }
 
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function nextFrame(socket: WebSocket): Promise<CodexFrame> {
   return once(socket, 'message').then(([bytes]) => JSON.parse(bytes.toString()) as CodexFrame)
 }
@@ -314,17 +323,19 @@ describe('Codex TUI transport', () => {
   })
 
   // CODEX§34
-  it('a TUI that drops and connects again finds the same server, whose second initialize Koloft answers; stopping the tab then ends the server and its detached tool child', async () => {
+  it('a TUI that drops and connects again gets a new app-server, which takes its initialize, while the old one and its detached tool child end', async () => {
     let disconnected!: () => void
     const done = new Promise<void>((resolve) => {
       disconnected = resolve
     })
     const errors: Error[] = []
+    let replaced = 0
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
       onFrame: () => {},
       onDisconnect: disconnected,
+      onServerReplaced: () => replaced++,
       onError: (e) => errors.push(e)
     })
     cleanups.push(() => transport.stop())
@@ -336,25 +347,26 @@ describe('Codex TUI transport', () => {
     await new Promise((resolve) => setTimeout(resolve, CHILD_SIGTERM_HANDLER_INSTALL_MS))
     socket.close()
     await done
+    expect(replaced).toBe(0)
     const again = await connect(transport.url)
-    reply = nextFrame(again)
-    again.send(JSON.stringify({ id: 'initialize', method: 'initialize', params: {} }))
-    expect(await reply).toEqual({ id: 'initialize', result: { userAgent: 'fake' } })
-    again.send(JSON.stringify({ method: 'initialized' }))
+    await handshake(again)
     reply = nextFrame(again)
     again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
     expect(await reply).toMatchObject({
       id: 3,
-      result: { seen: ['initialize', 'initialized', 'thread/read', 'thread/read'] }
+      result: { seen: ['initialize', 'initialized', 'thread/read'] }
     })
-    for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).not.toThrow()
-    await transport.stop()
-    for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()
+    expect(replaced).toBe(1)
+    await expect
+      .poll(() => [result.pid, result.child].filter((pid) => processAlive(pid)), {
+        timeout: 5000
+      })
+      .toEqual([])
     expect(errors).toEqual([])
   })
 
   // CODEX§34
-  it('an app-server that dies after it served the TUI is replaced: the TUI is dropped so it connects again, and the new server takes its initialize', async () => {
+  it('an app-server that dies after it served the TUI drops the TUI, and the TUI that connects again gets a new app-server', async () => {
     const errors: Error[] = []
     let replaced = 0
     const transport = await createCodexTransport({
@@ -370,7 +382,6 @@ describe('Codex TUI transport', () => {
     const dropped = once(socket, 'close')
     socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
     await dropped
-    expect(replaced).toBe(1)
     expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
     const again = await connect(transport.url)
     await handshake(again)
@@ -380,58 +391,7 @@ describe('Codex TUI transport', () => {
       id: 3,
       result: { seen: ['initialize', 'initialized', 'thread/read'] }
     })
-  })
-
-  // CODEX§34
-  it('an approval the screen had not answered when it dropped is asked again once the reconnected screen has resumed the thread, and the answer reaches Codex', async () => {
-    let disconnected!: () => void
-    const done = new Promise<void>((resolve) => {
-      disconnected = resolve
-    })
-    const transport = await createCodexTransport({
-      binary,
-      cwd: directory,
-      onFrame: () => {},
-      onDisconnect: disconnected
-    })
-    cleanups.push(() => transport.stop())
-    const socket = await connect(transport.url)
-    await handshake(socket)
-    const asked = nextFrame(socket)
-    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'approval' } }))
-    expect(await asked).toMatchObject({ id: 991, method: 'item/commandExecution/requestApproval' })
-    socket.close()
-    await done
-    const again = await connect(transport.url)
-    await handshake(again)
-    const frames: CodexFrame[] = []
-    const two = new Promise<void>((resolve) =>
-      again.on('message', (bytes) => {
-        if (frames.push(JSON.parse(bytes.toString()) as CodexFrame) === 2) resolve()
-      })
-    )
-    again.send(JSON.stringify({ id: 'resume', method: 'thread/resume', params: {} }))
-    await two
-    expect(frames.map((f) => f.id)).toEqual(['resume', 991])
-    const received = nextFrame(again)
-    again.send(JSON.stringify({ id: 991, result: { decision: 'accept' } }))
-    expect(await received).toMatchObject({ method: 'approval/received' })
-  })
-
-  // CODEX§34
-  it('a reply to a request the screen never sent, as one a dropped screen sent under the same id, does not reach it', async () => {
-    const transport = await createCodexTransport({
-      binary,
-      cwd: directory,
-      onFrame: () => {},
-      observes: (_direction, head) => head.replyTo !== 'plugin-list-1'
-    })
-    cleanups.push(() => transport.stop())
-    const socket = await connect(transport.url)
-    await handshake(socket)
-    const reply = nextFrame(socket)
-    socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
-    expect(await reply).toEqual({ id: 'mine', result: {} })
+    expect(replaced).toBe(1)
   })
 
   // CODEX§34
@@ -458,14 +418,18 @@ describe('Codex TUI transport', () => {
     expect(errors).toHaveLength(4)
   })
 
-  it('a remote app-server that dies is not replaced here, since only the machine can start one', async () => {
+  // CODEX§34
+  it('a remote screen that connects again gets a new line to the same app-server on the machine, and a remote app-server that dies ends the connection, since only the machine can start one', async () => {
     let failure!: (error: Error) => void
+    let lines = 0
+    let upstreams = 0
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
       onFrame: () => {},
       upstream: (frame, failed) => {
         failure = failed
+        upstreams++
         return {
           ready: Promise.resolve(),
           limit: DEFAULT_MAX_FRAME,
@@ -474,14 +438,21 @@ describe('Codex TUI transport', () => {
             if (f.method === 'initialize')
               frame(readFrame(Buffer.from(JSON.stringify({ id: f.id, result: {} })))!)
           },
-          stop: () => Promise.resolve()
+          stop: () => Promise.resolve(),
+          newScreen: () => lines++
         }
       }
     })
     cleanups.push(() => transport.stop())
     const socket = await connect(transport.url)
     await handshake(socket)
-    const dropped = once(socket, 'close')
+    const closed = once(socket, 'close')
+    socket.close()
+    await closed
+    const again = await connect(transport.url)
+    await handshake(again)
+    expect({ lines, upstreams }).toEqual({ lines: 1, upstreams: 1 })
+    const dropped = once(again, 'close')
     failure(new Error('Codex on the machine is no longer running'))
     await dropped
     await expect(connect(transport.url)).rejects.toThrow()
@@ -526,9 +497,6 @@ describe('Codex TUI transport', () => {
       socket.on('message', (bytes) => {
         if (raw.push(bytes.toString()) === 2) resolve()
       })
-    )
-    socket.send(
-      JSON.stringify({ id: 'plugin-list-1', method: 'plugin/list', params: { mode: 'hang' } })
     )
     socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
     await both

@@ -325,6 +325,13 @@ export class MachineCodexUpstream implements CodexUpstream {
     return true
   }
 
+  // CODEX§34
+  newScreen(): void {
+    this.tuiJoined = false
+    this.queue ??= []
+    this.ws?.terminate()
+  }
+
   stop(): Promise<void> {
     this.stopping ??= (async () => {
       for (const answer of this.own.values()) answer(undefined)

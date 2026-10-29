@@ -1270,12 +1270,12 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§34
-  test('a Codex screen whose connection drops mid-turn connects again to the same app-server: the turn it was running still ends in the tab, which is live again and answers the next prompt', async ({
+  test('a Codex screen whose connection drops mid-turn connects again to a new app-server for the same thread: the cut-off turn no longer shows as working, and the tab is live again and answers the next prompt', async ({
     env
   }) => {
     installCodex(env)
     fs.writeFileSync(path.join(env.home, 'fake-codex-reconnects'), '')
-    fs.writeFileSync(path.join(env.home, 'fake-codex-busy-ms'), '4000')
+    fs.writeFileSync(path.join(env.home, 'fake-codex-busy-ms'), '60000')
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -1292,7 +1292,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect
         .poll(answers, { timeout: 30_000 })
         .toContain('Codex fixture answered: after the drop')
-      expect(answers()).toContain('Codex fixture answered: /busy')
       const [codex] = (await page.evaluate(() => window.api.sessions.list())).filter(
         (s) => s.alive && s.details?.codex
       )

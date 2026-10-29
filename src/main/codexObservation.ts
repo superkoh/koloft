@@ -245,13 +245,17 @@ export class CodexObservation {
   }
 
   queueDrained(): boolean {
-    return [...this.queuedByKoloft.values()].every((sent) => sent.started)
+    for (const sent of this.queuedByKoloft.values()) if (!sent.started) return false
+    return true
   }
 
   // CODEX§34
   serverReplaced(): void {
     this.serverWasReplaced = true
     this.forgetRunningTurns()
+    this.activities.clear()
+    this.childRoots.clear()
+    this.childTurns.clear()
     const cutOff = this.turns.open()
     if (cutOff) this.turns.end(cutOff)
     this.publishActivity()
@@ -451,7 +455,8 @@ export class CodexObservation {
       const turn = record(p.turn)
       if (typeof turn.id === 'string')
         for (const [clientId, sent] of this.queuedByKoloft)
-          if (sent.turnId === turn.id) this.queuedByKoloft.delete(clientId)
+          if (sent.started && (sent.turnId ?? turn.id) === turn.id)
+            this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
       for (const [id, owner] of this.approvalThreads) {

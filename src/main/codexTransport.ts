@@ -28,7 +28,10 @@ export interface CodexUpstream {
   readonly limit: number
   write(raw: string | Buffer): void
   stop(): Promise<void>
+  newScreen?(): void
 }
+
+export class CodexServerExited extends Error {}
 
 export type CodexUpstreamFactory = (
   frame: (read: ReadFrame) => void,
@@ -79,7 +82,6 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
 
 export interface CodexFrameHead {
   method?: string
-  id?: string | number
   replyTo?: string | number
 }
 
@@ -108,12 +110,10 @@ export function readFrame(line: Buffer): ReadFrame | undefined {
   const parse = (): CodexFrame => (parsed ??= parseFrame(line.toString()))
   const m = FRAME_HEAD.exec(line.toString('utf8', 0, HEAD_PEEK_BYTES))
   if (m) {
-    const id = m[2] !== undefined ? +m[2] : m[3]
-    if (m[1] !== undefined) return { raw: line, head: { method: m[1] }, parse }
+    const method = m[1] ?? m[4]
     return {
       raw: line,
-      head:
-        m[4] !== undefined ? { method: m[4], ...(id !== undefined && { id }) } : { replyTo: id },
+      head: method !== undefined ? { method } : { replyTo: m[2] !== undefined ? +m[2] : m[3] },
       parse
     }
   }
@@ -135,20 +135,8 @@ function questionThatWaitsForTheOwner({ raw, head, parse }: ReadFrame): Buffer {
 }
 
 function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
-  const known = typeof id === 'string' || typeof id === 'number' ? id : undefined
-  if (typeof method === 'string') return { method, ...(known !== undefined && { id: known }) }
-  return known !== undefined ? { replyTo: known } : {}
-}
-
-const SERVER_REQUEST_HEAD = /^\{"method":"[^"\\]*","id":/
-
-// CODEX§1
-function requestIdOf({ raw, head, parse }: ReadFrame): string | number | undefined {
-  if (head.method === undefined) return undefined
-  if (head.id !== undefined) return head.id
-  if (!SERVER_REQUEST_HEAD.test(raw.toString('utf8', 0, HEAD_PEEK_BYTES))) return undefined
-  const { id } = parse()
-  return typeof id === 'string' || typeof id === 'number' ? id : undefined
+  if (typeof method === 'string') return { method }
+  return typeof id === 'string' || typeof id === 'number' ? { replyTo: id } : {}
 }
 
 async function processRows(): Promise<ProcessRow[]> {
@@ -259,7 +247,7 @@ class CodexProcess implements CodexUpstream {
     this.child.on('exit', (code, sig) => {
       this.exited = true
       if (!this.stopping)
-        this.fail(new Error(`Codex app-server exited (${sig ?? code ?? 'unknown'})`))
+        this.fail(new CodexServerExited(`Codex app-server exited (${sig ?? code ?? 'unknown'})`))
     })
   }
 
@@ -436,11 +424,7 @@ export async function createCodexTransport(
   const pending: Buffer[] = []
   let pendingBytes = 0
   const own = new Map<string, PendingRequest>()
-  let initializing: unknown
-  let initializedAs: unknown
-  let screenAsked = new Set<unknown>()
-  const askingTheScreen = new Map<unknown, Buffer>()
-  let askAgainAfter: unknown
+  let serverMetAScreen = false
   let replacements = 0
   const report = (error: Error): void => {
     try {
@@ -497,75 +481,53 @@ export async function createCodexTransport(
     )
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
-  const sendTo = (to: WebSocket, raw: Buffer | string): void =>
-    to.send(raw, { binary: false }, (error) => {
-      if (!error) return
-      report(error)
-      to.terminate()
-    })
   const startUpstream = (): CodexUpstream => {
     const started: CodexUpstream = upstreamOf(
       (read) => {
         if (started !== upstream) return
-        const { method, replyTo } = read.head
+        const { replyTo } = read.head
         // CODEX§1
         if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
           settleRequest(own, replyTo, read.parse)
           return
         }
-        if (initializing !== undefined && replyTo === initializing) {
-          initializing = undefined
-          initializedAs = read.parse().result
-        }
         const raw = questionThatWaitsForTheOwner(read)
-        // CODEX§34
-        const asks = requestIdOf(read)
-        if (asks !== undefined) askingTheScreen.set(asks, raw)
-        else if (method === 'serverRequest/resolved')
-          askingTheScreen.delete((read.parse().params as Record<string, unknown>)?.requestId)
         observe('server', read)
-        const to = client
-        if (to?.readyState !== WebSocket.OPEN) {
-          if (accepted) return
+        if (client?.readyState === WebSocket.OPEN) {
+          if (client.bufferedAmount > upstream.limit * 2)
+            throw new Error('Codex output queue exceeds the size limit')
+          client.send(raw, { binary: false }, (error) => {
+            if (error) fail(error)
+          })
+        } else if (!accepted) {
           pendingBytes += raw.length
           if (pendingBytes > upstream.limit * 2)
             throw new Error('Codex output queue exceeds the size limit')
           pending.push(raw)
-          return
         }
-        if (replyTo !== undefined && !screenAsked.delete(replyTo)) return
-        if (to.bufferedAmount > upstream.limit * 2)
-          throw new Error('Codex output queue exceeds the size limit')
-        sendTo(to, raw)
-        if (replyTo === undefined || replyTo !== askAgainAfter) return
-        askAgainAfter = undefined
-        for (const ask of askingTheScreen.values()) sendTo(to, ask)
       },
       (error) => {
         if (started !== upstream) return
         console.error(`[koloft] Codex app-server behind ${directory} failed: ${error.message}`)
-        if (
-          options.upstream ||
-          initializedAs === undefined ||
-          replacements >= MOST_APP_SERVER_REPLACEMENTS_PER_TAB ||
-          stopping
-        )
-          return fail(error)
-        report(error)
-        replaceUpstream(started)
+        // CODEX§34
+        if (error instanceof CodexServerExited && serverMetAScreen && canReplaceTheServer()) {
+          report(error)
+          client?.terminate()
+          return
+        }
+        fail(error)
       }
     )
     return started
   }
+  const canReplaceTheServer = (): boolean =>
+    !options.upstream && replacements < MOST_APP_SERVER_REPLACEMENTS_PER_TAB && !stopping
   // CODEX§34
-  const replaceUpstream = (failed: CodexUpstream): void => {
+  const replaceUpstream = (): void => {
     replacements++
     rejectAll(own, new Error('Codex connection is closed'))
-    void failed.stop().catch(report)
-    initializing = initializedAs = askAgainAfter = undefined
-    askingTheScreen.clear()
+    void upstream.stop().catch(report)
     upstream = startUpstream()
-    client?.terminate()
     tell(options.onServerReplaced)
   }
   let upstream = startUpstream()
@@ -577,33 +539,36 @@ export async function createCodexTransport(
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (client?.readyState === WebSocket.OPEN || stopping) {
+        ws.terminate()
+        return
+      }
+      // CODEX§34
+      if (serverMetAScreen) {
+        if (options.upstream) upstream.newScreen?.()
+        else if (canReplaceTheServer()) replaceUpstream()
+        else {
+          ws.terminate()
+          void stop('Codex app-server was replaced too many times').catch(report)
+          return
+        }
+        serverMetAScreen = false
+      }
       accepted = true
       client = ws
-      screenAsked = new Set()
-      let initializeAnsweredHere = false
       ws.on('error', (error) => {
         console.error(`[koloft] Codex screen connection to ${directory} failed: ${error.message}`)
         report(error)
       })
       ws.on('message', (bytes, binary) => {
+        if (client !== ws) return
         try {
           if (binary) throw new Error('Codex protocol requires text frames')
           const raw = bytes as Buffer
           const read = readFrame(raw)
           if (!read) return
-          const { method, replyTo } = read.head
-          // CODEX§34
-          if (method === 'initialize' && initializedAs !== undefined) {
-            initializeAnsweredHere = true
-            ws.send(JSON.stringify({ id: read.parse().id, result: initializedAs }))
-            return
-          }
-          if (method === 'initialized' && initializeAnsweredHere) return
-          const asked = requestIdOf(read)
-          if (asked !== undefined) screenAsked.add(asked)
-          if (method === 'initialize') initializing = asked
-          if (method === 'thread/resume' && initializeAnsweredHere) askAgainAfter = asked
-          if (method === undefined && replyTo !== undefined) askingTheScreen.delete(replyTo)
+          const { method } = read.head
+          if (method === 'initialize') serverMetAScreen = true
           const line = raw.includes(NEWLINE) ? JSON.stringify(read.parse()) : raw
           observe('client', read)
           // CODEX§1

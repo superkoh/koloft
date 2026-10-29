@@ -226,7 +226,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§34
-  test('E-RC-08: when the Codex screen on this Mac loses its connection mid-turn, it connects again to the same app-server on the machine: the turn it was running still ends in the tab, which answers the next prompt', async ({
+  test('E-RC-08: when the Codex screen on this Mac loses its connection mid-turn, it connects again over a new line to the same app-server on the machine, which finishes the turn it was running, and the tab answers the next prompt', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)

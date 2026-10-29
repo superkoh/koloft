@@ -187,6 +187,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
     return ran.stdout
   }
+  const threadsWorkingHere = new Set()
   const serve = (write) => {
     let initialized = false
     let active
@@ -232,6 +233,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     const complete = (thread, turn) => {
       if (turn.status === 'interrupted') return
       turn.status = 'completed'
+      threadsWorkingHere.delete(thread.id)
       thread.updatedAt = Math.floor(Date.now() / 1000)
       const desired = read('fake-codex-next-title')
       if (desired) {
@@ -268,6 +270,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       persistTurn(thread, text)
       const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
       activeTurn = turn
+      threadsWorkingHere.add(thread.id)
       started?.(turn)
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
@@ -506,6 +509,9 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           return
         }
         active = method === 'thread/resume' ? previous : newThread(p.cwd || process.cwd(), previous)
+        // CODEX§34
+        if (method === 'thread/resume' && !threadsWorkingHere.has(active.id))
+          active.status = { type: 'idle' }
         if (p.cwd) active.cwd = p.cwd
         if (method === 'thread/fork' && previous.path)
           persistTurn(active, previous.preview || 'Forked session')
@@ -591,6 +597,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         pendingApproval = undefined
         if (active && activeTurn) {
           activeTurn.status = 'interrupted'
+          threadsWorkingHere.delete(active.id)
           status(active, { type: 'idle' })
           event('turn/completed', { threadId: active.id, turn: activeTurn })
         }
@@ -720,7 +727,10 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     const server = http.createServer((_req, res) => res.writeHead(404).end())
     const wss = new WebSocketServer({ server })
     wss.on('connection', (ws) => {
-      const receive = serve((line) => ws.send(line))
+      // CODEX§16
+      const receive = serve((line) => {
+        for (const client of wss.clients) if (client.readyState === 1) client.send(line)
+      })
       ws.on('message', (data) => receive(String(data)))
     })
     process.on('SIGTERM', () => {})

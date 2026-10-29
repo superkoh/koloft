@@ -2650,8 +2650,8 @@ trusted. One run of each.
 - **A reconnected TUI counts its numeric request ids from 1 again** (`account/read` was
   `id: 1` on both connections), so a late reply to a request the first connection sent
   can carry the id of a different request on the second.
-- **Read in that binary's `app-server generate-json-schema` output, not seen on the wire:**
-  a `serverRequest/resolved` notification `{threadId, requestId}`; `ClientRequest` lists no
-  method that removes or reorders a queued message (`thread/queue/add` itself is not in the
-  generated schema either), so a message queued again lands behind those still queued.
+- **No method removes or reorders a queued message.** Read in that binary's
+  `app-server generate-json-schema` output, not tried on the wire: `ClientRequest` lists
+  none (`thread/queue/add` itself is not in the generated schema either), so a message
+  queued again lands behind those still queued.
 
