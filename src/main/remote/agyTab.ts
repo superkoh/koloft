@@ -179,6 +179,102 @@ flock -n "$l" true || exit 1`,
 
 export const AGY_HELD_ELSEWHERE_EXIT = 1
 
+// AGY§16 AGY§29
+const AGY_SEND_JS = `import fs from 'fs'
+import http from 'http'
+import { execFileSync } from 'child_process'
+const [tmuxName, cascadeId] = process.argv.slice(1)
+const text = fs.readFileSync(0, 'utf8')
+const out = (cmd, args) => {
+  try {
+    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch {
+    return ''
+  }
+}
+const pane = out('tmux', ['-L', 'koloft', 'list-panes', '-t', tmuxName, '-F', '#{pane_pid}']).trim().split('\\n')[0]
+const procs = out('ps', ['-A', '-ww', '-o', 'pid=,ppid=,args=']).split('\\n').flatMap((line) => {
+  const m = /^\\s*(\\d+)\\s+(\\d+)\\s+(.*)$/.exec(line)
+  return m ? [{ pid: m[1], ppid: m[2], args: m[3] }] : []
+})
+const tree = new Set([pane])
+for (let size = 0; size !== tree.size; ) {
+  size = tree.size
+  for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
+}
+const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args))
+if (!pane || !agy) process.exit(1)
+const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
+function ports() {
+  const listed = out('lsof', ['-nP', '-a', '-p', agy.pid, '-iTCP', '-sTCP:LISTEN', '-Fn'])
+    .split('\\n')
+    .flatMap((l) => (l.startsWith('n') ? [Number(/:(\\d+)$/.exec(l)?.[1])] : []))
+  if (listed.length) return listed
+  const inodes = new Set()
+  try {
+    for (const fd of fs.readdirSync('/proc/' + agy.pid + '/fd')) {
+      try {
+        const m = /^socket:\\[(\\d+)\\]$/.exec(fs.readlinkSync('/proc/' + agy.pid + '/fd/' + fd))
+        if (m) inodes.add(m[1])
+      } catch {}
+    }
+  } catch {}
+  return ['/proc/net/tcp', '/proc/net/tcp6'].flatMap((f) => {
+    let table = ''
+    try {
+      table = fs.readFileSync(f, 'utf8')
+    } catch {}
+    return table.split('\\n').flatMap((l) => {
+      const c = l.trim().split(/\\s+/)
+      return c.length > 9 && c[3] === '0A' && inodes.has(c[9]) ? [parseInt(c[1].split(':')[1], 16)] : []
+    })
+  })
+}
+const post = (port, method, body) =>
+  new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/exa.language_server_pb.LanguageServerService/' + method,
+        method: 'POST',
+        timeout: 15000,
+        headers: { 'content-type': 'application/json', 'x-codeium-csrf-token': token }
+      },
+      (res) => {
+        let t = ''
+        res.setEncoding('utf8')
+        res.on('data', (c) => (t += c))
+        res.on('end', () => (res.statusCode === 200 ? resolve(t ? JSON.parse(t) : {}) : reject(new Error(t))))
+      }
+    )
+    req.on('timeout', () => req.destroy(new Error('timeout')))
+    req.on('error', reject)
+    req.end(JSON.stringify(body))
+  })
+for (const port of new Set(ports().filter((p) => p > 0))) {
+  try {
+    await post(port, 'GetStatus', {})
+  } catch {
+    continue
+  }
+  const steps = (await post(port, 'GetCascadeTrajectory', { cascadeId })).trajectory?.steps ?? []
+  const cascadeConfig = steps.map((s) => s?.userInput?.userConfig).filter(Boolean).pop()
+  if (!cascadeConfig) process.exit(1)
+  await post(port, 'SendUserCascadeMessage', { cascadeId, items: [{ text }], cascadeConfig })
+  process.exit(0)
+}
+process.exit(1)
+`
+
+// AGY§16 AGY§29
+export function agySendCmd(tmuxName: string, conversationId: string): string {
+  return remoteShCommand(
+    `[ -x "${REMOTE_NODE}" ] || exit 1\nexec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_SEND_JS)} "$1" "$2"`,
+    [tmuxName, conversationId]
+  )
+}
+
 // AGY§11 AGY§29
 export function agyStatuslineScript(): string {
   return `#!/bin/sh

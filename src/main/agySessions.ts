@@ -142,6 +142,7 @@ export interface AgyMachine {
   readAgyConfig(account: string): Promise<RemoteAgyConfig>
   agyHeldElsewhere(conversationId: string): Promise<boolean>
   agyConversations(): Promise<SummaryRow[]>
+  agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -177,6 +178,7 @@ interface AgyRun extends StoredRun {
   account: string
   pid?: number
   api?: AgyApi
+  send?: (conversationId: string, text: string) => Promise<boolean>
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
@@ -600,6 +602,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
       })
       const pid = this.deps.pty.pidOf(handle.id)
+      const api = pid ? new AgyApi(pid, token) : undefined
       const run: AgyRun = {
         tabId: handle.id,
         cwd,
@@ -613,7 +616,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         bypassing: permission === 'bypass',
         account: pick.account,
         pid,
-        api: pid ? new AgyApi(pid, token) : undefined,
+        api,
+        send: api && ((id, text) => api.send(id, text)),
         dir,
         log: new LineTail(log, (line) => bound && this.onLogLine(bound, line)),
         touched: new Map(),
@@ -733,6 +737,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
+      // AGY§16 AGY§29
+      send: (id, text) => machine.agySend(tmuxSessionName(id), id, text),
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
       touched: new Map(),
       liveWrites: 0,
@@ -1281,7 +1287,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§15 AGY§16
   private async deliverText(run: AgyRun, conversationId: string, text: string): Promise<void> {
-    const sent = await run.api?.send(conversationId, text).catch(() => false)
+    const sent = await run.send?.(conversationId, text).catch(() => false)
     if (!sent) this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
   }
 
@@ -1289,7 +1295,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   async deliver(tabId: string, text: string): Promise<boolean> {
     const run = this.runs.get(tabId)
     const id = run?.info?.nativeSessionId
-    if (!run?.api || !id) return false
-    return run.api.send(id, text).catch(() => false)
+    if (!run?.send || !id) return false
+    return run.send(id, text).catch(() => false)
   }
 }

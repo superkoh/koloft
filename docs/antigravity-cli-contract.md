@@ -872,6 +872,19 @@ only downloaded the public release.
   `GetCommandModelConfigs` and `GetUserSettings` → 501; `SendAllQueuedMessages` →
   500 `deprecated`.
 - The method list (347 names) is the same in 1.3.6 and 1.4.0.
+- **From another process on the same machine** (1.4.10, Linux arm64, Docker with no
+  network, tmux 3.3a, fake Gemini server, 2026-10-29; the second process was a
+  `docker exec`, standing in for a non-tty `ssh host cmd`): agy started in tmux with
+  `--csrf_token` serves the API to any process there. The agy pid is in the tree under
+  `tmux list-panes -F '#{pane_pid}'`, its token in its own `ps -A -ww -o args=`, its
+  ports from `/proc/<pid>/fd` against `/proc/net/tcp` (the image has no `lsof`); the
+  whole lookup took about 1 ms. `GetCascadeTrajectory` then `SendUserCascadeMessage`
+  with the last `userConfig`: on an idle agy the turn ran at once; sent 2 s into a
+  12 s turn it got `200 {}` at once, the screen showed no "queued msg" line, and it ran
+  as its own turn right after (its model call came as the first one's 12 s answer
+  ended). Text typed into the
+  input box and not yet sent ("owner half typed") stayed there, untouched and unsent,
+  through both turns.
 
 ## §17 Compaction
 

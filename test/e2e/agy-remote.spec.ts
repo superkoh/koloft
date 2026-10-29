@@ -12,6 +12,7 @@ import {
   openWorktreeSession,
   runIn,
   sendShortcut,
+  startSessionIn,
   terminalText,
   waitBooted,
   worktreeDialog,
@@ -249,6 +250,51 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await runIn(page, centerTerm(page), 'after the restart')
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§16 AGY§29
+  test("koloft session send from a session on this Mac reaches a remote Antigravity tab through agy's own API on that machine, not typed into its screen", async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'first turn' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
+      const agy = await boundRemoteAgy(page)
+
+      await startSessionIn(page, 'ws-a')
+      const sender = await page.evaluate(() =>
+        window.api.sessions
+          .list()
+          .then((all) => all.find((s) => s.backendId === 'claude' && s.alive)?.tabId ?? '')
+      )
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [sender, `/koloft session send ${agy.id} hello from the mac`]
+      )
+
+      const sentThroughTheApi = (): unknown[] =>
+        fs
+          .readFileSync(path.join(machineHome(env), 'fake-agy-api.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { method: string; body: unknown; authorized: boolean })
+          .filter((c) => c.method === 'SendUserCascadeMessage' && c.authorized)
+          .map((c) => c.body)
+      await expect
+        .poll(() => JSON.stringify(sentThroughTheApi()), { timeout: 60_000 })
+        .toMatch(/"cascadeId":"[^"]+".*hello from the mac/)
     } finally {
       await quitAndClose(app)
     }
