@@ -332,7 +332,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       const codexItem = menu.locator('.mi', { hasText: 'New Codex session' })
       await expect(codexItem).toHaveClass(/\bdisabled\b/)
-      await expect(codexItem).toContainText('No account')
       await expect(menu.locator('.mi', { hasText: 'New Claude session' })).not.toHaveClass(
         /\bdisabled\b/
       )

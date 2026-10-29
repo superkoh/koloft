@@ -791,7 +791,7 @@ function SidebarFloating({
             }}
           >
             {label}
-            {shut ? <span className="k">No account</span> : key && <span className="k">{key}</span>}
+            {key && <span className="k">{key}</span>}
           </div>
         )
       }
