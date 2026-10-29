@@ -41,6 +41,7 @@ export interface CodexTransportOptions extends CodexProcessOptions {
   onFrame(direction: 'client' | 'server', frame: CodexFrame): void
   observes?(direction: 'client' | 'server', head: CodexFrameHead): boolean
   onDisconnect?(): void
+  onServerReplaced?(): void
   onError?(error: Error): void
 }
 
@@ -419,10 +420,19 @@ export async function createCodexTransport(
   const pending: Buffer[] = []
   let pendingBytes = 0
   const own = new Map<string, PendingRequest>()
+  let initializing: unknown
+  let initializedAs: unknown
   const report = (error: Error): void => {
     try {
       options.onError?.(error)
     } catch {}
+  }
+  const tell = (callback: (() => void) | undefined): void => {
+    try {
+      callback?.()
+    } catch (error) {
+      report(asError(error))
+    }
   }
   const observe = (direction: 'client' | 'server', { head, parse }: ReadFrame): void => {
     if (options.observes && !options.observes(direction, head)) return
@@ -433,8 +443,9 @@ export async function createCodexTransport(
       report(asError(error))
     }
   }
-  const stop = (): Promise<void> => {
-    if (!stopping)
+  const stop = (why = 'Koloft ended the tab'): Promise<void> => {
+    if (!stopping) {
+      console.error(`[koloft] Codex connection ${directory} stops: ${why}`)
       stopping = (async () => {
         rejectAll(own, new Error('Codex connection is closed'))
         client?.terminate()
@@ -449,11 +460,12 @@ export async function createCodexTransport(
         stopping = undefined
         throw error
       })
+    }
     return stopping
   }
   const fail = (error: Error): void => {
     report(error)
-    void stop().catch(report)
+    void stop(error.message).catch(report)
   }
   const request = (
     method: string,
@@ -465,68 +477,109 @@ export async function createCodexTransport(
     )
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
-  const upstream = upstreamOf((read) => {
-    const { replyTo } = read.head
-    // CODEX§1
-    if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
-      settleRequest(own, replyTo, read.parse)
-      return
-    }
-    const raw = questionThatWaitsForTheOwner(read)
-    observe('server', read)
-    if (client?.readyState === WebSocket.OPEN) {
-      if (client.bufferedAmount > upstream.limit * 2)
-        throw new Error('Codex output queue exceeds the size limit')
-      client.send(raw, { binary: false }, (error) => {
-        if (error) fail(error)
-      })
-    } else if (!accepted) {
-      pendingBytes += raw.length
-      if (pendingBytes > upstream.limit * 2)
-        throw new Error('Codex output queue exceeds the size limit')
-      pending.push(raw)
-    }
-  }, fail)
+  const startUpstream = (): CodexUpstream => {
+    const started: CodexUpstream = upstreamOf(
+      (read) => {
+        if (started !== upstream) return
+        const { replyTo } = read.head
+        // CODEX§1
+        if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
+          settleRequest(own, replyTo, read.parse)
+          return
+        }
+        if (initializing !== undefined && replyTo === initializing) {
+          initializing = undefined
+          initializedAs = read.parse().result
+        }
+        const raw = questionThatWaitsForTheOwner(read)
+        observe('server', read)
+        if (client?.readyState === WebSocket.OPEN) {
+          if (client.bufferedAmount > upstream.limit * 2)
+            throw new Error('Codex output queue exceeds the size limit')
+          const to = client
+          to.send(raw, { binary: false }, (error) => {
+            if (!error) return
+            report(error)
+            to.terminate()
+          })
+        } else if (!accepted) {
+          pendingBytes += raw.length
+          if (pendingBytes > upstream.limit * 2)
+            throw new Error('Codex output queue exceeds the size limit')
+          pending.push(raw)
+        }
+      },
+      (error) => {
+        if (started !== upstream) return
+        console.error(`[koloft] Codex app-server behind ${directory} failed: ${error.message}`)
+        if (initializedAs === undefined || stopping) return fail(error)
+        report(error)
+        replaceUpstream(started)
+      }
+    )
+    return started
+  }
+  // CODEX§34
+  const replaceUpstream = (failed: CodexUpstream): void => {
+    rejectAll(own, new Error('Codex connection is closed'))
+    void failed.stop().catch(report)
+    initializing = initializedAs = undefined
+    upstream = startUpstream()
+    client?.terminate()
+    tell(options.onServerReplaced)
+  }
+  let upstream = startUpstream()
   server.on('error', fail)
   wss.on('error', fail)
   server.on('upgrade', (req, socket, head) => {
-    if (accepted || stopping) {
+    if (client?.readyState === WebSocket.OPEN || stopping) {
       socket.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n')
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       accepted = true
       client = ws
-      ws.on('error', fail)
+      let initializeAnsweredHere = false
+      ws.on('error', (error) => {
+        console.error(`[koloft] Codex screen connection to ${directory} failed: ${error.message}`)
+        report(error)
+      })
       ws.on('message', (bytes, binary) => {
         try {
           if (binary) throw new Error('Codex protocol requires text frames')
           const raw = bytes as Buffer
           const read = readFrame(raw)
           if (!read) return
+          const { method } = read.head
+          // CODEX§34
+          if (method === 'initialize' && initializedAs !== undefined) {
+            initializeAnsweredHere = true
+            ws.send(JSON.stringify({ id: read.parse().id, result: initializedAs }))
+            return
+          }
+          if (method === 'initialized' && initializeAnsweredHere) return
+          if (method === 'initialize') initializing = read.parse().id
           const line = raw.includes(NEWLINE) ? JSON.stringify(read.parse()) : raw
           observe('client', read)
           // CODEX§1
           upstream.write(line)
           // CODEX§17
-          if (read.head.method === 'initialized' && options.skillRoots)
+          if (method === 'initialized' && options.skillRoots)
             request('skills/extraRoots/set', { extraRoots: options.skillRoots }).catch((err) =>
               console.error('[koloft] Codex did not take the koloft skill:', err)
             )
         } catch (error) {
-          fail(asError(error))
+          report(asError(error))
+          ws.terminate()
         }
       })
-      ws.on('close', () => {
-        void stop()
-          .then(() => {
-            try {
-              options.onDisconnect?.()
-            } catch (error) {
-              report(asError(error))
-            }
-          })
-          .catch(report)
+      ws.on('close', (code, reason) => {
+        console.error(
+          `[koloft] Codex screen left ${directory} (${code}${reason.length ? ` ${reason.toString()}` : ''})`
+        )
+        if (client !== ws) return
+        client = undefined
+        if (!stopping) tell(options.onDisconnect)
       })
       for (const raw of pending) ws.send(raw, { binary: false })
       pending.length = 0

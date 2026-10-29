@@ -1267,6 +1267,40 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§34
+  test('a Codex screen whose connection drops mid-turn connects again to the same app-server: the turn it was running still ends in the tab, which is live again and answers the next prompt', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-reconnects'), '')
+    fs.writeFileSync(path.join(env.home, 'fake-codex-busy-ms'), '4000')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(codexRows(page)).toHaveClass(/st-working/)
+      await runIn(page, centerTerm(page), '/drop')
+      await expect.poll(() => fakeCodexLog(env, 'fake-codex-reconnects.jsonl')).toHaveLength(1)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), 'after the drop')
+      const wire = (): string =>
+        fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+      await expect
+        .poll(wire, { timeout: 30_000 })
+        .toContain('Codex fixture answered: after the drop')
+      expect(wire()).toContain('Codex fixture answered: /busy')
+      const [codex] = (await page.evaluate(() => window.api.sessions.list())).filter(
+        (s) => s.alive && s.details?.codex
+      )
+      expect(codex.details?.codex?.observation).toBe('live')
+      expect(codexCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex list removal and native exit preserve restorable CLI history', async ({ env }) => {
     installCodex(env)
     const app = await launchApp(env)

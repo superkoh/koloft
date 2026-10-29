@@ -313,7 +313,8 @@ describe('Codex TUI transport', () => {
     await expect(fs.stat(socketPath)).rejects.toThrow()
   })
 
-  it('disconnecting the TUI stops its server and detached tool child', async () => {
+  // CODEX§34
+  it('a TUI that drops and connects again finds the same server, whose second initialize Koloft answers; stopping the tab then ends the server and its detached tool child', async () => {
     let disconnected!: () => void
     const done = new Promise<void>((resolve) => {
       disconnected = resolve
@@ -329,14 +330,75 @@ describe('Codex TUI transport', () => {
     cleanups.push(() => transport.stop())
     const socket = await connect(transport.url)
     await handshake(socket)
-    const reply = nextFrame(socket)
+    let reply = nextFrame(socket)
     socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'tree' } }))
     const { result } = (await reply) as { result: { pid: number; child: number } }
     await new Promise((resolve) => setTimeout(resolve, CHILD_SIGTERM_HANDLER_INSTALL_MS))
     socket.close()
     await done
+    const again = await connect(transport.url)
+    reply = nextFrame(again)
+    again.send(JSON.stringify({ id: 'initialize', method: 'initialize', params: {} }))
+    expect(await reply).toEqual({ id: 'initialize', result: { userAgent: 'fake' } })
+    again.send(JSON.stringify({ method: 'initialized' }))
+    reply = nextFrame(again)
+    again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 3,
+      result: { seen: ['initialize', 'initialized', 'thread/read', 'thread/read'] }
+    })
+    for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).not.toThrow()
+    await transport.stop()
     for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()
     expect(errors).toEqual([])
+  })
+
+  // CODEX§34
+  it('an app-server that dies after it served the TUI is replaced: the TUI is dropped so it connects again, and the new server takes its initialize', async () => {
+    const errors: Error[] = []
+    let replaced = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onServerReplaced: () => replaced++,
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const dropped = once(socket, 'close')
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+    await dropped
+    expect(replaced).toBe(1)
+    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
+    const again = await connect(transport.url)
+    await handshake(again)
+    const reply = nextFrame(again)
+    again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 3,
+      result: { seen: ['initialize', 'initialized', 'thread/read'] }
+    })
+  })
+
+  it('an app-server that dies before it ever answered the TUI ends the connection', async () => {
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    const dropped = once(socket, 'close')
+    socket.send(JSON.stringify({ id: 1, method: 'thread/read', params: {} }))
+    socket.send(JSON.stringify({ method: 'initialized' }))
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+    await dropped
+    await expect(connect(transport.url)).rejects.toThrow()
+    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
   })
 
   it('a reply the observer does not want reaches the TUI as Codex wrote it, without being read, while one it wants is read', async () => {
@@ -477,7 +539,7 @@ describe('Codex TUI transport', () => {
     expect(await first).toMatchObject({ id: 'start' })
   })
 
-  it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {
+  it('rejects oversized peer input by dropping that connection instead of hanging on a partial write', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({
       binary,

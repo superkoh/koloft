@@ -241,6 +241,7 @@ interface CodexRun extends StoredRun {
   transport: CodexTransport
   account: string
   machine?: string
+  serverReplaced?: boolean
 }
 
 interface CodexLaunch {
@@ -755,6 +756,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         return
       }
       if (!bound || bound.explicitStop || bound.stopping) return
+      const rejoined = bound.serverReplaced && bound.info?.nativeSessionId === event.thread.id
+      bound.serverReplaced = false
       const name = bound.launchName
       // CODEX§17
       if (name)
@@ -768,6 +771,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           : event.thread,
         event.change
       )
+      // CODEX§34
+      if (rejoined)
+        for (const text of bound.observer.takeQueuedCutOffMidTurn())
+          this.queueMessage(bound.tabId, text, undefined, true).catch((error) =>
+            this.deps.error(String(error))
+          )
     }
     const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
     const openShim = machine
@@ -864,6 +873,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         onFrame: (direction, frame) => observer.receive(direction, frame),
         observes: (direction, head) => observer.wants(direction, head),
         onDisconnect: () => this.markDegraded(bound),
+        onServerReplaced: () => {
+          observer.serverReplaced()
+          if (bound) bound.serverReplaced = true
+        },
         onError: (error) => {
           this.markDegraded(bound)
           this.deps.error(String(error))
@@ -1025,12 +1038,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   async queueMessage(
     tabId: string,
     text: string,
-    clientId = `koloft-${randomUUID()}`
+    clientId = `koloft-${randomUUID()}`,
+    sentAgain = false
   ): Promise<void> {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
-    run.observer.queuedMessage(clientId)
+    run.observer.queuedMessage(clientId, text, sentAgain)
     try {
       await run.transport.request(
         'thread/queue/add',

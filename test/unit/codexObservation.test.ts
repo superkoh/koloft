@@ -67,8 +67,8 @@ describe('CodexObservation: messages Koloft queued', () => {
   it('are still queued through the idle moment between two queued turns, and gone once the last one is taken', () => {
     const f = fixture()
     f.bind()
-    f.observer.queuedMessage('koloft-a')
-    f.observer.queuedMessage('koloft-b')
+    f.observer.queuedMessage('koloft-a', 'a')
+    f.observer.queuedMessage('koloft-b', 'b')
     f.server('turn/completed', { turn: { id: 't1' } })
     expect(f.observer.queueDrained()).toBe(false)
     f.server('turn/started', { turn: { id: 't2' } })
@@ -82,12 +82,90 @@ describe('CodexObservation: messages Koloft queued', () => {
   it('a refused one, or one left on a thread the session moved away from, does not hold the queue open', () => {
     const f = fixture()
     f.bind()
-    f.observer.queuedMessage('koloft-a')
+    f.observer.queuedMessage('koloft-a', 'a')
     f.observer.queueRefused('koloft-a')
     expect(f.observer.queueDrained()).toBe(true)
-    f.observer.queuedMessage('koloft-b')
+    f.observer.queuedMessage('koloft-b', 'b')
     f.bind(B, 2)
     expect(f.observer.queueDrained()).toBe(true)
+  })
+
+  // CODEX§34
+  it('once an app-server dies, only a message whose turn began and never ended is handed back to send again; one still in Codex queue, one whose turn ended, even interrupted, is not', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-done', 'answered')
+    f.observer.queuedMessage('koloft-stopped', 'stopped by the owner')
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.observer.queuedMessage('koloft-waiting', 'still queued')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-done'), turnId: 't1' })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/started', { ...userMessage('koloft-stopped'), turnId: 't2' })
+    f.server('turn/completed', { turn: { id: 't2', status: 'interrupted' } })
+    f.server('turn/started', { turn: { id: 't3' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't3' })
+    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual(['the report'])
+    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+  })
+
+  // CODEX§34
+  it('a message already sent again once is not handed back a second time when that turn is cut off too', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-again', 'the report', true)
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-again'), turnId: 't1' })
+    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+  })
+
+  // CODEX§34
+  it('a message whose turn began on a thread the session then left is not sent again', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't1' })
+    f.bind(B, 2)
+    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+  })
+})
+
+// CODEX§34
+describe('CodexObservation: a TUI that reconnects', () => {
+  it('re-opening the thread it already shows keeps the running turn, so its end is still seen and what it said still counts', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/completed', {
+      item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'hello' }] }
+    })
+    f.observer.receive('client', { id: 2, method: 'thread/resume', params: { threadId: A } })
+    f.observer.receive('server', {
+      id: 2,
+      result: { thread: { ...thread(), status: { type: 'active', activeFlags: [] }, turns: [] } }
+    })
+    expect(f.status()).toBe('working')
+    f.server('item/completed', { item: { type: 'agentMessage', id: 'a1', text: 'hi there' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    expect(f.status()).toBe('waiting')
+    const ended = f.events.flatMap((e) => (e.type === 'turn-ended' ? [e.turn] : []))
+    expect(ended.map((turn) => [turn.said.map((line) => line.text), turn.reply])).toEqual([
+      [['hello'], 'hi there']
+    ])
+  })
+
+  it('after a new app-server took over, the turn the old one was running no longer counts as working', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    expect(f.status()).toBe('working')
+    f.observer.serverReplaced()
+    f.observer.receive('client', { id: 2, method: 'thread/resume', params: { threadId: A } })
+    f.observer.receive('server', { id: 2, result: { thread: thread() } })
+    expect(f.status()).toBe('waiting')
   })
 })
 

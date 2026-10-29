@@ -222,18 +222,37 @@ export class CodexObservation {
   private lastWritten?: string
   private liveWrites = 0
   private queued = new Set<string>()
+  private queuedByKoloft = new Map<string, { text: string; sentAgain: boolean; turnId?: string }>()
   unsubscribed = false
   turns = new TurnLog()
 
   constructor(private emit: (event: CodexEvent) => void) {}
 
   // CODEX§17
-  queuedMessage(clientId: string): void {
+  queuedMessage(clientId: string, text: string, sentAgain = false): void {
     this.queued.add(clientId)
+    this.queuedByKoloft.set(clientId, { text, sentAgain })
   }
 
   queueRefused(clientId: string): void {
     this.queued.delete(clientId)
+    this.queuedByKoloft.delete(clientId)
+  }
+
+  // CODEX§34
+  serverReplaced(): void {
+    this.liveTurns.clear()
+    this.approvals.clear()
+    this.approvalThreads.clear()
+    this.approvalAsks.clear()
+    this.waitingForInput = false
+    this.mainTurn = 'ended'
+  }
+
+  takeQueuedCutOffMidTurn(): string[] {
+    const cutOff = [...this.queuedByKoloft].filter(([, sent]) => sent.turnId !== undefined)
+    for (const [clientId] of cutOff) this.queuedByKoloft.delete(clientId)
+    return cutOff.flatMap(([, sent]) => (sent.sentAgain ? [] : [sent.text]))
   }
 
   queueDrained(): boolean {
@@ -328,22 +347,27 @@ export class CodexObservation {
         this.degraded('Codex returned an unsupported session response.')
         return
       }
-      if (thread.id !== this.threadId) this.unanswered = false
+      // CODEX§34
+      const reopened = thread.id === this.threadId
+      if (!reopened) {
+        this.unanswered = false
+        this.queuedByKoloft.clear()
+        this.liveTurns.clear()
+        this.queued.clear()
+        this.approvals.clear()
+        this.approvalThreads.clear()
+        this.approvalAsks.clear()
+        this.waitingForInput = false
+        this.mainTurn = 'ended'
+        this.touched.clear()
+        this.lastTouched = this.lastWritten = undefined
+        this.liveWrites = 0
+        this.pricedThrough = this.longContextSurchargeUsd = 0
+      }
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
-      this.liveTurns.clear()
-      this.queued.clear()
-      this.approvals.clear()
-      this.approvalThreads.clear()
-      this.approvalAsks.clear()
-      this.waitingForInput = false
-      this.mainTurn = 'ended'
       this.publishedTurn = undefined
-      this.touched.clear()
-      this.lastTouched = this.lastWritten = undefined
-      this.liveWrites = 0
-      this.pricedThrough = this.longContextSurchargeUsd = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
@@ -354,8 +378,11 @@ export class CodexObservation {
         thread: { ...thread, cwd, model: this.model },
         change: req.method === 'thread/start' ? 'replace' : 'switch'
       })
-      this.seedFilesFromHistory(record(result.thread))
-      this.turns = codexTurns(record(result.thread).turns)
+      if (reopened) this.publishFiles()
+      else {
+        this.seedFilesFromHistory(record(result.thread))
+        this.turns = codexTurns(record(result.thread).turns)
+      }
       this.status(thread.status)
       return
     }
@@ -369,8 +396,11 @@ export class CodexObservation {
       (method === 'item/started' || method === 'item/completed') &&
       item.type === 'userMessage' &&
       typeof item.clientId === 'string'
-    )
+    ) {
       this.queued.delete(item.clientId)
+      const sent = this.queuedByKoloft.get(item.clientId)
+      if (sent && typeof p.turnId === 'string') sent.turnId = p.turnId
+    }
     if (method === 'item/completed') {
       if (this.noteFiles(item, true)) this.publishFiles()
       this.observeOpen(item)
@@ -403,6 +433,8 @@ export class CodexObservation {
       this.publishActivity()
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
+      for (const [clientId, sent] of this.queuedByKoloft)
+        if (sent.turnId === turn.id) this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
       for (const [id, owner] of this.approvalThreads) {

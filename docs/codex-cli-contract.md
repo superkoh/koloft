@@ -2615,3 +2615,36 @@ stdin. Each turn then failed at the model (401), after the hook had run. One run
   `"prompt":"[Discord] 你好 \"a\" <b> é\tx\nline2"`: only the quote, the tab and the line
   feed escaped, as Node's `JSON.stringify` does (second run, same setup).
 
+## 34. A TUI whose connection drops, and an app-server that dies mid-turn
+
+2026-10-29, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`), a
+throwaway `CODEX_HOME` with a made-up API key in `auth.json` (deleted afterwards), the folder
+trusted. One run of each.
+
+- **The TUI reconnects to the same `--remote` URL by itself.** A real `codex --remote
+  unix://…` TUI in a Python pty (120×40) behind a Node relay to one `codex app-server
+  --stdio`. After the TUI's `thread/start` was answered, the relay terminated the
+  WebSocket (the TUI saw 1006). The TUI opened a new connection 3 ms later, and again
+  after 1, 2, 4 and then every 8 s while each attempt was closed. Each new connection
+  began with `initialize`.
+- **A `--stdio` app-server answers a second `initialize` with an error.** The relay fed
+  the reconnected TUI's `initialize` to the same app-server: `{"error":{"code":-32600,
+  "message":"Already initialized"},"id":"initialize"}`, and the TUI dropped that
+  connection at once. So a TUI can never rejoin an app-server it has already
+  initialized unless something in between answers the second `initialize` itself.
+- **What a reconnected TUI sends.** With a fresh app-server behind the relay, the second
+  connection sent `initialize`, `initialized`, `account/read`, `model/list`,
+  `configRequirements/read`, `collaborationMode/list`, then `thread/resume` with the old
+  thread id and `excludeTurns: true`, then `plugin/list`. It stayed connected.
+- **A message queued but not started survives an app-server that dies; the turn that was
+  running does not.** A Node client on a stdio app-server whose model provider pointed at a
+  local HTTP server that never answered (`model_provider` with `base_url`,
+  `wire_api = "responses"`, `supports_websockets = false`). `turn/start` "A" stayed
+  `inProgress`; `thread/queue/add` "B" (`clientUserMessageId: "probe-b"`) was answered
+  `queuedSubmission` and `thread/queue/changed`. Then a SIGKILL of the app-server. A new
+  app-server on the same home answered `thread/resume` with status `idle` and turn A
+  `interrupted` (its `userMessage` kept), then on its own sent `thread/queue/changed`,
+  `turn/started` and `item/started` for B's `userMessage` with `clientId: "probe-b"`, and
+  asked the model. Nothing re-ran A. Every `item/started` and `item/completed` carried
+  `threadId` and `turnId`.
+
