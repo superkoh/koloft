@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { useStore, consumeRestartExit, workbenchOwnerLive } from '../../src/renderer/src/store'
 import {
   allEditTabs,
@@ -815,7 +816,7 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     const s = useStore.getState()
     s.addTab({ id: 'acct1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
     s.setSessions([session('acct1', { backendId: 'codex', sessionId: 'codex:local:thread-acct' })])
-    noAccount = 'No Codex account in Koloft can be used.'
+    noAccount = NO_USABLE_ACCOUNT.codex
     nextPty = { id: 'acct2', cwd: '/w' }
 
     s.restartActiveSession()
@@ -826,7 +827,7 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     const after = useStore.getState()
     expect(after.tabs).toMatchObject([{ id: 'acct1', alive: true }])
     expect(after.tabs[0].respawning).toBeUndefined()
-    expect(after.toast).toBe('No Codex account in Koloft can be used.')
+    expect(after.toast).toBe(NO_USABLE_ACCOUNT.codex)
 
     noAccount = null
     useStore.getState().restartActiveSession()

@@ -498,7 +498,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await clickAppMenuItem(app, page, 'restart-session')
       await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.codex)
-      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      await expect(codexRows(page)).toHaveClass(/\bst-(waiting|idle)\b/)
       await expect(codexRows(page)).not.toHaveClass(/\bcold\b/)
       expect(codexCalls(env)).toHaveLength(1)
     } finally {

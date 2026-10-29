@@ -372,7 +372,6 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
-  NO_USABLE_ACCOUNT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -5742,11 +5741,9 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  // ADR-0030
   ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
     if (typeof id !== 'string' || !id) return null
-    const backend = sessionBackends.forSession(id)
-    return backend.accountUsable() ? null : NO_USABLE_ACCOUNT[backend.id]
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
