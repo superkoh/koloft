@@ -162,7 +162,7 @@ const STAND_IN_MODEL_CONFIG = [
   ''
 ].join('\n')
 // CODEX§15
-const A_MADE_UP_API_KEY_THE_LAUNCH_PROBE_READS_AS_SIGNED_IN_OFFLINE = JSON.stringify({
+const A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN = JSON.stringify({
   OPENAI_API_KEY: 'sk-not-a-real-key'
 })
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
@@ -1376,7 +1376,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // ADR-0039 CODEX§16
-  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, no account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
     env
   }) => {
     test.skip(
@@ -1393,7 +1393,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
       NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
     )
-    addCodexAccount(env, A_MADE_UP_API_KEY_THE_LAUNCH_PROBE_READS_AS_SIGNED_IN_OFFLINE)
+    addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
     await withLab(

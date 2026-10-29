@@ -1037,18 +1037,6 @@ stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio 
 `thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
 "chatgpt authentication required to read rate limits".
 
-**A made-up ChatGPT login reads as signed out; a made-up API key does not.** Checked
-2026-10-29 with Codex CLI 0.162.0, no model turn, online: a Node script ran `codex
-app-server` on stdio in throwaway `CODEX_HOME`s and sent `account/read` twice. An
-`auth.json` of only `{tokens: {access_token, account_id}}` (no `id_token`) answered
-`{account: null}` both times, and `codex login status` there printed "missing field
-`id_token`". A well-formed one with a made-up unsigned `id_token`, access and refresh
-token tried to refresh against OpenAI (401 "token_expired") and answered the first
-`account/read` with error `-32603` ("workspace routing discovery unauthorized (401)"),
-the second with `{account: null}`. `{OPENAI_API_KEY: "<made up>"}` answered `{account:
-{type: "apiKey"}}` both times, with nothing on stderr. So only a made-up
-API key lets Koloft's launch probe leave a test account signed in.
-
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
 file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
@@ -1085,6 +1073,18 @@ yet expired) made `account/read` fail with error `-32603` ("workspace routing di
 unauthorized (401)") instead of answering `account: null`, so a probe with no network ends
 in an error and leaves the account's status alone. A real login whose access token ran out
 while offline was not tried.
+
+**Online, every made-up ChatGPT login reads as signed out; a made-up API key does not.**
+Checked 2026-10-29 with Codex CLI 0.162.0, no model turn, with the network on: a Node
+script ran `codex app-server` on stdio in throwaway `CODEX_HOME`s and sent `account/read`
+twice. An `auth.json` of only `{tokens: {access_token, account_id}}` (no `id_token`)
+answered `{account: null}` both times, and `codex login status` there printed "missing
+field `id_token`". A well-formed one with a made-up unsigned `id_token`, access and refresh
+token, not expired, tried to refresh against OpenAI (401 "token_expired") and answered the
+first `account/read` with the same `-32603` as the offline case above, the second with
+`{account: null}`. `{OPENAI_API_KEY: "<made up>"}` answered `{account: {type: "apiKey"}}`
+both times, with nothing on stderr. So a test that needs a Codex account to stay signed in
+without a real login can only use a made-up API key.
 
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any

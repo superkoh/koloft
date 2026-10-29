@@ -1606,6 +1606,17 @@ describe('CodexSessions', () => {
     expect(mocks.close).toHaveBeenCalledOnce()
   })
 
+  // CODEX§15
+  it('an API-key home reads as signed in with no rate limits, since Codex refuses to read limits for a key', async () => {
+    mocks.request.mockImplementation(async (method) => {
+      if (method === 'account/read') return { account: { type: 'apiKey' } }
+      throw new Error('chatgpt authentication required to read rate limits')
+    })
+    await expect(sessions.readAccount(path.join(directory, 'key-home'))).resolves.toEqual({
+      signedIn: true
+    })
+  })
+
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {
     const gate = deferred<{ id: 'codex'; available: boolean }>()
     vi.mocked(sessions.availability).mockReturnValueOnce(gate.promise)
