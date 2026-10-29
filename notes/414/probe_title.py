@@ -29,7 +29,10 @@ TITLE_LINES = """set -g set-titles on
 set -g set-titles-string '#{pane_title}'
 set -asq terminal-features ',xterm*:title'
 """
-OSC_TITLE = re.compile(rb"\x1b\][012];[^\x07\x1b]*(\x07|\x1b\\\\)")
+TWO_TITLE_LINES = """set -g set-titles on
+set -g set-titles-string '#{pane_title}'
+"""
+OSC_TITLE =re.compile(rb"\x1b\][012];[^\x07\x1b]*(\x07|\x1b\\\\)")
 
 
 def run(*args, cwd=None, check=True):
@@ -75,7 +78,13 @@ def variant(name, conf_text):
     sock = f"k{name}"
     tm = lambda *a: run("tmux", "-L", sock, "-f", conf, *a, check=False)
     launch = f"cd {repo} && exec {CLAUDE} -w wt --settings {settings} --strict-mcp-config --mcp-config {mcp}"
+    if name.startswith("upgrade"):
+        tm("new-session", "-d", "-s", "old", "sleep 600")
+        for args in (["set", "-gq", "set-titles", "on"], ["set", "-gq", "set-titles-string", "#{pane_title}"]):
+            tm(*args)
+            print("  set on the running server:", " ".join(args))
     tm("new-session", "-d", "-s", "s", "-x", "120", "-y", "40", launch)
+    print("  terminal-features:", tm("show", "-sv", "terminal-features").strip().replace("\n", " | "))
 
     pid, fd = pty.fork()
     if pid == 0:
@@ -175,4 +184,5 @@ def variant(name, conf_text):
 
 print("claude", run(CLAUDE, "--version").strip(), "| tmux", run("tmux", "-V").strip())
 for arg in sys.argv[1:]:
-    variant(arg, KOLOFT_TMUX_CONF + (TITLE_LINES if arg.startswith("titles") else ""))
+    extra = TITLE_LINES if arg.startswith("titles") else TWO_TITLE_LINES if arg.startswith("twolines") else ""
+    variant(arg, KOLOFT_TMUX_CONF + extra)

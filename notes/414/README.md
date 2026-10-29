@@ -89,5 +89,29 @@ With them the outer terminal gets Claude Code's own `ESC ] 0 ; BEL` right before
 `Removing worktree…`, in the same order as on the Mac. Only cursor and mode codes
 (`ESC[?12l ESC[?25h ESC[?2004l`) come between them, plus the two resume-hint lines when the
 session has a message. `set-titles on` alone (tried for the issue) is not enough: the
-default `set-titles-string` is never empty, and xterm-256color's terminfo has no title
-capability, so tmux needs the `title` feature.
+default `set-titles-string` is never empty.
+
+## 3. Two lines are enough, and they work on a tmux server already running
+
+`python3 probe_title.py twolines twolines-msg upgrade` (`twolines`: only `set-titles on` and
+`set-titles-string '#{pane_title}'` in the config; `upgrade`: a server started with the
+shipped config and a session already in it, then both options set with `tmux set -gq` before
+the Claude Code session starts):
+
+```
+=== twolines
+  terminal-features: xterm*:clipboard:ccolour:cstyle:focus:title | screen*:title | xterm*:RGB:hyperlinks
+  last title before it: b'\x1b]0;\x07', 20 bytes between: b'\x1b[?12l\x1b[?25h\x1b[?2004l'
+=== twolines-msg
+  last title before it: b'\x1b]0;\x07', 113 bytes between: b'\x1b[?12l\x1b[?25h\x1b[?2004l\r\n\x1b[2mResume this session with:\r\nclaude --resume 83a087b7-…\r\n\x1b(B\x1b[m'
+=== upgrade
+  set on the running server: set -gq set-titles on
+  set on the running server: set -gq set-titles-string #{pane_title}
+  title codes seen by the outer terminal: 3
+    +  0.052s b'\x1b]0;\x07'
+  'Removing worktree' reached the outer terminal at +0.062s
+  last title before it: b'\x1b]0;\x07', 20 bytes between: b'\x1b[?12l\x1b[?25h\x1b[?2004l'
+```
+
+tmux 3.3a's default `terminal-features` already gives `xterm*` the `title` feature, so the
+third line is not needed.
