@@ -63,8 +63,8 @@ only downloaded the public release.
 - `/exit` prints `Resume with -c (or command below):` and `agy --conversation=<id>`,
   then exits 0.
 - **Every way a person quits exits 0**: `/exit`, `/quit`, Ctrl+C twice and Ctrl+D twice
-  at the prompt (the first press shows "press ctrl+c again to exit"; 0.3 s and 0.8 s
-  apart both exit). Measured 2026-10-29, agy 1.3.6 on Linux in Docker, a python pty
+  at the prompt (the first press shows "press ctrl+c again to exit"; Ctrl+C was pressed
+  0.3 s and 0.8 s apart, Ctrl+D 0.3 s apart). Measured 2026-10-29, agy 1.3.6 on Linux in Docker, a python pty
   answering the terminal's queries, the API-key route with the folder trusted (§5).
   macOS: not probed.
 - `AGY_CLI_NONINTERACTIVE_HEADLESS=1` or `AGY_CLI_INTERACTIVE_HEADLESS=1` without a

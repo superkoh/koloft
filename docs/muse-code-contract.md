@@ -64,7 +64,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   answering the terminal's queries, output replayed into `@xterm/headless`; inside a
   tmux pane too, PLATFORM§35).
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
-  Ctrl+D twice at an empty input box (0.3 s and 0.8 s apart both exit). Measured
+  Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
+  0.3 s apart). Measured
   2026-10-29, 1.4.11 in the `koloft-muse-probe-1411` Docker image, `--provider echo`,
   inside a tmux pane, the exit code read from the shell that started it. macOS: not
   probed.
