@@ -1,0 +1,21 @@
+
+ RUN  v4.1.11 /Users/letianwang/Projects/koloft/.claude/worktrees/issue-398
+
+stdout | notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > ended -> input emits waiting -> approval, and input -> ended emits approval -> waiting
+edges (idle 4 min): [{"next":"working"},{"prev":"working","next":"waiting"},{"prev":"waiting","next":"approval"},{"prev":"approval","next":"waiting"}]
+
+stdout | notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > a long-idle session that then asks emits idle -> approval
+edges (idle 0 ms): [{"next":"waiting"},{"prev":"waiting","next":"idle"},{"prev":"idle","next":"approval"}]
+
+stdout | notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > a turn held by background work (status working) that then asks emits working -> approval
+edges (held by background): [{"next":"working"},{"prev":"working","next":"approval"}]
+
+ ✓ notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > ended -> input emits waiting -> approval, and input -> ended emits approval -> waiting 8ms
+ ✓ notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > a long-idle session that then asks emits idle -> approval 23ms
+ ✓ notes/398/turnEdges.test.ts > a turn that goes from ended to asking with no working step between > a turn held by background work (status working) that then asks emits working -> approval 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  05:32:28
+   Duration  139ms (transform 33ms, setup 0ms, import 33ms, tests 32ms, environment 0ms)
+
