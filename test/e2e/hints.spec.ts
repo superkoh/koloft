@@ -1,3 +1,4 @@
+import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
@@ -22,7 +23,12 @@ async function toggleWorkbenchWithoutClicking(app: ElectronApplication, page: Pa
 
 async function start(
   env: E2EEnv,
-  opts: { hintsSeen?: string[]; hintsOff?: boolean; panelOpen?: boolean } = {}
+  opts: {
+    hintsSeen?: string[]
+    hintsOff?: boolean
+    panelOpen?: boolean
+    onlyTypedWrites?: boolean
+  } = {}
 ): Promise<{ app: ElectronApplication; page: Page }> {
   seedSettings(env, {
     onboardingSeen: true,
@@ -30,6 +36,7 @@ async function start(
     hintsOff: opts.hintsOff ?? false
   })
   if (opts.panelOpen === false) seedWorkbenchDefault(env, false)
+  if (opts.onlyTypedWrites) fs.writeFileSync(env.claudeLazyFile, '1')
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
@@ -81,12 +88,6 @@ async function typeIntoHiddenRow(page: Page, tabId: string, line: string): Promi
   })
 }
 
-async function runInCenterWithoutAMousedown(page: Page, line: string): Promise<void> {
-  await centerTerm(page).locator('textarea').focus()
-  await page.keyboard.type(line)
-  await page.keyboard.press('Enter')
-}
-
 async function stayAbsentPastPumpGap(page: Page, ms = 4000): Promise<void> {
   await page.waitForTimeout(ms)
   await expect(card(page)).toHaveCount(0)
@@ -122,10 +123,10 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    let { app, page } = await start(env, { panelOpen: false })
+    let { app, page } = await start(env, { panelOpen: false, onlyTypedWrites: true })
     try {
       await startSessionIn(page, 'ws-a')
-      await runInCenterWithoutAMousedown(page, '/write first.md')
+      await runIn(page, centerTerm(page), '/write first.md')
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'workbench').locator('.h')).toHaveText('Claude changed a file')
       await expect(card(page, 'workbench').locator('.foot .n')).toHaveText('tip 1 of 5')
@@ -169,7 +170,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env)
+    const { app, page } = await start(env, { onlyTypedWrites: true })
     try {
       await holdWorkbenchReads(app)
       await startSessionIn(page, 'ws-a')
@@ -340,10 +341,10 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-06: Esc and an outside click close a hint, and count it as seen', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { panelOpen: false })
+    const { app, page } = await start(env, { panelOpen: false, onlyTypedWrites: true })
     try {
       await startSessionIn(page, 'ws-a')
-      await runInCenterWithoutAMousedown(page, '/write one.md')
+      await runIn(page, centerTerm(page), '/write one.md')
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
       await page.keyboard.press('Escape')
       await expect(card(page)).toHaveCount(0)
@@ -367,7 +368,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-07: two triggers at once show one card, and the second waits', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { hintsSeen: ['worktree'] })
+    const { app, page } = await start(env, { hintsSeen: ['worktree'], onlyTypedWrites: true })
     try {
       await startSessionIn(page, 'ws-a')
       const a = await shownTabId(page)

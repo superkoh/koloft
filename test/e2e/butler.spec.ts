@@ -24,6 +24,7 @@ import {
   centerTerm,
   discordOnDisk,
   closeMenu,
+  FAKE_SESSION_TITLE,
   menuItemTexts,
   newSessionInWith,
   notesIsland,
@@ -74,6 +75,13 @@ const A_HELPER_HAS_IT_SQUEEZED = '(FromKoloft:)Theowneraskedforsomething'
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
+}
+
+async function startupTurnOver(page: Page, wsName: string): Promise<void> {
+  await expect(wsRows(page, wsName).filter({ hasText: FAKE_SESSION_TITLE })).toHaveClass(
+    /\bst-waiting\b/,
+    { timeout: 60_000 }
+  )
 }
 
 function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
@@ -801,7 +809,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
     const { app, page, close } = await launched(env)
     try {
       await startSessionIn(page, 'ws-a')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await startupTurnOver(page, 'ws-a')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -809,7 +817,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
 
       await startSessionIn(page, 'ws-b')
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
-      await expect(wsRows(page, 'ws-b')).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await startupTurnOver(page, 'ws-b')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
