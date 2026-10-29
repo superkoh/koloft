@@ -116,6 +116,7 @@ const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
   ' && git init -q && git add -A && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
+const NOT_ASCII = '中文 ⏺ …'
 
 function mirroredSaidFiles(env: E2EEnv): string[] {
   const root = path.join(env.userData, 'remote')
@@ -622,6 +623,35 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
       }
+    })
+  })
+
+  // PLATFORM§35
+  test('E-SSH-33: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      expect(
+        execFileSync(
+          '/usr/bin/ssh',
+          ['-F', lab.config, 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
+          {
+            encoding: 'utf8'
+          }
+        ).trim()
+      ).toBe('[]')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive
+      )!.tabId
+      await page.evaluate(
+        ([id, typed]) => window.api.terminal.write(id, typed),
+        [tabId, `${NOT_ASCII}\r`]
+      )
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain(`handled: ${NOT_ASCII}`)
     })
   })
 

@@ -1614,6 +1614,27 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   handle INT died with 130 as before).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
+- **A tmux client whose login names no UTF-8 locale draws `_` for every character
+  outside ASCII**, whatever the program in the pane printed: `中文 ⏺ …` came out as
+  `____ _ _`, and `─` as the line-drawing set (`ESC(0q ESC(B`). The client decides by the
+  first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set: `tmux -u`, or `LANG=C.UTF-8` on the
+  client alone, drew them right; so did a `LANG=en_US.UTF-8` the login was handed though
+  the machine had no such locale (`locale -a`: `C`, `C.utf8`, `POSIX`), with or without
+  `-u`. With no `LANG` at login the pane's program gets none either.
+  - **Whether the login gets a `LANG` is up to the Mac's ssh config and the server.**
+    macOS's own `/etc/ssh/ssh_config.d/100-macos.conf` has `SendEnv LANG LC_*`, and a
+    stock Debian sshd has `AcceptEnv LANG LC_*`: an ssh run with the system config and
+    `LANG=en_US.UTF-8` (what Koloft gives a tab's terminal when the Mac set none) handed
+    the login `LANG=en_US.UTF-8`, also when it rode a ControlMaster that was started with
+    no `LANG` at all — the client's own variables count. An ssh run with `-F <file>`
+    skips the system config, so its `SendEnv` is gone and the login has no `LANG` (the
+    e2e lab's ssh is run that way); so does a server without `AcceptEnv`. The
+    container's own `ENV LANG=C.UTF-8` (seen by `docker exec`) does not reach an ssh
+    login.
+
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
+  reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
+  printing those characters and attached to it, its bytes read back on the Mac.)
 
 ## §36 ccstatusline
 
