@@ -1477,6 +1477,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  closing?: 'soon' | 'after-background-work'
   note?: string
 }
 

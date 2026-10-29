@@ -26,6 +26,7 @@ import {
   histWhen,
   lastRunOf,
   liveOf,
+  liveWords,
   oncePassed,
   whenLine
 } from '@shared/cronHistory'
@@ -749,13 +750,16 @@ export function CronJobsDialog({
     for (const job of selected ? [selected] : jobs) {
       const live = liveOf(cron.live, job.id)
       if (live?.state === 'done') {
+        const words = liveWords(job, live)
         waiting.push({
           key: `${job.id}-live`,
           job: job.name,
           at: live.dueAt,
           when: describeWhen(new Date(live.dueAt), now),
           dot: 'dot ok',
-          text: live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you',
+          text: live.kept
+            ? `Done — not closed: ${live.kept}`
+            : words.charAt(0).toUpperCase() + words.slice(1),
           worktree: live.worktree
         })
       }
