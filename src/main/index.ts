@@ -1756,7 +1756,7 @@ const agentRequests = new AgentRequests({
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
       machine: machineOfTab,
       pages: guestPagesOf,
-      open: openOnTabMachine,
+      open: openSignInEndOn,
       sleep
     }),
     gh: githubVerb({
@@ -4954,8 +4954,7 @@ async function secretAskerName(tabId: string): Promise<string> {
 const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
 
 // CODEX§15
-async function openOnTabMachine(tabId: string, url: string): Promise<string> {
-  const host = machineOfTab(tabId)
+async function openSignInEndOn(host: string | undefined, url: string): Promise<string> {
   if (!host) {
     const res = await fetch(url, {
       redirect: 'manual',

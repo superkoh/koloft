@@ -142,6 +142,24 @@ describe('koloft secret url', () => {
     expect(asked[0].body).toContain('https://auth.example/authorize?x')
   })
 
+  it('opens the address on the machine it named to the owner, even when the tab has left that machine by the time the owner answers', async () => {
+    const where = ['devbox']
+    const machines: (string | undefined)[] = []
+    const { verb } = setup(
+      {
+        machine: () => where.shift(),
+        open: async (machine) => {
+          machines.push(machine)
+          return '200'
+        }
+      },
+      'http://127.0.0.1:1455/auth/callback?code=c'
+    )
+    const r = await verb(['url', 'https://auth.example'], caller())
+    expect(machines).toEqual(['devbox'])
+    expect(r.text).toContain('opened the address on devbox')
+  })
+
   it('anything that is not a loopback http address is not opened', async () => {
     for (const pasted of [
       'https://evil.example/cb?code=c',

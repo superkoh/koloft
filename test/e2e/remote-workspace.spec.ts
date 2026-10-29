@@ -26,6 +26,7 @@ import {
   machineHome,
   mirrorProjectDir,
   OTHER_AGENTS_ON_THE_MACHINE,
+  type OtherAgentName,
   REMOTE_HOST,
   REMOTE_WS_NAME,
   remoteDir,
@@ -104,7 +105,7 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
   await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 }
 
-const KOLOFT_OPEN_CASE_OF: Partial<Record<AgentName, string>> = {
+const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
   Codex: 'E-RW-38',
   Muse: 'E-RW-39',
   Antigravity: 'E-RW-40'

@@ -355,8 +355,10 @@ export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
     .map((line) => JSON.parse(line) as MachineMuseCall)
 }
 
+export type OtherAgentName = Exclude<AgentName, 'Claude'>
+
 export const OTHER_AGENTS_ON_THE_MACHINE: {
-  label: AgentName
+  label: OtherAgentName
   install: (env: E2EEnv) => void
   bound?: (page: Page) => Promise<unknown>
 }[] = [
