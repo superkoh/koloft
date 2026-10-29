@@ -24,9 +24,10 @@ describe('telling that Claude Code has started removing its worktree', () => {
     expect(watch.failure()).toBeUndefined()
   })
 
-  it('sees the start of the removal in the bytes a tab on a machine gets through tmux, which sends mode switches between the empty title and the line, with and without the resume hint', () => {
+  it('sees the start of the removal in the bytes a tab on a machine gets through tmux, which sends mode switches between the empty title and the line, with and without the resume hint, and draws the ellipsis as _ for a login that is not UTF-8', () => {
     const throughTmux = [
       '\x1b[7;1H\x1b[K\x1b]0;\x07\x1b[?12l\x1b[?25h\x1b[?2004lRemoving worktree…\r\n',
+      '\x1b[7;1H\x1b[K\x1b]0;\x07\x1b[?12l\x1b[?25h\x1b[?2004lRemoving worktree_\r\n',
       '\r\n\x1b[K\x1b]0;\x07\x1b[?12l\x1b[?25h\x1b[?2004l\r\n\x1b[2mResume this session with:\r\nclaude --resume 83a087b7-8a9e-47fc-ae11-8315a6518e8f\r\n\x1b(B\x1b[mRemoving worktree…\r\n'
     ]
     for (const bytes of throughTmux) {
