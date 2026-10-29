@@ -75,9 +75,13 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
   agy: 'No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 
-export function noAccountMessage(accounts: readonly AccountMeta[], backend: BackendId): string {
+export function noAccountLine(accounts: readonly AccountMeta[], backend: BackendId): string {
   const lead = noUsableAccountLead(accounts, backend)
-  return lead ? `${lead}${ACCOUNTS_PANE}.` : NO_USABLE_ACCOUNT[backend]
+  return lead && `${lead}${ACCOUNTS_PANE}.`
+}
+
+export function noAccountMessage(accounts: readonly AccountMeta[], backend: BackendId): string {
+  return noAccountLine(accounts, backend) || NO_USABLE_ACCOUNT[backend]
 }
 
 export const STALE_MS = 15 * 60_000

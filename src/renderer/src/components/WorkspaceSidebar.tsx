@@ -36,7 +36,7 @@ import {
 import type { BackendId, HeldCommand, MachineState, QueuedLaunch, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
-import { noUsableAccountLead, popoverX } from '@shared/accountUsage'
+import { noAccountLine, popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
@@ -780,21 +780,21 @@ function SidebarFloating({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => (
-        <div
-          className={
-            'mi' +
-            (accounts && noUsableAccountLead(accounts, backend ?? soleMethod) ? ' disabled' : '')
-          }
-          onClick={() => {
-            setMenu(null)
-            onNewSession(target.wsPath, backend)
-          }}
-        >
-          {label}
-          {key && <span className="k">{key}</span>}
-        </div>
-      )
+      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
+        const shut = accounts && noAccountLine(accounts, backend ?? soleMethod)
+        return (
+          <div
+            className={'mi' + (shut ? ' disabled' : '')}
+            onClick={() => {
+              setMenu(null)
+              onNewSession(target.wsPath, backend)
+            }}
+          >
+            {label}
+            {shut ? <span className="k">No account</span> : key && <span className="k">{key}</span>}
+          </div>
+        )
+      }
       const hasHistory = rows.some(
         (r) => r.workspace.path === target.wsPath && r.workspace.hasHistory
       )

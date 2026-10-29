@@ -48,6 +48,7 @@ vi.mock('../../src/main/codexTransport', () => ({
 }))
 
 import { barePath } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
@@ -139,7 +140,7 @@ async function claudeTab(
             settings: () => ({ skipPermissions: false }),
             agentTools: () => true,
             pickAccount: async () => ({ env: {}, banner: '' }),
-            noAccountMessage: () => '',
+            noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
             hookSettings: () => ({})
           }
         })
@@ -200,7 +201,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     changed: () => {},
     events: () => {},
     error: () => {},
-    noAccountMessage: () => '',
+    noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     trustFolder: () => {},
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     assistOf: () => undefined,

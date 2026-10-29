@@ -20,6 +20,7 @@ import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -198,7 +199,7 @@ beforeEach(() => {
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
-    noAccountMessage: () => '',
+    noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,

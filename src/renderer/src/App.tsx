@@ -1307,7 +1307,7 @@ export default function App(): JSX.Element {
   const welcomeRoot = welcomeWs?.workspace.path
   const paletteChoice: AgentChoice = {
     listed,
-    lead: effectiveBackend(sessionMethods, installed),
+    lead: soleMethod,
     defaultBackend: sessionMethods.defaultBackend,
     issue: () => '',
     note: () => ''
