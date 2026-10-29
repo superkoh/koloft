@@ -804,13 +804,13 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   })
 
   // AGY§13
-  it("lists a file agy 1.4.7 edited with edit_file, from its Path, with Target's lines removed and Replacement's added", async () => {
+  it('lists a file agy 1.4.7 edited with edit_file, from its Path, counting only the lines where Target and Replacement differ', async () => {
     const id = await boundTab()
     const edited = path.join(repo, 'edited.txt')
     hook(id, 'PostToolUse', {
       toolCall: {
         name: 'edit_file',
-        args: { Path: edited, Target: 'two', Replacement: 'TWO\nthree' }
+        args: { Path: edited, Target: 'one\ntwo\nthree', Replacement: 'one\nTWO\n2b\nthree' }
       }
     })
     await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
@@ -821,6 +821,24 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
       removed: 1
     })
     expect(sessions.list()[0]).toMatchObject({ lastWritten: edited, liveWrites: 1 })
+  })
+
+  // AGY§13
+  it('does not list a write or edit that agy reports as failed', async () => {
+    const id = await boundTab()
+    const missed = path.join(repo, 'missed.txt')
+    const made = path.join(repo, 'made.txt')
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'edit_file', args: { Path: missed, Target: 'absent', Replacement: 'x' } },
+      error: 'target not found'
+    })
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'write_file', args: { Path: made, Content: 'one\n' } },
+      error: ''
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({ src: made })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: made, liveWrites: 1 })
   })
 
   it('shows work agy keeps doing after its turn, such as a subagent, until a Stop says it is fully idle', async () => {
@@ -971,6 +989,19 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
       [id, '2']
     ])
     expect(await sessions.answer(id, 'yes')).toBe(false)
+  })
+
+  // AGY§13
+  it("names the file in an approval for agy 1.4.7's write_file and edit_file, from their Path", async () => {
+    const id = await boundTab()
+    for (const name of ['write_file', 'edit_file']) {
+      const file = path.join(repo, `${name}.md`)
+      hook(id, 'PreToolUse', { toolCall: { name, args: { Path: file } } })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
+      expect(sessions.openApproval(id)).toMatchObject({ command: file })
+      expect(await sessions.answer(id, 'no')).toBeUndefined()
+    }
   })
 
   it("answers an approval through agy's API when it answers, and presses no key", async () => {

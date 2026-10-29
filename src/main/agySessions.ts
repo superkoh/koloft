@@ -269,6 +269,24 @@ function lineCount(text: string): number {
   return text ? text.split('\n').length - (text.endsWith('\n') ? 1 : 0) : 0
 }
 
+function replacementCounts(
+  target: string,
+  replacement: string
+): { added: number; removed: number } {
+  const from = target.split('\n')
+  const to = replacement.split('\n')
+  let same = 0
+  while (same < from.length && same < to.length && from[same] === to[same]) same++
+  let sameTail = 0
+  while (
+    sameTail < from.length - same &&
+    sameTail < to.length - same &&
+    from[from.length - 1 - sameTail] === to[to.length - 1 - sameTail]
+  )
+    sameTail++
+  return { added: to.length - same - sameTail, removed: from.length - same - sameTail }
+}
+
 function readText(file: string): string | undefined {
   try {
     return fs.readFileSync(file, 'utf8')
@@ -988,7 +1006,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const name = String(call.name ?? '')
     const args = record(call.args)
     const target = argOf(args, 'TargetFile') ?? argOf(args, 'Path')
-    if (!WRITING_TOOLS.has(name) || !target) return
+    if (!WRITING_TOOLS.has(name) || !target || input.error) return
     const where = parseRemoteKey(run.cwd)
     const written = where ? path.posix.resolve(where.path, target) : path.resolve(run.cwd, target)
     const file = where ? formatRemoteKey(where.host, written) : written
@@ -998,10 +1016,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     else if (name === 'write_file')
       counts = { added: lineCount(argOf(args, 'Content') ?? ''), removed: 0 }
     else if (name === 'edit_file')
-      counts = {
-        added: lineCount(argOf(args, 'Replacement') ?? ''),
-        removed: lineCount(argOf(args, 'Target') ?? '')
-      }
+      counts = replacementCounts(argOf(args, 'Target') ?? '', argOf(args, 'Replacement') ?? '')
     else if (run.info) {
       if (run.remote) await this.deps.remote.nextPull(run.remote.host)
       const transcript = agyTranscript(this.geminiOf(run.cwd), run.info.nativeSessionId!)
@@ -1209,7 +1224,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         }
       }
     }
-    const target = tool && (argOf(tool.args, 'CommandLine') ?? argOf(tool.args, 'TargetFile'))
+    const target =
+      tool &&
+      (argOf(tool.args, 'CommandLine') ??
+        argOf(tool.args, 'TargetFile') ??
+        argOf(tool.args, 'Path'))
     return { approval: { id, command: target ?? status.msg } }
   }
 
