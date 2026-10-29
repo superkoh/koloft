@@ -18,6 +18,7 @@ for (let i = 0; i < raw.length; i++) {
     i++
     continue
   }
+  if (a === '-u') continue
   if (!verb) verb = a
   else rest.push(a)
 }
