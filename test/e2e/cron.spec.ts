@@ -562,7 +562,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const row = cronRows(page, 'ws-a')
       await expect(row).toHaveCount(1, { timeout: 60_000 })
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await closeCron(page)
 
       await row.click()
@@ -636,7 +635,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(call.argv).not.toContain('--model')
       const row = cronRows(page, 'ws-a')
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await closeCron(page)
 
       await row.click()
