@@ -731,13 +731,19 @@ describe('accounts for remote launches started together', () => {
 it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
   const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
   let answered = (): void => {}
+  let askedForHeartbeat = (): void => {}
+  const heartbeatAsked = new Promise<void>((asked) => (askedForHeartbeat = asked))
   const alive = new Set<string>()
   const host = machine(runOnMachine, {
     alive: () => alive,
-    firstHeartbeatDone: () => new Promise((done) => (answered = done))
+    firstHeartbeatDone: () =>
+      new Promise((done) => {
+        answered = done
+        askedForHeartbeat()
+      })
   })
   const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
-  await new Promise((r) => setTimeout(r, 50))
+  await heartbeatAsked
   alive.add(live)
   answered()
   const plan = await launching
