@@ -53,6 +53,8 @@ import {
   boundSessionId,
   workbenchOwnerLive,
   consumeRestartExit,
+  keptTabsToClose,
+  launchToStartAgain,
   conversationTabFor,
   tabForSession,
   consumeRestoreExit,
@@ -69,7 +71,6 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
-  endedTabsLiveElsewhere,
   liveTabOf,
   mixesBackends,
   notesHeightFromDrag,
@@ -414,7 +415,7 @@ export default function App(): JSX.Element {
         title: BACKEND_LABEL[backend],
         cwd: res.cwd,
         alive: true,
-        launch
+        launch: launchToStartAgain(launch, res.cwd)
       })
     },
     [addTab]
@@ -916,7 +917,7 @@ export default function App(): JSX.Element {
         if (s.sessionId) releaseResume(s.sessionId)
       }
       const st = useStore.getState()
-      for (const tab of endedTabsLiveElsewhere(st.tabs, st.sessions)) {
+      for (const tab of keptTabsToClose(st)) {
         askAboutLeftEdits(tab)
         st.closeTab(tab.id)
       }

@@ -32,7 +32,8 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { selectionRoot, workspaceOfRow } from './sessionRows'
+import { endedTabsLiveElsewhere, selectionRoot, workspaceOfRow } from './sessionRows'
+import { inRoot } from './browseModel'
 import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
@@ -323,7 +324,7 @@ function rowOfTab(
   const cwd = tab.launch?.cwd ?? tab.cwd
   const wsPath = everyWorkspaceRows(s)
     .map((w) => w.workspace.path)
-    .filter((p) => cwd === p || cwd.startsWith(p + '/'))
+    .filter((p) => inRoot(cwd, p))
     .sort((a, b) => b.length - a.length)[0]
   if (!wsPath || !isSessionKind(tab.kind)) return undefined
   return {
@@ -1335,6 +1336,19 @@ export const useActiveOpenFile = (): OpenFile | null =>
 
 export function consumeRestartExit(ptyId: string): boolean {
   return restartedPtys.delete(ptyId)
+}
+
+export function launchToStartAgain(launch: CreateTabOptions, landedIn: string): CreateTabOptions {
+  const madeAWorktree =
+    (launch.worktree !== undefined || launch.worktreeResourceId !== undefined) &&
+    landedIn !== launch.cwd
+  return madeAWorktree
+    ? { ...launch, cwd: landedIn, worktree: undefined, worktreeResourceId: undefined }
+    : launch
+}
+
+export function keptTabsToClose(s: Pick<AppState, 'tabs' | 'sessions'>): Tab[] {
+  return endedTabsLiveElsewhere(s.tabs, s.sessions).filter((t) => !restarting.has(t.id))
 }
 
 export function conversationTabFor(ptyId: string): string {

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import type { SessionInfo, UpdateCheckResult, WorkspaceRows } from '@shared/types'
 import {
   boundSessionId,
+  launchToStartAgain,
   tabForSession,
   useStore,
   openInterceptedFile,
@@ -113,6 +114,24 @@ describe('store: claude → shell revert, only after a session actually bound', 
       row: { id: 'end2', title: 'Codex', worktree: 'fix-1', backendId: 'codex' }
     })
     expect(ended('end3')).toMatchObject({ wsPath: '/w', row: { worktree: 'pr-7' } })
+  })
+
+  it('starts a launch that got a worktree from Koloft again in that worktree, so ⇧⌘R never makes a second one; a launch whose agent makes its own keeps its name', () => {
+    const codex = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1', firstPrompt: 'go' }
+    expect(launchToStartAgain(codex, '/w/.wt/fix-1')).toEqual({
+      kind: 'codex',
+      cwd: '/w/.wt/fix-1',
+      worktree: undefined,
+      worktreeResourceId: undefined,
+      firstPrompt: 'go'
+    })
+    const rebuilt = { kind: 'muse' as const, cwd: '/w', worktreeResourceId: 'r1' }
+    expect(launchToStartAgain(rebuilt, '/w/.wt/r1')).toMatchObject({
+      cwd: '/w/.wt/r1',
+      worktreeResourceId: undefined
+    })
+    const claude = { kind: 'claude' as const, cwd: '/w', worktree: 'fix-2' }
+    expect(launchToStartAgain(claude, '/w')).toBe(claude)
   })
 
   it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {

@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
-import { useStore, consumeRestartExit, workbenchOwnerLive } from '../../src/renderer/src/store'
+import {
+  useStore,
+  consumeRestartExit,
+  keptTabsToClose,
+  workbenchOwnerLive
+} from '../../src/renderer/src/store'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -827,6 +832,45 @@ describe('restartActiveSession: a kept tab whose agent died with no conversation
     expect(tab).toMatchObject({ id: 'kept-new', alive: true })
     expect(tab.ended).toBeUndefined()
     expect(tab.sessionId).toBeUndefined()
+  })
+
+  it('is not closed as live elsewhere while ⇧⌘R resumes it, even when the new pty binds the session before the resume answers', async () => {
+    const row = {
+      id: 'sid-KEPT',
+      title: 'Kept',
+      worktree: 'main',
+      cwd: '/w',
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'claude' as const,
+      host: 'local' as const
+    }
+    const s = useStore.getState()
+    s.addTab({ id: 'kept2', kind: 'claude', title: 'Kept', cwd: '/w', alive: true })
+    useStore.setState({
+      tabs: useStore.getState().tabs.map((t) => ({
+        ...t,
+        alive: false,
+        sessionId: 'sid-KEPT',
+        ended: { note: 'killed (signal 9)', row, wsPath: '/w' }
+      }))
+    })
+    const boundElsewhere = [session('pty-other', { sessionId: 'sid-KEPT' })]
+    expect(keptTabsToClose({ ...useStore.getState(), sessions: boundElsewhere })).toHaveLength(1)
+
+    createGate = gate()
+    nextPty = { id: 'pty-new', cwd: '/w' }
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('pty-new', { sessionId: 'sid-KEPT' })])
+    expect(keptTabsToClose(useStore.getState())).toEqual([])
+
+    createGate.open()
+    await settle()
+    await settle()
+    expect(useStore.getState().tabs.map((t) => [t.id, t.ended])).toEqual([['pty-new', undefined]])
+    expect(killed).not.toContain('pty-new')
   })
 })
 
