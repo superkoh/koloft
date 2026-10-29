@@ -1687,10 +1687,14 @@ const sessionDeps: SessionVerbDeps = {
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
+  ready: tabTypable,
+  bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  press: (tabId, keys) => {
+    butler?.firstWordsComing(tabId)
+    return ptyMgr.type(tabId, keys)
+  },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -4927,15 +4931,29 @@ function showsPromptBeforeBind(tabId: string): boolean {
   return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
+function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
+  return (
+    !!sessionOfTab(tabId)?.sessionId &&
+    tracker.statusOf(tabId) !== undefined &&
+    (!turnEnded || tracker.turnOver(tabId))
+  )
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => boundAndSettled(tabId, turnEnded), ms)
+}
+
+// AGY§8
+function tabTypable(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+    () => showsPromptBeforeBind(tabId) || boundAndSettled(tabId, turnEnded),
     ms
   )
+}
+
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
 function registerSlashCommands(): void {
