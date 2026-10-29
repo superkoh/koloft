@@ -24,7 +24,6 @@ import {
   centerTerm,
   discordOnDisk,
   closeMenu,
-  FAKE_SESSION_TITLE,
   menuItemTexts,
   newSessionInWith,
   notesIsland,
@@ -45,6 +44,7 @@ import {
   resumedId,
   waitForAllCalls,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -75,13 +75,6 @@ const A_HELPER_HAS_IT_SQUEEZED = '(FromKoloft:)Theowneraskedforsomething'
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
-}
-
-async function startupTurnOver(page: Page, wsName: string): Promise<void> {
-  await expect(wsRows(page, wsName).filter({ hasText: FAKE_SESSION_TITLE })).toHaveClass(
-    /\bst-waiting\b/,
-    { timeout: 60_000 }
-  )
 }
 
 function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
@@ -617,6 +610,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const claudeId = (await waitForAllCalls(env, 1))[0].sessionId
+      await waitStartupTurnOver(page, 'ws-a')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
@@ -806,10 +800,11 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
   test('closing an ordinary session’s tab lands on the butler, opening it when it was not open; closing the butler’s own tab does not open it again', async ({
     env
   }) => {
+    test.setTimeout(240_000)
     const { app, page, close } = await launched(env)
     try {
       await startSessionIn(page, 'ws-a')
-      await startupTurnOver(page, 'ws-a')
+      await waitStartupTurnOver(page, 'ws-a')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -817,7 +812,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
 
       await startSessionIn(page, 'ws-b')
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
-      await startupTurnOver(page, 'ws-b')
+      await waitStartupTurnOver(page, 'ws-b')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)

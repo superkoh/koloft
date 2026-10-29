@@ -27,7 +27,7 @@ async function start(
     hintsSeen?: string[]
     hintsOff?: boolean
     panelOpen?: boolean
-    onlyTypedWrites?: boolean
+    noStartupTurn?: boolean
   } = {}
 ): Promise<{ app: ElectronApplication; page: Page }> {
   seedSettings(env, {
@@ -36,7 +36,7 @@ async function start(
     hintsOff: opts.hintsOff ?? false
   })
   if (opts.panelOpen === false) seedWorkbenchDefault(env, false)
-  if (opts.onlyTypedWrites) fs.writeFileSync(env.claudeLazyFile, '1')
+  if (opts.noStartupTurn) fs.writeFileSync(env.claudeLazyFile, '1')
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
@@ -123,7 +123,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    let { app, page } = await start(env, { panelOpen: false, onlyTypedWrites: true })
+    let { app, page } = await start(env, { panelOpen: false, noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       await runIn(page, centerTerm(page), '/write first.md')
@@ -170,7 +170,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { onlyTypedWrites: true })
+    const { app, page } = await start(env, { noStartupTurn: true })
     try {
       await holdWorkbenchReads(app)
       await startSessionIn(page, 'ws-a')
@@ -341,7 +341,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-06: Esc and an outside click close a hint, and count it as seen', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { panelOpen: false, onlyTypedWrites: true })
+    const { app, page } = await start(env, { panelOpen: false, noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       await runIn(page, centerTerm(page), '/write one.md')
@@ -368,7 +368,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-07: two triggers at once show one card, and the second waits', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { hintsSeen: ['worktree'], onlyTypedWrites: true })
+    const { app, page } = await start(env, { hintsSeen: ['worktree'], noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       const a = await shownTabId(page)
