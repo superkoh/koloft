@@ -627,7 +627,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§35
-  test('E-SSH-33: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
+  test('E-SSH-34: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
     env
   }) => {
     await withLab(env, async ({ page, lab }) => {
