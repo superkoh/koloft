@@ -832,7 +832,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (input.invocationNum !== 0) {
       for (const [, command] of mine) command.ran = true
     } else {
-      const declined = mine.filter(([, command]) => !command.ran)
+      const declined = mine.filter(([, command]) => !command.ran && !command.shown)
       this.dropCommands(
         run,
         declined.map(([id]) => id)

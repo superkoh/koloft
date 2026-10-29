@@ -804,7 +804,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it("names each command agy left running in the background after its turn, in place of the plain Background work, until it ends; one that finished inside the turn or was declined, so agy's own task list lacks it, never shows", async () => {
+  it("names each command agy left running in the background after its turn, in place of the plain Background work, until it ends; one that finished inside the turn or was declined, so agy's own task list lacks it, never shows, and one the list has stays through the next turn even if no model call followed it", async () => {
     apiAnswers = true
     const id = await boundTab()
     hook(id, 'PreToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2 })
@@ -824,6 +824,15 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     )
     hook(id, 'PostToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2, error: '' })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    hook(id, 'PreToolUse', { toolCall: command('npm test'), stepIdx: 10 })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-10` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
+    )
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
   })
 
   it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a command still asking, which agy's list lacks, is not one", async () => {
