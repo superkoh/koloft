@@ -235,6 +235,15 @@ async function waitTurnStopSoTheTranscriptExistsBeforeClose(
     .toContain('done — waiting for you')
 }
 
+async function waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(
+  page: Page,
+  name: string,
+  row: Locator
+): Promise<void> {
+  await waitTurnStopSoTheTranscriptExistsBeforeClose(page, name)
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+}
+
 async function waitColdRowMarkedBeforeRunNowSoTheCountsAfterMeanSomething(
   page: Page
 ): Promise<void> {
@@ -561,7 +570,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const wt = worktreeOf(call)
       const row = cronRows(page, 'ws-a')
       await expect(row).toHaveCount(1, { timeout: 60_000 })
-      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
 
       await row.click()
@@ -634,7 +643,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const call = await waitNewCall(env, 0)
       expect(call.argv).not.toContain('--model')
       const row = cronRows(page, 'ws-a')
-      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
 
       await row.click()
