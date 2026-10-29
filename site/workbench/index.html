@@ -282,6 +282,21 @@
           While the session is running, <kbd>⌃`</kbd> opens a shell in its folder (up to eight). Run
           a test or check git there, and leave the agent's terminal to the agent.
         </p>
+        <ul class="dash">
+          <li>
+            A one-off ask to an agent is fine there: <code>claude -p</code>,
+            <code>codex exec</code>, <code>muse exec</code> or <code>agy -p</code>. In a folder on
+            your Mac it runs on an account Koloft picks from Settings ▸ Accounts, the way a session
+            does, never on the login this Mac already has. The first line says which one, like
+            <code>koloft: → work · 5h 12% · 7d 40%</code>. If every Codex, Muse or Antigravity
+            account is at its limit, a second line says so, and it still runs on the one that resets
+            first.
+          </li>
+          <li>
+            In a <a href="../remote/">remote folder</a> the shell runs on the other machine, and
+            these use that machine's own login.
+          </li>
+        </ul>
 
         <figure class="shot" style="--ar: 1720 / 600; --ar-phone: 730 / 440">
           <div class="frame">
