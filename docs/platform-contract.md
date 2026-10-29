@@ -1620,7 +1620,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set: `tmux -u`, or `LANG=C.UTF-8` on the
   client alone, drew them right; so did a `LANG=en_US.UTF-8` the login was handed though
   the machine had no such locale (`locale -a`: `C`, `C.utf8`, `POSIX`), with or without
-  `-u`. With no `LANG` at login the pane's program gets none either.
+  `-u`. With no `LANG` at login the pane's program gets none either. `capture-pane -p`
+  run from inside such a pane, with no `LANG` and no `-u`, wrote the characters as they
+  are.
   - **Whether the login gets a `LANG` is up to the Mac's ssh config and the server.**
     macOS's own `/etc/ssh/ssh_config.d/100-macos.conf` has `SendEnv LANG LC_*`, and a
     stock Debian sshd has `AcceptEnv LANG LC_*`: an ssh run with the system config and

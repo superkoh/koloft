@@ -634,23 +634,16 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       expect(
         execFileSync(
           '/usr/bin/ssh',
-          ['-F', lab.config, 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
-          {
-            encoding: 'utf8'
-          }
+          ['-F', lab.config, '-o', 'BatchMode=yes', 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
+          { encoding: 'utf8', timeout: 10_000 }
         ).trim()
       ).toBe('[]')
       await addMachine(page, 'kt-key', 'kuser')
       await startSessionIn(page, 'kt-key', { remote: true })
-      const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive
-      )!.tabId
-      await page.evaluate(
-        ([id, typed]) => window.api.terminal.write(id, typed),
-        [tabId, `${NOT_ASCII}\r`]
-      )
+      const session = await boundRealSession(page, lab)
+      await session.write(`${NOT_ASCII}\r`)
       await expect
-        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
         .toContain(`handled: ${NOT_ASCII}`)
     })
   })
