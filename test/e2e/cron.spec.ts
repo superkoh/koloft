@@ -569,7 +569,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const call = await waitNewCall(env, 0)
       const wt = worktreeOf(call)
       const row = cronRows(page, 'ws-a')
-      await expect(row).toHaveCount(1, { timeout: 60_000 })
       await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
 
@@ -738,10 +737,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect
         .poll(() => fs.existsSync(path.join(tree, 'report.md')), { timeout: 60_000 })
         .toBe(true)
-      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+      const row = cronRows(page, 'ws-a')
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
       await closeCron(page)
 
-      const row = cronRows(page, 'ws-a')
       await row.click()
       await expect(row).toHaveClass(/\bactive\b/)
       await sendShortcut(app, 'shortcut:close-tab')
@@ -1331,10 +1330,9 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const tree = runTree(remoteDir(env), worktreeOf(call))
       await expect.poll(() => fs.existsSync(tree), { timeout: 60_000 }).toBe(true)
 
-      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Remote report')
-      await closeCron(page)
       const row = wsRows(page, REMOTE_WS_NAME)
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Remote report', row)
+      await closeCron(page)
       await row.click()
       await expect(row).toHaveClass(/\bactive\b/)
       await sendShortcut(app, 'shortcut:close-tab')
