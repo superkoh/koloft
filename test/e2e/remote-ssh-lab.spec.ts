@@ -161,6 +161,10 @@ const STAND_IN_MODEL_CONFIG = [
   'trust_level = "trusted"',
   ''
 ].join('\n')
+// CODEX§15
+const A_MADE_UP_API_KEY_THE_LAUNCH_PROBE_READS_AS_SIGNED_IN_OFFLINE = JSON.stringify({
+  OPENAI_API_KEY: 'sk-not-a-real-key'
+})
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -1389,10 +1393,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
       NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
     )
-    addCodexAccount(
-      env,
-      JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
-    )
+    addCodexAccount(env, A_MADE_UP_API_KEY_THE_LAUNCH_PROBE_READS_AS_SIGNED_IN_OFFLINE)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
     await withLab(
