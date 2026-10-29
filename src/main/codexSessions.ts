@@ -513,7 +513,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return this.withRpc(home, async (rpc) => {
       const account = record(await rpc.request('account/read', {}))
       if (!account.account) return { signedIn: false }
-      if (record(account.account).type === 'apiKey') return { signedIn: true }
       return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
     })
   }
