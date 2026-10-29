@@ -559,6 +559,36 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.showsPromptBeforeBind(id)).toBe(false)
   })
 
+  it('the status frames since the prompt from before the bind count once bound, so a turn that started or ended before it is not lost', async () => {
+    const started = (await launch()).id
+    say(started, state('idle'))
+    say(started, state('working'))
+    say(started, state('working'))
+    expect(events('prompt')).toHaveLength(0)
+    title(started, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(1)
+    expect(events('stop')).toHaveLength(0)
+
+    const ended = (await launch()).id
+    say(ended, state('idle'))
+    say(ended, state('working'))
+    say(ended, state('done'))
+    title(ended, { conversation_id: B })
+    await vi.waitFor(() => expect(sessions.list()).toHaveLength(2), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(2)
+    expect(events('stop')).toHaveLength(1)
+  })
+
+  it('a prompt from before the bind with nothing after it counts as a finished turn once bound, as after a slash command typed first', async () => {
+    const { id } = await launch()
+    say(id, state('idle'))
+    title(id, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('stop')).toHaveLength(1)
+    expect(events('prompt')).toHaveLength(0)
+  })
+
   it('binds on its own from the title log, without waiting for a status frame', async () => {
     const { id } = await launch()
     title(id, { conversation_id: A })
