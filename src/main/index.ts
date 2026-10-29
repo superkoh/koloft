@@ -1754,7 +1754,7 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
-      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      machine: machineOfTab,
       pages: guestPagesOf,
       open: openOnTabMachine,
       sleep
@@ -4955,7 +4955,7 @@ const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
 
 // CODEX§15
 async function openOnTabMachine(tabId: string, url: string): Promise<string> {
-  const host = tracker.remoteOf(tabId)?.host
+  const host = machineOfTab(tabId)
   if (!host) {
     const res = await fetch(url, {
       redirect: 'manual',
