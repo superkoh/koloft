@@ -4,9 +4,13 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, type E2EEnv } from './helpers/env'
 import { codexCalls } from './helpers/codex'
 import {
+  centerTerm,
+  killSession,
   menuItemTexts,
   newSessionInWith,
   openMenu,
+  readCalls,
+  runIn,
   sendShortcut,
   snap,
   startSessionIn,
@@ -108,6 +112,41 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
       await expect(closed).toHaveClass(/\bcold\b/, { timeout: 20_000 })
       await expect(closed.locator('.ws-tab-sub')).toHaveText('main')
       expect(loggedExits(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a kept tab closes by itself once its session runs again in another tab, as when another session resumes it, so no tab stays open with no row', async ({
+    env
+  }) => {
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const killed = wsRows(page, 'ws-a')
+      await expect(killed).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      const [first] = readCalls(env)
+      killSession(first.pid, env)
+      await expect(killed.locator('.ws-tab-sub')).toContainText(/killed|exited/, {
+        timeout: 20_000
+      })
+      const [keptTab] = await termIds(page)
+
+      await startSessionIn(page, 'ws-b')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), `/koloft session resume ${first.sessionId}`)
+
+      await expect
+        .poll(() => readCalls(env).filter((c) => c.argv.includes(first.sessionId)).length, {
+          timeout: 30_000
+        })
+        .toBe(1)
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(keptTab)
+      expect(await termIds(page)).toHaveLength(2)
+      await expect(killed).toHaveCount(1)
+      await expect(killed.locator('.ws-tab-sub')).not.toContainText(/killed|exited/)
     } finally {
       await quitAndClose(app)
     }

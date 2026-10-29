@@ -69,6 +69,7 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
+  endedTabsLiveElsewhere,
   liveTabOf,
   mixesBackends,
   notesHeightFromDrag,
@@ -913,6 +914,11 @@ export default function App(): JSX.Element {
       for (const s of sessions) {
         setTabAlive(s.tabId, s.alive)
         if (s.sessionId) releaseResume(s.sessionId)
+      }
+      const st = useStore.getState()
+      for (const tab of endedTabsLiveElsewhere(st.tabs, st.sessions)) {
+        askAboutLeftEdits(tab)
+        st.closeTab(tab.id)
       }
     })
     return off

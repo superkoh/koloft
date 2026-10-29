@@ -848,7 +848,7 @@ export const useStore = create<AppState>((set, get) => ({
         .then((res) => {
           if (!res.ok) return get().showToast(RELAUNCH_REFUSED_NOTICE)
           if (!get().tabs.some((x) => x.id === oldId)) return window.api.terminal.kill(res.id)
-          swapTo(res, {})
+          swapTo(res, { sessionId: undefined })
         })
         .catch((e) => get().showToast(ipcErrorText(e)))
         .finally(() => restarting.delete(oldId))

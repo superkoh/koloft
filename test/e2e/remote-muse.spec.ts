@@ -160,7 +160,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
-  test('a Muse that dies on the machine leaves its tab saying it ended with its exit code until Enter, then Koloft says it ended unexpectedly and its row stays with the “exited” mark', async ({
+  test('a Muse that dies on the machine keeps its tab: the screen says its exit code, Koloft says it ended unexpectedly with no key pressed, and its row stays saying “exited” with the “exited” mark', async ({
     env
   }) => {
     const { app, page } = await launchWithMuseThere(env)
@@ -176,10 +176,10 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
         .toMatch(/stopped with exit code [1-9]/)
-      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
       await expect(
         page.locator('.toast', { hasText: /^Muse session ended unexpectedly \(exit code [1-9]/ })
       ).toBeVisible()
+      await expect(row.locator('.ws-tab-sub')).toContainText(/exited \(code [1-9]/)
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')

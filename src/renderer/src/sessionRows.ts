@@ -292,19 +292,27 @@ type Ended<T extends EndedTab> = T & { ended: NonNullable<T['ended']> }
 
 const isEnded = <T extends EndedTab>(t: T): t is Ended<T> => !!t.ended
 
+type LiveSession = { sessionId: string; tabId: string; alive: boolean }
+
+const liveElsewhere = (t: EndedTab, sessions: readonly LiveSession[]): boolean =>
+  !!t.sessionId && sessions.some((s) => s.alive && s.sessionId === t.sessionId && s.tabId !== t.id)
+
 export function endedTabOf<T extends EndedTab>(
   row: { id: string },
   tabs: readonly T[],
-  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[]
+  sessions: readonly LiveSession[]
 ): Ended<T> | undefined {
   const ended = tabs.find(
     (t): t is Ended<T> => isEnded(t) && (t.id === row.id || t.sessionId === row.id)
   )
-  if (!ended) return undefined
-  const liveElsewhere = sessions.some(
-    (s) => s.alive && s.sessionId === row.id && s.tabId !== ended.id
-  )
-  return liveElsewhere ? undefined : ended
+  return ended && !liveElsewhere(ended, sessions) ? ended : undefined
+}
+
+export function endedTabsLiveElsewhere<T extends EndedTab>(
+  tabs: readonly T[],
+  sessions: readonly LiveSession[]
+): Ended<T>[] {
+  return tabs.filter((t): t is Ended<T> => isEnded(t) && liveElsewhere(t, sessions))
 }
 
 export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): WorkspaceRows[] {

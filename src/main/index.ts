@@ -2946,6 +2946,7 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
+    // CC§12 CODEX§5 MUSE§1 AGY§1
     const unexpected =
       !e.endedByKoloft &&
       !closedTabs.has(e.id) &&

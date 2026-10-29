@@ -62,6 +62,11 @@ only downloaded the public release.
   set at launch is ignored: there is no way to choose a new conversation's id.
 - `/exit` prints `Resume with -c (or command below):` and `agy --conversation=<id>`,
   then exits 0.
+- **Every way a person quits exits 0**: `/exit`, `/quit`, Ctrl+C twice and Ctrl+D twice
+  at the prompt (the first press shows "press ctrl+c again to exit"; 0.3 s and 0.8 s
+  apart both exit). Measured 2026-10-29, agy 1.3.6 on Linux in Docker, a python pty
+  answering the terminal's queries, the API-key route with the folder trusted (§5).
+  macOS: not probed.
 - `AGY_CLI_NONINTERACTIVE_HEADLESS=1` or `AGY_CLI_INTERACTIVE_HEADLESS=1` without a
   terminal exits at once with `could not open TTY`.
 - `agy changelog` downloads the list from

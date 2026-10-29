@@ -783,6 +783,53 @@ describe('restartActiveSession: respawn failure', () => {
 })
 
 // CC§2
+describe('restartActiveSession: a kept tab whose agent died with no conversation starts again from its launch options', () => {
+  it('starts the same launch in the same tab, and the new tab carries no id of the dead session', async () => {
+    const launches: unknown[] = []
+    const api = (globalThis as unknown as { window: { api: { terminal: object } } }).window.api
+    api.terminal = {
+      ...api.terminal,
+      create: (o: unknown) => {
+        launches.push(o)
+        return Promise.resolve({ ok: true, id: 'kept-new', cwd: '/w' })
+      }
+    }
+    const launch = { kind: 'codex' as const, cwd: '/w' }
+    const row = {
+      id: 'kept1',
+      title: 'Codex',
+      worktree: 'main',
+      cwd: '/w',
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'codex' as const,
+      host: 'local' as const
+    }
+    const s = useStore.getState()
+    s.addTab({ id: 'kept1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true, launch })
+    useStore.setState({
+      tabs: useStore.getState().tabs.map((t) => ({
+        ...t,
+        alive: false,
+        sessionId: 'sid-DEAD',
+        ended: { note: 'exited (code 1)', row, wsPath: '/w' }
+      }))
+    })
+    transcriptOnDisk = false
+
+    s.restartActiveSession()
+    await settle()
+    await settle()
+
+    expect(launches).toEqual([launch])
+    const [tab] = useStore.getState().tabs
+    expect(tab).toMatchObject({ id: 'kept-new', alive: true })
+    expect(tab.ended).toBeUndefined()
+    expect(tab.sessionId).toBeUndefined()
+  })
+})
+
 describe('restartActiveSession: the transcript gate — a session never typed into has nothing to resume, so ⇧⌘R asks main before the kill', () => {
   it('refuses a session with no conversation on disk: nothing killed, nothing spawned, a toast', async () => {
     const s = useStore.getState()

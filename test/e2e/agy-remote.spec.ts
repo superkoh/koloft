@@ -152,7 +152,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
-  test('an Antigravity agent that dies on the machine leaves its tab saying it ended with its exit code until Enter, then Koloft says it ended unexpectedly and its row stays with the “exited” mark, not dropped as if it had quit on its own', async ({
+  test('an Antigravity agent that dies on the machine keeps its tab: the screen says its exit code, Koloft says it ended unexpectedly with no key pressed, and its row stays saying “exited (code 137)” with the “exited” mark', async ({
     env
   }) => {
     setUp(env)
@@ -172,12 +172,15 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
         .toContain('stopped with exit code 137')
-      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
       await expect(
         page.locator('.toast', {
           hasText: 'Antigravity session ended unexpectedly (exit code 137)'
         })
       ).toBeVisible()
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)')
+      await expect
+        .poll(() => terminalText(page, tabId))
+        .toContain('[Koloft] Antigravity session ended unexpectedly (exit code 137)')
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')
