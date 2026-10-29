@@ -81,6 +81,12 @@ async function typeIntoHiddenRow(page: Page, tabId: string, line: string): Promi
   })
 }
 
+async function runInCenterWithoutAMousedown(page: Page, line: string): Promise<void> {
+  await centerTerm(page).locator('textarea').focus()
+  await page.keyboard.type(line)
+  await page.keyboard.press('Enter')
+}
+
 async function stayAbsentPastPumpGap(page: Page, ms = 4000): Promise<void> {
   await page.waitForTimeout(ms)
   await expect(card(page)).toHaveCount(0)
@@ -119,7 +125,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     let { app, page } = await start(env, { panelOpen: false })
     try {
       await startSessionIn(page, 'ws-a')
-      await runIn(page, centerTerm(page), '/write first.md')
+      await runInCenterWithoutAMousedown(page, '/write first.md')
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'workbench').locator('.h')).toHaveText('Claude changed a file')
       await expect(card(page, 'workbench').locator('.foot .n')).toHaveText('tip 1 of 5')
@@ -337,7 +343,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     const { app, page } = await start(env, { panelOpen: false })
     try {
       await startSessionIn(page, 'ws-a')
-      await runIn(page, centerTerm(page), '/write one.md')
+      await runInCenterWithoutAMousedown(page, '/write one.md')
       await expect(card(page, 'workbench')).toBeVisible({ timeout: 30_000 })
       await page.keyboard.press('Escape')
       await expect(card(page)).toHaveCount(0)
