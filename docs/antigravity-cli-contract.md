@@ -680,6 +680,19 @@ only downloaded the public release.
   {Subagents:[{TypeName:"self"|"research", Role, Prompt, Model?}]}` (no `TypeName`
   gives an INVALID step); `ask_question {questions:[{question, options[],
   is_multi_select}]}`, answered to the model as `A1: <option>`.
+- **On agy 1.4.7 the file tools are `write_file` and `edit_file`, and `view_file` /
+  `read_url_content` are gone.** 2026-10-28, agy 1.4.7 Linux arm64 in Docker with no
+  network, a fake Gemini server (API-key route, `modelProvider: "gemini"`), the TUI in
+  tmux with `--dangerously-skip-permissions`, every hook logged: the request's tool list
+  was `read_file, run_command, manage_task, send_message, schedule, invoke_subagent,
+  define_subagent, manage_subagents, write_file, edit_file, search_web, ask_question`.
+  `write_file {Path, Content, Overwrite?, Append?, ArtifactMetadata?}`; `edit_file {Path,
+  Target, Replacement}`; a call with `TargetFile` / `CodeContent` failed validation
+  ("missing properties 'Path', 'Content'"). PreToolUse and PostToolUse carry
+  `toolCall.name` `write_file` / `edit_file` with those `args`. `edit_file`'s result
+  reads "Made 1 replacement in <path> starting at line 2 (+1/-1 lines)." with no
+  unified diff. Whether the names depend on the build, the model or the sign-in route
+  was not probed.
 - A command that outlives `WaitMsBeforeAsync` returns "running as a background task
   with task id: <conv>/task-N … logs at file://…/brain/<id>/.system_generated/tasks/task-N.log".
   `manage_task` handles these background tasks; it is not a to-do list.

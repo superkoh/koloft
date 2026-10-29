@@ -222,7 +222,7 @@ const KEYS = { yes: '1', noCommand: '4', noFile: '2' } as const
 const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
-const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
+const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_file', 'edit_file'])
 const SERVER_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"IsDaemon"']
@@ -986,14 +986,22 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private async afterTool(run: AgyRun, input: Record<string, unknown>): Promise<void> {
     const call = record(input.toolCall)
     const name = String(call.name ?? '')
-    const target = argOf(record(call.args), 'TargetFile')
+    const args = record(call.args)
+    const target = argOf(args, 'TargetFile') ?? argOf(args, 'Path')
     if (!WRITING_TOOLS.has(name) || !target) return
     const where = parseRemoteKey(run.cwd)
     const written = where ? path.posix.resolve(where.path, target) : path.resolve(run.cwd, target)
     const file = where ? formatRemoteKey(where.host, written) : written
     let counts = { added: 0, removed: 0 }
     if (name === 'write_to_file')
-      counts = { added: lineCount(argOf(record(call.args), 'CodeContent') ?? ''), removed: 0 }
+      counts = { added: lineCount(argOf(args, 'CodeContent') ?? ''), removed: 0 }
+    else if (name === 'write_file')
+      counts = { added: lineCount(argOf(args, 'Content') ?? ''), removed: 0 }
+    else if (name === 'edit_file')
+      counts = {
+        added: lineCount(argOf(args, 'Replacement') ?? ''),
+        removed: lineCount(argOf(args, 'Target') ?? '')
+      }
     else if (run.info) {
       if (run.remote) await this.deps.remote.nextPull(run.remote.host)
       const transcript = agyTranscript(this.geminiOf(run.cwd), run.info.nativeSessionId!)

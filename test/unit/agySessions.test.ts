@@ -791,6 +791,38 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     expect(sessions.list()[0]).toMatchObject({ lastWritten: edited, liveWrites: 2 })
   })
 
+  // AGY§13
+  it("lists a file agy 1.4.7 wrote with write_file, from its Path, with the Content's lines as added", async () => {
+    const id = await boundTab()
+    const made = path.join(repo, 'made.txt')
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'write_file', args: { Path: made, Content: 'one\ntwo\n' } }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({ src: made, access: 'wrote', added: 2 })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: made, liveWrites: 1 })
+  })
+
+  // AGY§13
+  it("lists a file agy 1.4.7 edited with edit_file, from its Path, with Target's lines removed and Replacement's added", async () => {
+    const id = await boundTab()
+    const edited = path.join(repo, 'edited.txt')
+    hook(id, 'PostToolUse', {
+      toolCall: {
+        name: 'edit_file',
+        args: { Path: edited, Target: 'two', Replacement: 'TWO\nthree' }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({
+      src: edited,
+      access: 'wrote',
+      added: 2,
+      removed: 1
+    })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: edited, liveWrites: 1 })
+  })
+
   it('shows work agy keeps doing after its turn, such as a subagent, until a Stop says it is fully idle', async () => {
     const id = await boundTab()
     hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
