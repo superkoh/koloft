@@ -250,6 +250,10 @@ export class CodexObservation {
   }
 
   // CODEX§34
+  screenLeft(): void {
+    this.requests.clear()
+  }
+
   serverReplaced(): void {
     this.serverWasReplaced = true
     this.forgetRunningTurns()

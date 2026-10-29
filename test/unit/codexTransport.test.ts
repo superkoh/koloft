@@ -323,7 +323,7 @@ describe('Codex TUI transport', () => {
   })
 
   // CODEX§34
-  it('a TUI that drops and connects again gets a new app-server, which takes its initialize, while the old one and its detached tool child end', async () => {
+  it('a TUI that drops and connects again gets a new app-server, started only once the old one and its detached tool child have ended, which takes its initialize', async () => {
     let disconnected!: () => void
     const done = new Promise<void>((resolve) => {
       disconnected = resolve
@@ -347,8 +347,8 @@ describe('Codex TUI transport', () => {
     await new Promise((resolve) => setTimeout(resolve, CHILD_SIGTERM_HANDLER_INSTALL_MS))
     socket.close()
     await done
-    expect(replaced).toBe(0)
     const again = await connect(transport.url)
+    expect([result.pid, result.child].filter((pid) => processAlive(pid))).toEqual([])
     await handshake(again)
     reply = nextFrame(again)
     again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
@@ -357,16 +357,11 @@ describe('Codex TUI transport', () => {
       result: { seen: ['initialize', 'initialized', 'thread/read'] }
     })
     expect(replaced).toBe(1)
-    await expect
-      .poll(() => [result.pid, result.child].filter((pid) => processAlive(pid)), {
-        timeout: 5000
-      })
-      .toEqual([])
     expect(errors).toEqual([])
   })
 
   // CODEX§34
-  it('an app-server that dies after it served the TUI drops the TUI, and the TUI that connects again gets a new app-server', async () => {
+  it('an app-server that dies after it served the TUI drops the TUI without an error notice, and the TUI that connects again gets a new app-server', async () => {
     const errors: Error[] = []
     let replaced = 0
     const transport = await createCodexTransport({
@@ -382,7 +377,6 @@ describe('Codex TUI transport', () => {
     const dropped = once(socket, 'close')
     socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
     await dropped
-    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
     const again = await connect(transport.url)
     await handshake(again)
     const reply = nextFrame(again)
@@ -392,6 +386,7 @@ describe('Codex TUI transport', () => {
       result: { seen: ['initialize', 'initialized', 'thread/read'] }
     })
     expect(replaced).toBe(1)
+    expect(errors).toEqual([])
   })
 
   // CODEX§34
@@ -415,7 +410,7 @@ describe('Codex TUI transport', () => {
     }
     expect(replaced).toBe(3)
     await expect(connect(transport.url)).rejects.toThrow()
-    expect(errors).toHaveLength(4)
+    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
   })
 
   // CODEX§34

@@ -4,6 +4,7 @@ import fs from 'fs/promises'
 import http from 'http'
 import os from 'os'
 import path from 'path'
+import type { Duplex } from 'stream'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
@@ -31,7 +32,7 @@ export interface CodexUpstream {
   newScreen?(): void
 }
 
-export class CodexServerExited extends Error {}
+class CodexServerExited extends Error {}
 
 export type CodexUpstreamFactory = (
   frame: (read: ReadFrame) => void,
@@ -242,7 +243,7 @@ class CodexProcess implements CodexUpstream {
     })
     this.child.stdout.on('end', () => {
       if (!this.stopping && Buffer.concat(this.tail).toString().trim())
-        this.fail(new Error('Codex exited with an incomplete protocol frame'))
+        this.fail(new CodexServerExited('Codex exited with an incomplete protocol frame'))
     })
     this.child.on('exit', (code, sig) => {
       this.exited = true
@@ -496,8 +497,9 @@ export async function createCodexTransport(
         if (client?.readyState === WebSocket.OPEN) {
           if (client.bufferedAmount > upstream.limit * 2)
             throw new Error('Codex output queue exceeds the size limit')
-          client.send(raw, { binary: false }, (error) => {
-            if (error) fail(error)
+          const to = client
+          to.send(raw, { binary: false }, (error) => {
+            if (error) to.terminate()
           })
         } else if (!accepted) {
           pendingBytes += raw.length
@@ -511,7 +513,6 @@ export async function createCodexTransport(
         console.error(`[koloft] Codex app-server behind ${directory} failed: ${error.message}`)
         // CODEX§34
         if (error instanceof CodexServerExited && serverMetAScreen && canReplaceTheServer()) {
-          report(error)
           client?.terminate()
           return
         }
@@ -522,18 +523,32 @@ export async function createCodexTransport(
   }
   const canReplaceTheServer = (): boolean =>
     !options.upstream && replacements < MOST_APP_SERVER_REPLACEMENTS_PER_TAB && !stopping
+  let replacing: Promise<void> | undefined
   // CODEX§34
-  const replaceUpstream = (): void => {
+  const replaceUpstream = async (): Promise<void> => {
     replacements++
-    rejectAll(own, new Error('Codex connection is closed'))
-    void upstream.stop().catch(report)
+    await upstream.stop().catch(report)
+    if (stopping) return
     upstream = startUpstream()
     tell(options.onServerReplaced)
+  }
+  // CODEX§34
+  const screenLeft = (): void => {
+    if (!serverMetAScreen) return
+    serverMetAScreen = false
+    rejectAll(own, new Error('Codex connection is closed'))
+    if (options.upstream) upstream.newScreen?.()
+    else if (!canReplaceTheServer())
+      void stop('Codex app-server was replaced too many times').catch(report)
+    else
+      replacing = replaceUpstream()
+        .catch((error) => fail(asError(error)))
+        .finally(() => (replacing = undefined))
   }
   let upstream = startUpstream()
   server.on('error', fail)
   wss.on('error', fail)
-  server.on('upgrade', (req, socket, head) => {
+  const accept = (req: http.IncomingMessage, socket: Duplex, head: Buffer): void => {
     if (client?.readyState === WebSocket.OPEN || stopping) {
       socket.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n')
       return
@@ -542,17 +557,6 @@ export async function createCodexTransport(
       if (client?.readyState === WebSocket.OPEN || stopping) {
         ws.terminate()
         return
-      }
-      // CODEX§34
-      if (serverMetAScreen) {
-        if (options.upstream) upstream.newScreen?.()
-        else if (canReplaceTheServer()) replaceUpstream()
-        else {
-          ws.terminate()
-          void stop('Codex app-server was replaced too many times').catch(report)
-          return
-        }
-        serverMetAScreen = false
       }
       accepted = true
       client = ws
@@ -579,8 +583,7 @@ export async function createCodexTransport(
               console.error('[koloft] Codex did not take the koloft skill:', err)
             )
         } catch (error) {
-          report(asError(error))
-          ws.terminate()
+          fail(asError(error))
         }
       })
       ws.on('close', (code, reason) => {
@@ -589,11 +592,17 @@ export async function createCodexTransport(
         )
         if (client !== ws) return
         client = undefined
-        if (!stopping) tell(options.onDisconnect)
+        if (stopping) return
+        tell(options.onDisconnect)
+        screenLeft()
       })
       for (const raw of pending) ws.send(raw, { binary: false })
       pending.length = 0
     })
+  }
+  server.on('upgrade', (req, socket, head) => {
+    if (replacing) void replacing.then(() => accept(req, socket, head))
+    else accept(req, socket, head)
   })
   try {
     await upstream.ready

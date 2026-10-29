@@ -328,7 +328,8 @@ export class MachineCodexUpstream implements CodexUpstream {
   // CODEX§34
   newScreen(): void {
     this.tuiJoined = false
-    this.queue ??= []
+    this.queue = []
+    this.queuedBytes = 0
     this.ws?.terminate()
   }
 

@@ -869,7 +869,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         configOverrides: serverConfig,
         onFrame: (direction, frame) => observer.receive(direction, frame),
         observes: (direction, head) => observer.wants(direction, head),
-        onDisconnect: () => this.markDegraded(bound),
+        onDisconnect: () => {
+          observer.screenLeft()
+          this.markDegraded(bound)
+        },
         onServerReplaced: () => observer.serverReplaced(),
         onError: (error) => {
           this.markDegraded(bound)
