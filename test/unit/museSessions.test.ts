@@ -18,6 +18,7 @@ import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 
@@ -183,6 +184,7 @@ beforeEach(() => {
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn((message: string) => void shown.push(message)),
+    noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     openShimRoot: path.join(home, 'muse-open'),
     pickHome: () => picked,
     playwrightBin: tools,

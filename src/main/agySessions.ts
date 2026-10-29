@@ -9,7 +9,6 @@ import type {
   CreateTabOptions,
   LaunchPermission
 } from '@shared/types'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
@@ -478,7 +477,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   protected prepare(opts: CreateTabOptions): AgyLaunch {
     // ADR-0030
     const pick = this.deps.pickHome(opts.resumeSessionId)
-    if (!pick) throw new Error(NO_USABLE_ACCOUNT.agy)
+    if (!pick) throw new Error(this.deps.noAccountMessage('agy'))
     if (pick.notice) this.deps.error(pick.notice)
     return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
   }

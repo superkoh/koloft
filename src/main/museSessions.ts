@@ -9,7 +9,6 @@ import type {
   CreateTabOptions,
   LaunchPermission
 } from '@shared/types'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { koloftPrompt } from '@shared/agentGuide'
@@ -516,7 +515,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   protected prepare(opts: CreateTabOptions): MuseLaunch {
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
-    if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
+    if (!picked) throw new Error(this.deps.noAccountMessage('muse'))
     if (picked.notice) this.deps.error(picked.notice)
     return {
       binary: this.binary!,

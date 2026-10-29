@@ -95,6 +95,7 @@ export interface StoredSessionDeps {
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
+  noAccountMessage(backend: BackendId): string
   fallbackBin?: string
   gitBin?: string
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }

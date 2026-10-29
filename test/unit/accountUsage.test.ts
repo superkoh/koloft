@@ -25,6 +25,8 @@ import {
   CAP,
   hasUsableAccount,
   noUsableAccountLead,
+  noAccountMessage,
+  NO_USABLE_ACCOUNT,
   launchLine,
   launchUsageProbe
 } from '../../src/shared/accountUsage'
@@ -74,6 +76,16 @@ describe('noUsableAccountLead (the line that says why a session cannot start)', 
     expect(
       noUsableAccountLead([meta({ name: 'me', kind: 'apikey', status: 'unverified' })], 'claude')
     ).toMatch(/^No Claude account can be used/)
+  })
+
+  it('a refused launch says the same line the shut buttons show, and the general line only when an account looked usable but none was picked', () => {
+    expect(noAccountMessage([meta({ name: 'me', status: 'expired' })], 'claude')).toBe(
+      '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([], 'codex')).toBe(
+      'No Codex account yet — add one in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([meta({ kind: 'codex-home' })], 'codex')).toBe(NO_USABLE_ACCOUNT.codex)
   })
 })
 

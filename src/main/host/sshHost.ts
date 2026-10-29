@@ -12,7 +12,6 @@ import {
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { portOffset } from '@shared/worktreeName'
@@ -107,6 +106,7 @@ export interface MachineClaudeDeps {
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
+  noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
@@ -1147,7 +1147,7 @@ export class SshHost implements Host {
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
-    if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    if (pickKey && !account) throw new Error(d.noAccountMessage())
     // CC§9
     const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
     const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))

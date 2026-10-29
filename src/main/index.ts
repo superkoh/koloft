@@ -372,6 +372,7 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountMessage,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -615,6 +616,8 @@ const sessionBackends = new SessionBackends({
 sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
+sessionBackends.noAccountMessage = noAccountNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -3040,6 +3043,7 @@ app.whenReady().then(() => {
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    noAccountMessage: noAccountNow,
     holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
     holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
     hookRegDir: hookPaths.regDir
@@ -5242,6 +5246,7 @@ const hosts = new Hosts(
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId) =>
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+        noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(

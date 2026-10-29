@@ -399,6 +399,7 @@ export default function App(): JSX.Element {
     if (listed.length < 2 || !listed.includes(defaultBackend)) return null
     return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
   }, [listed, sessionMethods])
+  const soleMethod = effectiveBackend(sessionMethods, installed)
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -454,15 +455,11 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath, undefined, backend)
         return
       }
-      startNow(
-        hostOf(wsPath),
-        backend ?? effectiveBackend(sessionMethods, installed),
-        async () => ({
-          cwd: wsPath
-        })
-      )
+      startNow(hostOf(wsPath), backend ?? soleMethod, async () => ({
+        cwd: wsPath
+      }))
     },
-    [installed, requestNew, sessionMethods, startNow]
+    [requestNew, soleMethod, startNow]
   )
 
   const globalNew = useCallback(
@@ -1580,6 +1577,7 @@ export default function App(): JSX.Element {
           <WorkspaceSidebar
             onNewSession={startIn}
             namedMethods={namedMethods}
+            soleMethod={soleMethod}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onScheduledJobs={openScheduledJobs}

@@ -139,6 +139,7 @@ async function claudeTab(
             settings: () => ({ skipPermissions: false }),
             agentTools: () => true,
             pickAccount: async () => ({ env: {}, banner: '' }),
+            noAccountMessage: () => '',
             hookSettings: () => ({})
           }
         })
@@ -199,6 +200,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     changed: () => {},
     events: () => {},
     error: () => {},
+    noAccountMessage: () => '',
     trustFolder: () => {},
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     assistOf: () => undefined,

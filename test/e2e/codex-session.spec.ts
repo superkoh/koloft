@@ -45,7 +45,6 @@ import {
   type CodexCall
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   addWorkspace,
   centerTerm,
@@ -319,6 +318,42 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // ADR-0030
+  test('with no Codex account, the workspace menu shuts "New Codex session" and leaves Claude open, and a Codex start that still reaches Koloft is refused with the line the shut buttons show', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, { accounts: accounts.filter((a) => a.kind !== 'codex-home') })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      const codexItem = menu.locator('.mi', { hasText: 'New Codex session' })
+      await expect(codexItem).toHaveClass(/\bdisabled\b/)
+      await expect(menu.locator('.mi', { hasText: 'New Claude session' })).not.toHaveClass(
+        /\bdisabled\b/
+      )
+      await snap(page, 'codex-no-account-workspace-menu')
+      await codexItem.click({ force: true })
+      await expect(menu).toBeVisible()
+
+      const refusal = await page.evaluate(async (cwd) => {
+        try {
+          await window.api.terminal.create({ kind: 'codex', cwd })
+          return ''
+        } catch (e) {
+          return String(e)
+        }
+      }, env.workspaces.a)
+      expect(refusal).toContain('No Codex account yet — add one in Settings ▸ Accounts.')
+      expect(codexCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('the second method has its own entrance and does not become the default', async ({
     env
   }) => {
@@ -497,7 +532,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         E2E_CODEX_ACCOUNT
       )
       await clickAppMenuItem(app, page, 'restart-session')
-      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.codex)
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'No Codex account can be used — check Settings ▸ Accounts.'
+      )
       expect(codexCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)

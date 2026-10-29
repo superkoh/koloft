@@ -64,6 +64,7 @@ export class SessionBackends {
   isButlerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
+  noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -213,7 +214,8 @@ export class SessionBackends {
     }
     const backend = this.get(options.kind)
     // ADR-0030
-    if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))
+    if (!backend.accountUsable())
+      return Promise.reject(new Error(this.noAccountMessage(options.kind)))
     return backend.create(options)
   }
 }

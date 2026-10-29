@@ -198,6 +198,7 @@ beforeEach(() => {
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
+    noAccountMessage: () => '',
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,
