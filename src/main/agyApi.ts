@@ -161,6 +161,19 @@ export class AgyApi {
     return pendingOf(await this.trajectory(conversationId))
   }
 
+  // AGY§13
+  async backgroundTaskIds(conversationId: string): Promise<Set<string>> {
+    const tasks = record(
+      await this.call('ListBackgroundTasks', { cascadeId: conversationId })
+    ).tasks
+    return new Set(
+      (Array.isArray(tasks) ? tasks : []).flatMap((t) => {
+        const id = record(record(t).task).taskId
+        return typeof id === 'string' ? [id] : []
+      })
+    )
+  }
+
   // AGY§16
   async send(conversationId: string, text: string): Promise<boolean> {
     const cascadeConfig = latestUserConfig(await this.trajectory(conversationId))

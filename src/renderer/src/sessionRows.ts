@@ -63,7 +63,9 @@ export function parkedBadge(
         ? 'Stop these tasks in the Codex session to free the resources.'
         : backend === 'muse'
           ? 'Stop them in the Muse session (/tasks lists them) to free the resources.'
-          : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
+          : backend === 'agy'
+            ? 'Stop them in the Antigravity session (/tasks lists them) to free the resources.'
+            : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
   }
 }
 

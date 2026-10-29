@@ -1,3 +1,4 @@
+import path from 'path'
 import type { BackendId } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 
@@ -16,6 +17,22 @@ export interface ConfigText {
 export const PROJECT_MCP_FILE = '.mcp.json'
 // AGY§30
 export const AGY_PROJECT_MCP_FILE = '.agents/mcp_config.json'
+
+// CC§22
+export function foldersUpToRoot(folder: string): string[] {
+  const parent = path.dirname(folder)
+  return parent === folder ? [folder] : [folder, ...foldersUpToRoot(parent)]
+}
+
+// MUSE§18 AGY§30
+export async function foldersUpToRepoTop(
+  folder: string,
+  holdsGit: (folder: string) => Promise<boolean>
+): Promise<string[]> {
+  const up = foldersUpToRoot(folder)
+  const top = (await Promise.all(up.map(holdsGit))).indexOf(true)
+  return top < 0 ? [folder] : up.slice(0, top + 1)
+}
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -84,14 +101,16 @@ function reachText(s: McpServer): string {
 export function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): string[] {
   if (!servers.length) return ['No agent has an MCP server set up.']
   const names = [...new Set(servers.map((s) => s.name))].sort()
-  const lines = names.map(
-    (name) =>
-      `- ${name}: ${servers
-        .filter((s) => s.name === name)
-        .sort((a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend))
-        .map(reachText)
-        .join(', ')}`
-  )
+  const reachOf = (name: string): string =>
+    [
+      ...new Set(
+        servers
+          .filter((s) => s.name === name)
+          .sort((a, b) => SESSION_BACKENDS.indexOf(a.backend) - SESSION_BACKENDS.indexOf(b.backend))
+          .map(reachText)
+      )
+    ].join(', ')
+  const lines = names.map((name) => `- ${name}: ${reachOf(name)}`)
   const reachable = names.filter((name) =>
     servers.some(
       (s) => s.name === name && s.backend === mine && (!s.onlyIn || s.onlyIn === myFolder)

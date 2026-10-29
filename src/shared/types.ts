@@ -293,6 +293,13 @@ export interface AccountView extends AccountMeta {
 export type SignInResult =
   { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
 
+export interface SignInFailure {
+  backend: SignInBackend
+  name: string
+  again: boolean
+  tail: string
+}
+
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
   name: string
@@ -1306,6 +1313,9 @@ export interface KoloftApi {
     cancelLogin(): void
     // CODEX§15 MUSE§13
     signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
+    signInFailure(): Promise<SignInFailure | null>
+    dismissSignInFailure(): void
+    onSignInFailure(cb: (f: SignInFailure | null) => void): () => void
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
@@ -1474,6 +1484,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  closing?: 'soon' | 'after-background-work'
   note?: string
 }
 

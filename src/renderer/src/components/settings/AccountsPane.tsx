@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
-import type { AccountKind, AccountView, SignInBackend } from '@shared/types'
+import type { AccountKind, AccountView, SignInBackend, SignInFailure } from '@shared/types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
 import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
@@ -247,12 +247,14 @@ export function AccountsPane(): JSX.Element {
           </button>
         </>
       )}
-      {signIn && (
+      {signIn ? (
         <SignInDialog
           backend={signIn.backend}
           again={signIn.again}
           onClose={() => setSignIn(null)}
         />
+      ) : (
+        <SignInFailedDialog />
       )}
       {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
       {login && <LoginDialog />}
@@ -397,18 +399,50 @@ export function LoginDialog(): JSX.Element | null {
   )
 }
 
+function useSignInFailure(): SignInFailure | null {
+  const [failure, setFailure] = useState<SignInFailure | null>(null)
+  useEffect(() => {
+    let alive = true
+    const off = window.api.accounts.onSignInFailure(setFailure)
+    void window.api.accounts.signInFailure().then((f) => {
+      if (alive) setFailure(f)
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [])
+  return failure
+}
+
+export function SignInFailedDialog(): JSX.Element | null {
+  const failed = useSignInFailure()
+  if (!failed) return null
+  return (
+    <SignInDialog
+      key={`${failed.backend}:${failed.name}`}
+      backend={failed.backend}
+      again={failed.again ? failed.name : undefined}
+      failed={failed}
+      onClose={() => window.api.accounts.dismissSignInFailure()}
+    />
+  )
+}
+
 export function SignInDialog({
   backend,
   again,
+  failed,
   onClose
 }: {
   backend: SignInBackend
   again?: string
+  failed?: SignInFailure
   onClose(): void
 }): JSX.Element {
   const addTab = useStore((s) => s.addTab)
   const showSignInTab = useStore((s) => s.showSignInTab)
-  const [name, setName] = useState(again ?? '')
+  const [name, setName] = useState(again ?? failed?.name ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { installed } = useInstalledBackends()
@@ -459,20 +493,26 @@ export function SignInDialog({
         autoFocus={!again}
         readOnly={!!again}
       />
+      {failed && (
+        <div className="acct-login-state bad">
+          <div>Sign-in did not complete.</div>
+          {failed.tail && <pre className="acct-login-tail">{failed.tail}</pre>}
+        </div>
+      )}
       {error && <div className="acct-add-err">{error}</div>}
       <div className="acct-add-actions">
         <button className="mini" onClick={onClose} disabled={busy}>
           Cancel
         </button>
         <button className="mini" onClick={() => void start()} disabled={busy || !name.trim()}>
-          Sign in
+          {failed ? 'Try again' : 'Sign in'}
         </button>
       </div>
       <span className="field-hint">
         Koloft opens a terminal tab that runs <code>{command}</code> for this account only.
         {installsFirst && ` ${label} is not on this Mac yet, so the tab installs it first.`} Finish
-        the sign-in there; the tab closes itself when it is done and the account joins the pool.{' '}
-        {shared}
+        the sign-in there; the tab closes itself when <code>{command}</code> ends. Signed in, the
+        account joins the pool; if not, this page says so. {shared}
       </span>
     </div>
   )

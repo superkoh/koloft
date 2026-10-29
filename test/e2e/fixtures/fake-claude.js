@@ -413,9 +413,9 @@ function renderStatuslineWithoutBlockingSessionStart() {
   } catch {}
 }
 
-function taskNotification(toolUseId, status, summary) {
+function taskNotification(taskId, toolUseId, status, summary) {
   return (
-    `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
+    `<task-notification>\n<task-id>${taskId}</task-id>\n` +
     `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
     `<summary>${summary}</summary>\n</task-notification>`
   )
@@ -995,7 +995,10 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [{ id: 'abg_e2e', type: 'subagent', status: 'running', description: 'bg' }]
+    })
 
     const subDir = path.join(projDir, sessionId, 'subagents')
     fs.mkdirSync(subDir, { recursive: true })
@@ -1021,14 +1024,14 @@ function handleLine(line) {
             type: 'queue-operation',
             operation: 'enqueue',
             timestamp: new Date().toISOString(),
-            content: taskNotification(bgToolUseId, 'completed', 'background work done')
+            content: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done')
           },
           {
             type: 'attachment',
             timestamp: new Date().toISOString(),
             attachment: {
               type: 'queued_command',
-              prompt: taskNotification(bgToolUseId, 'completed', 'background work done'),
+              prompt: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done'),
               commandMode: 'task-notification'
             },
             cwd
@@ -1048,7 +1051,7 @@ function handleLine(line) {
             cwd
           }
         ])
-        fireHook('stop', { hook_event_name: 'Stop' })
+        fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
         process.stdout.write('[fake-claude] bg-work finished\r\n> ')
       }
     }, 500)
@@ -1246,9 +1249,22 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    // CC§8
+    const tasksDir = path.join(home, '.claude-tmp', sessionId, 'tasks')
+    fs.mkdirSync(tasksDir, { recursive: true })
+    const outputFd = fs.openSync(path.join(tasksDir, 'bash_e2e.output'), 'a')
+    const toolShell = cp.spawn('/bin/sh', ['-c', 'eval "sleep 5"; true'], {
+      stdio: ['ignore', outputFd, 'ignore']
+    })
+    fs.closeSync(outputFd)
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'bash_e2e', type: 'shell', status: 'running', description: 'npm test' }
+      ]
+    })
 
-    setTimeout(() => {
+    toolShell.on('exit', () => {
       const done = usageMeta()
       append([
         {
@@ -1256,7 +1272,12 @@ function handleLine(line) {
           timestamp: new Date().toISOString(),
           attachment: {
             type: 'queued_command',
-            prompt: taskNotification(shToolUseId, 'completed', 'Background command completed'),
+            prompt: taskNotification(
+              'bash_e2e',
+              shToolUseId,
+              'completed',
+              'Background command completed'
+            ),
             commandMode: 'task-notification'
           },
           cwd
@@ -1276,9 +1297,9 @@ function handleLine(line) {
           cwd
         }
       ])
-      fireHook('stop', { hook_event_name: 'Stop' })
+      fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-shell finished\r\n> ')
-    }, 5000)
+    })
     process.stdout.write('[fake-claude] bg-shell running\r\n> ')
     return
   }

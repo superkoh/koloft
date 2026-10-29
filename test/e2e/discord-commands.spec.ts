@@ -137,7 +137,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   })
 
   // AGY§8
-  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process', async ({
+  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and what it ran is posted soon after', async ({
     env
   }) => {
     installAgy(env)
@@ -159,6 +159,9 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .toBe(1)
       expect(agySessionCalls(env)).toHaveLength(1)
       expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model/)])
     } finally {
       await quitAndClose(app)
       await fake.close()

@@ -56,7 +56,7 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
-const QUIT_HANGUP_GRACE_SECONDS = 10
+const HANGUP_GRACE_SECONDS = 10
 const KILL_IF_STILL_OURS = `k=$1
 s=$2
 shift 2
@@ -64,6 +64,25 @@ sleep "$s"
 for p in "$@"; do
   [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
 done`
+
+// PLATFORM§41
+function killLaterIfStillOurs(pids: number[]): void {
+  if (!pids.length) return
+  spawn(
+    '/bin/sh',
+    [
+      '-c',
+      KILL_IF_STILL_OURS,
+      'sh',
+      String(process.pid),
+      String(HANGUP_GRACE_SECONDS),
+      ...pids.map(String)
+    ],
+    { detached: true, stdio: 'ignore' }
+  )
+    .on('error', () => {})
+    .unref()
+}
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -229,7 +248,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
-    this.running.add(proc)
+    this.track(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -270,7 +289,6 @@ export class PtyManager extends EventEmitter {
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
-      this.running.delete(proc)
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
@@ -379,11 +397,22 @@ export class PtyManager extends EventEmitter {
   kill(id: string): void {
     const h = this.ptys.get(id)
     if (h) {
-      try {
-        h.proc.kill()
-      } catch {}
+      this.hangUp(h.proc)
       this.ptys.delete(id)
     }
+  }
+
+  // PLATFORM§29
+  hangUp(proc: pty.IPty): void {
+    try {
+      proc.kill()
+    } catch {}
+    killLaterIfStillOurs([proc.pid])
+  }
+
+  track(proc: pty.IPty): void {
+    this.running.add(proc)
+    proc.onExit(() => this.running.delete(proc))
   }
 
   get(id: string): PtyHandle | undefined {
@@ -409,22 +438,7 @@ export class PtyManager extends EventEmitter {
 
   // PLATFORM§41
   killWhatOutlivesTheQuit(): void {
-    const pids = [...this.running].map((proc) => String(proc.pid))
-    if (!pids.length) return
-    spawn(
-      '/bin/sh',
-      [
-        '-c',
-        KILL_IF_STILL_OURS,
-        'sh',
-        String(process.pid),
-        String(QUIT_HANGUP_GRACE_SECONDS),
-        ...pids
-      ],
-      { detached: true, stdio: 'ignore' }
-    )
-      .on('error', () => {})
-      .unref()
+    killLaterIfStillOurs([...this.running].map((proc) => proc.pid))
   }
 
   killUtilOrphans(): void {

@@ -282,6 +282,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
   `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
   `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
+- **`UserPromptSubmit`'s stdin is compact JSON with non-ASCII text left as UTF-8.**
+  2026-10-28, muse 1.4.14 (`koloft-muse-probe-1411`, which updated itself), Docker,
+  `muse exec --provider echo --trust-workspace "[Discord] 你好 \"a\" <b> é<TAB>x"`, the hook
+  given through `TBH_MANAGED_HOOKS_PATH`, one run: the hook read
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx"` — only the quote and the tab escaped, as
+  Node's `JSON.stringify` does.
 - Tool shapes (fake model): `write_file` and `edit_file` → `PostToolUse.tool_response
   {filePath, structuredPatch:[{lines:["+…","-…"], oldStart, oldLines, newStart,
   newLines}]}`; `bash` with `yield_time_ms` that outlives it → `tool_response` holds
@@ -446,6 +452,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
+- `auth set --provider meta --api-key-stdin` does not check the key: a made-up one
+  exited 0 with "credentials saved for provider meta" and was written to `auth.json`
+  (0600) as `{schema_version, providers: {meta: {api_key}}}`. `account/read` then
+  answered `{state: "apiKey", label: "stored key"}`, and with `META_API_KEY` set
+  `{state: "envKey", label: "META_API_KEY"}`; `usage/read` answered `{}` either way
+  (1.4.14, Linux arm64, Docker, `TBH_CREDENTIAL_BACKEND=file`, 2026-10-28). That a wrong
+  stored key then ends the launch the way a rejected `META_API_KEY` does (below) is
+  inferred, not checked.
 - How much of a Meta account's quota is used showed only inside a live session: the
   TUI's `/usage` draws a box (screen only, §11), while a fresh `muse serve` answers
   `usage/read` with nothing in it and `muse exec --json` prints no usage record
@@ -458,7 +472,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   is closed. In the first second or two after start the box has only the session lines;
   typed again a moment later it has the Subscription block (1.4.10, real Meta account,
   macOS, 2026-10). An API-key account (`account/read` state `apiKey`) shows no
-  Subscription block (inferred from the box's layout, not checked: no API key on hand).
+  Subscription block (inferred from the box's layout, not checked: no real API key on hand).
 - `muse schema generate-ts --experimental` lists `usage/read` and `usage/changed` with
   `SubscriptionUsage {tier, window {usedPercent, resetsAtMs, windowDurationMins},
   weekly {usedPercent, resetsAtMs}, observedAtMs}`, the window described as "the
@@ -591,6 +605,13 @@ in the model request.
   workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
   untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
   `<A>/.agents/settings.json` were not read.
+- **Which folders' `.mcp.json`:** the workspace's and every folder above it up to the
+  nearest one holding `.git` (a folder, or the file of a linked worktree), that one
+  included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, a repository inside another did not reach the outer one, and
+  `--trust-workspace` for the cwd alone was enough for the files above it to load.
+  Measured 2026-10-28, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec --provider
+  echo --trust-workspace`, MCP servers that logged their start.
 - **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
   scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
   only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because

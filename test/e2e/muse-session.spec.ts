@@ -124,7 +124,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§13
-  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
+  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel as soon as Koloft opens, with no Claude subscription account and nothing clicked, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
     env
   }) => {
     installMuse(env)
@@ -142,7 +142,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect(page.locator('.tbu .tbu-fill:not(.cold)')).toHaveCount(1)
       await page.locator('.tbu').click()
       const pop = page.locator('.tbu-pop')
       await expect(pop.locator('.tbu-pop-head', { hasText: /^Muse$/ })).toBeVisible()
@@ -156,6 +156,39 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
+  test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-muse-login-fails'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Muse' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.',
+        { timeout: 20_000 }
+      )
+      await expect(dialog.locator('.acct-login-tail')).toHaveText(
+        'Error: the device code expired before it was approved'
+      )
+      await expect(page.locator('.term-island > .wb-bar')).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^work$/ })).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^e2e-muse$/ })).toBeVisible()
     } finally {
       await quitAndClose(app)
     }

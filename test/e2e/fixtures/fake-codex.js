@@ -593,6 +593,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         })
         return
       }
+      if (method === 'account/read' && flag('fake-codex-account-read-fails')) {
+        append('fake-codex-account-read-failures.jsonl', { codexHome, signedIn: !!signIn() })
+        error(id, 'stream disconnected before completion')
+        return
+      }
       if (method === 'account/read') {
         result(id, {
           account: signIn()

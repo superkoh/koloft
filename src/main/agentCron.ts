@@ -20,8 +20,8 @@ import {
   histText,
   histWhen,
   lastRunOf,
-  LIVE_WORDS,
   liveOf,
+  liveWords,
   nextWords,
   oncePassed,
   whenLine
@@ -277,7 +277,7 @@ export function formatList(jobs: CronJob[], live: LiveRun[], now: Date): string 
 export function formatShow(job: CronJob, number: number, live: LiveRun[], now: Date): string {
   const run = liveOf(live, job.id)
   const runs = [
-    ...(run ? [`    ${describeWhen(new Date(run.dueAt), now)} · ${LIVE_WORDS[run.state]}`] : []),
+    ...(run ? [`    ${describeWhen(new Date(run.dueAt), now)} · ${liveWords(job, run)}`] : []),
     ...job.history.map((h) => `    ${histWhen(h, now)} · ${histText(h)}`)
   ]
   return [

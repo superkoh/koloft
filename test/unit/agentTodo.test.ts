@@ -416,18 +416,19 @@ describe('koloft todo', () => {
     )
   })
 
-  it('names each MCP server, which agents reach it and from where, and which ones the butler’s own agent can use from its folder', async () => {
+  it('names each MCP server, which agents reach it and from where, once even when two project files above one workspace set it up, and which ones the butler’s own agent can use from its folder', async () => {
     const { run } = harness({
       sidebar: sidebarOf([]),
       sessions: [],
       servers: [
         { name: 'linear', backend: 'codex' },
         { name: 'linear', backend: 'claude' },
+        { name: 'jira', backend: 'claude', onlyIn: SHOP },
         { name: 'jira', backend: 'claude', onlyIn: SHOP }
       ]
     })
     const tools = section((await run([])).text, 'TOOLS SET UP')
-    expect(tools).toContain('- jira: Claude (only in /work/shop)')
+    expect(tools).toMatch(/^- jira: Claude \(only in \/work\/shop\)$/m)
     expect(tools).toContain('- linear: Claude (everywhere), Codex (everywhere)')
     expect(tools).toContain('You and your helpers run on Codex, so you can use: linear.')
   })
