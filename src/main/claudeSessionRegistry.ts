@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
+import { setTimeout as sleep } from 'timers/promises'
 
 const REGISTRY_DIR = path.join(os.homedir(), '.claude', 'sessions')
 const POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS = 500
@@ -157,23 +158,22 @@ export function whenMessagingSocket(
 }
 
 // CC§11
-export const MACHINE_REGISTRY_SH = `for f in "$HOME"/.claude/sessions/*.json; do [ -f "$f" ] && cat "$f" && printf '\\0'; done; :`
+export const LIVE_REGISTRY_ON_A_MACHINE_SH = `for f in "$HOME"/.claude/sessions/*.json; do p=\${f##*/}; kill -0 "\${p%.json}" 2>/dev/null && cat "$f" && printf '\\0'; done; :`
 
-// CC§11
-export function newestSocketOnMachine(registry: string, sessionId: string): string | null {
-  let newest: { at: number; socket: string } | null = null
-  for (const text of registry.split('\0')) {
-    let entry: { sessionId?: unknown; startedAt?: unknown; messagingSocketPath?: unknown }
+// CC§5 CC§11
+export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {
+  for (const text of liveRegistry.split('\0')) {
+    let entry: { sessionId?: unknown; kind?: unknown; messagingSocketPath?: unknown }
     try {
       entry = JSON.parse(text)
     } catch {
       continue
     }
-    if (entry.sessionId !== sessionId || typeof entry.messagingSocketPath !== 'string') continue
-    const at = typeof entry.startedAt === 'number' ? entry.startedAt : 0
-    if (!newest || at > newest.at) newest = { at, socket: entry.messagingSocketPath }
+    if (entry.sessionId !== sessionId || entry.kind === 'bg') continue
+    if (typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath)
+      return entry.messagingSocketPath
   }
-  return newest?.socket ?? null
+  return null
 }
 
 const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
@@ -181,13 +181,13 @@ const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
 export async function whenMessagingSocketOnMachine(
   sessionId: string,
   ms: number,
-  readRegistry: () => Promise<string>
+  readLiveRegistry: () => Promise<string>
 ): Promise<string | null> {
   const deadline = Date.now() + ms
   for (;;) {
-    const socket = newestSocketOnMachine(await readRegistry(), sessionId)
+    const socket = tabSocketOnMachine(await readLiveRegistry(), sessionId)
     if (socket || Date.now() >= deadline) return socket
-    await new Promise((r) => setTimeout(r, REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS))
+    await sleep(REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS)
   }
 }
 

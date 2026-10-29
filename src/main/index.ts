@@ -137,6 +137,7 @@ import {
   runMasterCommand,
   runSsh,
   runSshBytes,
+  problemOf,
   sshOptions,
   writeToMachineSocket
 } from './remote/ssh'
@@ -492,7 +493,7 @@ import {
   type McpServer
 } from './mcpServers'
 import {
-  MACHINE_REGISTRY_SH,
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
@@ -1589,23 +1590,27 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
   const host = tracker.remoteOf(tabId)?.host
-  if (host) await loginEnvReady()
-  const socket = !sessionId
-    ? null
-    : host
-      ? await whenMessagingSocketOnMachine(sessionId, ms, async () => {
-          const r = await runSsh(host, remoteShCommand(MACHINE_REGISTRY_SH), {
-            controlDir: remoteControlDir
-          })
-          return r.stdout
-        })
-      : await whenMessagingSocket(sessionId, ms)
-  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-  if (!host) return writeLineInTurn(socket, line)
+  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
+  if (!host) {
+    const socket = await whenMessagingSocket(sessionId, ms)
+    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+    return writeLineInTurn(socket, line)
+  }
+  await loginEnvReady()
+  const readLiveRegistry = async (): Promise<string> => {
+    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+      controlDir: remoteControlDir
+    })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout
+  }
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
   await writeLineInTurn(`${host}:${socket}`, line, (l) =>
     writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
   )
 }
+const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
