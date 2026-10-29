@@ -30,6 +30,18 @@ method. A recheck adds its date, version and command to the bullet.
   Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
   whenever Koloft found git missing, so claude finds that one and this check does not
   fire (inferred, not checked on a Mac without the tools).
+- **A git only the login shell's PATH holds** (nix's `~/.nix-profile/bin`, pkgsrc's
+  `/opt/pkg/bin`, asdf's and mise's shim folders) is not on the app's PATH at launch.
+  Some of them are not git: an asdf shim is a script starting `#!/usr/bin/env bash` that
+  runs `asdf exec git` (asdf `internal/shims/shims.go`), and a mise shim on macOS is a
+  link to the `mise` program itself, or a script starting `#!/bin/sh` in its `file` mode
+  (mise `src/shims.rs`); both look git up again on PATH, so handing git to one can come
+  back to Koloft's own. nixpkgs' `bin/git` is git's own program behind links into
+  `/nix/store` — its wrappers touch only helpers under `libexec/git-core` (nixpkgs
+  `pkgs/by-name/gi/git/package.nix`). (2026-10-28, read from each project's source on
+  its main branch, not run on a Mac with nix, asdf or mise.) The program Koloft ships,
+  copied elsewhere and run without the launcher's `GIT_EXEC_PATH`, prints
+  `//libexec/git-core` for `--exec-path` (2026-10-28, macOS 27.0, git 2.53.0).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).

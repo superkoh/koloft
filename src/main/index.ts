@@ -189,7 +189,13 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  setupBundledGit,
+  stepAsideForTheUsersGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -1151,6 +1157,11 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      try {
+        if (gitFirstBin) stepAsideForTheUsersGit(gitFirstBin, env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
     })
     .catch(() => undefined))
 }
@@ -2807,7 +2818,10 @@ app.whenReady().then(() => {
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
-  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
