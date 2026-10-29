@@ -8,7 +8,7 @@ import type { CodexFrame } from '../../src/main/codexTransport'
 
 const PROCESS_SAMPLE_MS = 1000
 process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
-const { CodexRpc, codexEnvironment, createCodexTransport } =
+const { CodexRpc, codexEnvironment, createCodexTransport, DEFAULT_MAX_FRAME, readFrame } =
   await import('../../src/main/codexTransport')
 type CodexRpc = InstanceType<typeof CodexRpc>
 
@@ -382,6 +382,111 @@ describe('Codex TUI transport', () => {
     })
   })
 
+  // CODEX§34
+  it('an approval the screen had not answered when it dropped is asked again once the reconnected screen has resumed the thread, and the answer reaches Codex', async () => {
+    let disconnected!: () => void
+    const done = new Promise<void>((resolve) => {
+      disconnected = resolve
+    })
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onDisconnect: disconnected
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const asked = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'approval' } }))
+    expect(await asked).toMatchObject({ id: 991, method: 'item/commandExecution/requestApproval' })
+    socket.close()
+    await done
+    const again = await connect(transport.url)
+    await handshake(again)
+    const frames: CodexFrame[] = []
+    const two = new Promise<void>((resolve) =>
+      again.on('message', (bytes) => {
+        if (frames.push(JSON.parse(bytes.toString()) as CodexFrame) === 2) resolve()
+      })
+    )
+    again.send(JSON.stringify({ id: 'resume', method: 'thread/resume', params: {} }))
+    await two
+    expect(frames.map((f) => f.id)).toEqual(['resume', 991])
+    const received = nextFrame(again)
+    again.send(JSON.stringify({ id: 991, result: { decision: 'accept' } }))
+    expect(await received).toMatchObject({ method: 'approval/received' })
+  })
+
+  // CODEX§34
+  it('a reply to a request the screen never sent, as one a dropped screen sent under the same id, does not reach it', async () => {
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      observes: (_direction, head) => head.replyTo !== 'plugin-list-1'
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
+    expect(await reply).toEqual({ id: 'mine', result: {} })
+  })
+
+  // CODEX§34
+  it('an app-server that keeps dying is replaced three times, and the fourth death ends the connection', async () => {
+    const errors: Error[] = []
+    let replaced = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onServerReplaced: () => replaced++,
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    for (let death = 1; death <= 4; death++) {
+      const socket = await connect(transport.url)
+      await handshake(socket)
+      const dropped = once(socket, 'close')
+      socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+      await dropped
+    }
+    expect(replaced).toBe(3)
+    await expect(connect(transport.url)).rejects.toThrow()
+    expect(errors).toHaveLength(4)
+  })
+
+  it('a remote app-server that dies is not replaced here, since only the machine can start one', async () => {
+    let failure!: (error: Error) => void
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      upstream: (frame, failed) => {
+        failure = failed
+        return {
+          ready: Promise.resolve(),
+          limit: DEFAULT_MAX_FRAME,
+          write: (raw) => {
+            const f = JSON.parse(raw.toString()) as CodexFrame
+            if (f.method === 'initialize')
+              frame(readFrame(Buffer.from(JSON.stringify({ id: f.id, result: {} })))!)
+          },
+          stop: () => Promise.resolve()
+        }
+      }
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const dropped = once(socket, 'close')
+    failure(new Error('Codex on the machine is no longer running'))
+    await dropped
+    await expect(connect(transport.url)).rejects.toThrow()
+  })
+
   it('an app-server that dies before it ever answered the TUI ends the connection', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({
@@ -421,6 +526,9 @@ describe('Codex TUI transport', () => {
       socket.on('message', (bytes) => {
         if (raw.push(bytes.toString()) === 2) resolve()
       })
+    )
+    socket.send(
+      JSON.stringify({ id: 'plugin-list-1', method: 'plugin/list', params: { mode: 'hang' } })
     )
     socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
     await both

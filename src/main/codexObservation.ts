@@ -186,6 +186,13 @@ function tokenCountsOf(t: WireTokens): TokenCounts {
   }
 }
 
+export interface QueuedByKoloft {
+  text: string
+  sentAgain: boolean
+  started: boolean
+  turnId?: string
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -221,8 +228,8 @@ export class CodexObservation {
   private lastTouched?: string
   private lastWritten?: string
   private liveWrites = 0
-  private queued = new Set<string>()
-  private queuedByKoloft = new Map<string, { text: string; sentAgain: boolean; turnId?: string }>()
+  private queuedByKoloft = new Map<string, QueuedByKoloft>()
+  private serverWasReplaced = false
   unsubscribed = false
   turns = new TurnLog()
 
@@ -230,33 +237,45 @@ export class CodexObservation {
 
   // CODEX§17
   queuedMessage(clientId: string, text: string, sentAgain = false): void {
-    this.queued.add(clientId)
-    this.queuedByKoloft.set(clientId, { text, sentAgain })
+    this.queuedByKoloft.set(clientId, { text, sentAgain, started: false })
   }
 
   queueRefused(clientId: string): void {
-    this.queued.delete(clientId)
     this.queuedByKoloft.delete(clientId)
+  }
+
+  queueDrained(): boolean {
+    return [...this.queuedByKoloft.values()].every((sent) => sent.started)
   }
 
   // CODEX§34
   serverReplaced(): void {
+    this.serverWasReplaced = true
+    this.forgetRunningTurns()
+    const cutOff = this.turns.open()
+    if (cutOff) this.turns.end(cutOff)
+    this.publishActivity()
+  }
+
+  takeQueuedCutOffByAReplacedServer(): QueuedByKoloft[] {
+    if (!this.serverWasReplaced) return []
+    this.serverWasReplaced = false
+    const cutOff: QueuedByKoloft[] = []
+    for (const [clientId, sent] of this.queuedByKoloft) {
+      if (!sent.started) continue
+      this.queuedByKoloft.delete(clientId)
+      cutOff.push(sent)
+    }
+    return cutOff
+  }
+
+  private forgetRunningTurns(): void {
     this.liveTurns.clear()
     this.approvals.clear()
     this.approvalThreads.clear()
     this.approvalAsks.clear()
     this.waitingForInput = false
     this.mainTurn = 'ended'
-  }
-
-  takeQueuedCutOffMidTurn(): string[] {
-    const cutOff = [...this.queuedByKoloft].filter(([, sent]) => sent.turnId !== undefined)
-    for (const [clientId] of cutOff) this.queuedByKoloft.delete(clientId)
-    return cutOff.flatMap(([, sent]) => (sent.sentAgain ? [] : [sent.text]))
-  }
-
-  queueDrained(): boolean {
-    return this.queued.size === 0
   }
 
   // CODEX§3
@@ -351,14 +370,9 @@ export class CodexObservation {
       const reopened = thread.id === this.threadId
       if (!reopened) {
         this.unanswered = false
+        this.serverWasReplaced = false
         this.queuedByKoloft.clear()
-        this.liveTurns.clear()
-        this.queued.clear()
-        this.approvals.clear()
-        this.approvalThreads.clear()
-        this.approvalAsks.clear()
-        this.waitingForInput = false
-        this.mainTurn = 'ended'
+        this.forgetRunningTurns()
         this.touched.clear()
         this.lastTouched = this.lastWritten = undefined
         this.liveWrites = 0
@@ -397,9 +411,11 @@ export class CodexObservation {
       item.type === 'userMessage' &&
       typeof item.clientId === 'string'
     ) {
-      this.queued.delete(item.clientId)
       const sent = this.queuedByKoloft.get(item.clientId)
-      if (sent && typeof p.turnId === 'string') sent.turnId = p.turnId
+      if (sent) {
+        sent.started = true
+        if (typeof p.turnId === 'string') sent.turnId = p.turnId
+      }
     }
     if (method === 'item/completed') {
       if (this.noteFiles(item, true)) this.publishFiles()
@@ -433,8 +449,9 @@ export class CodexObservation {
       this.publishActivity()
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
-      for (const [clientId, sent] of this.queuedByKoloft)
-        if (sent.turnId === turn.id) this.queuedByKoloft.delete(clientId)
+      if (typeof turn.id === 'string')
+        for (const [clientId, sent] of this.queuedByKoloft)
+          if (sent.turnId === turn.id) this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
       for (const [id, owner] of this.approvalThreads) {

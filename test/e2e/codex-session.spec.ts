@@ -38,11 +38,13 @@ import {
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
   claudeRows,
+  codexAnswers,
   codexCalls,
   codexRows,
   fakeCodexLog,
   startCodex,
-  type CodexCall
+  type CodexCall,
+  type CodexWireLine
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
@@ -1285,12 +1287,12 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect.poll(() => fakeCodexLog(env, 'fake-codex-reconnects.jsonl')).toHaveLength(1)
       await expect(codexRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await runIn(page, centerTerm(page), 'after the drop')
-      const wire = (): string =>
-        fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+      const answers = (): string[] =>
+        codexAnswers(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
       await expect
-        .poll(wire, { timeout: 30_000 })
+        .poll(answers, { timeout: 30_000 })
         .toContain('Codex fixture answered: after the drop')
-      expect(wire()).toContain('Codex fixture answered: /busy')
+      expect(answers()).toContain('Codex fixture answered: /busy')
       const [codex] = (await page.evaluate(() => window.api.sessions.list())).filter(
         (s) => s.alive && s.details?.codex
       )

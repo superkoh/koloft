@@ -35,7 +35,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { fakeCodexLog } from './helpers/codex'
+import { codexAnswers, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 
 test.setTimeout(180_000)
 
@@ -247,12 +247,12 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         .toEqual([expect.objectContaining({ sessionId: tuiCalls(env)[0].sessionId })])
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await type('after the drop')
-      const wire = (): string =>
-        fs.readFileSync(path.join(machineHome(env), 'fake-codex-wire.jsonl'), 'utf8')
+      const answers = (): string[] =>
+        codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
       await expect
-        .poll(wire, { timeout: 60_000 })
+        .poll(answers, { timeout: 60_000 })
         .toContain('Codex fixture answered: after the drop')
-      expect(wire()).toContain('Codex fixture answered: /busy')
+      expect(answers()).toContain('Codex fixture answered: /busy')
       expect(machineServers(env)).toHaveLength(1)
       expect(serverAlive(env, tabId)).toBe(true)
     } finally {

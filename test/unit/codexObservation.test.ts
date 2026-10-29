@@ -106,18 +106,26 @@ describe('CodexObservation: messages Koloft queued', () => {
     f.server('turn/completed', { turn: { id: 't2', status: 'interrupted' } })
     f.server('turn/started', { turn: { id: 't3' } })
     f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't3' })
-    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual(['the report'])
-    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer().map((cut) => cut.text)).toEqual([
+      'the report'
+    ])
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    expect(f.observer.queueDrained()).toBe(false)
   })
 
   // CODEX§34
-  it('a message already sent again once is not handed back a second time when that turn is cut off too', () => {
+  it('a message already sent again once comes back marked as such when that turn is cut off too', () => {
     const f = fixture()
     f.bind()
     f.observer.queuedMessage('koloft-again', 'the report', true)
     f.server('turn/started', { turn: { id: 't1' } })
     f.server('item/started', { ...userMessage('koloft-again'), turnId: 't1' })
-    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([
+      expect.objectContaining({ text: 'the report', sentAgain: true })
+    ])
   })
 
   // CODEX§34
@@ -127,8 +135,9 @@ describe('CodexObservation: messages Koloft queued', () => {
     f.observer.queuedMessage('koloft-cut', 'the report')
     f.server('turn/started', { turn: { id: 't1' } })
     f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't1' })
+    f.observer.serverReplaced()
     f.bind(B, 2)
-    expect(f.observer.takeQueuedCutOffMidTurn()).toEqual([])
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
   })
 })
 
@@ -157,14 +166,12 @@ describe('CodexObservation: a TUI that reconnects', () => {
     ])
   })
 
-  it('after a new app-server took over, the turn the old one was running no longer counts as working', () => {
+  it('once a new app-server took over, the turn the old one was running no longer counts as working, even before the screen is back', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 't1' } })
     expect(f.status()).toBe('working')
     f.observer.serverReplaced()
-    f.observer.receive('client', { id: 2, method: 'thread/resume', params: { threadId: A } })
-    f.observer.receive('server', { id: 2, result: { thread: thread() } })
     expect(f.status()).toBe('waiting')
   })
 })
