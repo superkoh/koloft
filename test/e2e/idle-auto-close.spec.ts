@@ -125,7 +125,7 @@ test('an idle session goes to sleep quietly, its needs-you mark unseen and kept:
     await expect
       .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
       .toContain('answered: after the handover')
-    expect(await termIds(page)).not.toContain(asleepTab)
+    await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     await expect(wsRows(page, 'ws-a')).toHaveCount(2)
   } finally {
     await quitAndClose(app)

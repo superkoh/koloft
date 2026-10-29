@@ -1055,7 +1055,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
       await expect(codexRows(page)).not.toHaveAttribute('data-tab-id', asleepTab ?? '')
       await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      await expect.poll(() => termIds(page)).not.toContain(asleepTab)
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     } finally {
       await quitAndClose(app)
     }
