@@ -63,9 +63,7 @@ const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
 export const CODEX_TMP_FOLDER = new RegExp(
   `^koloft-cx-(?:open-)?(${MACOS_PID_AT_MOST_FIVE_DIGITS})-`
 )
-export const CODEX_OPEN_SHIM_FOLDER = new RegExp(
-  `^(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`
-)
+export const OPEN_SHIM_FOLDER = new RegExp(`^(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`)
 
 export const ownedByThisRun = (name: string): string => `${process.pid}-${name}`
 
