@@ -306,18 +306,12 @@ case "$event" in
     # CC§5
     if [ "$event" = "start" ] && [ "$src" = "fork" ]; then exit 0; fi
     acct="$(printf '%s' "$ANT_ACCOUNT" | tr -d '"\\\\[:cntrl:]')"
-    # CC§1
-    ver="$(basename "$CLAUDE_CODE_EXECPATH" 2>/dev/null)"
-    case "$ver" in ''|*[!0-9.]*) ver="";; esac
-    if [ -z "$ver" ]; then
-      ver="$(printf '%s' "$AI_AGENT" | sed -n 's/^claude-code_\\([0-9-]*\\)_agent$/\\1/p' | tr '-' '.')"
-    fi
     if [ "$event" = "start" ] && [ "$KOLOFT_TMUX_FOLLOW" = "1" ] && [ -n "$TMUX" ] && [ -n "$sid" ]; then
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null && printf 'k-%s' "$sid" > "$HOME/.koloft/tabs/$tab.tmux"
     fi
     logged=""
     [ "$event" = "start" ] && logged=',"${START_IN_STATUS_LOG}":true'
-    note="$(printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"%s}' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" "$logged")"
+    note="$(printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","tmux":"%s"%s}' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$tm" "$logged")"
     printf '%s\\n' "$note" > "$reg/$tab.json"
     # CC§1
     [ "$event" = "start" ] && printf '%s\\n' "$note" >> "$log"

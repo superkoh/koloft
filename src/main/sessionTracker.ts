@@ -873,18 +873,12 @@ export class SessionTracker extends SessionRuntime {
     sessionId: string,
     cwd = '',
     account = '',
-    ccVersion = '',
     source = ''
   ): void {
     const t = this.tracked.get(tabId)
     if (!t) return
     if (account && t.info.account !== account) {
       t.info.account = account
-      t.info.updatedAt = Date.now()
-      this.emitUpdate()
-    }
-    if (ccVersion && t.info.cliVersion !== ccVersion) {
-      t.info.cliVersion = ccVersion
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }

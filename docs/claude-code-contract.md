@@ -164,9 +164,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `AI_AGENT=claude-code_X-Y-Z_harness`: measured 2026-10-28 on 2.1.311 and 2.1.312 with
   a command hook that logs its env, in an interactive pty run (6 runs); the binary sets
   `_harness` for its own process and `_agent` only for children it starts as the agent.
-  So the version Koloft's hook script tries to read (`src/main/hooks.ts`) comes out
-  empty. A resumed session's transcript tail still shows the version of the older
-  claude that wrote it, so only the live process tells the truth (inferred, not checked).
+  So Koloft's hook script does not try to read the version. A resumed session's
+  transcript tail still shows the version of the older claude that wrote it, so only the
+  live process tells the truth (inferred, not checked).
 - **A brand-new claude prints its login and onboarding links before its SessionStart
   hook fires**, so a user can click a link before the session is bound. (Inferred, not
   checked.)
