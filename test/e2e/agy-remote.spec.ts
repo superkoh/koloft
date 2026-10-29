@@ -27,6 +27,7 @@ import {
   installRemoteAgy,
   killFakeRemote,
   liveTmuxSessions,
+  machineAgyApiCalls,
   machineAgyCalls,
   machineHome,
   remoteDir,
@@ -274,27 +275,36 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const agy = await boundRemoteAgy(page)
 
       await startSessionIn(page, 'ws-a')
-      const sender = await page.evaluate(() =>
-        window.api.sessions
-          .list()
-          .then((all) => all.find((s) => s.backendId === 'claude' && s.alive)?.tabId ?? '')
-      )
+      let sender = ''
+      await expect
+        .poll(async () => {
+          const all = await page.evaluate(() => window.api.sessions.list())
+          sender = all.find((s) => s.backendId === 'claude' && s.alive)?.tabId ?? ''
+          return sender
+        })
+        .not.toBe('')
       await page.evaluate(
         ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
         [sender, `/koloft session send ${agy.id} hello from the mac`]
       )
 
-      const sentThroughTheApi = (): unknown[] =>
-        fs
-          .readFileSync(path.join(machineHome(env), 'fake-agy-api.jsonl'), 'utf8')
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as { method: string; body: unknown; authorized: boolean })
-          .filter((c) => c.method === 'SendUserCascadeMessage' && c.authorized)
-          .map((c) => c.body)
       await expect
-        .poll(() => JSON.stringify(sentThroughTheApi()), { timeout: 60_000 })
-        .toMatch(/"cascadeId":"[^"]+".*hello from the mac/)
+        .poll(async () => (await terminalText(page, sender)).replace(/\s+/g, ''), {
+          timeout: 60_000
+        })
+        .toMatch(/Sentto.+koloftexit=0/)
+      const sentThroughTheApi = machineAgyApiCalls(env)
+        .filter((c) => c.method === 'SendUserCascadeMessage' && c.authorized)
+        .map((c) => JSON.stringify(c.body))
+      expect(sentThroughTheApi.join('\n')).toMatch(
+        new RegExp(`"cascadeId":"${agy.id}".*hello from the mac`)
+      )
+      const typedIntoAgy = fs.readFileSync(
+        path.join(accountFolder(env), 'antigravity-cli', 'history.jsonl'),
+        'utf8'
+      )
+      expect(typedIntoAgy).toContain('first turn')
+      expect(typedIntoAgy).not.toContain('hello from the mac')
     } finally {
       await quitAndClose(app)
     }

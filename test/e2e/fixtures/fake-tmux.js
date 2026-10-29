@@ -155,7 +155,7 @@ if (verb === 'new-session') {
   }
   process.exit(0)
 } else if (verb === 'list-panes') {
-  const pid = pidOf(flagVal('-t'))
+  const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
   if (!alive(pid)) process.exit(1)
   process.stdout.write(pid + '\n')
   process.exit(0)

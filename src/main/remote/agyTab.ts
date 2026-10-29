@@ -4,6 +4,7 @@ import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
+import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteShCommand } from './install'
 import { koloftSkillLine, machineToolProgram, type TabProgram } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
@@ -179,10 +180,14 @@ flock -n "$l" true || exit 1`,
 
 export const AGY_HELD_ELSEWHERE_EXIT = 1
 
+const LOCALHOST_CALL_TIMEOUT_MS = 3_000
+const NO_SEND_STARTS_AFTER_MS = 15_000
+export const AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS = 30_000
+
 // AGY§16 AGY§29
 const AGY_SEND_JS = `import fs from 'fs'
-import http from 'http'
 import { execFileSync } from 'child_process'
+const started = Date.now()
 const [tmuxName, cascadeId] = process.argv.slice(1)
 const text = fs.readFileSync(0, 'utf8')
 const out = (cmd, args) => {
@@ -192,7 +197,7 @@ const out = (cmd, args) => {
     return ''
   }
 }
-const pane = out('tmux', ['-L', 'koloft', 'list-panes', '-t', tmuxName, '-F', '#{pane_pid}']).trim().split('\\n')[0]
+const pane = out('tmux', ['-L', 'koloft', 'list-panes', '-s', '-t', '=' + tmuxName + ':', '-F', '#{pane_pid}']).trim().split('\\n')[0]
 const procs = out('ps', ['-A', '-ww', '-o', 'pid=,ppid=,args=']).split('\\n').flatMap((line) => {
   const m = /^\\s*(\\d+)\\s+(\\d+)\\s+(.*)$/.exec(line)
   return m ? [{ pid: m[1], ppid: m[2], args: m[3] }] : []
@@ -203,7 +208,7 @@ for (let size = 0; size !== tree.size; ) {
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
 const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args))
-if (!pane || !agy) process.exit(1)
+if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
 function ports() {
   const listed = out('lsof', ['-nP', '-a', '-p', agy.pid, '-iTCP', '-sTCP:LISTEN', '-Fn'])
@@ -230,39 +235,31 @@ function ports() {
     })
   })
 }
-const post = (port, method, body) =>
-  new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        host: '127.0.0.1',
-        port,
-        path: '/exa.language_server_pb.LanguageServerService/' + method,
-        method: 'POST',
-        timeout: 15000,
-        headers: { 'content-type': 'application/json', 'x-codeium-csrf-token': token }
-      },
-      (res) => {
-        let t = ''
-        res.setEncoding('utf8')
-        res.on('data', (c) => (t += c))
-        res.on('end', () => (res.statusCode === 200 ? resolve(t ? JSON.parse(t) : {}) : reject(new Error(t))))
-      }
-    )
-    req.on('timeout', () => req.destroy(new Error('timeout')))
-    req.on('error', reject)
-    req.end(JSON.stringify(body))
+const post = async (port, method, body) => {
+  const r = await fetch('http://127.0.0.1:' + port + '${SERVICE}' + method, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', '${CSRF_HEADER}': token },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(${LOCALHOST_CALL_TIMEOUT_MS})
   })
-for (const port of new Set(ports().filter((p) => p > 0))) {
+  const t = await r.text()
+  if (r.status !== 200) throw new Error(t)
+  return t ? JSON.parse(t) : {}
+}
+for (const port of new Set(ports().filter((p) => Number.isInteger(p) && p > 0))) {
+  let cascadeConfig
   try {
     await post(port, 'GetStatus', {})
+    const steps = (await post(port, 'GetCascadeTrajectory', { cascadeId })).trajectory?.steps ?? []
+    cascadeConfig = steps.map((s) => s?.userInput?.userConfig).filter(Boolean).pop()
   } catch {
     continue
   }
-  const steps = (await post(port, 'GetCascadeTrajectory', { cascadeId })).trajectory?.steps ?? []
-  const cascadeConfig = steps.map((s) => s?.userInput?.userConfig).filter(Boolean).pop()
-  if (!cascadeConfig) process.exit(1)
-  await post(port, 'SendUserCascadeMessage', { cascadeId, items: [{ text }], cascadeConfig })
-  process.exit(0)
+  if (!cascadeConfig || Date.now() - started > ${NO_SEND_STARTS_AFTER_MS}) process.exit(1)
+  await post(port, 'SendUserCascadeMessage', { cascadeId, items: [{ text }], cascadeConfig }).then(
+    () => process.exit(0),
+    () => process.exit(1)
+  )
 }
 process.exit(1)
 `
@@ -270,7 +267,7 @@ process.exit(1)
 // AGY§16 AGY§29
 export function agySendCmd(tmuxName: string, conversationId: string): string {
   return remoteShCommand(
-    `[ -x "${REMOTE_NODE}" ] || exit 1\nexec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_SEND_JS)} "$1" "$2"`,
+    `exec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_SEND_JS)} "$1" "$2"`,
     [tmuxName, conversationId]
   )
 }

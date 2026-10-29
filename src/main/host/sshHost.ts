@@ -80,6 +80,7 @@ import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
+  AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
   agyHeldCmd,
   agySendCmd,
   listAgyCmd,
@@ -221,7 +222,6 @@ command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
 node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
-const AGY_SEND_ANSWERS_WITHIN_MS = 20_000
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -1094,7 +1094,7 @@ export class SshHost implements Host {
   async agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean> {
     const r = await this.deps.run(agySendCmd(tmuxName, conversationId), {
       input: Buffer.from(text),
-      timeoutMs: AGY_SEND_ANSWERS_WITHIN_MS
+      timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
     })
     return r.code === 0
   }

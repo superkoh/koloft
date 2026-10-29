@@ -6,8 +6,8 @@ import { record } from './codexObservation'
 const exec = promisify(execFile)
 
 // AGY§16
-const SERVICE = '/exa.language_server_pb.LanguageServerService/'
-const CSRF_HEADER = 'x-codeium-csrf-token'
+export const SERVICE = '/exa.language_server_pb.LanguageServerService/'
+export const CSRF_HEADER = 'x-codeium-csrf-token'
 const CALL_TIMEOUT_MS = 15_000
 const FIND_TIMEOUT_MS = 5_000
 
