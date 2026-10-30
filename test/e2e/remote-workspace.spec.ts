@@ -367,6 +367,35 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-44: the Workbench shell of a remote session is named for the program running on the machine, not ssh, and its folder follows cd there as a path on that machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.mkdirSync(path.join(remoteDir(env), 'sub'))
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await openSessionTerminal(app, page)
+      const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+      const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+
+      await runIn(page, panelTerm(page), 'sleep 60')
+      await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+      await page.keyboard.press('Control+C')
+      await expect(shellTab).toHaveText(path.basename(process.env.SHELL || '/bin/sh'), {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await runIn(page, panelTerm(page), 'cd sub')
+      await expect(folder).toHaveAttribute('title', /^ssh:\/\/[^/]+\/.*\/sub$/, {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await expect(folder).toHaveText(/\/sub$/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-24: an ssh drop keeps the remote Changes list and offers Retry, never "This directory no longer exists."', async ({
     env
   }) => {
@@ -1097,35 +1126,6 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     } finally {
       await quitAndClose(app)
       await server.close()
-    }
-  })
-
-  test('E-RW-44: the Workbench shell of a remote session is named for the program running on the machine, not ssh, and its folder follows cd there as a path on that machine', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      fs.mkdirSync(path.join(remoteDir(env), 'sub'))
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await openSessionTerminal(app, page)
-      const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
-      const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
-
-      await runIn(page, panelTerm(page), 'sleep 60')
-      await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
-      await page.keyboard.press('Control+C')
-      await expect(shellTab).toHaveText(path.basename(process.env.SHELL || '/bin/sh'), {
-        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
-      })
-      await runIn(page, panelTerm(page), 'cd sub')
-      await expect(folder).toHaveAttribute('title', /^ssh:\/\/[^/]+\/.*\/sub$/, {
-        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
-      })
-      await expect(folder).toHaveText(/\/sub$/)
-    } finally {
-      await quitAndClose(app)
     }
   })
 })

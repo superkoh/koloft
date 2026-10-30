@@ -286,7 +286,7 @@ export class RemoteSync {
             watched,
             slugsNow(),
             extras.map((e) => e.from),
-            target.shellTabs ?? []
+            target.shellTabs
           )
         )
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
@@ -298,7 +298,7 @@ export class RemoteSync {
         mirrors = parsed.mirrors
         this.noticeStamps(host, watched, parsed.stamps)
         st.tmp = parsed.tmp
-        if (parsed.shells.length) this.deps.onShells?.(host, parsed.shells)
+        this.deps.onShells?.(host, parsed.shells)
         const prevAlive = st.alive
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)

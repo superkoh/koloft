@@ -174,6 +174,7 @@ import {
   mirrorHookDir,
   mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
+  remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
@@ -3047,6 +3048,7 @@ app.whenReady().then(() => {
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
+    if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -3621,10 +3623,16 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
-      const live = new Set([
-        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...codexMachines
-      ])
+      const live = new Set(codexMachines)
+      const shellTabsOn = new Map<string, string[]>()
+      for (const h of ptyMgr.list()) {
+        if (!h.alive) continue
+        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.utilMachine) {
+          live.add(h.utilMachine)
+          shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
+        }
+      }
       const busy = new Set(
         allSessions().flatMap((s) => {
           const host = s.alive && machineOfTab(s.tabId)
@@ -3654,10 +3662,7 @@ app.whenReady().then(() => {
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host),
-        shellTabs: ptyMgr
-          .list()
-          .filter((h) => h.alive && h.utilMachine === t.host)
-          .map((h) => h.id)
+        shellTabs: shellTabsOn.get(t.host)
       }))
     },
     onChange: (host) => {
@@ -3671,8 +3676,8 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
-    onShells: (_host, shells) => {
-      for (const s of shells) ptyMgr.shellOnMachineSaid(s.tabId, s.name, s.cwd)
+    onShells: (host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) =>
@@ -4968,6 +4973,12 @@ function forgetFreeOnMachine(tabId: string): void {
   }).catch(() => undefined)
 }
 
+function forgetShellOnMachine(host: string, tabId: string): void {
+  void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
 const RESUMES_AT_ONCE = 4
 
 function restoreOpenTabs(): string | undefined {
@@ -5466,6 +5477,7 @@ function registerIpc(): void {
         utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
+      if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }

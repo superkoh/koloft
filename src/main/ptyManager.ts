@@ -288,10 +288,7 @@ export class PtyManager extends EventEmitter {
       watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
-      if (cwd && cwd !== handle.cwd) {
-        handle.cwd = cwd
-        this.emit('cwd', { id, cwd })
-      }
+      if (cwd) this.noticeCwd(handle, cwd)
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
@@ -302,7 +299,6 @@ export class PtyManager extends EventEmitter {
     })
 
     if (followsThisMac) {
-      let last: string | undefined
       titlePoll = setInterval(() => {
         let reported: unknown
         try {
@@ -310,31 +306,31 @@ export class PtyManager extends EventEmitter {
         } catch {
           return
         }
-        const name = foregroundName(reported)
-        if (name === null || name === last) return
-        last = name
-        this.emit('process-title', { id, name })
+        this.noticeTitle(handle, reported)
       }, UTIL_TITLE_POLL_MS)
     }
 
     return handle
   }
 
-  shellOnMachineSaid(id: string, reported: string, cwd: string): void {
+  shellOnMachineSaid(machine: string, id: string, reported: string, cwd: string): void {
     const handle = this.ptys.get(id)
-    if (!handle?.alive || !handle.utilMachine) return
+    if (!handle?.alive || handle.utilMachine !== machine) return
+    this.noticeTitle(handle, reported)
+    if (cwd.startsWith('/')) this.noticeCwd(handle, formatRemoteKey(machine, cwd))
+  }
+
+  private noticeTitle(handle: PtyHandle, reported: unknown): void {
     const name = foregroundName(reported)
-    if (name !== null && name !== handle.title) {
-      handle.title = name
-      this.emit('process-title', { id, name })
-    }
-    if (cwd.startsWith('/')) {
-      const keyed = formatRemoteKey(handle.utilMachine, cwd)
-      if (keyed !== handle.cwd) {
-        handle.cwd = keyed
-        this.emit('cwd', { id, cwd: keyed })
-      }
-    }
+    if (name === null || name === handle.title) return
+    handle.title = name
+    this.emit('process-title', { id: handle.id, name })
+  }
+
+  private noticeCwd(handle: PtyHandle, cwd: string): void {
+    if (cwd === handle.cwd) return
+    handle.cwd = cwd
+    this.emit('cwd', { id: handle.id, cwd })
   }
 
   write(id: string, data: string): void {

@@ -312,11 +312,13 @@ const EXTRA_LINE = 'extra '
 const SHELL_LINE = 'shell '
 // PLATFORM§37
 const EACH_SHELLS_FOREGROUND_AND_FOLDER =
-  `k=$1; shift; while [ "$k" -gt 0 ]; do p=$(cat "${remoteShellPidFile('$1')}" 2>/dev/null); ` +
+  `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +
   `[ -n "$p" ] && printf '%s%s\\t%s\\t%s\\n' '${SHELL_LINE}' "$1" ` +
-  '"$(ps -o comm= -p "$(ps -o tpgid= -p "$p" | tr -d " ")" 2>/dev/null)" ' +
-  `"$(readlink "/proc/$p/cwd" 2>/dev/null || lsof -a -d cwd -p "$p" -Fn 2>/dev/null | sed -n 's/^n//p')"; ` +
+  '"$(ps -o comm= -p $(ps -o tpgid= -p "$p" 2>/dev/null) 2>/dev/null)" ' +
+  `"$(if [ -d /proc ]; then readlink "/proc/$p/cwd"; else lsof -a -d cwd -p "$p" -Fn | sed -n 's/^n//p'; fi 2>/dev/null)"; ` +
   'shift; k=$((k - 1)); done'
+// PLATFORM§37
+const A_REMOVED_FOLDER_ON_LINUX = ' (deleted)'
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
@@ -423,8 +425,13 @@ export function parseHeartbeat(stdout: string): {
     } else if (!current && line.startsWith(EXTRA_LINE)) {
       mirrors.extras.push(line.slice(EXTRA_LINE.length))
     } else if (!current && line.startsWith(SHELL_LINE)) {
-      const [tabId, name, ...cwd] = line.slice(SHELL_LINE.length).split('\t')
-      shells.push({ tabId, name: name ?? '', cwd: cwd.join('\t') })
+      const [tabId, name, ...rest] = line.slice(SHELL_LINE.length).split('\t')
+      const cwd = rest.join('\t')
+      shells.push({
+        tabId,
+        name: name ?? '',
+        cwd: cwd.endsWith(A_REMOVED_FOLDER_ON_LINUX) ? '' : cwd
+      })
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
