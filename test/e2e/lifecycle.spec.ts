@@ -398,9 +398,15 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       const calls = await waitForCalls(env, 1)
       expect(resumedId(calls[0])).toBe(id)
       await expect(masks).toHaveCount(0, { timeout: 15_000 })
-      const tab = (await termIds(page)).find((t) => !before.has(t))!
+      let tab = ''
       await expect
-        .poll(() => terminalText(page, tab), { timeout: 15_000 })
+        .poll(
+          async () => {
+            tab = (await termIds(page)).find((t) => !before.has(t)) ?? ''
+            return tab ? terminalText(page, tab) : ''
+          },
+          { timeout: 15_000 }
+        )
         .toContain('Quick safety check')
 
       await centerTerm(page).click()
