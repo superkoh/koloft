@@ -51,7 +51,8 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 
 const DEFAULT_TIMEOUT = 15_000
 const MOST_APP_SERVER_REPLACEMENTS_PER_TAB = 3
-export const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
+// CODEX§1
+export const DEFAULT_MAX_FRAME = 256 * 1024 * 1024
 export const TUI_STALLED_AFTER_MS = 30_000
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
