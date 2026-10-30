@@ -625,7 +625,7 @@ export class ClaudeBackend implements SessionBackend {
       trigger?: string
     }
     obj.tabId = this.liveTabFor(obj)
-    if (!obj.tabId) return
+    if (!obj.tabId || !this.d.pty.get(obj.tabId)?.alive) return
     // CC§1
     if (obj.event === 'start') {
       if (obj.source !== 'compact' && obj.sessionId === this.sessionIdOf(obj.tabId)) return

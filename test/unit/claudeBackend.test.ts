@@ -37,6 +37,8 @@ const sessionId = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
 function backendWithDirs(): {
   backend: ClaudeBackend
   events: unknown[]
+  statusLog: string
+  agentExits(): void
   writeHookStart(): void
   writeTurn(): void
   writePrompt(): void
@@ -49,8 +51,9 @@ function backendWithDirs(): {
   fs.mkdirSync(shimRegDir)
   fs.mkdirSync(hookRegDir)
   const events: unknown[] = []
+  const pty = { alive: true }
   const backend = new ClaudeBackend({
-    pty: { get: () => ({}), pidOf: () => 4242, clearResumeIntent: () => {} },
+    pty: { get: () => pty, pidOf: () => 4242, clearResumeIntent: () => {} },
     tracker: fakeTracker(),
     workspaces: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
@@ -61,6 +64,11 @@ function backendWithDirs(): {
   return {
     backend,
     events,
+    statusLog,
+    agentExits: () => {
+      pty.alive = false
+      backend.onPtyExit(tabId, true)
+    },
     writeHookStart: () => {
       const note = { event: 'start', source: 'startup', cwd: root, [START_IN_STATUS_LOG]: true }
       fs.writeFileSync(
@@ -116,7 +124,7 @@ function machineBackend(): {
   const backend = new ClaudeBackend({
     pty: {
       get: (id: string) =>
-        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
+        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? { alive: true } : undefined),
       clearResumeIntent: () => {}
     },
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
@@ -329,6 +337,23 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     await vi.waitFor(() => expect(t.events).toEqual(inOrder))
     t.writePrompt()
     await vi.waitFor(() => expect(t.events).toEqual([...inOrder, [tabId, { type: 'prompt' }]]))
+  })
+
+  it('reports a tab whose claude died without an end report as exited, and takes no turn from its status log read again from the start after that, as a poll that caught the log before it was removed does', async () => {
+    const t = backendWithDirs()
+    t.watch()
+    t.writeShimRegistration()
+    t.writeHookStart()
+    t.writeTurn()
+    await vi.waitFor(() => expect(t.events).toHaveLength(3))
+    t.agentExits()
+    const exited = [tabId, { type: 'exited', clean: false, sessionId }]
+    expect(t.events.slice(3)).toEqual([exited])
+    await vi.waitFor(() => expect(fs.existsSync(t.statusLog)).toBe(false))
+    t.writeHookStart()
+    t.writeTurn()
+    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
+    expect(t.events.slice(3)).toEqual([exited])
   })
 
   // PLATFORM§28
