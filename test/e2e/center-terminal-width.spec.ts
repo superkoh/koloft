@@ -13,6 +13,8 @@ import {
   clickAppMenuItem,
   focusOwner,
   openSessionTerminal,
+  setWindowWidth,
+  shownCenterTerm,
   startSessionIn,
   waitBooted
 } from './helpers/p1'
@@ -26,18 +28,8 @@ const WIDE_WINDOW_PX = 1720
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
-function shownCenterCols(page: Page): Promise<number | undefined> {
-  return page.evaluate(() => {
-    const terms = (
-      window as unknown as {
-        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
-      }
-    ).__koloftTerms
-    return Object.values(terms ?? {}).find((t) => {
-      const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
-      return !!wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden'
-    })?.cols
-  })
+async function shownCenterCols(page: Page): Promise<number | undefined> {
+  return (await shownCenterTerm(page))?.cols
 }
 
 function shownPanelCols(page: Page): Promise<number | undefined> {
@@ -81,13 +73,6 @@ function centerLayout(page: Page): Promise<{
       termMaxWidth: termEl.style.maxWidth
     }
   })
-}
-
-async function setWindowWidth(app: ElectronApplication, width: number): Promise<void> {
-  await app.evaluate(({ BrowserWindow }, w) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    win.setSize(w, win.getSize()[1])
-  }, width)
 }
 
 async function launchWithPanelShut(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {

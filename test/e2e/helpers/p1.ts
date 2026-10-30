@@ -567,6 +567,31 @@ export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
 }
 
+export function shownCenterTerm(page: Page): Promise<{ cols: number; left: number } | undefined> {
+  return page.evaluate(() => {
+    const terms = (
+      window as unknown as {
+        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+      }
+    ).__koloftTerms
+    for (const t of Object.values(terms ?? {})) {
+      const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
+      if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
+        const left = wrap.querySelector('.term')!.getBoundingClientRect().left
+        return { cols: t.cols, left: Math.round(left) }
+      }
+    }
+    return undefined
+  })
+}
+
+export async function setWindowWidth(app: ElectronApplication, width: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, w) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    win.setSize(w, win.getSize()[1])
+  }, width)
+}
+
 export async function switchToRow(page: Page, row: Locator): Promise<void> {
   await row.click()
   await expect(row).toHaveClass(/\bactive\b/)

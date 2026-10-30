@@ -1428,7 +1428,8 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [])
   const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
-  const previewSlot = !!panelTab && !panelShown && previewFits
+  const previewSlot =
+    !panelShown && previewFits && (panelOpenKnown || (!panelBound && !!landedTab?.alive))
   const previewShown = previewSlot && panelOpenKnown && panelReady
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1886,11 +1887,17 @@ export default function App(): JSX.Element {
               )}
             </div>
           )}
-          {previewShown && panelTab ? (
-            <WorkbenchPreview tabId={panelTab} root={fileTreeRoot} width={PREVIEW_CARD_WIDTH_PX} />
-          ) : (
-            previewSlot && <div className="wb-peek-slot" style={{ width: PREVIEW_CARD_WIDTH_PX }} />
-          )}
+          {panelTab &&
+            previewSlot &&
+            (previewShown ? (
+              <WorkbenchPreview
+                tabId={panelTab}
+                root={fileTreeRoot}
+                width={PREVIEW_CARD_WIDTH_PX}
+              />
+            ) : (
+              <div className="wb-peek-slot" style={{ width: PREVIEW_CARD_WIDTH_PX }} />
+            ))}
 
           <div className="aux-icons">
             {(!landedTab || hasWorkbench(landedTab)) && (

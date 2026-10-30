@@ -7,17 +7,21 @@ import {
   addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
+  machineHome,
   REMOTE_WS_NAME,
   remoteDir,
   remoteKey
 } from './helpers/remote'
 import {
   centerTerm,
+  ENDED_ROW_NOTE,
   gitCommitAll,
   gitInit,
   newSessionInWith,
   openMenu,
   runIn,
+  setWindowWidth,
+  shownCenterTerm,
   startSessionIn,
   waitBooted,
   wsRows
@@ -39,29 +43,9 @@ const docNames = (page: Page): Promise<string[]> =>
 const readingView = (page: Page): Locator =>
   page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
 const CANNED_STARTUP_TURN_WRITES = 'NOTES.md'
-const BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS = 3000
+const BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS = 6000
 const WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX = 1500
 const FIT_SETTLE_MS = 500
-
-function shownTerm(page: Page): Promise<{ cols: number; left: number } | null> {
-  return page.evaluate(() => {
-    const wrap = [...document.querySelectorAll<HTMLElement>('.term-island .term-wrap')].find(
-      (w) => w.style.display !== 'none' && w.style.visibility !== 'hidden'
-    )
-    const terms = (
-      window as unknown as {
-        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
-      }
-    ).__koloftTerms
-    const term =
-      wrap && Object.values(terms ?? {}).find((t) => !!t.element && wrap.contains(t.element))
-    if (!wrap || !term || document.querySelector('.term-island .empty')) return null
-    return {
-      cols: term.cols,
-      left: Math.round(wrap.querySelector('.term')!.getBoundingClientRect().left)
-    }
-  })
-}
 
 function collapsedWithoutTips(env: E2EEnv): void {
   seedWorkbenchDefault(env, false)
@@ -161,27 +145,81 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     }
   })
 
-  test('WB-P08: the card has its place beside the terminal from the start, so binding neither moves the terminal nor costs it columns', async ({
+  for (const tab of [
+    {
+      kind: 'a local Claude Code tab',
+      menuItem: 'New session',
+      open: async (env: E2EEnv) => {
+        fs.writeFileSync(env.claudeDelayFile, String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS))
+        return { ...(await launchCollapsed(env)), wsName: 'ws-a' }
+      }
+    },
+    {
+      kind: 'a local Codex tab',
+      menuItem: 'New Codex session',
+      open: async (env: E2EEnv) => {
+        installCodex(env)
+        fs.writeFileSync(
+          path.join(env.home, 'fake-codex-delay'),
+          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
+        )
+        return { ...(await launchCollapsed(env)), wsName: 'ws-a' }
+      }
+    },
+    {
+      kind: 'a remote (ssh) Claude Code tab',
+      menuItem: 'New session',
+      open: async (env: E2EEnv) => {
+        collapsedWithoutTips(env)
+        const { app, page } = await launchWithRemote(env)
+        await addRemoteWorkspace(page, env)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-claude-delay'),
+          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
+        )
+        return { app, page, wsName: REMOTE_WS_NAME }
+      }
+    }
+  ]) {
+    test(`WB-P08: in ${tab.kind}, the card has its place beside the terminal from the start, so binding neither moves the terminal nor costs it columns`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      const { app, page, wsName } = await tab.open(env)
+      try {
+        await setWindowWidth(app, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
+        await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+        await page.locator('.menu .mi', { hasText: tab.menuItem }).click()
+        await expect.poll(() => shownCenterTerm(page), { timeout: 20_000 }).toBeDefined()
+        await expect(page.locator('.terminals > .empty')).toHaveCount(0, { timeout: 20_000 })
+        await page.waitForTimeout(FIT_SETTLE_MS)
+        const beforeBind = await shownCenterTerm(page)
+        await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
+
+        await expect(card(page)).toBeVisible({ timeout: 60_000 })
+        await page.waitForTimeout(FIT_SETTLE_MS)
+        expect(await shownCenterTerm(page)).toEqual(beforeBind)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  test('WB-P09: a tab whose agent quits before it binds gives the card’s place back to its terminal', async ({
     env
   }) => {
     test.setTimeout(120_000)
-    fs.writeFileSync(env.claudeDelayFile, String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS))
+    fs.writeFileSync(env.claudeExitFile, '1')
     const { app, page } = await launchCollapsed(env)
     try {
-      await app.evaluate(({ BrowserWindow }, w) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        win.setSize(w, win.getSize()[1])
-      }, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
+      await setWindowWidth(app, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi', { hasText: 'New session' }).click()
-      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1, { timeout: 20_000 })
-      await expect.poll(() => shownTerm(page), { timeout: 20_000 }).not.toBeNull()
-      const beforeBind = await shownTerm(page)
-      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
-
-      await expect(card(page)).toBeVisible({ timeout: 30_000 })
-      await page.waitForTimeout(FIT_SETTLE_MS)
-      expect(await shownTerm(page)).toEqual(beforeBind)
+      await expect(page.locator('.ws .ws-tab .ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, {
+        timeout: 30_000
+      })
+      await expect(page.locator('.wb-peek-slot')).toHaveCount(0)
+      await expect(card(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
