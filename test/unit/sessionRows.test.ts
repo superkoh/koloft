@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AttentionEvent, WorkspaceRows } from '../../src/shared/types'
+import { PLAN_READY, type AttentionEvent, type WorkspaceRows } from '../../src/shared/types'
 import {
   clampNotesHeight,
   isOrphanRow,
@@ -14,6 +14,7 @@ import {
   parkedBadge,
   sessionActivityBadge,
   relTime,
+  rowActivityLine,
   rowLookups,
   rowStateClass,
   selectionRoot,
@@ -173,6 +174,32 @@ describe('rowStateClass (C2 lightbar)', () => {
 
   it('keeps running rows on their run-state once the pending flag clears', () => {
     expect(rowStateClass(true, 'working', false)).toBe('st-working')
+  })
+})
+
+describe('rowActivityLine (C2 the line under a live row)', () => {
+  const s = { lastAction: 'Edited foo.ts', asking: 'Asks: English or Chinese?' }
+  it('says what the session is doing while it works', () => {
+    expect(rowActivityLine('st-working', s)).toBe('Edited foo.ts')
+  })
+  it('shows the question only while the row is amber, and what it did otherwise', () => {
+    expect(rowActivityLine('st-approval', s)).toBe('Asks: English or Chinese?')
+    expect(rowActivityLine('st-approval', { lastAction: 'Ran ls' })).toBe('Last: Ran ls')
+  })
+  it('says Last: once the turn is over, background work still running included', () => {
+    expect(rowActivityLine('st-waiting', s)).toBe('Last: Edited foo.ts')
+    expect(rowActivityLine('st-waiting st-bg-run', s)).toBe('Last: Edited foo.ts')
+    expect(rowActivityLine('st-idle', s)).toBe('Last: Edited foo.ts')
+  })
+  it('a ready Codex plan reads as itself, never as Last:', () => {
+    expect(rowActivityLine('st-waiting', { lastAction: PLAN_READY })).toBe(PLAN_READY)
+  })
+  it('a sleeping, starting or unknown-state row, or one with nothing to say, has no line', () => {
+    expect(rowActivityLine('cold', s)).toBeUndefined()
+    expect(rowActivityLine('st-pending', s)).toBeUndefined()
+    expect(rowActivityLine('', s)).toBeUndefined()
+    expect(rowActivityLine('st-waiting', {})).toBeUndefined()
+    expect(rowActivityLine('st-working', undefined)).toBeUndefined()
   })
 })
 

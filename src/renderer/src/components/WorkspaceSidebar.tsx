@@ -51,6 +51,7 @@ import {
   leftoverLabel,
   relTime,
   rowLookups,
+  rowActivityLine,
   rowStateClass,
   rowsUnder,
   sessionsInside,
@@ -326,6 +327,7 @@ const SessionRowView = memo(function SessionRowView({
   startedBy,
   worktree,
   memory,
+  activity,
   actions
 }: {
   id: string
@@ -349,6 +351,7 @@ const SessionRowView = memo(function SessionRowView({
   startedBy: string | undefined
   worktree: string
   memory: string | undefined
+  activity: string | undefined
   actions: SidebarActions
 }): JSX.Element {
   const mq = useMarquee()
@@ -432,6 +435,7 @@ const SessionRowView = memo(function SessionRowView({
         <span>{worktree}</span>
         {memory !== undefined && <span>{memory}</span>}
       </div>
+      {activity !== undefined && <div className="ws-tab-act">{activity}</div>}
     </div>
   )
 })
@@ -1384,6 +1388,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
             worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
             memory={memoryShown(machine, tabId)}
+            activity={rowActivityLine(shownCls, sess)}
             actions={actions}
           />
           {node.children.length > 0 && !folded && (
