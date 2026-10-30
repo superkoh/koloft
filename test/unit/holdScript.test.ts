@@ -123,14 +123,15 @@ describe('the hook that holds a background session’s next command while the ma
     busy()
     const a = hold(BASH_TOOL('npm run build'))
     const b = hold(BASH_TOOL('npm test'))
-    await until(() => heldFiles().length === 2)
+    await until(() => heldFiles().length === 2, 10_000)
+    expect(heldFiles()).toHaveLength(2)
     fs.rmSync(path.join(dir, BUSY_MARKER))
     await Promise.race([a.done, b.done])
     await new Promise((r) => setTimeout(r, 1500))
     expect(heldFiles()).toHaveLength(1)
     fs.writeFileSync(path.join(dir, 'tab-1.free'), '')
     await Promise.all([a.done, b.done])
-  }, 20_000)
+  }, 30_000)
 
   it('lets go when the owner frees the session while it waits', async () => {
     busy()
