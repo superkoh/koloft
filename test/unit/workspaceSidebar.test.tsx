@@ -8,6 +8,7 @@ import type {
   SessionRow,
   WorkspaceRows
 } from '../../src/shared/types'
+import type { LaunchMenu } from '../../src/shared/sessionBackend'
 
 const drawn: Record<string, number> = {}
 
@@ -32,6 +33,9 @@ beforeAll(() => {
 })
 
 afterEach(cleanup)
+
+const claudeAlone: LaunchMenu = { listed: ['claude'], named: null, sole: 'claude' }
+const onlyClaude = { local: claudeAlone, ssh: claudeAlone }
 
 function row(id: string, backendId: BackendId, running: boolean): SessionRow {
   return {
@@ -76,8 +80,7 @@ describe('WorkspaceSidebar (C2): a row redraws only when what it shows changes',
     const { container } = render(
       <WorkspaceSidebar
         onNewSession={() => {}}
-        namedMethods={null}
-        soleMethod="claude"
+        launchable={onlyClaude}
         onNewWorktreeSession={() => {}}
         onRestoreSession={() => {}}
         onScheduledJobs={() => {}}
@@ -116,8 +119,7 @@ function renderSidebar(): HTMLElement {
   return render(
     <WorkspaceSidebar
       onNewSession={() => {}}
-      namedMethods={null}
-      soleMethod="claude"
+      launchable={onlyClaude}
       onNewWorktreeSession={() => {}}
       onRestoreSession={() => {}}
       onScheduledJobs={() => {}}

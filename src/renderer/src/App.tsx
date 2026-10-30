@@ -3,14 +3,7 @@ import { SessionBackendIcon } from './components/SessionBackendIcon'
 import type { AgentChoice } from './agentChoice'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import { WelcomeLaunch } from './components/WelcomeLaunch'
-import {
-  backendAvailable,
-  BACKEND_LABEL,
-  byBackend,
-  effectiveBackend,
-  listedBackends,
-  SESSION_BACKENDS
-} from '@shared/sessionBackend'
+import { backendAvailable, BACKEND_LABEL, byBackend, launchMenus } from '@shared/sessionBackend'
 import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
@@ -389,21 +382,12 @@ export default function App(): JSX.Element {
       alive = false
     }
   }, [toolsChanged])
-  const installed = useMemo(
-    () => new Set(probed ? SESSION_BACKENDS.filter((b) => probed[b]) : SESSION_BACKENDS),
-    [probed]
-  )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const listed = useMemo(
-    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+  const launchable = useMemo(
+    () => launchMenus(sessionMethods, probed && ((b) => probed[b])),
     [probed, sessionMethods]
   )
-  const namedMethods = useMemo((): SessionBackend[] | null => {
-    const { defaultBackend } = sessionMethods
-    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
-    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
-  }, [listed, sessionMethods])
-  const soleMethod = effectiveBackend(sessionMethods, installed)
+  const { listed, sole: soleMethod } = launchable.local
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -461,11 +445,12 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath, undefined, backend)
         return
       }
-      startNow(hostOf(wsPath), backend ?? soleMethod, async () => ({
+      const host = hostOf(wsPath)
+      startNow(host, backend ?? launchable[host].sole, async () => ({
         cwd: wsPath
       }))
     },
-    [requestNew, soleMethod, startNow]
+    [requestNew, launchable, startNow]
   )
 
   const globalNew = useCallback(
@@ -1597,8 +1582,7 @@ export default function App(): JSX.Element {
         <div className="dock-left" ref={dockRef}>
           <WorkspaceSidebar
             onNewSession={startIn}
-            namedMethods={namedMethods}
-            soleMethod={soleMethod}
+            launchable={launchable}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onScheduledJobs={openScheduledJobs}

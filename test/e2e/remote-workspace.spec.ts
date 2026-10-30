@@ -16,6 +16,7 @@ import {
   picturePath,
   typeInAddressBar
 } from './helpers/browser'
+import { codexCalls } from './helpers/codex'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
@@ -612,6 +613,39 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(agentRow(page, 'Codex')).not.toHaveAttribute('aria-disabled', 'true')
       await expect(agentRow(page, 'Codex')).not.toContainText(/Local only|Unavailable|No account/)
       await snap(page, 'E-RW-30')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-43: with no claude on this Mac, a remote workspace’s menu still offers "New Claude session" and starts claude on the machine, while a local workspace’s menu offers only Codex', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      const localItems = await menuItemTexts(page)
+      expect(localItems.some((t) => t.startsWith('New session'))).toBe(true)
+      expect(localItems.some((t) => t.includes('Claude'))).toBe(false)
+      await page.keyboard.press('Escape')
+
+      const menu = await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      const remoteItems = await menuItemTexts(page)
+      expect(remoteItems.filter((t) => t.startsWith('New ') && t.includes(' session'))).toEqual([
+        'New Claude session⌘N',
+        'New Codex session'
+      ])
+      await menu.locator('.mi', { hasText: 'New Claude session' }).click()
+
+      const [first] = await waitForCalls(env, 1)
+      expect(first.cwd).toBe(remoteDir(env))
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+      expect(codexCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }

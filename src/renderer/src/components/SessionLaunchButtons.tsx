@@ -38,7 +38,7 @@ export function useLaunchChoice(host: HostId) {
   const { installed: detected, checkFailed } = useInstalledBackends(retry)
   const accountIssue = useAccountIssue()
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
-  const listed = listedBackends(methods, detected && ((b) => backendAvailable(detected, b)))
+  const listed = listedBackends(methods, detected && ((b) => backendAvailable(detected, b)), host)
   const setupIssue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     if (on === 'ssh') return ''
