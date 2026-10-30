@@ -65,6 +65,7 @@ export class SessionBackends {
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
+  noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -220,6 +221,6 @@ export class SessionBackends {
 
   // ADR-0030
   noUsableAccount(kind: BackendId): string | null {
-    return this.get(kind).accountUsable() ? null : NO_USABLE_ACCOUNT[kind]
+    return this.get(kind).accountUsable() ? null : this.noAccountMessage(kind)
   }
 }

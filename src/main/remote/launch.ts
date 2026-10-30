@@ -311,7 +311,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
     `${tabPushed(s)}a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
-    `[ "$c" = 0 ] || { echo "[Koloft] the session on the machine stopped with exit code $c — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
+    `[ "$c" = 0 ] || echo "[Koloft] the session on the machine stopped with exit code $c — see above"; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
   )

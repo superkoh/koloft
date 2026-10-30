@@ -292,7 +292,7 @@ export class PtyManager extends EventEmitter {
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
-      this.emit('exit', { id, exitCode, signal })
+      this.emit('exit', { id, exitCode, signal, endedByKoloft: this.ptys.get(id) !== handle })
     })
 
     if (args.util) {

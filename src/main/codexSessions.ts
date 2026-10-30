@@ -101,7 +101,6 @@ import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
 import { browserControlEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import {
   StoredSessions,
@@ -704,7 +703,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   protected prepare(opts: CreateTabOptions): CodexLaunch {
     // CODEX§15 CODEX§18 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
-    if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    if (!picked) throw new Error(this.deps.noAccountMessage('codex'))
     if (picked.notice) this.deps.error(picked.notice)
     return { picked, binary: this.binary!, processEnv: this.processEnv }
   }

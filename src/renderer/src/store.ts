@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import {
@@ -15,7 +15,9 @@ import {
   type LoginProgress,
   type LeftoverProcess,
   type MachineState,
+  type CreateTabOptions,
   type SessionInfo,
+  type SessionRow,
   type TabKind,
   type Settings,
   type ReleaseNotes,
@@ -30,8 +32,9 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { selectionRoot, workspaceOfRow } from './sessionRows'
-import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerRows'
+import { endedTabsLiveElsewhere, selectionRoot, workspaceOfRow } from './sessionRows'
+import { inRoot } from './browseModel'
+import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -64,6 +67,14 @@ export interface Tab {
   asleep?: true
   ghost?: string
   wakeOverdue?: true
+  launch?: CreateTabOptions
+  ended?: TabEnded
+}
+
+export interface TabEnded {
+  note: string
+  row: SessionRow
+  wsPath: string
 }
 
 export interface OpenFile {
@@ -179,6 +190,7 @@ interface AppState {
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
+  keepEndedTab: (id: string, note: string) => boolean
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
@@ -276,6 +288,7 @@ const restartedPtys = new Set<string>()
 const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
+const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -302,6 +315,31 @@ function killTerminalsOf(tabId: string): string[] {
     window.api.terminal.kill(id)
   }
   return ids
+}
+
+function rowOfTab(
+  s: Pick<AppState, 'workspaceRows' | 'butlerWorkspace'>,
+  tab: Tab
+): { row: SessionRow; wsPath: string } | undefined {
+  const cwd = tab.launch?.cwd ?? tab.cwd
+  const wsPath = everyWorkspaceRows(s)
+    .map((w) => w.workspace.path)
+    .filter((p) => inRoot(cwd, p))
+    .sort((a, b) => b.length - a.length)[0]
+  if (!wsPath || !isSessionKind(tab.kind)) return undefined
+  return {
+    wsPath,
+    row: {
+      id: tab.id,
+      title: tab.title,
+      worktree: tab.launch?.worktree ?? (cwd === wsPath ? 'main' : basename(cwd)),
+      cwd,
+      running: false,
+      invalidCwd: false,
+      mtime: Date.now(),
+      ...sourceOf(tab.kind, wsPath)
+    }
+  }
 }
 
 export function tabEverBound(tabId: string): boolean {
@@ -361,7 +399,7 @@ function panelStateMoved(
   }
 }
 
-function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
+function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   const parked = workbenchParked.get(oldId)
   if (parked) {
     workbenchParked.delete(oldId)
@@ -371,7 +409,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
   window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
-  lastSessionId.set(newId, sessionId)
+  if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
@@ -725,9 +763,28 @@ export const useStore = create<AppState>((set, get) => ({
   setTabAlive: (id, alive) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.alive === alive || cur.asleep) return s
+      if (!cur || cur.alive === alive || cur.asleep || cur.ended) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
+  keepEndedTab: (id, note) => {
+    const s = get()
+    const tab = s.tabs.find((t) => t.id === id)
+    const sessionId = boundSessionId(s, id) ?? lastSessionId.get(id)
+    const at =
+      everyWorkspaceRows(s)
+        .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
+        .find(({ row }) => row.id === id || row.id === sessionId) ??
+      (tab && rowOfTab(s, tab))
+    if (!at) return false
+    set({
+      tabs: s.tabs.map((t) =>
+        t.id === id
+          ? { ...t, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
+          : t
+      )
+    })
+    return true
+  },
   setTabAsleep: (id) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -762,6 +819,41 @@ export const useStore = create<AppState>((set, get) => ({
       if (!get().tabs.some((x) => x.id === oldId)) return
       get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
     }
+    const swapTo = (res: { id: string; cwd: string }, patch: Partial<Tab>): void => {
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId
+            ? {
+                ...x,
+                ...patch,
+                id: res.id,
+                cwd: res.cwd,
+                alive: true,
+                respawning: undefined,
+                ended: undefined
+              }
+            : x
+        ),
+        activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
+        ...panelStateMoved(s, oldId, res.id)
+      }))
+      tabStateMoved(oldId, res.id, patch.sessionId)
+      restarting.add(res.id)
+      setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
+    }
+    const relaunch = (launch: CreateTabOptions): void => {
+      restarting.add(oldId)
+      window.api.terminal.kill(oldId, true)
+      void window.api.terminal
+        .create(launch)
+        .then((res) => {
+          if (!res.ok) return get().showToast(RELAUNCH_REFUSED_NOTICE)
+          if (!get().tabs.some((x) => x.id === oldId)) return window.api.terminal.kill(res.id)
+          swapTo(res, { sessionId: undefined })
+        })
+        .catch((e) => get().showToast(ipcErrorText(e)))
+        .finally(() => restarting.delete(oldId))
+    }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
       const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
@@ -779,6 +871,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (!hasTranscript) {
         restarting.delete(oldId)
+        if (tab.ended && tab.launch) return relaunch(tab.launch)
         sayNoConversation(live)
         return
       }
@@ -791,7 +884,7 @@ export const useStore = create<AppState>((set, get) => ({
         get().showToast(noAccount)
         return
       }
-      restartedPtys.add(oldId)
+      if (!tab.ended) restartedPtys.add(oldId)
       const title = sess?.title ?? tab.title
       set((s) => ({
         tabs: s.tabs.map((x) =>
@@ -826,31 +919,13 @@ export const useStore = create<AppState>((set, get) => ({
             window.api.terminal.kill(res.id)
             return
           }
-          set((s) => ({
-            tabs: s.tabs.map((x) =>
-              x.id === oldId
-                ? {
-                    ...x,
-                    id: res.id,
-                    kind: backend,
-                    cwd: res.cwd,
-                    sessionId: resumeId,
-                    alive: true,
-                    respawning: undefined
-                  }
-                : x
-            ),
-            activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
-            ...panelStateMoved(s, oldId, res.id)
-          }))
-          tabStateMoved(oldId, res.id, resumeId)
-          restarting.add(res.id)
-          setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
+          swapTo(res, { kind: backend, sessionId: resumeId })
         })
         .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
     if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
+    if (tab.ended && tab.launch) return relaunch(tab.launch)
     restarting.add(oldId)
     void window.api.sessions
       .list()
@@ -890,6 +965,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (
           isSessionKind(t.kind) &&
           !t.asleep &&
+          !t.ended &&
           !liveTabs.has(t.id) &&
           everBoundSession.has(t.id) &&
           !restarting.has(t.id)
@@ -1269,6 +1345,19 @@ export const useActiveOpenFile = (): OpenFile | null =>
 
 export function consumeRestartExit(ptyId: string): boolean {
   return restartedPtys.delete(ptyId)
+}
+
+export function launchToStartAgain(launch: CreateTabOptions, landedIn: string): CreateTabOptions {
+  const madeAWorktree =
+    (launch.worktree !== undefined || launch.worktreeResourceId !== undefined) &&
+    landedIn !== launch.cwd
+  return madeAWorktree
+    ? { ...launch, cwd: landedIn, worktree: undefined, worktreeResourceId: undefined }
+    : launch
+}
+
+export function keptTabsToClose(s: Pick<AppState, 'tabs' | 'sessions'>): Tab[] {
+  return endedTabsLiveElsewhere(s.tabs, s.sessions).filter((t) => !restarting.has(t.id))
 }
 
 export function conversationTabFor(ptyId: string): string {

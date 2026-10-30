@@ -37,6 +37,26 @@ export function registerScreen(id: string, term: Terminal): () => void {
   }
 }
 
+function lastWrittenLines(term: Terminal, count: number): string[] {
+  const buffer = term.buffer.active
+  const text = (y: number): string => buffer.getLine(y)?.translateToString(true) ?? ''
+  let end = buffer.length
+  while (end > 0 && !text(end - 1)) end--
+  const lines: string[] = []
+  for (let y = Math.max(0, end - count); y < end; y++) lines.push(text(y))
+  return lines
+}
+
+export function lastLinesOnceWritten(id: string, count: number): Promise<string[]> {
+  const term = shown.get(id)?.term
+  if (!term) return Promise.resolve([])
+  return new Promise((resolve) => term.write('', () => resolve(lastWrittenLines(term, count))))
+}
+
+export function writeOnScreen(id: string, text: string): void {
+  shown.get(id)?.term.write(text)
+}
+
 export function screenSizedToPane(id: string): void {
   const s = shown.get(id)
   if (s) s.sizedToPane = true

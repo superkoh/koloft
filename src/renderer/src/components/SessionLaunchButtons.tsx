@@ -15,7 +15,7 @@ import {
   effectiveBackend,
   listedBackends
 } from '@shared/sessionBackend'
-import { ACCOUNTS_PANE, noUsableAccountLead } from '@shared/accountUsage'
+import { ACCOUNTS_PANE, noAccountLine, noUsableAccountLead } from '@shared/accountUsage'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { firstHot, type AgentChoice } from '../agentChoice'
 import { launchErrorMessage } from '../agentUi'
@@ -323,8 +323,8 @@ function useNoAccountLeads(): Record<BackendId, string> {
 }
 
 export function useAccountIssue(): (backend: BackendId) => string {
-  const leads = useNoAccountLeads()
-  return (backend) => leads[backend] && `${leads[backend]}${ACCOUNTS_PANE}.`
+  const accounts = useStore((s) => s.accounts)
+  return (backend) => (accounts ? noAccountLine(accounts, backend) : '')
 }
 
 export function NoAccountLines({
