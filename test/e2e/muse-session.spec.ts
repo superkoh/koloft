@@ -69,7 +69,7 @@ function museListings(env: E2EEnv): number {
 }
 
 test.describe('Muse Code sessions through the real method chooser, status signal, live registry and muse serve, with only the CLI faked', () => {
-  test("a Muse session starts from the workspace menu, waits on Muse's trust question in its terminal, and its light follows its status from working to waiting, the finished turn leaving a red dot and the bell's count though its tab is on screen", async ({
+  test("a Muse session starts from the workspace menu, waits on Muse's trust question in its terminal, with Koloft's open and playwright-cli first on its PATH, and its light follows its status from working to waiting, the finished turn leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     installMuse(env)
@@ -86,6 +86,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const call = museCalls(env)[0]
       expect(call.argv).toEqual(SKIPS_PERMISSION_PROMPTS_AS_SHIPPED)
       expect(fs.existsSync(path.join(call.pathHead, 'open'))).toBe(true)
+      expect(fs.existsSync(path.join(call.pathHead, 'playwright-cli'))).toBe(true)
       expect(call.configHome).toBe(path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT))
       expect(call.credentials).toBe('file')
       const row = museRows(page)

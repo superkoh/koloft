@@ -238,7 +238,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§4 AGY§11 AGY§12
-  test("the account's folder links the owner's ~/.gemini conversations, brain, annotations, presence, summaries and config files, holds Koloft's koloft hook entry and title command, and Koloft's guide and the reply-language reminder quoting the prompt reach the model", async ({
+  test("the account's folder links the owner's ~/.gemini conversations, brain, annotations, presence, summaries and config files, holds Koloft's koloft hook entry and title command, and Koloft's guide and the reply-language reminder quoting the prompt reach the model, with the playwright-cli the guide names first on agy's PATH", async ({
     env
   }) => {
     installAgy(env)
@@ -294,6 +294,9 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const starts = injected(env).filter((r) => r.event === 'SessionStart')
       expect(starts).toHaveLength(1)
       expect(String(starts[0].systemMessage)).toContain('koloft help')
+      expect(fs.existsSync(path.join(sessionCalls(env)[0].env.pathHead, 'playwright-cli'))).toBe(
+        true
+      )
       const reminders = injected(env)
         .filter((r) => r.event === 'request')
         .flatMap((r) => r.ephemeralMessages as string[])

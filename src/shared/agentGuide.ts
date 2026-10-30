@@ -101,7 +101,7 @@ ${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}`
 }
 
-// CC§3
+// CC§3 CODEX§12
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
@@ -304,7 +304,7 @@ koloft gh <gh command>
 
 WEB PAGES
 
-To use the web pages in this session's Workbench, drive them with the playwright-cli command (a tool that controls a browser), which Koloft puts in Claude Code and Codex sessions on this computer. Run it by that name, not through npx or a full path, so you get Koloft's copy. "playwright-cli --help" lists its commands.
+To use the web pages in this session's Workbench, drive them with the playwright-cli command (a tool that controls a browser), which Koloft puts in ${kindsOf(SESSION_BACKENDS, 'and')} sessions on this computer. Run it by that name, not through npx or a full path, so you get Koloft's copy. "playwright-cli --help" lists its commands.
     Example: playwright-cli open https://example.com
     Example: playwright-cli snapshot
 When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A Claude Code session on another machine (over SSH) reaches the Workbench browser too, through Koloft's ssh connection: there playwright-cli reads the address each time it runs, so $KOLOFT_BROWSER_CDP is not set there and Playwright MCP tools cannot use the Workbench browser, and after Koloft restarts or the connection comes back, run "playwright-cli close" and open the page again. From there it cannot open file:// pages, upload files, or open any address of the owner's Mac (localhost, 127.0.0.1, [::1], the Mac's own network addresses, or a name that points at one of them): those would be the owner's Mac, not the machine, so a web server you start on the machine cannot be opened in the Workbench browser. Other sessions on another machine cannot reach the Workbench browser.`
