@@ -56,6 +56,7 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
       settings: () => ({ skipPermissions: false }),
       agentTools: () => true,
       pickAccount: async () => ({ env: {}, banner: '' }),
+      noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
       hookSettings: () => ({}),
       ...claude
     }
@@ -684,6 +685,7 @@ describe('accounts for remote launches started together', () => {
           handed.push(res.account)
           return { env: {}, banner: '' }
         },
+        noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
         hookSettings: () => ({})
       }
     })
@@ -715,8 +717,9 @@ describe('accounts for remote launches started together', () => {
   })
 
   // ADR-0030
-  it("refuses a remote launch with no usable account instead of using the machine's own login, but re-attaching a live session needs none", async () => {
+  it("refuses a remote launch with no usable account, naming what is wrong with the accounts, instead of using the machine's own login, but re-attaching a live session needs none", async () => {
     const pickAccount = vi.fn(async () => undefined)
+    const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
     const live = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
@@ -734,10 +737,11 @@ describe('accounts for remote launches started together', () => {
         settings: () => ({ skipPermissions: false }),
         agentTools: () => true,
         pickAccount,
+        noAccountMessage: () => why,
         hookSettings: () => ({})
       }
     })
-    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(NO_USABLE_ACCOUNT.claude)
+    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(why)
     pickAccount.mockClear()
     expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
     expect(pickAccount).not.toHaveBeenCalled()

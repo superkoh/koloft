@@ -17,7 +17,6 @@ import {
   typeInAddressBar
 } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   type E2EEnv,
   E2E_CLAUDE_ACCOUNT,
@@ -878,9 +877,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         E2E_CLAUDE_ACCOUNT
       )
       await sendShortcut(app, 'shortcut:restart-session')
-      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude, {
-        timeout: 60_000
-      })
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'No Claude account can be used — check Settings ▸ Accounts.',
+        { timeout: 60_000 }
+      )
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(await waitForCalls(env, launches)).toHaveLength(launches)

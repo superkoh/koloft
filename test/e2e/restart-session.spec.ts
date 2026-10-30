@@ -4,7 +4,6 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, runInTerminal } from './helpers/app'
 import { E2E_CLAUDE_ACCOUNT, writeClaudeWrapper, type E2EEnv } from './helpers/env'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   centerTerm,
   ENDED_ROW_NOTE,
@@ -725,7 +724,9 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         )
         await triggerRestart(app)
 
-        await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude)
+        await expect(page.locator('.toast-msg')).toHaveText(
+          'No Claude account can be used — check Settings ▸ Accounts.'
+        )
         const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
         await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/)
         await expect(row).not.toHaveClass(/\bcold\b/)

@@ -36,7 +36,7 @@ import {
 import type { BackendId, HeldCommand, MachineState, QueuedLaunch, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
-import { popoverX } from '@shared/accountUsage'
+import { noAccountLine, popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
@@ -593,6 +593,7 @@ interface FloatingCtl {
 function SidebarFloating({
   ctl,
   namedMethods,
+  soleMethod,
   onNewSession,
   onNewWorktreeSession,
   onRestoreSession,
@@ -601,6 +602,7 @@ function SidebarFloating({
 }: {
   ctl: RefObject<FloatingCtl | null>
   namedMethods: BackendId[] | null
+  soleMethod: BackendId
   onNewSession: (wsPath: string, backend?: BackendId) => void
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
@@ -613,6 +615,7 @@ function SidebarFloating({
   const storeTabs = useStore((s) => s.tabs)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
   const machine = useStore((s) => s.machine)
+  const accounts = useStore((s) => s.accounts)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
   const [parkedPop, setParkedPop] = useState<{ rowId: string; left: number; top: number } | null>(
@@ -787,18 +790,21 @@ function SidebarFloating({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => (
-        <div
-          className="mi"
-          onClick={() => {
-            setMenu(null)
-            onNewSession(target.wsPath, backend)
-          }}
-        >
-          {label}
-          {key && <span className="k">{key}</span>}
-        </div>
-      )
+      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
+        const shut = accounts && noAccountLine(accounts, backend ?? soleMethod)
+        return (
+          <div
+            className={'mi' + (shut ? ' disabled' : '')}
+            onClick={() => {
+              setMenu(null)
+              onNewSession(target.wsPath, backend)
+            }}
+          >
+            {label}
+            {key && <span className="k">{key}</span>}
+          </div>
+        )
+      }
       const hasHistory = rows.some(
         (r) => r.workspace.path === target.wsPath && r.workspace.hasHistory
       )
@@ -1077,12 +1083,14 @@ function SidebarFloating({
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
   namedMethods,
+  soleMethod,
   onNewWorktreeSession,
   onRestoreSession,
   onScheduledJobs
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
   namedMethods: BackendId[] | null
+  soleMethod: BackendId
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
@@ -1539,6 +1547,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           <SidebarFloating
             ctl={floating}
             namedMethods={namedMethods}
+            soleMethod={soleMethod}
             onNewSession={onNewSession}
             onNewWorktreeSession={onNewWorktreeSession}
             onRestoreSession={onRestoreSession}
