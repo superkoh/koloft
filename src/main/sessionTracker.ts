@@ -18,6 +18,7 @@ import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, touchedItem } from './touchedFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
+import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
 import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
@@ -26,7 +27,12 @@ import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
 import { messageText } from './messageText'
-import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
+import {
+  parseRecord,
+  type TextBlock,
+  type ToolResultBlock,
+  type TranscriptRecord
+} from './transcriptRecord'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -168,6 +174,17 @@ const TASK_LABEL_FIELD: Record<string, string> = {
   Agent: 'description'
 }
 const UNACKED_TOOL_CAP = 64
+
+// CC§2
+const TURNED_DOWN = "The user doesn't want to proceed with this tool use"
+
+function turnedDown(result: ToolResultBlock): boolean {
+  return (
+    result.is_error === true &&
+    typeof result.content === 'string' &&
+    result.content.startsWith(TURNED_DOWN)
+  )
+}
 
 export interface ToolCall {
   name: string
@@ -428,7 +445,7 @@ interface Tracked {
   resetMs: number
   reported: ReportedTask[]
   reportedAt: number
-  openTools: Map<string, ToolCall>
+  openTools: Map<string, ToolCall & { main: boolean }>
   procs: TaskProcs | null
   shellActivity: Map<
     string,
@@ -1026,6 +1043,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
+    t.info.lastAction = undefined
     t.caughtUp = false
     t.meter = new UsageMeter()
     t.subagentFiles = new Map()
@@ -1416,9 +1434,12 @@ export class SessionTracker extends SessionRuntime {
     if (!Array.isArray(content)) return
     for (const b of content) {
       if (b?.type !== 'tool_result') continue
-      const call = t.openTools.get(b.tool_use_id)
-      if (!call) continue
+      const open = t.openTools.get(b.tool_use_id)
+      if (!open) continue
       t.openTools.delete(b.tool_use_id)
+      const { main, ...call } = open
+      if (main && !turnedDown(b))
+        t.info.lastAction = claudeToolDid(call.name, call.input) ?? t.info.lastAction
       if (t.caughtUp) this.emit('tool-done', { tabId: t.info.tabId, ...call })
     }
   }
@@ -1518,7 +1539,7 @@ export class SessionTracker extends SessionRuntime {
         if (liveNow && typeof b.id === 'string') {
           if (t.openTools.size >= UNACKED_TOOL_CAP)
             t.openTools.delete(t.openTools.keys().next().value as string)
-          t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
+          t.openTools.set(b.id, { name: b.name, input: b.input ?? {}, main: mainThread })
         }
         const labelField = TASK_LABEL_FIELD[b.name]
         const label = labelField ? b.input?.[labelField] : undefined

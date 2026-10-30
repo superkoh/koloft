@@ -1731,6 +1731,19 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   `<proposed_plan>` tags. Checked 2026-10-03 with Codex 0.159.3: one `turn/start` with
   `collaborationMode: {mode: "plan", …}` in a fresh `CODEX_HOME`, in a folder holding
   only `README.md`; `collaborationMode/list` answered `Plan` and `Default`.
+- **"Implement this plan?" is the TUI's own menu, not a server request.** 2026-10-27,
+  codex-cli 0.162.0, `gpt-6-astra` (low effort), a throwaway `CODEX_HOME` with a copied
+  login, the real TUI in a python pty (120×40) with `--remote` to a WebSocket relay in
+  front of `codex app-server --stdio` that logged every frame, 1 run: `/plan`, a question
+  answered by digit, then the model wrote a two-step plan. The turn ended with
+  `item/completed` of an item `{type: "plan", id: "<turnId>-plan", text: "1. …\n2. …"}`
+  (streamed before as `item/plan/delta`), `thread/status/changed` to `idle` and
+  `turn/completed`; then the menu showed ("Implement this plan?", "Yes, implement this
+  plan", "No, stay in Plan mode", per the strings also "Yes, clear context and
+  implement"), and no frame came from the server. Picking 1 sent `thread/settings/update`
+  with `collaborationMode: {mode: "default", …}`, then `turn/start` with the text
+  "Implement the plan.". So a client sees the plan only as a finished turn with a `plan`
+  item; it cannot answer the menu with a reply.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.

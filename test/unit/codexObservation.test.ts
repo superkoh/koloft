@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
 import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
 import { AttentionTracker } from '../../src/main/attention'
-import type { AttentionKind, BackgroundItem } from '../../src/shared/types'
+import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -646,6 +646,66 @@ describe('CodexObservation', () => {
       lastTouched: '/repo/docs/a.md',
       lastWritten: '/repo/notes.txt',
       liveWrites: 1
+    })
+  })
+
+  it('says on the row what the session itself last finished, a ready plan until the next turn starts, and nothing declined, still running or from another thread', () => {
+    const f = fixture()
+    const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    f.bind()
+    f.server('item/started', { item: { ...command('npm test', []).item, status: 'inProgress' } })
+    expect(did()).toEqual([])
+    f.server('item/completed', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/src/bar.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/completed', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
+    f.server(
+      'item/completed',
+      command('cat a.md && rm -rf build', [
+        { type: 'read', path: '/repo/a.md' },
+        { type: 'unknown', command: 'rm -rf build' }
+      ])
+    )
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { type: 'plan', id: 't-plan', text: '1. a\n2. b' } }
+    })
+    expect(did()).toEqual([
+      'Ran npm test',
+      'Edited foo.ts',
+      'Read a.md',
+      'Ran cat a.md && rm -rf build',
+      PLAN_READY
+    ])
+    f.server('turn/started', { turn: { id: 'next' } })
+    expect(did().at(-1)).toBeUndefined()
+    f.server('turn/started', { turn: { id: 'another' } })
+    expect(did()).toHaveLength(6)
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
+    })
+    expect(did()).toHaveLength(6)
+  })
+
+  it('a patch Codex asks to apply names the file it would change', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/started',
+      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/fileChange/requestApproval', { itemId: 'patch', reason: 'outside' }, 7)
+    expect(f.observer.openApproval()).toEqual({
+      id: 7,
+      file: '/repo/src/foo.ts',
+      reason: 'outside'
     })
   })
 

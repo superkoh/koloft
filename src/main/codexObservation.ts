@@ -1,4 +1,5 @@
-import type { BackgroundItem } from '@shared/types'
+import { PLAN_READY, type BackgroundItem } from '@shared/types'
+import { codexEditTarget, codexItemDid } from './rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
@@ -228,6 +229,8 @@ export class CodexObservation {
   private lastTouched?: string
   private lastWritten?: string
   private liveWrites = 0
+  private planReady = false
+  private editing = new Map<string, string>()
   private queuedByKoloft = new Map<string, QueuedByKoloft>()
   private serverWasReplaced = false
   unsubscribed = false
@@ -282,6 +285,7 @@ export class CodexObservation {
     this.approvals.clear()
     this.approvalThreads.clear()
     this.approvalAsks.clear()
+    this.editing.clear()
     this.waitingForInput = false
     this.mainTurn = 'ended'
   }
@@ -384,6 +388,7 @@ export class CodexObservation {
         this.touched.clear()
         this.lastTouched = this.lastWritten = undefined
         this.liveWrites = 0
+        this.planReady = false
         this.pricedThrough = this.longContextSurchargeUsd = 0
       }
       this.threadId = thread.id
@@ -437,8 +442,10 @@ export class CodexObservation {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
       const question = codexQuestionOf(method, p)
+      const file = typeof p.itemId === 'string' ? this.editing.get(p.itemId) : undefined
       this.approvalAsks.set(id, {
         ...(typeof p.command === 'string' ? { command: p.command } : {}),
+        ...(file ? { file } : {}),
         ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
         ...(question ? { question } : {})
       })
@@ -446,6 +453,20 @@ export class CodexObservation {
       this.publishActivity()
     } else if (ownedChild) {
       return
+    } else if (method === 'item/started') {
+      const file = codexEditTarget(item)
+      if (file && typeof item.id === 'string') this.editing.set(item.id, file)
+    } else if (method === 'item/completed') {
+      if (typeof item.id === 'string') this.editing.delete(item.id)
+      const did =
+        item.type === 'plan'
+          ? PLAN_READY
+          : item.status === 'completed'
+            ? codexItemDid(item)
+            : undefined
+      if (!did) return
+      this.planReady = did === PLAN_READY
+      this.emit({ type: 'did', what: did })
     } else if (method === 'thread/status/changed') {
       this.status(p.status)
     } else if (method === 'turn/started') {
@@ -455,6 +476,10 @@ export class CodexObservation {
       this.unanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
+      if (this.planReady) {
+        this.planReady = false
+        this.emit({ type: 'did', what: undefined })
+      }
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
       if (typeof turn.id === 'string')

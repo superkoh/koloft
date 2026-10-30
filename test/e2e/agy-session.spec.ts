@@ -367,6 +367,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveClass(/\bst-approval\b/, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
+      await expect(agyRows(page).locator('.ws-tab-act')).toHaveText('Wants to edit: agy-notes.txt')
       expect(fs.existsSync(target)).toBe(false)
 
       fake.say(OWNER, `/koloft session answer ${id} yes`)
@@ -386,6 +387,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         })
       ])
       await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-act')).toHaveText('Last: Wrote agy-notes.txt')
 
       await agyRows(page).click()
       await showChanges(page)
