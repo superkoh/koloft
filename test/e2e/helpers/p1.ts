@@ -560,6 +560,9 @@ export async function startSessionIn(
     })
     return
   }
+  await expect(page.locator('.w-empty'), 'the new session is on screen').toHaveCount(0, {
+    timeout: 30_000
+  })
   await expect(page.locator(SESSION_BOUND_ICON)).toHaveAttribute('aria-disabled', 'false', {
     timeout: 30_000
   })

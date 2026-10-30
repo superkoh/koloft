@@ -6287,7 +6287,14 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
+    if (
+      what !== 'repo' &&
+      what !== 'issues' &&
+      what !== 'pulls' &&
+      what !== 'pr' &&
+      what !== 'compare'
+    )
+      return null
     return hosts.of(root).github.target(root, what)
   })
   ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {

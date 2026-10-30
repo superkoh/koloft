@@ -18,7 +18,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
-type PanelMapKey = 'sessions' | 'panels'
+type PanelMapKey = 'sessions' | 'panels' | 'workspacePanels'
 
 function isPanelLayout(raw: unknown, version: number, mapKey: PanelMapKey = 'sessions'): boolean {
   return (
@@ -188,12 +188,17 @@ export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV6 {
   if (isPanelLayout(raw, 6, 'panels')) {
     const { sessions, ...rest } = readPanelLayout(raw, DEFAULT_PANEL_OPEN, 'panels')
     const resident = readIds(raw, 'resident')
+    const doc = raw as Record<string, unknown>
+    const workspacePanels = isRecord(doc.workspacePanels)
+      ? readSessions(doc, rest.workbench.defaultOpen, 'workspacePanels')
+      : {}
     return {
       version: 6,
       ...rest,
       members: readIds(raw, 'members'),
       panels: sessions,
-      ...(resident.length ? { resident } : {})
+      ...(resident.length ? { resident } : {}),
+      ...(Object.keys(workspacePanels).length ? { workspacePanels } : {})
     }
   }
   return sessionsBecomePanels(toV5(raw, deps))

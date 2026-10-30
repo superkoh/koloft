@@ -48,6 +48,7 @@ import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
+import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionPlace } from './usageCache'
@@ -55,6 +56,7 @@ import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
+const WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT = false
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
 const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
@@ -521,6 +523,14 @@ export class WorkspaceManager {
   }
 
   workbenchState(sessionId: string): SessionWorkbenchState {
+    if (isWorkspaceWorkbenchKey(sessionId)) {
+      return (
+        this.layout.workspacePanels?.[workspaceOfWorkbenchKey(sessionId)] ?? {
+          open: WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT,
+          tabs: []
+        }
+      )
+    }
     return resolveWorkbenchState(this.layout, sessionId)
   }
 
@@ -529,6 +539,16 @@ export class WorkspaceManager {
   }
 
   setWorkbenchState(sessionId: string, state: SessionWorkbenchState): void {
+    if (isWorkspaceWorkbenchKey(sessionId)) {
+      const wsPath = workspaceOfWorkbenchKey(sessionId)
+      if (!this.layout.workspaces.some((w) => w.path === wsPath)) return
+      this.layout = {
+        ...this.layout,
+        workspacePanels: { ...this.layout.workspacePanels, [wsPath]: state }
+      }
+      this.saveSoon()
+      return
+    }
     if (!this.isMember(sessionId)) return
     this.layout = { ...this.layout, panels: withWorkbenchState(this.layout, sessionId, state) }
     this.saveSoon()
@@ -671,6 +691,11 @@ export class WorkspaceManager {
     const next = this.layout.workspaces.filter((w) => w.path !== wsPath)
     if (next.length === this.layout.workspaces.length) return
     this.layout.workspaces = next
+    if (this.layout.workspacePanels?.[wsPath]) {
+      const workspacePanels = { ...this.layout.workspacePanels }
+      delete workspacePanels[wsPath]
+      this.layout.workspacePanels = workspacePanels
+    }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
   }

@@ -549,3 +549,32 @@ it('a v6 document keeps its Keep running marks across a reload, and drops an ent
   expect(out.resident).toEqual(['claude-a', 'codex:local:00000000-0000-0000-0000-000000000001'])
   expect(migrateLayout(JSON.parse(serializeLayout(out)), deps)).toEqual(out)
 })
+
+it('a v6 document keeps each workspace’s own Workbench tabs across a reload, cleaned like a session’s', () => {
+  const out = migrateLayout(
+    {
+      version: 6,
+      workspaces: [{ path: '/repo' }],
+      workbench: { defaultOpen: false },
+      members: [],
+      panels: {},
+      workspacePanels: {
+        '/repo': {
+          open: true,
+          tabs: [
+            { kind: 'web', title: 'Issues', url: 'https://github.com/acme/repo/issues' },
+            { kind: 'terminal', title: 'zsh' }
+          ]
+        }
+      }
+    },
+    deps
+  )
+  expect(out.workspacePanels).toEqual({
+    '/repo': {
+      open: true,
+      tabs: [{ kind: 'web', title: 'Issues', url: 'https://github.com/acme/repo/issues' }]
+    }
+  })
+  expect(migrateLayout(JSON.parse(serializeLayout(out)), deps)).toEqual(out)
+})

@@ -32,7 +32,7 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { endedTabsLiveElsewhere, selectionRoot, workspaceOfRow } from './sessionRows'
+import { endedTabsLiveElsewhere, selectionRoot, welcomeTarget, workspaceOfRow } from './sessionRows'
 import { inRoot } from './browseModel'
 import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
@@ -51,7 +51,11 @@ import {
   TERMINAL_CAP_NOTICE,
   type WorkbenchTabSet
 } from './components/workbenchTabs'
-import { DEFAULT_PANEL_OPEN } from '@shared/workbenchState'
+import {
+  DEFAULT_PANEL_OPEN,
+  isWorkspaceWorkbenchKey,
+  workspaceWorkbenchKey
+} from '@shared/workbenchState'
 import type { SettingsPaneId } from '@shared/paletteFeatures'
 
 export interface Tab {
@@ -261,6 +265,7 @@ interface AppState {
   followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
+  openWorkspaceList: (path: string, what: 'issues' | 'pulls') => void
 
   focusPanelTerm: (ptyId: string) => void
 
@@ -399,6 +404,35 @@ function panelStateMoved(
   }
 }
 
+function workbenchStateDropped(
+  s: AppState,
+  ids: string[]
+): Pick<
+  AppState,
+  | 'workbench'
+  | 'workbenchOpen'
+  | 'workbenchFetched'
+  | 'workbenchWidths'
+  | 'workbenchLoad'
+  | 'filesReveal'
+  | 'followsAgentBrowser'
+> {
+  const without = <T>(m: Record<string, T>): Record<string, T> => {
+    const next = { ...m }
+    for (const id of ids) delete next[id]
+    return next
+  }
+  return {
+    workbench: without(s.workbench),
+    workbenchOpen: without(s.workbenchOpen),
+    workbenchFetched: without(s.workbenchFetched),
+    workbenchWidths: without(s.workbenchWidths),
+    workbenchLoad: without(s.workbenchLoad),
+    filesReveal: without(s.filesReveal),
+    followsAgentBrowser: without(s.followsAgentBrowser)
+  }
+}
+
 function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   const parked = workbenchParked.get(oldId)
   if (parked) {
@@ -486,9 +520,30 @@ export function tabForSession(
   return s.tabs.find((t) => boundSessionId(s, t.id) === sessionId)?.id
 }
 
-export function panelTabId(s: Pick<AppState, 'tabs' | 'activeTabId'>): string | undefined {
+export function welcomeWorkbenchKey(
+  s: Pick<AppState, 'workspaceRows' | 'lastWsPath' | 'resumeLaunch' | 'welcomeActive'>
+): string | undefined {
+  if (s.resumeLaunch || s.welcomeActive) return undefined
+  const ws = welcomeTarget(s.workspaceRows, s.lastWsPath)
+  return ws ? workspaceWorkbenchKey(ws.workspace.path) : undefined
+}
+
+export function panelTabId(
+  s: Pick<
+    AppState,
+    'tabs' | 'activeTabId' | 'workspaceRows' | 'lastWsPath' | 'resumeLaunch' | 'welcomeActive'
+  >
+): string | undefined {
+  if (!s.activeTabId) return welcomeWorkbenchKey(s)
   const tab = s.tabs.find((t) => t.id === s.activeTabId)
   return hasWorkbench(tab) ? tab?.id : undefined
+}
+
+export function workbenchStoreKey(
+  s: Pick<AppState, 'sessions' | 'tabs'>,
+  tabId: string
+): string | undefined {
+  return isWorkspaceWorkbenchKey(tabId) ? tabId : boundSessionId(s, tabId)
 }
 
 export function panelIsOpen(
@@ -527,15 +582,15 @@ function bindParkedWorkbench(): void {
   }
 }
 
-function workbenchAllowed(s: Pick<AppState, 'tabs'>, tabId: string | null): boolean {
-  return hasWorkbench(s.tabs.find((t) => t.id === tabId))
+function workbenchAllowed(s: Pick<AppState, 'tabs'>, tabId: string | null | undefined): boolean {
+  return isWorkspaceWorkbenchKey(tabId) || hasWorkbench(s.tabs.find((t) => t.id === tabId))
 }
 
 function whenWorkbenchFetched(tabId: string, fn: () => void): void {
   const s = useStore.getState()
   if (!workbenchAllowed(s, tabId)) return
   if (s.workbenchFetched[tabId]) return fn()
-  if (!boundSessionId(s, tabId)) return parkWorkbench(tabId, fn)
+  if (!workbenchStoreKey(s, tabId)) return parkWorkbench(tabId, fn)
   void s
     .ensureWorkbench(tabId)
     .catch(() => useStore.getState().ensureWorkbench(tabId))
@@ -545,7 +600,7 @@ function whenWorkbenchFetched(tabId: string, fn: () => void): void {
 }
 
 function writeWorkbench(tabId: string, s: AppState): void {
-  const sid = boundSessionId(s, tabId)
+  const sid = workbenchStoreKey(s, tabId)
   if (!sid) return
   window.api.workbench.setState(sid, {
     open: s.workbenchOpen[tabId] ?? DEFAULT_PANEL_OPEN,
@@ -697,20 +752,6 @@ export const useStore = create<AppState>((set, get) => ({
       delete openFiles[id]
       let activeTabId = s.activeTabId
       if (activeTabId === id) activeTabId = tabs.length ? tabs[tabs.length - 1].id : null
-      const workbench = { ...s.workbench }
-      const workbenchOpen = { ...s.workbenchOpen }
-      const workbenchFetched = { ...s.workbenchFetched }
-      const workbenchWidths = { ...s.workbenchWidths }
-      const workbenchLoad = { ...s.workbenchLoad }
-      const filesReveal = { ...s.filesReveal }
-      const followsAgentBrowser = { ...s.followsAgentBrowser }
-      delete workbench[id]
-      delete workbenchOpen[id]
-      delete workbenchFetched[id]
-      delete workbenchWidths[id]
-      delete workbenchLoad[id]
-      delete filesReveal[id]
-      delete followsAgentBrowser[id]
       return {
         ...(s.signIn?.tabId === id && {
           signIn: null,
@@ -719,13 +760,7 @@ export const useStore = create<AppState>((set, get) => ({
         tabs,
         openFiles,
         activeTabId,
-        workbench,
-        workbenchOpen,
-        workbenchFetched,
-        workbenchWidths,
-        workbenchLoad,
-        filesReveal,
-        followsAgentBrowser
+        ...workbenchStateDropped(s, [id])
       }
     })
     if (toButler) get().landOnButler()
@@ -1028,7 +1063,12 @@ export const useStore = create<AppState>((set, get) => ({
   setWorkspaceRows: (all) =>
     set((s) => {
       const workspaceRows = all.filter((w) => !w.workspace.butler)
+      const kept = new Set(all.map((w) => workspaceWorkbenchKey(w.workspace.path)))
+      const gone = Object.keys(s.workbench).filter(
+        (k) => isWorkspaceWorkbenchKey(k) && !kept.has(k)
+      )
       return {
+        ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
         butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
         selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
@@ -1064,7 +1104,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().workbenchFetched[tabId]) return Promise.resolve()
     const inflight = workbenchFetches.get(tabId)
     if (inflight) return inflight
-    const sid = boundSessionId(get(), tabId)
+    const sid = workbenchStoreKey(get(), tabId)
     if (!sid) return Promise.resolve()
     const p = window.api.workbench
       .get(sid)
@@ -1124,7 +1164,7 @@ export const useStore = create<AppState>((set, get) => ({
       landInWorkbench(tabId, r.tabId)
     }),
   setWorkbenchFull: (workbenchFull) => {
-    if (workbenchFull && !workbenchAllowed(get(), get().activeTabId)) return
+    if (workbenchFull && !workbenchAllowed(get(), panelTabId(get()))) return
     set({ workbenchFull })
   },
   landOverlay: (url, presentation) => {
@@ -1163,6 +1203,12 @@ export const useStore = create<AppState>((set, get) => ({
   setLastWsPath: (lastWsPath) => set({ lastWsPath }),
   selectWorkspace: (path) =>
     set({ selectedWs: path, activeTabId: null, lastWsPath: path, resumeLaunch: null }),
+  openWorkspaceList: (path, what) => {
+    get().selectWorkspace(path)
+    void window.api.github.target(path, what).then((url) => {
+      if (url) get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
+    })
+  },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25
@@ -1417,10 +1463,9 @@ export function previewLinkTarget(href: string, fromSrc: string): string {
 
 export function openWebPage(src: string, sourceTabId?: string, sourcePath?: string): void {
   const st = useStore.getState()
-  const selected = st.tabs.find((t) => t.id === st.activeTabId)
   const decision = routeFor(src, 'user')
   if (decision.dest !== 'browser') return
-  const tabId = hasWorkbench(selected) ? selected?.id : undefined
+  const tabId = panelTabId(st)
   if (!tabId) {
     st.landOverlay(decision.target, 'now')
     return

@@ -101,6 +101,12 @@
   font-weight: 700;
   line-height: 1;
 }
+.ws-gh.links > span {
+  cursor: pointer;
+}
+.ws-gh.links > span:hover {
+  color: var(--accent);
+}
 .hact {
   -webkit-app-region: no-drag;
   margin-left: auto;

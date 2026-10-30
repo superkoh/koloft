@@ -265,6 +265,7 @@ interface SidebarActions {
   gitEnter: (e: MouseEvent, path: string) => void
   gitLeave: (e: MouseEvent, path: string) => void
   behindClick: (e: MouseEvent, path: string) => void
+  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
   openDoor: (path: string, isGit: boolean) => void
 }
 
@@ -481,6 +482,7 @@ const WorkspaceHead = memo(function WorkspaceHead({
 }): JSX.Element {
   const mq = useMarquee()
   const door = doorFor(isGit)
+  const listsReachable = remoteHost === undefined || remoteConnected
   return (
     <div
       className={'ws-head' + (missing ? ' missing' : '') + (active ? ' active' : '')}
@@ -539,15 +541,21 @@ const WorkspaceHead = memo(function WorkspaceHead({
             </button>
           )}
           {(issues > 0 || prs > 0) && (
-            <span className="ws-gh">
+            <span className={'ws-gh' + (listsReachable ? ' links' : '')}>
               {issues > 0 && (
-                <span aria-label={openIssuesLabel(issues)}>
+                <span
+                  aria-label={openIssuesLabel(issues)}
+                  onClick={listsReachable ? (e) => actions.openList(e, path, 'issues') : undefined}
+                >
                   <IconIssue size={12} />
                   {countLabel(issues)}
                 </span>
               )}
               {prs > 0 && (
-                <span aria-label={openPullsLabel(prs)}>
+                <span
+                  aria-label={openPullsLabel(prs)}
+                  onClick={listsReachable ? (e) => actions.openList(e, path, 'pulls') : undefined}
+                >
                   <IconPullRequest size={12} />
                   {countLabel(prs)}
                 </span>
@@ -1259,6 +1267,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       behindClick: (e, path) => {
         e.stopPropagation()
         floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
+      },
+      openList: (e, path, what) => {
+        e.stopPropagation()
+        floating.current?.closeAll()
+        useStore.getState().openWorkspaceList(path, what)
       },
       openDoor: (path, isGit) => {
         floating.current?.dismissMenu()

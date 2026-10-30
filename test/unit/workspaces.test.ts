@@ -12,6 +12,7 @@ import {
   type SessionWorkbenchState,
   type WorkspaceRows
 } from '@shared/types'
+import { workspaceWorkbenchKey } from '@shared/workbenchState'
 
 let root: string
 let projectsRoot: string
@@ -835,6 +836,29 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
     expect(mgr.isMember('s1')).toBe(false)
     mgr.dispose()
     expect(layout.panels.s1).toBeUndefined()
+  })
+
+  it('a workspace’s own Workbench starts shut even when new sessions open theirs, so the welcome page looks as it did', () => {
+    layout = { ...layout, workbench: { defaultOpen: true } }
+    expect(restart().workbenchState(workspaceWorkbenchKey(plain))).toEqual({
+      open: false,
+      tabs: []
+    })
+  })
+
+  it('keeps a pinned workspace’s own Workbench across a restart, forgets it when the workspace is removed, and ignores one never pinned', () => {
+    const state: SessionWorkbenchState = {
+      open: true,
+      tabs: [{ kind: 'web', title: 'Issues', url: 'https://github.com/acme/repo/issues' }]
+    }
+    mgr.setWorkbenchState(workspaceWorkbenchKey(plain), state)
+    mgr.setWorkbenchState(workspaceWorkbenchKey('/never/pinned'), state)
+    expect(restart().workbenchState(workspaceWorkbenchKey(plain))).toEqual(state)
+    expect(layout.workspacePanels).toEqual({ [plain]: state })
+    expect(layout.panels).toEqual({})
+
+    expect(mgr.remove(plain).removed).toBe(true)
+    expect(layout.workspacePanels?.[plain]).toBeUndefined()
   })
 })
 

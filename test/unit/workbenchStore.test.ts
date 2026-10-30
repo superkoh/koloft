@@ -15,10 +15,14 @@ const osOpen = vi.fn()
 const openExternal = vi.fn()
 let disk: Record<string, SessionWorkbenchState> = {}
 const get = vi.fn(async (sessionId: string) => disk[sessionId] ?? { open: true, tabs: [] })
+const githubTarget = vi.fn(
+  async (root: string, what: string) => `https://github.com/acme${root}/${what}`
+)
 
 vi.stubGlobal('window', {
   api: {
     workbench: { get, setState },
+    github: { target: githubTarget },
     preview: { osOpen },
     browser: { openExternal },
     settings: { set: vi.fn() },
@@ -705,8 +709,8 @@ describe('openWebPage (FR-11 — an .html file renders in a `web` tab)', () => {
     expect(strip().tabs[1].sourceTabId).toBe(FILES_TAB_ID)
   })
 
-  it('with no session selected the global overlay takes it — never the OS', () => {
-    useStore.setState({ tabs: [], sessions: [], activeTabId: null })
+  it('with no session selected and no workspace to show, the global overlay takes it — never the OS', () => {
+    useStore.setState({ tabs: [], sessions: [], activeTabId: null, workspaceRows: [] })
     openWebPage('/ws/docs/page.html')
 
     expect(strip()).toBeUndefined()
@@ -716,6 +720,70 @@ describe('openWebPage (FR-11 — an .html file renders in a `web` tab)', () => {
       open: true
     })
     expect(osOpen).not.toHaveBeenCalled()
+  })
+})
+
+describe('a workspace row’s own Workbench', () => {
+  const WS = '/repo'
+  const WS_KEY = 'ws:/repo'
+  const rowsOf = (...paths: string[]): WorkspaceRows[] =>
+    paths.map((p) => ({ workspace: { path: p }, rows: [] }) as unknown as WorkspaceRows)
+
+  beforeEach(() => {
+    githubTarget.mockClear()
+    useStore.setState({ workspaceRows: rowsOf(WS, '/other'), lastWsPath: null })
+  })
+
+  it('a click on a count leaves the session on screen for the workspace’s welcome page and opens the list in that workspace’s Workbench, once', async () => {
+    disk = {
+      [WS_KEY]: { open: false, tabs: [{ kind: 'file', title: 'a.md', path: '/repo/a.md' }] }
+    }
+
+    useStore.getState().openWorkspaceList(WS, 'issues')
+    await vi.waitFor(() => expect(strip(WS_KEY)?.tabs.some((t) => t.kind === 'web')).toBe(true))
+    useStore.getState().openWorkspaceList(WS, 'issues')
+    await flush()
+
+    const s = useStore.getState()
+    expect(s.activeTabId).toBeNull()
+    expect(s.lastWsPath).toBe(WS)
+    expect(githubTarget).toHaveBeenCalledWith(WS, 'issues')
+    expect(strip(WS_KEY).tabs.map((t) => t.url ?? t.path ?? t.kind)).toEqual([
+      'files',
+      '/repo/a.md',
+      'https://github.com/acme/repo/issues'
+    ])
+    expect(s.workbenchOpen[WS_KEY]).toBe(true)
+    expect(setState).toHaveBeenLastCalledWith(WS_KEY, {
+      open: true,
+      tabs: [
+        { kind: 'file', title: 'a.md', path: '/repo/a.md' },
+        expect.objectContaining({ kind: 'web', url: 'https://github.com/acme/repo/issues' })
+      ]
+    })
+    expect(strip(TAB)).toBeUndefined()
+  })
+
+  it('a link opened while the welcome page is up lands in that workspace’s Workbench, not the overlay', async () => {
+    useStore.setState({ activeTabId: null, lastWsPath: '/other' })
+    openWebPage('https://example.com/doc')
+    await flush()
+
+    expect(useStore.getState().overlay).toBeNull()
+    expect(strip('ws:/other').tabs.some((t) => t.url === 'https://example.com/doc')).toBe(true)
+  })
+
+  it('removing the workspace forgets its Workbench, so adding it back starts clean', async () => {
+    useStore.getState().openWorkspaceList(WS, 'pulls')
+    await vi.waitFor(() => expect(strip(WS_KEY)).toBeDefined())
+
+    useStore.getState().setWorkspaceRows(rowsOf('/other'))
+
+    const s = useStore.getState()
+    expect(s.workbench[WS_KEY]).toBeUndefined()
+    expect(s.workbenchOpen[WS_KEY]).toBeUndefined()
+    expect(s.workbenchFetched[WS_KEY]).toBeUndefined()
+    expect(s.workbenchFetched[TAB]).toBe(true)
   })
 })
 
