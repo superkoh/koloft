@@ -70,6 +70,10 @@ Schema availability is distinguished from behavior actually seen on the wire.
   `createCodexTransport`) a TUI resuming a thread asked four times as it opened; each
   reply was 24,187,552 bytes and three reached Koloft within 60 ms, faster than the TUI
   took them off its socket, so more than 64 MB waited to be sent to it at once.
+  0.166.0 has a feature flag `plugin_discovery_prefetch` (`stable`, on), turned off with
+  `--disable plugin_discovery_prefetch` (its notes: "Allow disabling plugin discovery
+  prefetch at app-server startup"; read from `codex features list`, 2026-10-30); whether
+  turning it off stops the TUI's `plugin/list` asks was not run.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
@@ -278,6 +282,16 @@ normal. With four app-servers resuming one thread at once, three showed the same
 empty composer (one press is enough; it prints the `codex resume <id>` line first).
 Measured 2026-10-29, codex 0.166.0, a python pty 80×24, the owner's own `CODEX_HOME`.
 
+**From 0.166.0 the npm `codex` is one process.** Its `bin/codex.js` replaces itself with
+the native binary (`execve`), so the pid that ran `node …/.bin/codex` becomes
+`…/codex-darwin-arm64/vendor/…/bin/codex` with the same arguments; on 0.165.0 the same
+command was a `node` process with the native binary as its child (2026-10-30, `ps` of a
+running TUI and app-server per build). Koloft kills a tab's process group by pid, and
+finds a left-over or remote app-server by its `app-server --stdio` arguments, which
+`ps` showed kept; that both still work, and that a Workbench shell's title now shows
+`codex` where it showed `node`, is inferred from that `ps`, not run (the real-binary
+e2e specs passed on 0.166.0, section 7).
+
 Koloft's own stop, ownership and retry rules are product rules, covered by
 `test/unit/codexTransport.test.ts`, not Codex facts.
 
@@ -318,7 +332,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0 or 0.165.0. Koloft
+0.164.0, 0.165.0 or 0.166.0. Koloft
 treats the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`)
 as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
 `test/unit/codexRuntime.test.ts`) and warns on anything newer. The owner raised the
@@ -356,7 +370,26 @@ both builds, `gpt-6.1-terra` new to this ledger, the default still `gpt-6.1-sol`
 (a message queued mid-turn starts the next turn within 14 ms, `clientId` kept), the
 rollout records of section 13 (one new record, see there) and 27 (the same four events, order and stdin keys) were measured
 again, and the same e2e specs passed. `codex --help`, `app-server --help`, `exec
---help` and `resume --help` are byte-identical to 0.164.0's. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+--help` and `resume --help` are byte-identical to 0.164.0's. On 0.166.0 (2026-10-30, the
+same way against 0.165.0, `gpt-6-luna`): sections 1 (`thread/list` keys unchanged, 32
+keys per thread; the schema adds only the client methods `account/gcp/setup`,
+`accountSession/list` and `accountSession/switch`, the fields `ThreadItem.startedAtMs` /
+`completedAtMs`, `ThreadUsage.nativeUsageUsdMicros`, `HooksListParams.threadId`,
+`HookMetadata.environmentId` and `ProcessExitedNotification.outputDrainTimedOut`, and no
+server notification or request), 5 (the npm `codex` is now one process), 11 (a `never`
+/ `danger-full-access` thread resumed by an app-server given other `-c` stays as it was;
+the other two shapes not rerun), 13/14 (`model/list` the same eight models, all priced,
+default `gpt-6.1-sol`; `total` keeps growing across a resume; reasoning tokens were 0 in
+every turn, so the notes' "reasoning-token accounting across resume and fork" was not
+reached), 15 (`login status`, `auth.json` unchanged by a turn), 17 (an unsubscribed
+thread unloads within a minute and a message queued into it waits), 25 (OSC 7501 still
+sent; the `?u` and DA1 queries now come before `6n`), 27 (the same four events and
+keys; `cwd` is now the command's folder), 28 (the start race, not fixed), 33 (`codex
+queue`'s options) and 34 (a TUI whose app-server is killed keeps trying to reconnect)
+were measured again, and the same
+e2e specs passed, the remote ones (E-SSH-23/24/25) too. `codex
+--help`, `app-server --help`, `exec --help` and `resume --help` are byte-identical to
+0.165.0's; `queue --help` and `doctor --help` (`--network-only`) differ. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -1644,6 +1677,24 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   So a message Koloft queues is not an interrupt. `turn/steer` and `turn/interrupt` are
   methods on 0.161.0–0.163.0 (strings; `codex features list` shows `steer` as removed,
   on, and `instant_interrupt` under development, on since 0.162.1) — neither run.
+- **Since 0.166.0 a thread nobody is subscribed to unloads within a minute, and a
+  message queued into it then waits until someone resumes it.** 2026-10-30, 0.165.0
+  against 0.166.0, a Node client on `codex app-server --stdio` in a throwaway
+  `CODEX_HOME` and `HOME` signed in with a copied `auth.json`, `gpt-6-luna`. A thread
+  the client stayed subscribed to was still loaded and `idle` after 90 s on both. After
+  `thread/unsubscribe`, 0.166.0 sent `thread/closed` and dropped the thread from
+  `thread/loaded/list` between 30 s and 60 s later (`thread/read` then `notLoaded`);
+  0.165.0 still had it loaded 90 s later. On the unloaded 0.166.0 thread
+  `thread/queue/add` still answered `queuedSubmission`, but no turn started in 25 s and
+  the message stayed in `thread/queue/list`; the same for `codex queue --thread <id>
+  --message …` from another process (exit 0, `Queued message …`). A later
+  `thread/resume` ran all three queued messages within 40 s. On 0.165.0 both kinds of
+  queued message started a turn within 25 s. Koloft queues only into the thread a live
+  tab's TUI holds, through that tab's own stdio app-server; while the TUI reconnects to
+  Koloft's relay (section 34) the relay keeps that app-server's connection, or a new
+  app-server gets the TUI's `thread/resume` — so Koloft should not meet this (read from
+  `codexTransport.ts`, not run on 0.166.0). A queue in the first minute after the
+  unsubscribe, and a reconnect slower than a minute, were not run.
 
 ## 18. Which command lines open the full-screen TUI
 
@@ -2181,8 +2232,9 @@ the one before, the screen read back through `pyte`.
   Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
   `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
   for either CLI (issue #487). The startup and exit sequences are otherwise the same on
-  both versions and both env shapes: `?2004h`, `>7u`, `?1004h`, the `6n`, OSC 10/11
-  and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
+  both versions and both env shapes (on 0.166.0, 2026-10-30, Koloft's env shape, too,
+  except that the `?u` and DA1 queries now come before `6n`): `?2004h`, `>7u`,
+  `?1004h`, the `6n`, OSC 10/11 and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
   `?1006l ?1015l ?1003l ?1002l ?1000l <1u ?1007l ?1049l <u ?2004l ?1004l` — so the
   mouse modes are set at start and reset at exit, not both on the welcome screen as the
   bullet above says from 2026-10-13. No XTVERSION query is sent. 0.163.0's strings drop
@@ -2439,7 +2491,11 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   `model`; all but `SessionStart`/`SessionEnd` add `turn_id`. `UserPromptSubmit` adds
   `prompt`; `PostToolUse` adds `tool_name`, `tool_input`, `tool_use_id`, `tool_response`
   (for `Bash` the output as one string); `Stop` adds `stop_hook_active`,
-  `last_assistant_message`.
+  `last_assistant_message`. **Since 0.166.0 the `cwd` of `PreToolUse` and `PostToolUse`
+  is the command's own folder**: a command the model ran in `work/sub` gave `…/work/sub`
+  there, where 0.165.0 gave the thread's `…/work`; the keys and the order of the four
+  events were the same on both (2026-10-30, one `gpt-6-luna` turn per build, throwaway
+  homes). Koloft's Codex hooks (the reply-language and hold hooks) read no `cwd`.
 - **When each fires:** `SessionStart` at the first turn after `thread/start`,
   `thread/resume` or a compaction, not at `thread/start` itself. `UserPromptSubmit`, then
   `PreToolUse`/`PostToolUse` around each tool, then `Stop` at the end of each turn.
@@ -2505,6 +2561,9 @@ home where one app-server had already started and stopped first.
   copied `auth.json`): 5 of 6 rounds lost one app-server with the same error (0.163.0
   the same day: 1 of 6). One 0.164.0 round where both answered logged
   `failed to install system skills: … Directory not empty (os error 66)`.
+- **Not fixed on 0.166.0** either (2026-10-30, the same method): 2 of 6 fresh-home rounds
+  lost one app-server with the same error, exit 1, 50–76 ms after start (0.165.0 the
+  same day: 5 of 6); a home used once before, 0 of 6 on both.
 
 ## 29. Git credentials from inside the sandbox
 
@@ -2676,6 +2735,16 @@ stdin. Each turn then failed at the model (401), after the hook had run. One run
   `[Discord] 你好 "a" <b> é<TAB>x<LF>line2` reached the hook as
   `"prompt":"[Discord] 你好 \"a\" <b> é\tx\nline2"`: only the quote, the tab and the line
   feed escaped, as Node's `JSON.stringify` does (second run, same setup).
+- **0.166.0 trims `codex queue`'s options and adds `--resume`.** 2026-10-30, `codex queue
+  --help` against 0.165.0's: `-i`, `-m`, `--oss`, `--local-provider`, `-s`,
+  `--approve-for-me`, `--dangerously-bypass-approvals-and-sandbox`,
+  `--dangerously-bypass-hook-trust`, `--worktree` and `--add-dir` are gone (`-m` now
+  exits 2; it exited 0 on 0.165.0), `-C` sits under "Local server options (without
+  --remote)", and `-c` says queued messages use the thread's model. `--resume` against a
+  thread unloaded from a stdio app-server exited 0 with `Warning: message was queued,
+  but could not resume thread …: start a local daemon or specify a server with
+  --remote`, and the message waited as in section 17. Koloft never builds a `codex
+  queue` line; the shim only lets it through without a TUI.
 
 ## 34. A TUI whose connection drops, and an app-server that dies mid-turn
 
@@ -2716,4 +2785,9 @@ trusted. One run of each.
   `app-server generate-json-schema` output, not tried on the wire: `ClientRequest` lists
   none (`thread/queue/add` itself is not in the generated schema either), so a message
   queued again lands behind those still queued.
+- **A TUI whose app-server is killed keeps trying on 0.165.0 and 0.166.0 too.**
+  2026-10-30, a real TUI on `--remote unix://…` to an `app-server --listen` of its own
+  (no relay in between), the app-server sent SIGKILL: both drew "Reconnecting to
+  server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
+  reconnect recovery" was not told apart from 0.165.0 by this.
 
