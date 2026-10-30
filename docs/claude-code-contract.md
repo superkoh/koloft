@@ -96,7 +96,14 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   "idleCompaction": false in settings.json` (the tail is new, joined with a no-break
   space), and `/config` gets an `Idle compaction` row (read, not run). Koloft shows that
   record's text as a notice without matching on it (`commandOutputOf`), so only the
-  words a user sees change.
+  words a user sees change. **Since 2.1.314 the server flag is gone**: neither binary
+  (darwin-arm64, linux-arm64) holds `tengu_sunny_locket`, the mode is `on` in the code
+  and the fraction is the constant 0.9; the token floor, the `1h` cache TTL, the 60 s
+  skips and `"idleCompaction": false` read the same, and the path stays off for `bg` and
+  `daemon` sessions (`strings`, 2026-10-30, not run). Its changelog says it now also runs
+  for subscribers with telemetry off. So every interactive session past the floor on a
+  one-hour cache can compact while idle (inferred from those strings, not watched in a
+  session on 2.1.314).
 - **Every compaction ends by writing a summary record**, at about the moment SessionStart
   `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
   content "This session is being continued from a previous conversation that ran out of
@@ -188,7 +195,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   linux-arm64 (`strings`, 2026-10-25: the same again), and on 2.1.311, darwin-arm64 and
   linux-arm64 (`strings`, 2026-10-27: the same 33 names in the same order), and on
   2.1.312, darwin-arm64 and linux-arm64 (`strings`, 2026-10-28: the same 33 names in the
-  same order).
+  same order), and on 2.1.314, darwin-arm64 and linux-arm64 (`strings`, 2026-10-30: the
+  same 33 names in the same order).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -512,7 +520,8 @@ Unless a bullet below says more, it is inferred, not checked.
   messages out of order or keeping messages that were taken back" case (an interrupt, a
   denied call) was not run. No reader in `src/` names `tools-used`; each picks records
   by `type`. 2.1.312 writes it too (2026-10-28, interactive pty runs: one per launch
-  that ran a tool).
+  that ran a tool), and so does 2.1.314 (2026-10-30, `claude -p` runs: one after each
+  tool call, `tools` growing, e.g. `["ToolSearch"]` then `["ToolSearch","Monitor"]`).
 - **A Bash tool call that writes files leaves no file record**; the file-history
   snapshot stays empty for it and the command text is the only trace.
 - **The `relocated` record is written before the transcript rename as often as after
@@ -1196,6 +1205,13 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   gains 2 (`HOST_GUARDS_ARTIFACTS_MCP`, `REMOTE_TOOLS_HOST_IDLE_RELEASE_MINUTES`) and
   loses `MCP_HANDED_LISTINGS`, none of which `src/` sets; `tengu_*` gains 25 and loses 5,
   none named in this ledger; all 49 names `src/` uses or passes are still there.
+  Between 2.1.312 and 2.1.314 (`strings -n 6`, 2026-10-30, darwin-arm64 and
+  linux-arm64): `ANTHROPIC_*` and `*_MODEL` identical at 77 and 14, the 54 dated beta
+  names identical; `CLAUDE_CODE_*` gains 9 (among them `UPFRONT_TOOLS`,
+  `STREAM_EVENT_HOLD_MS`, `MEMORY_CONTEXT_NO_WAIT`) and loses none, none of which `src/`
+  sets; `tengu_*` gains 45 and loses 12, the one named in this ledger being
+  `tengu_sunny_locket` (§1, idle compaction); all 49 names `src/` uses or passes are
+  still there.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1590,8 +1606,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
-(2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27) and
-2.1.312 (2026-10-28).
+(2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
+2.1.312 (2026-10-28) and 2.1.314 (2026-10-30).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1956,7 +1972,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli' | 'sdk-cli'`,
   `nameSource: 'derived' | 'user' | 'auto'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
-  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. A daemon-hosted
+  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
+  key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
+  (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
+  reader parses the JSON and counts no keys. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -1991,7 +2010,8 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     `idle_prompt` Notification. `busy` while a turn, a local command or a compaction
     runs. A reply that says "waiting on you" mid-sentence leaves it `idle` (0.1 s after
     Stop and for 6 s after, 3 interactive runs each on 2026-10-28, CC 2.1.311 and
-    2.1.312, the same 18 keys); the binary sets `waiting` only from what is open on
+    2.1.312, the same 18 keys; on 2.1.314, 2026-10-30, one run, `idle` 0.1 s after
+    Stop); the binary sets `waiting` only from what is open on
     screen, never from the message text, so the 2.1.312 changelog's "showing as waiting
     on you" fix is the agent view's count, not this field.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
@@ -2459,7 +2479,8 @@ below was one run.
   and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
   is a different gate), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
   green (2026-10-25), and on linux-arm64 2.1.311 the same (2026-10-27), and on
-  linux-arm64 2.1.312 the same (2026-10-28). A user's own `claude -p` in a Koloft terminal is the measured case.
+  linux-arm64 2.1.312 the same (2026-10-28), and on linux-arm64 2.1.314 the same
+  (2026-10-30). A user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
@@ -2577,6 +2598,26 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   input** (changelog: "unknown keys are dropped, and input the tool rejects denies the
   call"; not run — Koloft's gate never rewrites input, it only allows or denies; the
   `PermissionRequest` side was run, §14).
+- **Since 2.1.314 a `PreToolUse` hook on matcher `Bash` also runs before the Monitor
+  tool starts its command, and can deny or hold it but not allow it.** 2026-10-30, CC
+  2.1.312 against 2.1.314, `claude -p` through Koloft's shim, haiku, a prompt that has
+  Claude start Monitor on a short command, PreToolUse and PostToolUse hooks logging
+  stdin, 8 runs. On 2.1.312 a `Bash` hook never fired for Monitor; a `*` hook fired
+  with `tool_name: "Monitor"`. On 2.1.314 the `Bash` hook fires with `tool_name:
+  "Bash"` and `tool_input: {command, description}` (no `timeout_ms`), while the `*`
+  hook still sees `Monitor`. A deny stops it, reported as `PreToolUse:Monitor hook
+  error: <reason>`; an allow under `--permission-mode default` is ignored (the call
+  still needed approval); an 8 s sleep started the monitor 8 s late, then it ran.
+  `PostToolUse` on `Bash` still does not fire for Monitor. Koloft's hold hook matches
+  `"tool_name":"Bash"` and reads `tool_input.command`, so on a busy machine it should
+  now hold a background tab's Monitor start the way it holds a Bash call, and list its
+  command as held (inferred from these runs and the hook's text; the hold hook itself
+  was not run). `stale_pr_status` never sees a Monitor. Not run: the interactive TUI, a
+  subagent's Monitor.
+- **The transcript record of a call a `PreToolUse` hook denied is unchanged on
+  2.1.314**: a `tool_result` `{type, content: "PreToolUse:<tool> hook error: <reason>",
+  is_error: true, tool_use_id}` with `toolDenialKind: "permission-rule"` beside it, the
+  same keys as on 2.1.312 (2026-10-30, `claude -p`, one run per build).
 
 ## §16 `claude --version` and `claude update`
 
@@ -2598,7 +2639,10 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-27; its `--help` differs from 2.1.310's only in the wording of `purge`'s line,
   no flag or command added or gone) and 2.1.312 (`2.1.312 (Claude Code)`, 2026-10-28;
   its `--help` and the `agents`, `attach`, `daemon`, `mcp`, `mcp add`, `respawn` and
-  `self-hosted-runner` helps byte-identical to 2.1.311's).
+  `self-hosted-runner` helps byte-identical to 2.1.311's) and 2.1.314 (`2.1.314 (Claude
+  Code)`, 2026-10-30; its `--help` differs from 2.1.312's only in the wording of
+  `auto-mode`'s line, and the same seven subcommand helps are byte-identical; 2.1.313
+  has no changelog section and was not downloaded).
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2659,7 +2703,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   and npm's and the download host's `stable` still 2.1.308; on 2026-10-27 npm `latest`
   and `next` and the download host's `latest` offered 2.1.311, `stable` still 2.1.308;
   on 2026-10-28 npm `latest` and `next` and the download host's `latest` offered
-  2.1.312, `stable` still 2.1.308.
+  2.1.312, `stable` still 2.1.308; on 2026-10-30 npm `latest` and `next` and the
+  download host's `latest` offered 2.1.314, npm's and the download host's `stable` still
+  2.1.308.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2680,7 +2726,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   291,496,120 bytes (ETag the file's MD5, strings stamp `2.1.310` only), and on
   2026-10-27 `2.1.311/linux-arm64/claude` with 293,658,808 bytes (ETag the file's MD5),
   and on 2026-10-28 `2.1.312/linux-arm64/claude` with 293,462,200 bytes (ETag the
-  file's MD5, strings stamp `2.1.312` only) — each ran as
+  file's MD5, strings stamp `2.1.312` only), and on 2026-10-30
+  `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt

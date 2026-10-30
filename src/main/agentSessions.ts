@@ -608,7 +608,9 @@ async function launchSibling(
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     ownerWords,
-    ...(helperRole && { trustFolder: true }),
+    // ADR-0026
+    trustFolder:
+      !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
     // CODEX§17
     ...(traits.handoverAsRole
       ? { role: preamble, firstPrompt: args.prompt }
