@@ -1,0 +1,75 @@
+$ node notes/431/probe-local-forward.mjs koloft-e2e-sshd:e2fa0e244851
+(2026-10-30, on macOS 27; one lab machine from the e2e image, reached directly — no jump host;
+ the master opened with Koloft's own ssh options from src/main/remote/ssh.ts)
+
+ssh client: OpenSSH_10.3p1, LibreSSL 3.3.6
+sshd: OpenSSH_9.2p1 Debian-2+deb12u10, OpenSSL 3.0.22 25 Aug 2026 / Debian GNU/Linux 12 (bookworm)
+
+== 1. master up, logins counted
+[master] exit=0 ms=152 stdout="" stderr=""
+logins so far: 2
+[check] exit=0 ms=6 stdout="" stderr="Master running (pid=37814)"
+
+== 2. -L with port 0 (does ssh pick and print a Mac port?)
+[forward L 0] exit=255 ms=6 stdout="" stderr="Bad local forwarding specification '127.0.0.1:0:localhost:8000'"
+
+== 3. -L with a port Koloft picked
+[forward L] exit=0 ms=8 stdout="" stderr=""
+fetch 127.0.0.1: HTTP 200 48B in 33ms
+fetch localhost: HTTP 200 48B in 7ms
+logins after forward: 2 (before 2 )
+[plain command still rides] exit=0 ms=10 stdout="ok" stderr=""
+
+== 4. machine side "localhost" reaching an ::1-only server
+[forward to ::1 server via localhost] exit=0 ms=14 stdout="" stderr=""
+fetch: HTTP 200 48B in 8ms
+
+== 5. many connections at once
+30 parallel fetches: 30 ok
+
+== 6. the same spec again, and the same Mac port to another machine port
+[same spec twice] exit=0 ms=6 stdout="" stderr=""
+[same Mac port, other target] exit=255 ms=6 stdout="" stderr="mux_client_forward: forwarding request failed: Port forwarding failed\r\nmuxclient: master forward request failed"
+
+== 7. a Mac port another program already holds
+[forward onto held port] exit=255 ms=7 stdout="" stderr="mux_client_forward: forwarding request failed: Port forwarding failed\r\nmuxclient: master forward request failed"
+[check after] exit=0 ms=4 stdout="" stderr="Master running (pid=37814)"
+
+== 8. a machine port nothing listens on
+[forward to dead port] exit=0 ms=5 stdout="" stderr=""
+fetch: error ECONNRESET in 3ms
+[check after] exit=0 ms=5 stdout="" stderr="Master running (pid=37814)"
+
+== 9. cancel: exact spec, and a spec written differently
+[cancel other spelling] exit=0 ms=5 stdout="" stderr="mux_client_forward: forwarding request failed: port not forwarded\r\nmuxclient: master cancel forward request failed"
+fetch after other-spelling cancel: HTTP 200 48B in 3ms
+[cancel exact] exit=0 ms=4 stdout="" stderr=""
+fetch after exact cancel: error ECONNREFUSED in 1ms
+[cancel again (already gone)] exit=0 ms=4 stdout="" stderr="mux_client_forward: forwarding request failed: port not forwarded\r\nmuxclient: master cancel forward request failed"
+[plain command still rides] exit=0 ms=8 stdout="ok" stderr=""
+
+== 10. the master goes, the forward goes
+[forward] exit=0 ms=4 stdout="" stderr=""
+fetch: HTTP 200 48B in 3ms
+[exit master] exit=0 ms=5 stdout="" stderr="Exit request sent."
+fetch after master exit: error ECONNREFUSED in 1ms
+[forward with no master] exit=255 ms=9 stdout="" stderr="Control socket connect(/tmp/p431-36912/be64216565c1ab0ed4e810070f539bf5e85b135d): No such file or directory"
+
+== 11. MaxSessions 2 (muser): two sessions held, then a forward
+[master muser] exit=0 ms=146 stdout="" stderr=""
+[forward while full] exit=0 ms=6 stdout="" stderr=""
+fetch while 2 sessions held: HTTP 200 48B in 15ms
+[exit master muser] exit=0 ms=8 stdout="" stderr="Exit request sent."
+
+== 12. AllowTcpForwarding no (nuser)
+[master nuser] exit=0 ms=130 stdout="Welcome to the box" stderr=""
+[forward] exit=0 ms=7 stdout="" stderr=""
+fetch: error ECONNRESET in 2ms
+[check after] exit=0 ms=7 stdout="" stderr="Master running (pid=40011)"
+[plain command still rides] exit=0 ms=10 stdout="Welcome to the box\nok" stderr=""
+[exit master nuser] exit=0 ms=7 stdout="" stderr="Exit request sent."
+
+Notes on reading it:
+- "logins so far: 2" counts sshd's "Accepted publickey" lines: one from the readiness check before the probe, one for the master. It stays 2 after the forward, so the forward needed no new login.
+- Step 11 started two `ssh lab-muser 'sleep 30'` riding the master 1.5 s before the forward; that they had opened their sessions by then was not checked.
+- Not checked: the same through a ProxyJump bastion (Koloft's lab path); §33's -R facts were measured that way.
