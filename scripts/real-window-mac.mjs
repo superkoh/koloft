@@ -18,6 +18,9 @@ const VM_MEMORY_MB = 6144
 const VM_CPUS = 4
 const IP_WAIT_SECONDS = 300
 const SSH_READY_TRIES = 60
+// PLATFORM§52
+const LSREGISTER =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
 
 const USAGE = `Runs test/real-window on a Mac whose screen the run may take over.
 
@@ -55,13 +58,27 @@ function run(command, args, opts = {}) {
 
 const tart = (args, opts) => run('tart', args, opts)
 
+// PLATFORM§52
+const SCREEN_CAPTURE_APPROVED_FOR_TESTS_RUN_OVER_SSH = `approvals="${GUEST_HOME}/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist"
+approved="/usr/libexec/sshd-keygen-wrapper"
+mkdir -p "\${approvals:h}"
+plutil -create xml1 "$approvals"
+plutil -insert "$approved" -dictionary "$approvals"
+plutil -insert "$approved.kScreenCaptureApprovalLastAlerted" -date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
+plutil -insert "$approved.kScreenCaptureApprovalLastUsed" -date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
+plutil -insert "$approved.kScreenCapturePrivacyHintDate" -date "$(date -u -v+30d +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
+plutil -insert "$approved.kScreenCapturePrivacyHintPolicy" -integer 2592000 "$approvals"
+plutil -insert "$approved.kScreenCaptureAlertableUsageCount" -integer 1 "$approvals"`
+
 function guestScript(args) {
   const quoted = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`).join(' ')
   return `set -u
+${SCREEN_CAPTURE_APPROVED_FOR_TESTS_RUN_OVER_SSH}
 rsync -a --exclude /.git --exclude /.claude --exclude /dist --exclude /test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
 cd ${GUEST_HOME}/koloft
 codesign --force --deep --sign - node_modules/electron/dist/Electron.app
+${LSREGISTER} -f node_modules/electron/dist/Electron.app
 sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} ${GUEST_HOME}/node scripts/real-window-mac.mjs here ${quoted}
 code=$?
 rsync -a ${GUEST_HOME}/koloft/test-results/real-window/ "${GUEST_SHARES}/kit/results/"

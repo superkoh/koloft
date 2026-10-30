@@ -2459,6 +2459,20 @@ server unless a line says so.
   2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
   before boot was replaced when the user logged in (the group container was re-created).
   macOS 26.6.2 on GitHub's runner did not ask.
+- **The screen-capture dialog is asked once, may be drawn late, and is skipped when the
+  approval is already on file** (measured 2026-10-30, macOS 27.0 26A428, same tart base
+  image). The dialog is a `UserNotificationCenter` window; replayd writes the
+  `ScreenCaptureApprovals.plist` entry when it asks, not when Allow is clicked, and the
+  entry looks the same either way. Unanswered, the dialog stays on screen and takes key
+  focus: in two real-window runs the first three captures did not show it and the fourth
+  did, so it landed in the middle of a later case, where it hid the banners and took the
+  Pinyin keys. Answered with Allow, 8 more captures over a minute raised nothing. On a
+  fresh clone, the logged-in user (over SSH, before any capture) creating the group
+  container folder and writing the entry with `plutil` (all five keys, both dates now)
+  stopped the dialog: 18 captures, none asked, and containermanagerd adopted the folder
+  (it added its metadata plist, the usage count kept rising). On a VM whose replayd had
+  already asked, a hand-written entry was overwritten from replayd's memory within a
+  capture.
 - **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
   `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
   its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
@@ -2470,6 +2484,13 @@ server unless a line says so.
   performing Allow answers it. Until it is answered the app's notifications are kept
   as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
   2026-10-12 in the tart VM above.
+- **A freshly re-signed bundle can be unknown to Notification Center until LaunchServices
+  registers it again.** In some tart runs, every `requestAuthorization` from the bundle
+  signed moments before came back `didGrant: 0 hasError: 1` while usernoted logged
+  "Failed to find or validate client of identifier com.github.Electron": no question, no
+  banner for the whole run, though the Dock badge was still drawn. `lsregister -f` on the
+  bundle right after `codesign` gave `didGrant: 1 hasError: 0` and the question. Measured
+  2026-10-30, macOS 27.0 26A428, Electron 43.8.1, in the tart VM above.
 
 ## §53 An SSH remote sent over https, and a server that refuses https
 
