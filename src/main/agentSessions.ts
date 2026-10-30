@@ -416,6 +416,7 @@ export interface SessionVerbDeps {
   butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
+  bound(tabId: string, ms: number): Promise<boolean>
   asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
@@ -810,6 +811,7 @@ const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft sessio
 const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
 export const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
+const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
 const NO_WORKTREE_IN_BUTLER_FOLDER =
   'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'
@@ -998,7 +1000,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       throw new Error(
         `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`
       )
+    const first = !(await d.bound(tab, 0))
     await d.press(tab, [text, '\r'])
+    // AGY§8
+    if (first && !(await d.bound(tab, Math.min(until - Date.now(), FIRST_PROMPT_BINDS_WITHIN_MS))))
+      return `Typed into ${t.name}, but it has not started a conversation yet.`
     return `Typed into ${t.name}.`
   }
 

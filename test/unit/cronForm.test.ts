@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { CronJob, Schedule, SkillSuggestion } from '@shared/types'
+import type { CronJob, LiveRun, Schedule, SkillSuggestion } from '@shared/types'
 import { describeSchedule } from '@shared/schedule'
-import { histEnd, histText, histWhen } from '@shared/cronHistory'
+import { histEnd, histText, histWhen, liveWords } from '@shared/cronHistory'
 import {
   emptyFields,
   fieldsToSchedule,
@@ -332,6 +332,21 @@ describe('history rows', () => {
     expect(histWhen({ dueAt: at(9, 0), state: 'skipped', count: 1, until: at(9, 0) }, NOW)).toBe(
       'today 09:00'
     )
+  })
+
+  it('says a finished run Koloft is closing is closing, or still finishing while background work runs; one kept open, not being closed, or whose job no longer closes waits for you', () => {
+    const done: LiveRun = { jobId: 'j', tabId: 't', state: 'done', startedAt: 0, dueAt: 0 }
+    const closing: LiveRun = { ...done, closing: 'soon' }
+    expect(liveWords({ autoClose: true }, closing)).toBe('done — closing')
+    expect(liveWords({ autoClose: true }, { ...done, closing: 'after-background-work' })).toBe(
+      'done — still finishing'
+    )
+    expect(liveWords({ autoClose: true }, { ...closing, kept: 'Changes not committed' })).toBe(
+      'done — waiting for you'
+    )
+    expect(liveWords({ autoClose: true }, done)).toBe('done — waiting for you')
+    expect(liveWords({}, closing)).toBe('done — waiting for you')
+    expect(liveWords({ autoClose: true }, { ...closing, state: 'running' })).toBe('working')
   })
 
   it('ends where the row ends', () => {

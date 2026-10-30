@@ -47,12 +47,16 @@ const daemon = (CommandLine: string): Record<string, unknown> => ({
   name: 'run_command',
   args: { CommandLine, IsDaemon: true, WaitMsBeforeAsync: 500, toolSummary: 'Dev server startup' }
 })
+const command = (CommandLine: string): Record<string, unknown> => ({
+  name: 'run_command',
+  args: { CommandLine, WaitMsBeforeAsync: 500, toolSummary: 'Probe command' }
+})
 
 let home: string
 let repo: string
 let gemini: string
 let sessions: AgySessions
-let pty: EventEmitter & { write: ReturnType<typeof vi.fn> }
+let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
 let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
@@ -207,6 +211,7 @@ beforeEach(() => {
     }),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
+    type: vi.fn(async () => undefined),
     wakeReady: vi.fn(),
     kill: vi.fn(),
     clearResumeIntent: vi.fn()
@@ -248,6 +253,7 @@ beforeEach(() => {
         readAgyConfig: async () => machine.config,
         agyHeldElsewhere: async () => machine.held,
         agyConversations: async () => machine.rows as SummaryRow[],
+        agySend: async () => false,
         endTmuxSession: async (name) => {
           machine.ended.push(name)
           return undefined
@@ -559,6 +565,36 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.showsPromptBeforeBind(id)).toBe(false)
   })
 
+  it('the status frames since the prompt from before the bind count once bound, so a turn that started or ended before it is not lost', async () => {
+    const started = (await launch()).id
+    say(started, state('idle'))
+    say(started, state('working'))
+    say(started, state('working'))
+    expect(events('prompt')).toHaveLength(0)
+    title(started, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(1)
+    expect(events('stop')).toHaveLength(0)
+
+    const ended = (await launch()).id
+    say(ended, state('idle'))
+    say(ended, state('working'))
+    say(ended, state('done'))
+    title(ended, { conversation_id: B })
+    await vi.waitFor(() => expect(sessions.list()).toHaveLength(2), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(2)
+    expect(events('stop')).toHaveLength(1)
+  })
+
+  it('a prompt from before the bind with nothing after it counts as a finished turn once bound, as after a slash command typed first', async () => {
+    const { id } = await launch()
+    say(id, state('idle'))
+    title(id, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('stop')).toHaveLength(1)
+    expect(events('prompt')).toHaveLength(0)
+  })
+
   it('binds on its own from the title log, without waiting for a status frame', async () => {
     const { id } = await launch()
     title(id, { conversation_id: A })
@@ -800,7 +836,38 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a plain background command or an ask still open is not one", async () => {
+  it("names each command agy left running in the background after its turn, in place of the plain Background work, until it ends; one that finished inside the turn or was declined, so agy's own task list lacks it, never shows, and one the list has stays through the next turn even if no model call followed it", async () => {
+    apiAnswers = true
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'PreToolUse', { toolCall: command('echo fast'), stepIdx: 4 })
+    hook(id, 'PostToolUse', { toolCall: command('echo fast'), stepIdx: 4, error: '' })
+    hook(id, 'PreInvocation', { invocationNum: 2 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', { toolCall: command('rm -rf build'), stepIdx: 6 })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-2` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-2`, kind: 'command', label: 'sleep 45; echo done', state: 'working' }
+      ])
+    )
+    hook(id, 'PostToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2, error: '' })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    hook(id, 'PreToolUse', { toolCall: command('npm test'), stepIdx: 10 })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-10` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
+    )
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
+  })
+
+  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a command still asking, which agy's list lacks, is not one", async () => {
     apiAnswers = true
     const id = await boundTab()
     const listed = (...steps: number[]): void => {
@@ -823,7 +890,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
     await hooksTaken(id)
     expect(sessions.list()[0].background).toBeUndefined()
-    listed(2, 4, 6)
+    listed(2, 4)
     await turnOver(A, 1)
     await vi.waitFor(() =>
       expect(sessions.list()[0].background).toEqual([
@@ -960,7 +1027,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it("answers a question with the picked option's id through the API", async () => {
+  it("answers each question of an ask through the API, a picked option by its id and the owner's own words as a write-in", async () => {
     apiAnswers = true
     trajectory = waitingStep({
       askQuestion: {
@@ -971,32 +1038,45 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
               { id: 'a', text: 'Apple' },
               { id: 'b', text: 'Banana' }
             ]
-          }
+          },
+          { question: 'Which size?', options: [{ id: 's', text: 'Small' }] }
         ]
       }
     })
     const id = await boundTab()
     say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
     await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
-    expect(sessions.openQuestion(id)).toMatchObject({
-      question: 'Which fruit?',
-      options: [{ label: 'Apple' }, { label: 'Banana' }]
-    })
-    expect(await sessions.answer(id, 'banana')).toBeUndefined()
+    expect(sessions.openQuestion(id)?.questions).toEqual([
+      {
+        question: 'Which fruit?',
+        options: [{ label: 'Apple' }, { label: 'Banana' }],
+        ownWords: true
+      },
+      { question: 'Which size?', options: [{ label: 'Small' }], ownWords: true }
+    ])
+    expect(await sessions.answer(id, 'banana')).toBe(false)
+    expect(sent('HandleCascadeUserInteraction')).toEqual([])
+    expect(await sessions.answer(id, 'banana\nMedium, please')).toBeUndefined()
     expect(sent('HandleCascadeUserInteraction')).toEqual([
       {
         cascadeId: A,
         interaction: {
           trajectoryId: 't9',
           stepIndex: 2,
-          askQuestion: { responses: [{ question: 'Which fruit?', selectedOptionIds: ['b'] }] }
+          askQuestion: {
+            responses: [
+              { question: 'Which fruit?', selectedOptionIds: ['b'] },
+              { question: 'Which size?', writeInResponse: 'Medium, please' }
+            ]
+          }
         }
       }
     ])
     expect(pty.write).not.toHaveBeenCalled()
+    expect(pty.type).not.toHaveBeenCalled()
   })
 
-  it("answers a question with the option's digit when the API does not answer, reading the options from the tool call", async () => {
+  it('reads a question from the tool call when the API does not answer, and leaves it open for the keys the relay presses', async () => {
     const id = await boundTab()
     hook(id, 'PreToolUse', {
       toolCall: {
@@ -1006,15 +1086,65 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     })
     await hooksTaken(id)
     say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
-    expect(sessions.openQuestion(id)).toMatchObject({
-      question: 'Which fruit?',
-      options: [{ label: 'Apple' }, { label: 'Banana' }]
+    const open = {
+      id: expect.any(String),
+      questions: [
+        {
+          question: 'Which fruit?',
+          options: [{ label: 'Apple' }, { label: 'Banana' }],
+          ownWords: true
+        }
+      ]
+    }
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(await sessions.answer(id, 'A ripe mango')).toBe(false)
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  // AGY§14
+  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+    const id = await boundTab()
+    const asked = async (multi: boolean): Promise<void> => {
+      hook(id, 'PreToolUse', {
+        toolCall: {
+          name: 'ask_question',
+          args: {
+            questions: [
+              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
+            ]
+          }
+        }
+      })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    }
+    await asked(true)
+    expect(sessions.openQuestion(id)).toBeUndefined()
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(await sessions.answer(id, '1')).toBe(false)
+
+    say(id, state('working'))
+    apiAnswers = true
+    trajectory = waitingStep({
+      askQuestion: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [
+              { id: '1', text: 'Apple' },
+              { id: '2', text: 'Banana' }
+            ],
+            isMultiSelect: true
+          }
+        ]
+      }
     })
-    expect(await sessions.answer(id, 'Cherry')).toBe(
-      'this Antigravity question takes the number or the name of one option.'
-    )
-    expect(await sessions.answer(id, '2')).toBeUndefined()
-    expect(pty.write.mock.calls).toEqual([[id, '2']])
+    await asked(false)
+    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
+    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(pty.write).not.toHaveBeenCalled()
   })
 
   it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
@@ -1267,23 +1397,41 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(await runtime.stillWorking(id)).toBe(false)
   })
 
-  it('a remote tab, with no task list to ask, shows a daemon once a turn-over title counts tasks and drops it once one counts none; on an agy that never sends task_count it keeps it', async () => {
+  it('a remote tab, with no task list to ask, shows a daemon and names a plain background command once a turn-over title counts tasks, drops them once one counts none, and never shows a command that was declined, which no model call follows; on an agy that never sends task_count it keeps them', async () => {
     const background = (tabId: string): unknown =>
       sessions.list().find((s) => s.tabId === tabId)?.background
-    const pre = (conversationId: string): unknown => ({
+    const pre = (
+      conversationId: string,
+      stepIdx = 2,
+      toolCall = daemon('npm run dev')
+    ): unknown => ({
       event: 'PreToolUse',
-      input: { conversationId, stepIdx: 2, toolCall: daemon('npm run dev') }
+      input: { conversationId, stepIdx, toolCall }
+    })
+    const modelCall = (conversationId: string, invocationNum: number): unknown => ({
+      event: 'PreInvocation',
+      input: { conversationId, invocationNum }
     })
     const counting = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
     mirrored(counting, [
       { event: 'SessionStart', input: { conversationId: A } },
+      modelCall(A, 0),
       pre(A),
       { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
     ])
     expect(background(counting)).toBeUndefined()
-    mirrored(counting, [{ conversation_id: A, agent_state: 'idle', task_count: 1 }])
+    mirrored(counting, [
+      modelCall(A, 1),
+      pre(A, 4, command('sleep 45')),
+      modelCall(A, 2),
+      { event: 'Stop', input: { conversationId: A, fullyIdle: false } },
+      modelCall(A, 0),
+      pre(A, 8, command('rm -rf build')),
+      { conversation_id: A, agent_state: 'idle', task_count: 2 }
+    ])
     expect(background(counting)).toEqual([
-      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' },
+      { id: `${A}/task-4`, kind: 'command', label: 'sleep 45', state: 'working' }
     ])
     mirrored(counting, [{ conversation_id: A, agent_state: 'idle' }])
     expect(background(counting)).toBeUndefined()
@@ -1291,6 +1439,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     mirrored(older, [
       { event: 'SessionStart', input: { conversationId: B } },
       pre(B),
+      modelCall(B, 1),
       { conversation_id: B, agent_state: 'idle' }
     ])
     expect(background(older)).toEqual([
@@ -1311,10 +1460,12 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     fs.writeFileSync(
       path.join(mirror, 'pty-old.agy.jsonl'),
       line('PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
         titled(1) +
         JSON.stringify({ conversation_id: A, agent_state: 'idle' }) +
         '\n' +
         line('PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 6 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
         line('Stop', { fullyIdle: true }) +
         titled(1)
     )

@@ -30,6 +30,18 @@ method. A recheck adds its date, version and command to the bullet.
   Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
   whenever Koloft found git missing, so claude finds that one and this check does not
   fire (inferred, not checked on a Mac without the tools).
+- **A git only the login shell's PATH holds** (nix's `~/.nix-profile/bin`, pkgsrc's
+  `/opt/pkg/bin`, asdf's and mise's shim folders) is not on the app's PATH at launch.
+  Some of them are not git: an asdf shim is a script starting `#!/usr/bin/env bash` that
+  runs `asdf exec git` (asdf `internal/shims/shims.go`), and a mise shim on macOS is a
+  link to the `mise` program itself, or a script starting `#!/bin/sh` in its `file` mode
+  (mise `src/shims.rs`); both look git up again on PATH, so handing git to one can come
+  back to Koloft's own. nixpkgs' `bin/git` is git's own program behind links into
+  `/nix/store` — its wrappers touch only helpers under `libexec/git-core` (nixpkgs
+  `pkgs/by-name/gi/git/package.nix`). (2026-10-28, read from each project's source on
+  its main branch, not run on a Mac with nix, asdf or mise.) The program Koloft ships,
+  copied elsewhere and run without the launcher's `GIT_EXEC_PATH`, prints
+  `//libexec/git-core` for `--exec-path` (2026-10-28, macOS 27.0, git 2.53.0).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -705,6 +717,54 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
   whichever comes first, and neither is thrown off (measured on Electron 43 /
   Chromium 150).
+- **One `debugger.attach` per guest; two users share it.** A second `attach` on the same
+  guest throws "Debugger is already attached to the target". Measured 2026-10-27,
+  Electron 43.8.1 / Chromium 150.0.7871.250, in the built app: with a real Playwright
+  client attached through Koloft's relay, main ran a whole element pick (below) through
+  the same attachment, with no attach or detach of its own; afterwards the client's
+  click, an element handle taken before the pick, a locator, a screenshot and a
+  navigation all still worked. The pick's `Overlay.*` events reach the client too, and
+  Playwright ignores them.
+- **Picking an element in a guest** (same measurement, plus a scratch main script with a
+  `<webview>` in a `show: false` window, input sent with `Input.dispatchMouseEvent`):
+  `Overlay.setInspectMode {mode: 'searchForNode'}` outlines the element under the mouse
+  and a click sends `Overlay.inspectNodeRequested {backendNodeId}`; the page's own click
+  handler ran 0 times. `CSS.getComputedStyleForNode` gave 481 properties. `DOM.getBoxModel`
+  is in viewport coordinates while the `Page.captureScreenshot` clip is in page
+  coordinates: with the page scrolled 1040 px, a clip straight from the box model came
+  back as an empty transparent picture; adding `Page.getLayoutMetrics`'
+  `cssVisualViewport.pageX/pageY` gave the element.
+- **A cross-origin iframe in a guest is its own target, and inspect mode does not reach
+  it from the guest's session.** Measured 2026-10-28, same Electron, in the built app,
+  with a page on `127.0.0.1` holding an iframe from `localhost` (its own renderer
+  process): with `Overlay.setInspectMode` on the guest's root session only, a click in
+  the iframe reached the iframe's page and no `inspectNodeRequested` came. From the
+  root session, `Target.getTargets` lists every target of the app (the host page too);
+  the iframe is `type: 'iframe'` with `parentId` the guest's own target id
+  (`Target.getTargetInfo`). `Target.attachToTarget {flatten: true}` on it gives a
+  session where the same inspect mode works: the click is held, and
+  `inspectNodeRequested` arrives with that session id. The iframe's box model is in its
+  own viewport; `DOM.getFrameOwner {frameId: <iframe target id>}` on the parent session
+  plus that owner's content box gives the offset in the guest.
+  - That attach sends `Target.attachedToTarget`, and its detach
+    `Target.detachedFromTarget`, on the guest's root session — the session a relay
+    client listens on. Passed on to a Playwright client that drives the page, they made
+    it drop its own frame for that iframe (measured: `frame.isDetached()` came back
+    undefined, the frame gone from `page.frames()`); kept from the client, its frame
+    still evaluated afterwards.
+  - The guest can attach to its own target the same way (`Target.attachToTarget
+    {targetId: <its own id>, flatten: true}` from its root session): inspect mode, DOM and
+    CSS work in that session (measured the same day, e2e BP-01). Iframes attached from
+    that session kept a Playwright client's own iframe frame alive (BP-08), which the
+    root-session attach above did not; that their announcements land on that session
+    rather than the root one is inferred from this, not read off the wire.
+  - `Page.captureScreenshot` from the guest's root session draws the iframe's area
+    transparent (a clip on a red button inside it came back all 0,0,0,0), also with
+    `captureBeyondViewport`. The guest's own `webContents.capturePage(rect)`, with
+    `rect` in the viewport's DIP, drew it (centre pixel the button's red).
+- **An agent's click inside a cross-origin iframe does not land through the relay**
+  (measured the same day: Playwright's `frame.click()` on a button in such an iframe
+  left the page's click counter at 0, with no element pick running).
 
 ## §17 Playwright as a CDP client
 
@@ -1110,6 +1170,13 @@ inferred, not checked.
   never-answering `ext::` remote.
 - **`execFile` gives the child an open stdin pipe that is never closed**, so a child that
   reads stdin blocks until the timeout.
+- **Input written to a child's stdin that the child exits before reading raises `EPIPE`
+  on the stdin stream, and with no `'error'` listener there it is an uncaught exception.**
+  Measured 2026-10-29 (Node 24.13.0, macOS 27.0): `/usr/bin/ssh -F /dev/null -o
+  BatchMode=yes -p 1 127.0.0.1 cat` (connection refused) given 4 MB through `execFile`
+  then `stdin.end(buf)` raised it in 30 of 30 runs, exit code 255; with
+  `stdin.on('error', () => {})` 0 of 30, same exit code. Pinned by a unit test with a
+  fake `ssh` that exits at once.
 - **`err.code` in `execFile`'s callback**: a number for the child's exit code; a string
   when Node could not run it (missing binary, output past `maxBuffer`); absent when it
   was killed.
@@ -1518,6 +1585,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
   ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
   ssh lab.)
+- **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
+  the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
+  opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection
+  closed by UNKNOWN port 65535`), because the bastion closes the hop at once. Machine
+  frozen so it answers nothing (`docker pause`), master up: ssh never returns on its own
+  — still hung at 60 s, when the probe killed it (§33's no-connect-phase rule) — so
+  Koloft's own 10 s timeout in `runSshBytes` is what ends it. (2026-10-29, OpenSSH_10.3p1
+  on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a ProxyJump bastion, Koloft's
+  `sshOptions` with BatchMode, the e2e Docker ssh lab image, a scratch node script timing
+  `spawnSync`.)
 
 ## §34 rsync
 
@@ -1633,6 +1710,29 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   handle INT died with 130 as before).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
+- **A tmux client whose login names no UTF-8 locale draws `_` for every character
+  outside ASCII**, whatever the program in the pane printed: `中文 ⏺ …` came out as
+  `____ _ _`, and `─` as the line-drawing set (`ESC(0q ESC(B`). The client decides by the
+  first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set: `tmux -u`, or `LANG=C.UTF-8` on the
+  client alone, drew them right; so did a `LANG=en_US.UTF-8` the login was handed though
+  the machine had no such locale (`locale -a`: `C`, `C.utf8`, `POSIX`), with or without
+  `-u`. With no `LANG` at login the pane's program gets none either. `capture-pane -p`
+  run from inside such a pane, with no `LANG` and no `-u`, wrote the characters as they
+  are.
+  - **Whether the login gets a `LANG` is up to the Mac's ssh config and the server.**
+    macOS's own `/etc/ssh/ssh_config.d/100-macos.conf` has `SendEnv LANG LC_*`, and a
+    stock Debian sshd has `AcceptEnv LANG LC_*`: an ssh run with the system config and
+    `LANG=en_US.UTF-8` (what Koloft gives a tab's terminal when the Mac set none) handed
+    the login `LANG=en_US.UTF-8`, also when it rode a ControlMaster that was started with
+    no `LANG` at all — the client's own variables count. An ssh run with `-F <file>`
+    skips the system config, so its `SendEnv` is gone and the login has no `LANG` (the
+    e2e lab's ssh is run that way); so does a server without `AcceptEnv`. The
+    container's own `ENV LANG=C.UTF-8` (seen by `docker exec`) does not reach an ssh
+    login.
+
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
+  reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
+  printing those characters and attached to it, its bytes read back on the Mac.)
 
 ## §36 ccstatusline
 

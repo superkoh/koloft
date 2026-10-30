@@ -77,7 +77,8 @@ export function shownAsInstalled(list: BackendAvailability[] | null, id: Backend
 export type Messaging = 'queue' | 'peerLine' | 'typed'
 
 const MESSAGING: Record<BackendId, Record<HostId, Messaging>> = {
-  claude: { local: 'peerLine', ssh: 'typed' },
+  // CC§13
+  claude: { local: 'peerLine', ssh: 'peerLine' },
   // CODEX§17
   codex: { local: 'queue', ssh: 'queue' },
   // MUSE§7

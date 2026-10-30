@@ -8,7 +8,7 @@ import type { CodexFrame } from '../../src/main/codexTransport'
 
 const PROCESS_SAMPLE_MS = 1000
 process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
-const { CodexRpc, codexEnvironment, createCodexTransport } =
+const { CodexRpc, codexEnvironment, createCodexTransport, TUI_STALLED_AFTER_MS } =
   await import('../../src/main/codexTransport')
 type CodexRpc = InstanceType<typeof CodexRpc>
 
@@ -51,6 +51,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
  if(mode==='unread') {process.stdout.write('{"id":"plugin-list-1","result":not json}\\n');out({id:f.id,result:{}});return;}
+ if(mode==='burst') {for(let i=0;i<f.params.count;i++) out({method:'burst',params:{i,pad:'x'.repeat(f.params.bytes)}});return;}
  if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
@@ -475,6 +476,78 @@ describe('Codex TUI transport', () => {
     const first = nextFrame(socket)
     socket.send(JSON.stringify({ id: 'start', method: 'initialize', params: {} }))
     expect(await first).toMatchObject({ id: 'start' })
+  })
+
+  const BURST_FRAME_LIMIT = 256 * 1024
+  const BURST_REPLY_BYTES = 200 * 1024
+  const BURST_REPLIES = 8
+
+  async function tuiThatStopsReading(): Promise<{
+    socket: WebSocket
+    errors: Error[]
+    burst(id: number, count: number): void
+    burstReachedKoloft(): number
+  }> {
+    const errors: Error[] = []
+    let reached = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      maxFrameBytes: BURST_FRAME_LIMIT,
+      onFrame: (direction, frame) => {
+        if (direction === 'server' && frame.method === 'burst') reached++
+      },
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    socket.pause()
+    return {
+      socket,
+      errors,
+      burst: (id, count) =>
+        socket.send(
+          JSON.stringify({
+            id,
+            method: 'thread/read',
+            params: { mode: 'burst', count, bytes: BURST_REPLY_BYTES }
+          })
+        ),
+      burstReachedKoloft: () => reached
+    }
+  }
+
+  // CODEX§1
+  it('a TUI that reads slower than a burst of replies far over the size limit together, as the Codex TUI asking for its plugin list several times at once, keeps its connection and gets every reply', async () => {
+    const { socket, errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    const seen: number[] = []
+    socket.on('message', (bytes) =>
+      seen.push(((JSON.parse(bytes.toString()) as CodexFrame).params as { i: number }).i)
+    )
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() =>
+      expect(burstReachedKoloft() === BURST_REPLIES || errors.length > 0).toBe(true)
+    )
+    expect(errors).toEqual([])
+    socket.resume()
+    await vi.waitFor(() => expect(seen).toHaveLength(BURST_REPLIES))
+    expect(seen).toEqual([...Array(BURST_REPLIES).keys()])
+    expect(errors).toEqual([])
+  })
+
+  it('a TUI that has taken nothing for 30 s while far behind loses its connection when Codex sends it more', async () => {
+    const { errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() => expect(burstReachedKoloft()).toBe(BURST_REPLIES))
+    const now = performance.now()
+    const later = vi.spyOn(performance, 'now').mockReturnValue(now + TUI_STALLED_AFTER_MS + 1000)
+    try {
+      burst(3, 1)
+      await vi.waitFor(() => expect(errors.map((e) => e.message).join()).toMatch(/took none/))
+    } finally {
+      later.mockRestore()
+    }
   })
 
   it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {

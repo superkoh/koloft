@@ -61,16 +61,20 @@ async function takeOneFromTheAllowance(box: Outbox): Promise<void> {
 }
 
 // CC§13
-export function writeLineInTurn(socketPath: string, line: string): Promise<void> {
-  const box = outboxes.get(socketPath) ?? {
+export function writeLineInTurn(
+  receiver: string,
+  line: string,
+  write: (line: string) => Promise<void> = (l) => writeLine(receiver, l)
+): Promise<void> {
+  const box = outboxes.get(receiver) ?? {
     last: Promise.resolve(),
     allowance: MESSAGES_A_SENDER_MAY_BURST,
     at: Date.now()
   }
-  outboxes.set(socketPath, box)
+  outboxes.set(receiver, box)
   const mine = box.last.then(async () => {
     await takeOneFromTheAllowance(box)
-    await writeLine(socketPath, line)
+    await write(line)
   })
   box.last = mine.catch(() => undefined)
   return mine

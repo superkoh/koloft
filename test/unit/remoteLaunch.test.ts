@@ -578,7 +578,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     )
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
   })
 
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
@@ -623,7 +623,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     )
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
   })
 
   it("an Antigravity tab started without an API key runs agy without the machine's own key", () => {
@@ -662,7 +662,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.tmux()).toEqual([
       ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
       ...['set', '-gq', 'set-titles-string', '#{pane_title}'],
-      ...['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1']
+      ...['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1']
     ])
     expect(b.ensured()).toBe(false)
   })
@@ -676,7 +676,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
 
     b.run('attach', '90', '30')
     expect(b.standIn().join(' ')).toContain('stty cols 90 rows 30')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
   it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {

@@ -34,6 +34,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
     c.stdout.on('data', (d: Buffer) => out.push(d))
     c.stderr.on('data', (d: Buffer) => (err += String(d)))
     c.on('close', (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }))
+    c.stdin.on('error', () => {})
     c.stdin.end(opts?.input)
   })
 }
@@ -357,6 +358,21 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
+    })
+
+    it("saves a picked element's picture on the machine and answers with its absolute path there, deleting anything older than a day left in its folder", async () => {
+      const picks = path.join(home, '.koloft', 'element-picks')
+      fs.mkdirSync(picks, { recursive: true })
+      const old = path.join(picks, 'old.png.part')
+      fs.writeFileSync(old, 'x')
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      fs.utimesSync(old, twoDaysAgo, twoDaysAgo)
+
+      const saved = await machine().savePick('tab-1-5.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+
+      expect(saved).toBe(path.join(fs.realpathSync(picks), 'tab-1-5.png'))
+      expect([...fs.readFileSync(saved)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+      expect(fs.readdirSync(picks)).toEqual(['tab-1-5.png'])
     })
 
     it('measures how far the checkout is behind origin, fetching in the same command only when asked, and fast-forwards it in one command that answers with the checkout as it now stands', async () => {
@@ -730,16 +746,18 @@ describe('accounts for remote launches started together', () => {
 
 it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
   const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-  let answered = (): void => {}
+  let askForHeartbeat!: (answer: () => void) => void
+  const heartbeatAsked = new Promise<() => void>((asked) => (askForHeartbeat = asked))
   const alive = new Set<string>()
   const host = machine(runOnMachine, {
     alive: () => alive,
-    firstHeartbeatDone: () => new Promise((done) => (answered = done))
+    firstHeartbeatDone: () => new Promise((done) => askForHeartbeat(done))
   })
   const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
-  await new Promise((r) => setTimeout(r, 50))
+  const answer = await Promise.race([heartbeatAsked, launching.then(() => undefined)])
+  if (!answer) throw new Error('launch finished without asking for the first heartbeat')
   alive.add(live)
-  answered()
+  answer()
   const plan = await launching
   if (!plan.ok) throw new Error('launch refused')
   expect(plan.machine?.attachTo).toBe(live)

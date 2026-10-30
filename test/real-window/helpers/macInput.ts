@@ -6,6 +6,8 @@ const SCRIPT = path.join(__dirname, 'macInput.jxa.js')
 
 export const COMMAND_FLAG = 0x100000
 export const KEY_P = 35
+export const KEY_O = 31
+export const KEY_K = 40
 export const KEY_RETURN = 36
 export const KEY_SPACE = 49
 const NIHAO_KEYCODES = [45, 34, 4, 0, 31]
