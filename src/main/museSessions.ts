@@ -36,6 +36,7 @@ import {
   museHook,
   writeMuseHooks,
   type MuseHold,
+  type MuseRelayFiles,
   type MuseHook
 } from './museHooks'
 import {
@@ -80,7 +81,6 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
-import { discordSaidFile, noticeFile } from './hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -704,8 +704,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
       hold && { ...hold, tabId },
-      this.deps.hookRegDir && noticeFile(this.deps.hookRegDir, tabId),
-      this.deps.hookRegDir && discordSaidFile(this.deps.hookRegDir, tabId)
+      this.deps.hookRegDir ? { regDir: this.deps.hookRegDir, tabId } : undefined
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -755,8 +754,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     context: string | undefined,
     ownerWords: string | undefined,
     hold: MuseHold | undefined,
-    notice: string | undefined,
-    discordSaid: string | undefined
+    relay: MuseRelayFiles | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -783,15 +781,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(
-        shimDir,
-        requestDir,
-        context,
-        ownerWords,
-        hold,
-        notice,
-        discordSaid
-      )
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, relay)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
