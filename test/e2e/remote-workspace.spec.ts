@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Page } from '@playwright/test'
+import type { Frame, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
@@ -18,6 +18,7 @@ import {
   typeInAddressBar
 } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import { PNG_1X1 } from './helpers/filesFixture'
 import { machinePageUrl } from '../../src/shared/browserRoute'
 import {
   type E2EEnv,
@@ -99,11 +100,6 @@ const A_REFUSED_LOAD_SETTLES_MS = 3000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
-
-const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64'
-)
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
   sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
@@ -805,7 +801,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       fs.writeFileSync(path.join(dir, 'linked.html'), machinePage('from a link'))
       fs.writeFileSync(path.join(dir, 'style.css'), 'h1 { color: rgb(1, 2, 3); }\n')
       fs.mkdirSync(path.join(dir, 'img'))
-      fs.writeFileSync(path.join(dir, 'img', 'pic.png'), PNG_1X1)
+      fs.writeFileSync(path.join(dir, 'img', 'pic.png'), Buffer.from(PNG_1X1, 'base64'))
       fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](linked.html)\n')
 
       await addRemoteWorkspace(page, env)
@@ -845,7 +841,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test("E-RW-50: a page on the machine cannot read the machine's other files, and a web page cannot load them", async ({
+  test("E-RW-50: a page on the machine cannot read the machine's other files, and a web page cannot load them, not even from inside a page on the machine", async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -854,18 +850,27 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     try {
       const dir = remoteDir(env)
       fs.writeFileSync(path.join(dir, 'secret.js'), 'window.leaked = "the secret"\n')
-      fs.writeFileSync(
-        path.join(dir, 'reader.html'),
-        '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe><script>' +
-          'fetch("secret.js").then(() => { document.body.dataset.fetch = "read" }, ' +
-          '() => { document.body.dataset.fetch = "blocked" })</script>\n'
-      )
       const secretUrl = machinePageUrl(REMOTE_HOST, path.join(dir, 'secret.js'))
       const webPage = server.page(
         '/pulls-a-machine-script',
         `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
           `onerror="document.body.dataset.script = 'refused'"></script>`
       )
+      fs.writeFileSync(
+        path.join(dir, 'reader.html'),
+        '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe>' +
+          `<iframe src="${webPage}"></iframe><script>` +
+          'fetch("secret.js").then(() => { document.body.dataset.fetch = "read" }, ' +
+          '() => { document.body.dataset.fetch = "blocked" })</script>\n'
+      )
+      const pulledBy = async (frame: Frame): Promise<void> => {
+        await expect
+          .poll(() => frame.evaluate(() => document.body?.dataset.script ?? ''), {
+            timeout: 30_000
+          })
+          .toBe('refused')
+        expect(await frame.evaluate(() => (window as { leaked?: string }).leaked)).toBeUndefined()
+      }
 
       await openRemoteSessionWorkbench(page, env)
       await openInBrowse(page, `${remoteKey(env)}/reader.html`)
@@ -875,26 +880,29 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect
         .poll(() => reader.evaluate(() => document.body.dataset.fetch ?? ''), { timeout: 30_000 })
         .toBe('blocked')
+      const secretFrame = (): Frame | undefined =>
+        reader.frames().find((f) => f.url().endsWith('/secret.js'))
       await expect
-        .poll(() =>
-          reader.evaluate(() => {
-            const frame = document.getElementById('f') as HTMLIFrameElement
-            try {
-              return frame.contentDocument === null ? 'unreadable' : 'readable'
-            } catch {
-              return 'unreadable'
-            }
-          })
+        .poll(async () => (await secretFrame()?.evaluate(() => document.body.innerText)) ?? '', {
+          timeout: 30_000
+        })
+        .toContain('the secret')
+      expect(
+        await reader.evaluate(
+          () => (document.getElementById('f') as HTMLIFrameElement).contentDocument
         )
-        .toBe('unreadable')
+      ).toBeNull()
+      await expect
+        .poll(() => reader.frames().some((f) => f.url().endsWith('/pulls-a-machine-script')), {
+          timeout: 30_000
+        })
+        .toBe(true)
+      await pulledBy(reader.frames().find((f) => f.url().endsWith('/pulls-a-machine-script'))!)
 
       await newWebTab(page)
       await typeInAddressBar(page, webPage)
       const web = await guestByUrl(app, '/pulls-a-machine-script', { timeout: 30_000 })
-      await expect
-        .poll(() => web.evaluate(() => document.body.dataset.script ?? ''), { timeout: 30_000 })
-        .toBe('refused')
-      expect(await web.evaluate(() => (window as { leaked?: string }).leaked)).toBeUndefined()
+      await pulledBy(web.mainFrame())
     } finally {
       await quitAndClose(app)
       await server.close()

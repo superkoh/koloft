@@ -2695,8 +2695,16 @@ function mimeOf(p: string): string {
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
     '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
     '.css': 'text/css',
     '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.wasm': 'application/wasm',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
     '.json': 'application/json',
     '.txt': 'text/plain'
   }
@@ -4467,15 +4475,17 @@ async function machinePageResponse(request: Request): Promise<Response> {
       status: 404,
       headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
     })
-  return new Response(new Uint8Array(body), {
+  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
     headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
   })
 }
 
+const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
+
 // ADR-0045
 function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
-  if (!machinePageOf(details.url) || details.resourceType === 'mainFrame') return false
-  return !machinePageOf(details.webContents?.getURL() ?? '')
+  if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
+  return !machinePageOf(details.frame?.url ?? '')
 }
 
 function setupBrowserPartition(): void {

@@ -224,6 +224,8 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
+const MACHINE_PAGE_READ_MS = 120_000
+const MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -602,6 +604,8 @@ export class SshHost implements Host {
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
+  private pageReads = 0
+  private pageReadsWaiting: (() => void)[] = []
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -817,8 +821,8 @@ export class SshHost implements Host {
     return this.git.gitFileDiffFull(this.bare(file), base, untracked)
   }
 
-  private async readWithHeader(file: string, maxBytes: number) {
-    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)])
+  private async readWithHeader(file: string, maxBytes: number, timeoutMs?: number) {
+    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)], { timeoutMs })
     if (r.code !== 0) throw failure(r, 'KOLOFT_READ_FAILED')
     const { header, body } = headerAndBody(r.stdout)
     const parts = header.split(' ')
@@ -836,7 +840,16 @@ export class SshHost implements Host {
   }
 
   async readPageFile(file: string): Promise<Buffer> {
-    return (await this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES)).body
+    while (this.pageReads >= MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
+      await new Promise<void>((free) => this.pageReadsWaiting.push(free))
+    this.pageReads++
+    try {
+      const read = this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES, MACHINE_PAGE_READ_MS)
+      return (await read).body
+    } finally {
+      this.pageReads--
+      this.pageReadsWaiting.shift()?.()
+    }
   }
 
   async openForEdit(file: string) {

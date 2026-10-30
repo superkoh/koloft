@@ -45,10 +45,6 @@ export function previewDocs(input: {
   return [...latest.values()].sort((a, b) => b.at - a.at)
 }
 
-export function docLanding(doc: PreviewDoc): 'reading-rendered' | 'web-tab' {
-  return doc.kind === 'markdown' ? 'reading-rendered' : 'web-tab'
-}
-
 export function changeTotals(
   git: GitStatusMap,
   numstat: GitNumstatMap,

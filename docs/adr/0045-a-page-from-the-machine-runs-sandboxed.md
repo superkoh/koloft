@@ -9,10 +9,12 @@ page: Chromium lets it embed any Mac file but read none.
 **Decision**: every response of the scheme carries `Content-Security-Policy: sandbox …`
 without `allow-same-origin`. The page then has an opaque origin, as a `file://` page does:
 it embeds files from the machine and runs its scripts, but cannot read another file's
-bytes. Only a main-frame load, or a load by a page that is itself from the machine, may
-ask the scheme for a file, so a web page cannot pull a machine's script into its own
-origin; a tab an agent on another machine drives may not load it at all, as it may not
-load `file:`; and only a machine of a pinned remote workspace is ever reached.
+bytes. A frame may load a file of the scheme as its own document (it then runs sandboxed
+too), but any other load — a script, a stylesheet, a picture — must come from a frame that
+is itself from the machine, so a web page, even one framed inside a machine page, cannot
+pull a machine's script into its own origin. A tab an agent on another machine drives may
+not load the scheme, and such an agent may not list or attach to a tab showing it, as with
+`file:`; and only a machine of a pinned remote workspace is ever reached.
 **Cost**: `localStorage`, IndexedDB and cookies throw or are empty in such a page, while a
 local `file://` page has them.
 **Rejected**: adding `allow-same-origin` so storage works (it reopens every read above);

@@ -119,6 +119,7 @@ describe('routeFor — the §05B routing table', () => {
 
   it('opens a page on an ssh machine as a machine page web tab that maps back to the same file, and keeps every other machine file out of the browser', () => {
     for (const source of ['agent', 'user', 'address'] as const) {
+      expect(routeFor('ssh://dev/srv/a.html', source).target).not.toMatch(/^koloft-machine:\/\/\d/)
       const decision = routeFor('ssh://u@Box.lan/srv/my site/a#b.html', source)
       expect(decision.dest).toBe('browser')
       expect(decision.target.startsWith(`${MACHINE_PAGE_SCHEME}://`)).toBe(true)

@@ -35,6 +35,8 @@ function fileUrlFor(p: string): string {
 }
 
 export const MACHINE_PAGE_SCHEME = 'koloft-machine'
+const NOT_AN_IP_ADDRESS_PREFIX = 'm'
+const MACHINE_HOST = new RegExp(`^${NOT_AN_IP_ADDRESS_PREFIX}((?:[0-9a-f]{2})+)$`)
 
 function hexOf(text: string): string {
   return [...new TextEncoder().encode(text)].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -45,15 +47,15 @@ function textOfHex(hex: string): string {
 }
 
 export function machinePageUrl(host: string, p: string): string {
-  return `${MACHINE_PAGE_SCHEME}://${hexOf(host)}${encodedPath(p)}`
+  return `${MACHINE_PAGE_SCHEME}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
 }
 
 export function machinePageOf(url: string): RemoteKey | null {
   const u = urlOrNull(url)
-  if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !/^(?:[0-9a-f]{2})+$/.test(u.hostname))
-    return null
+  const hex = MACHINE_HOST.exec(u?.hostname ?? '')?.[1]
+  if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !hex) return null
   try {
-    return parseRemoteKey(formatRemoteKey(textOfHex(u.hostname), decodeURIComponent(u.pathname)))
+    return parseRemoteKey(formatRemoteKey(textOfHex(hex), decodeURIComponent(u.pathname)))
   } catch {
     return null
   }
@@ -88,7 +90,7 @@ function addressEntry(raw: string): RouteDecision {
   return { dest: 'browser', target: SEARCH_URL + encodeURIComponent(raw) }
 }
 
-export function fileUrlPath(url: string): string | null {
+function fileUrlPath(url: string): string | null {
   try {
     const u = new URL(url)
     return u.protocol === 'file:' ? decodeURIComponent(u.pathname) : null
