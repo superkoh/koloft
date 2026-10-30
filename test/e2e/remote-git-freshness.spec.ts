@@ -201,6 +201,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(away.locator('.fresh-line.stale')).toContainText(
         'main is 3 commits behind origin/main'
       )
+      await page.waitForTimeout(DIALOG_SETTLE_MS)
       expect(fetchesSent(env).length).toBe(beforeAway)
       await snap(page, 'E-RW-43-away')
     } finally {
