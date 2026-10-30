@@ -745,7 +745,6 @@ export interface SessionUsage {
   todayCostUsd?: number
   todayDayKey?: string
   model?: string
-  ccVersion?: string
   ctxTokens?: number
   ctxPct?: number
 }
@@ -767,7 +766,6 @@ export interface SessionSource {
 }
 
 export interface BackendSessionInfo {
-  cliVersion?: string
   background?: BackgroundItem[]
   nativeSessionId?: string
   tabId: string
