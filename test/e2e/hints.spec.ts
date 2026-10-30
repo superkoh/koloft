@@ -205,6 +205,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
       await runIn(page, centerTerm(page), 'back to work')
       await expect(page.locator(rowSel(b))).not.toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await expect(page.locator(rowSel(b))).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
       await page.locator(rowSel(a)).click()
       await expect(page.locator(rowSel(a))).toHaveClass(/\bactive\b/, { timeout: 15_000 })
 
