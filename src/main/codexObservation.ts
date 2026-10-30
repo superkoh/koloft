@@ -120,6 +120,17 @@ export function codexTurns(turns: unknown): TurnLog {
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
 
+// CODEX§4 CODEX§12
+function itemFinished(item: Record<string, unknown>): boolean {
+  if (item.status === 'completed') return true
+  return (
+    item.type === 'commandExecution' &&
+    item.status === 'failed' &&
+    typeof item.exitCode === 'number' &&
+    item.exitCode > 0
+  )
+}
+
 function openTarget(command: string, cwd: unknown): string | null {
   const m = OPEN_ONE_TARGET.exec(command.trim())
   const arg = m && (m[1] ?? m[2] ?? m[3])
@@ -458,11 +469,7 @@ export class CodexObservation {
     } else if (method === 'item/completed') {
       if (typeof item.id === 'string') this.editing.delete(item.id)
       const did =
-        item.type === 'plan'
-          ? PLAN_READY
-          : item.status === 'completed'
-            ? codexItemDid(item)
-            : undefined
+        item.type === 'plan' ? PLAN_READY : itemFinished(item) ? codexItemDid(item) : undefined
       if (!did) return
       this.planReady = did === PLAN_READY
       this.emit({ type: 'did', what: did })
