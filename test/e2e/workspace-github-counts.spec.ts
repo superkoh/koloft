@@ -47,7 +47,7 @@ function headFit(
   return page.locator('.ws-head', { hasText: ws }).evaluate((head) => {
     const box = head.getBoundingClientRect()
     const limit = box.right - parseFloat(getComputedStyle(head).paddingRight)
-    const counts = [...head.querySelectorAll<HTMLElement>('.ws-gh > span')]
+    const counts = [...head.querySelectorAll<HTMLElement>('.ws-gh > button')]
     const shown = counts.filter((c) => c.checkVisibility())
     const name = head.querySelector<HTMLElement>('.ws-name')!
     return {
@@ -68,7 +68,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 12, prs: 3 } })
     const { app, page } = await launchSettled(env)
     try {
-      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
+      const counts = gitMark(page, 'repo').locator('.ws-gh > button')
       await expect(counts).toHaveCount(2, { timeout: COUNTS_TIMEOUT })
       await expect(counts.nth(0)).toHaveAttribute('aria-label', '12 open issues')
       await expect(counts.nth(0)).toHaveText('12')
@@ -94,7 +94,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 0, prs: 5 } })
     const { app, page } = await launchSettled(env)
     try {
-      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
+      const counts = gitMark(page, 'repo').locator('.ws-gh > button')
       await expect(counts).toHaveCount(1, { timeout: COUNTS_TIMEOUT })
       await expect(counts).toHaveAttribute('aria-label', '5 open pull requests')
       await expect(gitMark(page, 'repo')).toHaveAttribute('title', '')
@@ -113,7 +113,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     const { app, page } = await launchSettled(env)
     try {
-      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > button')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       await expect(page.locator('.side')).toHaveJSProperty('offsetWidth', SIDEBAR_MIN)
@@ -136,7 +136,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     seedSettings(env, { sidebarWidth: 420 })
     const { app, page } = await launchSettled(env)
     try {
-      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > button')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       await expect
@@ -155,7 +155,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     const { app, page } = await launchSettled(env)
     try {
-      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > button')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       const name = page.locator('.ws-head', { hasText: LONG_NAME }).locator('.ws-name')
@@ -200,9 +200,10 @@ test.describe('Workspace GitHub counts · the counts open their lists in the wor
       await expect(workbenchPanel(page)).toBeVisible({ timeout: 20_000 })
       await expect.poll(() => tabTargets(page)).toContain(ISSUES_URL)
 
-      await gitMark(page, 'repo').locator('.ws-gh > span').nth(1).click()
+      await gitMark(page, 'repo').locator('.ws-gh > button').nth(1).click()
       await expect.poll(() => tabTargets(page)).toContain(PULLS_URL)
       await expect(wbTabs(page)).toHaveCount(3)
+      await page.mouse.move(1, 1)
       await listRows(await openGitPanel(page, 'repo'))
         .first()
         .click()
@@ -251,7 +252,7 @@ test.describe('Workspace GitHub counts · the real gh path, no fixture', () => {
 
     const { app, page } = await launchSettled(env)
     try {
-      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
+      const counts = gitMark(page, 'repo').locator('.ws-gh > button')
       await expect(counts).toHaveCount(2, { timeout: COUNTS_TIMEOUT })
       await expect(counts.nth(0)).toHaveAttribute('aria-label', '7 open issues')
       await expect(counts.nth(1)).toHaveAttribute('aria-label', '2 open pull requests')
@@ -279,7 +280,7 @@ test.describe('Workspace GitHub counts · a remote workspace', () => {
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
-      const counts = gitMark(page, REMOTE_WS_NAME).locator('.ws-gh > span')
+      const counts = gitMark(page, REMOTE_WS_NAME).locator('.ws-gh > button')
       await expect(counts).toHaveCount(1, { timeout: 60_000 })
       await expect(counts).toHaveAttribute('aria-label', '4 open pull requests')
 

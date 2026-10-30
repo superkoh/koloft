@@ -4,6 +4,8 @@ export const PERSISTED_TAB_CAP = 8
 
 export const DEFAULT_PANEL_OPEN = false
 
+export const WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT = false
+
 const WORKSPACE_WORKBENCH_PREFIX = 'ws:'
 
 export function workspaceWorkbenchKey(wsPath: string): string {

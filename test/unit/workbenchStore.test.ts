@@ -773,9 +773,25 @@ describe('a workspace row’s own Workbench', () => {
     expect(strip('ws:/other').tabs.some((t) => t.url === 'https://example.com/doc')).toBe(true)
   })
 
+  it('a file picked in Files while the welcome page is up opens in that workspace’s reading area', () => {
+    useStore.setState({ activeTabId: null, lastWsPath: WS })
+    useStore.getState().setOpenFile({ src: '/repo/a.md', label: 'a.md' })
+
+    expect(useStore.getState().openFiles[WS_KEY]?.src).toBe('/repo/a.md')
+  })
+
+  it('when the GitHub page cannot be found, the click says so instead of doing nothing', async () => {
+    githubTarget.mockResolvedValueOnce(null as unknown as string)
+    useStore.getState().openWorkspaceList(WS, 'issues')
+
+    await vi.waitFor(() => expect(useStore.getState().toast).toMatch(/GitHub page/))
+    expect(strip(WS_KEY)).toBeUndefined()
+  })
+
   it('removing the workspace forgets its Workbench, so adding it back starts clean', async () => {
     useStore.getState().openWorkspaceList(WS, 'pulls')
     await vi.waitFor(() => expect(strip(WS_KEY)).toBeDefined())
+    useStore.getState().setOpenFile({ src: '/repo/a.md', label: 'a.md' }, WS_KEY)
 
     useStore.getState().setWorkspaceRows(rowsOf('/other'))
 
@@ -783,6 +799,7 @@ describe('a workspace row’s own Workbench', () => {
     expect(s.workbench[WS_KEY]).toBeUndefined()
     expect(s.workbenchOpen[WS_KEY]).toBeUndefined()
     expect(s.workbenchFetched[WS_KEY]).toBeUndefined()
+    expect(s.openFiles[WS_KEY]).toBeUndefined()
     expect(s.workbenchFetched[TAB]).toBe(true)
   })
 })

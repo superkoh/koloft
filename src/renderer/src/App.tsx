@@ -737,6 +737,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
       const st = useStore.getState()
+      if (isWorkspaceWorkbenchKey(r.tabId)) {
+        st.openWorkbenchTarget(r.tabId, { url: r.url, source: r.source })
+        return
+      }
       const named = { ...r, tabId: conversationTabFor(r.tabId) }
       const sess = browserOpenTargetSession(st.sessions, named, st.activeTabId)
       const fromShell = named.tabId !== r.tabId
@@ -1302,12 +1306,15 @@ export default function App(): JSX.Element {
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : landedTab ? undefined : welcomeKey
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
-    useShallow((s) => [
-      ...s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id),
-      ...Object.keys(s.workbench).filter(isWorkspaceWorkbenchKey)
-    ])
+    useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
-  const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
+  const liveTabs = useMemo(
+    () =>
+      new Set(
+        panelTab && isWorkspaceWorkbenchKey(panelTab) ? [...liveTabIds, panelTab] : liveTabIds
+      ),
+    [liveTabIds, panelTab]
+  )
   const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return

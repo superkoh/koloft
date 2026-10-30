@@ -550,12 +550,12 @@ it('a v6 document keeps its Keep running marks across a reload, and drops an ent
   expect(migrateLayout(JSON.parse(serializeLayout(out)), deps)).toEqual(out)
 })
 
-it('a v6 document keeps each workspace’s own Workbench tabs across a reload, cleaned like a session’s', () => {
+it('a v6 document keeps each workspace’s own Workbench tabs across a reload, cleaned like a session’s, and one with no open flag starts shut whatever the session default', () => {
   const out = migrateLayout(
     {
       version: 6,
       workspaces: [{ path: '/repo' }],
-      workbench: { defaultOpen: false },
+      workbench: { defaultOpen: true },
       members: [],
       panels: {},
       workspacePanels: {
@@ -565,7 +565,8 @@ it('a v6 document keeps each workspace’s own Workbench tabs across a reload, c
             { kind: 'web', title: 'Issues', url: 'https://github.com/acme/repo/issues' },
             { kind: 'terminal', title: 'zsh' }
           ]
-        }
+        },
+        '/no-flag': { tabs: [] }
       }
     },
     deps
@@ -574,7 +575,8 @@ it('a v6 document keeps each workspace’s own Workbench tabs across a reload, c
     '/repo': {
       open: true,
       tabs: [{ kind: 'web', title: 'Issues', url: 'https://github.com/acme/repo/issues' }]
-    }
+    },
+    '/no-flag': { open: false, tabs: [] }
   })
   expect(migrateLayout(JSON.parse(serializeLayout(out)), deps)).toEqual(out)
 })

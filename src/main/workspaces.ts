@@ -48,7 +48,11 @@ import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
-import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
+import {
+  isWorkspaceWorkbenchKey,
+  workspaceOfWorkbenchKey,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionPlace } from './usageCache'
@@ -56,7 +60,6 @@ import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
-const WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT = false
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
 const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024

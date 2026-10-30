@@ -541,24 +541,26 @@ const WorkspaceHead = memo(function WorkspaceHead({
             </button>
           )}
           {(issues > 0 || prs > 0) && (
-            <span className={'ws-gh' + (listsReachable ? ' links' : '')}>
+            <span className="ws-gh">
               {issues > 0 && (
-                <span
+                <button
                   aria-label={openIssuesLabel(issues)}
-                  onClick={listsReachable ? (e) => actions.openList(e, path, 'issues') : undefined}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'issues')}
                 >
                   <IconIssue size={12} />
                   {countLabel(issues)}
-                </span>
+                </button>
               )}
               {prs > 0 && (
-                <span
+                <button
                   aria-label={openPullsLabel(prs)}
-                  onClick={listsReachable ? (e) => actions.openList(e, path, 'pulls') : undefined}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'pulls')}
                 >
                   <IconPullRequest size={12} />
                   {countLabel(prs)}
-                </span>
+                </button>
               )}
             </span>
           )}

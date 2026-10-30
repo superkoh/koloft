@@ -6,7 +6,11 @@ import type {
   PersistedTab,
   SessionWorkbenchState
 } from '@shared/types'
-import { DEFAULT_PANEL_OPEN, sanitizeSessionWorkbench } from '@shared/workbenchState'
+import {
+  DEFAULT_PANEL_OPEN,
+  sanitizeSessionWorkbench,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
 import { identityOf } from '@shared/sessionBackend'
 
 export interface MigrateDeps {
@@ -190,7 +194,11 @@ export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV6 {
     const resident = readIds(raw, 'resident')
     const doc = raw as Record<string, unknown>
     const workspacePanels = isRecord(doc.workspacePanels)
-      ? readSessions(doc, rest.workbench.defaultOpen, 'workspacePanels')
+      ? readSessions(
+          doc,
+          WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT,
+          'workspacePanels'
+        )
       : {}
     return {
       version: 6,

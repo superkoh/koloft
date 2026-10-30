@@ -294,6 +294,7 @@ const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
 const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
+const GITHUB_LIST_UNREACHABLE_NOTICE = 'Could not find this workspace’s GitHub page — try again.'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -409,6 +410,8 @@ function workbenchStateDropped(
   ids: string[]
 ): Pick<
   AppState,
+  | 'openFiles'
+  | 'changesBase'
   | 'workbench'
   | 'workbenchOpen'
   | 'workbenchFetched'
@@ -423,6 +426,8 @@ function workbenchStateDropped(
     return next
   }
   return {
+    openFiles: without(s.openFiles),
+    changesBase: without(s.changesBase),
     workbench: without(s.workbench),
     workbenchOpen: without(s.workbenchOpen),
     workbenchFetched: without(s.workbenchFetched),
@@ -582,8 +587,13 @@ function bindParkedWorkbench(): void {
   }
 }
 
-function workbenchAllowed(s: Pick<AppState, 'tabs'>, tabId: string | null | undefined): boolean {
-  return isWorkspaceWorkbenchKey(tabId) || hasWorkbench(s.tabs.find((t) => t.id === tabId))
+function workbenchAllowed(
+  s: Pick<AppState, 'tabs' | 'workspaceRows'>,
+  tabId: string | null | undefined
+): boolean {
+  if (isWorkspaceWorkbenchKey(tabId))
+    return s.workspaceRows.some((w) => workspaceWorkbenchKey(w.workspace.path) === tabId)
+  return hasWorkbench(s.tabs.find((t) => t.id === tabId))
 }
 
 function whenWorkbenchFetched(tabId: string, fn: () => void): void {
@@ -748,8 +758,6 @@ export const useStore = create<AppState>((set, get) => ({
       lastSessionId.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
-      const openFiles = { ...s.openFiles }
-      delete openFiles[id]
       let activeTabId = s.activeTabId
       if (activeTabId === id) activeTabId = tabs.length ? tabs[tabs.length - 1].id : null
       return {
@@ -758,7 +766,6 @@ export const useStore = create<AppState>((set, get) => ({
           settingsOpen: s.settingsOpen || s.signIn.backToSettings
         }),
         tabs,
-        openFiles,
         activeTabId,
         ...workbenchStateDropped(s, [id])
       }
@@ -1045,7 +1052,7 @@ export const useStore = create<AppState>((set, get) => ({
   clearLogin: () => set({ accountLogin: null }),
   setOpenFile: (f, tabId) => {
     const s = get()
-    const id = tabId ?? s.activeTabId
+    const id = tabId ?? s.activeTabId ?? welcomeWorkbenchKey(s)
     if (!id) return
     if (f) revealFiles(id, 'browse')
     set((st) => ({ openFiles: { ...st.openFiles, [id]: f } }))
@@ -1060,13 +1067,18 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ workbenchWidth: w, workbenchWidths: { ...s.workbenchWidths, [tabId]: w } })),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setNotesHeight: (notesHeight) => set({ notesHeight }),
-  setWorkspaceRows: (all) =>
+  setWorkspaceRows: (all) => {
+    const kept = new Set(all.map((w) => workspaceWorkbenchKey(w.workspace.path)))
+    const s = get()
+    const gone = [
+      ...new Set([...Object.keys(s.workbench), ...Object.keys(s.workbenchOpen)])
+    ].filter((k) => isWorkspaceWorkbenchKey(k) && !kept.has(k))
+    for (const k of gone) {
+      endEditsOf(k)
+      workbenchParked.delete(k)
+    }
     set((s) => {
       const workspaceRows = all.filter((w) => !w.workspace.butler)
-      const kept = new Set(all.map((w) => workspaceWorkbenchKey(w.workspace.path)))
-      const gone = Object.keys(s.workbench).filter(
-        (k) => isWorkspaceWorkbenchKey(k) && !kept.has(k)
-      )
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
@@ -1075,7 +1087,8 @@ export const useStore = create<AppState>((set, get) => ({
           ? s.selectedWs
           : null
       }
-    }),
+    })
+  },
   showToast: (msg, reveal) => {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
@@ -1109,6 +1122,7 @@ export const useStore = create<AppState>((set, get) => ({
     const p = window.api.workbench
       .get(sid)
       .then((st) => {
+        if (!workbenchAllowed(get(), tabId)) return
         if (st) get().setWorkbenchState(tabId, st)
         else set((s) => ({ workbenchFetched: { ...s.workbenchFetched, [tabId]: true } }))
         runParked(tabId)
@@ -1202,12 +1216,22 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setLastWsPath: (lastWsPath) => set({ lastWsPath }),
   selectWorkspace: (path) =>
-    set({ selectedWs: path, activeTabId: null, lastWsPath: path, resumeLaunch: null }),
+    set({
+      selectedWs: path,
+      activeTabId: null,
+      lastWsPath: path,
+      resumeLaunch: null,
+      workbenchFull: false
+    }),
   openWorkspaceList: (path, what) => {
     get().selectWorkspace(path)
-    void window.api.github.target(path, what).then((url) => {
-      if (url) get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
-    })
+    void window.api.github
+      .target(path, what)
+      .then((url) => {
+        if (!url) return get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE)
+        get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
+      })
+      .catch(() => get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE))
   },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
@@ -1387,7 +1411,10 @@ export const useStore = create<AppState>((set, get) => ({
 }))
 
 export const useActiveOpenFile = (): OpenFile | null =>
-  useStore((s) => (s.activeTabId ? (s.openFiles[s.activeTabId] ?? null) : null))
+  useStore((s) => {
+    const id = s.activeTabId ?? welcomeWorkbenchKey(s)
+    return id ? (s.openFiles[id] ?? null) : null
+  })
 
 export function consumeRestartExit(ptyId: string): boolean {
   return restartedPtys.delete(ptyId)
@@ -1444,6 +1471,10 @@ export function openInterceptedFile(
     source: source === 'agent' ? 'intercept' : undefined,
     view,
     openedAt: source === 'agent' ? Date.now() : undefined
+  }
+  if (isWorkspaceWorkbenchKey(tabId)) {
+    setOpenFile(file, tabId)
+    return
   }
   if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) {
     setOpenFile({ ...file, unseen: true }, tabId)
