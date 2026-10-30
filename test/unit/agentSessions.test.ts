@@ -1368,28 +1368,47 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
   })
 
   it('send types into a tab that has no conversation yet as its first prompt and waits for it to bind before answering; a bind that does not come is said in the answer', async () => {
+    const AGY_KEY = 'agy:local:gy-conv'
+    const typedLive = [
+      ...live,
+      session('gy', 'agy', { sessionId: AGY_KEY, nativeSessionId: 'gy-conv', title: 'gy-fix' })
+    ]
+    const typedRows = sidebar([
+      [
+        WS,
+        [
+          row(AGY_KEY, {
+            backendId: 'agy',
+            nativeSessionId: 'gy-conv',
+            title: 'gy-fix',
+            running: true
+          })
+        ]
+      ]
+    ])
     const waits: number[] = []
     const binds = harness(
-      live,
+      typedLive,
       {},
       [],
       conducting({
+        sidebar: typedRows,
         bound: (_tab, ms) => {
           waits.push(ms)
           return ms > 0
         }
       })
     )
-    expect((await binds.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
-      'Typed into api-fix.'
+    expect((await binds.verb(['send', 'gy-fix', 'hi'], from('butler'))).text).toBe(
+      'Typed into gy-fix.'
     )
-    expect(binds.pressed).toEqual([{ tabId: 'api', keys: [ownerSays('hi'), '\r'] }])
+    expect(binds.pressed).toEqual([{ tabId: 'gy', keys: [ownerSays('hi'), '\r'] }])
     expect(waits).toHaveLength(2)
     expect(waits[1]).toBeGreaterThan(0)
 
-    const never = harness(live, {}, [], conducting({ bound: () => false }))
-    expect((await never.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
-      'Typed into api-fix, but it has not started a conversation yet.'
+    const never = harness(typedLive, {}, [], conducting({ sidebar: typedRows, bound: () => false }))
+    expect((await never.verb(['send', 'gy-fix', 'hi'], from('butler'))).text).toBe(
+      'Typed into gy-fix, but it has not started a conversation yet.'
     )
   })
 
