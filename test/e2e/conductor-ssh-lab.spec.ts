@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
+  test('E-SSH-C1: the butler’s message reaches the remote session on its message socket there; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -245,7 +245,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
     )
   })
 
-  test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, its own question is answered by koloft session answer, and after a /compact it shows done again, not working', async ({
+  test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a message, which reaches that claude as one from another session, is answered, its own question is answered by koloft session answer, and after a /compact it shows done again, not working', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
@@ -281,6 +281,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toContain(ownerSays('Say the word MANGO'))
+        expect(transcript()).toMatch(/"origin":\{"kind":"peer"[^}]*Say the word MANGO/)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"MANGO/)

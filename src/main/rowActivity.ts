@@ -139,7 +139,10 @@ export function claudeAskLine(p: AskPayload): string {
 }
 
 export function storedAskLine(a: CodexApproval | CodexQuestion): string {
-  if ('options' in a) return `Asks: ${oneLine(a.question)}`
+  if ('questions' in a) {
+    const first = a.questions[0]
+    return first ? `Asks: ${oneLine(first.question)}` : 'Asks you a question'
+  }
   if (a.plan) return 'Asks: Approve this plan?'
   if (a.file) return `Wants to edit: ${basename(a.file)}`
   if (a.command) return `Wants to run: ${oneLine(a.command)}`

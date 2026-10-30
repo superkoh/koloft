@@ -28,20 +28,21 @@ import {
   crossSessionLine,
   type ModeClass
 } from '../crossSessionMessage'
-import { discordIdsFile } from '../hooks'
+import { discordIdsFile, noteDiscordSaid } from '../hooks'
 import {
+  answerKeys,
+  ANSWER_KEYS,
   askHow,
+  cannotAnswer,
   claudeDialog,
   claudeKeysFor,
   codexDialog,
   codexKeyFor,
-  codexOptionKey,
   hookAnswer,
+  howToAnswer,
   isAskedCall,
-  NO_OWN_WORDS,
-  ownWordsKeys,
-  PICK_ONE_OPTION,
-  PICK_OR_OWN_WORDS,
+  questionAnswers,
+  type AnswerKeys,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -54,24 +55,15 @@ export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right 
 export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
   'It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.'
 export const inputNotProbed = (label: string): string =>
-  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The butler can still answer this one by pressing its keys.`
+  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
 const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
-const takesAnOption = (label: string): string =>
-  `this ${label} question takes the number or the name of one option.`
 
-// CODEX§20 MUSE§11 AGY§14
-const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = {
-  claude: undefined,
-  codex: (key) => [key],
-  muse: (key) => [key, '\r'],
-  agy: (key) => [key]
-}
-const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
-  backend && OPTION_KEYS[backend]
+const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
+  backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
 
 // MUSE§7 AGY§15
 const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
@@ -392,8 +384,11 @@ export class DiscordRelay {
     if (item.command) return dest.typeCommand(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
-    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     if (route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
+    // ADR-0028 AGY§16
+    if (backend !== 'agy' && text.startsWith(DISCORD_PREFIX))
+      noteDiscordSaid(this.d.regDir, tab, text)
+    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 
@@ -612,8 +607,8 @@ export class DiscordRelay {
 
   private async answerNow(tab: string, reply: string): Promise<string | undefined> {
     const backend = this.d.backendOf(tab)
-    const optionKeys = optionKeysOf(backend)
-    if (backend && optionKeys) {
+    const answerKeysFor = answerKeysOf(backend)
+    if (backend && answerKeysFor) {
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
         this.codexAsks.delete(tab)
@@ -628,9 +623,9 @@ export class DiscordRelay {
       }
       const question = this.d.pendingQuestion(tab)
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
-      const keys = this.questionKeys(question, reply, optionKeys)
-      if (!keys) return takesAnOption(label)
-      await this.press(tab, keys)
+      const answers = questionAnswers(question, reply)
+      if (!answers) return howToAnswer(question)
+      await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return undefined
     }
     const ask = this.openAsk(tab)
@@ -655,8 +650,8 @@ export class DiscordRelay {
     if (!channelId || this.codexAsks.get(tab) === a.id || this.holds(tab)) return
     this.codexAsks.set(tab, a.id)
     const view = codexDialog(a)
-    const question = 'options' in a
-    const how = !question ? CODEX_NEEDS_YES_OR_NO : a.ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
+    const question = 'questions' in a
+    const how = question ? howToAnswer(a) : CODEX_NEEDS_YES_OR_NO
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
     const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
     this.postAsk(tab, channelId, this.askCard(tab, view, how, shown))
@@ -679,15 +674,15 @@ export class DiscordRelay {
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return false
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
-    const optionKeys = optionKeysOf(this.d.backendOf(tab))
-    if (!open || open.id !== asked || !optionKeys) {
+    const keys = answerKeysOf(this.d.backendOf(tab))
+    if (!open || open.id !== asked || !keys) {
       this.codexAsks.delete(tab)
       return false
     }
     void this.d.answerInPlace(tab, m.content).then((inPlace) => {
-      if (inPlace === false) return this.answerOpenByKeys(tab, m, open, optionKeys)
+      if (inPlace === false) return this.answerOpenByKeys(tab, m, open, keys)
       this.codexAsks.delete(tab)
-      if (inPlace) this.say(m.channelId, 'options' in open ? NO_OWN_WORDS : inPlace, m.id)
+      if (inPlace) this.say(m.channelId, inPlace, m.id)
       else this.d.answered(tab, m.content)
     })
     return true
@@ -697,26 +692,20 @@ export class DiscordRelay {
     tab: string,
     m: DiscordMessage,
     open: CodexApproval | CodexQuestion,
-    optionKeys: (key: string) => string[]
+    keys: AnswerKeys
   ): void {
-    if ('options' in open) {
-      const keys = this.questionKeys(open, m.content, optionKeys)
-      if (keys) void this.press(tab, keys).then(() => this.d.answered(tab, m.content))
-      else this.say(m.channelId, open.ownWords ? PICK_OR_OWN_WORDS : NO_OWN_WORDS, m.id)
+    if ('questions' in open) {
+      const answers = questionAnswers(open, m.content)
+      if (answers)
+        void this.press(tab, answerKeys(keys, open, answers)).then(() =>
+          this.d.answered(tab, m.content)
+        )
+      else this.say(m.channelId, cannotAnswer(open), m.id)
       return
     }
     const key = codexKeyFor(m.content)
     if (key) void this.press(tab, [key]).then(() => this.d.answered(tab, m.content))
     else this.say(m.channelId, CODEX_NEEDS_YES_OR_NO, m.id)
-  }
-
-  private questionKeys(
-    q: CodexQuestion,
-    reply: string,
-    optionKeys: (key: string) => string[]
-  ): string[] | undefined {
-    const key = codexOptionKey(q, reply)
-    return key ? optionKeys(key) : ownWordsKeys(q, reply)
   }
 
   forget(tab: string): void {

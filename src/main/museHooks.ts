@@ -3,14 +3,14 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import {
+  discordSaidBeside,
   LANGUAGE_FNS,
   QUOTE_PROMPT_FN,
-  QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
+  QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
   seedHandedOverOwnerWords,
   type HoldScript
 } from './hooks'
-import { FROM_A_SESSION, FROM_KOLOFT } from './crossSessionMessage'
 import { record } from './codexObservation'
 import { HOLD_HOOK_TIMEOUT_S } from './resourceGuard'
 import { REMOTE_HOOK_DIR } from './remote/paths'
@@ -46,11 +46,8 @@ ${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
   UserPromptSubmit)
-    case "$input" in
-      *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
-      *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
-    esac
-    remind_reply_language UserPromptSubmit ;;
+    ${QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD}
+    remind_reply_language UserPromptSubmit "$flag" ;;
   PostToolUse) remind_reply_language PostToolUse ;;
 esac
 exit 0
@@ -63,6 +60,7 @@ dir="$1"
 event="$2"
 said="$4"
 notice="$5"
+discord_said="$6"
 [ -d "$dir" ] || exit 0
 ${NEWID_FN}`,
   `id="$(newid)"
@@ -106,7 +104,7 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)}`,
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(notice && discordSaidBeside(notice))}`,
       hold && `/bin/bash ${shq(hold.file)} ${shq(hold.regDir)} ${shq(hold.tabId)} hold`
     )
   )

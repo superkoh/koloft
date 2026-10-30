@@ -69,9 +69,15 @@ describe('what a row says while the session waits on you', () => {
   })
 
   it('Codex, Muse Code and Antigravity: a question, a command, a file edit or a plan', () => {
-    expect(storedAskLine({ id: 1, question: 'Which one?', options: [{ label: 'A' }] })).toBe(
-      'Asks: Which one?'
-    )
+    expect(
+      storedAskLine({
+        id: 1,
+        questions: [
+          { question: 'Which one?', options: [{ label: 'A' }] },
+          { question: 'And then?', options: [{ label: 'B' }] }
+        ]
+      })
+    ).toBe('Asks: Which one?')
     expect(storedAskLine({ id: 2, command: 'rm -rf build' })).toBe('Wants to run: rm -rf build')
     expect(storedAskLine({ id: 3, command: '/r/e.go', file: '/r/e.go' })).toBe(
       'Wants to edit: e.go'

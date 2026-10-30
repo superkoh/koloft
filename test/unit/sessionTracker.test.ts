@@ -695,10 +695,10 @@ describe('SessionTracker — binding', () => {
       const tracker = newTracker()
       tracker.track('tabTR6', wsA)
       const fileA = writeJsonl(wsA, SID, [{ type: 'user', message: { content: 'x' }, cwd: wsA }])
-      tracker.bindSession('tabTR6', fileA, SID, wsA, '', '', 'startup')
+      tracker.bindSession('tabTR6', fileA, SID, wsA, '', 'startup')
       await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.jsonlPath === fileA)
       const fileB = writeJsonl(wsB, SID2, [{ type: 'user', message: { content: 'y' }, cwd: wsB }])
-      tracker.bindSession('tabTR6', fileB, SID2, wsB, '', '', 'clear')
+      tracker.bindSession('tabTR6', fileB, SID2, wsB, '', 'clear')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.sessionId === SID2)
       expect(s.treeRoot).toBe(wsB)
     })
@@ -709,9 +709,9 @@ describe('SessionTracker — binding', () => {
       const tracker = newTracker()
       tracker.track('tabTR7', wsA)
       const file = writeJsonl(wsA, SID, [{ type: 'user', message: { content: 'x' }, cwd: wsA }])
-      tracker.bindSession('tabTR7', file, SID, wsA, '', '', 'startup')
+      tracker.bindSession('tabTR7', file, SID, wsA, '', 'startup')
       await waitFor(tracker, (x) => x.tabId === 'tabTR7' && x.jsonlPath === file)
-      tracker.bindSession('tabTR7', file, SID, wsB, '', '', 'compact')
+      tracker.bindSession('tabTR7', file, SID, wsB, '', 'compact')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR7' && x.cwd === wsB)
       expect(s.treeRoot).toBe(wsA)
     })
@@ -1017,7 +1017,7 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
       { type: 'user', message: { content: 'hi' }, cwd: wt },
       wtState(wt)
     ])
-    tracker.bindSession('tabM6', file, SID, repo, '', '', 'resume')
+    tracker.bindSession('tabM6', file, SID, repo, '', 'resume')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabM6' && x.treeRoot === wt)
     expect(s.worktree).toBe('resumed')
@@ -1173,11 +1173,10 @@ describe('SessionTracker — per-session usage', () => {
     })
     rec.version = '2.0.0-test'
     const file = writeJsonl(cwd, SID, [rec])
-    tracker.bindSession('tabUM', file, SID, cwd, 'acct-x', '3.9.9')
+    tracker.bindSession('tabUM', file, SID, cwd, 'acct-x')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabUM' && !!x.usage)
     expect(s.usage!.ccVersion).toBe('2.0.0-test')
-    expect(s.cliVersion).toBe('3.9.9')
     expect(s.account).toBe('acct-x')
   })
 
@@ -1370,18 +1369,18 @@ describe('SessionTracker — compact SessionStart (auto-compaction fires mid-tur
     const tracker = newTracker()
     tracker.track('tabCP', cwd)
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'startup')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'startup')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'waiting')
     tracker.setStatus('tabCP', 'working')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'working')
 
     const transitions: { prev?: string; next: string }[] = []
     tracker.on('status', (t: { prev?: string; next: string }) => transitions.push(t))
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'compact')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'compact')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('working')
     expect(transitions).toEqual([])
 
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'clear')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('waiting')
   })
 })
@@ -1633,7 +1632,7 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
       `/tmp/claude-1000/${encodeCwd(RCWD)}/${RSID}/scratchpad`
     )
 
-    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
       `/tmp/claude-1000/${encodeCwd(RCWD)}/session-after-clear/scratchpad`
     )
@@ -1650,7 +1649,7 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
   it('U-TRK-2: follows the tmux name when an in-TUI /clear mints a new session id — liveness, kill and restart key off it', () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)
-    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', 'clear')
     tracker.setRemoteTmuxName('tabR', 'k-session-after-clear')
     expect(tracker.remoteOf('tabR')?.tmuxName).toBe('k-session-after-clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.sessionId).toBe('session-after-clear')

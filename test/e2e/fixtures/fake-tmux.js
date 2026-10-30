@@ -18,6 +18,7 @@ for (let i = 0; i < raw.length; i++) {
     i++
     continue
   }
+  if (a === '-u') continue
   if (!verb) verb = a
   else rest.push(a)
 }
@@ -153,6 +154,11 @@ if (verb === 'new-session') {
         fs.unlinkSync(aliveFile(name))
       } catch {}
   }
+  process.exit(0)
+} else if (verb === 'list-panes') {
+  const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
+  if (!alive(pid)) process.exit(1)
+  process.stdout.write(pid + '\n')
   process.exit(0)
 } else if (verb === 'display-message' || verb === 'display') {
   const io = process.env.KOLOFT_FAKE_TMUX_IO

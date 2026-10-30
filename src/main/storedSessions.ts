@@ -5,6 +5,7 @@ import type {
   BackendSessionInfo,
   BackendSessionRow,
   CreateTabOptions,
+  DiscoveredFolder,
   LaunchPermission,
   ProjectInfo,
   SessionResumeRequest
@@ -119,6 +120,7 @@ export interface SessionsWithStore {
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
+  localHistoryFolders(): Promise<DiscoveredFolder[]>
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
@@ -401,6 +403,17 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
     return false
   }
+  async localHistoryFolders(): Promise<DiscoveredFolder[]> {
+    if (this.refreshing || !this.listedAt.has(undefined)) await this.refreshHistory()
+    return [...this.history].flatMap(([key, t]) =>
+      hostOfKey(key) || this.archivedIds.has(key)
+        ? []
+        : [{ path: t.cwd, sessions: 1, mtime: this.mtimeOf(t) }]
+    )
+  }
+  private mtimeOf(t: H): number {
+    return (t.updatedAt ?? t.createdAt ?? 0) * 1000
+  }
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
     const scope = this.rowScope()
     return (id, host) => {
@@ -510,7 +523,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
       invalidCwd: place.missing,
-      mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
+      mtime: this.mtimeOf(t),
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
         : {})

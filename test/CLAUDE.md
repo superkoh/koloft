@@ -337,8 +337,9 @@ The sandbox is launched like an e2e app, so "Keys, focus and the hidden window" 
 "Test-only seams" above hold for it too: no Dock, badge or OS notification is shown
 (main records what it would have said in `__koloftOsOutlets`), no real ⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
 hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with DOM
-(not WebGL), and the lab machine has no UTF-8 locale, so a remote Claude draws `_` for
-its symbols.
+(not WebGL), and the lab machine's ssh login has no locale (the lab's ssh runs with
+`-F`, so no `SendEnv LANG`); a remote tab still draws its symbols, as Koloft runs the
+tmux client there with `-u`.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
 the question, the outcomes as options. Only the questions of the butler and of the

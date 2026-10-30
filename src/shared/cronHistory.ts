@@ -64,11 +64,18 @@ export function histEnd(h: HistoryLine): number {
   return h.until !== undefined && h.until > h.dueAt ? h.until : h.dueAt
 }
 
-export const LIVE_WORDS: Record<LiveRun['state'], string> = {
+const LIVE_WORDS: Record<LiveRun['state'], string> = {
   queued: 'queued — waiting for the machine',
   launching: 'starting',
   running: 'working',
   done: 'done — waiting for you'
+}
+
+export function liveWords(job: Pick<CronJob, 'autoClose'>, run: LiveRun): string {
+  if (run.state !== 'done' || !job.autoClose || !run.closing || run.kept) {
+    return LIVE_WORDS[run.state]
+  }
+  return run.closing === 'after-background-work' ? 'done — still finishing' : 'done — closing'
 }
 
 export const HIST_WORDS: Record<HistoryLine['state'], string> = {
@@ -94,7 +101,7 @@ export function lastRunOf(
   const hAt = h ? histEnd(h) : 0
   const lead = (dueAt: number): string => `last run ${describeWhen(new Date(dueAt), now)} · `
   if (run && (!h || run.dueAt >= hAt)) {
-    return { lead: lead(run.dueAt), words: LIVE_WORDS[run.state], done: run.state === 'done' }
+    return { lead: lead(run.dueAt), words: liveWords(job, run), done: run.state === 'done' }
   }
   return h ? { lead: lead(hAt), words: HIST_WORDS[h.state], done: h.state === 'finished' } : null
 }

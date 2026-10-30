@@ -95,6 +95,7 @@ import {
 } from './helpers/docker'
 
 const BACKGROUND_CONNECT_MS = 45_000
+const A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS = 3000
 const LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC = 'lab-page.test'
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
@@ -115,6 +116,7 @@ const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
   ' && git init -q && git add -A && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
+const NOT_ASCII = '中文 ⏺ …'
 
 function mirroredSaidFiles(env: E2EEnv): string[] {
   const root = path.join(env.userData, 'remote')
@@ -160,6 +162,10 @@ const STAND_IN_MODEL_CONFIG = [
   'trust_level = "trusted"',
   ''
 ].join('\n')
+// CODEX§15
+const A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN = JSON.stringify({
+  OPENAI_API_KEY: 'sk-not-a-real-key'
+})
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -194,6 +200,24 @@ async function withLab(
     if (app) await quitAndClose(app)
     stopSshLab(lab, defaultControlDir())
   }
+}
+
+async function refusedSessionNewOnKtKey(
+  page: Page,
+  parentTab: string,
+  backend: string
+): Promise<string> {
+  const before = (await terminalText(page, parentTab)).length
+  const reply = async (): Promise<string> => (await terminalText(page, parentTab)).slice(before)
+  await runIn(
+    page,
+    centerTerm(page),
+    `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+  )
+  await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
+  const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
+  expect(refused).not.toBeNull()
+  return refused![1].trim()
 }
 
 const LAB_GIT = 'git -c user.email=lab@koloft.test -c user.name=lab'
@@ -606,6 +630,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  // PLATFORM§35
+  test('E-SSH-34: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      expect(
+        execFileSync(
+          '/usr/bin/ssh',
+          ['-F', lab.config, '-o', 'BatchMode=yes', 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
+          { encoding: 'utf8', timeout: 10_000 }
+        ).trim()
+      ).toBe('[]')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`${NOT_ASCII}\r`)
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
+        .toContain(`handled: ${NOT_ASCII}`)
+    })
+  })
+
   test('E-SSH-14: koloft open, run inside a session on the machine, shows a file there in that session’s Workbench, and a file the machine does not have is refused', async ({
     env
   }) => {
@@ -722,7 +768,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, since SendMessage reaches no session on another machine', async ({
+  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, on the child’s message socket there through ssh, not typed into its terminal, since SendMessage reaches no session on another machine', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -761,10 +807,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await write(parentTab, `/koloft session send ${kidTab} keep going`)
       await expect
-        .poll(() => runOnTarget(lab, 'kuser', 'cat .claude/projects/*/*.jsonl'), {
+        .poll(() => runOnTarget(lab, 'kuser', 'cat fake-claude-peer.jsonl 2>/dev/null; :'), {
           timeout: 60_000
         })
-        .toContain('keep going')
+        .toMatch(/<cross-session-message from-mode=\\"\w+\\">\\n.*keep going/)
     })
   })
 
@@ -782,24 +828,42 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
       stopMachine(lab)
       let reason = ''
-      for (const backend of SESSION_BACKENDS) {
-        const before = (await terminalText(page, parentTab)).length
-        const reply = async (): Promise<string> =>
-          (await terminalText(page, parentTab)).slice(before)
-        await runIn(
-          page,
-          centerTerm(page),
-          `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
-        )
-        await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
-        const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
-        expect(refused).not.toBeNull()
-        reason = refused![1].trim()
-      }
+      for (const backend of SESSION_BACKENDS)
+        reason = await refusedSessionNewOnKtKey(page, parentTab, backend)
       await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
       await page.locator('.menu .mi', { hasText: 'New Claude session' }).click()
       await expect(page.locator('.toast-msg')).toContainText(reason, { timeout: 30_000 })
       await expect(wsRows(page, 'kt-key')).toHaveCount(0)
+    })
+  })
+
+  test('E-SSH-32: resuming a closed Claude Code session on a machine that has gone down says ssh’s reason, the same one koloft session new gives there, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const row = wsRows(page, 'kt-key').first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      const reason = await refusedSessionNewOnKtKey(page, parentTab, 'claude')
+      const terminalsBefore = await termIds(page)
+
+      await row.click()
+      await expect(page.locator('.toast-msg', { hasText: reason })).toBeVisible({
+        timeout: 30_000
+      })
+      await page.waitForTimeout(A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS)
+      expect(await termIds(page)).toEqual(terminalsBefore)
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1)
+      await expect(row).toHaveClass(/\bcold\b/)
     })
   })
 
@@ -1335,7 +1399,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // ADR-0039 CODEX§16
-  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, no account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
     env
   }) => {
     test.skip(
@@ -1352,10 +1416,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
       NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
     )
-    addCodexAccount(
-      env,
-      JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
-    )
+    addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
     await withLab(

@@ -37,6 +37,7 @@ import type {
   GitAccountView,
   GitLoginProgress,
   LoginProgress,
+  SignInFailure,
   Settings,
   UpdateProgress,
   UpdateCheckResult,
@@ -152,6 +153,7 @@ const api: KoloftApi = {
     setResident: (id, on) => ipcRenderer.send(CH.sessions.setResident, id, on),
     forceClose: (id) => ipcRenderer.invoke(CH.sessions.forceClose, id),
     transcriptExists: (id) => ipcRenderer.invoke(CH.sessions.transcriptExists, id),
+    noAccountToResume: (id) => ipcRenderer.invoke(CH.sessions.noAccountToResume, id),
     leftovers: () => ipcRenderer.invoke(CH.sessions.leftovers),
     onLeftovers: (cb) => {
       const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)
@@ -454,6 +456,13 @@ const api: KoloftApi = {
     startLogin: (name, reauth) => ipcRenderer.invoke(CH.accounts.startLogin, name, reauth),
     cancelLogin: () => ipcRenderer.send(CH.accounts.cancelLogin),
     signIn: (kind, name, again) => ipcRenderer.invoke(CH.accounts.signIn, kind, name, again),
+    signInFailure: () => ipcRenderer.invoke(CH.accounts.signInFailure),
+    dismissSignInFailure: () => ipcRenderer.send(CH.accounts.dismissSignInFailure),
+    onSignInFailure: (cb) => {
+      const handler = (_e: unknown, f: SignInFailure | null): void => cb(f)
+      ipcRenderer.on(CH.accounts.signInFailure, handler)
+      return () => ipcRenderer.removeListener(CH.accounts.signInFailure, handler)
+    },
     codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)

@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { E2E_MUSE_ACCOUNT, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -24,10 +24,12 @@ import {
   closeActiveTab,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
+  killSession,
   newSessionInWith,
   openMenu,
   runIn,
   switchToRow,
+  terminalText,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -153,6 +155,35 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toBe(3)
       expect(machineMuseCalls(env)[2].argv.slice(-2)).toEqual(['resume', cleared.sessionId])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Muse that dies on the machine leaves its tab saying it ended with its exit code until Enter, then Koloft says it ended unexpectedly and its row stays with the “exited” mark', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      const tabId = (await row.getAttribute('data-tab-id')) ?? ''
+
+      killSession(call.pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toMatch(/stopped with exit code [1-9]/)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect(
+        page.locator('.toast', { hasText: /^Muse session ended unexpectedly \(exit code [1-9]/ })
+      ).toBeVisible()
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
+      await expect(row).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

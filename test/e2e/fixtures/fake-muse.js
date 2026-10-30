@@ -120,6 +120,9 @@ else if (argv[0] === 'auth') {
     storeKey(key)
     process.stdout.write('credentials saved for provider meta\n')
   })
+} else if (argv[0] === 'login' && fs.existsSync(file('fake-muse-login-fails'))) {
+  process.stdout.write('Error: the device code expired before it was approved\n')
+  process.exit(1)
 } else if (argv[0] === 'login') {
   process.stdout.write('Open this page to sign in: https://auth.example/device  code: FAKE-CODE\n')
   storeKey('fake-login')

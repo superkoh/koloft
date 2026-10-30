@@ -54,6 +54,7 @@ export const CH = {
     setResident: 'sessions:setResident',
     forceClose: 'sessions:forceClose',
     transcriptExists: 'sessions:transcriptExists',
+    noAccountToResume: 'sessions:noAccountToResume',
     leftovers: 'sessions:leftovers',
     stopLeftover: 'sessions:stopLeftover',
     search: 'sessions:search',
@@ -228,6 +229,8 @@ export const CH = {
     startLogin: 'accounts:start-login',
     cancelLogin: 'accounts:cancel-login',
     signIn: 'accounts:sign-in',
+    signInFailure: 'accounts:sign-in-failure',
+    dismissSignInFailure: 'accounts:dismiss-sign-in-failure',
     codexUseReset: 'accounts:codex-use-reset',
     loginProgress: 'accounts:login-progress',
     update: 'accounts:update'

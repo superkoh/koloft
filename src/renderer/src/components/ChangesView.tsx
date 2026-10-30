@@ -18,7 +18,7 @@ import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
-import { isComposing } from '../keys'
+import { isComposing, keepCaretInSessionTerminal } from '../keys'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -718,6 +718,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'diff' ? 'on' : undefined}
             aria-pressed={view === 'diff'}
+            onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'diff')}
           >
             Diff
@@ -725,6 +726,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'source' ? 'on' : undefined}
             aria-pressed={view === 'source'}
+            onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'source')}
           >
             Source

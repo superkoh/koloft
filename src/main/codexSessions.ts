@@ -64,12 +64,14 @@ import {
   type KoloftHook
 } from './codexLaunchConfig'
 import {
+  CODEX_DISCORD_SAID_ENV,
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
   codexHoldHook,
+  discordSaidFile,
   HOLD_TAB_ENV,
   NOTICE_ENV,
   noticeFile,
@@ -86,7 +88,6 @@ import {
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
 import {
-  CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
   endCodexAppServersLeftByACrash,
@@ -296,10 +297,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     // CODEX§5
     await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(CODEX_ASKS_AND_WAITS)
       .catch(() => {})
-      .then(() => {
-        removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
-        removeFoldersLeftByEndedRuns(this.deps.openShimRoot, CODEX_OPEN_SHIM_FOLDER)
-      }))
+      .then(() => removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -795,7 +793,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said,
-          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) })
+          ...(this.deps.hookRegDir && {
+            [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId),
+            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId)
+          })
         }),
         ...(holdHere && {
           [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,

@@ -211,7 +211,7 @@ describe('CodexObservation', () => {
   })
 
   // CODEX§20
-  it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
+  it('holds an open question only in the shapes that were probed, questions with options or one enum field with options, until the TUI answers it', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'turn' } })
@@ -235,7 +235,7 @@ describe('CodexObservation', () => {
       },
       0
     )
-    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked, ownWords: true })
+    expect(f.observer.openQuestion()).toEqual({ id: 0, questions: [{ ...asked, ownWords: true }] })
     f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
     expect(f.observer.openQuestion()).toBeUndefined()
 
@@ -250,8 +250,7 @@ describe('CodexObservation', () => {
     )
     expect(f.observer.openQuestion()).toEqual({
       id: 1,
-      question: 'Which?',
-      options: [{ label: 'Red' }, { label: 'Green' }]
+      questions: [{ question: 'Which?', options: [{ label: 'Red' }, { label: 'Green' }] }]
     })
     f.observer.receive('client', {
       id: 1,
@@ -262,12 +261,23 @@ describe('CodexObservation', () => {
       'item/tool/requestUserInput',
       {
         questions: [
-          { id: 'a', question: 'A?', options: colours },
+          { id: 'a', question: 'A?', isOther: true, options: colours },
           { id: 'b', question: 'B?', options: colours }
         ]
       },
       2
     )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 2,
+      questions: [
+        { question: 'A?', options: colours, ownWords: true },
+        { question: 'B?', options: colours }
+      ]
+    })
+    f.observer.receive('client', {
+      id: 2,
+      result: { answers: { a: { answers: ['Red'] }, b: { answers: ['Green'] } } }
+    })
     f.server(
       'item/tool/requestUserInput',
       { questions: [{ id: 'free', question: 'Name?', options: null }] },

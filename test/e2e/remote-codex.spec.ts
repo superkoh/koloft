@@ -339,7 +339,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         timeout: 30_000
       })
       await expect(remoteRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      expect(await termIds(page)).not.toContain(asleepTab)
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     } finally {
       await quitAndClose(app)
     }

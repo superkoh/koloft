@@ -2,12 +2,13 @@ import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { record } from './codexObservation'
+import type { QuestionAnswer } from './discord/dialog'
 
 const exec = promisify(execFile)
 
 // AGY§16
-const SERVICE = '/exa.language_server_pb.LanguageServerService/'
-const CSRF_HEADER = 'x-codeium-csrf-token'
+export const SERVICE = '/exa.language_server_pb.LanguageServerService/'
+export const CSRF_HEADER = 'x-codeium-csrf-token'
 const CALL_TIMEOUT_MS = 15_000
 const FIND_TIMEOUT_MS = 5_000
 
@@ -73,7 +74,7 @@ export interface PendingInteraction {
   stepIndex: number
   kind: 'command' | 'file' | 'question'
   target?: string
-  questions?: { question: string; options: { id: string; text: string }[] }[]
+  questions?: { question: string; options: { id: string; text: string }[]; multiSelect?: true }[]
 }
 
 const WAITING = 'CORTEX_STEP_STATUS_WAITING'
@@ -105,7 +106,8 @@ function pendingOf(trajectory: Record<string, unknown>): PendingInteraction | un
         options: (Array.isArray(r.options) ? r.options : []).map((o) => {
           const opt = record(o)
           return { id: String(opt.id ?? ''), text: typeof opt.text === 'string' ? opt.text : '' }
-        })
+        }),
+        ...(r.isMultiSelect === true && { multiSelect: true as const })
       }
     })
   }
@@ -161,6 +163,19 @@ export class AgyApi {
     return pendingOf(await this.trajectory(conversationId))
   }
 
+  // AGY§13
+  async backgroundTaskIds(conversationId: string): Promise<Set<string>> {
+    const tasks = record(
+      await this.call('ListBackgroundTasks', { cascadeId: conversationId })
+    ).tasks
+    return new Set(
+      (Array.isArray(tasks) ? tasks : []).flatMap((t) => {
+        const id = record(record(t).task).taskId
+        return typeof id === 'string' ? [id] : []
+      })
+    )
+  }
+
   // AGY§16
   async send(conversationId: string, text: string): Promise<boolean> {
     const cascadeConfig = latestUserConfig(await this.trajectory(conversationId))
@@ -195,18 +210,23 @@ export class AgyApi {
   }
 
   // AGY§16
-  async pick(
+  async answer(
     conversationId: string,
     pending: PendingInteraction,
-    optionIds: string[]
+    answers: QuestionAnswer[]
   ): Promise<void> {
-    const question = pending.questions?.[0]?.question ?? ''
+    const responses = (pending.questions ?? []).map(({ question, options }, i) => {
+      const a = answers[i]!
+      return 'pick' in a
+        ? { question, selectedOptionIds: [options[a.pick - 1]!.id] }
+        : { question, writeInResponse: a.words }
+    })
     await this.call('HandleCascadeUserInteraction', {
       cascadeId: conversationId,
       interaction: {
         trajectoryId: pending.trajectoryId,
         stepIndex: pending.stepIndex,
-        askQuestion: { responses: [{ question, selectedOptionIds: optionIds }] }
+        askQuestion: { responses }
       }
     })
   }

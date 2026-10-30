@@ -98,6 +98,9 @@ function writeSubagentJsonl(
   fs.writeFileSync(path.join(dir, name), lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
 }
 
+const agentTaskId = (toolUseId: string): string => 'a' + toolUseId
+const shellTaskId = (toolUseId: string): string => 'b' + toolUseId
+
 // CC§8
 function spawnRec(
   toolUseId: string,
@@ -108,7 +111,7 @@ function spawnRec(
   return {
     type: 'user',
     timestamp: new Date().toISOString(),
-    toolUseResult: { status, agentId: 'a' + toolUseId, ...extra },
+    toolUseResult: { status, agentId: agentTaskId(toolUseId), ...extra },
     message: {
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'Spawned successfully.' }]
@@ -132,7 +135,7 @@ function forkedSkillRec(
       commandName,
       status: 'forked',
       ...(background ? { background: true } : {}),
-      agentId: 'a' + toolUseId,
+      agentId: agentTaskId(toolUseId),
       result: `Running in the background as @${commandName}`
     },
     message: {
@@ -159,7 +162,7 @@ function shellAckRec(toolUseId: string, cwd: string, extra: Record<string, unkno
       stderr: '',
       interrupted: false,
       isImage: false,
-      backgroundTaskId: 'b' + toolUseId,
+      backgroundTaskId: shellTaskId(toolUseId),
       ...extra
     },
     message: {
@@ -176,22 +179,28 @@ function shellAckRec(toolUseId: string, cwd: string, extra: Record<string, unkno
   }
 }
 
-function notifText(toolUseId: string, status: string): string {
+// CC§8
+function notifText(toolUseId: string, status: string, taskId = agentTaskId(toolUseId)): string {
   return (
-    `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
+    `<task-notification>\n<task-id>${taskId}</task-id>\n` +
     `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
     `<summary>done</summary>\n</task-notification>`
   )
 }
 
 // CC§8
-function attachNotifRec(toolUseId: string, cwd: string, status = 'completed'): unknown {
+function attachNotifRec(
+  toolUseId: string,
+  cwd: string,
+  status = 'completed',
+  taskId = agentTaskId(toolUseId)
+): unknown {
   return {
     type: 'attachment',
     timestamp: new Date().toISOString(),
     attachment: {
       type: 'queued_command',
-      prompt: notifText(toolUseId, status),
+      prompt: notifText(toolUseId, status, taskId),
       commandMode: 'task-notification'
     },
     cwd
@@ -202,13 +211,14 @@ function attachNotifRec(toolUseId: string, cwd: string, status = 'completed'): u
 function queueNotifRec(
   toolUseId: string,
   operation: 'enqueue' | 'remove' = 'enqueue',
-  status = 'completed'
+  status = 'completed',
+  taskId = agentTaskId(toolUseId)
 ): unknown {
   return {
     type: 'queue-operation',
     operation,
     timestamp: new Date().toISOString(),
-    content: notifText(toolUseId, status)
+    content: notifText(toolUseId, status, taskId)
   }
 }
 
@@ -272,13 +282,7 @@ function notifRec(
     type: 'user',
     timestamp: new Date().toISOString(),
     origin: { kind: 'task-notification' },
-    message: {
-      role: 'user',
-      content:
-        `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
-        `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
-        `<summary>done</summary>\n</task-notification>`
-    },
+    message: { role: 'user', content: notifText(toolUseId, status) },
     cwd
   }
 }
@@ -381,7 +385,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(edges).toEqual([])
   })
 
-  it('a delivered task-notification drains the ledger; the next turn-end waits', async () => {
+  it('a delivered task-notification drops its task; the next turn-end waits', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB2', cwd, initialLines(cwd))
@@ -402,7 +406,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     const file = await bindCaughtUp(tracker, 'tabB3', cwd, initialLines(cwd))
     tracker.setStatus('tabB3', 'working')
 
-    appendJsonl(file, [spawnRec('toolu_k1', cwd), spawnRec('toolu_k2', cwd, 'teammate_spawned')])
+    appendJsonl(file, [spawnRec('toolu_k1', cwd), spawnRec('toolu_k2', cwd)])
     await tracker.reportTurnEnd('tabB3')
     expect(status(tracker, 'tabB3')).toBe('working')
 
@@ -411,7 +415,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB3')).toBe('waiting')
   })
 
-  it('a silent ledger holds past the recency window, then self-releases at the silence cap', async () => {
+  it('a silent acked task holds past the recency window, then self-releases at the silence cap', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB4', cwd, initialLines(cwd))
@@ -425,7 +429,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB4' && s.status === 'waiting', 8000)
   }, 12_000)
 
-  it('fresh subagent growth promotes a resting dot (Koloft bound mid-run, ledger empty)', async () => {
+  it('fresh subagent growth promotes a resting dot (Koloft bound mid-run, task list empty)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabB5', cwd, [...initialLines(cwd), spawnRec('toolu_old', cwd)])
@@ -437,26 +441,6 @@ describe('run-state vs background work: any live background task keeps the sessi
 
     await waitFor(tracker, (s) => s.tabId === 'tabB5' && s.status === 'waiting', 8000)
   }, 20_000)
-
-  it('a promoted hold outlives the recency window, so one long tool call neither flaps the dot nor fires a false turn-done', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabB19', cwd, [...initialLines(cwd), spawnRec('toolu_old', cwd)])
-    expect(status(tracker, 'tabB19')).toBe('waiting')
-
-    await sleep(RESUME_MS + 300)
-    const promoted = new Promise<void>((resolve) =>
-      tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
-        if (e.tabId === 'tabB19' && e.next === 'working') resolve()
-      })
-    )
-    const wroteAt = Date.now()
-    writeSubagentJsonl(cwd, SID, 'agent-live.jsonl', [subagentRec(wroteAt)])
-    await promoted
-
-    await sleep(Math.max(0, wroteAt + HOLD_MS + 2 * SCAN_MS - Date.now()))
-    expect(status(tracker, 'tabB19')).toBe('working')
-  }, 12_000)
 
   it('stale subagent content never promotes (record time, not fold time)', async () => {
     const cwd = makeWorkspace()
@@ -553,7 +537,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     await waitFor(tracker, (s) => s.tabId === 'tabB12' && s.status === 'waiting', 8000)
   }, 12_000)
 
-  it('a live spawn ack inside the catch-up batch still enters the ledger', async () => {
+  it('a live spawn ack inside the catch-up batch still enters the task list', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     tracker.track('tabB13', cwd)
@@ -622,19 +606,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB15')).toBe('waiting')
   })
 
-  it('an idle nudge while resting cannot block the background promotion', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabB16', cwd, initialLines(cwd))
-    expect(status(tracker, 'tabB16')).toBe('waiting')
-
-    await sleep(RESUME_MS + 200)
-    writeSubagentJsonl(cwd, SID, 'agent-live.jsonl', [subagentRec(Date.now())])
-    await tracker.reportTurnEnd('tabB16')
-    await waitFor(tracker, (s) => s.tabId === 'tabB16' && s.status === 'working', 8000)
-  }, 12_000)
-
-  it('a truncation mid-hold re-ledgers live spawn acks (no degraded 10s hold)', async () => {
+  it('a truncation mid-hold keeps live spawn acks in the task list', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB17', cwd, initialLines(cwd))
@@ -727,7 +699,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS1')
     expect(status(tracker, 'tabS1')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_build')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_build', 'enqueue', 'completed', shellTaskId('toolu_build'))
+    ])
     await tracker.reportTurnEnd('tabS1')
     expect(status(tracker, 'tabS1')).toBe('waiting')
   })
@@ -753,12 +727,14 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS3')
     expect(status(tracker, 'tabS3')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_devserver')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_devserver', 'enqueue', 'completed', shellTaskId('toolu_devserver'))
+    ])
     await tracker.reportTurnEnd('tabS3')
     expect(status(tracker, 'tabS3')).toBe('waiting')
   })
 
-  it('a Monitor task holds working until its notification', async () => {
+  it('a Monitor acked before any report is parked at the turn-end, and its notification clears the badge', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabS4', cwd, initialLines(cwd))
@@ -766,12 +742,14 @@ describe('run-state vs background work: any live background task keeps the sessi
 
     appendJsonl(file, [monitorAckRec('toolu_mon', cwd)])
     await tracker.reportTurnEnd('tabS4')
-    expect(status(tracker, 'tabS4')).toBe('working')
-
-    appendJsonl(file, [attachNotifRec('toolu_mon', cwd)])
-    await tracker.reportTurnEnd('tabS4')
     expect(status(tracker, 'tabS4')).toBe('waiting')
-  })
+    expect(parked(tracker, 'tabS4')).toEqual([
+      { id: 'mtoolu_mon', kind: 'monitor', label: 'mtoolu_mon', state: 'waiting' }
+    ])
+
+    appendJsonl(file, [attachNotifRec('toolu_mon', cwd, 'completed', 'mtoolu_mon')])
+    await waitFor(tracker, (s) => s.tabId === 'tabS4' && s.background === undefined, 6000)
+  }, 10_000)
 
   // CC§8
   it('a skill forked into the background holds working — its own wrap-up must not rest the dot', async () => {
@@ -807,7 +785,7 @@ describe('run-state vs background work: any live background task keeps the sessi
   })
 
   // CC§8
-  it('a fork with no background flag never enters the ledger (its result is already final)', async () => {
+  it('a fork with no background flag never enters the task list (its result is already final)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabF3', cwd, initialLines(cwd))
@@ -829,13 +807,15 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS5')
     expect(status(tracker, 'tabS5')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_stopme', 'enqueue', 'stopped')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_stopme', 'enqueue', 'stopped', shellTaskId('toolu_stopme'))
+    ])
     await tracker.reportTurnEnd('tabS5')
     expect(status(tracker, 'tabS5')).toBe('waiting')
   })
 
   // CC§8
-  it('every delivered-notification shape retires the ledger (attachment / queue-op / legacy)', async () => {
+  it('every delivered-notification shape retires its task (attachment / queue-op / legacy)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabN1', cwd, initialLines(cwd))
@@ -938,6 +918,8 @@ describe('run-state vs background work: any live background task keeps the sessi
     const file = await bindCaughtUp(tracker, 'tabX1', cwd, initialLines(cwd))
     tracker.setStatus('tabX1', 'working')
 
+    appendJsonl(file, [spawnRec('toolu_side', cwd)])
+    await sleep(SILENCE_MS + 100)
     const now = Date.now()
     appendJsonl(file, [mainAssistantRec(cwd, now - 200), mainAssistantRec(cwd, now, true)])
     await tracker.reportTurnEnd('tabX1')
@@ -983,7 +965,7 @@ describe('run-state vs background work: any live background task keeps the sessi
 })
 
 // CC§8
-describe("run-state from the turn-end payload: the Stop hook's own task list outranks the inferred ledger, which stays for an older claude", () => {
+describe("run-state from the turn-end payload: the Stop hook's own task list decides, and a spawn ack only adds to it", () => {
   it('a reported live task holds working with NO ack in the transcript at all', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -1002,7 +984,7 @@ describe("run-state from the turn-end payload: the Stop hook's own task list out
   })
 
   // CC§8
-  it('a reported empty list rests the dot even while the inferred ledger still holds', async () => {
+  it('a reported empty list rests the dot even after a spawn ack this turn', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabP2', cwd, initialLines(cwd))
@@ -1013,18 +995,7 @@ describe("run-state from the turn-end payload: the Stop hook's own task list out
     expect(status(tracker, 'tabP2')).toBe('waiting')
   })
 
-  it('no reported list falls back to the inferred ledger', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    const file = await bindCaughtUp(tracker, 'tabP3', cwd, initialLines(cwd))
-    tracker.setStatus('tabP3', 'working')
-
-    appendJsonl(file, [spawnRec('toolu_old', cwd)])
-    await tracker.reportTurnEnd('tabP3')
-    expect(status(tracker, 'tabP3')).toBe('working')
-  })
-
-  it('an empty ledger cannot release a payload-held turn-end early', async () => {
+  it('a reported task holds past the recency window with no ack on disk', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabP5', cwd, initialLines(cwd))
@@ -1512,7 +1483,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(parked(tracker, 'tabL9')).toBeUndefined()
   })
 
-  it('an idle nudge re-judges the reported list rather than the ledger (live shell, empty ledger)', async () => {
+  it('an idle nudge re-judges the reported list, so a live listed shell keeps it working', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabL10', cwd, initialLines(cwd))
@@ -1524,7 +1495,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL10')).toBe('working')
   })
 
-  it('an idle nudge cannot be held by a ledger entry the list has judged idle', async () => {
+  it('an idle nudge cannot be held by a spawn ack the list has since replaced with an idle teammate', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL11', cwd, initialLines(cwd))
@@ -1546,7 +1517,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     const file = await bindCaughtUp(tracker, 'tabL12', cwd, initialLines(cwd))
     stageProcs(tracker, {})
     tracker.setStatus('tabL12', 'working')
-    await tracker.reportTurnEnd('tabL12', [{ id: 't_x1', type: 'subagent' }])
+    await tracker.reportTurnEnd('tabL12', [{ id: agentTaskId('x1'), type: 'subagent' }])
     expect(status(tracker, 'tabL12')).toBe('working')
     appendJsonl(file, [attachNotifRec('x1', cwd)])
     await waitFor(tracker, (s) => s.tabId === 'tabL12' && s.status === 'waiting', 6000)
@@ -1581,7 +1552,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     stageProcs(tracker, { bsrv: { listening: true } })
     await tracker.reportTurnEnd('tabL14', [{ id: 'bsrv', type: 'shell' }])
     await waitFor(tracker, (s) => s.tabId === 'tabL14' && !!s.background, 6000)
-    tracker.bindSession('tabL14', file, SID, cwd, '', '', 'clear')
+    tracker.bindSession('tabL14', file, SID, cwd, '', 'clear')
     expect(parked(tracker, 'tabL14')).toBeUndefined()
     expect(status(tracker, 'tabL14')).toBe('waiting')
   }, 10_000)

@@ -4,6 +4,7 @@ import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
+import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteShCommand } from './install'
 import { koloftSkillLine, machineToolProgram, type TabProgram } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
@@ -178,6 +179,98 @@ flock -n "$l" true || exit 1`,
 }
 
 export const AGY_HELD_ELSEWHERE_EXIT = 1
+
+const LOCALHOST_CALL_TIMEOUT_MS = 3_000
+const NO_SEND_STARTS_AFTER_MS = 15_000
+export const AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS = 30_000
+
+// AGY§16 AGY§29
+const AGY_SEND_JS = `import fs from 'fs'
+import { execFileSync } from 'child_process'
+const started = Date.now()
+const [tmuxName, cascadeId] = process.argv.slice(1)
+const text = fs.readFileSync(0, 'utf8')
+const out = (cmd, args) => {
+  try {
+    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch {
+    return ''
+  }
+}
+const pane = out('tmux', ['-L', 'koloft', 'list-panes', '-s', '-t', '=' + tmuxName + ':', '-F', '#{pane_pid}']).trim().split('\\n')[0]
+const procs = out('ps', ['-A', '-ww', '-o', 'pid=,ppid=,args=']).split('\\n').flatMap((line) => {
+  const m = /^\\s*(\\d+)\\s+(\\d+)\\s+(.*)$/.exec(line)
+  return m ? [{ pid: m[1], ppid: m[2], args: m[3] }] : []
+})
+const tree = new Set([pane])
+for (let size = 0; size !== tree.size; ) {
+  size = tree.size
+  for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
+}
+const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args))
+if (!agy) process.exit(1)
+const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
+function ports() {
+  const listed = out('lsof', ['-nP', '-a', '-p', agy.pid, '-iTCP', '-sTCP:LISTEN', '-Fn'])
+    .split('\\n')
+    .flatMap((l) => (l.startsWith('n') ? [Number(/:(\\d+)$/.exec(l)?.[1])] : []))
+  if (listed.length) return listed
+  const inodes = new Set()
+  try {
+    for (const fd of fs.readdirSync('/proc/' + agy.pid + '/fd')) {
+      try {
+        const m = /^socket:\\[(\\d+)\\]$/.exec(fs.readlinkSync('/proc/' + agy.pid + '/fd/' + fd))
+        if (m) inodes.add(m[1])
+      } catch {}
+    }
+  } catch {}
+  return ['/proc/net/tcp', '/proc/net/tcp6'].flatMap((f) => {
+    let table = ''
+    try {
+      table = fs.readFileSync(f, 'utf8')
+    } catch {}
+    return table.split('\\n').flatMap((l) => {
+      const c = l.trim().split(/\\s+/)
+      return c.length > 9 && c[3] === '0A' && inodes.has(c[9]) ? [parseInt(c[1].split(':')[1], 16)] : []
+    })
+  })
+}
+const post = async (port, method, body) => {
+  const r = await fetch('http://127.0.0.1:' + port + '${SERVICE}' + method, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', '${CSRF_HEADER}': token },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(${LOCALHOST_CALL_TIMEOUT_MS})
+  })
+  const t = await r.text()
+  if (r.status !== 200) throw new Error(t)
+  return t ? JSON.parse(t) : {}
+}
+for (const port of new Set(ports().filter((p) => Number.isInteger(p) && p > 0))) {
+  let cascadeConfig
+  try {
+    await post(port, 'GetStatus', {})
+    const steps = (await post(port, 'GetCascadeTrajectory', { cascadeId })).trajectory?.steps ?? []
+    cascadeConfig = steps.map((s) => s?.userInput?.userConfig).filter(Boolean).pop()
+  } catch {
+    continue
+  }
+  if (!cascadeConfig || Date.now() - started > ${NO_SEND_STARTS_AFTER_MS}) process.exit(1)
+  await post(port, 'SendUserCascadeMessage', { cascadeId, items: [{ text }], cascadeConfig }).then(
+    () => process.exit(0),
+    () => process.exit(1)
+  )
+}
+process.exit(1)
+`
+
+// AGY§16 AGY§29
+export function agySendCmd(tmuxName: string, conversationId: string): string {
+  return remoteShCommand(
+    `exec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_SEND_JS)} "$1" "$2"`,
+    [tmuxName, conversationId]
+  )
+}
 
 // AGY§11 AGY§29
 export function agyStatuslineScript(): string {

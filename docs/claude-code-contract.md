@@ -155,8 +155,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
 - **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
   Stop, Notification) included, not only SessionStart/SessionEnd. (Inferred, not
   checked.)
-- **A hook cannot read the running claude's version from its env; only the Bash
-  tool's shell can.** Inside a Bash tool call `CLAUDE_CODE_EXECPATH` is the binary
+- **A hook's env has the running claude's version only inside `AI_AGENT`, which ends
+  in `_harness` there and in `_agent` in the Bash tool's shell.** Inside a Bash tool call `CLAUDE_CODE_EXECPATH` is the binary
   (on a native install inside `…/versions/<version>`, so its basename is the version)
   and `AI_AGENT=claude-code_X-Y-Z_agent`. Seen 2026-09-24 on CC 2.1.281 with `env`
   inside a Bash tool call: `CLAUDE_CODE_EXECPATH=/Users/…/.local/share/claude/versions/2.1.281`,
@@ -164,9 +164,6 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `AI_AGENT=claude-code_X-Y-Z_harness`: measured 2026-10-28 on 2.1.311 and 2.1.312 with
   a command hook that logs its env, in an interactive pty run (6 runs); the binary sets
   `_harness` for its own process and `_agent` only for children it starts as the agent.
-  So the version Koloft's hook script tries to read (`src/main/hooks.ts`) comes out
-  empty. A resumed session's transcript tail still shows the version of the older
-  claude that wrote it, so only the live process tells the truth (inferred, not checked).
 - **A brand-new claude prints its login and onboarding links before its SessionStart
   hook fires**, so a user can click a link before the session is bound. (Inferred, not
   checked.)
@@ -1954,6 +1951,11 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
+- **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
+  CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
+  (not the `ps -o lstart=` text below), `"tmux":"cc:@0.%0"`, `"pidDomain":
+  "linux::pid:[4026532380]"`, `"messagingSocketPath":"/tmp/cc-socks/60.sock"`, one entry
+  per file on one line; the other keys as on macOS.
 - **A `/fork` copy writes one too, with `kind: "bg"` and a `jobId`** (2026-10-27, CC
   2.1.311, §5), so a live entry for an id can belong to a background copy that
   `claude --resume` would attach to rather than run twice.
@@ -2201,6 +2203,23 @@ sessions.
   machine right now", and `SendMessage` to `home-session`: `{"success":false,"message":
   "No agent named 'home-session' is reachable."}`; nothing reached the receiver. Claude's
   own way across machines, Remote Control, refuses the token Koloft injects (§7).
+- **A line written from the Mac with `ssh -W <messagingSocketPath> <host>` reaches a
+  session on that machine** as one written on its own machine does. 2026-10-29, CC 2.1.312
+  (linux-arm64) in the e2e SSH lab image (Debian bookworm, OpenSSH 9.2 sshd), the Mac's
+  OpenSSH 10.3; an interactive `--dangerously-skip-permissions` receiver in tmux, model
+  haiku, an OAuth token. Its registry entry (§11) gave `/tmp/cc-socks/<pid>.sock`. Five
+  `bypass` envelopes, each one line on ssh's stdin: idle, it showed "Message from @peer: …"
+  and answered; written while a 20 s Bash call ran, it was folded into that turn and
+  answered at its end; written with a half-typed line in the box, it started its own turn
+  and the half-typed line stayed in the box. It went through a fresh connection, through a
+  ControlMaster another ssh had opened, and with Koloft's own option set
+  (`RemoteCommand=none`, `RequestTTY=no`, `ControlMaster=auto`, `ControlPersist=yes`,
+  `BatchMode=yes`) with no master yet, which left one behind; ssh exited 0 each time. The
+  transcript held the same `origin: {kind:"peer", fromMode:"bypass", body, verifiedPeerPid}`
+  as on one machine, `verifiedPeerPid` being sshd's process for that connection (the same
+  pid for every line through one master). A path with no socket behind it made ssh exit
+  255 with "Stdio forwarding request failed: Session open refused by peer" — the words
+  ssh also prints when a master has no room left (platform ledger §33).
 - **How a message from another session lands in the receiver's transcript** (2026-10-02,
   CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
   `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the
@@ -2885,6 +2904,12 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   the same variables removed, run from A, A/sub, a linked worktree W of A and W/sub, with
   A a git repository and again with A not one. A submodule, and `/mcp` in the TUI, were
   not probed.
+- **`.mcp.json` is read in the cwd and every folder above it, up to `/`:** the git
+  top-level does not stop the walk, nor does `HOME`. Run from two folders below a
+  repository's top level, `mcp list` showed the servers of the folder in between, of the
+  top level, of the folder above the repository and of a folder above `HOME`; run in a
+  repository inside another, it showed the outer repository's too. Measured 2026-10-28,
+  CC 2.1.312, `claude mcp list` under a throwaway `HOME` with the same variables removed.
 - **A `.mcp.json` server connects only after approval:** `mcp list` showed it `⏸ Pending
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).

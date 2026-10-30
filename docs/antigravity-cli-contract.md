@@ -540,7 +540,8 @@ only downloaded the public release.
   current_usage{input_tokens, output_tokens, cache_creation_input_tokens,
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
-  `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
+  `conversation_title`, `tool_confirmation_pending` (seen on macOS), and `task_count`
+  (1.4.7, while background tasks run, §13).
   - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
     conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
     is open), `reviewing` (an artifact is waiting for review, §19).
@@ -723,6 +724,81 @@ only downloaded the public release.
     it has ended.
   - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
     cancelling a task from the TUI's `/tasks`; the macOS build.
+- **Daemon commands, and no Monitor.** 1.4.7 Linux arm64 in Docker with no network, a
+  fake Gemini server, the TUI in tmux with `--dangerously-skip-permissions`, every hook
+  logged, `ps` and `ListBackgroundTasks` read every few seconds, 2026-10-28.
+  - The tool list that build sent was `read_file`, `run_command`, `manage_task`,
+    `send_message`, `schedule`, `invoke_subagent`, `define_subagent`,
+    `manage_subagents`, `write_file`, `edit_file`, `search_web`, `ask_question`.
+    `run_command` takes `{CommandLine, WaitMsBeforeAsync, toolSummary, IsDaemon?}`;
+    `IsDaemon` is described as "long-running support processes that are meant to keep
+    running in the background indefinitely … (e.g., dev servers, file watchers,
+    tunnels)". Its description also says a backgrounded command notifies the model
+    when it finishes. No tool streams a running command's output to the model or wakes
+    it on a line of output, the way Claude Code's Monitor does (CC§8); `schedule`'s
+    `TimerCondition` only cancels a timer early when a message arrives.
+  - `python3 -m http.server` with `IsDaemon:true`: `PreToolUse` carries the args
+    as sent (`"IsDaemon":true`, typed), the command is a direct child of agy, the
+    turn's `Stop` says `fullyIdle:true`, the footer shows "1 task(s) · /tasks" and a
+    line "● [time] <command> running", and `ListBackgroundTasks {cascadeId}` answers
+    `{tasks:[{conversationId, task:{taskId:"<conversation id>/task-<stepIdx>",
+    toolName:"run_command", toolSummary, description:"<command>", startTime,
+    stepIndex, logUri, isDaemon:true}}]}` (a plain backgrounded command: the same
+    without `isDaemon`; no task: `{}`). No hook comes while it runs.
+  - The same with no `IsDaemon` (`sleep 25`): `Stop` says `fullyIdle:false`; when it
+    ends, `PostToolUse` with the same `stepIdx`, then a turn agy starts by itself on a
+    `<SYSTEM_MESSAGE>` "Task id … finished with result", then `Stop` with
+    `fullyIdle:true`. A daemon that exits by itself (`sleep 10` with `IsDaemon:true`)
+    gives the same `PostToolUse` and the same turn.
+  - `manage_task {Action:"kill", TaskId}` on a daemon: `Pre`/`PostToolUse` for
+    `manage_task` with `error:""`, the process gone, `ListBackgroundTasks` empty; no
+    `PostToolUse` for the `run_command`. Without `toolSummary` the call is valid; with
+    it, it fails tool validation and no hook fires.
+  - `/tasks` opens a list ("Agent Backgrounded", the command and "running"; keys
+    "enter View output  k Kill Task  x Remove Task From List"). `k` killed the daemon:
+    the process was gone and `ListBackgroundTasks` empty within 3 s, and no hook came
+    in the next 30 s, nor with the next turn.
+  - After `/clear` the footer showed no task while the daemon kept running, and
+    `ListBackgroundTasks` with the old conversation id still listed it. Ending agy
+    (Ctrl+C twice) ended it.
+  - The status line and title scripts (§11) get `task_count`, the conversation's
+    background tasks, left out when there are none. With a daemon started: `working`
+    without it, `working` with `task_count:1`, then `idle` with it. A `k` in `/tasks`
+    ran the scripts again 0.3 s later, `idle` with no `task_count`.
+  - Without `--dangerously-skip-permissions` the daemon's `PreToolUse` comes before
+    the ask (`tool_use`, `tool_confirmation_pending:true`). Declined with `4`: the next
+    title input is `idle` with no `task_count`, and no other hook comes (no
+    `PostToolUse`, no `Stop`). Allowed with `1`: `working` with no `task_count`, then
+    `Stop`, then `idle` with `task_count:1`; the count came only after the turn ended.
+- **Plain background commands, one after another, and a decline between them.** 1.4.7
+  Linux arm64 in Docker with no network, a fake Gemini server, the TUI in tmux in the
+  default approval mode (every command asked, `1` to allow, `4` to decline), every hook
+  and every title-script input logged, `ps` and `ListBackgroundTasks` read every 10 s,
+  2026-10-29.
+  - `run_command {CommandLine:"sleep 45; echo P-DONE", WaitMsBeforeAsync:500}` and, a
+    turn later, a `sleep 70` one: each turn's `Stop` says `fullyIdle:false`, then the
+    title input is `idle` with `task_count:1`, then `task_count:2`.
+    `ListBackgroundTasks` lists both (`toolName:"run_command"`, `description` the
+    command line as sent, `stepIndex` the `PreToolUse`'s `stepIdx`). When the first
+    ends: its `PostToolUse` (same `stepIdx`), the title scripts run again with
+    `task_count:1`, and the list holds only the second; when that ends, a title input
+    with no `task_count` and `{}`.
+  - A command that finishes inside `WaitMsBeforeAsync` (`echo fast-one`) gets its
+    `PostToolUse` before the turn's `Stop` (`fullyIdle:true`) and never shows in
+    `ListBackgroundTasks` or `task_count`.
+  - In every turn, after an allowed command's `PreToolUse` comes a `PreInvocation`
+    with `invocationNum` 1 (the model reading the result) before the `Stop`; each new
+    turn, typed or started by agy itself, opens with `invocationNum` 0. A declined
+    command (`echo declined-one`) gets its `PreToolUse` and nothing after it in that
+    turn: no `PreInvocation`, no `PostToolUse` ever, no `Stop`, and it is in neither
+    `task_count` (still 2) nor `ListBackgroundTasks`.
+  - With nothing declined, a plain command ending starts a turn by itself
+    (`PreInvocation` `invocationNum` 0, `Stop` `fullyIdle:true`), as with
+    `--dangerously-skip-permissions`. When the last thing in the conversation was a
+    declined command ("Interrupted · What should Antigravity CLI do instead?"), the two
+    commands ending started no turn: their `PostToolUse` and the title scripts came, no
+    model request and no `Stop` in the next 40 s. A decline followed by a typed prompt
+    that ran a command left that next command's ending its turn as usual.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -739,6 +815,18 @@ only downloaded the public release.
   Antigravity CLI do instead?", end the turn and send 7501 `idle` with no `done`.
 - Question: "Question 1/1: <q>", the options plus "Write-in…". A digit picks that
   option at once; ↑/↓ then Enter picks too.
+- **Own words and several questions by keys.** 1.4.7 Linux arm64 in Docker with no
+  network, a fake Gemini server answering with an `ask_question` call, the TUI in tmux
+  160×50, keys by `tmux send-keys`, the model's next request read for the tool result,
+  2026-10-29. The digit of "Write-in..." (`N+1`) opens "Your answer:" ("enter Submit · esc
+  Back"); the words, then Enter, send it: the model got `A1: A ripe mango, please`. The
+  same `3`, words and Enter sent in one burst worked too. With two questions the box reads
+  "Question 1/2" ("→ Next · enter Select"); a digit, or a write-in and its Enter, moves to
+  "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
+  `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
+  `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
+  not tried.
 
 ## §15 Typing into it
 
@@ -794,6 +882,8 @@ only downloaded the public release.
   | `"permission":{"allow":false}` on a file | step ERROR, file untouched, the model goes on to `done` (key `2` ends the turn instead) |
   | `"runCommand":{"confirm":true,…}` | the ask closes but the command does **not** run |
   | `"askQuestion":{"responses":[{"question":"…","selectedOptionIds":["2"]}]}` | the model gets `A1: Banana` |
+  | `"askQuestion":{"responses":[{"question":"…","writeInResponse":"A ripe mango, please"}]}` | the model gets `A1: A ripe mango, please` (1.4.7, 2026-10-29; the field is `write_in_response` on `AskQuestionEntry` in the binary's strings) |
+  | two `responses`, one `selectedOptionIds`, one `writeInResponse`, for a call of two questions | the model gets `A1: A ripe mango\nA2: Large` (same day) |
   | `"askQuestion":{"cancelled":true}` | the question closes |
   | a step not waiting | `500 "input not registered for step <n>"` |
 
@@ -825,6 +915,19 @@ only downloaded the public release.
   `GetCommandModelConfigs` and `GetUserSettings` → 501; `SendAllQueuedMessages` →
   500 `deprecated`.
 - The method list (347 names) is the same in 1.3.6 and 1.4.0.
+- **From another process on the same machine** (1.4.10, Linux arm64, Docker with no
+  network, tmux 3.3a, fake Gemini server, 2026-10-29; the second process was a
+  `docker exec`, standing in for a non-tty `ssh host cmd`): agy started in tmux with
+  `--csrf_token` serves the API to any process there. The agy pid is in the tree under
+  `tmux list-panes -F '#{pane_pid}'`, its token in its own `ps -A -ww -o args=`, its
+  ports from `/proc/<pid>/fd` against `/proc/net/tcp` (the image has no `lsof`); the
+  whole lookup took about 1 ms. `GetCascadeTrajectory` then `SendUserCascadeMessage`
+  with the last `userConfig`: on an idle agy the turn ran at once; sent 2 s into a
+  12 s turn it got `200 {}` at once, the screen showed no "queued msg" line, and it ran
+  as its own turn right after (its model call came as the first one's 12 s answer
+  ended). Text typed into the
+  input box and not yet sent ("owner half typed") stayed there, untouched and unsent,
+  through both turns.
 
 ## §17 Compaction
 
@@ -1192,6 +1295,12 @@ fake Gemini server with MCP servers that logged their start.
   `<workspace>/.agents/plugins/<p>/mcp_config.json` (named `<p>_<server>`) were loaded in
   folder A and not in folder B; `<A>/.gemini/mcp_config.json`, `<A>/.gemini/settings.json`
   and `<A>/.mcp.json` were not. In `-p` this held with A out of `trustedWorkspaces`.
+- **Which folders' `.agents/mcp_config.json`:** the workspace's and every folder above it
+  up to the nearest one holding `.git` (a folder, or the file of a linked worktree), that
+  one included; outside any repository only the workspace's own. A linked worktree did not
+  reach its main checkout, nor a repository inside another the outer one. Measured
+  2026-10-28, agy 1.4.9 (the manifest's `linux_arm64.json`), Docker, `agy -p` against a
+  fake Gemini server, MCP servers that logged their start.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).
 

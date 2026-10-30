@@ -254,12 +254,12 @@ describe('U-LINE-*: the launch line', () => {
     expect(r.calls()).toBe(4)
   })
 
-  it('a start that failed holds the tab open until Enter, so its reason can be read', async () => {
+  it('a session that failed to start or ended with an error holds the tab open until Enter, so its reason can be read', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
     r.fail(4, 7)
     const live = typeLineLive(r, st.line())
-    expect(await until(() => live.out().includes('did not start (exit 7)'))).toBe(true)
+    expect(await until(() => live.out().includes('exit code 7'))).toBe(true)
     expect(live.out()).toContain('press Enter to close')
     await new Promise((res) => setTimeout(res, 300))
     expect(live.running()).toBe(true)
@@ -324,7 +324,7 @@ interface Box {
   run(...args: string[]): { status: number | null; stdout: string }
 }
 
-function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
+function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}): Box {
   const home = mkroot('tabhome')
   const bin = path.join(home, '.local', 'bin')
   const logs = path.join(home, 'logs')
@@ -347,9 +347,10 @@ printf '%s\\n' "$@" >> ${JSON.stringify(path.join(logs, 'tmux'))}
 printf 'tmux %s\\n' "$*" >> ${JSON.stringify(path.join(logs, 'order'))}
 conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
+case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
-grep -q 'default-shell /bin/sh' "$conf" && exec sh -c "$last"
-exec "$SHELL" -c "$last"
+if grep -q 'default-shell /bin/sh' "$conf"; then sh -c "$last"; else "$SHELL" -c "$last"; fi
+exit 0
 `,
     { mode: 0o755 }
   )
@@ -376,7 +377,7 @@ printf '%s\\n' "$@" > "$L/argv.$n"
 printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
-exit 0
+exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
   )
@@ -577,7 +578,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     )
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
   })
 
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
@@ -622,7 +623,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     )
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
   })
 
   it("an Antigravity tab started without an API key runs agy without the machine's own key", () => {
@@ -640,11 +641,24 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().GEMINI_API_KEY).toBeUndefined()
   })
 
+  it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
+    const failed = box(spec(), { claudeExit: 3 }).run()
+    expect(failed.status).toBe(3)
+    expect(failed.stdout).toMatch(/the last screen\n$/)
+    const clean = box(spec()).run()
+    expect(clean.status).toBe(0)
+    expect(clean.stdout).not.toContain('the last screen')
+  })
+
+  it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
+    expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
+  })
+
   it('a reconnect attaches to the running session and installs nothing', () => {
     const b = box(spec())
     const res = b.run('attach')
     expect(res.status).toBe(0)
-    expect(b.tmux()).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux()).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
     expect(b.ensured()).toBe(false)
   })
 
@@ -657,7 +671,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
 
     b.run('attach', '90', '30')
     expect(b.standIn().join(' ')).toContain('stty cols 90 rows 30')
-    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
+    expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1'])
   })
 
   it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {

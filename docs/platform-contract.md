@@ -30,6 +30,18 @@ method. A recheck adds its date, version and command to the bullet.
   Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
   whenever Koloft found git missing, so claude finds that one and this check does not
   fire (inferred, not checked on a Mac without the tools).
+- **A git only the login shell's PATH holds** (nix's `~/.nix-profile/bin`, pkgsrc's
+  `/opt/pkg/bin`, asdf's and mise's shim folders) is not on the app's PATH at launch.
+  Some of them are not git: an asdf shim is a script starting `#!/usr/bin/env bash` that
+  runs `asdf exec git` (asdf `internal/shims/shims.go`), and a mise shim on macOS is a
+  link to the `mise` program itself, or a script starting `#!/bin/sh` in its `file` mode
+  (mise `src/shims.rs`); both look git up again on PATH, so handing git to one can come
+  back to Koloft's own. nixpkgs' `bin/git` is git's own program behind links into
+  `/nix/store` — its wrappers touch only helpers under `libexec/git-core` (nixpkgs
+  `pkgs/by-name/gi/git/package.nix`). (2026-10-28, read from each project's source on
+  its main branch, not run on a Mac with nix, asdf or mise.) The program Koloft ships,
+  copied elsewhere and run without the launcher's `GIT_EXEC_PATH`, prints
+  `//libexec/git-core` for `--exec-path` (2026-10-28, macOS 27.0, git 2.53.0).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -1110,6 +1122,13 @@ inferred, not checked.
   never-answering `ext::` remote.
 - **`execFile` gives the child an open stdin pipe that is never closed**, so a child that
   reads stdin blocks until the timeout.
+- **Input written to a child's stdin that the child exits before reading raises `EPIPE`
+  on the stdin stream, and with no `'error'` listener there it is an uncaught exception.**
+  Measured 2026-10-29 (Node 24.13.0, macOS 27.0): `/usr/bin/ssh -F /dev/null -o
+  BatchMode=yes -p 1 127.0.0.1 cat` (connection refused) given 4 MB through `execFile`
+  then `stdin.end(buf)` raised it in 30 of 30 runs, exit code 255; with
+  `stdin.on('error', () => {})` 0 of 30, same exit code. Pinned by a unit test with a
+  fake `ssh` that exits at once.
 - **`err.code` in `execFile`'s callback**: a number for the child's exit code; a string
   when Node could not run it (missing binary, output past `maxBuffer`); absent when it
   was killed.
@@ -1151,7 +1170,11 @@ inferred, not checked.
   133 of 300 (same, 8 CPU burners), 40 of 300 (30 ms apart) and 3 of 300 (100 ms apart).
   Measured 2026-10-22 (Node 24.13.0 under vitest, macOS 27.0) with a throwaway probe on
   `watchJsonDrops`. So a reader that must keep write order reads one drop at a time, in
-  event order; the drop's own `ts` is whole seconds and cannot sort them.
+  event order; the drop's own `ts` is whole seconds and cannot sort them. File mtime
+  can: 1000 rounds of 12 drops written back to back in one process (write a `.tmp`,
+  rename it into place) gave 11,000 neighbour pairs with no tie and none out of order.
+  Measured 2026-10-28 (Node 24.13.0, macOS 27.0, APFS in the temp folder) with a
+  throwaway probe that stat'ed each drop after the round.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 - **A session's two start notes can go unreported.** With the launch line typed about
@@ -1189,6 +1212,13 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
   Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
   child in the probe.
+- **`kill()` is one SIGHUP and nothing after it.** A pty program that ignores SIGHUP
+  keeps running with its terminal gone. Measured 2026-10-28 (Electron 43.8.1, node-pty
+  1.1.0, macOS 27.0) in the e2e app: a Workbench shell that `exec`ed a script with
+  `trap '' HUP` was still alive 20 s after its tab closed. The pty's pid leads its own
+  process group, so `kill -9 -<pid>` reaches it and whatever it started in that group;
+  a job an interactive shell put in a group of its own is not in it. macOS `pgrep` has
+  no session-id filter (`-s`), so the whole session cannot be listed that way.
 
 ## §30 git
 
@@ -1507,6 +1537,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
   ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
   ssh lab.)
+- **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
+  the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
+  opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection
+  closed by UNKNOWN port 65535`), because the bastion closes the hop at once. Machine
+  frozen so it answers nothing (`docker pause`), master up: ssh never returns on its own
+  — still hung at 60 s, when the probe killed it (§33's no-connect-phase rule) — so
+  Koloft's own 10 s timeout in `runSshBytes` is what ends it. (2026-10-29, OpenSSH_10.3p1
+  on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a ProxyJump bastion, Koloft's
+  `sshOptions` with BatchMode, the e2e Docker ssh lab image, a scratch node script timing
+  `spawnSync`.)
 
 ## §34 rsync
 
@@ -1589,6 +1629,43 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   own screen (2026-10-25, tmux 3.3a in the `koloft-muse-probe` Docker image and in the agy
   probe image, a python pty answering the terminal's queries, its output replayed into
   `@xterm/headless`). So a remote tab's account line goes in the pane's run lines.
+- **The tmux client exits 0 however the program in the pane ends** — exit 1, SIGKILL, or
+  the session killed from outside — and prints `[exited]`. To pass the program's code on,
+  the pane's shell runs it in a subshell, writes `$?` to a file, and the script that ran
+  the client exits with it; `tmux capture-pane -p` run from that shell after the program
+  ended still holds the program's last screen (2026-10-28, tmux 3.3a in the
+  `koloft-e2e-sshd` Docker image: codes 3, 137 and 0 came through, the screen was captured).
+- **On a machine whose `/bin/sh` is dash, a Ctrl-C reaching the pane kills the waiting
+  shell** once its child exits, even when the child handled the signal, so nothing after the
+  child runs. `trap : INT QUIT` in that shell keeps it alive and still hands the child the
+  default action after `exec` (2026-10-28, dash in the same image, `setsid -w` per case:
+  untrapped, the shell died with 130; trapped, it saw the child's 5; a child that did not
+  handle INT died with 130 as before).
+- **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
+  link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
+- **A tmux client whose login names no UTF-8 locale draws `_` for every character
+  outside ASCII**, whatever the program in the pane printed: `中文 ⏺ …` came out as
+  `____ _ _`, and `─` as the line-drawing set (`ESC(0q ESC(B`). The client decides by the
+  first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set: `tmux -u`, or `LANG=C.UTF-8` on the
+  client alone, drew them right; so did a `LANG=en_US.UTF-8` the login was handed though
+  the machine had no such locale (`locale -a`: `C`, `C.utf8`, `POSIX`), with or without
+  `-u`. With no `LANG` at login the pane's program gets none either. `capture-pane -p`
+  run from inside such a pane, with no `LANG` and no `-u`, wrote the characters as they
+  are.
+  - **Whether the login gets a `LANG` is up to the Mac's ssh config and the server.**
+    macOS's own `/etc/ssh/ssh_config.d/100-macos.conf` has `SendEnv LANG LC_*`, and a
+    stock Debian sshd has `AcceptEnv LANG LC_*`: an ssh run with the system config and
+    `LANG=en_US.UTF-8` (what Koloft gives a tab's terminal when the Mac set none) handed
+    the login `LANG=en_US.UTF-8`, also when it rode a ControlMaster that was started with
+    no `LANG` at all — the client's own variables count. An ssh run with `-F <file>`
+    skips the system config, so its `SendEnv` is gone and the login has no `LANG` (the
+    e2e lab's ssh is run that way); so does a server without `AcceptEnv`. The
+    container's own `ENV LANG=C.UTF-8` (seen by `docker exec`) does not reach an ssh
+    login.
+
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
+  reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
+  printing those characters and attached to it, its bytes read back on the Mac.)
 
 ## §36 ccstatusline
 
@@ -2569,3 +2646,18 @@ field and says so; a remote workspace's pull requests are listed by that machine
 
 Koloft dependents: `installFakeRemote` in `test/e2e/helpers/remote.ts`, which a case may
 call twice on one home, the second time over the link the first one made.
+
+## §63 A command line typed into the user's own login shell: `VAR=x exec cmd` in fish
+
+- **fish drops the variable.** `fish -c "A=1 exec fakecli"` ran `fakecli` with `A`
+  empty. `A=1 fakecli` without `exec` got `A=1`.
+- **`exec env A=1 cmd` passes it in fish, zsh and bash**, and the shell ends when `cmd`
+  ends (a `; echo` after it never ran; the exit code was `cmd`'s).
+- **`printf '\033…\007'` prints a real ESC and BEL in all three**, so a marker printed
+  that way differs from its own echo on the typed line.
+- Measured 2026-10-28 in the `debian:bookworm` Docker image: fish 3.6.0, zsh 5.9, the
+  image's bash, `fakecli` a `/bin/sh` script printing `$A`.
+
+Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
+Antigravity sign-in into the user's login shell with an account's environment, and
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`.

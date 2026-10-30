@@ -14,29 +14,32 @@ describe('what a waiting Muse session asks', () => {
     ).toEqual({ approval: { id: 'a2', command: 'https://example.com' } })
   })
 
-  it('takes one question that picks one option, and nothing it could not answer by keys', () => {
+  // MUSE§11
+  it('takes every question that picks one option, each open to the owner’s own words, and nothing when one of them picks several', () => {
     const question = {
       id: 'color',
       question: 'Which colour?',
       options: [{ label: 'Red', description: 'warm' }, { label: 'Blue' }],
       selection: { mode: 'single' }
     }
+    const taken = {
+      question: 'Which colour?',
+      options: [{ label: 'Red', description: 'warm' }, { label: 'Blue' }],
+      ownWords: true
+    }
     expect(
       museAsk({ approvals: [], userInputs: [{ userInputId: 'u1', questions: [question] }] })
-    ).toEqual({
-      question: {
-        id: 'u1',
-        question: 'Which colour?',
-        options: [{ label: 'Red', description: 'warm' }, { label: 'Blue' }]
-      }
-    })
+    ).toEqual({ question: { id: 'u1', questions: [taken] } })
     expect(
       museAsk({ userInputs: [{ userInputId: 'u2', questions: [question, question] }] })
-    ).toEqual({})
+    ).toEqual({ question: { id: 'u2', questions: [taken, taken] } })
     expect(
       museAsk({
         userInputs: [
-          { userInputId: 'u3', questions: [{ ...question, selection: { mode: 'multiple' } }] }
+          {
+            userInputId: 'u3',
+            questions: [question, { ...question, selection: { mode: 'multiple' } }]
+          }
         ]
       })
     ).toEqual({})

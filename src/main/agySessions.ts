@@ -93,9 +93,11 @@ import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles
 import { agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
-  codexOptionKey,
+  labelsOf,
+  questionAnswers,
   type CodexApproval,
-  type CodexQuestion
+  type CodexQuestion,
+  type Question
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
@@ -143,6 +145,7 @@ export interface AgyMachine {
   readAgyConfig(account: string): Promise<RemoteAgyConfig>
   agyHeldElsewhere(conversationId: string): Promise<boolean>
   agyConversations(): Promise<SummaryRow[]>
+  agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -174,6 +177,12 @@ interface AgyAsk {
   plan?: string
 }
 
+interface AgyCommand {
+  item: BackgroundItem
+  shown: boolean
+  ran?: boolean
+}
+
 interface AgyRun extends StoredRun {
   account: string
   pid?: number
@@ -181,7 +190,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
-  promptBeforeBind?: boolean
+  statesBeforeBind?: ProgramStatus[]
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -190,9 +199,21 @@ interface AgyRun extends StoredRun {
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
   schedules?: Set<string>
+  commands?: Map<string, AgyCommand>
+  countsTasks?: boolean
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
+}
+
+function sinceThePrompt(held: ProgramStatus[], arrived: ProgramStatus[]): ProgramStatus[] {
+  let kept = held
+  for (const status of arrived) {
+    const last = kept.at(-1)
+    if (status.state === 'idle') kept = [status]
+    else if (last?.state !== status.state || last.kind !== status.kind) kept = [...kept, status]
+  }
+  return kept
 }
 
 // AGY§1 AGY§3
@@ -222,6 +243,9 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
+const COMMAND_LABEL_CHARS = 160
+// AGY§13
+const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
 
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
@@ -246,6 +270,12 @@ function agyArgs(
         ? ['-i', opts.firstPrompt]
         : [])
   ]
+}
+
+// AGY§14
+function agyQuestion(question: string, raw: unknown): Question {
+  const options = labelsOf(raw)
+  return { question, options, ...(options.length > 0 && { ownWords: true as const }) }
 }
 
 // AGY§8
@@ -293,6 +323,11 @@ function logTail(file: string): { size: number; text: string } {
 
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
+}
+
+// AGY§13
+function commandsOf(run: AgyRun, conversationId: string): [string, AgyCommand][] {
+  return [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
 // AGY§11 AGY§12
@@ -772,6 +807,73 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     for (const run of this.runs.values()) if (!run.explicitStop && !run.remote) run.log.read()
   }
 
+  // AGY§11 AGY§13
+  private settleCommands(
+    run: AgyRun,
+    { conversationId, agentState, taskCount }: AgyTitleState
+  ): void {
+    if (taskCount !== undefined) run.countsTasks = true
+    if (agentState !== 'idle' || !run.commands?.size) return
+    if (run.api) return this.askCommands(run)
+    const mine = commandsOf(run, conversationId)
+    if (!taskCount && run.countsTasks)
+      return this.dropCommands(
+        run,
+        mine.map(([id]) => id)
+      )
+    for (const [, command] of mine) command.shown ||= !!command.ran
+    this.publishBackground(run)
+  }
+
+  // AGY§13 AGY§16
+  private askCommands(run: AgyRun): void {
+    const asked = [...run.commands!.keys()]
+    const conversations = new Set(asked.map((id) => id.split('/')[0]))
+    void Promise.all([...conversations].map((id) => run.api!.backgroundTaskIds(id)))
+      .then((lists) => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+        const live = new Set(lists.flatMap((ids) => [...ids]))
+        for (const id of asked) {
+          const command = run.commands?.get(id)
+          if (command && live.has(id)) command.shown = true
+        }
+        this.dropCommands(
+          run,
+          asked.filter((id) => !live.has(id))
+        )
+        this.publishBackground(run)
+      })
+      .catch(() => undefined)
+  }
+
+  // AGY§12 AGY§13
+  private sortAnswered(run: AgyRun, conversationId: string, input: Record<string, unknown>): void {
+    const mine = commandsOf(run, conversationId)
+    if (input.invocationNum !== 0) {
+      for (const [, command] of mine) command.ran = true
+    } else {
+      const declined = mine.filter(([, command]) => !command.ran && !command.shown)
+      this.dropCommands(
+        run,
+        declined.map(([id]) => id)
+      )
+    }
+  }
+
+  private dropCommands(run: AgyRun, ids: string[]): void {
+    let dropped = false
+    for (const id of ids) if (run.commands?.delete(id)) dropped = true
+    if (dropped) this.publishBackground(run)
+  }
+
+  private publishBackground(run: AgyRun): void {
+    const commands = [...(run.commands?.values() ?? [])].flatMap((c) => (c.shown ? [c.item] : []))
+    this.deps.events(run.tabId, {
+      type: 'background-changed',
+      items: [...(run.background ? [run.background] : []), ...commands]
+    })
+  }
+
   // AGY§29
   followMirrors(host: string): void {
     for (const run of this.runs.values())
@@ -809,15 +911,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
-    this.replaySchedules(run)
+    this.replayTasks(run)
   }
 
-  // AGY§13
-  private replaySchedules(run: AgyRun): void {
+  // AGY§11 AGY§13
+  private replayTasks(run: AgyRun): void {
     for (const line of (readText(run.log.file) ?? '').split('\n')) {
-      if (!line.includes('"schedule"') && !line.includes('"manage_task"')) continue
+      const turnOver = line.includes('"conversation_id"') && line.includes('"idle"')
+      if (!turnOver && !TASK_LINE_MARKS.some((mark) => line.includes(mark))) continue
       const read = agyLogLine(line)
-      if (read && 'hook' in read) this.trackSchedule(run, read.hook)
+      if (read && 'hook' in read) this.trackTasks(run, read.hook)
+      else if (read) this.settleCommands(run, read.title)
     }
   }
 
@@ -827,7 +931,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!read) return
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
     if ('hook' in read) {
-      this.trackSchedule(run, read.hook)
+      this.trackTasks(run, read.hook)
       this.onHook(run, read.hook)
     } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
@@ -845,6 +949,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
+    this.settleCommands(run, state)
     if (state.title && state.title !== before?.title) {
       run.givenTitle = undefined
       this.retitle(run.info, state.title)
@@ -868,8 +973,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    if (run.commands?.size) this.publishBackground(run)
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
+    // AGY§10
+    const before = run.statesBeforeBind ?? []
+    run.statesBeforeBind = undefined
+    if (run.stopping) return
+    const replayed = before.length > 1 && before[0].state === 'idle' ? before.slice(1) : before
+    for (const status of replayed) this.emitState(run, status)
   }
 
   // AGY§12
@@ -895,21 +1007,39 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§13
-  private trackSchedule(run: AgyRun, hook: AgyHook): void {
+  private trackTasks(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
     const { event, input, conversationId } = hook
+    if (event === 'PreInvocation') return this.sortAnswered(run, conversationId, input)
     const call = record(input.toolCall)
-    if (call.name !== 'schedule' && call.name !== 'manage_task') return
     const args = record(call.args)
+    const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+    if (call.name === 'run_command') {
+      if (event === 'PreToolUse') {
+        const label =
+          argOf(args, 'CommandLine')?.slice(0, COMMAND_LABEL_CHARS) ?? 'Background command'
+        const item: BackgroundItem = {
+          id: taskId,
+          label,
+          ...(args.IsDaemon === true
+            ? { kind: 'server', state: 'waiting' }
+            : { kind: 'command', state: 'working' })
+        }
+        ;(run.commands ??= new Map()).set(taskId, { item, shown: false })
+      } else if (event === 'PostToolUse') this.dropCommands(run, [taskId])
+      return
+    }
+    if (call.name !== 'schedule' && call.name !== 'manage_task') return
     const schedules = (run.schedules ??= new Set())
     const before = schedules.size
     if (call.name === 'schedule') {
-      const taskId = `${conversationId}/task-${String(input.stepIdx)}`
       if (event === 'PreToolUse') schedules.add(taskId)
       else if (event === 'PostToolUse') schedules.delete(taskId)
     } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
-      const taskId = argOf(args, 'TaskId') ?? ''
-      schedules.delete(taskId.includes('/') ? taskId : `${conversationId}/${taskId}`)
+      const killed = argOf(args, 'TaskId') ?? ''
+      const id = killed.includes('/') ? killed : `${conversationId}/${killed}`
+      schedules.delete(id)
+      this.dropCommands(run, [id])
     }
     if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
   }
@@ -949,15 +1079,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (run.api) this.endCompaction(run)
       else this.deps.events(run.tabId, { type: 'compacted' })
     }
-    const busy = input.fullyIdle === false
+    const namedCommandRuns = [...(run.commands?.values() ?? [])].some(
+      (command) => command.ran && command.item.kind === 'command'
+    )
+    const busy = input.fullyIdle === false && !namedCommandRuns
     if (busy === !!run.background) return
     run.background = busy
       ? { id: 'agy-background', kind: 'agent', label: 'Background work', state: 'working' }
       : undefined
-    this.deps.events(run.tabId, {
-      type: 'background-changed',
-      items: run.background ? [run.background] : []
-    })
+    this.publishBackground(run)
   }
 
   // AGY§10
@@ -970,7 +1100,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
     if (!run.info) {
-      run.promptBeforeBind = states[states.length - 1].state === 'idle'
+      run.statesBeforeBind = sinceThePrompt(run.statesBeforeBind ?? [], states)
       this.deps.pty.wakeReady(tabId)
       return
     }
@@ -980,7 +1110,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && !!run.promptBeforeBind
+    return !!run && !run.info && !run.explicitStop && run.statesBeforeBind?.at(-1)?.state === 'idle'
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {
@@ -1099,25 +1229,31 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const pending = await run.api?.pending(id).catch(() => undefined)
     if (!pending || run.waiting !== fromHook) return
     const askId = `${pending.trajectoryId}:${pending.stepIndex}`
-    const question = pending.questions?.[0]
+    const questions = pending.questions ?? []
     run.waiting = {
       pending,
-      ...(pending.kind === 'question' && question
+      ...(pending.kind !== 'question'
         ? {
-            question: {
-              id: askId,
-              question: question.question,
-              options: question.options.map((o) => ({ label: o.text }))
-            }
-          }
-        : {
             approval: {
               id: askId,
               command: pending.target,
               reason: pending.kind === 'file' ? 'Write this file' : undefined,
               ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
             }
-          })
+          }
+        : questions.length && !questions.some((q) => q.multiSelect)
+          ? {
+              question: {
+                id: askId,
+                questions: questions.map((q) =>
+                  agyQuestion(
+                    q.question,
+                    q.options.map((o) => o.text)
+                  )
+                )
+              }
+            }
+          : {})
     }
     this.changedSoon()
   }
@@ -1128,13 +1264,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tool = run.lastTool
     if (status.kind === 'question' && tool?.name === 'ask_question') {
       const raw = record(tool.args).questions
-      const first = record(Array.isArray(raw) ? raw[0] : undefined)
-      const options = Array.isArray(first.options) ? first.options : []
+      const asked = (Array.isArray(raw) && raw.length ? raw : [undefined]).map(record)
+      if (asked.some((q) => q.is_multi_select === true)) return {}
       return {
         question: {
           id,
-          question: typeof first.question === 'string' ? first.question : (status.msg ?? ''),
-          options: options.map((o) => ({ label: String(o) }))
+          questions: asked.map((q) =>
+            agyQuestion(typeof q.question === 'string' ? q.question : (status.msg ?? ''), q.options)
+          )
         }
       }
     }
@@ -1185,26 +1322,25 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run?.info?.nativeSessionId
     if (!run || !ask || !id) return false
     if (ask.question) {
-      const key = codexOptionKey(ask.question, reply)
-      if (!key) return 'this Antigravity question takes the number or the name of one option.'
-      run.waiting = undefined
-      const option = ask.pending?.questions?.[0]?.options[Number(key) - 1]
+      const answers = questionAnswers(ask.question, reply)
       const viaApi =
-        ask.pending && option
-          ? await run.api?.pick(id, ask.pending, [option.id]).then(
+        answers && ask.pending
+          ? await run.api?.answer(id, ask.pending, answers).then(
               () => true,
               () => false
             )
           : false
-      if (!viaApi) this.deps.pty.write(tabId, key)
+      if (!viaApi) return false
+      run.waiting = undefined
       return undefined
     }
+    if (!ask.approval) return false
     const key = codexKeyFor(reply)
     if (!key) return 'an Antigravity approval takes yes or no.'
     const yes = key === 'y'
     run.waiting = undefined
     if (ask.plan) {
-      await this.deliverText(run, id, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
+      await this.deliverText(run, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
       return undefined
     }
     const viaApi = ask.pending
@@ -1221,16 +1357,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§15 AGY§16
-  private async deliverText(run: AgyRun, conversationId: string, text: string): Promise<void> {
-    const sent = await run.api?.send(conversationId, text).catch(() => false)
-    if (!sent) this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
+  private async deliverText(run: AgyRun, text: string): Promise<void> {
+    if (!(await this.deliver(run.tabId, text)))
+      this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
   }
 
-  // AGY§16
+  // AGY§16 AGY§29
   async deliver(tabId: string, text: string): Promise<boolean> {
     const run = this.runs.get(tabId)
     const id = run?.info?.nativeSessionId
-    if (!run?.api || !id) return false
-    return run.api.send(id, text).catch(() => false)
+    if (!run || !id) return false
+    const sent = run.remote
+      ? this.deps.remote.machine(run.remote.host).agySend(run.remote.tmuxName, id, text)
+      : run.api?.send(id, text)
+    return (await sent?.catch(() => false)) ?? false
   }
 }

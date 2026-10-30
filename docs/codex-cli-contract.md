@@ -64,7 +64,12 @@ Schema availability is distinguished from behavior actually seen on the wire.
 - **A signed-in start brings very large replies.** The TUI asks `plugin/list` (ids
   `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
   marketplace), and three came within about 75 seconds. A home with no login gets
-  `{"marketplaces":[],…}` (101 bytes).
+  `{"marketplaces":[],…}` (101 bytes). On 2026-10-29 (0.162.0, a ChatGPT-signed-in
+  `CODEX_HOME` in the real-model e2e case where a reopened Codex Alfred gets a Claude
+  helper's report, measured with a log in
+  `createCodexTransport`) a TUI resuming a thread asked four times as it opened; each
+  reply was 24,187,552 bytes and three reached Koloft within 60 ms, faster than the TUI
+  took them off its socket, so more than 64 MB waited to be sent to it at once.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
@@ -197,6 +202,33 @@ final response without waiting. The relay saw:
 The completed **spawn tool call** is not completion of the **spawned child**.
 The parent-child relationship comes from the collab item, not from treating every
 other thread on the wire as a child. Temporary title threads share that wire too.
+
+### No Monitor; a server left in a background terminal
+
+**Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
+macOS, `codex app-server --stdio` driven by a Node script, a fresh `CODEX_HOME` whose model
+was a fake Responses-API server on localhost, `sandbox_mode = "danger-full-access"`, no
+login, 1 run.**
+
+- `codex features list` has no Monitor-like feature, and section 32's tool list has no
+  tool that wakes the model on a running command's output; a command that outlives its
+  turn ends with `item/completed` and starts no turn. The thread's only way to wait is
+  `clock.sleep` inside a turn (section 32).
+- The fake model answered with one `exec_command {cmd: "python3 -m http.server 18799",
+  yield_time_ms: 1000}`, then a message. The item was `/bin/zsh -lc 'python3 -m
+  http.server 18799'`, `inProgress`, `processId` `"71962"`; the turn completed with it
+  still `inProgress`. `ps` then showed the server as a direct child of the app-server
+  pid, its command line the interpreter's own file (`…/Python.app/Contents/MacOS/Python
+  -m http.server 18799`, as in MUSE§8).
+- `thread/backgroundTerminals/list {threadId}` (an experimental method: it is in
+  `codex app-server generate-json-schema --experimental` only, and `initialize` sent
+  `capabilities.experimentalApi: true`) answered one entry `{itemId: "call_1", processId:
+  "71962", command: "python3 -m http.server 18799", cwd, osPid: null, cpuPercent: null,
+  rssKb: null}`: no OS PID on macOS.
+- `thread/backgroundTerminals/clean {threadId}` answered `{}`, the item then completed
+  `failed` with `exitCode: -1`, the process was gone and the list was empty. The binary's
+  strings hold "thread/backgroundTerminals/clean failed in TUI", "/ps to view" and
+  "/stop to close"; the TUI's `/ps` and `/stop` were not run.
 
 ### Schema limits
 
@@ -875,13 +907,19 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 `gpt-5.3-codex` 1.75 / 0.175 / 14, `gpt-5.2` 1.75 / 0.175 / 14, `gpt-5.1` 1.25 / 0.125 /
 10, `gpt-5` 1.25 / 0.125 / 10. **`gpt-6.1-sol` 2 / 0.10 / 10** (the same page, fetched
 2026-10-11; Codex 0.161.0 made it the default model of the bundled catalog, so a fresh
-account home runs on it). OpenAI charges nothing to write the cache. The page lists
+account home runs on it). **`gpt-6.1-terra` 1 / 0.05 / 5, long context 2 / 0.10 /
+7.5** (the same page, fetched 2026-10-28; `model/list` offered it on Codex 0.164.0 and
+0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`). The page now also lists 30-minute and 12-hour
+cache-write prices (about 1.25 and 2.5 times the input price), but Codex reported
+`cache_write_input_tokens` 0 in every record of a fresh home's turns on 0.164.0 and
+0.165.0 (2026-10-28), so Koloft prices cache writes at 0. The page lists
 a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
 (258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
 the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
 the `models_cache.json` a fresh throwaway home got from `model/list` on 0.162.1 and on
-0.163.0 gives it a `context_window` of 500000 (the other six 272000), so a prompt above
-272K tokens on it is billed at the long-context price (the context meter
+0.163.0 gives it a `context_window` of 500000 (the other six 272000), and on 2026-10-28
+the same file on 0.164.0 and 0.165.0 gives `gpt-6.1-terra` 500000 too, so a prompt above
+272K tokens on either is billed at the long-context price (the context meter
 reads `modelContextWindow` from the wire, not the table). The same page on 2026-10-16
 ("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
 15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
@@ -1003,6 +1041,13 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
   `<CODEX_HOME>/sessions/…`, so a session lives in the home it was started in, and only
   an app-server on that home can list, read or resume it.
 
+**An API-key home has an account but no rate limits.** Checked 2026-10-28 with Codex CLI
+0.162.0, no model turn: a Node script ran `codex login --with-api-key` (a made-up key on
+stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
+`account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
+`thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
+"chatgpt authentication required to read rate limits".
+
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
 file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
@@ -1039,6 +1084,18 @@ yet expired) made `account/read` fail with error `-32603` ("workspace routing di
 unauthorized (401)") instead of answering `account: null`, so a probe with no network ends
 in an error and leaves the account's status alone. A real login whose access token ran out
 while offline was not tried.
+
+**Online, every made-up ChatGPT login reads as signed out; a made-up API key does not.**
+Checked 2026-10-29 with Codex CLI 0.162.0, no model turn, with the network on: a Node
+script ran `codex app-server` on stdio in throwaway `CODEX_HOME`s and sent `account/read`
+twice. An `auth.json` of only `{tokens: {access_token, account_id}}` (no `id_token`)
+answered `{account: null}` both times, and `codex login status` there printed "missing
+field `id_token`". A well-formed one with a made-up unsigned `id_token`, access and refresh
+token, not expired, tried to refresh against OpenAI (401 "token_expired") and answered the
+first `account/read` with the same `-32603` as the offline case above, the second with
+`{account: null}`. `{OPENAI_API_KEY: "<made up>"}` answered `{account: {type: "apiKey"}}`
+both times, with nothing on stderr. So a test that needs a Codex account to stay signed in
+without a real login can only use a made-up API key.
 
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
@@ -1200,10 +1257,18 @@ probed: a real `consume` — every try spends one of the owner's resets, so Kolo
 it only on a walled account and only the fake codex has run it; whether
 `nothingToReset` leaves the credit unspent is inferred from its description.
 
+**A `codex login` stopped part way leaves the home signed out.** Checked 2026-10-28 with
+Codex CLI 0.165.0 (Linux, `node:22-bookworm` Docker image, no account): `codex login` and
+`codex login --device-auth`, each in an empty `CODEX_HOME` under `script`, were sent SIGHUP
+8 s in, while waiting for the browser or the device code. Each home then held only a
+`log/` folder, no `auth.json`, and `codex login status` printed "Not logged in" and
+exited 1. So the probe Koloft runs when a sign-in tab closes reads such a home as not
+signed in.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
-  done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
-  only on exit 0) — **inferred, not checked**;
+  done (Koloft execs `codex login` in the sign-in terminal, so the tab closes when it
+  ends, and the probe after it decides) — **inferred, not checked**;
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
 
@@ -1824,9 +1889,24 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   `{answers: {colour: {answers: ["None of the above", "user_note: Purple with dots"]}}}`,
   as on a non-blocking one, and the model repeated the words. Not probed: Esc on it, and
   whether a non-null `autoResolutionMs` counts down on its own.
+- **Several questions by keys: one answer per question, the last one sends them all.**
+  2026-10-29, codex-cli 0.162.0, the full-screen `codex --no-daemon` in a python pty
+  (120×40, screen read through `pyte`), a throwaway `CODEX_HOME` whose `config.toml` points
+  `model_provider` at a fake Responses server on localhost (`wire_api = "responses"`, no
+  login), `features.default_mode_request_user_input=true`; the fake answered the first turn
+  with a `request_user_input` call of two questions (ids `fruit` and `size`, two options
+  each, no `isOther` sent by the fake) and logged the next request. The TUI drew
+  "Question 1/2 (2 unanswered)", each question with `3. None of the above` and "tab to add
+  notes | enter to submit answer | ←/→ to navigate questions". A digit on question 1 moved
+  to "Question 2/2 (1 unanswered)" ("enter to submit all"). Two runs, keys 300–400 ms
+  apart: `2`, then Down, Down, Tab, `Medium please`, Enter sent `{"answers":{"fruit":
+  {"answers":["Banana"]},"size":{"answers":["None of the above","user_note: Medium
+  please"]}}}`; Down, Down, Tab, `A ripe mango`, Enter on question 1, then `1`, sent
+  `{"size":{"answers":["Small"]},"fruit":{"answers":["None of the above","user_note: A ripe
+  mango"]}}`. So Koloft answers each question in turn by its own keys, with nothing after
+  the last.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
-  an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
-  those from Discord.
+  an elicitation `mode` other than `form`.
 
 ## 21. Slash commands typed into the TUI
 
@@ -2557,4 +2637,32 @@ owner's login, `gpt-6.1-sol`, told to call no tool:
   and a prompt line telling the model to prefer `clock.sleep` "over automations". No
   app-server method or model tool that makes an automation was found in its strings;
   what makes one in the Codex desktop app was not probed.
+
+## 33. A message queued from outside Koloft
+
+2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`), a
+throwaway `CODEX_HOME` with no login (deleted afterwards), a Node client on
+`codex app-server --stdio` (`initialize` with `experimentalApi: true`), the folder trusted,
+a `UserPromptSubmit` hook given with `-c` and trusted as in section 27 that logged its
+stdin. Each turn then failed at the model (401), after the hook had run. One run.
+
+- **Anything that knows the tab's `CODEX_HOME` and thread id can put a turn into it.**
+  `codex queue --thread <id> --message "[Discord] …"`, run as a separate process with the
+  same `CODEX_HOME`, printed `Queued message <id> for thread <id>.` and exited 0. The
+  stdio app-server, which no client of that process had asked, sent
+  `thread/queue/changed`, then (once its running turn ended) `turn/started` for a turn
+  whose `userMessage` held the text, with a `clientId` Codex made up (a UUID). The home
+  gained `queue_1.sqlite`, which is how the two processes met. That a TUI on `--remote`
+  in front of that server draws it is inferred, not checked: the server, not the TUI,
+  drained the queue.
+- **`UserPromptSubmit` cannot tell who queued a message.** For the message Koloft's own
+  `thread/queue/add` sent (`clientUserMessageId: "koloft-discord-1"`) and for the one
+  `codex queue` sent, the stdin had the same fields: `session_id`, `turn_id`,
+  `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `prompt` — the
+  text as sent, no client id. The hook ran before the turn's `userMessage` item was
+  sent, so the id was not in the rollout yet either.
+- **The `prompt` is compact JSON with non-ASCII text left as UTF-8.** A queued
+  `[Discord] 你好 "a" <b> é<TAB>x<LF>line2` reached the hook as
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx\nline2"`: only the quote, the tab and the line
+  feed escaped, as Node's `JSON.stringify` does (second run, same setup).
 

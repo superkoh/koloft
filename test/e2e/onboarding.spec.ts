@@ -1,12 +1,16 @@
 import fs from 'fs'
 import http from 'http'
+import { execFileSync } from 'child_process'
 import type { AddressInfo } from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   codexMissingWhoseCheckAnswersOnlyWhenLetGo,
+  installAgy,
   installCodex,
+  installMuse,
+  ownersGemini,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
@@ -167,6 +171,78 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(page.locator('.ws-name')).toHaveText('ws-a')
       await expect(welcome(page)).toBeVisible()
       await expectStep(page, 3)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15 MUSE§5 AGY§8
+  test('T-OB-17: step 2 also lists the folders Codex, Muse and Antigravity were used in, with no Claude Code history at all', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env)
+    installCodex(env)
+    installMuse(env)
+    installAgy(env)
+    const now = Math.floor(Date.now() / 1000)
+    const codexThread = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b'
+    const codexSaved = path.join(env.home, '.codex', 'sessions')
+    fs.mkdirSync(codexSaved, { recursive: true })
+    fs.writeFileSync(
+      path.join(codexSaved, codexThread + '.json'),
+      JSON.stringify({
+        id: codexThread,
+        cwd: env.workspaces.a,
+        name: 'Codex in ws-a',
+        preview: 'Codex in ws-a',
+        createdAt: now - 60,
+        updatedAt: now - 60,
+        turns: []
+      })
+    )
+    const museSession = '01a17db8-7cda-7722-8212-7f60790ea9c8'
+    const museListed = path.join(env.home, '.local', 'share', 'muse', 'sessions', 'fake')
+    fs.mkdirSync(museListed, { recursive: true })
+    fs.writeFileSync(
+      path.join(museListed, museSession + '.json'),
+      JSON.stringify({
+        id: museSession,
+        cwd: fs.realpathSync(env.workspaces.b),
+        title: 'Muse in ws-b',
+        createdAt: new Date((now - 120) * 1000).toISOString(),
+        updatedAt: new Date((now - 120) * 1000).toISOString(),
+        items: []
+      })
+    )
+    fs.mkdirSync(path.join(env.home, 'agy-ws'))
+    const agyFolder = fs.realpathSync(path.join(env.home, 'agy-ws'))
+    const agyApp = path.join(ownersGemini(env), 'antigravity-cli')
+    fs.mkdirSync(agyApp, { recursive: true })
+    fs.writeFileSync(
+      path.join(agyApp, 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [agyFolder], modelProvider: 'gemini' })
+    )
+    execFileSync(
+      process.execPath,
+      [path.join(__dirname, 'fixtures', 'fake-agy.js'), '-p', 'Antigravity in agy-ws'],
+      {
+        cwd: agyFolder,
+        env: { ...env.launchEnv, PWD: agyFolder, GEMINI_API_KEY: 'fake-gemini-key' }
+      }
+    )
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 2)
+
+      await expect(welcome(page).locator('.disc-row .disc-name')).toHaveText(
+        ['agy-ws', 'ws-a', 'ws-b'],
+        { timeout: 20_000 }
+      )
+      await snap(page, 'T-OB-17')
     } finally {
       await quitAndClose(app)
     }

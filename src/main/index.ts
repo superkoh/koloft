@@ -39,6 +39,7 @@ import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
+  agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
@@ -62,6 +63,7 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
+import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -136,7 +138,9 @@ import {
   runMasterCommand,
   runSsh,
   runSshBytes,
-  sshOptions
+  problemOf,
+  sshOptions,
+  writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
@@ -177,13 +181,7 @@ import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
-import {
-  oncePerName,
-  readJsonDrop,
-  watchAndSweepJsonDrops,
-  watchJsonDrops,
-  writeWholeBeforeVisible
-} from './jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   AGY_STATUSLINE_JS,
   bundlePath,
@@ -194,7 +192,13 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  setupBundledGit,
+  stepAsideForTheUsersGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -295,7 +299,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor, realpathSafe } from './projectInfo'
+import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -372,7 +376,13 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
+import {
+  ACCOUNT_KINDS_OF,
+  AUTO_PROBE_MS,
+  launchLine,
+  launchUsageProbe,
+  type LaunchUsageProbe
+} from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -397,6 +407,7 @@ import type {
   CodexLimits,
   CodexResetOutcome,
   SignInResult,
+  SignInFailure,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -482,11 +493,18 @@ import {
   PROJECT_MCP_FILE,
   claudeServers,
   codexServers,
+  foldersUpToRepoTop,
+  foldersUpToRoot,
   jsonServers,
   type ConfigText,
   type McpServer
 } from './mcpServers'
-import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
+import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
+  claudeShowsAPanel,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+} from './claudeSessionRegistry'
 import {
   asPeerName,
   GLOBAL_SCOPE,
@@ -1168,6 +1186,11 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      try {
+        if (gitFirstBin) stepAsideForTheUsersGit(gitFirstBin, env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
     })
     .catch(() => undefined))
 }
@@ -1441,34 +1464,49 @@ function textOrNull(file: string): Promise<string | null> {
 }
 
 async function mcpServersNow(): Promise<McpServer[]> {
-  const local = (workspaceMgr?.pinnedPaths() ?? []).flatMap((w) =>
-    isRemoteKey(w.path) ? [] : [w.path]
+  const folders = [
+    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    conductorFolder(app.getPath('userData'))
+  ]
+  const walks = await Promise.all(
+    folders.map(async (onlyIn) => ({
+      onlyIn,
+      toRoot: foldersUpToRoot(onlyIn),
+      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
+    }))
   )
-  const inProjects = (file: string): Promise<ConfigText[]> =>
+  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
     Promise.all(
-      local.map(async (onlyIn) => ({ onlyIn, text: await textOrNull(path.join(onlyIn, file)) }))
+      walks.flatMap((w) =>
+        w[walk].map(async (folder) => ({
+          onlyIn: w.onlyIn,
+          text: await textOrNull(path.join(folder, file))
+        }))
+      )
     )
   const museSettings = path.join(
     museConfigHome(museSessions?.defaultEnv ?? process.env),
     'muse',
     'settings.json'
   )
-  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy] = await Promise.all([
-    textOrNull(claudeJsonPath()),
-    inProjects(PROJECT_MCP_FILE),
-    inProjects(AGY_PROJECT_MCP_FILE),
-    textOrNull(codexSharedConfig()),
-    textOrNull(museSettings),
-    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-  ])
-  const claudeFolders = [...local, conductorFolder(app.getPath('userData'))].map((folder) => ({
+  const [claudeJson, projectFiles, museProjectFiles, agyProjectFiles, codexToml, muse, agy] =
+    await Promise.all([
+      textOrNull(claudeJsonPath()),
+      inFolders(PROJECT_MCP_FILE, 'toRoot'),
+      inFolders(PROJECT_MCP_FILE, 'toRepoTop'),
+      inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
+      textOrNull(codexSharedConfig()),
+      textOrNull(museSettings),
+      textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+    ])
+  const claudeFolders = folders.map((folder) => ({
     folder,
     projectKey: claudeProjectKey(folder)
   }))
   return [
     ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
-    ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
+    ...jsonServers('muse', [{ text: muse }, ...museProjectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
   ]
 }
@@ -1584,10 +1622,28 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
-  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-  await writeLineInTurn(socket, line)
+  const host = tracker.remoteOf(tabId)?.host
+  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
+  if (!host) {
+    const socket = await whenMessagingSocket(sessionId, ms)
+    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+    return writeLineInTurn(socket, line)
+  }
+  await loginEnvReady()
+  const readLiveRegistry = async (): Promise<string> => {
+    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+      controlDir: remoteControlDir
+    })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout
+  }
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
+    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
+  )
 }
+const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
@@ -1689,10 +1745,14 @@ const sessionDeps: SessionVerbDeps = {
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
+  ready: tabTypable,
+  bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  press: (tabId, keys) => {
+    butler?.firstWordsComing(tabId)
+    return ptyMgr.type(tabId, keys)
+  },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -1756,9 +1816,9 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
-      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      machine: machineOfTab,
       pages: guestPagesOf,
-      open: openOnTabMachine,
+      open: openSignInEndOn,
       sleep
     }),
     gh: githubVerb({
@@ -1849,19 +1909,66 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => UtilTerminalPick | undefined
+> = {
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
+  agy: () => {
+    const picked = terminalPickOf(pickAgyHome())
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+  }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
+}
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
   if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -1998,7 +2105,13 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
-let probeOnceTheRendererIsUp = false
+let probeOnceTheRendererIsUp: LaunchUsageProbe = null
+
+function probeSignInFolderAccounts(): Promise<void> {
+  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
+    () => undefined
+  )
+}
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
@@ -2007,9 +2120,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
       (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
     )
     await Promise.all([
-      probeCodexAccounts(),
-      probeMuseAccounts(),
-      probeAgyAccounts(),
+      probeSignInFolderAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -2031,6 +2142,11 @@ function probeAllForPanel(): Promise<AccountView[]> {
   }
   void round.then(release, release)
   return round
+}
+
+const LAUNCH_PROBES: Record<NonNullable<LaunchUsageProbe>, () => Promise<unknown>> = {
+  everyAccount: probeAllForPanel,
+  signInFoldersOnly: probeSignInFolderAccounts
 }
 
 async function addAccount(
@@ -2093,7 +2209,7 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; notice?: string } | undefined {
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(
     views,
@@ -2105,7 +2221,12 @@ function pickCodexHome(
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: allLimitedNotice(picked, 'codex') }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'codex')
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2146,7 +2267,42 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
+interface HomeSignInTab {
+  kind: SignInFolderKind
+  name: string
+  again: boolean
+  output: SignInOutput
+}
+const signInPtys = new Map<string, HomeSignInTab>()
+let signInFailure: SignInFailure | null = null
+
+function setSignInFailure(f: SignInFailure | null): void {
+  signInFailure = f
+  sendToRenderer(CH.accounts.signInFailure, f)
+}
+
+function forgetAccount(name: string, kind: AccountKind): void {
+  removeAccountMeta(name, kind)
+  usageViews.delete(viewKey(name, kind))
+  picker.forget(kind, name)
+  pushAccounts()
+}
+
+async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
+  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
+    () => false
+  )
+  const account = findAccount(s.name, s.kind)
+  if (!probeAnswered || !account || account.status === 'ok') return
+  if (!s.again) forgetAccount(s.name, s.kind)
+  setSignInFailure({
+    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    name: s.name,
+    again: s.again,
+    tail: s.output.tail()
+  })
+}
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
@@ -2207,18 +2363,25 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
+  // PLATFORM§63
   const signIn = (quotedBinary: string): string =>
-    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
   const tab = homeShellTab(
-    login.binary
-      ? signIn(shq(login.binary))
-      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+    `${MARK_OUTPUT_START}; ` +
+      (login.binary
+        ? signIn(shq(login.binary))
+        : installThen(
+            BACKEND_OF_SIGN_IN_FOLDER[kind],
+            signIn,
+            process.env.KOLOFT_TEST_TOOL_INSTALLER
+          ))
   )
-  signInPtys.set(tab.tabId, { kind, name })
+  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
@@ -2237,7 +2400,7 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(
     views,
@@ -2247,14 +2410,15 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return (
-    picked && {
-      account: picked.name,
-      env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now()),
-      notice: allLimitedNotice(picked, 'muse')
-    }
-  )
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
+  }
 }
 
 async function museServeFor(
@@ -2279,7 +2443,7 @@ async function probeMuseAccount(name: string): Promise<void> {
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
       fs.mkdirSync(dir, { recursive: true })
-      const limits = await readMuseQuota(serve.binary, serve.env, dir)
+      const limits = await readMuseQuota(serve.binary, serve.env, dir, ptyMgr)
       usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
     }
   } catch {
@@ -2387,12 +2551,17 @@ async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
   return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
 
+let agyProbeRound: Promise<void> | null = null
+
 function probeAgyAccounts(): Promise<void> {
-  return Promise.all(
+  agyProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'agy-home' && a.enabled)
       .map((a) => probeAgyAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    agyProbeRound = null
+  })
+  return agyProbeRound
 }
 
 // AGY§6
@@ -2681,10 +2850,7 @@ app.whenReady().then(() => {
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
-  if (watchOpenRequests(openDir)) {
-    ptyMgr.openDir = openDir
-    sweepOpenRequests(openDir)
-  }
+  if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
 
   ptyMgr.cdpDir = cdpEnvDir()
@@ -2699,7 +2865,10 @@ app.whenReady().then(() => {
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
-  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
@@ -2794,6 +2963,7 @@ app.whenReady().then(() => {
     // CC§12
     if (sleepers.has(d.id)) return
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
@@ -2845,10 +3015,10 @@ app.whenReady().then(() => {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
     }
-    const signedIn = signInPtys.get(e.id)
-    if (signedIn) {
+    const signingIn = signInPtys.get(e.id)
+    if (signingIn) {
       signInPtys.delete(e.id)
-      void probeHomeAccount[signedIn.kind](signedIn.name)
+      void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
@@ -3091,6 +3261,12 @@ app.whenReady().then(() => {
         stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
       ),
     additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
+    additionalFolders: async () =>
+      (
+        await Promise.all(
+          storedSessions().map((stored) => stored.localHistoryFolders().catch(() => []))
+        )
+      ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
     saveLayout,
@@ -3618,9 +3794,7 @@ app.whenReady().then(() => {
   createWindow()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
-  const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  probeOnceTheRendererIsUp = capsuleShownSoLaunchProbeIsNotBilledForNothing()
+  probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -3721,30 +3895,13 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(
+  const handle = (obj: unknown, full: string): void => handleOpenRequest(obj as OpenDrop, full)
+  return watchAndSweepJsonDrops(
     openDir,
-    () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
+    () => handle,
+    undefined,
     () => true
   )
-}
-
-const OPEN_REQUEST_STILL_WANTED_MS = 60_000
-function sweepOpenRequests(openDir: string): void {
-  fs.readdir(openDir, (err, names) => {
-    if (err) return
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(openDir, name)
-      fs.stat(full, (e, st) => {
-        if (e) return
-        if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          void readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
-        } else {
-          fs.rm(full, { force: true }, () => {})
-        }
-      })
-    }
-  })
 }
 
 // ADR-0009
@@ -4839,15 +4996,29 @@ function showsPromptBeforeBind(tabId: string): boolean {
   return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
+function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
+  return (
+    !!sessionOfTab(tabId)?.sessionId &&
+    tracker.statusOf(tabId) !== undefined &&
+    (!turnEnded || tracker.turnOver(tabId))
+  )
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => boundAndSettled(tabId, turnEnded), ms)
+}
+
+// AGY§8
+function tabTypable(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+    () => showsPromptBeforeBind(tabId) || boundAndSettled(tabId, turnEnded),
     ms
   )
+}
+
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
 function registerSlashCommands(): void {
@@ -4866,8 +5037,7 @@ async function secretAskerName(tabId: string): Promise<string> {
 const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
 
 // CODEX§15
-async function openOnTabMachine(tabId: string, url: string): Promise<string> {
-  const host = tracker.remoteOf(tabId)?.host
+async function openSignInEndOn(host: string | undefined, url: string): Promise<string> {
   if (!host) {
     const res = await fetch(url, {
       redirect: 'manual',
@@ -5295,8 +5465,8 @@ function registerIpc(): void {
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {
-      probeOnceTheRendererIsUp = false
-      void probeAllForPanel().catch(() => {})
+      void LAUNCH_PROBES[probeOnceTheRendererIsUp]().catch(() => {})
+      probeOnceTheRendererIsUp = null
     }
     const activeAsleep = restoreOpenTabs()
     cronRunner?.onRendererReady()
@@ -5383,10 +5553,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
-    removeAccountMeta(name, kind)
-    usageViews.delete(viewKey(name, kind))
-    picker.forget(kind, name)
-    pushAccounts()
+    forgetAccount(name, kind)
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
@@ -5411,6 +5578,8 @@ function registerIpc(): void {
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
+  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
   ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
@@ -5652,6 +5821,11 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).transcriptExists(id)
+  })
+
+  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
+    if (typeof id !== 'string' || !id) return null
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
