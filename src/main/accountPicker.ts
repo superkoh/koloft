@@ -89,7 +89,7 @@ function bannerFor(
 export function allLimitedNotice(a: AccountView, backend: BackendId): string | undefined {
   const room = homeRoom(a, Math.floor(Date.now() / 1000))
   if (!room?.walled) return undefined
-  return `Every ${BACKEND_LABEL[backend]} account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(room.backAt)}).`
+  return `Every ${BACKEND_LABEL[backend]} account is at its limit, so this runs on ${a.name}, the first to reset (${fmtReset(room.backAt)}).`
 }
 
 function fallbackTag(a: AccountMeta): string {
