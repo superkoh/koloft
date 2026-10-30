@@ -78,6 +78,12 @@ async function butlerTab(page: Page): Promise<string> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.tabId ?? ''
 }
 
+async function butlerShownWorkingOnItsOpeningTurn(fake: FakeDiscord): Promise<void> {
+  await expect
+    .poll(() => fake.typing, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    .toContain(CHANNEL)
+}
+
 async function connected(
   env: E2EEnv,
   fake: FakeDiscord
@@ -105,6 +111,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         Object.fromEntries(fake.commands.map((c) => [c.name, (c.options ?? []).map((o) => o.name)]))
       ).toEqual({ run: ['command'], clear: [], compact: ['focus'] })
 
+      await butlerShownWorkingOnItsOpeningTurn(fake)
       const asked = fake.interact(OWNER, 'run', { command: '/context' })
       await expect
         .poll(() => replyTo(fake, asked))
