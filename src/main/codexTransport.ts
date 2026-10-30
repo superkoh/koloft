@@ -22,11 +22,12 @@ export interface CodexProcessOptions {
   args?: string[]
   timeoutMs?: number
   maxFrameBytes?: number
+  maxQueuedBytes?: number
 }
 
 export interface CodexUpstream {
   readonly ready: Promise<void>
-  readonly limit: number
+  readonly queueLimit: number
   write(raw: string | Buffer): void
   stop(): Promise<void>
   newScreen?(): void
@@ -53,6 +54,7 @@ const DEFAULT_TIMEOUT = 15_000
 const MOST_APP_SERVER_REPLACEMENTS_PER_TAB = 3
 // CODEX§1
 export const DEFAULT_MAX_FRAME = 256 * 1024 * 1024
+export const DEFAULT_MAX_QUEUED = 64 * 1024 * 1024
 export const TUI_STALLED_AFTER_MS = 30_000
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -258,6 +260,10 @@ class CodexProcess implements CodexUpstream {
     return this.options.maxFrameBytes ?? DEFAULT_MAX_FRAME
   }
 
+  get queueLimit(): number {
+    return this.options.maxQueuedBytes ?? DEFAULT_MAX_QUEUED
+  }
+
   private fail(error: Error): void {
     if (this.failed || this.stopping) return
     this.failed = true
@@ -266,7 +272,7 @@ class CodexProcess implements CodexUpstream {
 
   write(raw: string | Buffer): void {
     if (this.stopping || this.failed || this.exited) throw new Error('Codex connection is closed')
-    if (this.child.stdin.writableLength + Buffer.byteLength(raw) > this.limit * 2) {
+    if (this.child.stdin.writableLength + Buffer.byteLength(raw) > this.queueLimit) {
       throw new Error('Codex input queue exceeds the size limit')
     }
     this.child.stdin.write(raw)
@@ -501,7 +507,7 @@ export async function createCodexTransport(
           // CODEX§1
           if (client.bufferedAmount === 0) tuiTookAFrameAt = performance.now()
           else if (
-            client.bufferedAmount > upstream.limit * 2 &&
+            client.bufferedAmount > upstream.queueLimit &&
             performance.now() - tuiTookAFrameAt > TUI_STALLED_AFTER_MS
           )
             throw new Error(
@@ -514,7 +520,7 @@ export async function createCodexTransport(
           })
         } else if (!accepted) {
           pendingBytes += raw.length
-          if (pendingBytes > upstream.limit * 2)
+          if (pendingBytes > upstream.queueLimit)
             throw new Error('Codex output queue exceeds the size limit')
           pending.push(raw)
         }

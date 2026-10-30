@@ -12,7 +12,7 @@ const {
   CodexRpc,
   codexEnvironment,
   createCodexTransport,
-  DEFAULT_MAX_FRAME,
+  DEFAULT_MAX_QUEUED,
   readFrame,
   TUI_STALLED_AFTER_MS
 } = await import('../../src/main/codexTransport')
@@ -435,7 +435,7 @@ describe('Codex TUI transport', () => {
         upstreams++
         return {
           ready: Promise.resolve(),
-          limit: DEFAULT_MAX_FRAME,
+          queueLimit: DEFAULT_MAX_QUEUED,
           write: (raw) => {
             const f = JSON.parse(raw.toString()) as CodexFrame
             if (f.method === 'initialize')
@@ -510,7 +510,7 @@ describe('Codex TUI transport', () => {
   })
 
   // CODEX§1
-  it('a reply past 32 MB, as the plugin list a signed-in TUI asks for keeps growing toward, reaches the TUI whole and keeps the connection', async () => {
+  it('a reply past 32 MB, as the plugin list a signed-in TUI asks for (24 MB and growing) would be, reaches the TUI whole and keeps the connection', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({
       binary,
@@ -529,11 +529,10 @@ describe('Codex TUI transport', () => {
         params: { mode: 'big', bytes: PLUGIN_LIST_PAST_32_MB }
       })
     )
-    const dropped = once(socket, 'close').then(() => {
-      throw new Error('the TUI lost its connection')
-    })
-    const { result } = (await Promise.race([reply, dropped])) as { result: { pad: string } }
-    expect(result.pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
+    const dropped = once(socket, 'close').then(() => 'the TUI lost its connection')
+    const got = await Promise.race([reply, dropped])
+    expect(got).toMatchObject({ id: 'plugin-list-1' })
+    expect((got as { result: { pad: string } }).result.pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
     expect(errors).toEqual([])
   }, 30_000)
 
@@ -646,7 +645,7 @@ describe('Codex TUI transport', () => {
     expect(await first).toMatchObject({ id: 'start' })
   })
 
-  const BURST_FRAME_LIMIT = 256 * 1024
+  const BURST_QUEUE_LIMIT = 512 * 1024
   const BURST_REPLY_BYTES = 200 * 1024
   const BURST_REPLIES = 8
 
@@ -661,7 +660,7 @@ describe('Codex TUI transport', () => {
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
-      maxFrameBytes: BURST_FRAME_LIMIT,
+      maxQueuedBytes: BURST_QUEUE_LIMIT,
       onFrame: (direction, frame) => {
         if (direction === 'server' && frame.method === 'burst') reached++
       },

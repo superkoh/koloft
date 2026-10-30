@@ -260,6 +260,7 @@ export interface MachineUpstreamOptions {
   machineCwd(): string
   stopServer(): Promise<void>
   maxFrameBytes: number
+  maxQueuedBytes: number
   report(error: Error): void
 }
 
@@ -276,7 +277,7 @@ const isInitialized = (line: string | Buffer): boolean =>
 // ADR-0039 CODEX§16
 export class MachineCodexUpstream implements CodexUpstream {
   readonly ready = Promise.resolve()
-  readonly limit: number
+  readonly queueLimit: number
   private ws?: WebSocket
   private child?: ChildProcessWithoutNullStreams
   private queue: (string | Buffer)[] | null = []
@@ -297,7 +298,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     private frame: (read: ReadFrame) => void,
     private failure: (error: Error) => void
   ) {
-    this.limit = o.maxFrameBytes
+    this.queueLimit = o.maxQueuedBytes
   }
 
   write(raw: string | Buffer): void {
@@ -305,7 +306,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     const line = this.withMachineCwd(raw)
     if (this.queue) {
       this.queuedBytes += Buffer.byteLength(line)
-      if (this.queuedBytes > this.limit * 2)
+      if (this.queuedBytes > this.queueLimit)
         throw new Error('Codex input queue exceeds the size limit')
       this.queue.push(line)
       this.connect()
@@ -356,7 +357,7 @@ export class MachineCodexUpstream implements CodexUpstream {
   private send(line: string | Buffer): void {
     const ws = this.ws
     if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Codex connection is closed')
-    if (ws.bufferedAmount > this.limit * 2)
+    if (ws.bufferedAmount > this.queueLimit)
       throw new Error('Codex input queue exceeds the size limit')
     ws.send(line, { binary: false })
   }
@@ -482,7 +483,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     const duplex = Duplex.from({ readable: child.stdout, writable: child.stdin })
     const ws = new WebSocket('ws://localhost/', {
       createConnection: () => duplex as unknown as Socket,
-      maxPayload: this.limit
+      maxPayload: this.o.maxFrameBytes
     })
     let opened = false
     let lost = false

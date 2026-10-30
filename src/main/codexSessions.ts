@@ -27,6 +27,7 @@ import {
   codexEnvironment,
   createCodexTransport,
   DEFAULT_MAX_FRAME,
+  DEFAULT_MAX_QUEUED,
   type CodexProcessOptions,
   type CodexTransport
 } from './codexTransport'
@@ -985,6 +986,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         await m.run(machine, stopCodexServerCmd(m.instance, tabId))
       },
       maxFrameBytes: DEFAULT_MAX_FRAME,
+      maxQueuedBytes: DEFAULT_MAX_QUEUED,
       report: (error) => this.deps.error(String(error))
     }
   }
