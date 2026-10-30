@@ -529,7 +529,10 @@ describe('Codex TUI transport', () => {
         params: { mode: 'big', bytes: PLUGIN_LIST_PAST_32_MB }
       })
     )
-    const { result } = (await reply) as { result: { pad: string } }
+    const dropped = once(socket, 'close').then(() => {
+      throw new Error('the TUI lost its connection')
+    })
+    const { result } = (await Promise.race([reply, dropped])) as { result: { pad: string } }
     expect(result.pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
     expect(errors).toEqual([])
   }, 30_000)
