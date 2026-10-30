@@ -1122,6 +1122,13 @@ inferred, not checked.
   never-answering `ext::` remote.
 - **`execFile` gives the child an open stdin pipe that is never closed**, so a child that
   reads stdin blocks until the timeout.
+- **Input written to a child's stdin that the child exits before reading raises `EPIPE`
+  on the stdin stream, and with no `'error'` listener there it is an uncaught exception.**
+  Measured 2026-10-29 (Node 24.13.0, macOS 27.0): `/usr/bin/ssh -F /dev/null -o
+  BatchMode=yes -p 1 127.0.0.1 cat` (connection refused) given 4 MB through `execFile`
+  then `stdin.end(buf)` raised it in 30 of 30 runs, exit code 255; with
+  `stdin.on('error', () => {})` 0 of 30, same exit code. Pinned by a unit test with a
+  fake `ssh` that exits at once.
 - **`err.code` in `execFile`'s callback**: a number for the child's exit code; a string
   when Node could not run it (missing binary, output past `maxBuffer`); absent when it
   was killed.
