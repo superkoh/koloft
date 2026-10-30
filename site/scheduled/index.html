@@ -195,11 +195,12 @@
               <tr>
                 <td>After each run…</td>
                 <td>
-                  Pick a wait, in minutes or hours. The wait starts when the last run's tab is gone
-                  (it closed itself, you closed it, or it could not start); then the next run
-                  starts. While a run is open, nothing new starts, Run now included. Saving the job
-                  or turning it on starts the wait again. It is never missed: if the wait ran out
-                  while Koloft was closed or asleep, the run starts as soon as Koloft is back.
+                  Pick a wait, in minutes or hours. The wait starts when the last run is over (it
+                  closed itself, you closed it, it could not start, or its agent quit with an
+                  error); then the next run starts. While a run is open, nothing new starts, Run now
+                  included. Saving the job or turning it on starts the wait again. It is never
+                  missed: if the wait ran out while Koloft was closed or asleep, the run starts as
+                  soon as Koloft is back.
                 </td>
               </tr>
             </tbody>
@@ -209,11 +210,11 @@
           Picking After each run… sets When done to Close it, so each run makes room for the next by
           itself. The list says <code>waits for the open run to end</code> while a run is open. In a
           <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
-          reconnect, and the run stays open. A run whose agent quits with an error after the run
-          started keeps its tab and its last screen, like any
-          <a href="../sessions/#quit">session</a>, but the run counts as over at once, so the wait
-          starts. An agent that dies before the run starts leaves no tab; History says
-          <code>Could not start</code>.
+          reconnect, and the run stays open. If the agent quits with an error after the run has
+          started, the tab stays with its last screen, like any
+          <a href="../sessions/#quit">session</a>. But the run counts as over right away, so the
+          wait starts, and History says <code>Closed by you</code>. If the agent quits before the
+          run starts, no tab stays, and History says <code>Could not start</code>.
         </p>
 
         <h2>Where it runs</h2>
@@ -347,7 +348,8 @@
               <tr>
                 <td>Closed by you</td>
                 <td>
-                  You closed the run yourself. The line then ends with
+                  You closed the run yourself, or its agent quit with an error after the run
+                  started. The line then ends with
                   <code>· folder removed</code>, or <code>· folder kept: …</code> and what is left
                   in it.
                 </td>

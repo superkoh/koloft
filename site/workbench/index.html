@@ -252,34 +252,6 @@
           the machine, and an HTML file opens as its source. Plain words run a search.
         </p>
 
-        <h3 id="pick">Point the agent at one part of a page</h3>
-        <p>
-          Right of the address field sits a button whose tip reads
-          <code>Pick an element and paste it into the session</code>. Click it and move the mouse
-          over the page: the part under it lights up. Click that part (the click does not reach the
-          page). Into the session's input box, not sent, goes:
-        </p>
-        <ul class="dash">
-          <li>a first line, <code>Element picked in the Workbench browser</code></li>
-          <li>the page's address and title</li>
-          <li>the part's name, like <code>button#buy.primary</code>, its size and where it sits</li>
-          <li>the path of a picture of it (a PNG file)</li>
-          <li>
-            its HTML, cut after 4,000 characters, and its CSS as the page really drew it: size,
-            margins, colours, font and the like
-          </li>
-        </ul>
-        <p>
-          Add what you want done and press <kbd>⏎</kbd>; your cursor is already back in the
-          terminal. <kbd>Esc</kbd>, the button again, or a click anywhere else in Koloft stops
-          picking, and nothing is pasted. While the session waits for your OK, has ended, or the
-          page is not showing, the button is greyed and its tip says why. Every agent gets the same
-          paste. On a <a href="../remote/">remote folder</a> the picture is copied to the machine,
-          into <code>~/.koloft/element-picks</code>, and the paste names that path. Koloft throws a
-          picture away after about a day; on a remote machine it does that the next time it saves a
-          picture there.
-        </p>
-
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 776 / 960">
           <div class="frame">
             <picture>
@@ -304,6 +276,40 @@
             >
           </figcaption>
         </figure>
+
+        <h3 id="pick">Point the agent at one part of a page</h3>
+        <p>
+          To the right of the address field is a button. Its tip reads
+          <code>Pick an element and paste it into the session</code>. Click it and move the mouse
+          over the page: the part under the mouse lights up. Click that part (the click does not
+          reach the page). Koloft puts this in the session's input box, without sending it:
+        </p>
+        <ul class="dash">
+          <li>a first line, <code>Element picked in the Workbench browser</code></li>
+          <li>
+            the page's address and title, and the frame's address if the part sits in a frame (a
+            page inside the page)
+          </li>
+          <li>the part's name, like <code>button#buy.primary</code>, its size and where it sits</li>
+          <li>the path of a picture of it (a PNG file), when Koloft can take one</li>
+          <li>
+            its HTML, cut after 4,000 characters, and its CSS as the page really drew it: size,
+            margins, colours, font and the like
+          </li>
+        </ul>
+        <p>
+          Add what you want done and press <kbd>⏎</kbd>; your cursor is already back in the
+          terminal. To stop picking without pasting anything, press <kbd>Esc</kbd>, click the button
+          again, or click anywhere else in Koloft; picking also stops if the page goes to a new
+          address. While the session waits for your OK, has ended, or the page is not showing, the
+          button is greyed and its tip says why.
+        </p>
+        <p>
+          Every agent gets the same paste. On a <a href="../remote/">remote folder</a>, the picture
+          is copied to that machine, into <code>~/.koloft/element-picks</code>, and the paste names
+          that path. Koloft deletes each picture after about a day. On a remote machine, it deletes
+          old pictures the next time it saves a new one there.
+        </p>
 
         <h2>Terminal tabs</h2>
         <p>

@@ -147,11 +147,13 @@
           </li>
           <li id="quit">
             If the agent quits on its own with an error (it crashes, is killed, or fails to start),
-            its tab stays open with its last screen. The line under the row's title ends with
+            its tab stays open with its last screen. The branch line under the row's title ends with
             <code>· exited (code N)</code> or <code>· killed (signal N)</code>, and the row's tip
             reads <code>Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it</code>. If
-            it quits cleanly, as when you type <code>/exit</code>, the tab closes as before. All
-            four agents do this, on your Mac and on a <a href="../remote/">remote folder</a>.
+            it quits cleanly, as when you type <code>/exit</code>, the tab closes. All four agents
+            do this, on your Mac and on a <a href="../remote/">remote folder</a>. A
+            <a href="../scheduled/">scheduled run</a> whose agent fails before the run starts is the
+            one case that leaves no tab.
           </li>
         </ul>
         <p>Every row has a light on its left. The colour says what the session is doing.</p>
@@ -195,13 +197,24 @@
           </table>
         </div>
         <p id="last-step">
-          Once the agent has taken a step, an open row gets one more short line under it: what the
-          agent did last. While it works, the last step it took, like <code>Ran npm test</code> or
-          <code>Edited api.ts</code>. While it waits for your OK, what it asks, like
-          <code>Wants to run: rm -rf build</code> or <code>Asks: …</code>. Once its turn is done,
-          the last step with <code>Last:</code> in front. A row that is still starting has no such
-          line. Claude, Codex, Muse and Antigravity all do this, on your Mac and on a
-          <a href="../remote/">remote folder</a>.
+          An open row can have one more short line under it, about what the agent is doing:
+        </p>
+        <ul class="dash">
+          <li>
+            while it works: the last step it took, like <code>Ran npm test</code> or
+            <code>Edited api.ts</code>
+          </li>
+          <li>
+            while it waits for your OK: what it asks, like
+            <code>Wants to run: rm -rf build</code> or <code>Asks: …</code> (if Koloft cannot tell,
+            its last step)
+          </li>
+          <li>once its turn is done: the last step, with <code>Last:</code> in front</li>
+          <li>when a Codex plan is ready: <code>Plan ready: implement it?</code></li>
+        </ul>
+        <p>
+          Before the agent has done or asked anything, there is no such line. Claude, Codex, Muse
+          and Antigravity all do this, on your Mac and on a <a href="../remote/">remote folder</a>.
         </p>
 
         <h2 id="red-dots">Red dots</h2>
@@ -529,7 +542,8 @@
           <li>
             New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
             Sessions, one line per agent (New Claude session, New Codex session, …), the default one
-            first with <kbd>⌘N</kbd>. An agent with no account Koloft can use is greyed out there.
+            first with <kbd>⌘N</kbd>. An agent with no account Koloft can use is greyed out there
+            (see <a href="../accounts/#no-account">accounts</a>).
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
@@ -570,7 +584,8 @@
           <li>
             Start again <kbd>⇧⌘R</kbd> and Close <kbd>⌘W</kbd>
             <span class="why"
-              >(only these two, on a row whose agent <a href="#quit">quit on its own</a>)</span
+              >(on a row whose agent <a href="#quit">quit on its own</a>, the menu has only these
+              two)</span
             >
           </li>
         </ul>

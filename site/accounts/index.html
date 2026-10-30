@@ -200,12 +200,13 @@
             <code>Account usage</code> panel: one part per tool, each with its accounts; Claude,
             Codex and Muse get a Pool row with two or more accounts
           </li>
-          <li>
+          <li id="no-account">
             with no account that can be used, the New session button is greyed out, and a line under
-            it says why (the same for Codex, Muse and Antigravity), and so is that agent's New
-            session in a folder's right-click menu; a scheduled job does not start either. Resuming
-            or restarting (<kbd>⇧⌘R</kbd>) a session of that agent shows the same line, and a
-            session that is running keeps running. The line is one of:
+            it says why (the same for Codex, Muse and Antigravity). That agent's New session in a
+            folder's right-click menu is greyed out too, and a scheduled job does not start either.
+            Resuming or restarting (<kbd>⇧⌘R</kbd>) a session of that agent shows the same words in
+            a short message, and a session that is already running keeps running. For Claude the
+            line is one of:
             <ul class="dash">
               <li>
                 <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when none is
@@ -410,12 +411,12 @@
           <li>
             When the session tab you are looking at goes away (you close it, or its agent quits
             cleanly), Koloft shows your butler, opening it if it was not open, once the butler is
-            set up. A tab whose agent quits with an error stays (see
-            <a href="../sessions/#quit">sessions</a>); closing it then shows your butler, if its
-            session had started. Closing the butler's own tab does not open it again; Koloft shows
-            the newest open tab. A new session that ends before it ever started (you answer "No,
-            exit" to its trust question, say) leaves you on its folder's page, or on the newest open
-            tab.
+            set up. A tab whose agent quits with an error stays open (see
+            <a href="../sessions/#quit">sessions</a>). When you close it, Koloft shows your butler,
+            as long as that session had started. Closing the butler's own tab does not open it
+            again; Koloft shows the newest open tab. A new session whose agent quits cleanly before
+            the session ever started (you answer "No, exit" to Antigravity's trust question, say)
+            leaves you on its folder's page, or on the newest open tab.
           </li>
           <li>
             Like any session it goes to sleep after a quiet half hour, unless it has a Discord
@@ -509,13 +510,13 @@
           <li>Codex, here or on another machine, gets it in line, when Codex is ready.</li>
           <li>
             Antigravity, here or on another machine, gets it through its own API (the door other
-            programs talk to it by); a message sent mid-turn waits for that turn to end. If the API
-            does not take it, Koloft types it in once the turn is over.
+            programs use to talk to it). A message sent while it is working waits until its turn
+            ends. If the API does not take it, Koloft types it in once the turn is over.
           </li>
           <li>Muse gets it typed in once its turn is over.</li>
           <li>
-            While a Muse or Antigravity session is busy, the butler is told it will be delivered
-            then.
+            While a Muse or Antigravity session is busy, the butler is told the message will arrive
+            when that session is ready.
           </li>
         </ul>
 
