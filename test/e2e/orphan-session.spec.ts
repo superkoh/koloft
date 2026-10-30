@@ -105,6 +105,11 @@ test.describe("Session unreachable → Force Close: the fallback when a reload f
 
       await expect(modal).toHaveCount(0)
       await expectNoToastAtAnyMomentOfAWindow(page)
+
+      await row.click()
+      const calls = await waitForCalls(env, 2)
+      expect(resumedId(calls[1])).toBe(launch.sessionId)
+      await expect(page.locator('.toast', { hasText: /Could not force close/ })).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }

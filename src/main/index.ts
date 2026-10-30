@@ -5867,7 +5867,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.forceClose, async (_e, id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
     const tabId = sessionBackends.forSession(id).aliveTabFor(id)
-    if (!tabId) return { ok: true }
+    if (!tabId) return { ok: false }
     return { ok: await killTabPty(tabId) }
   })
 
