@@ -1685,10 +1685,15 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     await verb(['new', '--backend', 'codex', '--', 'fix it'], from('fix'))
     await verb(['new', '--', 'look around'], from('stray'))
     await verb(['new', '-w', 'kid', '--', 'try it'], from('fix'))
+    await verb(
+      ['new', '--workspace', 'ssh://box/srv/api', '--backend', 'muse', '--', 'check'],
+      from('fix')
+    )
     expect(launched.map((l) => [l.kind, l.cwd, l.worktree, l.trustFolder])).toEqual([
       ['codex', WS, undefined, true],
       ['claude', '/Users/me', undefined, false],
-      ['claude', WS, 'kid', false]
+      ['claude', WS, 'kid', false],
+      ['muse', 'ssh://box/srv/api', undefined, true]
     ])
   })
 
