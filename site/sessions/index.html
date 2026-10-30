@@ -81,13 +81,13 @@
       <main>
         <h1 class="title">Folders and their sessions</h1>
 
-        <figure class="shot is-narrow" style="--ar: 558 / 800">
+        <figure class="shot is-narrow" style="--ar: 558 / 870">
           <div class="frame">
             <img
               src="../img/a-sidebar.webp"
               width="558"
-              height="800"
-              alt="Two folders in the sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
+              height="870"
+              alt="Two folders in the sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names; the three open ones also say what their agent did last, like Last: Ran npm run build, and two of them have a red dot; below it the folder harbor-site with one session"
             />
           </div>
           <figcaption>
@@ -145,6 +145,15 @@
             that were running run again, with the one you were on selected; the ones that were
             asleep stay asleep until you click them; the closed ones stay closed.
           </li>
+          <li id="quit">
+            If the agent quits on its own with an error (it crashes, is killed, or fails to start),
+            its tab stays open with its last screen. The branch line under the row's title ends with
+            <code>· exited (code N)</code> or <code>· killed (signal N)</code>, and the row's tip
+            reads <code>Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it</code>. If
+            it quits cleanly, as when you type <code>/exit</code>, the tab closes. All four agents
+            do this, on your Mac and on a <a href="../remote/">remote folder</a>. A tab that a
+            <a href="../scheduled/">scheduled job</a> opened may close instead.
+          </li>
         </ul>
         <p>Every row has a light on its left. The colour says what the session is doing.</p>
         <div class="typed-table" id="lights">
@@ -186,6 +195,26 @@
             </tbody>
           </table>
         </div>
+        <p id="last-step">
+          An open row can have one more short line under it, about what the agent is doing:
+        </p>
+        <ul class="dash">
+          <li>
+            while it works: the last step it took, like <code>Ran npm test</code> or
+            <code>Edited api.ts</code>
+          </li>
+          <li>
+            while it waits for your OK: what it asks, like
+            <code>Wants to run: rm -rf build</code> or <code>Asks: …</code> (if Koloft cannot tell,
+            <code>Last:</code> and its last step)
+          </li>
+          <li>once its turn is done: the last step, with <code>Last:</code> in front</li>
+          <li>when a Codex plan is ready: <code>Plan ready: implement it?</code></li>
+        </ul>
+        <p>
+          Before the agent has done or asked anything, there is no such line. Claude, Codex, Muse
+          and Antigravity all do this, on your Mac and on a <a href="../remote/">remote folder</a>.
+        </p>
 
         <h2 id="red-dots">Red dots</h2>
         <ul class="dash">
@@ -223,12 +252,12 @@
         </ul>
 
         <h2 id="keep-running">Keep running</h2>
-        <figure class="shot is-narrow" style="--ar: 554 / 578">
+        <figure class="shot is-narrow" style="--ar: 558 / 668">
           <div class="frame">
             <img
               src="../img/p-keep-running.webp"
-              width="554"
-              height="578"
+              width="558"
+              height="668"
               loading="lazy"
               alt="The tidewatch sessions; the row Fix tide times near midnight has a small pin before its name"
             />
@@ -430,12 +459,12 @@
           thin line down its left. A session that one of those starts hangs one level deeper. The
           row is there from the moment it reads Starting….
         </p>
-        <figure class="shot is-narrow" style="--ar: 558 / 578">
+        <figure class="shot is-narrow" style="--ar: 558 / 722">
           <div class="frame">
             <img
               src="../img/v-session-tree.webp"
               width="558"
-              height="578"
+              height="722"
               loading="lazy"
               alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
             />
@@ -448,12 +477,12 @@
           <a href="#red-dots">folded folder</a> does, and a grey count of all the hidden ones. Click
           the arrow again to see them.
         </p>
-        <figure class="shot is-narrow" style="--ar: 558 / 296">
+        <figure class="shot is-narrow" style="--ar: 558 / 366">
           <div class="frame">
             <img
               src="../img/v-session-tree-folded.webp"
               width="558"
-              height="296"
+              height="366"
               loading="lazy"
               alt="The same folder with Add storm alerts endpoint folded: a red 2 and a grey 3 at the right of its name, and the arrow now points right"
             />
@@ -512,7 +541,8 @@
           <li>
             New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
             Sessions, one line per agent (New Claude session, New Codex session, …), the default one
-            first with <kbd>⌘N</kbd>
+            first with <kbd>⌘N</kbd>. An agent with no account Koloft can use is greyed out there
+            (see <a href="../accounts/#no-account">accounts</a>).
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
@@ -526,12 +556,12 @@
         </ul>
 
         <h2>Right-click a session</h2>
-        <figure class="shot" style="--ar: 912 / 290; --w: min(456px, 100cqw)">
+        <figure class="shot" style="--ar: 916 / 444; --w: min(458px, 100cqw)">
           <div class="frame">
             <img
               src="../img/p-keep-running-menu2.webp"
-              width="912"
-              height="290"
+              width="916"
+              height="444"
               loading="lazy"
               alt="The row Add storm alerts endpoint with its right-click menu open: Reveal in Finder, Copy session ID, Keep running, Close"
             />
@@ -549,6 +579,13 @@
           <li>
             Close <span class="why">(on a running row)</span>, or Remove from list
             <span class="why">(on a closed row)</span>
+          </li>
+          <li>
+            Start again <kbd>⇧⌘R</kbd> and Close <kbd>⌘W</kbd>
+            <span class="why"
+              >(on a row whose agent <a href="#quit">quit on its own</a>, the menu has only these
+              two)</span
+            >
           </li>
         </ul>
 
