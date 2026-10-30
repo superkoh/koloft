@@ -3,11 +3,13 @@ import type { BackendAvailability, DiscoveredFolder, SessionRow } from '../../sr
 import {
   ADOPTED_PER_FOLDER,
   FIRST_RUN_RECENT_MS,
+  foldersToPin,
+  rowsToAdopt
+} from '../../src/shared/firstRun'
+import {
   defaultAccountName,
   defaultAgent,
-  foldersToPin,
   resumeTarget,
-  rowsToAdopt,
   tallyAgents
 } from '../../src/renderer/src/welcomeModel'
 

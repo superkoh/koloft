@@ -262,6 +262,10 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.workspaces()?.archiveSession(key) ?? false
   }
 
+  adopt(keys: string[]): void {
+    this.d.workspaces()?.adopt(keys)
+  }
+
   transcriptExists(key: string): boolean {
     return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }

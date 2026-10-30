@@ -210,7 +210,7 @@ export const CH = {
     fetchFreshness: 'workspace:fetchFreshness',
     pull: 'workspace:pull',
     discover: 'workspace:discover',
-    adopt: 'workspace:adopt'
+    pinRecent: 'workspace:pinRecent'
   },
   project: {
     create: 'project:create'

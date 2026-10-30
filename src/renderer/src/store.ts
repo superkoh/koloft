@@ -210,6 +210,7 @@ interface AppState {
   setWelcomeReplay: (on: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
+  openSignInTab: (tab: { tabId: string; cwd: string }, title: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -1004,6 +1005,10 @@ export const useStore = create<AppState>((set, get) => ({
       signIn: { tabId, backToSettings: s.settingsOpen },
       settingsOpen: false
     })),
+  openSignInTab: ({ tabId, cwd }, title) => {
+    get().showSignInTab(tabId)
+    get().addTab({ id: tabId, kind: 'shell', title, cwd, alive: true })
+  },
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),

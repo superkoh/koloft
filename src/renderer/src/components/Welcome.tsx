@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
@@ -10,21 +10,22 @@ import {
 } from '@shared/sessionBackend'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
+import { foldersToPin } from '@shared/firstRun'
 import { useStore } from '../store'
-import { relTime } from '../sessionRows'
+import { plural, relTime } from '../sessionRows'
 import { resumeSession } from '../resumeFlow'
+import { aDialogIsOpen } from '../dialogOpen'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { SessionBackendIcon } from './SessionBackendIcon'
+import { SignInFailedDialog } from './settings/AccountsPane'
 import { IconAiStart, IconAssist, IconCheck, IconFolderOpen, IconLoading, IconPlus } from '../icons'
 import {
   defaultAccountName,
   defaultAgent,
   folderUseOf,
-  foldersToPin,
   lastUsedAgent,
   resumeTarget,
-  rowsToAdopt,
   tallyAgents
 } from '../welcomeModel'
 import '../welcome.css'
@@ -57,22 +58,10 @@ const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
 const SIGN_IN_SETTLE_MS = 4000
 const LEAVE_MS = 650
-const SCAN_WAIT_MS = 6000
-const SCAN_POLL_MS = 120
-
-async function scanned(paths: string[]): Promise<void> {
-  const deadline = Date.now() + SCAN_WAIT_MS
-  const done = (): boolean => {
-    const rows = useStore.getState().workspaceRows
-    return paths.every((p) => rows.some((w) => w.workspace.path === p && w.workspace.hasHistory))
-  }
-  while (!done() && Date.now() < deadline) await new Promise((r) => setTimeout(r, SCAN_POLL_MS))
-}
 
 const backendOf = (l: Launch): BackendId => (l.kind === 'resume' ? l.row.backendId : l.backend)
 const nextAgent = (b: BackendId): BackendId =>
   SESSION_BACKENDS[(SESSION_BACKENDS.indexOf(b) + 1) % SESSION_BACKENDS.length]
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function Title({ plain, script }: { plain: string; script: string }): JSX.Element {
   return (
@@ -123,38 +112,38 @@ function MiniSidebar({ folders }: { folders: Folder[] }): JSX.Element {
   )
 }
 
+const LIGHTS = [
+  {
+    cls: 'grey',
+    title: 'Grey: started in your terminal',
+    hint: 'Click one to pick it up here.',
+    delayMs: 400
+  },
+  { cls: 'working', title: 'Orange: working', hint: 'Leave it be.', delayMs: 750 },
+  {
+    cls: 'amber',
+    title: 'Amber: needs your OK',
+    hint: 'Your turn to say yes or no.',
+    delayMs: 900
+  },
+  { cls: 'green', title: 'Green: done this round', hint: 'Come and look.', delayMs: 1050 }
+]
+
 function LightKey(): JSX.Element {
   return (
     <div className="wl-key">
-      <div className="wl-key-row grey">
-        <i />
-        <div>
-          <b>Grey: started in your terminal</b>
-          <small>Click one to pick it up here.</small>
-        </div>
-      </div>
-      <div className="wl-key-cap">Once one runs here, its light turns:</div>
-      <div className="wl-key-row working">
-        <i />
-        <div>
-          <b>Orange: working</b>
-          <small>Leave it be.</small>
-        </div>
-      </div>
-      <div className="wl-key-row amber">
-        <i />
-        <div>
-          <b>Amber: needs your OK</b>
-          <small>Your turn to say yes or no.</small>
-        </div>
-      </div>
-      <div className="wl-key-row green">
-        <i />
-        <div>
-          <b>Green: done this round</b>
-          <small>Come and look.</small>
-        </div>
-      </div>
+      {LIGHTS.map((l, i) => (
+        <Fragment key={l.cls}>
+          <div className={'wl-key-row ' + l.cls} style={{ animationDelay: `${l.delayMs}ms` }}>
+            <i />
+            <div>
+              <b>{l.title}</b>
+              <small>{l.hint}</small>
+            </div>
+          </div>
+          {i === 0 && <div className="wl-key-cap">Once one runs here, its light turns:</div>}
+        </Fragment>
+      ))}
     </div>
   )
 }
@@ -176,8 +165,7 @@ export function Welcome({
   const beginLogin = useStore((s) => s.beginLogin)
   const setLoginProgress = useStore((s) => s.setLoginProgress)
   const clearLogin = useStore((s) => s.clearLogin)
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
+  const openSignInTab = useStore((s) => s.openSignInTab)
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const activeTabId = useStore((s) => s.activeTabId)
   const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
@@ -191,7 +179,6 @@ export function Welcome({
   const [signingFor, setSigningFor] = useState<BackendId | null>(null)
   const [peek, setPeek] = useState(false)
   const [pending, setPending] = useState<Launch | null>(null)
-  const [chip, setChip] = useState<BackendId | null>(null)
   const [prompt, setPrompt] = useState('')
   const [leaving, setLeaving] = useState(false)
   const started = useRef(false)
@@ -202,12 +189,10 @@ export function Welcome({
   }, [])
 
   const folders = useMemo<Folder[]>(
-    () =>
-      workspaceRows
-        .filter((w) => !w.workspace.butler)
-        .map((w) => ({ path: w.workspace.path, rows: w.rows })),
+    () => workspaceRows.map((w) => ({ path: w.workspace.path, rows: w.rows })),
     [workspaceRows]
   )
+  const folderNames = folders.map((f) => basename(f.path)).join(', ')
   const allRows = folders.flatMap((f) => f.rows)
   const known = useMemo(() => {
     const seen = new Set((found ?? []).map((f) => f.path))
@@ -226,7 +211,6 @@ export function Welcome({
   const signedIn = (b: BackendId): boolean => !!accounts && hasUsableAccount(accounts, b)
   const target = resumeTarget(allRows, Date.now())
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
-  const newAgent = chip ?? pick
   const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined
   const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
   const signTabOpen = !!signingFor && signingFor !== 'claude' && !!signInTabId
@@ -240,23 +224,12 @@ export function Welcome({
     if (pins.length === 0) return
     pinTried.current = true
     setPinning(true)
-    void (async () => {
-      try {
-        for (const f of pins) await window.api.workspace.add(f.path)
-        await scanned(pins.map((f) => f.path))
-        const now = Date.now()
-        const lists = await Promise.all(pins.map((f) => window.api.workspace.historyRows(f.path)))
-        await window.api.workspace.adopt(
-          lists
-            .flatMap((rows) => rowsToAdopt(rows, now))
-            .map((r) => ({ id: r.id, backendId: r.backendId }))
-        )
-      } catch {
+    window.api.workspace
+      .pinRecent(pins.map((f) => f.path))
+      .catch(() =>
         useStore.getState().showToast('Some sessions could not be read. The folders are pinned.')
-      } finally {
-        setPinning(false)
-      }
-    })()
+      )
+      .finally(() => setPinning(false))
   }, [step, found, folders.length])
 
   useEffect(() => {
@@ -304,7 +277,7 @@ export function Welcome({
     const l: Launch =
       target && !text
         ? { kind: 'resume', row: target }
-        : { kind: 'fresh', backend: newAgent, prompt: text }
+        : { kind: 'fresh', backend: pick, prompt: text }
     const b = backendOf(l)
     if (!isInstalled(b) || !signedIn(b)) {
       setPending(l)
@@ -350,38 +323,25 @@ export function Welcome({
     }
     setSigningFor(pick)
     setPeek(false)
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `${BACKEND_LABEL[pick]} sign in: ${name}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    openSignInTab(r, `${BACKEND_LABEL[pick]} sign in: ${name}`)
   }
 
   const install = async (b: BackendId): Promise<void> => {
     const r = await window.api.sessions.installTool(b)
     if (!r) return
     setPeek(false)
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `Install ${BACKEND_PRODUCT[b]}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    openSignInTab(r, `Install ${BACKEND_PRODUCT[b]}`)
   }
 
   const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'
 
+  const reading = pinning || found === null
   const primary = ((): { label: string; go: () => void; busy?: boolean; disabled?: boolean } => {
     if (step === 1) return { label: 'Continue', go: () => setStep(2), disabled: installed === null }
     if (step === 2) {
       if (folders.length === 0 && emptyMac)
         return { label: 'Choose Folder…', go: () => void onAddFolder() }
-      return { label: 'Continue', go: () => setStep(3), busy: pinning || found === null }
+      return { label: 'Continue', go: () => setStep(3), busy: reading }
     }
     if (step === 3) {
       if (signedIn(pick))
@@ -402,31 +362,25 @@ export function Welcome({
     }
     return { label: target ? `Resume “${target.title}”` : 'Start', go: go4 }
   })()
-  const primaryRef = useRef(primary)
-  primaryRef.current = primary
-  const finishRef = useRef(finish)
-  finishRef.current = finish
-
   const steppedAside = !!signInTabId && activeTabId === signInTabId && !peek
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (steppedAside || document.querySelector('.modal-backdrop')) return
+      if (steppedAside || aDialogIsOpen()) return
       if (e.key === 'Escape') {
         e.preventDefault()
-        finishRef.current()
+        finish()
         return
       }
       if (e.key !== 'Enter' || e.isComposing) return
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'BUTTON' || (tag === 'INPUT' && step !== 4)) return
       e.preventDefault()
-      const p = primaryRef.current
-      if (!p.disabled && !p.busy) p.go()
+      if (!primary.disabled && !primary.busy) primary.go()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [steppedAside, step])
+  })
 
   if (steppedAside) {
     return createPortal(
@@ -441,7 +395,7 @@ export function Welcome({
     )
   }
 
-  const readyCount = installed ? SESSION_BACKENDS.filter(isInstalled).length : 0
+  const readyCount = SESSION_BACKENDS.filter(isInstalled).length
   const pickedFolder = emptyMac && folders.length > 0
 
   return createPortal(
@@ -524,11 +478,7 @@ export function Welcome({
 
         {step === 2 && emptyMac && (
           <>
-            <Chip>
-              {pickedFolder
-                ? `${folders.map((f) => basename(f.path)).join(', ')} is pinned`
-                : 'No sessions on this Mac yet'}
-            </Chip>
+            <Chip>{pickedFolder ? `${folderNames} is pinned` : 'No sessions on this Mac yet'}</Chip>
             <Title plain="Pick a folder" script="to work in." />
             <p className="wl-sub">Any folder works; a git checkout gets extra help.</p>
             {pickedFolder ? (
@@ -545,8 +495,8 @@ export function Welcome({
 
         {step === 2 && !emptyMac && (
           <>
-            <Chip busy={pinning || found === null}>
-              {pinning || found === null
+            <Chip busy={reading}>
+              {reading
                 ? 'Reading each tool’s history…'
                 : `Found ${plural(allRows.length, 'session')} in ${plural(folders.length, 'folder')}`}
             </Chip>
@@ -637,11 +587,7 @@ export function Welcome({
 
         {step === 4 && (
           <>
-            <Chip>
-              {folders.length > 0
-                ? `Ready · ${folders.map((f) => basename(f.path)).join(', ')}`
-                : 'Ready'}
-            </Chip>
+            <Chip>{folders.length > 0 ? `Ready · ${folderNames}` : 'Ready'}</Chip>
             <Title plain="Built for you." script="And for your agents." />
             <p className="wl-sub">
               {target
@@ -707,7 +653,7 @@ export function Welcome({
 
       <footer className="wl-foot">
         {step === 4 ? (
-          <div className="wl-go4">
+          <div className="wl-go">
             {target && (
               <button className="wl-cta" onClick={go4} data-welcome-go>
                 <span>{`Resume “${target.title}”`}</span>
@@ -725,16 +671,12 @@ export function Welcome({
                 onKeyDown={(e) => {
                   if (e.key !== 'Tab') return
                   e.preventDefault()
-                  setChip(nextAgent(newAgent))
+                  setAgent(nextAgent(pick))
                 }}
               />
-              <button
-                className="wl-agtag"
-                tabIndex={-1}
-                onClick={() => setChip(nextAgent(newAgent))}
-              >
-                <SessionBackendIcon backend={newAgent} size={12} decorative />
-                {BACKEND_LABEL[newAgent]}
+              <button className="wl-agtag" tabIndex={-1} onClick={() => setAgent(nextAgent(pick))}>
+                <SessionBackendIcon backend={pick} size={12} decorative />
+                {BACKEND_LABEL[pick]}
                 <kbd>tab</kbd>
               </button>
               {(!target || prompt.trim()) && (
@@ -782,6 +724,7 @@ export function Welcome({
           </div>
         )}
       </footer>
+      {step === 3 && <SignInFailedDialog />}
     </div>,
     document.body
   )

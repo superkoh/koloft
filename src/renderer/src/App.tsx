@@ -144,6 +144,7 @@ import { UpdateModal } from './components/UpdateModal'
 import { AssistDialog } from './components/AssistDialog'
 import { useToolsChanged } from './useInstalledBackends'
 import { Welcome } from './components/Welcome'
+import { aDialogIsOpen } from './dialogOpen'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
@@ -181,10 +182,6 @@ function focusedWorkbench(): HTMLElement | null {
 }
 
 const NOTES_ISLAND = '.isl-notes'
-
-function aDialogIsOpen(): boolean {
-  return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')
-}
 
 function caretInNote(): boolean {
   return !!document.activeElement?.matches(`${NOTES_ISLAND} .ed-area`)
@@ -1115,7 +1112,7 @@ export default function App(): JSX.Element {
   const welcomeReplay = useStore((s) => s.welcomeReplay)
   const firstSidebarWasEmpty = useRef<boolean | null>(null)
   if (rowsLoaded && firstSidebarWasEmpty.current === null)
-    firstSidebarWasEmpty.current = workspaceRows.every((w) => w.workspace.butler)
+    firstSidebarWasEmpty.current = workspaceRows.length === 0
   const welcomeOpen =
     rowsLoaded && (welcomeReplay || (!onboardingSeen && !!firstSidebarWasEmpty.current))
   useEffect(() => setWelcomeActive(welcomeOpen), [welcomeOpen, setWelcomeActive])

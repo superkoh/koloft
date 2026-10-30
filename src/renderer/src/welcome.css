@@ -11,11 +11,24 @@
   font-display: block;
 }
 
+.wl-blob.claude,
+.wl-agent.claude {
+  --c: #ff7a3d;
+}
+.wl-blob.codex,
+.wl-agent.codex {
+  --c: #2fc4b2;
+}
+.wl-blob.muse,
+.wl-agent.muse {
+  --c: #7a5cff;
+}
+.wl-blob.agy,
+.wl-agent.agy {
+  --c: #f0609e;
+}
+
 .wl {
-  --wl-claude: #ff7a3d;
-  --wl-codex: #2fc4b2;
-  --wl-muse: #7a5cff;
-  --wl-agy: #f0609e;
   --wl-sans: 'Geist', var(--font);
   --wl-serif: 'Instrument Serif', Georgia, serif;
   --wl-ink: #f6f3ee;
@@ -33,9 +46,9 @@
   font-family: var(--wl-sans);
   animation: wlFadeIn 0.5s ease both;
   transition:
-    opacity var(--wl-leave, 0.65s) ease,
-    transform var(--wl-leave, 0.65s) var(--wl-move),
-    filter var(--wl-leave, 0.65s) ease;
+    opacity 0.65s ease,
+    transform 0.65s var(--wl-move),
+    filter 0.65s ease;
 }
 .wl.leaving {
   opacity: 0;
@@ -55,7 +68,8 @@
   height: 62vmax;
   border-radius: 50%;
   opacity: 0.06;
-  filter: blur(40px);
+  background: radial-gradient(closest-side, var(--c), transparent);
+  will-change: transform;
   transition: opacity 1.2s ease;
   animation: wlDrift 22s ease-in-out infinite alternate;
 }
@@ -65,24 +79,20 @@
 .wl-blob.claude {
   left: -18vmax;
   top: 6vmax;
-  background: radial-gradient(closest-side, var(--wl-claude), transparent);
 }
 .wl-blob.codex {
   left: 10vmax;
   bottom: -34vmax;
-  background: radial-gradient(closest-side, var(--wl-codex), transparent);
   animation-duration: 19s;
 }
 .wl-blob.muse {
   right: -8vmax;
   top: -26vmax;
-  background: radial-gradient(closest-side, var(--wl-muse), transparent);
   animation-duration: 25s;
 }
 .wl-blob.agy {
   right: -22vmax;
   bottom: -20vmax;
-  background: radial-gradient(closest-side, var(--wl-agy), transparent);
   animation-duration: 28s;
 }
 
@@ -248,18 +258,6 @@
   transition:
     border-color 0.6s ease,
     box-shadow 0.6s ease;
-}
-.wl-agent.claude {
-  --c: var(--wl-claude);
-}
-.wl-agent.codex {
-  --c: var(--wl-codex);
-}
-.wl-agent.muse {
-  --c: var(--wl-muse);
-}
-.wl-agent.agy {
-  --c: var(--wl-agy);
 }
 .wl-agent.ready {
   border-color: color-mix(in srgb, var(--c) 45%, transparent);
@@ -456,25 +454,22 @@
 }
 .wl-key-row.grey {
   --lc: #77736c;
-  animation-delay: 400ms;
 }
 .wl-key-row.grey i {
   box-shadow: none;
 }
 .wl-key-row.working {
   --lc: var(--accent);
-  animation-delay: 750ms;
 }
 .wl-key-row.amber {
   --lc: var(--amber);
-  animation-delay: 900ms;
 }
 .wl-key-row.amber i {
+  transform-origin: left;
   animation: wlPump 1s ease-in-out infinite;
 }
 .wl-key-row.green {
   --lc: var(--good);
-  animation-delay: 1050ms;
 }
 .wl-key-cap {
   margin-top: 10px;
@@ -710,8 +705,7 @@
   justify-content: center;
   padding: 18px 24px 38px;
 }
-.wl-go,
-.wl-go4 {
+.wl-go {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -862,7 +856,7 @@
 }
 @keyframes wlPump {
   50% {
-    width: 9px;
+    transform: scaleX(2.25);
   }
 }
 @keyframes wlSheen {

@@ -81,7 +81,6 @@ import { SessionAccounts } from './sessionAccounts'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
-  backendAvailable,
   backendIdOf,
   capabilitiesFor,
   identityOf,
@@ -242,6 +241,7 @@ import {
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import { rowsToAdopt } from '@shared/firstRun'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import {
   dirExistsSync,
@@ -406,7 +406,6 @@ import type {
   AccountMeta,
   AccountView,
   ArtifactView,
-  BackendAvailability,
   BackendId,
   CodexLimits,
   CodexResetOutcome,
@@ -5539,15 +5538,13 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
-  const backendStatus = (): Promise<BackendAvailability[]> =>
-    sessionBackends.availability((id) => ({
+  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
+    if (recheck === true) sessionBackends.forgetAvailability()
+    return sessionBackends.availability((id) => ({
       id,
       available: false,
       reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
-  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
-    if (recheck === true) sessionBackends.forgetAvailability()
-    return backendStatus()
   })
   ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
     const id = backendIdOf(backend)
@@ -5660,8 +5657,8 @@ function registerIpc(): void {
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    sessionBackends.forgetAvailability()
-    startGuidedLogin(name, !backendAvailable(await backendStatus(), 'claude'))
+    claudeBackend.forgetAvailability()
+    startGuidedLogin(name, !(await claudeBackend.availability()).available)
     return 'ok'
   })
   ipcMain.handle(
@@ -5706,10 +5703,28 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle(CH.workspace.add, (_e, p: string) => {
+  const historyPartlyUnread = (id: BackendId, error: unknown): void => {
+    sendToRenderer(
+      CH.cron.toast,
+      `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+    )
+  }
+  const pinWorkspace = (p: string): WorkspaceAddResult | undefined => {
     const r = addWorkspacePath(p)
     if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
+  }
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => pinWorkspace(p))
+  ipcMain.handle(CH.workspace.pinRecent, async (_e, paths: unknown) => {
+    if (!workspaceMgr || !Array.isArray(paths)) return
+    const picked = paths.filter((p): p is string => typeof p === 'string')
+    for (const p of picked) pinWorkspace(p)
+    await workspaceMgr.whenScanned()
+    const now = Date.now()
+    const lists = await Promise.all(
+      picked.map((p) => sessionBackends.historyRows(p, historyPartlyUnread))
+    )
+    sessionBackends.adopt(lists.flatMap((rows) => rowsToAdopt(rows, now)))
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
@@ -5921,25 +5936,8 @@ function registerIpc(): void {
     return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
-  ipcMain.handle(CH.workspace.adopt, (_e, rows: unknown) => {
-    if (!Array.isArray(rows)) return
-    const picked = rows.filter(
-      (r): r is { id: string; backendId: BackendId } =>
-        typeof r?.id === 'string' && typeof r?.backendId === 'string'
-    )
-    const idsOf = (backend: BackendId): string[] =>
-      picked.filter((r) => r.backendId === backend).map((r) => r.id)
-    workspaceMgr?.adopt(idsOf('claude'))
-    for (const s of storedSessions()) s.adopt(idsOf(s.id))
-  })
-
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, (id, error) =>
-      sendToRenderer(
-        CH.cron.toast,
-        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
-      )
-    )
+    sessionBackends.historyRows(p, historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({

@@ -32,6 +32,7 @@ function stubBackend(
     aliveTabFor: () => undefined,
     stop: () => {},
     archive: () => true,
+    adopt: () => {},
     transcriptExists: () => true,
     observe: () => {},
     occupantOf: () => null,

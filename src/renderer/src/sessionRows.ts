@@ -148,6 +148,8 @@ export function sessionsInside(n: number): string {
   return n > 1 ? `${n} sessions inside` : '1 session inside'
 }
 
+export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
+
 export interface RowNode<R extends { id: string; parentId?: string }> {
   row: R
   children: RowNode<R>[]

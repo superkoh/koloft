@@ -1290,7 +1290,7 @@ export interface KoloftApi {
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
-    adopt(rows: { id: string; backendId: BackendId }[]): Promise<void>
+    pinRecent(paths: string[]): Promise<void>
     createProject(parent: string, name: string): Promise<ProjectCreateResult>
   }
   assist: {
