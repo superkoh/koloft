@@ -1271,7 +1271,7 @@ describe('setupHooks at startup', () => {
 
 describe("a shell command's written files", () => {
   function repoWithChanges(): string {
-    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-shell-writes-')))
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(base, 'shell-writes-')))
     const run = (...args: string[]): void => {
       spawnSync('git', args, { cwd: repo })
     }
@@ -1334,7 +1334,7 @@ describe("a shell command's written files", () => {
 
   it('a session whose folder is reached through a symlink gets its files under that same path, as its own edits name them', () => {
     const repo = repoWithChanges()
-    const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-shell-link-')), 'proj')
+    const link = path.join(fs.mkdtempSync(path.join(base, 'shell-link-')), 'proj')
     fs.symlinkSync(repo, link)
     const call = { session_id: 'sid-sh', cwd: link, tool_use_id: 'toolu_04' }
     fire('tabShL', 'shell-before', call)
