@@ -209,9 +209,11 @@
           Picking After each run… sets When done to Close it, so each run makes room for the next by
           itself. The list says <code>waits for the open run to end</code> while a run is open. In a
           <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
-          reconnect, and the run stays open. A run whose agent quits with an error keeps its tab and
-          its last screen, like any <a href="../sessions/#quit">session</a>, but the run counts as
-          over at once, so the wait starts.
+          reconnect, and the run stays open. A run whose agent quits with an error after the run
+          started keeps its tab and its last screen, like any
+          <a href="../sessions/#quit">session</a>, but the run counts as over at once, so the wait
+          starts. An agent that dies before the run starts leaves no tab; History says
+          <code>Could not start</code>.
         </p>
 
         <h2>Where it runs</h2>
