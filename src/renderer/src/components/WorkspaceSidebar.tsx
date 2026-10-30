@@ -1307,7 +1307,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const forceCloseSession = async (id: string): Promise<void> => {
     const r = await window.api.sessions.forceClose(id)
-    if (!r.ok) showToast(FORCE_CLOSE_FAILED_NOTICE)
+    if (!r.ok && rowStillRuns(id)) showToast(FORCE_CLOSE_FAILED_NOTICE)
+  }
+
+  const rowStillRuns = (id: string): boolean => {
+    const st = useStore.getState()
+    const lookNow = rowLookups(st.sessions, st.tabs, [])
+    return everyWorkspaceRows(shownRows(st)).some((w) =>
+      w.rows.some((r) => r.id === id && !endedTabOf(r, st.tabs, st.sessions) && lookNow.running(r))
+    )
   }
 
   const removeWorkspace = async (path: string): Promise<void> => {

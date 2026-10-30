@@ -317,6 +317,29 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     })
   }
 
+  test('E-RW-42: koloft open, typed in the Workbench shell of a Claude Code session on the machine, shows a source file there, not only a page or a picture', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.mkdirSync(path.join(remoteDir(env), 'src'), { recursive: true })
+      fs.writeFileSync(
+        path.join(remoteDir(env), 'src', 'app.ts'),
+        'export const shownOnTheMachine = 1\n'
+      )
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      await openSessionTerminal(app, page)
+      await runIn(page, panelTerm(page), 'koloft open src/app.ts')
+      await expect(artifactBody(page)).toContainText('shownOnTheMachine', { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('after ⇧⌘R on a Claude Code tab on the machine, koloft open typed in its Workbench shell still shows the file in that tab’s Workbench', async ({
     env
   }) => {

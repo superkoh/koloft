@@ -1549,11 +1549,15 @@ function notesFileOfScope(scope: string): string | undefined {
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) => {
+  open: async (tabId, target, view) => {
     const machine = machineOfTab(tabId)
-    return machine && !schemeOf(target)
-      ? openOnMachine(tabId, machine, target, view)
-      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+    if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
+    const routed = routeFor(target, 'agent')
+    const decision: RouteDecision =
+      routed.reason === 'unsupported-target' && !schemeOf(target) && (await isRegularFile(target))
+        ? { dest: 'preview', target }
+        : routed
+    return openInWorkbench(tabId, decision, 'agent', target, view)
   },
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
@@ -4674,6 +4678,11 @@ async function openOnMachine(
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true
+}
+
+async function isRegularFile(file: string): Promise<boolean> {
+  const stat = await fs.promises.stat(file).catch(() => null)
+  return !!stat?.isFile()
 }
 
 function killTabFromMain(tabId: string): void {
