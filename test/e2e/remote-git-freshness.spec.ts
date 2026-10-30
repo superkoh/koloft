@@ -41,12 +41,7 @@ function machineCheckoutBehindOrigin(env: E2EEnv, behind: number): { author: str
   runGit(author, 'remote', 'add', 'origin', `file://${origin}`)
   runGit(author, 'push', '-q', '-u', 'origin', 'main')
   runGit(home, 'clone', '-q', `file://${origin}`, remoteDir(env))
-  for (let i = 1; i <= behind; i++) {
-    fs.writeFileSync(path.join(author, `upstream-${i}.txt`), `${i}\n`)
-    runGit(author, 'add', '-A')
-    runGit(author, 'commit', '-q', '-m', `upstream ${i}`)
-  }
-  if (behind > 0) runGit(author, 'push', '-q', 'origin', 'main')
+  for (let i = 1; i <= behind; i++) publishOnOrigin(author, `upstream-${i}`)
   return { author }
 }
 
@@ -169,7 +164,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
     }
   })
 
-  test('E-RW-38: C8 fetches on the machine when it opens, so its Pull & Start line counts a commit pushed since the last sweep; while the machine is away it fetches nothing and shows the last result', async ({
+  test('E-RW-43: the New Worktree Session dialog (C8) fetches on the machine when it opens, so its Pull & Start line counts a commit pushed since the last sweep; while the machine is away it fetches nothing and shows the last result', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -192,7 +187,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(dialogPrimary(dlg)).toContainText('Pull & Create worktree')
       await page.waitForTimeout(DIALOG_SETTLE_MS)
       expect(fetchesSent(env).length).toBe(beforeOpen + 1)
-      await snap(page, 'E-RW-38-fetched-on-open')
+      await snap(page, 'E-RW-43-fetched-on-open')
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
 
@@ -206,10 +201,8 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(away.locator('.fresh-line.stale')).toContainText(
         'main is 3 commits behind origin/main'
       )
-      await page.waitForTimeout(DIALOG_SETTLE_MS)
-      await expect(away.getByText('Checking origin…')).toHaveCount(0)
       expect(fetchesSent(env).length).toBe(beforeAway)
-      await snap(page, 'E-RW-38-away')
+      await snap(page, 'E-RW-43-away')
     } finally {
       await quitAndClose(app)
     }

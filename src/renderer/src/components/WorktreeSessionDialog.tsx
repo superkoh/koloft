@@ -70,8 +70,7 @@ export function WorktreeSessionDialog({
   onClose: () => void
   onStart: StartSession
 }): JSX.Element {
-  const { path: wsPath, isGit, remote } = ws.workspace
-  const machineReachable = !remote || remote.connected
+  const { path: wsPath, isGit } = ws.workspace
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -109,7 +108,7 @@ export function WorktreeSessionDialog({
   }, [wsPath])
 
   useEffect(() => {
-    if (!isGit || !machineReachable || !gitAutoFetch) return
+    if (!isGit || !gitAutoFetch) return
     let live = true
     setChecking(true)
     void window.api.workspace.fetchFreshness(wsPath).then(
@@ -125,7 +124,7 @@ export function WorktreeSessionDialog({
     return () => {
       live = false
     }
-  }, [wsPath, isGit, machineReachable, gitAutoFetch])
+  }, [wsPath, isGit, gitAutoFetch])
 
   useEffect(() => {
     if (!isGit) return
