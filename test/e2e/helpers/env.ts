@@ -308,7 +308,7 @@ export interface AgyCall {
   pid: number
   argv: string[]
   cwd: string
-  env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean; pathHead: string }
+  env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean }
   geminiDir: string
 }
 
