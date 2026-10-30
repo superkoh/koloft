@@ -321,6 +321,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ws-tab-act {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-tab.st-approval .ws-tab-act {
+  color: var(--amber);
+}
 .session-backend-icon {
   display: inline-flex;
   flex: none;
