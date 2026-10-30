@@ -165,7 +165,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§27
-  test("E-RC-10: a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
+  test("E-RC-11: a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
