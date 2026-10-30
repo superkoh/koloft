@@ -5498,6 +5498,8 @@ function registerIpc(): void {
   ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
+    startedSessions.moved(oldTabId, newTabId)
+    sessionCommand.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
   })

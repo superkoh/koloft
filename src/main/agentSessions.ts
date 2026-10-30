@@ -899,6 +899,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
+  tabMoved(oldTabId: string, newTabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
@@ -1338,7 +1339,14 @@ export function sessionVerb(d: SessionVerbDeps): {
       )
     )?.tabId ?? null
 
-  return { verb, turnEnded, waitsOnAnother, startButlerHelper }
+  const tabMoved = (oldTabId: string, newTabId: string): void => {
+    const owed = replyOwed.get(oldTabId)
+    if (owed === undefined) return
+    replyOwed.delete(oldTabId)
+    replyOwed.set(newTabId, owed)
+  }
+
+  return { verb, turnEnded, waitsOnAnother, startButlerHelper, tabMoved }
 }
 
 export interface WorkspaceVerbDeps {
