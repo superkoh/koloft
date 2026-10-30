@@ -198,6 +198,24 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
+export async function conversationOnceFirstTurnEnded(page: Page, tabId: string): Promise<string> {
+  let conversation: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const tab = await page.evaluate(
+          (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)),
+          tabId
+        )
+        conversation = tab?.usage ? tab.nativeSessionId : undefined
+        return conversation
+      },
+      { timeout: 30_000 }
+    )
+    .toBeTruthy()
+  return conversation!
+}
+
 export interface SeedOptions {
   id?: string
   summary?: string

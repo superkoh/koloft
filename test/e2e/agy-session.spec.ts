@@ -20,6 +20,7 @@ import {
 import {
   agentRow,
   centerTerm,
+  conversationOnceFirstTurnEnded,
   gitCommitAll,
   gitInit,
   newSessionInWith,
@@ -360,8 +361,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     try {
       await startAgy(page, env)
       await runIn(page, centerTerm(page), 'warm up')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const { tabId, id } = await boundAgy(page)
+      const { tabId } = await boundAgy(page)
+      const id = await conversationOnceFirstTurnEnded(page, tabId)
       await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), tabId)
       const target = path.join(env.workspaces.a, 'agy-notes.txt')
       await expect(agyRows(page)).toHaveClass(/\bst-approval\b/, {
@@ -413,8 +414,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       await startAgy(page, env)
       await runIn(page, centerTerm(page), 'plan the work')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
       const parent = await boundAgy(page)
+      await conversationOnceFirstTurnEnded(page, parent.tabId)
 
       await page.evaluate(
         (t) =>
@@ -508,8 +509,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'held elsewhere')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const { id } = await boundAgy(page)
+      const id = await conversationOnceFirstTurnEnded(page, (await boundAgy(page)).tabId)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
@@ -606,16 +606,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'survive a restart')
-      await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some(
-              (s) => s.backendId === 'agy' && s.usage
-            ),
-          { timeout: 30_000 }
-        )
-        .toBe(true)
-      const { id } = await boundAgy(page)
+      const id = await conversationOnceFirstTurnEnded(page, (await boundAgy(page)).tabId)
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
 
