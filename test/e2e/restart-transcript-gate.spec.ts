@@ -385,7 +385,10 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       expect(processAlive(first.pid)).toBe(true)
 
       await runIn(page, centerTerm(page), 'now we have talked')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await expect(page.locator('.term-island .term-wrap:visible')).toContainText(
+        'Answer to: now we have talked',
+        { timeout: 30_000 }
+      )
       expect(agySessionCalls(env)).toHaveLength(1)
       const conversationOfTab = async (): Promise<string | undefined> =>
         (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
