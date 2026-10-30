@@ -86,9 +86,9 @@ import {
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
 import { keepKoloftSkillIn } from './agentPlugin'
-import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
+import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { capTouched, noteWrite, shellWrittenFiles, touchedItem, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
@@ -1067,8 +1067,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const name = String(call.name ?? '')
     const args = record(call.args)
     const target = argOf(args, 'TargetFile') ?? argOf(args, 'Path')
-    if (!WRITING_TOOLS.has(name) || !target || input.error) return
     const where = parseRemoteKey(run.cwd)
+    const shellWrote = shellWrittenFiles(input[SHELL_WROTE_FIELD]).map((f) =>
+      where ? formatRemoteKey(where.host, f) : f
+    )
+    if (shellWrote.length) {
+      for (const file of shellWrote) noteWrite(run.touched, file, 0, 0, Date.now())
+      this.publishWrite(run, shellWrote[shellWrote.length - 1])
+    }
+    if (!WRITING_TOOLS.has(name) || !target || input.error) return
     const written = where ? path.posix.resolve(where.path, target) : path.resolve(run.cwd, target)
     const file = where ? formatRemoteKey(where.host, written) : written
     let counts = { added: 0, removed: 0 }
@@ -1085,12 +1092,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (diff) counts = diffCounts(diff)
     }
     noteWrite(run.touched, file, counts.added, counts.removed, Date.now())
+    this.publishWrite(run, file)
+  }
+
+  private publishWrite(run: AgyRun, last: string): void {
     run.liveWrites++
     this.deps.events(run.tabId, {
       type: 'files-changed',
       files: capTouched([...run.touched].map(([src, acc]) => touchedItem(src, acc))),
-      lastTouched: file,
-      lastWritten: file,
+      lastTouched: last,
+      lastWritten: last,
       liveWrites: run.liveWrites
     })
   }

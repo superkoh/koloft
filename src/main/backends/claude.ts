@@ -47,6 +47,7 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
   STATUS_LOG_SUFFIX,
   statusLogOf
@@ -623,6 +624,7 @@ export class ClaudeBackend implements SessionBackend {
       wake?: number
       ask?: unknown
       trigger?: string
+      wrote?: unknown
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId || !this.d.pty.get(obj.tabId)?.alive) return
@@ -637,6 +639,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
+    if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
   }

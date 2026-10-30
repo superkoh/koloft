@@ -27,6 +27,10 @@ export function noteWrite(
   }
 }
 
+export function shellWrittenFiles(wrote: unknown): string[] {
+  return Array.isArray(wrote) ? wrote.filter((f): f is string => typeof f === 'string') : []
+}
+
 export function noteRead(files: Map<string, FileAcc>, abs: string): void {
   if (!files.has(abs)) files.set(abs, { access: 'read', added: 0, removed: 0, wroteAt: 0 })
 }

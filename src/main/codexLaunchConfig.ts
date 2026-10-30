@@ -5,8 +5,8 @@ import { record } from './codexObservation'
 import { playwrightMcpEnv } from './browserControlEnv'
 
 // CODEX§27 CODEX§30
-const codexHookOverride = ({ event, command, matcher, timeout }: KoloftHook): string =>
-  `hooks.${event}=[{${matcher ? `matcher=${JSON.stringify(matcher)},` : ''}hooks=[{type="command",command=${JSON.stringify(command)}${timeout ? `,timeout=${timeout}` : ''}}]}]`
+const codexHookGroup = ({ command, matcher, timeout }: KoloftHook): string =>
+  `{${matcher ? `matcher=${JSON.stringify(matcher)},` : ''}hooks=[{type="command",command=${JSON.stringify(command)}${timeout ? `,timeout=${timeout}` : ''}}]}`
 
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'
@@ -83,7 +83,15 @@ export interface KoloftHook {
   timeout?: number
 }
 
-export const hookOverrides = (hooks: KoloftHook[]): string[] => hooks.map(codexHookOverride)
+// CODEX§27
+export const hookOverrides = (hooks: KoloftHook[]): string[] =>
+  [...new Set(hooks.map((h) => h.event))].map(
+    (event) =>
+      `hooks.${event}=[${hooks
+        .filter((h) => h.event === event)
+        .map(codexHookGroup)
+        .join(',')}]`
+  )
 
 interface Permissions {
   approval: 'never' | 'on-request'

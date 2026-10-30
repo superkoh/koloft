@@ -826,9 +826,13 @@ describe('injected hook script', () => {
     })
 
     // ADR-0029
-    it('a conductor tab gets no gate: like any tab, no PreToolUse hook stands between it and its tools', () => {
-      expect(hooksOf(true)).not.toHaveProperty('PreToolUse')
-      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
+    it('a conductor tab gets no gate: like any tab, its only PreToolUse hook is the look at the folder before a shell command', () => {
+      for (const conductor of [true, false])
+        expect(
+          (hooksOf(conductor).PreToolUse as { hooks: { command: string }[] }[]).map((e) =>
+            e.hooks.map((h) => h.command.split(' ').pop())
+          )
+        ).toEqual([['shell-before']])
     })
   })
 
@@ -904,7 +908,7 @@ describe('injected hook script', () => {
   })
 
   // CC§19
-  it('every tool call fires the reply-language hook; the Bash-matched one rides along only with the statusline', () => {
+  it('every tool call fires the reply-language hook and every Bash call the look at the folder after it; the Bash-matched status-line one rides along only with the statusline', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const postToolUse = (file: string): { matcher: string; hooks: { command: string }[] }[] =>
       JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
@@ -912,9 +916,13 @@ describe('injected hook script', () => {
       postToolUse(file).map((e) => `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`)
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
       '* tool',
+      'Bash shell-after',
       'Bash posttool'
     ])
-    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual(['* tool'])
+    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual([
+      '* tool',
+      'Bash shell-after'
+    ])
   })
 
   // CC§8
@@ -1246,5 +1254,76 @@ describe('setupHooks at startup', () => {
       timeout: 5000
     })
     expect(res).toMatchObject({ status: 0, stdout: '' })
+  })
+})
+
+describe("a shell command's written files", () => {
+  function repoWithChanges(): string {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-shell-writes-')))
+    const run = (...args: string[]): void => {
+      spawnSync('git', args, { cwd: repo })
+    }
+    run('init', '-q')
+    for (const f of ['kept.txt', 'edited.txt', 'already-dirty.txt'])
+      fs.writeFileSync(path.join(repo, f), 'one\n')
+    run('add', '.')
+    run('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base')
+    fs.writeFileSync(path.join(repo, 'already-dirty.txt'), 'two\n')
+    fs.writeFileSync(path.join(repo, 'left-alone.txt'), 'untracked before\n')
+    return repo
+  }
+
+  function runTheCommand(repo: string): void {
+    fs.writeFileSync(path.join(repo, 'edited.txt'), 'changed by the command\n')
+    fs.mkdirSync(path.join(repo, 'sub'))
+    fs.writeFileSync(path.join(repo, 'sub', 'made.txt'), 'new\n')
+  }
+
+  const written = (repo: string): string[] => [
+    path.join(repo, 'edited.txt'),
+    path.join(repo, 'sub', 'made.txt')
+  ]
+
+  it('a Claude Bash call reports the files that changed between its PreToolUse and its PostToolUse, not the ones that were already changed before it', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: path.join(repo), tool_use_id: 'toolu_01' }
+    fire('tabSh', 'shell-before', call)
+    runTheCommand(repo)
+    fire('tabSh', 'shell-after', call)
+    expect(readStatusLog('tabSh')).toEqual([
+      expect.objectContaining({
+        tabId: 'tabSh',
+        event: 'shell-wrote',
+        sessionId: 'sid-sh',
+        wrote: written(repo)
+      })
+    ])
+  })
+
+  it('a command that changes nothing reports nothing', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: repo, tool_use_id: 'toolu_02' }
+    fire('tabSh0', 'shell-before', call)
+    fire('tabSh0', 'shell-after', call)
+    expect(fs.existsSync(path.join(regDir, 'tabSh0.status.jsonl'))).toBe(false)
+  })
+
+  it('a Codex Bash call appends the same list to the file its tab names, also when the script runs under a plain sh', () => {
+    const repo = repoWithChanges()
+    const out = path.join(regDir, 'tabCx.shell-wrote.jsonl')
+    const call = JSON.stringify({ session_id: 'th', cwd: repo, tool_use_id: 'call_9' })
+    const hook = (event: string): void => {
+      spawnSync('sh', [codexReplyLanguage, event], {
+        input: call,
+        env: { ...process.env, KOLOFT_SHELL_WROTE: out }
+      })
+    }
+    hook('shell-before')
+    runTheCommand(repo)
+    hook('shell-after')
+    expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
+      event: 'shell-wrote',
+      wrote: written(repo)
+    })
   })
 })

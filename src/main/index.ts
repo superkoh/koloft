@@ -1204,6 +1204,13 @@ function loginEnvReady(): Promise<void> {
     .catch(() => undefined))
 }
 
+function pullNow(host: string): Promise<void> {
+  if (!remoteSync) return Promise.resolve()
+  const pulled = remoteSync.nextPullDone(host)
+  remoteSync.pokeNow(host)
+  return pulled
+}
+
 function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
   const pkgFiles: Record<string, string | Buffer> = {
@@ -3165,7 +3172,9 @@ app.whenReady().then(() => {
         machinePackage,
         tabDir: (tabId) => tabPackageDir(userData, tabId),
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
-        keyed: pinnedKeyOn
+        keyed: pinnedKeyOn,
+        mirrorDir: (host) => mirrorHookDir(userData, host),
+        nextPull: pullNow
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -3230,12 +3239,7 @@ app.whenReady().then(() => {
         ...museOnMachines,
         machine: (host) => hosts.machine(host),
         mirrorGemini: (host) => mirrorAgyGemini(userData, host),
-        nextPull: (host) => {
-          if (!remoteSync) return Promise.resolve()
-          const pulled = remoteSync.nextPullDone(host)
-          remoteSync.pokeNow(host)
-          return pulled
-        },
+        nextPull: pullNow,
         machineName: () => machinePackage().name
       },
       leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
