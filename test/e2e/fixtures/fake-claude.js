@@ -4,8 +4,7 @@ const path = require('path')
 const cp = require('child_process')
 const readline = require('readline')
 
-const LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION = '/fake/versions/8.8.8'
-const TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE = '9.9.9-fake'
+const FAKE_CLAUDE_VERSION = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
 const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 
@@ -295,9 +294,7 @@ function fireHook(event, payload) {
     out = cp.execSync(cmd, {
       input: JSON.stringify(body),
       stdio: ['pipe', 'pipe', 'ignore'],
-      encoding: 'utf8',
-      // CC§1
-      env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
+      encoding: 'utf8'
     })
   } catch {
     return ''
@@ -375,7 +372,7 @@ function renderStatuslineWithoutBlockingSessionStart() {
     model: { id: PRICED_MODEL_ID, display_name: 'Opus 4.8' },
     effort: { level: 'xhigh' },
     workspace: { current_dir: cwd, project_dir: cwd, added_dirs: [] },
-    version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+    version: FAKE_CLAUDE_VERSION,
     cost: {
       total_cost_usd: 0.01,
       total_duration_ms: 1000,
@@ -510,7 +507,7 @@ function startupTurn() {
     { type: 'summary', summary: sessionTitle() },
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {
@@ -970,7 +967,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1038,7 +1035,7 @@ function handleLine(line) {
           },
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: done.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -1066,7 +1063,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1090,7 +1087,7 @@ function handleLine(line) {
       append([
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -1127,7 +1124,7 @@ function handleLine(line) {
       },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1158,7 +1155,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1212,7 +1209,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1284,7 +1281,7 @@ function handleLine(line) {
         },
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -1322,7 +1319,7 @@ function handleLine(line) {
       },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1415,7 +1412,7 @@ function handleLine(line) {
         append([
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: meta.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -1577,7 +1574,7 @@ function handleLine(line) {
     ...context,
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {

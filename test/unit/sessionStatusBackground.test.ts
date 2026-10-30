@@ -1552,7 +1552,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     stageProcs(tracker, { bsrv: { listening: true } })
     await tracker.reportTurnEnd('tabL14', [{ id: 'bsrv', type: 'shell' }])
     await waitFor(tracker, (s) => s.tabId === 'tabL14' && !!s.background, 6000)
-    tracker.bindSession('tabL14', file, SID, cwd, '', '', 'clear')
+    tracker.bindSession('tabL14', file, SID, cwd, '', 'clear')
     expect(parked(tracker, 'tabL14')).toBeUndefined()
     expect(status(tracker, 'tabL14')).toBe('waiting')
   }, 10_000)
