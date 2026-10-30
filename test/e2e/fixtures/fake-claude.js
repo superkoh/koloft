@@ -4,8 +4,7 @@ const path = require('path')
 const cp = require('child_process')
 const readline = require('readline')
 
-const LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION = '/fake/versions/8.8.8'
-const TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE = '9.9.9-fake'
+const FAKE_CLAUDE_VERSION = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
 const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 
@@ -295,9 +294,7 @@ function fireHook(event, payload) {
     out = cp.execSync(cmd, {
       input: JSON.stringify(body),
       stdio: ['pipe', 'pipe', 'ignore'],
-      encoding: 'utf8',
-      // CC§1
-      env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
+      encoding: 'utf8'
     })
   } catch {
     return ''
@@ -375,7 +372,7 @@ function renderStatuslineWithoutBlockingSessionStart() {
     model: { id: PRICED_MODEL_ID, display_name: 'Opus 4.8' },
     effort: { level: 'xhigh' },
     workspace: { current_dir: cwd, project_dir: cwd, added_dirs: [] },
-    version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+    version: FAKE_CLAUDE_VERSION,
     cost: {
       total_cost_usd: 0.01,
       total_duration_ms: 1000,
@@ -413,9 +410,9 @@ function renderStatuslineWithoutBlockingSessionStart() {
   } catch {}
 }
 
-function taskNotification(toolUseId, status, summary) {
+function taskNotification(taskId, toolUseId, status, summary) {
   return (
-    `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
+    `<task-notification>\n<task-id>${taskId}</task-id>\n` +
     `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
     `<summary>${summary}</summary>\n</task-notification>`
   )
@@ -510,7 +507,7 @@ function startupTurn() {
     { type: 'summary', summary: sessionTitle() },
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {
@@ -970,7 +967,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -995,7 +992,10 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [{ id: 'abg_e2e', type: 'subagent', status: 'running', description: 'bg' }]
+    })
 
     const subDir = path.join(projDir, sessionId, 'subagents')
     fs.mkdirSync(subDir, { recursive: true })
@@ -1021,21 +1021,21 @@ function handleLine(line) {
             type: 'queue-operation',
             operation: 'enqueue',
             timestamp: new Date().toISOString(),
-            content: taskNotification(bgToolUseId, 'completed', 'background work done')
+            content: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done')
           },
           {
             type: 'attachment',
             timestamp: new Date().toISOString(),
             attachment: {
               type: 'queued_command',
-              prompt: taskNotification(bgToolUseId, 'completed', 'background work done'),
+              prompt: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done'),
               commandMode: 'task-notification'
             },
             cwd
           },
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: done.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -1048,7 +1048,7 @@ function handleLine(line) {
             cwd
           }
         ])
-        fireHook('stop', { hook_event_name: 'Stop' })
+        fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
         process.stdout.write('[fake-claude] bg-work finished\r\n> ')
       }
     }, 500)
@@ -1063,7 +1063,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1087,7 +1087,7 @@ function handleLine(line) {
       append([
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -1124,7 +1124,7 @@ function handleLine(line) {
       },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1155,7 +1155,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1209,7 +1209,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1246,9 +1246,22 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    // CC§8
+    const tasksDir = path.join(home, '.claude-tmp', sessionId, 'tasks')
+    fs.mkdirSync(tasksDir, { recursive: true })
+    const outputFd = fs.openSync(path.join(tasksDir, 'bash_e2e.output'), 'a')
+    const toolShell = cp.spawn('/bin/sh', ['-c', 'eval "sleep 5"; true'], {
+      stdio: ['ignore', outputFd, 'ignore']
+    })
+    fs.closeSync(outputFd)
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'bash_e2e', type: 'shell', status: 'running', description: 'npm test' }
+      ]
+    })
 
-    setTimeout(() => {
+    toolShell.on('exit', () => {
       const done = usageMeta()
       append([
         {
@@ -1256,14 +1269,19 @@ function handleLine(line) {
           timestamp: new Date().toISOString(),
           attachment: {
             type: 'queued_command',
-            prompt: taskNotification(shToolUseId, 'completed', 'Background command completed'),
+            prompt: taskNotification(
+              'bash_e2e',
+              shToolUseId,
+              'completed',
+              'Background command completed'
+            ),
             commandMode: 'task-notification'
           },
           cwd
         },
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -1276,9 +1294,9 @@ function handleLine(line) {
           cwd
         }
       ])
-      fireHook('stop', { hook_event_name: 'Stop' })
+      fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-shell finished\r\n> ')
-    }, 5000)
+    })
     process.stdout.write('[fake-claude] bg-shell running\r\n> ')
     return
   }
@@ -1301,7 +1319,7 @@ function handleLine(line) {
       },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1394,7 +1412,7 @@ function handleLine(line) {
         append([
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: meta.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -1556,7 +1574,7 @@ function handleLine(line) {
     ...context,
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {

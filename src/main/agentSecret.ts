@@ -28,7 +28,7 @@ export interface SecretVerbDeps {
   ask(a: SecretAsk): Promise<string | undefined | null>
   machine(tabId: string): string | undefined
   pages(tabId: string): FieldPage[]
-  open(tabId: string, url: string): Promise<string>
+  open(machine: string | undefined, url: string): Promise<string>
   sleep(ms: number): Promise<void>
 }
 
@@ -138,7 +138,8 @@ function loopback(text: string): string | undefined {
 
 // CODEX§15
 async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Promise<AgentReply> {
-  const where = d.machine(tabId) ?? 'this Mac'
+  const machine = d.machine(tabId)
+  const where = machine ?? 'this Mac'
   const value = await askOwner(d, {
     tabId,
     header: (name) => `🔑 **${name}** needs the address a sign-in ends on`,
@@ -152,7 +153,7 @@ async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Prom
   if (typeof value !== 'string') return value
   const url = loopback(value)
   if (!url) return refused(NOT_LOOPBACK)
-  const status = await d.open(tabId, url)
+  const status = await d.open(machine, url)
   return answered(`Koloft opened the address on ${where}; it answered ${status}.`)
 }
 

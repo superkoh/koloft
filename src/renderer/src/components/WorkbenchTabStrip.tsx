@@ -11,6 +11,7 @@ import {
 } from '../icons'
 import type { BrowserAudioState, GithubInfo, GithubTarget } from '@shared/types'
 import { CHANGES_MSG, type ChangeTotals } from './changesModel'
+import { keepCaretInSessionTerminal } from '../keys'
 import { FilesTabLabel } from './FilesTabLabel'
 import type { ChecksDot } from './prChecksView'
 import { GithubButton } from './workbenchGithub'
@@ -21,10 +22,6 @@ export type TabAudio = Record<string, Pick<BrowserAudioState, 'audible' | 'muted
 function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void }): void {
   e.stopPropagation()
   e.preventDefault()
-}
-
-function caretInSessionTerminal(): boolean {
-  return !!document.activeElement?.closest('.term-island .xterm')
 }
 
 function iconFor(t: WorkbenchTab): JSX.Element {
@@ -121,7 +118,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
         heldWidths && t.id in heldWidths ? { width: heldWidths[t.id], flexShrink: 0 } : undefined
       }
       onMouseDown={(e) => {
-        if (t.kind === 'files' && caretInSessionTerminal()) e.preventDefault()
+        if (t.kind === 'files') keepCaretInSessionTerminal(e)
         onActivate(t.id)
       }}
       draggable={t.kind !== 'files'}

@@ -153,6 +153,7 @@ const api: KoloftApi = {
     setResident: (id, on) => ipcRenderer.send(CH.sessions.setResident, id, on),
     forceClose: (id) => ipcRenderer.invoke(CH.sessions.forceClose, id),
     transcriptExists: (id) => ipcRenderer.invoke(CH.sessions.transcriptExists, id),
+    noAccountToResume: (id) => ipcRenderer.invoke(CH.sessions.noAccountToResume, id),
     leftovers: () => ipcRenderer.invoke(CH.sessions.leftovers),
     onLeftovers: (cb) => {
       const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)
@@ -334,7 +335,10 @@ const api: KoloftApi = {
     certProceed: (url) => ipcRenderer.invoke(CH.browser.certProceed, url),
     clearData: () => ipcRenderer.invoke(CH.browser.clearData),
     openExternal: (url) => ipcRenderer.send(CH.browser.openExternal, url),
-    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId)
+    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId),
+    pickElement: (guestId, sessionTabId) =>
+      ipcRenderer.invoke(CH.browser.pickElement, guestId, sessionTabId),
+    stopPick: (guestId) => ipcRenderer.send(CH.browser.pickStop, guestId)
   },
   extensions: {
     list: () => ipcRenderer.invoke(CH.ext.list),

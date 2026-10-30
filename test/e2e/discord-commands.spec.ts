@@ -78,6 +78,12 @@ async function butlerTab(page: Page): Promise<string> {
   return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.tabId ?? ''
 }
 
+async function butlerShownWorkingOnItsOpeningTurn(fake: FakeDiscord): Promise<void> {
+  await expect
+    .poll(() => fake.typing, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    .toContain(CHANNEL)
+}
+
 async function connected(
   env: E2EEnv,
   fake: FakeDiscord
@@ -105,6 +111,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         Object.fromEntries(fake.commands.map((c) => [c.name, (c.options ?? []).map((o) => o.name)]))
       ).toEqual({ run: ['command'], clear: [], compact: ['focus'] })
 
+      await butlerShownWorkingOnItsOpeningTurn(fake)
       const asked = fake.interact(OWNER, 'run', { command: '/context' })
       await expect
         .poll(() => replyTo(fake, asked))
@@ -137,7 +144,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   })
 
   // AGY§8
-  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process', async ({
+  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and what it ran is posted soon after', async ({
     env
   }) => {
     installAgy(env)
@@ -159,6 +166,9 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .toBe(1)
       expect(agySessionCalls(env)).toHaveLength(1)
       expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model/)])
     } finally {
       await quitAndClose(app)
       await fake.close()

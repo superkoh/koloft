@@ -6,6 +6,8 @@ import {
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  gitCommitAll,
+  gitInit,
   landsOnTheButler,
   openSessionTerminal,
   panelTerm,
@@ -24,6 +26,7 @@ import {
   cancelFileDialog,
   pendingFileDialogAnswers,
   appRegion,
+  browseRow,
   persistedTabsOnDisk,
   WORKBENCH,
   seedWorkbench,
@@ -95,6 +98,48 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await wbTabs(page).nth(1).click()
     await expect(wbActiveTab(page)).toHaveText(/alpha/)
     expect(await focusOwner(page)).toBe('panel')
+  })
+
+  test('a click on a view switch inside the Changes tab (Diff / Source, Changes / Browse) leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+    page,
+    env
+  }) => {
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    fs.appendFileSync(path.join(env.workspaces.a, 'docs', 'page.html'), '<!-- edited -->\n')
+    await startSessionIn(page, 'ws-a')
+    await wbTabs(page).nth(0).click()
+    expect(await focusOwner(page)).toBe('tui')
+
+    const blockSource = page
+      .locator(`${WORKBENCH.panel} .cv-blk[data-path="docs/page.html"]`)
+      .locator('.seg[aria-label="Block view"] button', { hasText: 'Source' })
+    await blockSource.click({ timeout: 30_000 })
+    await expect(blockSource).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    const browse = page.locator(`${WORKBENCH.panel} .seg[aria-label="Files view"] button`, {
+      hasText: 'Browse'
+    })
+    await browse.click()
+    await expect(browse).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    await browseRow(page, path.join(env.workspaces.a, 'README.md')).click({ timeout: 30_000 })
+    const readingSource = page.locator(
+      `${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] button`,
+      { hasText: 'Source' }
+    )
+    await expect(readingSource).toBeVisible({ timeout: 20_000 })
+    await centerTerm(page).click()
+    expect(await focusOwner(page)).toBe('tui')
+    await readingSource.click()
+    await expect(readingSource).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    await page.keyboard.type('/answer looks good')
+    await page.keyboard.press('Enter')
+    await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
   })
 
   test('WB-T03: an agent re-open brings its existing tab back to the front', async ({ page }) => {

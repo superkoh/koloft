@@ -64,13 +64,6 @@ function cpuSpentSince(seen: Map<number, number>, cpuMsByPid: Map<number, number
   return spent
 }
 
-const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
-  id: 'unlisted',
-  kind: 'command',
-  label: 'background work',
-  state: 'working'
-}
-
 // CC§8
 export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
   if (typeof bgl !== 'string') return undefined
@@ -433,7 +426,7 @@ interface Tracked {
   lastMainActivityTs: number
   bindMs: number
   resetMs: number
-  reported: ReportedTask[] | null
+  reported: ReportedTask[]
   reportedAt: number
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
@@ -557,7 +550,7 @@ export class SessionTracker extends SessionRuntime {
       lastMainActivityTs: 0,
       bindMs: Date.now(),
       resetMs: Date.now(),
-      reported: null,
+      reported: [],
       reportedAt: 0,
       openTools: new Map(),
       procs: null,
@@ -683,13 +676,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
-    this.endTurnHeldByWhatRuns(t)
-  }
-
-  private endTurnHeldByWhatRuns(t: Tracked): void {
-    const busy = this.judgeHold(t)
-    if (!busy) t.ledger.clear()
-    this.applyStatus(t, 'ended', busy)
+    this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
   // CC§2
@@ -716,16 +703,8 @@ export class SessionTracker extends SessionRuntime {
       this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
-  private judgeHold(t: Tracked): boolean {
-    if (t.reported) return this.judgeReported(t)
-    const busy = this.bgBusy(t)
-    this.setBackgroundItems(t, busy ? [UNLISTED_BACKGROUND_WORK] : [])
-    return busy
-  }
-
   private judgeReported(t: Tracked, holding = true): boolean {
     const now = Date.now()
-    const list = t.reported ?? []
     const procs = t.procs
     const parked: BackgroundItem[] = []
     const running: BackgroundItem[] = []
@@ -734,12 +713,12 @@ export class SessionTracker extends SessionRuntime {
     }
     let observed = false
     let trusted = false
-    const reportedIds = new Set(list.map((x) => x.id))
+    const reportedIds = new Set(t.reported.map((x) => x.id))
     const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
-    for (const task of list) {
+    for (const task of t.reported) {
       if (task.type === 'shell') {
         const label = t.ledger.labelOf(task.id) ?? task.id
         if (t.ledger.isMonitor(task.id)) {
@@ -802,10 +781,9 @@ export class SessionTracker extends SessionRuntime {
 
   private async refreshProcs(t: Tracked, force = false): Promise<void> {
     if (t.remote) return
-    const list = t.reported
     const observable = (x: ReportedTask): boolean =>
       x.type === 'teammate' || AGENT_TYPES.has(x.type) || x.type === 'shell'
-    if (!list?.some(observable)) return
+    if (!t.reported.some(observable)) return
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
@@ -860,12 +838,6 @@ export class SessionTracker extends SessionRuntime {
     )
   }
 
-  private bgBusy(t: Tracked): boolean {
-    const quietMs = Date.now() - t.lastBgActivityTs
-    if (t.ledger.held) return quietMs < BG_SILENCE_MAX_MS
-    return t.lastBgActivityTs > t.lastMainActivityTs && quietMs < STOP_HOLD_MS
-  }
-
   // CC§1
   bindSession(
     tabId: string,
@@ -873,18 +845,12 @@ export class SessionTracker extends SessionRuntime {
     sessionId: string,
     cwd = '',
     account = '',
-    ccVersion = '',
     source = ''
   ): void {
     const t = this.tracked.get(tabId)
     if (!t) return
     if (account && t.info.account !== account) {
       t.info.account = account
-      t.info.updatedAt = Date.now()
-      this.emitUpdate()
-    }
-    if (ccVersion && t.info.cliVersion !== ccVersion) {
-      t.info.cliVersion = ccVersion
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }
@@ -909,7 +875,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
-      t.reported = null
+      t.reported = []
       this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
@@ -1283,19 +1249,14 @@ export class SessionTracker extends SessionRuntime {
       t.lastBgActivityTs > this.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
     ) {
       this.applyStatus(t, 'ended', true)
-      t.ledger.promote()
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
-      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t, false)
+      if (s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
-    const busy = this.judgeHold(t)
-    if (!busy) {
-      if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
-      t.ledger.clear()
+    if (!this.judgeReported(t) && Date.now() - t.lastMainActivityTs >= STOP_HOLD_MS)
       this.applyStatus(t, 'ended')
-    }
   }
 
   private async ingestMainAppend(t: Tracked, p: string, st: fs.Stats): Promise<boolean> {
@@ -1339,11 +1300,9 @@ export class SessionTracker extends SessionRuntime {
     if (s !== 'working' && s !== 'approval') return
     const tabId = t.info.tabId
     if (this.statusSince(tabId) > t.lastInterruptTs) return
-    if (t.reported) {
-      await this.refreshProcs(t, true)
-      if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
-    }
-    this.endTurnHeldByWhatRuns(t)
+    await this.refreshProcs(t, true)
+    if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
+    this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
@@ -1444,7 +1403,7 @@ export class SessionTracker extends SessionRuntime {
     const task = t.ledger.noteSpawnAck(tur, toolUseIds)
     // CC§8
     if (tur.status === 'teammate_spawned') t.teammateActiveMs = Date.now()
-    if (task && t.reported && !t.reported.some((x) => x.id === task.id)) {
+    if (task && !t.reported.some((x) => x.id === task.id)) {
       t.reported.push({ ...task, since: Date.now() })
     }
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
@@ -1469,7 +1428,7 @@ export class SessionTracker extends SessionRuntime {
     const text = taskNotificationText(obj)
     if (text === null) return
     const gone = t.ledger.noteNotification(text)
-    if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
+    if (gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
   }
 
   private ingestLine(t: Tracked, line: string): 'user' | 'assistant' | 'interrupt' | null {

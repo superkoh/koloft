@@ -6,6 +6,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
+import { hiddenFromClients, holdDebugger } from './guestDebugger'
 import { urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
@@ -64,7 +65,12 @@ interface Client {
   protocol: CdpProtocol
   attached: Map<
     string,
-    { guestId: number; onMessage: (...a: never[]) => void; onDetach: () => void }
+    {
+      guestId: number
+      onMessage: (...a: never[]) => void
+      onDetach: () => void
+      release: () => void
+    }
   >
 }
 
@@ -256,21 +262,29 @@ function backendFor(client: Client): RelayBackend {
       const showsTheMac = async (): Promise<boolean> =>
         showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL()))
       await fence(showsTheMac)
+      let release: () => void
       try {
-        wc.debugger.attach('1.3')
+        release = holdDebugger(wc)
       } catch (e) {
         throw new Error(`cannot attach to ${targetId}: ${String(e)}`)
       }
       try {
         await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
       } catch {}
-      const onMessage = (_e: unknown, method: string, params: unknown, sessionId?: string): void =>
+      const onMessage = (
+        _e: unknown,
+        method: string,
+        params: unknown,
+        sessionId?: string
+      ): void => {
+        if (hiddenFromClients(method, params, sessionId)) return
         client.protocol.fromGuest(
           targetId,
           method,
           swapIds(params, frameIds.get(targetId), targetId),
           sessionId
         )
+      }
       const onDetach = (): void => {
         client.protocol.forceDetach(targetId, 'Target.detachedFromTarget')
       }
@@ -284,9 +298,7 @@ function backendFor(client: Client): RelayBackend {
       const gone = clients.get(client.tabId) !== client
       if (gone || (client.onMachine && (await showsTheMac()))) {
         frameIds.delete(targetId)
-        try {
-          if (wc.debugger.isAttached()) wc.debugger.detach()
-        } catch {}
+        release()
         throw new Error(
           gone
             ? `cannot attach to ${targetId}: the client disconnected`
@@ -298,7 +310,8 @@ function backendFor(client: Client): RelayBackend {
       client.attached.set(targetId, {
         guestId,
         onMessage: onMessage as never,
-        onDetach: onDetach as never
+        onDetach: onDetach as never,
+        release
       })
       publishAttached(client)
     },
@@ -311,8 +324,9 @@ function backendFor(client: Client): RelayBackend {
         const wc = guestOf(held.guestId)
         wc.debugger.off('message', held.onMessage as never)
         wc.debugger.off('detach', held.onDetach as never)
-        if (wc.debugger.isAttached()) wc.debugger.detach()
+        void wc.debugger.sendCommand('Fetch.disable').catch(() => {})
       } catch {}
+      held.release()
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {

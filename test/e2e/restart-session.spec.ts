@@ -3,7 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, runInTerminal } from './helpers/app'
-import { writeClaudeWrapper, type E2EEnv } from './helpers/env'
+import { E2E_CLAUDE_ACCOUNT, writeClaudeWrapper, type E2EEnv } from './helpers/env'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   centerTerm,
   gitCommitAll,
@@ -699,6 +700,34 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         const calls = await waitForCalls(env, 2)
         expect(resumedId(calls[1])).toBe(first.sessionId)
         expect(fs.readFileSync(env.wrapperCalls, 'utf8')).toContain(`--resume ${first.sessionId}`)
+      } finally {
+        await app.close().catch(() => {})
+      }
+    })
+
+    test('T17: with no Claude account usable, restart says why and leaves the running claude alone', async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      const { app, page } = await launch(env)
+      try {
+        await startClaudeTab(page, env)
+        const [first] = await waitForCalls(env, 1)
+        await waitUntilTranscriptIsOnDiskSoRestartIsNotANoOp(
+          transcriptPath(env, env.workspaces.a, first.sessionId)
+        )
+        await page.evaluate(
+          (name) => window.api.accounts.toggle(name, 'apikey', false),
+          E2E_CLAUDE_ACCOUNT
+        )
+        await triggerRestart(app)
+
+        await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude)
+        const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+        await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row).not.toHaveClass(/\bcold\b/)
+        expect(processAlive(first.pid)).toBe(true)
+        expect(readCalls(env)).toHaveLength(1)
       } finally {
         await app.close().catch(() => {})
       }
