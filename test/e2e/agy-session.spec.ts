@@ -19,6 +19,7 @@ import {
 } from './helpers/env'
 import {
   agentRow,
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   gitCommitAll,
   gitInit,
@@ -360,8 +361,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     try {
       await startAgy(page, env)
       await runIn(page, centerTerm(page), 'warm up')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const { tabId, id } = await boundAgy(page)
+      const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
       await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), tabId)
       const target = path.join(env.workspaces.a, 'agy-notes.txt')
       await expect(agyRows(page)).toHaveClass(/\bst-approval\b/, {
@@ -413,8 +413,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       await startAgy(page, env)
       await runIn(page, centerTerm(page), 'plan the work')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const parent = await boundAgy(page)
+      const parent = await agyConversationOnceFirstTurnEnded(page)
 
       await page.evaluate(
         (t) =>
@@ -508,8 +507,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'held elsewhere')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const { id } = await boundAgy(page)
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
@@ -549,8 +547,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'keep me')
       await expect(agyRows(page)).toContainText('keep me', { timeout: 30_000 })
-      await expect(agyRows(page)).toHaveClass(/st-waiting/)
-      const { id } = await boundAgy(page)
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
@@ -606,8 +603,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'survive a restart')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const { id } = await boundAgy(page)
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
 

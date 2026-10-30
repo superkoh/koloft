@@ -13,6 +13,7 @@ import {
 } from './helpers/env'
 import { codexCalls, codexRows } from './helpers/codex'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   clickAppMenuItem,
   encodeCwd,
@@ -385,13 +386,8 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       expect(processAlive(first.pid)).toBe(true)
 
       await runIn(page, centerTerm(page), 'now we have talked')
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const { id: conversation } = await agyConversationOnceFirstTurnEnded(page, tabId)
       expect(agySessionCalls(env)).toHaveLength(1)
-      const conversationOfTab = async (): Promise<string | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
-          ?.nativeSessionId
-      await expect.poll(conversationOfTab, { timeout: 30_000 }).toBeTruthy()
-      const conversation = await conversationOfTab()
 
       await restart(app, page)
       await expect.poll(() => agySessionCalls(env).length, { timeout: 30_000 }).toBe(2)

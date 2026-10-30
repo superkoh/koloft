@@ -198,6 +198,32 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
+export async function agyConversationOnceFirstTurnEnded(
+  page: Page,
+  tabId?: string
+): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find(
+          (x) =>
+            x.backendId === 'agy' &&
+            x.alive &&
+            (tabId === undefined || x.tabId === tabId) &&
+            x.usage &&
+            x.nativeSessionId
+        )
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
+      },
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+  return found!
+}
+
 export interface SeedOptions {
   id?: string
   summary?: string
