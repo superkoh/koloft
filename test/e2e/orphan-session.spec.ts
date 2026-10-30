@@ -1,4 +1,4 @@
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, expectNoToastAtAnyMomentOfAWindow } from './helpers/app'
 import type { ElectronApplication, Page } from '@playwright/test'
 import type { E2EEnv } from './helpers/env'
 import {
@@ -82,7 +82,7 @@ test.describe("Session unreachable → Force Close: the fallback when a reload f
     }
   })
 
-  test('T-ORPH-03: a binding that dies while the confirm is up fails loudly, not silently', async ({
+  test('T-ORPH-03: Force Close on a session that already stopped by itself closes the box with no note', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -103,7 +103,8 @@ test.describe("Session unreachable → Force Close: the fallback when a reload f
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await modal.locator('.btn-primary').click()
 
-      await expect(page.locator('.toast')).toHaveText(/Could not force close/, { timeout: 15_000 })
+      await expect(modal).toHaveCount(0)
+      await expectNoToastAtAnyMomentOfAWindow(page)
     } finally {
       await app.close().catch(() => {})
     }
