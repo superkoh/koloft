@@ -4,10 +4,12 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
+import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
   centerTerm,
   chooseBackend,
+  gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   menuItemTexts,
@@ -157,6 +159,33 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
       await expect.poll(() => serverAlive(env, server.tabId!), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§27
+  test("E-RC-10: a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      gitInit(remoteDir(env))
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await runIn(page, centerTerm(page), '/sh printf made > shell-made.txt')
+      const made = path.join(fs.realpathSync(remoteDir(env)), 'shell-made.txt')
+      await expect
+        .poll(
+          async () => {
+            const all = await page.evaluate(() => window.api.sessions.list())
+            const codex = all.find((s) => s.backendId === 'codex' && s.alive)
+            return codex?.files.filter((f) => f.access === 'wrote').map((f) => barePath(f.src))
+          },
+          { timeout: 60_000 }
+        )
+        .toEqual([made])
     } finally {
       await quitAndClose(app)
     }

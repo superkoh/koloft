@@ -1308,6 +1308,18 @@ describe("a shell command's written files", () => {
     expect(fs.existsSync(path.join(regDir, 'tabSh0.status.jsonl'))).toBe(false)
   })
 
+  it('a command that commits, and so takes changed files out of what git lists, reports none of them as written', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: repo, tool_use_id: 'toolu_03' }
+    fire('tabShC', 'shell-before', call)
+    spawnSync('git', ['add', '.'], { cwd: repo })
+    spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'c'], {
+      cwd: repo
+    })
+    fire('tabShC', 'shell-after', call)
+    expect(fs.existsSync(path.join(regDir, 'tabShC.status.jsonl'))).toBe(false)
+  })
+
   it('a Codex Bash call appends the same list to the file its tab names, also when the script runs under a plain sh', () => {
     const repo = repoWithChanges()
     const out = path.join(regDir, 'tabCx.shell-wrote.jsonl')

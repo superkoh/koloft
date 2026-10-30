@@ -166,8 +166,6 @@ async function listSubagentJsonls(dir: string): Promise<string[]> {
   return out
 }
 
-// CC§2
-const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const TASK_LABEL_FIELD: Record<string, string> = {
   Bash: 'command',
   Monitor: 'command',
@@ -1552,12 +1550,7 @@ export class SessionTracker extends SessionRuntime {
         }
         const labelField = TASK_LABEL_FIELD[b.name]
         const label = labelField ? b.input?.[labelField] : undefined
-        if (typeof label === 'string') {
-          t.ledger.noteToolLabel(b.id, label)
-          if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
-            t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-          }
-        }
+        if (typeof label === 'string') t.ledger.noteToolLabel(b.id, label)
         // CC§2
         const raw = toolFilePath(b.input)
         const fp = raw ? this.resolvePath(t, raw) : null

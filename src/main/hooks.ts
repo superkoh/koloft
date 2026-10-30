@@ -183,7 +183,7 @@ shell_wrote() {
   files_now "$1" | LC_ALL=C sort > "$was.now" 2>/dev/null
   top="$(head -n 1 "$was.now")"
   if [ -n "$top" ] && [ "$top" = "$(head -n 1 "$was")" ]; then
-    wrote="$(LC_ALL=C comm -3 "$was" "$was.now" | sed 's/^[[:space:]]*[^ ]* [^ ]* //' | LC_ALL=C sort -u |
+    wrote="$(LC_ALL=C comm -13 "$was" "$was.now" | sed 's/^[^ ]* [^ ]* //' |
       awk -v top="$top" '{ print top "/" $0 }' | LC_ALL=C grep -v '["\\\\[:cntrl:]]' | sed 's/.*/"&"/' | paste -s -d , -)"
     [ -n "$wrote" ] && printf ',"${SHELL_WROTE_FIELD}":[%s]' "$wrote"
   fi
