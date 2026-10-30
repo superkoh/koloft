@@ -62,6 +62,39 @@ test('starting a session in a workspace surfaces it, its file, and a preview thr
   await expect(page.locator(WORKBENCH.readingBody)).toContainText('Written by the fake claude')
 })
 
+test('C2: a live Claude Code row says under its branch what it did, while it works and as Last: once the turn is over, and in amber what it asks or wants to run while it waits on you', async ({
+  page
+}, testInfo) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  const line = row.locator('.ws-tab-act')
+  const sessions = page.locator('.isl-sessions')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  await expect(line).toHaveCount(0)
+
+  await runIn(page, centerTerm(page), '/bash rm -rf build')
+  await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Wants to run: rm -rf build')
+  await sessions.screenshot({ path: testInfo.outputPath('row-asking.png') })
+  await page.keyboard.press('1')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Last: Ran rm -rf build')
+  await sessions.screenshot({ path: testInfo.outputPath('row-finished.png') })
+
+  await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+  await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Asks: Which colour?')
+  await page.keyboard.press('2')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Last: Ran rm -rf build')
+
+  await runIn(page, centerTerm(page), '/busy')
+  await expect(row).toHaveClass(/\bst-working\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Ran rm -rf build')
+  await sessions.screenshot({ path: testInfo.outputPath('row-working.png') })
+})
+
 test('when Claude Code moves the conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id', async ({
   page,
   env
