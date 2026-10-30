@@ -786,6 +786,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         info.lastWritten = event.lastWritten
         info.liveWrites = event.liveWrites
         return this.changedSoon()
+      case 'did':
+        if (info.lastAction === event.what) return
+        info.lastAction = event.what
+        return this.changedSoon()
     }
   }
 

@@ -63,6 +63,7 @@ export class SessionBackends {
   private cleanExitAt = new Map<string, number>()
   isButlerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
+  askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
 
@@ -155,6 +156,7 @@ export class SessionBackends {
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         butler: this.isButlerSession(s.tabId) || this.isButlerSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
+        asking: this.askingOf(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))
     )

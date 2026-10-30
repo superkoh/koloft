@@ -100,6 +100,7 @@ import {
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
+import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -993,8 +994,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         run.lastTool = { name: String(call.name ?? ''), args: record(call.args) }
         return
       }
-      case 'PostToolUse':
+      case 'PostToolUse': {
+        const call = record(input.toolCall)
+        const did = agyToolDid(String(call.name ?? ''), (key) => argOf(record(call.args), key))
+        if (did) this.deps.events(run.tabId, { type: 'did', what: did })
         return void this.afterTool(run, input)
+      }
       case 'Stop':
         return this.onStop(run, input)
     }
@@ -1231,7 +1236,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             approval: {
               id: askId,
               command: pending.target,
-              reason: pending.kind === 'file' ? 'Write this file' : undefined
+              reason: pending.kind === 'file' ? 'Write this file' : undefined,
+              ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
             }
           }
         : questions.length && !questions.some((q) => q.multiSelect)
@@ -1248,6 +1254,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             }
           : {})
     }
+    this.changedSoon()
   }
 
   // AGY§12 AGY§13
@@ -1267,8 +1274,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         }
       }
     }
-    const target = tool && (argOf(tool.args, 'CommandLine') ?? argOf(tool.args, 'TargetFile'))
-    return { approval: { id, command: target ?? status.msg } }
+    const commandLine = tool && argOf(tool.args, 'CommandLine')
+    const file = tool && !commandLine ? argOf(tool.args, 'TargetFile') : undefined
+    return {
+      approval: { id, command: commandLine ?? file ?? status.msg, ...(file ? { file } : {}) }
+    }
   }
 
   // AGY§19
@@ -1290,9 +1300,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const askId = `plan:${id}:${plan}`
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan' }
+      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
+    this.changedSoon()
   }
 
   openApproval(tabId: string): CodexApproval | undefined {

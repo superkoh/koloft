@@ -96,6 +96,7 @@ const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
+const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
   sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
@@ -208,6 +209,17 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(rows.first()).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      const line = rows.first().locator('.ws-tab-act')
+      await runIn(page, centerTerm(page), '/bash rm -rf build')
+      await expect(rows.first()).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+      await expect(line).toHaveText('Wants to run: rm -rf build', { timeout: 30_000 })
+      const tabId = await rows.first().getAttribute('data-tab-id')
+      await page.evaluate(
+        ([id, key]) => window.api.terminal.write(id!, key!),
+        [tabId, YES_THROUGH_A_LINE_MODE_TMUX]
+      )
+      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await expect(line).toHaveText('Last: Ran rm -rf build', { timeout: 30_000 })
 
       const localProjects = path.join(env.home, '.claude', 'projects')
       expect(fs.existsSync(path.join(localProjects, encodeCwd(remoteDir(env))))).toBe(false)

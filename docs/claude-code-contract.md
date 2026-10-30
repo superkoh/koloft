@@ -560,6 +560,15 @@ Unless a bullet below says more, it is inferred, not checked.
     its body as a `user` `isMeta` record, then a normal turn.
   - `/clear` writes its `<command-name>` record and an empty stdout into the new id's
     file.
+- **A tool the person turns down still has its `tool_use`.** The `assistant` record with
+  the `tool_use` is written before the permission dialog shows, so it is in the file
+  whether or not the tool runs. When the person says No, its `tool_result` has
+  `is_error: true` and a `content` that begins "The user doesn't want to proceed with
+  this tool use.", and the record's `toolUseResult` is the string "User rejected tool
+  use". A command that ran and failed has `is_error: true` too, with its own output. So
+  "the tool ran" is a `tool_result` that is not that rejection. Checked 2026-10-28: the
+  sentence is in the CC 2.1.312 binary (`grep -a`), and a real transcript from
+  2026-10-20 holds such a rejected `tool_result`.
 
 Evidence: full census of 535 on-disk transcripts, 2026-08-10 (CC 2.1.220–227), plus
 controlled experiment E2; lazy write verified live 2026-08-24. The five mid-conversation

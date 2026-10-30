@@ -77,6 +77,7 @@ import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
 import { MIRROR_SUFFIX, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
 import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
+import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
 import { noticeFile } from './hooks'
@@ -872,6 +873,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private afterTool(run: MuseRun, input: Record<string, unknown>): void {
     const tool = String(input.tool_name)
     const response = responseOf(input)
+    const did = museToolDid(tool, record(input.tool_input), response)
+    if (did) this.deps.events(run.tabId, { type: 'did', what: did })
     if (WRITING_TOOLS.has(tool) && typeof response.filePath === 'string') {
       const target = cwdRelative(run.cwd, response.filePath)
       const { added, removed } = patchDelta(response)
@@ -1120,7 +1123,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.waiting = waiting
     void readMuseAsk(this.serveFor(run.info!.sessionId), sessionId)
       .then((ask) => {
-        if (run.waiting === waiting) waiting.ask = ask
+        if (run.waiting !== waiting) return
+        waiting.ask = ask
+        this.changedSoon()
       })
       .catch(() => undefined)
   }
