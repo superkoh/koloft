@@ -1,7 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
+import type { SessionInfo, TabKind } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -11,10 +11,11 @@ export type CloseIntent =
 export const CLOSE_CONFIRM_TITLE = 'Close running session?'
 
 export function closeTabIntent(
-  tab: { id: string; kind: TabKind; title: string } | undefined,
+  tab: { id: string; kind: TabKind; title: string; ended?: unknown } | undefined,
   sessions: SessionInfo[]
 ): CloseIntent {
   if (!tab) return { kind: 'none' }
+  if (tab.ended) return { kind: 'close' }
   const bound = sessions.find((s) => s.tabId === tab.id && s.alive && !!s.sessionId)
   if (bound && (bound.status === 'working' || bound.status === 'approval')) {
     return { kind: 'confirm', status: bound.status, title: bound.title || tab.title }
@@ -69,13 +70,13 @@ export function unexpectedExitNotice(
   return `${agent} session ended unexpectedly (${how})`
 }
 
+export function endedRowNote(exit: { exitCode: number; signal?: number }): string {
+  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
+}
+
 export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
->(
-  tab: T | undefined,
-  exit: { exitCode: number; signal?: number }
-): tab is T & { kind: SessionBackend } {
-  if (!tab || !isSessionKind(tab.kind)) return false
-  if (!exitedAbnormally(exit)) return false
+>(tab: T | undefined, exit: { unexpected?: true }): tab is T & { kind: SessionBackend } {
+  if (!tab || !isSessionKind(tab.kind) || !exit.unexpected) return false
   return !(tab.jobId !== undefined && tab.sessionId === undefined)
 }

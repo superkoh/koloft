@@ -22,8 +22,60 @@ import {
   rowsUnder,
   welcomeQuietLine,
   welcomeTarget,
+  endedTabOf,
+  endedTabsLiveElsewhere,
+  withEndedRows,
   type RowNode
 } from '../../src/renderer/src/sessionRows'
+
+describe('withEndedRows (a tab whose agent died on its own keeps one row until it is closed)', () => {
+  const ws = (path: string, ids: string[]): WorkspaceRows => ({
+    workspace: { path, missing: false, isGit: true, hasHistory: true },
+    rows: ids.map((id) => ({
+      id,
+      title: id,
+      worktree: 'main',
+      cwd: path,
+      running: false,
+      invalidCwd: false,
+      mtime: 0,
+      backendId: 'codex',
+      host: 'local'
+    }))
+  })
+  const startingRow = { ...ws('/a', ['t1']).rows[0], title: 'Starting…', pending: true }
+  const died = {
+    id: 't1',
+    title: 'Codex',
+    ended: { note: 'exited (code 1)', wsPath: '/a', row: startingRow }
+  }
+
+  it('brings back the row of a launch that died before it started, in its workspace, titled by its tab and no longer starting', () => {
+    const rows = withEndedRows([ws('/a', ['s9']), ws('/b', [])], [died])
+    expect(rows[0].rows.map((r) => [r.id, r.title, r.pending, r.running])).toEqual([
+      ['t1', 'Codex', false, false],
+      ['s9', 's9', undefined, false]
+    ])
+    expect(rows[1].rows).toEqual([])
+  })
+
+  it('lets the row follow a live tab once its session is running again elsewhere, and picks the dead tab to close, so no tab is left with no row', () => {
+    const dead = { ...died, sessionId: 's1' }
+    const live = { sessionId: 's1', tabId: 't2', alive: true }
+    const neverBound = { ...died, id: 't3' }
+    expect(endedTabOf({ id: 's1' }, [dead], [])).toBe(dead)
+    expect(endedTabsLiveElsewhere([dead, neverBound], [])).toEqual([])
+    expect(endedTabOf({ id: 's1' }, [dead], [live])).toBeUndefined()
+    expect(endedTabsLiveElsewhere([dead, neverBound], [live])).toEqual([dead])
+  })
+
+  it('adds nothing while the list still shows the tab or its session, so the row never doubles', () => {
+    const all = [ws('/a', ['t1'])]
+    expect(withEndedRows(all, [died])).toBe(all)
+    const bound = [ws('/a', ['s1'])]
+    expect(withEndedRows(bound, [{ ...died, sessionId: 's1' }])).toBe(bound)
+  })
+})
 
 type Row = { id: string; parentId?: string }
 

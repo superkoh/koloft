@@ -109,10 +109,10 @@ function typeLine(r: Remote, line: string): { status: number | null; stdout: str
   return { status: res.status, stdout: res.stdout }
 }
 
-function typeLineLive(
+function typeLineWithStdinOpen(
   r: Remote,
   line: string
-): { out: () => string; running: () => boolean; enter: () => void; done: Promise<number | null> } {
+): { out: () => string; done: Promise<number | null> } {
   const script = path.join(mkroot('line'), 'line.sh')
   fs.writeFileSync(script, line + '\n')
   const c = spawn(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, [script], {
@@ -120,24 +120,9 @@ function typeLineLive(
     stdio: ['pipe', 'pipe', 'pipe']
   })
   let out = ''
-  let alive = true
   c.stdout.on('data', (d) => (out += String(d)))
-  const done = new Promise<number | null>((resolve) =>
-    c.on('close', (code) => {
-      alive = false
-      resolve(code)
-    })
-  )
-  return { out: () => out, running: () => alive, enter: () => c.stdin.write('\n'), done }
-}
-
-async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    if (pred()) return true
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  return pred()
+  const done = new Promise<number | null>((resolve) => c.on('close', resolve))
+  return { out: () => out, done }
 }
 
 const spec = ({
@@ -254,17 +239,13 @@ describe('U-LINE-*: the launch line', () => {
     expect(r.calls()).toBe(4)
   })
 
-  it('a session that failed to start or ended with an error holds the tab open until Enter, so its reason can be read', async () => {
+  it('a session that failed to start or ended with an error says its exit code and ends at once, waiting for no key, since Koloft keeps the tab and its screen', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
     r.fail(4, 7)
-    const live = typeLineLive(r, st.line())
-    expect(await until(() => live.out().includes('exit code 7'))).toBe(true)
-    expect(live.out()).toContain('press Enter to close')
-    await new Promise((res) => setTimeout(res, 300))
-    expect(live.running()).toBe(true)
-    live.enter()
+    const live = typeLineWithStdinOpen(r, st.line())
     expect(await live.done).toBe(7)
+    expect(live.out()).toContain('stopped with exit code 7')
   }, 30_000)
 
   it('an account name full of quotes reaches the machine unharmed', () => {

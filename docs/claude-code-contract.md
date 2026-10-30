@@ -2142,6 +2142,11 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   211–307 MB RSS (three of them measured with `footprint`: 255–271 MB) and used 1.8–5.3 s
   of CPU in 5 minutes (0.6–1.8% of one core) — the process, not Koloft's watching of it,
   is what an idle session costs.
+- **Every way a person quits exits 0**: `/exit`, Ctrl+C twice and Ctrl+D twice at an idle
+  input box. The second press counts only within about 0.8 s of the first: with 0.8 s
+  between them claude was still running 20 s later, its footer back to "Press Ctrl-C
+  again to exit"; with 0.3 s it exited. Measured 2026-10-29, CC 2.1.312, a python pty
+  80×24 through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR` with the folder trusted.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

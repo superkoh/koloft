@@ -53,6 +53,8 @@ import {
   boundSessionId,
   workbenchOwnerLive,
   consumeRestartExit,
+  keptTabsToClose,
+  launchToStartAgain,
   conversationTabFor,
   tabForSession,
   consumeRestoreExit,
@@ -84,7 +86,8 @@ import {
   welcomeTarget
 } from './sessionRows'
 import { beginLayoutDrag, endLayoutDrag } from './resizeGate'
-import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
+import { endedRowNote, unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
+import { lastLinesOnceWritten, writeOnScreen } from './terminalScreens'
 import { requestCloseTab } from './closeFlow'
 import {
   allDirty,
@@ -99,6 +102,7 @@ import {
 import { browserOpenTargetSession, overlayPresentation } from './browserOpenTarget'
 
 const FIXED_VIEWPORT_FOR_OFFSCREEN_DRIVEN_PAGE = { width: 1000, height: 700 }
+const LAST_SCREEN_LINES_LOGGED = 20
 import {
   rearmResume,
   releaseResume,
@@ -402,14 +406,16 @@ export default function App(): JSX.Element {
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
-      const res = await window.api.terminal.create({ kind: backend, ...opts })
+      const launch = { kind: backend, ...opts }
+      const res = await window.api.terminal.create(launch)
       if (!res.ok) throw new Error(LAUNCH_REFUSED_NOTICE)
       addTab({
         id: res.id,
         kind: backend,
         title: BACKEND_LABEL[backend],
         cwd: res.cwd,
-        alive: true
+        alive: true,
+        launch: launchToStartAgain(launch, res.cwd)
       })
     },
     [addTab]
@@ -910,6 +916,11 @@ export default function App(): JSX.Element {
         setTabAlive(s.tabId, s.alive)
         if (s.sessionId) releaseResume(s.sessionId)
       }
+      const st = useStore.getState()
+      for (const tab of keptTabsToClose(st)) {
+        askAboutLeftEdits(tab)
+        st.closeTab(tab.id)
+      }
     })
     return off
   }, [setSessions, setTabAlive])
@@ -998,8 +1009,17 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id)))
+        const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
+        useStore.getState().showToast(notice)
+        if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
+          void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {
+            window.api.terminal.logUnexpectedExit({ id: e.id, lines })
+            writeOnScreen(e.id, `\x1b[0m\r\n[Koloft] ${notice}\r\n`)
+          })
+          return
+        }
       }
+      if (e.unexpected) window.api.terminal.logUnexpectedExit({ id: e.id, lines: [] })
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
     })

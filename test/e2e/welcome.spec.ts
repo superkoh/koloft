@@ -4,6 +4,7 @@ import { test, expect, launchApp, runInTerminal } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import {
   gitInit,
+  closeKeptTab,
   killSession,
   landsOnTheButler,
   pickerDialog,
@@ -145,6 +146,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const [sessionB] = await waitForCalls(env, 1)
       killSession(sessionB.pid, env)
       await expect(rowB).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+      await closeKeptTab(page1, rowB)
       await landsOnTheButler(page1)
       await sendShortcut(app1, 'shortcut:close-tab')
       const panel = page1.locator('.w-empty')

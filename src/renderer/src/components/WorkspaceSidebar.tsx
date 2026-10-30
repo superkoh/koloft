@@ -42,6 +42,7 @@ import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
+  endedTabOf,
   isOrphanRow,
   liveTabOf,
   marqueeAnim,
@@ -57,6 +58,7 @@ import {
   sessionsNeedYou,
   sessionTree,
   shortDur,
+  shownRows,
   shownTitle,
   statusUnavailable,
   workspaceName,
@@ -90,6 +92,8 @@ const FORCE_CLOSE_FAILED_NOTICE =
   'Could not force close — the session may be running outside Koloft.'
 
 const CRON_BADGE_MS = 30_000
+
+const ENDED_ROW_TIP = 'Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it'
 
 const GIB = 2 ** 30
 const SMALLEST_MEMORY_SHOWN_GB = 0.05
@@ -661,11 +665,13 @@ function SidebarFloating({
       ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
       : t.kind === 'queued'
         ? 2
-        : t.row.pending
-          ? 1
-          : t.row.running
-            ? 3 + (waitingTabOf(t.row) ? 1 : 0)
-            : 5
+        : endedTabOf(t.row, storeTabs, sessions)
+          ? 2
+          : t.row.pending
+            ? 1
+            : t.row.running
+              ? 3 + (waitingTabOf(t.row) ? 1 : 0)
+              : 5
 
   const openMenuAt = (el: HTMLElement, target: MenuTarget): void => {
     const pos = menuPosFor(el, menuItemCount(target))
@@ -882,6 +888,32 @@ function SidebarFloating({
       )
     }
     const { row } = target
+    const ended = endedTabOf(row, storeTabs, sessions)
+    if (ended) {
+      return (
+        <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              useStore.getState().activateTab(ended.id)
+              useStore.getState().restartActiveSession()
+            }}
+          >
+            Start again<span className="k">⇧⌘R</span>
+          </div>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              requestCloseTab(ended.id)
+            }}
+          >
+            Close<span className="k">⌘W</span>
+          </div>
+        </div>
+      )
+    }
     if (row.pending) {
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
@@ -1055,16 +1087,20 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
 }): JSX.Element {
-  const rows = useStore((s) => s.workspaceRows)
+  const listedRows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
   const butlerName = useStore((s) => s.settings.butler.name)
-  const butlerWorkspace = useStore((s) => s.butlerWorkspace)
+  const listedButler = useStore((s) => s.butlerWorkspace)
   const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
+  const { workspaceRows: rows, butlerWorkspace } = useMemo(
+    () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
+    [listedRows, listedButler, storeTabs]
+  )
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const selectedWs = useStore((s) => s.selectedWs)
@@ -1126,8 +1162,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     revealed.current = reveal
     const st = useStore.getState()
     const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
-    for (const w of everyWorkspaceRows(st)) {
-      const row = w.rows.find((r) => lookNow.tabOf(r) === reveal.tabId)
+    for (const w of everyWorkspaceRows(shownRows(st))) {
+      const row = w.rows.find(
+        (r) => (endedTabOf(r, st.tabs, st.sessions)?.id ?? lookNow.tabOf(r)) === reveal.tabId
+      )
       if (!row) continue
       setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
       const byId = new Map(w.rows.map((r) => [r.id, r]))
@@ -1166,7 +1204,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const actions = useMemo<SidebarActions>(() => {
     const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
-      const w = everyWorkspaceRows(useStore.getState()).find((w) =>
+      const w = everyWorkspaceRows(shownRows(useStore.getState())).find((w) =>
         w.rows.some((r) => r.id === id)
       )!
       const row = w.rows.find((r) => r.id === id)!
@@ -1293,18 +1331,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
     const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
       const { row } = node
-      const running = look.running(row)
-      const tabId = look.tabOf(row)
+      const ended = endedTabOf(row, storeTabs, sessions)
+      const running = !ended && look.running(row)
+      const tabId = ended?.id ?? look.tabOf(row)
       const calling = look.attentionOn(row.id, tabId)
       const sess = tabId ? look.sessionOn(tabId) : undefined
-      const stateCls = statusUnavailable(sess)
-        ? ''
-        : rowStateClass(running, sess?.status, row.pending, sess?.turnOver)
+      const stateCls = ended
+        ? rowStateClass(false, undefined)
+        : statusUnavailable(sess)
+          ? ''
+          : rowStateClass(running, sess?.status, row.pending, sess?.turnOver)
       const badge = sessionActivityBadge(sess, leftovers[row.id])
       const held = tabId ? machine?.held[tabId] : undefined
       const launching = resumeLaunch?.id === row.id
       const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-      const resumingNow = !running && !row.pending && (launching || look.hasAliveTab(row.id))
+      const resumingNow =
+        !ended && !running && !row.pending && (launching || look.hasAliveTab(row.id))
       const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
       const isCronRow =
         capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
@@ -1320,12 +1362,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             className={'ws-tab ' + shownCls + (active ? ' active' : '')}
             tabId={tabId}
             tooltip={
-              running || row.pending
-                ? undefined
-                : relTime(row.mtime, now.getTime()) +
-                  (row.invalidCwd
-                    ? ' — worktree deleted; click to rebuild and resume'
-                    : ' — click to resume')
+              ended
+                ? ENDED_ROW_TIP
+                : running || row.pending
+                  ? undefined
+                  : relTime(row.mtime, now.getTime()) +
+                    (row.invalidCwd
+                      ? ' — worktree deleted; click to rebuild and resume'
+                      : ' — click to resume')
             }
             cron={isCronRow}
             resident={!!row.resident}
@@ -1342,7 +1386,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             folded={folded}
             backend={showBackend ? row.backendId : undefined}
             startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
-            worktree={row.worktree}
+            worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
             memory={memoryShown(machine, tabId)}
             activity={rowActivityLine(shownCls, sess)}
             actions={actions}

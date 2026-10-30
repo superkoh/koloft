@@ -258,6 +258,18 @@ describe('PtyManager handles after the pty exits', () => {
     mgr.reapDead()
     expect(mgr.get(h.id)).toBeUndefined()
   })
+
+  it('says a pty ended by kill() was ended by Koloft, and one that exited on its own was not — the line between a closed tab and an unexpected exit', () => {
+    const mgr = new PtyManager()
+    const exits: { endedByKoloft: boolean }[] = []
+    mgr.on('exit', (e) => exits.push(e))
+    const killed = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    mgr.kill(killed.id)
+    mocks.state.exit?.({ exitCode: 0, signal: 1 })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    mocks.state.exit?.({ exitCode: 1 })
+    expect(exits.map((e) => e.endedByKoloft)).toEqual([true, false])
+  })
 })
 
 describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {

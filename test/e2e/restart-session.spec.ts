@@ -7,6 +7,7 @@ import { E2E_CLAUDE_ACCOUNT, writeClaudeWrapper, type E2EEnv } from './helpers/e
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   centerTerm,
+  ENDED_ROW_NOTE,
   gitCommitAll,
   gitInit,
   openMenu,
@@ -31,6 +32,7 @@ const SHIM_REGISTRATION_SETTLE_MS = 2000
 const OLD_PTY_REVERT_CAN_TRAIL_RELAUNCH_MS = 5000
 const TITLE_SAMPLE_INTERVAL_MS = 150
 const SHELL_COMMAND_NOT_FOUND_TOAST = 'exit code 127'
+const RESTART_COOLDOWN_OUTLASTED_MS = 1500
 
 function hasMalformedResume(calls: ClaudeCall[]): boolean {
   return calls.some((c) => {
@@ -153,13 +155,6 @@ async function backAfterRelaunch(page: Page, title: string): Promise<void> {
     /\bst-(working|waiting|idle)\b/,
     { timeout: 40_000 }
   )
-}
-
-async function resumeColdRow(page: Page, title: string): Promise<void> {
-  const row = page.locator('.ws .ws-tab', { hasText: title })
-  await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-  await row.click()
-  await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 40_000 })
 }
 
 function transcriptPath(env: E2EEnv, workspace: string, sessionId: string): string {
@@ -676,7 +671,9 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
   })
 
   test.describe('fault tolerance', () => {
-    test('T15: a respawn that dies at exec says so, and the row still resumes', async ({ env }) => {
+    test('T15: a respawn that dies at exec says so and keeps its tab, and ⇧⌘R there resumes the same id in it', async ({
+      env
+    }) => {
       test.setTimeout(180_000)
       const wrapper = writeClaudeWrapper(env)
       env.launchEnv.KOLOFT_CLAUDE_CMD = wrapper
@@ -693,11 +690,17 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
           timeout: 30_000
         })
         expect(readCalls(env)).toHaveLength(1)
-        await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
+        const row = page.locator('.ws .ws-tab', { hasText: SESSION_TITLE })
+        await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 20_000 })
+        await expect(row).toHaveClass(/\bactive\b/)
+        await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
 
         writeClaudeWrapper(env, wrapper)
-        await resumeColdRow(page, SESSION_TITLE)
+        await page.waitForTimeout(RESTART_COOLDOWN_OUTLASTED_MS)
+        await triggerRestart(app)
         const calls = await waitForCalls(env, 2)
+        await expect(row.locator('.ws-tab-sub')).not.toHaveText(ENDED_ROW_NOTE, { timeout: 20_000 })
+        await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
         expect(resumedId(calls[1])).toBe(first.sessionId)
         expect(fs.readFileSync(env.wrapperCalls, 'utf8')).toContain(`--resume ${first.sessionId}`)
       } finally {

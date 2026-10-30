@@ -4,6 +4,7 @@ import type {
   BackgroundItem,
   LeftoverProcess,
   SessionInfo,
+  SessionRow,
   SessionStatus,
   TabKind,
   WorkspaceRows
@@ -12,6 +13,7 @@ import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
+import { everyWorkspaceRows } from './butlerRows'
 
 export { statusUnavailable }
 
@@ -288,6 +290,74 @@ export function rowLookups<S extends { sessionId: string; tabId: string; alive: 
     attentionOn: (rowId, tabId) => attention.find((e) => markOn(e, tabId, rowId)),
     hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
   }
+}
+
+interface EndedTab {
+  id: string
+  title: string
+  sessionId?: string
+  ended?: { row: SessionRow; wsPath: string }
+}
+
+type Ended<T extends EndedTab> = T & { ended: NonNullable<T['ended']> }
+
+const isEnded = <T extends EndedTab>(t: T): t is Ended<T> => !!t.ended
+
+type LiveSession = { sessionId: string; tabId: string; alive: boolean }
+
+const liveElsewhere = (t: EndedTab, sessions: readonly LiveSession[]): boolean =>
+  !!t.sessionId && sessions.some((s) => s.alive && s.sessionId === t.sessionId && s.tabId !== t.id)
+
+export function endedTabOf<T extends EndedTab>(
+  row: { id: string },
+  tabs: readonly T[],
+  sessions: readonly LiveSession[]
+): Ended<T> | undefined {
+  const ended = tabs.find(
+    (t): t is Ended<T> => isEnded(t) && (t.id === row.id || t.sessionId === row.id)
+  )
+  return ended && !liveElsewhere(ended, sessions) ? ended : undefined
+}
+
+export function endedTabsLiveElsewhere<T extends EndedTab>(
+  tabs: readonly T[],
+  sessions: readonly LiveSession[]
+): Ended<T>[] {
+  return tabs.filter((t): t is Ended<T> => isEnded(t) && liveElsewhere(t, sessions))
+}
+
+export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): WorkspaceRows[] {
+  const ended = tabs.filter(isEnded)
+  if (!ended.length) return all
+  const shown = new Set(all.flatMap((w) => w.rows.map((r) => r.id)))
+  const lost = ended.filter(
+    (t) => ![t.id, t.sessionId, t.ended.row.id].some((id) => id !== undefined && shown.has(id))
+  )
+  if (!lost.length) return all
+  return all.map((w) => {
+    const here = lost.filter((t) => t.ended.wsPath === w.workspace.path)
+    if (!here.length) return w
+    const kept = here.map(({ title, ended: { row } }): SessionRow => ({
+      ...row,
+      title: row.pending ? title : row.title,
+      running: false,
+      pending: false
+    }))
+    return { ...w, rows: [...kept, ...w.rows] }
+  })
+}
+
+export function shownRows(s: {
+  workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
+  tabs: readonly EndedTab[]
+}): { workspaceRows: WorkspaceRows[]; butlerWorkspace: WorkspaceRows | null } {
+  const every = everyWorkspaceRows(s)
+  const all = withEndedRows(every, s.tabs)
+  if (all === every) return { workspaceRows: s.workspaceRows, butlerWorkspace: s.butlerWorkspace }
+  return s.butlerWorkspace
+    ? { workspaceRows: all.slice(0, -1), butlerWorkspace: all[all.length - 1] }
+    : { workspaceRows: all, butlerWorkspace: null }
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {

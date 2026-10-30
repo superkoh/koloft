@@ -3,6 +3,7 @@ import { test, expect } from './helpers/app'
 import type { Locator, Page } from '@playwright/test'
 import {
   centerTerm,
+  ENDED_ROW_NOTE,
   killSession,
   layoutOnDisk,
   openMenu,
@@ -570,7 +571,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await closeDiscardingEdits(app)
   })
 
-  test('a session killed while its Workbench has unsaved work asks at once — Keep for later, Discard or Save, with no Cancel as the tab is already gone — and Save writes the file', async ({
+  test('a session killed while its Workbench has unsaved work keeps its tab and the work and asks nothing; closing that tab asks Cancel, Discard or Save & close, and Save writes the file', async ({
     app,
     page,
     env
@@ -587,18 +588,25 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
 
     killSession(session.pid, env)
 
-    await expect(modal(page)).toBeVisible({ timeout: 30_000 })
+    await expect(wsRows(page, 'ws-a').locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, {
+      timeout: 30_000
+    })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/)
+    await expect(modal(page)).toHaveCount(0)
+    expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+
+    await centerTerm(page).click()
+    await sendShortcut(app, 'shortcut:close-tab')
+    await expect(modal(page)).toBeVisible({ timeout: 20_000 })
     await expect(modal(page)).toContainText('config/app.json')
     await expect(modal(page)).not.toContainText(fx.root)
     expect(await modal(page).locator('button').allTextContents()).toEqual([
-      'Keep for later',
+      'Cancel',
       'Discard',
-      'Save'
+      'Save & close'
     ])
-    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/, { timeout: 20_000 })
-    expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
 
-    await modal(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await modal(page).getByRole('button', { name: 'Save & close', exact: true }).click()
     await expect(modal(page)).toHaveCount(0, { timeout: 20_000 })
     await expect.poll(() => fs.readFileSync(ed.config, 'utf8'), { timeout: 20_000 }).toBe(mine)
 

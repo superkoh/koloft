@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
+  closeKeptTab,
   gitInit,
   killSession,
   menuItemTexts,
@@ -101,7 +102,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     }
   })
 
-  test('T-LIFE-03: a launch that dies before binding leaves nothing behind, and the exit is said out loud', async ({
+  test('T-LIFE-03: a launch that dies before binding says so out loud and keeps one row with its screen, until ⌘W leaves nothing behind', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -116,6 +117,14 @@ test.describe('pending row: what a launch owns before Claude reports a session i
         'Claude closed before the session started (exit code 1)',
         { timeout: 20_000 }
       )
+      const kept = page.locator('.ws .ws-tab')
+      await expect(kept).toHaveCount(1)
+      await expect(kept).toHaveClass(/\bcold\b/)
+      await expect(kept).not.toHaveClass(/st-pending/)
+      await expect(kept.locator('.ws-tab-sub')).toHaveText('main · exited (code 1)')
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+
+      await sendShortcut(app, 'shortcut:close-tab')
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
     } finally {
@@ -123,7 +132,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     }
   })
 
-  test('a session you watch that leaves while still starting puts you back on its folder page, and never opens the butler', async ({
+  test('a session you watch that is killed while still starting keeps its row; closing it puts you back on its folder page, and never opens the butler', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -138,6 +147,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       const [call] = await waitForCalls(env, 1)
 
       killSession(call.pid, env)
+      await closeKeptTab(page, page.locator('.ws .ws-tab'))
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
       await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
     } finally {
