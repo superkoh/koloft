@@ -85,6 +85,12 @@ exit 0
 `
 }
 
+export const REMOTE_OPEN_SHIM = `${OPEN_SHIM_HEAD}
+[ -n "$KOLOFT_TAB_ID" ] && [ -x "$self_dir/koloft" ] || passthrough "$@"
+${OPEN_SHIM_TARGET}
+exec "$self_dir/koloft" open "$abs$url"
+`
+
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
 
 // PLATFORM§2
