@@ -16,6 +16,7 @@ import type { E2EEnv } from '../helpers/env'
 import { fetchedAtMs } from '../helpers/gitFixture'
 import {
   centerTerm,
+  closeKeptTab,
   closeMenu,
   FAKE_SESSION_TITLE,
   fetchNowInGitPanel,
@@ -65,6 +66,7 @@ async function seedSessionKilledThenRemovedFromListByHand(
   const calls = await waitForCalls(env, 1)
   killSession(calls[calls.length - 1].pid, env)
   await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+  await closeKeptTab(page, row)
 
   await openMenu(page, row)
   await page.locator('.menu .mi', { hasText: 'Remove from list' }).click()

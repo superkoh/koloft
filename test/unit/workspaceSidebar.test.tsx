@@ -77,6 +77,7 @@ describe('WorkspaceSidebar (C2): a row redraws only when what it shows changes',
       <WorkspaceSidebar
         onNewSession={() => {}}
         namedMethods={null}
+        soleMethod="claude"
         onNewWorktreeSession={() => {}}
         onRestoreSession={() => {}}
         onScheduledJobs={() => {}}
@@ -116,6 +117,7 @@ function renderSidebar(): HTMLElement {
     <WorkspaceSidebar
       onNewSession={() => {}}
       namedMethods={null}
+      soleMethod="claude"
       onNewWorktreeSession={() => {}}
       onRestoreSession={() => {}}
       onScheduledJobs={() => {}}

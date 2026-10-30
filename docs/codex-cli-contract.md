@@ -274,6 +274,10 @@ open in another app — Close it there and press R to continue here"; pressing `
 the old app-server had exited resumed in 0.2 s, and a resume ~20 s after the kill was
 normal. With four app-servers resuming one thread at once, three showed the same lock.
 
+**Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C and Ctrl+D at an
+empty composer (one press is enough; it prints the `codex resume <id>` line first).
+Measured 2026-10-29, codex 0.166.0, a python pty 80×24, the owner's own `CODEX_HOME`.
+
 Koloft's own stop, ownership and retry rules are product rules, covered by
 `test/unit/codexTransport.test.ts`, not Codex facts.
 

@@ -162,6 +162,39 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
+  test('E-RC-08: a remote Codex whose screen on this Mac dies before its session starts keeps its tab, row and last screen, and ⇧⌘R starts it again in that tab', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const failOnStart = path.join(env.home, 'fake-codex-exit')
+    fs.writeFileSync(failOnStart, '3')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Codex closed before the session started (exit code 3)',
+        { timeout: 60_000 }
+      )
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveCount(1)
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 3)')
+      const [tabId] = await termIds(page)
+      expect(await terminalText(page, tabId)).toContain('Codex fixture startup failure')
+
+      fs.rmSync(failOnStart)
+      const servers = machineServers(env).length
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(servers + 1)
+      await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
+      expect(await termIds(page)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // ADR-0039 CODEX§16
   test("E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft, and Koloft's Codex home there holds the koloft skill; and when its ssh line drops, the next prompt still gets its answer", async ({
     env

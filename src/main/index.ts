@@ -18,7 +18,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
@@ -382,6 +382,7 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountMessage,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -418,6 +419,8 @@ import type {
   BrowserCdpOpResult,
   ScreenAnswer,
   ScreenRequest,
+  TerminalExit,
+  UnexpectedExitScreen,
   BrowserOpenRequest,
   BrowserOverlayOpen,
   BrowserStripTarget,
@@ -651,6 +654,8 @@ function showAskOnItsRow(tabId: string): void {
     sendToRenderer(CH.sessions.update, onSessionsChanged())
 }
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
+sessionBackends.noAccountMessage = noAccountNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -3007,6 +3012,15 @@ app.whenReady().then(() => {
     butler: () => butler
   })
   ptyMgr.on('exit', (e) => {
+    const exited = ptyMgr.get(e.id)
+    // CC§12 CODEX§5 MUSE§1 AGY§1
+    const unexpected =
+      !e.endedByKoloft &&
+      !closedTabs.has(e.id) &&
+      !quitCommitted &&
+      exitedAbnormally(e) &&
+      !!backendIdOf(exited?.kind)
+    if (unexpected && exited) unexpectedExits.set(e.id, unexpectedExitHeading(exited, e))
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     closedTabs.delete(e.id)
     const exit: TabExit = {
@@ -3064,7 +3078,8 @@ app.whenReady().then(() => {
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
-    sendToRenderer(CH.terminal.exit, e)
+    const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {
     const all = onSessionsChanged()
@@ -3125,6 +3140,7 @@ app.whenReady().then(() => {
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    noAccountMessage: noAccountNow,
     holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
     holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
     hookRegDir: hookPaths.regDir
@@ -4215,7 +4231,24 @@ function overlayListenerLost(): void {
 const cdpOps = new Map<string, (res: BrowserCdpOpResult) => void>()
 const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
+const unexpectedExits = new Map<string, string>()
+let agentExitLog: ((line: string) => void) | undefined
 let windowOpenedAt = 0
+
+function unexpectedExitHeading(h: PtyHandle, e: TerminalExit): string {
+  const how = e.signal ? `was killed by signal ${e.signal}` : `exited with code ${e.exitCode}`
+  const where = h.remoteHost ? `${h.remoteHost}:${h.cwd}` : h.cwd
+  const after = Math.round((Date.now() - h.startedAt) / 1000)
+  return `${h.kind} tab ${h.id} ${how} in ${where}, ${after}s after it started; its last screen:`
+}
+
+function logUnexpectedExit(screen: UnexpectedExitScreen): void {
+  const heading = unexpectedExits.get(screen.id)
+  if (!heading) return
+  unexpectedExits.delete(screen.id)
+  agentExitLog ??= signalLog(path.join(app.getPath('userData'), 'agent-exits.log'))
+  agentExitLog([heading, ...screen.lines.map((l) => `  | ${l}`)].join('\n'))
+}
 const SCREEN_ANSWER_BUDGET_MS = 3000
 
 async function screenLines(tabId: string): Promise<string[] | undefined> {
@@ -5341,6 +5374,7 @@ const hosts = new Hosts(
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId) =>
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+        noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(
@@ -5985,6 +6019,11 @@ function registerIpc(): void {
     if (!pending) return
     screenAsks.delete(a.requestId)
     pending(a)
+  })
+  ipcMain.on(CH.terminal.unexpectedExit, (_e, screen: unknown) => {
+    const s = screen as UnexpectedExitScreen
+    if (!s || typeof s.id !== 'string' || !Array.isArray(s.lines)) return
+    logUnexpectedExit({ id: s.id, lines: s.lines.map(String) })
   })
   ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult

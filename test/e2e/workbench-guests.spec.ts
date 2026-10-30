@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import {
   centerTerm,
+  closeKeptTab,
   killSession,
   runIn,
   sendShortcut,
@@ -231,6 +232,7 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     killSession(session.pid, env)
     const row = wsRows(page, 'ws-a').first()
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+    await closeKeptTab(page, row)
     await expect(workbenchPanel(page)).not.toBeVisible()
 
     await row.click()

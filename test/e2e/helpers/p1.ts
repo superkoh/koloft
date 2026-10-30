@@ -811,6 +811,18 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
   return texts.map((t) => t.replace(/\s+/g, ' ').trim())
 }
 
+export const ENDED_ROW_NOTE = /· (exited \(code \d+\)|killed \(signal \d+\))$/
+
+export async function closeKeptTab(page: Page, row: Locator): Promise<void> {
+  await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 40_000 })
+  await openMenu(page, row)
+  await page.locator('.menu .mi', { hasText: /^Close/ }).click()
+  await expect(row.locator('.ws-tab-sub', { hasText: ENDED_ROW_NOTE })).toHaveCount(0, {
+    timeout: 20_000
+  })
+  await expect(row.and(page.locator('.ws-tab:not(.cold)'))).toHaveCount(0, { timeout: 20_000 })
+}
+
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)

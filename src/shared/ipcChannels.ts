@@ -14,7 +14,8 @@ export const CH = {
     cwd: 'terminal:cwd',
     spawned: 'terminal:spawned',
     screen: 'terminal:screen',
-    screenDone: 'terminal:screen-done'
+    screenDone: 'terminal:screen-done',
+    unexpectedExit: 'terminal:unexpected-exit'
   },
   app: {
     isDev: 'app:isDev',

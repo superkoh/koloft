@@ -202,7 +202,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-20: a remote claude that dies without an end report leaves its tab saying it ended with its exit code, and raises the “exited” mark, drawn as a red dot on its row and said in an OS notification, once the machine’s tmux list has lost it', async ({
+  test('E-RW-20: a remote claude that dies without an end report keeps its tab saying it ended with its exit code, its row reading “exited (code 137)”, and raises the “exited” mark, drawn as a red dot on its row and said in an OS notification, once the machine’s tmux list has lost it', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -220,6 +220,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 30_000 })
         .toContain('stopped with exit code 137')
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)')
 
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
@@ -254,7 +255,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
-        .toContain('press Enter to close')
+        .toContain('stopped with exit code')
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')

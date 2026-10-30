@@ -165,7 +165,7 @@ export interface CodexLaunchLineSpec {
 export function codexLaunchLine(s: CodexLaunchLineSpec): string {
   const start = `ssh -tt ${s.sshOptions.join(' ')} ${shq(s.host)} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" start"`
   return (
-    `${tabPushed(s)}${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above; press Enter to close"; read -r _; exit "$c"; }; ` +
+    `${tabPushed(s)}${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above"; exit "$c"; }; ` +
     `clear; exec ${s.tui.map(shq).join(' ')}`
   )
 }

@@ -2,7 +2,7 @@ import type { SessionRow } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
 import { adoptionSettled } from './adoption'
 import { resumeInFlight, resumeSession, wakeTab } from './resumeFlow'
-import { isOrphanRow, liveTabOf, nextWaitingTab } from './sessionRows'
+import { endedTabOf, isOrphanRow, liveTabOf, nextWaitingTab } from './sessionRows'
 import { useStore } from './store'
 
 export function offerForceCloseUnlessMainHasBoundIt(row: SessionRow): void {
@@ -37,6 +37,11 @@ export function visitNextWaiting(): void {
 
 export function openSessionRow(row: SessionRow, wsPath: string): void {
   const st = useStore.getState()
+  const ended = endedTabOf(row, st.tabs, st.sessions)
+  if (ended) {
+    st.activateTab(ended.id)
+    return
+  }
   if (row.pending) {
     st.activateTab(row.id)
     return

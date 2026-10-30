@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import type { SessionInfo, UpdateCheckResult, WorkspaceRows } from '@shared/types'
 import {
   boundSessionId,
+  launchToStartAgain,
   tabForSession,
   useStore,
   openInterceptedFile,
@@ -65,6 +66,80 @@ describe('store: claude → shell revert, only after a session actually bound', 
     expect(t.kind).toBe('shell')
     expect(t.title).toBe('Terminal')
     expect(t.sessionId).toBeUndefined()
+  })
+
+  it('keeps a tab whose agent exited unexpectedly as that agent, dead, with the row and workspace it had, when its session leaves the list', () => {
+    const s = useStore.getState()
+    const row = { id: 'sid-end1', title: 'My run', worktree: 'main', cwd: '/w', running: true }
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        {
+          workspace: { path: '/w', missing: false, isGit: true, hasHistory: true },
+          rows: [{ ...row, invalidCwd: false, mtime: 0, backendId: 'codex', host: 'local' }]
+        }
+      ]
+    })
+    s.addTab({ id: 'end1', kind: 'codex', title: 'My run', cwd: '/w', alive: true })
+    s.setSessions([session('end1')])
+    s.keepEndedTab('end1', 'exited (code 1)')
+    s.setTabAlive('end1', true)
+    s.setSessions([])
+    const t = useStore.getState().tabs.find((x) => x.id === 'end1')!
+    expect(t).toMatchObject({
+      kind: 'codex',
+      title: 'My run',
+      alive: false,
+      sessionId: 'sid-end1',
+      ended: { note: 'exited (code 1)', wsPath: '/w', row }
+    })
+  })
+
+  it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        { workspace: { path: '/w', missing: false, isGit: true, hasHistory: false }, rows: [] }
+      ]
+    })
+    const s = useStore.getState()
+    const launch = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1' }
+    s.addTab({ id: 'end2', kind: 'codex', title: 'Codex', cwd: '/w', alive: true, launch })
+    s.addTab({ id: 'end3', kind: 'claude', title: 'Claude', cwd: '/w/.wt/pr-7', alive: true })
+    expect(s.keepEndedTab('end2', 'exited (code 3)')).toBe(true)
+    expect(s.keepEndedTab('end3', 'exited (code 1)')).toBe(true)
+    const ended = (id: string): unknown => useStore.getState().tabs.find((x) => x.id === id)!.ended
+    expect(ended('end2')).toMatchObject({
+      wsPath: '/w',
+      row: { id: 'end2', title: 'Codex', worktree: 'fix-1', backendId: 'codex' }
+    })
+    expect(ended('end3')).toMatchObject({ wsPath: '/w', row: { worktree: 'pr-7' } })
+  })
+
+  it('starts a launch that got a worktree from Koloft again in that worktree, so ⇧⌘R never makes a second one; a launch whose agent makes its own keeps its name', () => {
+    const codex = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1', firstPrompt: 'go' }
+    expect(launchToStartAgain(codex, '/w/.wt/fix-1')).toEqual({
+      kind: 'codex',
+      cwd: '/w/.wt/fix-1',
+      worktree: undefined,
+      worktreeResourceId: undefined,
+      firstPrompt: 'go'
+    })
+    const rebuilt = { kind: 'muse' as const, cwd: '/w', worktreeResourceId: 'r1' }
+    expect(launchToStartAgain(rebuilt, '/w/.wt/r1')).toMatchObject({
+      cwd: '/w/.wt/r1',
+      worktreeResourceId: undefined
+    })
+    const claude = { kind: 'claude' as const, cwd: '/w', worktree: 'fix-2' }
+    expect(launchToStartAgain(claude, '/w')).toBe(claude)
+  })
+
+  it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {
+    useStore.setState({ butlerWorkspace: null, workspaceRows: [] })
+    const s = useStore.getState()
+    s.addTab({ id: 'end4', kind: 'codex', title: 'Codex', cwd: '/elsewhere', alive: true })
+    expect(s.keepEndedTab('end4', 'exited (code 1)')).toBe(false)
+    expect(useStore.getState().tabs.find((x) => x.id === 'end4')).toMatchObject({ alive: true })
   })
 
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {
