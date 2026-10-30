@@ -387,7 +387,6 @@ export default function App(): JSX.Element {
     () => launchMenus(sessionMethods, probed && ((b) => probed[b])),
     [probed, sessionMethods]
   )
-  const { listed, sole: soleMethod } = launchable.local
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -1310,13 +1309,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const paletteChoice: AgentChoice = {
-    listed,
-    lead: soleMethod,
+  const paletteChoice = (host: HostId): AgentChoice => ({
+    listed: launchable[host].listed,
+    lead: launchable[host].sole,
     defaultBackend: sessionMethods.defaultBackend,
     issue: () => '',
     note: () => ''
-  }
+  })
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landed.treeRoot,
@@ -1927,7 +1926,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              choice={paletteChoice}
+              choices={{ local: paletteChoice('local'), ssh: paletteChoice('ssh') }}
             />
           )}
           {newRequest && (

@@ -304,11 +304,12 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
   })
 })
 
+const methods = (defaultBackend: BackendId, codex = true) => ({
+  defaultBackend,
+  enabled: { claude: true, codex, muse: true, agy: true }
+})
+
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
-  const methods = (defaultBackend: BackendId, codex = true) => ({
-    defaultBackend,
-    enabled: { claude: true, codex, muse: true, agy: true }
-  })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 
   it('takes the saved default whenever it can run', () => {
@@ -336,10 +337,6 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
 })
 
 describe('launchMenus (the agents a New session menu offers, by where the workspace is)', () => {
-  const methods = (defaultBackend: BackendId) => ({
-    defaultBackend,
-    enabled: { claude: true, codex: true, muse: true, agy: true }
-  })
   const only =
     (...ids: BackendId[]) =>
     (b: BackendId): boolean =>

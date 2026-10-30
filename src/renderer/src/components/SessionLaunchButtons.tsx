@@ -12,6 +12,7 @@ import {
   BACKEND_LABEL,
   backendAvailable,
   byBackend,
+  checkedOnThisMac,
   effectiveBackend,
   listedBackends
 } from '@shared/sessionBackend'
@@ -38,10 +39,12 @@ export function useLaunchChoice(host: HostId) {
   const { installed: detected, checkFailed } = useInstalledBackends(retry)
   const accountIssue = useAccountIssue()
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
-  const listed = listedBackends(methods, detected && ((b) => backendAvailable(detected, b)), host)
+  const listedOn = (on: HostId): BackendId[] =>
+    listedBackends(methods, detected && ((b) => backendAvailable(detected, b)), on)
+  const listed = listedOn(host)
   const setupIssue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
-    if (on === 'ssh') return ''
+    if (!checkedOnThisMac(backend, on)) return ''
     const result = found(backend)
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
@@ -51,7 +54,7 @@ export function useLaunchChoice(host: HostId) {
     setupIssue(backend, on) ? 'Unavailable' : accountIssue(backend) ? 'No account' : ''
   const choice = ({
     on = host,
-    backends = listed,
+    backends = listedOn(on),
     chosen
   }: { on?: HostId; backends?: BackendId[]; chosen?: BackendId } = {}): AgentChoice => ({
     listed: backends,
