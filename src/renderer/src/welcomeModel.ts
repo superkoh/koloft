@@ -23,10 +23,8 @@ export interface AgentTally extends FolderUse {
   folders: number
 }
 
-export function tallyAgents(
-  found: readonly DiscoveredFolder[]
-): Partial<Record<BackendId, AgentTally>> {
-  const tally: Partial<Record<BackendId, AgentTally>> = {}
+export function tallyAgents(found: readonly DiscoveredFolder[]): Tally {
+  const tally: Tally = {}
   for (const f of found) {
     for (const [agent, use] of Object.entries(f.agents) as [BackendId, FolderUse][]) {
       const had = tally[agent]
@@ -40,25 +38,35 @@ export function tallyAgents(
   return tally
 }
 
+export type Tally = Partial<Record<BackendId, AgentTally>>
+
 export function lastUsedAgent(
-  found: readonly DiscoveredFolder[],
-  installed: readonly BackendAvailability[]
+  tally: Tally,
+  installed: BackendAvailability[]
 ): BackendId | undefined {
-  const tally = tallyAgents(found)
-  return SESSION_BACKENDS.filter((b) => tally[b] && backendAvailable([...installed], b)).sort(
+  return SESSION_BACKENDS.filter((b) => tally[b] && backendAvailable(installed, b)).sort(
     (a, b) => tally[b]!.mtime - tally[a]!.mtime
   )[0]
 }
 
-export function defaultAgent(
-  found: readonly DiscoveredFolder[],
-  installed: readonly BackendAvailability[]
-): BackendId {
+export function defaultAgent(tally: Tally, installed: BackendAvailability[]): BackendId {
   return (
-    lastUsedAgent(found, installed) ??
-    SESSION_BACKENDS.find((b) => backendAvailable([...installed], b)) ??
+    lastUsedAgent(tally, installed) ??
+    SESSION_BACKENDS.find((b) => backendAvailable(installed, b)) ??
     SESSION_BACKENDS[0]
   )
+}
+
+export function folderUseOf(path: string, rows: readonly SessionRow[]): DiscoveredFolder {
+  const agents: DiscoveredFolder['agents'] = {}
+  for (const r of rows) {
+    const had = agents[r.backendId]
+    agents[r.backendId] = {
+      sessions: (had?.sessions ?? 0) + 1,
+      mtime: Math.max(had?.mtime ?? 0, r.mtime)
+    }
+  }
+  return { path, sessions: rows.length, mtime: Math.max(0, ...rows.map((r) => r.mtime)), agents }
 }
 
 export function defaultAccountName(

@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from '
 import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
-import { BACKEND_LABEL, SESSION_BACKENDS, backendAvailable } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  BACKEND_PRODUCT,
+  SESSION_BACKENDS,
+  backendAvailable
+} from '@shared/sessionBackend'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { useStore } from '../store'
@@ -15,6 +20,7 @@ import { IconAiStart, IconAssist, IconCheck, IconFolderOpen, IconLoading, IconPl
 import {
   defaultAccountName,
   defaultAgent,
+  folderUseOf,
   foldersToPin,
   lastUsedAgent,
   resumeTarget,
@@ -39,13 +45,6 @@ const MAKER: Record<BackendId, string> = {
   agy: 'Google'
 }
 
-const AGENT_NAME: Record<BackendId, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  muse: 'Muse',
-  agy: 'Antigravity'
-}
-
 const SIGN_IN_HOW: Record<BackendId, string> = {
   claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',
   codex:
@@ -56,6 +55,7 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
+const SIGN_IN_SETTLE_MS = 4000
 const LEAVE_MS = 650
 const SCAN_WAIT_MS = 6000
 const SCAN_POLL_MS = 120
@@ -175,23 +175,27 @@ export function Welcome({
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
   const setLoginProgress = useStore((s) => s.setLoginProgress)
+  const clearLogin = useStore((s) => s.clearLogin)
   const addTab = useStore((s) => s.addTab)
   const showSignInTab = useStore((s) => s.showSignInTab)
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const activeTabId = useStore((s) => s.activeTabId)
+  const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
+  const skipPermissions = useStore((s) => s.settings.skipPermissions)
 
   const [step, setStep] = useState<Step>(1)
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
   const [pinning, setPinning] = useState(false)
   const [agent, setAgent] = useState<BackendId | null>(null)
   const [signError, setSignError] = useState<string | null>(null)
-  const [signingIn, setSigningIn] = useState(false)
+  const [signingFor, setSigningFor] = useState<BackendId | null>(null)
   const [peek, setPeek] = useState(false)
   const [pending, setPending] = useState<Launch | null>(null)
   const [chip, setChip] = useState<BackendId | null>(null)
   const [prompt, setPrompt] = useState('')
   const [leaving, setLeaving] = useState(false)
   const started = useRef(false)
+  const pinTried = useRef(false)
 
   useEffect(() => {
     void window.api.workspace.discover().then(setFound, () => setFound([]))
@@ -205,47 +209,81 @@ export function Welcome({
     [workspaceRows]
   )
   const allRows = folders.flatMap((f) => f.rows)
-  const tally = useMemo(() => tallyAgents(found ?? []), [found])
-  const emptyMac = found !== null && found.length === 0
-  const lastUsed = installed && found ? lastUsedAgent(found, installed) : undefined
-  const pick: BackendId = agent ?? (installed ? defaultAgent(found ?? [], installed) : 'claude')
+  const known = useMemo(() => {
+    const seen = new Set((found ?? []).map((f) => f.path))
+    return [
+      ...(found ?? []),
+      ...folders
+        .filter((f) => f.rows.length > 0 && !seen.has(f.path))
+        .map((f) => folderUseOf(f.path, f.rows))
+    ]
+  }, [found, folders])
+  const tally = useMemo(() => tallyAgents(known), [known])
+  const emptyMac = found !== null && known.length === 0
+  const lastUsed = installed ? lastUsedAgent(tally, installed) : undefined
+  const pick: BackendId = agent ?? (installed ? defaultAgent(tally, installed) : 'claude')
   const isInstalled = (b: BackendId): boolean => !!installed && backendAvailable(installed, b)
   const signedIn = (b: BackendId): boolean => !!accounts && hasUsableAccount(accounts, b)
   const target = resumeTarget(allRows, Date.now())
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
   const newAgent = chip ?? pick
-  const signTabOpen = signingIn && pick !== 'claude' && !!signInTabId
+  const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined
+  const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
+  const signTabOpen = !!signingFor && signingFor !== 'claude' && !!signInTabId
+  const waiting = claudeBusy || signTabOpen
   const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
   useEffect(() => {
-    if (step !== 2 || found === null || folders.length > 0 || pinning) return
+    if (step !== 2 || found === null || folders.length > 0 || pinTried.current) return
     const pins = foldersToPin(found, Date.now())
     if (pins.length === 0) return
+    pinTried.current = true
     setPinning(true)
     void (async () => {
-      for (const f of pins) await window.api.workspace.add(f.path)
-      await scanned(pins.map((f) => f.path))
-      const now = Date.now()
-      const lists = await Promise.all(pins.map((f) => window.api.workspace.historyRows(f.path)))
-      await window.api.workspace.adopt(
-        lists
-          .flatMap((rows) => rowsToAdopt(rows, now))
-          .map((r) => ({ id: r.id, backendId: r.backendId }))
-      )
-      setPinning(false)
+      try {
+        for (const f of pins) await window.api.workspace.add(f.path)
+        await scanned(pins.map((f) => f.path))
+        const now = Date.now()
+        const lists = await Promise.all(pins.map((f) => window.api.workspace.historyRows(f.path)))
+        await window.api.workspace.adopt(
+          lists
+            .flatMap((rows) => rowsToAdopt(rows, now))
+            .map((r) => ({ id: r.id, backendId: r.backendId }))
+        )
+      } catch {
+        useStore.getState().showToast('Some sessions could not be read. The folders are pinned.')
+      } finally {
+        setPinning(false)
+      }
     })()
-  }, [step, found, folders.length, pinning])
+  }, [step, found, folders.length])
+
+  useEffect(() => {
+    if (!signingFor || waiting || signedIn(signingFor)) return
+    const t = setTimeout(() => setSigningFor(null), SIGN_IN_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [signingFor, waiting, accounts])
 
   const finish = (): void => {
     if (leaving) return
     setLeaving(true)
-    setTimeout(() => update({ onboardingSeen: true }), LEAVE_MS)
+    setTimeout(() => {
+      setWelcomeReplay(false)
+      update({ onboardingSeen: true })
+    }, LEAVE_MS)
   }
 
   const run = (l: Launch): void => {
     if (started.current) return
+    const where = (targetFolder ?? folders[0])?.path
+    if (l.kind === 'fresh' && !where) {
+      setPending(null)
+      setStep(2)
+      return
+    }
     started.current = true
+    if (skipPermissions) update({ skipPermissionsAgreed: true })
     if (l.kind === 'resume') {
       void resumeSession({
         id: l.row.id,
@@ -253,9 +291,8 @@ export function Welcome({
         title: l.row.title,
         restore: true
       })
-    } else {
-      const where = (targetFolder ?? folders[0])?.path
-      if (where) onStart(where, l.backend, l.prompt || undefined)
+    } else if (where) {
+      onStart(where, l.backend, l.prompt || undefined)
     }
     finish()
   }
@@ -268,25 +305,27 @@ export function Welcome({
       target && !text
         ? { kind: 'resume', row: target }
         : { kind: 'fresh', backend: newAgent, prompt: text }
-    if (!signedIn(backendOf(l))) {
+    const b = backendOf(l)
+    if (!isInstalled(b) || !signedIn(b)) {
       setPending(l)
-      setAgent(backendOf(l))
+      setAgent(b)
       setStep(3)
       return
     }
     run(l)
   }
 
-  const ready = step === 3 && signedIn(pick)
+  const goal = signingFor ?? (pending ? backendOf(pending) : null)
+  const ready = step === 3 && goal !== null && signedIn(goal)
   useEffect(() => {
-    if (!ready || (!signingIn && !pending)) return
+    if (!ready || !goal) return
     const t = setTimeout(() => {
-      setSigningIn(false)
-      if (pending && backendOf(pending) === pick) runRef.current(pending)
+      setSigningFor(null)
+      if (pending && backendOf(pending) === goal) runRef.current(pending)
       else setStep(4)
     }, AUTO_NEXT_MS)
     return () => clearTimeout(t)
-  }, [ready, signingIn, pending, pick])
+  }, [ready, goal, pending])
 
   const signIn = async (): Promise<void> => {
     setSignError(null)
@@ -296,9 +335,10 @@ export function Welcome({
     if (pick === 'claude') {
       beginLogin(again)
       setLoginProgress({ phase: 'starting', name })
-      setSigningIn(true)
+      setSigningFor('claude')
       if ((await window.api.accounts.startLogin(name, !!again)) !== 'ok') {
-        setSigningIn(false)
+        clearLogin()
+        setSigningFor(null)
         setSignError(failed)
       }
       return
@@ -308,7 +348,7 @@ export function Welcome({
       setSignError(failed)
       return
     }
-    setSigningIn(true)
+    setSigningFor(pick)
     setPeek(false)
     showSignInTab(r.tabId)
     addTab({
@@ -328,14 +368,13 @@ export function Welcome({
     addTab({
       id: r.tabId,
       kind: 'shell',
-      title: `Install ${AGENT_NAME[b]}`,
+      title: `Install ${BACKEND_PRODUCT[b]}`,
       cwd: r.cwd,
       alive: true
     })
   }
 
-  const loginPhase = pick === 'claude' ? login?.progress?.phase : undefined
-  const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
+  const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'
 
   const primary = ((): { label: string; go: () => void; busy?: boolean; disabled?: boolean } => {
     if (step === 1) return { label: 'Continue', go: () => setStep(2), disabled: installed === null }
@@ -350,8 +389,10 @@ export function Welcome({
           label: pending ? 'Start' : 'Continue',
           go: () => (pending ? run(pending) : setStep(4))
         }
-      if (claudeBusy) return { label: 'Waiting for your browser…', go: () => undefined, busy: true }
-      if (signTabOpen) return { label: 'Show the sign-in tab', go: () => setPeek(false) }
+      if (claudeBusy && pick === 'claude')
+        return { label: 'Waiting for your browser…', go: () => undefined, busy: true }
+      if (signTabOpen && pick === signingFor)
+        return { label: 'Show the sign-in tab', go: () => setPeek(false) }
       return {
         label: isInstalled(pick)
           ? `Sign in to ${BACKEND_LABEL[pick]}`
@@ -377,7 +418,8 @@ export function Welcome({
         return
       }
       if (e.key !== 'Enter' || e.isComposing) return
-      if ((e.target as HTMLElement | null)?.tagName === 'INPUT' && step !== 4) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'BUTTON' || (tag === 'INPUT' && step !== 4)) return
       e.preventDefault()
       const p = primaryRef.current
       if (!p.disabled && !p.busy) p.go()
@@ -448,7 +490,7 @@ export function Welcome({
                     <div className="wl-agent-mark">
                       <SessionBackendIcon backend={b} size={34} decorative />
                     </div>
-                    <div className="wl-agent-name">{AGENT_NAME[b]}</div>
+                    <div className="wl-agent-name">{BACKEND_PRODUCT[b]}</div>
                     <div className="wl-agent-maker">{MAKER[b]}</div>
                     <div className={'wl-agent-state' + (there ? ' ok' : '')}>
                       {installed === null ? (
@@ -543,7 +585,7 @@ export function Welcome({
                   }}
                 >
                   <SessionBackendIcon backend={b} size={13} decorative />
-                  {AGENT_NAME[b]}
+                  {BACKEND_PRODUCT[b]}
                   {b === lastUsed && <em>last used</em>}
                 </button>
               ))}
@@ -556,12 +598,12 @@ export function Welcome({
                 <div className="wl-sign-done">
                   <IconCheck size={18} /> Signed in to {BACKEND_LABEL[pick]}
                 </div>
-              ) : loginPhase === 'failed' ? (
+              ) : claudeFailed ? (
                 <div className="wl-sign-text bad">
                   The sign-in did not finish.
                   {login?.progress?.tail && <pre>{login.progress.tail}</pre>}
                 </div>
-              ) : claudeBusy ? (
+              ) : claudeBusy && pick === 'claude' ? (
                 <div className="wl-sign-text">
                   {loginPhase === 'starting' && !isInstalled('claude')
                     ? 'Installing Claude Code, then your browser opens…'
@@ -577,7 +619,7 @@ export function Welcome({
                 </div>
               ) : (
                 <div className="wl-sign-text">
-                  {!isInstalled(pick) && `Koloft installs ${AGENT_NAME[pick]} first. `}
+                  {!isInstalled(pick) && `Koloft installs ${BACKEND_PRODUCT[pick]} first. `}
                   {SIGN_IN_HOW[pick]}
                 </div>
               )}
@@ -702,6 +744,23 @@ export function Welcome({
                 </button>
               )}
             </div>
+            <div className="wl-perm">
+              {skipPermissions ? (
+                <>
+                  Sessions run each step without stopping to ask.{' '}
+                  <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
+                    Ask me first instead
+                  </button>
+                </>
+              ) : (
+                <>
+                  Sessions ask you before each step.{' '}
+                  <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
+                    Don’t ask
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="wl-go">
@@ -715,7 +774,7 @@ export function Welcome({
               <span>{primary.label}</span>
               {!primary.busy && <kbd>↩</kbd>}
             </button>
-            {step === 3 && !signedIn(pick) && !signingIn && (
+            {step === 3 && !signedIn(pick) && !waiting && (
               <button className="ob-link wl-alt" onClick={() => setStep(4)}>
                 I’ll sign in later
               </button>

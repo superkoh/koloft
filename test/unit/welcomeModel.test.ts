@@ -76,16 +76,16 @@ describe('welcome: which agent it starts with', () => {
   ]
 
   it('is the installed agent used most recently, not the one used most', () => {
-    expect(defaultAgent(found, installed('claude', 'codex'))).toBe('codex')
+    expect(defaultAgent(tallyAgents(found), installed('claude', 'codex'))).toBe('codex')
   })
 
   it('skips an agent that is no longer on this Mac', () => {
-    expect(defaultAgent(found, installed('claude'))).toBe('claude')
+    expect(defaultAgent(tallyAgents(found), installed('claude'))).toBe('claude')
   })
 
   it('with no history it is the first installed agent, and Claude Code on an empty Mac', () => {
-    expect(defaultAgent([], installed('muse', 'agy'))).toBe('muse')
-    expect(defaultAgent([], installed())).toBe('claude')
+    expect(defaultAgent({}, installed('muse', 'agy'))).toBe('muse')
+    expect(defaultAgent({}, installed())).toBe('claude')
   })
 
   it('counts each agent’s sessions and folders across all folders', () => {

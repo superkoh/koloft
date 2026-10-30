@@ -2034,9 +2034,11 @@ function feedLoginWatcher(tabId: string, data: string): void {
     const rest = afterOutputStart(seen)
     if (rest === null) {
       w.installing.carry = outputStartCarry(seen)
+      w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
       return
     }
     w.installing = undefined
+    w.buf = ''
     data = rest
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
@@ -3086,7 +3088,13 @@ app.whenReady().then(() => {
       flowGates.delete(e.id)
       return
     }
-    if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
+    if (loginWatchers.has(e.id))
+      failLogin(
+        e.id,
+        loginWatchers.get(e.id)?.installing
+          ? 'Installing Claude Code failed'
+          : 'setup-token exited without printing a token'
+      )
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
@@ -5652,6 +5660,7 @@ function registerIpc(): void {
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
+    sessionBackends.forgetAvailability()
     startGuidedLogin(name, !backendAvailable(await backendStatus(), 'claude'))
     return 'ok'
   })
@@ -5921,9 +5930,7 @@ function registerIpc(): void {
     const idsOf = (backend: BackendId): string[] =>
       picked.filter((r) => r.backendId === backend).map((r) => r.id)
     workspaceMgr?.adopt(idsOf('claude'))
-    let stored = 0
-    for (const s of storedSessions()) stored += s.adopt(idsOf(s.id))
-    if (stored > 0) workspaceMgr?.onAdditionalSessionsChanged()
+    for (const s of storedSessions()) s.adopt(idsOf(s.id))
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>

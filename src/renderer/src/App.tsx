@@ -142,7 +142,6 @@ import { TopbarUsage } from './components/TopbarUsage'
 import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
 import { AssistDialog } from './components/AssistDialog'
-import { useAssistSetup } from './useAssistSetup'
 import { useToolsChanged } from './useInstalledBackends'
 import { Welcome } from './components/Welcome'
 import { BrowserOverlay } from './components/BrowserOverlay'
@@ -1113,7 +1112,12 @@ export default function App(): JSX.Element {
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
   const setWelcomeActive = useStore((s) => s.setWelcomeActive)
   const onboardingSeen = useStore((s) => s.settings.onboardingSeen)
-  const welcomeOpen = rowsLoaded && !onboardingSeen
+  const welcomeReplay = useStore((s) => s.welcomeReplay)
+  const firstSidebarWasEmpty = useRef<boolean | null>(null)
+  if (rowsLoaded && firstSidebarWasEmpty.current === null)
+    firstSidebarWasEmpty.current = workspaceRows.every((w) => w.workspace.butler)
+  const welcomeOpen =
+    rowsLoaded && (welcomeReplay || (!onboardingSeen && !!firstSidebarWasEmpty.current))
   useEffect(() => setWelcomeActive(welcomeOpen), [welcomeOpen, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
@@ -1275,8 +1279,6 @@ export default function App(): JSX.Element {
   const activeSessionTitle = useStore((s) =>
     activeTab ? s.sessions.find((x) => x.tabId === activeTab.id)?.title : undefined
   )
-  // ADR-0030
-  const assistSetup = useAssistSetup()
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
@@ -1998,9 +2000,7 @@ export default function App(): JSX.Element {
           <BindConductorDialog />
           <RenameButlerDialog />
           <UpdateModal />
-          {assistAsked && (
-            <AssistDialog setup={assistSetup} asked onNotNow={() => setAssistAsked(false)} />
-          )}
+          {assistAsked && <AssistDialog onNotNow={() => setAssistAsked(false)} />}
           {welcomeOpen && (
             <Welcome
               onAddFolder={addWorkspace}

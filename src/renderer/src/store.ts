@@ -118,6 +118,7 @@ interface AppState {
   settingsPane: SettingsPaneId | null
   settingsFocus: SettingsFocus
   welcomeActive: boolean
+  welcomeReplay: boolean
   accounts: AccountView[] | null
   signIn: { tabId: string; backToSettings: boolean } | null
   accountLogin: LoginFlowState | null
@@ -206,6 +207,7 @@ interface AppState {
   gitAccountsMachine: string | undefined
   openGitAccounts: (focus?: 'git-token', machine?: string) => void
   setWelcomeActive: (on: boolean) => void
+  setWelcomeReplay: (on: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
   beginLogin: (reauthName?: string) => void
@@ -581,6 +583,7 @@ export const useStore = create<AppState>((set, get) => ({
   settingsFocus: null,
   gitAccountsMachine: undefined,
   welcomeActive: false,
+  welcomeReplay: false,
   accounts: null,
   signIn: null,
   accountLogin: null,
@@ -994,6 +997,7 @@ export const useStore = create<AppState>((set, get) => ({
       settingsOpen: true
     }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
+  setWelcomeReplay: (welcomeReplay) => set({ welcomeReplay }),
   setAccounts: (accounts) => set({ accounts }),
   showSignInTab: (tabId) =>
     set((s) => ({

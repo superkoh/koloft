@@ -77,6 +77,7 @@ const DIFFS: [string, string, string][] = [
 export function WelcomePane(): JSX.Element {
   const update = useSettingsUpdate()
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
 
   return (
     <>
@@ -125,7 +126,7 @@ export function WelcomePane(): JSX.Element {
             className="mini"
             onClick={() => {
               setSettingsOpen(false)
-              update({ onboardingSeen: false })
+              setWelcomeReplay(true)
             }}
           >
             Show welcome again

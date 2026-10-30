@@ -425,8 +425,18 @@ describe('CodexSessions', () => {
           ]
     }))
     expect(await sessions.localHistoryFolders()).toEqual([
-      { path: repo, sessions: 1, mtime: 100_000 },
-      { path: other, sessions: 1, mtime: 200_000 }
+      {
+        path: repo,
+        sessions: 1,
+        mtime: 100_000,
+        agents: { codex: { sessions: 1, mtime: 100_000 } }
+      },
+      {
+        path: other,
+        sessions: 1,
+        mtime: 200_000,
+        agents: { codex: { sessions: 1, mtime: 200_000 } }
+      }
     ])
   })
 

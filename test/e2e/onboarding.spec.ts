@@ -164,11 +164,11 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await expect(welcome(page).locator('.wl-agent-name')).toHaveText([
         'Claude Code',
         'Codex',
-        'Muse',
-        'Antigravity'
+        'Muse Code',
+        'Antigravity CLI'
       ])
       await expect(agentCard(page, 'Claude Code')).toHaveClass(/\bready\b/, { timeout: 20_000 })
-      for (const missing of ['Codex', 'Muse', 'Antigravity']) {
+      for (const missing of ['Codex', 'Muse Code', 'Antigravity CLI']) {
         await expect(agentCard(page, missing)).toContainText('Not on this Mac')
         await expect(
           agentCard(page, missing).locator('button', { hasText: 'Install' })
@@ -261,7 +261,7 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expectStep(page, 1)
-      for (const agent of ['Codex', 'Muse', 'Antigravity'])
+      for (const agent of ['Codex', 'Muse Code', 'Antigravity CLI'])
         await expect(agentCard(page, agent)).toContainText('1 session · 1 folder', {
           timeout: 20_000
         })
@@ -343,11 +343,11 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
   })
 
   // CC§10
-  test('T-OB-05: the last screen resumes the newest terminal session with its own agent, and Claude Code’s own first-run page is marked done', async ({
+  test('T-OB-05: the last screen resumes the newest terminal session with its own agent, says sessions skip the step-by-step asking, and Claude Code’s own first-run page is marked done', async ({
     env
   }) => {
     test.setTimeout(180_000)
-    firstRun(env)
+    firstRun(env, { skipPermissionsAgreed: false })
     terminalSession(env, env.workspaces.a, 'Older one', DAY)
     const newest = terminalSession(env, env.workspaces.a, 'Fix login bug', 2 * HOUR)
 
@@ -360,6 +360,9 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
         'Built for you. And for your agents.'
       )
       await expect(primary(page)).toHaveText(/Resume “Fix login bug”/)
+      await expect(welcome(page).locator('.wl-perm')).toContainText(
+        'Sessions run each step without stopping to ask.'
+      )
       await snap(page, 'T-OB-05')
       await page.keyboard.press('Enter')
 
@@ -372,6 +375,25 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       ).toBe(true)
       await expect(welcome(page)).toHaveCount(0, { timeout: 20_000 })
       await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
+      expect(settingsOnDisk(env).skipPermissionsAgreed).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-OB-20: someone who already pinned folders but never finished the old welcome is not stopped by the new one after an upgrade', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, { onboardingSeen: false })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(sidebarFolders(page)).toHaveText(['ws-a', 'ws-b'], { timeout: 20_000 })
+      await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
+      await expect(welcome(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
@@ -400,6 +422,12 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await ask.press('Tab')
       await expect(tag).toContainText('Claude')
 
+      await welcome(page).locator('.wl-perm button', { hasText: 'Ask me first instead' }).click()
+      await expect(welcome(page).locator('.wl-perm')).toContainText(
+        'Sessions ask you before each step.'
+      )
+      await expect.poll(() => settingsOnDisk(env).skipPermissions, { timeout: 20_000 }).toBe(false)
+
       await ask.fill('explain this project')
       await ask.press('Enter')
       const [call] = await waitForCalls(env, 1)
@@ -425,7 +453,7 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expectStep(page, 1)
-      for (const agent of ['Claude Code', 'Codex', 'Muse', 'Antigravity'])
+      for (const agent of ['Claude Code', 'Codex', 'Muse Code', 'Antigravity CLI'])
         await expect(agentCard(page, agent)).toContainText('Not on this Mac', { timeout: 20_000 })
       await expect(welcome(page).locator('.wl-chip')).toHaveText(/0 of 4 ready/)
       await expect(welcome(page)).not.toContainText('npm')

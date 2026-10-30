@@ -123,7 +123,7 @@ export interface SessionsWithStore {
   workspacesFor(cwds: string[]): string[]
   localHistoryFolders(): Promise<DiscoveredFolder[]>
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
-  adopt(keys: string[]): number
+  adopt(keys: string[]): void
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -443,7 +443,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       PLACEHOLDER_TITLES[this.id]
     )
   }
-  adopt(keys: string[]): number {
+  adopt(keys: string[]): void {
     let adopted = 0
     for (const key of keys) {
       const t = this.history.get(key)
@@ -460,7 +460,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       })
       adopted++
     }
-    return adopted
+    if (adopted > 0) this.changed()
   }
   members(): Set<string> {
     return new Set([
