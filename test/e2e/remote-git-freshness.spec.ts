@@ -169,7 +169,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
     }
   })
 
-  test('E-RW-38: C8 fetches on the machine when it opens, so a commit pushed since the last sweep turns Create into Pull & Start; while the machine is away it fetches nothing and shows the last result', async ({
+  test('E-RW-38: C8 fetches on the machine when it opens, so its Pull & Start line counts a commit pushed since the last sweep; while the machine is away it fetches nothing and shows the last result', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -189,7 +189,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
         timeout: 30_000
       })
       await expect(line).toContainText('Pull & Start will fast-forward first.')
-      await expect(dialogPrimary(dlg)).toContainText('Pull & Start')
+      await expect(dialogPrimary(dlg)).toContainText('Pull & Create worktree')
       await page.waitForTimeout(DIALOG_SETTLE_MS)
       expect(fetchesSent(env).length).toBe(beforeOpen + 1)
       await snap(page, 'E-RW-38-fetched-on-open')
