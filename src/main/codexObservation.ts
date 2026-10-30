@@ -187,6 +187,13 @@ function tokenCountsOf(t: WireTokens): TokenCounts {
   }
 }
 
+export interface QueuedByKoloft {
+  text: string
+  sentAgain: boolean
+  started: boolean
+  turnId?: string
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -224,23 +231,63 @@ export class CodexObservation {
   private liveWrites = 0
   private planReady = false
   private editing = new Map<string, string>()
-  private queued = new Set<string>()
+  private queuedByKoloft = new Map<string, QueuedByKoloft>()
+  private serverWasReplaced = false
   unsubscribed = false
   turns = new TurnLog()
 
   constructor(private emit: (event: CodexEvent) => void) {}
 
   // CODEX§17
-  queuedMessage(clientId: string): void {
-    this.queued.add(clientId)
+  queuedMessage(clientId: string, text: string, sentAgain = false): void {
+    this.queuedByKoloft.set(clientId, { text, sentAgain, started: false })
   }
 
   queueRefused(clientId: string): void {
-    this.queued.delete(clientId)
+    this.queuedByKoloft.delete(clientId)
   }
 
   queueDrained(): boolean {
-    return this.queued.size === 0
+    for (const sent of this.queuedByKoloft.values()) if (!sent.started) return false
+    return true
+  }
+
+  // CODEX§34
+  screenLeft(): void {
+    this.requests.clear()
+  }
+
+  serverReplaced(): void {
+    this.serverWasReplaced = true
+    this.forgetRunningTurns()
+    this.activities.clear()
+    this.childRoots.clear()
+    this.childTurns.clear()
+    const cutOff = this.turns.open()
+    if (cutOff) this.turns.end(cutOff)
+    this.publishActivity()
+  }
+
+  takeQueuedCutOffByAReplacedServer(): QueuedByKoloft[] {
+    if (!this.serverWasReplaced) return []
+    this.serverWasReplaced = false
+    const cutOff: QueuedByKoloft[] = []
+    for (const [clientId, sent] of this.queuedByKoloft) {
+      if (!sent.started) continue
+      this.queuedByKoloft.delete(clientId)
+      cutOff.push(sent)
+    }
+    return cutOff
+  }
+
+  private forgetRunningTurns(): void {
+    this.liveTurns.clear()
+    this.approvals.clear()
+    this.approvalThreads.clear()
+    this.approvalAsks.clear()
+    this.editing.clear()
+    this.waitingForInput = false
+    this.mainTurn = 'ended'
   }
 
   // CODEX§3
@@ -331,24 +378,23 @@ export class CodexObservation {
         this.degraded('Codex returned an unsupported session response.')
         return
       }
-      if (thread.id !== this.threadId) this.unanswered = false
+      // CODEX§34
+      const reopened = thread.id === this.threadId
+      if (!reopened) {
+        this.unanswered = false
+        this.serverWasReplaced = false
+        this.queuedByKoloft.clear()
+        this.forgetRunningTurns()
+        this.touched.clear()
+        this.lastTouched = this.lastWritten = undefined
+        this.liveWrites = 0
+        this.planReady = false
+        this.pricedThrough = this.longContextSurchargeUsd = 0
+      }
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
-      this.liveTurns.clear()
-      this.queued.clear()
-      this.approvals.clear()
-      this.approvalThreads.clear()
-      this.approvalAsks.clear()
-      this.waitingForInput = false
-      this.mainTurn = 'ended'
       this.publishedTurn = undefined
-      this.touched.clear()
-      this.lastTouched = this.lastWritten = undefined
-      this.liveWrites = 0
-      this.planReady = false
-      this.editing.clear()
-      this.pricedThrough = this.longContextSurchargeUsd = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
@@ -359,8 +405,11 @@ export class CodexObservation {
         thread: { ...thread, cwd, model: this.model },
         change: req.method === 'thread/start' ? 'replace' : 'switch'
       })
-      this.seedFilesFromHistory(record(result.thread))
-      this.turns = codexTurns(record(result.thread).turns)
+      if (reopened) this.publishFiles()
+      else {
+        this.seedFilesFromHistory(record(result.thread))
+        this.turns = codexTurns(record(result.thread).turns)
+      }
       this.status(thread.status)
       return
     }
@@ -374,8 +423,13 @@ export class CodexObservation {
       (method === 'item/started' || method === 'item/completed') &&
       item.type === 'userMessage' &&
       typeof item.clientId === 'string'
-    )
-      this.queued.delete(item.clientId)
+    ) {
+      const sent = this.queuedByKoloft.get(item.clientId)
+      if (sent) {
+        sent.started = true
+        if (typeof p.turnId === 'string') sent.turnId = p.turnId
+      }
+    }
     if (method === 'item/completed') {
       if (this.noteFiles(item, true)) this.publishFiles()
       this.observeOpen(item)
@@ -428,6 +482,10 @@ export class CodexObservation {
       }
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
+      if (typeof turn.id === 'string')
+        for (const [clientId, sent] of this.queuedByKoloft)
+          if (sent.started && (sent.turnId ?? turn.id) === turn.id)
+            this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
       for (const [id, owner] of this.approvalThreads) {

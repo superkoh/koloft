@@ -6,6 +6,7 @@ import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
+  centerTerm,
   chooseBackend,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
@@ -14,6 +15,7 @@ import {
   openMenu,
   openWorktreeSession,
   processAlive,
+  runIn,
   sendShortcut,
   startSessionIn,
   terminalText,
@@ -33,6 +35,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
+import { codexAnswers, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 
 test.setTimeout(180_000)
 
@@ -253,6 +256,41 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         fs.readFileSync(path.join(machineHome(env), 'fake-codex-wire.jsonl'), 'utf8')
       ).toContain('Codex fixture answered: after the drop')
       expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toHaveLength(3)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§34
+  test('E-RC-09: when the Codex screen on this Mac loses its connection mid-turn, it connects again over a new line to the same app-server on the machine, which finishes the turn it was running, and the tab answers the next prompt', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-reconnects'), '')
+    fs.writeFileSync(path.join(machineHome(env), 'fake-codex-busy-ms'), '4000')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const tabId = server.tabId!
+      const row = wsRows(page, REMOTE_WS_NAME)
+      const type = (line: string): Promise<void> => runIn(page, centerTerm(page), line)
+      await type('/busy')
+      await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+      await type('/drop')
+      await expect
+        .poll(() => fakeCodexLog<{ sessionId: string }>(env, 'fake-codex-reconnects.jsonl'))
+        .toEqual([expect.objectContaining({ sessionId: tuiCalls(env)[0].sessionId })])
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await type('after the drop')
+      const answers = (): string[] =>
+        codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+      await expect
+        .poll(answers, { timeout: 60_000 })
+        .toContain('Codex fixture answered: after the drop')
+      expect(answers()).toContain('Codex fixture answered: /busy')
+      expect(machineServers(env)).toHaveLength(1)
+      expect(serverAlive(env, tabId)).toBe(true)
     } finally {
       await quitAndClose(app)
     }

@@ -114,6 +114,7 @@ import {
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
 const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
+const MESSAGE_SHOWN_IN_A_NOTICE_CHARS = 120
 
 export const CODEX_TAB_ENV = {
   koloftShim: false,
@@ -750,6 +751,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         return
       }
       if (!bound || bound.explicitStop || bound.stopping) return
+      // CODEX§34
+      if (bound.info?.nativeSessionId === event.thread.id) {
+        this.rejoined(bound)
+        return
+      }
       const name = bound.launchName
       // CODEX§17
       if (name)
@@ -858,7 +864,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         configOverrides: serverConfig,
         onFrame: (direction, frame) => observer.receive(direction, frame),
         observes: (direction, head) => observer.wants(direction, head),
-        onDisconnect: () => this.markDegraded(bound),
+        onDisconnect: () => {
+          observer.screenLeft()
+          this.markDegraded(bound)
+        },
+        onServerReplaced: () => observer.serverReplaced(),
         onError: (error) => {
           this.markDegraded(bound)
           this.deps.error(String(error))
@@ -1016,16 +1026,37 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }
 
+  // CODEX§34
+  private rejoined(run: CodexRun): void {
+    if (run.info) Object.assign(run.info, this.runDetails(run))
+    this.changed()
+    for (const cut of run.observer.takeQueuedCutOffByAReplacedServer()) {
+      if (cut.sentAgain)
+        this.deps.error(
+          `Codex stopped twice in the middle of a message Koloft gave it, so Koloft did not send it a third time: "${cut.text.slice(0, MESSAGE_SHOWN_IN_A_NOTICE_CHARS)}"`
+        )
+      else
+        this.queueInto(run.tabId, cut.text, `koloft-${randomUUID()}`, true).catch((error) =>
+          this.deps.error(String(error))
+        )
+    }
+  }
+
   // CODEX§17
-  async queueMessage(
+  queueMessage(tabId: string, text: string, clientId = `koloft-${randomUUID()}`): Promise<void> {
+    return this.queueInto(tabId, text, clientId, false)
+  }
+
+  private async queueInto(
     tabId: string,
     text: string,
-    clientId = `koloft-${randomUUID()}`
+    clientId: string,
+    sentAgain: boolean
   ): Promise<void> {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
-    run.observer.queuedMessage(clientId)
+    run.observer.queuedMessage(clientId, text, sentAgain)
     try {
       await run.transport.request(
         'thread/queue/add',
