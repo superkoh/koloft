@@ -368,6 +368,7 @@ export default function App(): JSX.Element {
     if (nextFull) setPanelFocus((n) => n + 1)
   }, [])
   const [rowsLoaded, setRowsLoaded] = useState(false)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const [probed, setProbed] = useState<Record<SessionBackend, boolean> | null>(null)
   const toolsChanged = useToolsChanged()
@@ -468,7 +469,6 @@ export default function App(): JSX.Element {
     (wsPath: string, backend: SessionBackend, firstPrompt?: string): void =>
       startNow(hostOf(wsPath), backend, async () => ({
         cwd: wsPath,
-        trustFolder: true,
         ...(firstPrompt && { firstPrompt })
       })),
     [startNow]
@@ -857,13 +857,17 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('click', close)
   }, [addMenu])
   useEffect(
-    () => window.api.shortcuts.onOpenSettings(() => setSettingsOpen(true)),
+    () =>
+      window.api.shortcuts.onOpenSettings(() => {
+        if (!useStore.getState().welcomeActive) setSettingsOpen(true)
+      }),
     [setSettingsOpen]
   )
   useEffect(
     () =>
       window.api.shortcuts.onCommandPalette(() => {
-        if (rowsLoaded && !aDialogIsOpen()) setPaletteOpen(true)
+        if (rowsLoaded && !aDialogIsOpen() && !useStore.getState().welcomeActive)
+          setPaletteOpen(true)
       }),
     [rowsLoaded]
   )
@@ -1068,6 +1072,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.api.settings.get().then((s) => {
       setSettings(s)
+      setSettingsLoaded(true)
       setWorkbenchWidth(s.workbenchWidth)
       setSidebarWidth(Math.max(SIDEBAR_MIN, s.sidebarWidth))
       setNotesHeight(s.notesHeight)
@@ -1114,7 +1119,9 @@ export default function App(): JSX.Element {
   if (rowsLoaded && firstSidebarWasEmpty.current === null)
     firstSidebarWasEmpty.current = workspaceRows.length === 0
   const welcomeOpen =
-    rowsLoaded && (welcomeReplay || (!onboardingSeen && !!firstSidebarWasEmpty.current))
+    rowsLoaded &&
+    settingsLoaded &&
+    (welcomeReplay || (!onboardingSeen && !!firstSidebarWasEmpty.current))
   useEffect(() => setWelcomeActive(welcomeOpen), [welcomeOpen, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))

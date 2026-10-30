@@ -185,6 +185,7 @@ export function Welcome({
   const pinTried = useRef(false)
 
   useEffect(() => {
+    ;(document.activeElement as HTMLElement | null)?.blur()
     void window.api.workspace.discover().then(setFound, () => setFound([]))
   }, [])
 
@@ -344,11 +345,13 @@ export function Welcome({
       return { label: 'Continue', go: () => setStep(3), busy: reading }
     }
     if (step === 3) {
-      if (signedIn(pick))
+      if (signedIn(pick)) {
+        const startable = pending && backendOf(pending) === pick && isInstalled(pick)
         return {
-          label: pending ? 'Start' : 'Continue',
-          go: () => (pending ? run(pending) : setStep(4))
+          label: startable ? 'Start' : 'Continue',
+          go: () => (startable && pending ? run(pending) : setStep(4))
         }
+      }
       if (claudeBusy && pick === 'claude')
         return { label: 'Waiting for your browser…', go: () => undefined, busy: true }
       if (signTabOpen && pick === signingFor)
@@ -374,7 +377,7 @@ export function Welcome({
       }
       if (e.key !== 'Enter' || e.isComposing) return
       const tag = (e.target as HTMLElement | null)?.tagName
-      if (tag === 'BUTTON' || (tag === 'INPUT' && step !== 4)) return
+      if (tag === 'BUTTON' || tag === 'TEXTAREA' || (tag === 'INPUT' && step !== 4)) return
       e.preventDefault()
       if (!primary.disabled && !primary.busy) primary.go()
     }
@@ -427,7 +430,7 @@ export function Welcome({
             <Chip busy={installed === null}>
               {installed === null
                 ? 'Looking around your Mac…'
-                : `${readyCount} of 4 ready on this Mac`}
+                : `${readyCount} of ${SESSION_BACKENDS.length} ready on this Mac`}
             </Chip>
             <Title plain="Four agents." script="One window." />
             <p className="wl-sub">Koloft runs Claude Code, Codex, Muse and Antigravity.</p>

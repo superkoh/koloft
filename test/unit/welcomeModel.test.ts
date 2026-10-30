@@ -99,7 +99,7 @@ describe('welcome: which agent it starts with', () => {
 })
 
 describe('welcome: the account name nobody has to type', () => {
-  it('is the agent’s name, with -2, -3 on a clash among that agent’s accounts only', () => {
+  it('is the agent’s name, with -2, -3 on a clash among that agent’s accounts only, in any letter case', () => {
     expect(defaultAccountName('codex', [])).toBe('Codex')
     expect(
       defaultAccountName('codex', [
@@ -109,6 +109,7 @@ describe('welcome: the account name nobody has to type', () => {
       ])
     ).toBe('Codex-3')
     expect(defaultAccountName('agy', [{ name: 'Codex', kind: 'codex-home' }])).toBe('Antigravity')
+    expect(defaultAccountName('claude', [{ name: 'claude', kind: 'oauth' }])).toBe('Claude-2')
   })
 })
 

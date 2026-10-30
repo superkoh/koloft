@@ -660,6 +660,7 @@ export class WorkspaceManager {
     this.disposed = true
     this.flushPanelSave()
     if (this.timer) clearTimeout(this.timer)
+    for (const done of this.scanWaiters.splice(0)) done()
     for (const w of this.rootWatchers.values()) w.close()
     this.rootWatchers.clear()
     for (const w of this.bucketWatchers.values()) w.close()

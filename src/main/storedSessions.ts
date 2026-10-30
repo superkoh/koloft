@@ -407,18 +407,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
   async localHistoryFolders(): Promise<DiscoveredFolder[]> {
     if (this.refreshing || !this.listedAt.has(undefined)) await this.refreshHistory()
-    return [...this.history].flatMap(([key, t]) =>
-      hostOfKey(key) || this.archivedIds.has(key)
-        ? []
-        : [
-            {
-              path: t.cwd,
-              sessions: 1,
-              mtime: this.mtimeOf(t),
-              agents: { [this.id]: { sessions: 1, mtime: this.mtimeOf(t) } }
-            }
-          ]
-    )
+    return [...this.history].flatMap(([key, t]) => {
+      if (hostOfKey(key) || this.archivedIds.has(key)) return []
+      const use = { sessions: 1, mtime: this.mtimeOf(t) }
+      return [{ path: t.cwd, ...use, agents: { [this.id]: use } }]
+    })
   }
   private mtimeOf(t: H): number {
     return (t.updatedAt ?? t.createdAt ?? 0) * 1000

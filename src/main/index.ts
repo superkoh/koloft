@@ -2024,10 +2024,6 @@ function sendLoginProgress(p: LoginProgress): void {
 function feedLoginWatcher(tabId: string, data: string): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
-  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
-    failLogin(tabId, 'Sign-in timed out')
-    return
-  }
   if (w.installing) {
     const seen = w.installing.carry + data
     const rest = afterOutputStart(seen)
@@ -2037,8 +2033,13 @@ function feedLoginWatcher(tabId: string, data: string): void {
       return
     }
     w.installing = undefined
+    w.startedAt = Date.now()
     w.buf = ''
     data = rest
+  }
+  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
+    failLogin(tabId, 'Sign-in timed out')
+    return
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
@@ -5656,9 +5657,10 @@ function registerIpc(): void {
         : 'unknown'
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
-    for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
     claudeBackend.forgetAvailability()
-    startGuidedLogin(name, !(await claudeBackend.availability()).available)
+    const installFirst = !(await claudeBackend.availability()).available
+    for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
+    startGuidedLogin(name, installFirst)
     return 'ok'
   })
   ipcMain.handle(
@@ -5717,14 +5719,22 @@ function registerIpc(): void {
   ipcMain.handle(CH.workspace.add, (_e, p: string) => pinWorkspace(p))
   ipcMain.handle(CH.workspace.pinRecent, async (_e, paths: unknown) => {
     if (!workspaceMgr || !Array.isArray(paths)) return
-    const picked = paths.filter((p): p is string => typeof p === 'string')
-    for (const p of picked) pinWorkspace(p)
+    const pinned = paths.flatMap((p) => {
+      const r = typeof p === 'string' ? pinWorkspace(p) : undefined
+      return r && 'path' in r ? [r.path] : []
+    })
     await workspaceMgr.whenScanned()
     const now = Date.now()
-    const lists = await Promise.all(
-      picked.map((p) => sessionBackends.historyRows(p, historyPartlyUnread))
+    const unread = new Map<BackendId, unknown>()
+    const lists = await Promise.allSettled(
+      pinned.map((p) => sessionBackends.historyRows(p, (id, error) => unread.set(id, error)))
     )
-    sessionBackends.adopt(lists.flatMap((rows) => rowsToAdopt(rows, now)))
+    for (const [id, error] of unread) historyPartlyUnread(id, error)
+    sessionBackends.adopt(
+      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
+    )
+    await workspaceMgr.whenScanned()
+    if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)

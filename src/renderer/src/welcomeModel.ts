@@ -57,11 +57,13 @@ export function defaultAccountName(
   accounts: readonly Pick<AccountMeta, 'name' | 'kind'>[]
 ): string {
   const taken = new Set(
-    accounts.filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind)).map((a) => a.name)
+    accounts
+      .filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
+      .map((a) => a.name.toLowerCase())
   )
   const base = BACKEND_LABEL[backend]
   let name = base
-  for (let i = 2; taken.has(name); i++) name = `${base}-${i}`
+  for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base}-${i}`
   return name
 }
 
