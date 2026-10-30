@@ -1006,12 +1006,7 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        const notice = unexpectedExitNotice(
-          e,
-          tab.kind,
-          tabEverBound(tab.id),
-          useStore.getState().accounts
-        )
+        const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
         useStore.getState().showToast(notice)
         if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
           void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {

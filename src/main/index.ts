@@ -382,7 +382,9 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountLine,
   noAccountMessage,
+  SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -3086,6 +3088,9 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    // ADR-0030
+    if (exited?.kind === 'claude' && !e.signal && e.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+      sent.accountIssue = noAccountLine(listAccounts(), 'claude') || undefined
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {

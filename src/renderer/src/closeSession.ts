@@ -1,11 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import {
-  noAccountLine,
-  SHIM_FOUND_NO_ACCOUNT_EXIT,
-  SHIM_FOUND_NO_ACCOUNT_NOTICE
-} from '@shared/accountUsage'
+import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import type { AccountMeta, SessionInfo, TabKind } from '@shared/types'
+import type { SessionInfo, TabKind } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -59,15 +55,14 @@ export function sessionEndedBody(title: string, files: string[]): string {
 }
 
 export function unexpectedExitNotice(
-  exit: { exitCode: number; signal?: number },
+  exit: { exitCode: number; signal?: number; accountIssue?: string },
   backend: SessionBackend,
-  everBound: boolean,
-  accounts: readonly AccountMeta[] | null
+  everBound: boolean
 ): string {
   const agent = BACKEND_LABEL[backend]
   // ADR-0030
   if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
-    return (accounts && noAccountLine(accounts, 'claude')) || SHIM_FOUND_NO_ACCOUNT_NOTICE
+    return exit.accountIssue || SHIM_FOUND_NO_ACCOUNT_NOTICE
   // PLATFORM§29
   const how = exit.signal ? `killed by signal ${exit.signal}` : `exit code ${exit.exitCode}`
   if (!everBound) return `${agent} closed before the session started (${how})`

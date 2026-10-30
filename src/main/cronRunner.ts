@@ -449,7 +449,7 @@ export class CronRunner {
       const noAccount = this.d.noUsableAccount(backend)
       if (noAccount) {
         this.fail(job, dueAt, mark, noAccount)
-        return { ok: false, reason: 'no-account' }
+        return { ok: false, reason: 'no-account', why: noAccount }
       }
 
       if (!this.d.ready()) {

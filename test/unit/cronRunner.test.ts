@@ -13,7 +13,7 @@ import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
 import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
 
-const NO_CLAUDE_ACCOUNT_LINE = 'No Claude account yet — add one in Settings ▸ Accounts.'
+const ACCOUNT_CHECK_REASON = 'the reason the account check gave'
 const T0 = new Date(2026, 8, 2, 10, 0, 0, 0).getTime()
 const SEC = 1000
 const MIN = 60 * SEC
@@ -128,7 +128,7 @@ function makeHarness(
     tidyRun,
     foldersInUse: () => new Set(flags.inUse),
     quitting: () => flags.quitting,
-    noUsableAccount: () => (flags.account ? null : NO_CLAUDE_ACCOUNT_LINE),
+    noUsableAccount: () => (flags.account ? null : ACCOUNT_CHECK_REASON),
     trusted: () => true,
     ready: () => flags.ready,
     endpointAccountWithModelOf: () => undefined,
@@ -353,18 +353,22 @@ describe('CronRunner — reasons a run does not start', () => {
     expect(h.save).toHaveBeenCalled()
   })
 
-  it('writes what is wrong with the accounts and never launches', async () => {
+  it('passes the account check’s own reason to the history, the toast and the caller, and never launches', async () => {
     const h = makeHarness([makeJob()])
     h.flags.account = false
-    expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'no-account' })
+    expect(await h.runner.runNow('j1')).toEqual({
+      ok: false,
+      reason: 'no-account',
+      why: ACCOUNT_CHECK_REASON
+    })
     expect(h.launch).not.toHaveBeenCalled()
     expect(h.jobs[0].history[0]).toEqual({
       dueAt: T0,
       state: 'failed',
-      note: NO_CLAUDE_ACCOUNT_LINE,
+      note: ACCOUNT_CHECK_REASON,
       manual: true
     })
-    expect(h.toasts).toEqual([`⏰ Nightly report could not start: ${NO_CLAUDE_ACCOUNT_LINE}`])
+    expect(h.toasts).toEqual([`⏰ Nightly report could not start: ${ACCOUNT_CHECK_REASON}`])
   })
 
   it('writes "Claude exited before it started" as failed, never skipped, when the launch itself is refused', async () => {

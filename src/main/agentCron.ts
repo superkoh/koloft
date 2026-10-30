@@ -297,11 +297,13 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
   ].join('\n')
 }
 
-const RUN_REFUSED: Record<Exclude<CronRunNowResult, { ok: true }>['reason'], string> = {
+const RUN_REFUSED: Record<
+  Exclude<CronRunNowResult, { ok: true } | { reason: 'no-account' }>['reason'],
+  string
+> = {
   skipped: 'the last run is still open.',
   failed: 'the session exited before it started.',
   'folder-missing': 'the workspace folder is missing.',
-  'no-account': 'there is no usable account.',
   'not-ready': 'Koloft is not ready yet. Try again in a moment.',
   'unknown-job': 'the task is gone.'
 }
@@ -385,8 +387,8 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
       return answered(`Turned ${sub} ${job.name}. ${whenLine(job, now, live)}`)
     }
     const result = await runner.runNow(job.id)
-    return result.ok
-      ? answered(`Started ${job.name} in a new session tab.`)
-      : refused(`koloft cron: ${job.name} did not start: ${RUN_REFUSED[result.reason]}`)
+    if (result.ok) return answered(`Started ${job.name} in a new session tab.`)
+    const why = result.reason === 'no-account' ? result.why : RUN_REFUSED[result.reason]
+    return refused(`koloft cron: ${job.name} did not start: ${why}`)
   }
 }
