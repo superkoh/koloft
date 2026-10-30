@@ -1605,8 +1605,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
-(2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27) and
-2.1.312 (2026-10-28).
+(2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
+2.1.312 (2026-10-28) and 2.1.314 (2026-10-30).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -2476,7 +2476,8 @@ below was one run.
   and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
   is a different gate), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
   green (2026-10-25), and on linux-arm64 2.1.311 the same (2026-10-27), and on
-  linux-arm64 2.1.312 the same (2026-10-28). A user's own `claude -p` in a Koloft terminal is the measured case.
+  linux-arm64 2.1.312 the same (2026-10-28), and on linux-arm64 2.1.314 the same
+  (2026-10-30). A user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.

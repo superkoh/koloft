@@ -384,7 +384,8 @@ notes' "reasoning-token accounting across resume and fork" was not reached), 15
 unloads within a minute and a message queued into it waits; `codex queue`'s options),
 25 (the same escape sequences under Koloft's `TERM`, OSC 7501 still sent; the `?u` and
 DA1 queries now come before `6n`), 27 (the same four events and keys; `cwd` is now the
-command's folder) and 28 (the start race, not fixed) were measured again. `codex
+command's folder) and 28 (the start race, not fixed) were measured again, and the same
+e2e specs passed, the remote ones (E-SSH-23/24/25) too. `codex
 --help`, `app-server --help`, `exec --help` and `resume --help` are byte-identical to
 0.165.0's; `queue --help` and `doctor --help` (`--network-only`) differ. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
