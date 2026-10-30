@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
@@ -434,6 +434,32 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await quitAndClose(app)
     }
   })
+
+  for (const backend of ['muse', 'agy'] as const)
+    test(`a ${backend} session that koloft session new starts in a folder ${backend} never trusted gets past ${backend}’s trust question with nobody at its terminal`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      if (backend === 'muse') installMuse(env)
+      else installAgy(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a', { method: 'Claude' })
+
+        expect(
+          await koloftInSession(page, `session new --workspace ws-b --backend ${backend} -- hello`)
+        ).toBe('0')
+
+        await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bst-waiting\b/, {
+          timeout: 60_000
+        })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('koloft session new --workspace starts the sibling in another sidebar workspace, as a top-level row there', async ({
     page,

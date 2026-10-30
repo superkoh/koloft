@@ -1679,6 +1679,24 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
   })
 
+  it('new in a sidebar workspace writes the agent’s folder trust, so nobody has to answer the trust question at the terminal; in a folder the sidebar does not hold it writes none, and a new worktree is left to trust itself', async () => {
+    const stray = session('stray', 'claude', { sessionId: 'stray-id', cwd: '/Users/me' })
+    const { verb, launched } = harness([...live, stray], {}, [], conducting())
+    await verb(['new', '--backend', 'codex', '--', 'fix it'], from('fix'))
+    await verb(['new', '--', 'look around'], from('stray'))
+    await verb(['new', '-w', 'kid', '--', 'try it'], from('fix'))
+    await verb(
+      ['new', '--workspace', 'ssh://box/srv/api', '--backend', 'muse', '--', 'check'],
+      from('fix')
+    )
+    expect(launched.map((l) => [l.kind, l.cwd, l.worktree, l.trustFolder])).toEqual([
+      ['codex', WS, undefined, true],
+      ['claude', '/Users/me', undefined, false],
+      ['claude', WS, 'kid', false],
+      ['muse', 'ssh://box/srv/api', undefined, true]
+    ])
+  })
+
   it('new from a session in a workspace is never told the butler’s goals', async () => {
     const { verb, launched } = harness(live, {}, [], conducting())
     await verb(['new', '--', 'fix it'], from('fix'))
