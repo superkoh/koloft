@@ -18,6 +18,7 @@ const VM_MEMORY_MB = 6144
 const VM_CPUS = 4
 const IP_WAIT_SECONDS = 300
 const SSH_READY_TRIES = 60
+const SSH_LOGIN_CLIENT = '/usr/libexec/sshd-keygen-wrapper'
 // PLATFORM§52
 const LSREGISTER =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
@@ -58,27 +59,33 @@ function run(command, args, opts = {}) {
 
 const tart = (args, opts) => run('tart', args, opts)
 
+const REPLAYD_GROUP = `${GUEST_HOME}/Library/Group Containers/group.com.apple.replayd`
+
 // PLATFORM§52
-const SCREEN_CAPTURE_APPROVED_FOR_TESTS_RUN_OVER_SSH = `approvals="${GUEST_HOME}/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist"
-approved="/usr/libexec/sshd-keygen-wrapper"
-mkdir -p "\${approvals:h}"
-plutil -create xml1 "$approvals"
-plutil -insert "$approved" -dictionary "$approvals"
-plutil -insert "$approved.kScreenCaptureApprovalLastAlerted" -date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
-plutil -insert "$approved.kScreenCaptureApprovalLastUsed" -date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
-plutil -insert "$approved.kScreenCapturePrivacyHintDate" -date "$(date -u -v+30d +%Y-%m-%dT%H:%M:%SZ)" "$approvals"
-plutil -insert "$approved.kScreenCapturePrivacyHintPolicy" -integer 2592000 "$approvals"
-plutil -insert "$approved.kScreenCaptureAlertableUsageCount" -integer 1 "$approvals"`
+const SCREEN_CAPTURE_APPROVED_FOR_TESTS_RUN_OVER_SSH = `mkdir -p "${REPLAYD_GROUP}"
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cat > "${REPLAYD_GROUP}/ScreenCaptureApprovals.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>${SSH_LOGIN_CLIENT}</key><dict>
+<key>kScreenCaptureAlertableUsageCount</key><integer>1</integer>
+<key>kScreenCaptureApprovalLastAlerted</key><date>$now</date>
+<key>kScreenCaptureApprovalLastUsed</key><date>$now</date>
+<key>kScreenCapturePrivacyHintDate</key><date>$(date -u -v+30d +%Y-%m-%dT%H:%M:%SZ)</date>
+<key>kScreenCapturePrivacyHintPolicy</key><integer>2592000</integer>
+</dict></dict></plist>
+EOF
+plutil -lint "${REPLAYD_GROUP}/ScreenCaptureApprovals.plist"`
 
 function guestScript(args) {
   const quoted = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`).join(' ')
-  return `set -u
+  return `set -eu
 ${SCREEN_CAPTURE_APPROVED_FOR_TESTS_RUN_OVER_SSH}
 rsync -a --exclude /.git --exclude /.claude --exclude /dist --exclude /test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
 cd ${GUEST_HOME}/koloft
 codesign --force --deep --sign - node_modules/electron/dist/Electron.app
 ${LSREGISTER} -f node_modules/electron/dist/Electron.app
+set +e
 sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} ${GUEST_HOME}/node scripts/real-window-mac.mjs here ${quoted}
 code=$?
 rsync -a ${GUEST_HOME}/koloft/test-results/real-window/ "${GUEST_SHARES}/kit/results/"
@@ -89,11 +96,11 @@ exit $code
 // PLATFORM§52
 const GRANTS_FOR_TESTS_RUN_OVER_SSH = `insert or replace into access
   (service, client, client_type, auth_value, auth_reason, auth_version, flags) values
-  ('kTCCServiceAccessibility', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServiceAccessibility', '${SSH_LOGIN_CLIENT}', 1, 2, 4, 1, 0),
   ('kTCCServiceAccessibility', '/usr/bin/osascript', 1, 2, 4, 1, 0),
-  ('kTCCServicePostEvent', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServicePostEvent', '${SSH_LOGIN_CLIENT}', 1, 2, 4, 1, 0),
   ('kTCCServicePostEvent', '/usr/bin/osascript', 1, 2, 4, 1, 0),
-  ('kTCCServiceScreenCapture', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServiceScreenCapture', '${SSH_LOGIN_CLIENT}', 1, 2, 4, 1, 0),
   ('kTCCServiceAccessibility', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),
   ('kTCCServicePostEvent', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),
   ('kTCCServiceScreenCapture', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),

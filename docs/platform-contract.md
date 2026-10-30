@@ -2446,33 +2446,31 @@ server unless a line says so.
   `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
   separated. Before that, a booted clone held a row denying Accessibility to
   `sshd-keygen-wrapper`.
-- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
-  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
-  system private window picker…' (Allow / Open System Settings) even with the TCC rows
-  above; the capture itself was written. Left alone, the dialog stayed on screen and the
-  real-window cases still passed with it in their screenshots. A real click on Allow
-  closed it, but later captures raised it again. After Allow, macOS records the answer in
+- **macOS 27 asks about screen capture from SSH.** A `screencapture` run over SSH raised
+  a dialog '"com.apple.sshd-session" is requesting to bypass the system private window
+  picker…' (Allow / Open System Settings) even with the TCC rows above; the capture
+  itself was written. macOS keeps the record in
   `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
   keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
   `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
   `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
   2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
   before boot was replaced when the user logged in (the group container was re-created).
-  macOS 26.6.2 on GitHub's runner did not ask.
-- **The screen-capture dialog is asked once, may be drawn late, and is skipped when the
-  approval is already on file** (measured 2026-10-30, macOS 27.0 26A428, same tart base
-  image). The dialog is a `UserNotificationCenter` window; replayd writes the
-  `ScreenCaptureApprovals.plist` entry when it asks, not when Allow is clicked, and the
-  entry looks the same either way. Unanswered, the dialog stays on screen and takes key
-  focus: in two real-window runs the first three captures did not show it and the fourth
-  did, so it landed in the middle of a later case, where it hid the banners and took the
-  Pinyin keys. Answered with Allow, 8 more captures over a minute raised nothing. On a
-  fresh clone, the logged-in user (over SSH, before any capture) creating the group
-  container folder and writing the entry with `plutil` (all five keys, both dates now)
-  stopped the dialog: 18 captures, none asked, and containermanagerd adopted the folder
-  (it added its metadata plist, the usage count kept rising). On a VM whose replayd had
-  already asked, a hand-written entry was overwritten from replayd's memory within a
-  capture.
+  macOS 26.6.2 on GitHub's runner did not ask. Measured 2026-10-12; on that day a real
+  click on Allow closed the dialog and later captures raised it again.
+- **The screen-capture dialog may be drawn late, stays until answered, and is skipped when
+  the record is already on file** (measured 2026-10-30, macOS 27.0 26A428, same tart base
+  image). The dialog is a `UserNotificationCenter` window; replayd writes the plist entry
+  when it asks, and Allow leaves the entry unchanged. Unanswered, the dialog stays on
+  screen and takes key focus: in two real-window runs the first three captures did not
+  show it and the fourth did, so it landed in the middle of a later case, where it hid
+  the banners and took the Pinyin keys. After Allow, 8 more captures over a minute raised
+  nothing. On a fresh clone, the logged-in user (over SSH, before any capture) creating
+  the group container folder and writing the entry with all five keys (last-alerted and
+  last-used now, privacy-hint date 30 days on, policy 2592000, count 1) stopped the
+  dialog: 18 captures, none asked, and containermanagerd adopted the folder (it added its
+  metadata plist, the usage count kept rising). On a VM whose replayd had already asked,
+  a hand-written entry was overwritten from replayd's memory within a capture.
 - **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
   `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
   its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
