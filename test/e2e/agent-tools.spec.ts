@@ -6,7 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
-import { startLocalSession } from './helpers/codex'
+import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
 import {
@@ -100,6 +100,35 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
   const dlg = page.locator('.modal.cronjobs')
   await expect(dlg).toBeVisible({ timeout: 15_000 })
   return dlg
+}
+
+async function aChildWhoseParentTabWasClosed(
+  page: Page,
+  backend: 'claude' | 'codex'
+): Promise<{ parentId: string; kidTab: string }> {
+  if (backend === 'claude') await startSessionIn(page, 'ws-a')
+  else await newSessionInWith(page, 'ws-a', 'Codex')
+  const parentRow = wsRows(page, 'ws-a').first()
+  await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+  const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.tabId === parentTab
+  )!
+  expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+  const kidRow = wsGroup(page, 'ws-a').locator(
+    `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
+  )
+  await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+  await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
+  await expect
+    .poll(async () =>
+      (await page.evaluate(() => window.api.sessions.list())).some(
+        (s) => s.alive && s.tabId === parentTab
+      )
+    )
+    .toBe(false)
+  return { parentId: parent.nativeSessionId ?? parent.sessionId, kidTab }
 }
 
 test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH reaches Koloft and acts for the session it runs in', () => {
@@ -293,31 +322,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        if (backend === 'claude') await startSessionIn(page, 'ws-a')
-        else await newSessionInWith(page, 'ws-a', 'Codex')
-        const parentRow = wsRows(page, 'ws-a').first()
-        await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-        const parentTab = (await parentRow.getAttribute('data-tab-id'))!
-        const parent = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.tabId === parentTab
-        )!
-        const parentId = parent.nativeSessionId ?? parent.sessionId
-
-        expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
-        const kidRow = wsGroup(page, 'ws-a').locator(
-          `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
-        )
-        await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-        const kidTab = (await kidRow.getAttribute('data-tab-id'))!
-
-        await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
-        await expect
-          .poll(async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some(
-              (s) => s.alive && s.tabId === parentTab
-            )
-          )
-          .toBe(false)
+        const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, backend)
         await page.evaluate(
           ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
           [kidTab, `/koloft session send ${parentId} all done`]
@@ -336,6 +341,52 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         await quitAndClose(app)
       }
     })
+
+  // CODEX§34
+  test('a codex child’s report whose turn has just begun in the reopened codex parent when that parent’s app-server dies is sent again, once, after Koloft starts a new app-server and the parent’s screen joins it, and the parent answers it', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-codex-reconnects'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, 'codex')
+      fs.writeFileSync(path.join(env.home, 'fake-codex-server-dies-on'), ':) all done')
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [kidTab, `/koloft session send ${parentId} all done`]
+      )
+      const wire = (): CodexWireLine[] => fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
+      const report = /^\(From the session ".+", id \S+:\) all done$/
+      const answered = /^Codex fixture answered: \(From the session ".+", id \S+:\) all done$/
+      await expect
+        .poll(() => codexAnswers(wire()).filter((text) => answered.test(text)), {
+          timeout: 60_000
+        })
+        .toHaveLength(1)
+      expect(
+        fakeCodexLog<{ text: string }>(env, 'fake-codex-server-deaths.jsonl').map((d) =>
+          report.test(d.text)
+        )
+      ).toEqual([true])
+      expect(fakeCodexLog(env, 'fake-codex-reconnects.jsonl')).toEqual([
+        expect.objectContaining({ sessionId: parentId })
+      ])
+      expect(
+        wire().filter(
+          ({ frame }) =>
+            frame.method === 'thread/queue/add' &&
+            JSON.stringify(frame.params).includes(':) all done')
+        )
+      ).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   test('a codex child reports to the codex worktree session that started it after that session’s tab was closed and its untouched worktree went with it: koloft session send makes the worktree again in place and delivers the report', async ({
     env

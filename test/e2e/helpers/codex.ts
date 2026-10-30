@@ -31,6 +31,22 @@ export function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
     })
 }
 
+export interface CodexWireLine {
+  direction: 'client' | 'server'
+  frame: {
+    method?: string
+    params?: { item?: { type?: string; text?: string } } & Record<string, unknown>
+  }
+}
+
+export function codexAnswers(wire: CodexWireLine[]): string[] {
+  return wire.flatMap(({ frame }) =>
+    frame.method === 'item/completed' && frame.params?.item?.type === 'agentMessage'
+      ? [frame.params.item.text ?? '']
+      : []
+  )
+}
+
 export function codexCalls(env: E2EEnv): CodexCall[] {
   return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
 }

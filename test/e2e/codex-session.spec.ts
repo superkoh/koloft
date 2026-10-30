@@ -49,11 +49,13 @@ import {
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
   claudeRows,
+  codexAnswers,
   codexCalls,
   codexRows,
   fakeCodexLog,
   startCodex,
-  type CodexCall
+  type CodexCall,
+  type CodexWireLine
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
@@ -1318,6 +1320,39 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(confirm).toContainText('still working')
       await confirm.getByRole('button', { name: 'Close', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/cold/)
+      expect(codexCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§34
+  test('a Codex screen whose connection drops mid-turn connects again to a new app-server for the same thread: the cut-off turn no longer shows as working, and the tab is live again and answers the next prompt', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-reconnects'), '')
+    fs.writeFileSync(path.join(env.home, 'fake-codex-busy-ms'), '60000')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(codexRows(page)).toHaveClass(/st-working/)
+      await runIn(page, centerTerm(page), '/drop')
+      await expect.poll(() => fakeCodexLog(env, 'fake-codex-reconnects.jsonl')).toHaveLength(1)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), 'after the drop')
+      const answers = (): string[] =>
+        codexAnswers(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+      await expect
+        .poll(answers, { timeout: 30_000 })
+        .toContain('Codex fixture answered: after the drop')
+      const [codex] = (await page.evaluate(() => window.api.sessions.list())).filter(
+        (s) => s.alive && s.details?.codex
+      )
+      expect(codex.details?.codex?.observation).toBe('live')
       expect(codexCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)

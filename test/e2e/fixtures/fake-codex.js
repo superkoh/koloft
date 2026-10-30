@@ -187,6 +187,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
     return ran.stdout
   }
+  const threadsWorkingHere = new Set()
   const serve = (write) => {
     let initialized = false
     let active
@@ -232,6 +233,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     const complete = (thread, turn) => {
       if (turn.status === 'interrupted') return
       turn.status = 'completed'
+      threadsWorkingHere.delete(thread.id)
       thread.updatedAt = Math.floor(Date.now() / 1000)
       const desired = read('fake-codex-next-title')
       if (desired) {
@@ -268,6 +270,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       persistTurn(thread, text)
       const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
       activeTurn = turn
+      threadsWorkingHere.add(thread.id)
       started?.(turn)
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
@@ -280,6 +283,13 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       turn.items.push(asked)
       event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+      // CODEX§34
+      const diesOn = read('fake-codex-server-dies-on')
+      if (diesOn && text.includes(diesOn)) {
+        fs.unlinkSync(file('fake-codex-server-dies-on'))
+        append('fake-codex-server-deaths.jsonl', { pid: process.pid, text })
+        process.exit(1)
+      }
       runHook('UserPromptSubmit', { session_id: thread.id, cwd: thread.cwd, prompt: text })
       if (text.startsWith('open ')) {
         const shell = spawnSync(SHELL, [SHELL_FLAG, text], { cwd: thread.cwd, encoding: 'utf8' })
@@ -415,6 +425,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       append('fake-codex-wire.jsonl', { direction: 'client', frame })
       const { id, method, params: p = {} } = frame
+      // CODEX§34
+      if (method === 'initialize' && initialized) {
+        emit({ error: { code: -32600, message: 'Already initialized' }, id })
+        return
+      }
       if (method === 'initialize') {
         result(id, {
           userAgent: `fake-codex/${VERSION_AT_KOLOFTS_MINIMUM}`,
@@ -494,6 +509,9 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           return
         }
         active = method === 'thread/resume' ? previous : newThread(p.cwd || process.cwd(), previous)
+        // CODEX§34
+        if (method === 'thread/resume' && !threadsWorkingHere.has(active.id))
+          active.status = { type: 'idle' }
         if (p.cwd) active.cwd = p.cwd
         if (method === 'thread/fork' && previous.path)
           persistTurn(active, previous.preview || 'Forked session')
@@ -579,6 +597,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         pendingApproval = undefined
         if (active && activeTurn) {
           activeTurn.status = 'interrupted'
+          threadsWorkingHere.delete(active.id)
           status(active, { type: 'idle' })
           event('turn/completed', { threadId: active.id, turn: activeTurn })
         }
@@ -708,7 +727,10 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     const server = http.createServer((_req, res) => res.writeHead(404).end())
     const wss = new WebSocketServer({ server })
     wss.on('connection', (ws) => {
-      const receive = serve((line) => ws.send(line))
+      // CODEX§16
+      const receive = serve((line) => {
+        for (const client of wss.clients) if (client.readyState === 1) client.send(line)
+      })
       ws.on('message', (data) => receive(String(data)))
     })
     process.on('SIGTERM', () => {})
@@ -762,7 +784,10 @@ async function startTui() {
     process.exit(2)
   }
   const WebSocket = require('ws')
-  const ws = new WebSocket(url.startsWith('unix://') ? 'ws+unix://' + url.slice(7) + ':/' : url)
+  const connectTo = () =>
+    new WebSocket(url.startsWith('unix://') ? 'ws+unix://' + url.slice(7) + ':/' : url)
+  let ws = connectTo()
+  let leaving = false
   let id = 0
   let thread
   let turnId
@@ -802,6 +827,7 @@ async function startTui() {
       await prompt(first ?? read('fake-codex-next-title', 'Codex fixture session'))
   }
   const exit = async () => {
+    leaving = true
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})
     ws.close()
   }
@@ -817,6 +843,7 @@ async function startTui() {
       )
       approval = undefined
     } else if (text === '/exit' || text === '/quit') await exit()
+    else if (text === '/drop') ws.terminate()
     else if (text === '/new' || text === '/clear') await open('thread/start', { cwd })
     // CODEX§21
     else if (text === '/compact') await send('thread/compact/start', { threadId: thread.id })
@@ -825,7 +852,7 @@ async function startTui() {
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })
     else await prompt(text)
   }
-  ws.on('message', (bytes) => {
+  const onMessage = (bytes) => {
     const frame = JSON.parse(bytes.toString())
     if (frame.method === 'item/commandExecution/requestApproval') {
       approval = frame.id
@@ -859,19 +886,49 @@ async function startTui() {
       if (frame.error) waiting.reject(new Error(frame.error.message))
       else waiting.resolve(frame.result)
     }
-  })
-  ws.on('error', (error) => {
-    console.error(error.message)
-    process.exit(1)
-  })
-  ws.on('close', () => process.exit(0))
-  ws.on('open', async () => {
+  }
+  const initialize = async () => {
+    await send('initialize', {
+      clientInfo: { name: 'codex_cli_rs', version: VERSION_AT_KOLOFTS_MINIMUM },
+      capabilities: { experimentalApi: true }
+    })
+    ws.send(JSON.stringify({ method: 'initialized' }))
+  }
+  // CODEX§34
+  const reconnects = () => !leaving && !!thread && flag('fake-codex-reconnects')
+  const attach = (socket, opened) => {
+    socket.on('message', onMessage)
+    socket.on('error', (error) => {
+      if (reconnects()) return
+      console.error(error.message)
+      process.exit(1)
+    })
+    socket.on('close', () => {
+      if (!reconnects()) process.exit(0)
+      for (const waiting of pending.values()) waiting.reject(new Error('Reconnecting to server…'))
+      pending.clear()
+      process.stdout.write('\r\nReconnecting to server…\r\n')
+      setTimeout(() => {
+        ws = connectTo()
+        attach(ws, async () => {
+          try {
+            await initialize()
+            thread = (await send('thread/resume', { threadId: thread.id, excludeTurns: true }))
+              .thread
+            append('fake-codex-reconnects.jsonl', { pid: process.pid, sessionId: thread.id })
+            process.stdout.write('Codex fixture reconnected ' + thread.id + '\r\n> ')
+          } catch (error) {
+            process.stdout.write(error.message + '\r\n')
+            ws.terminate()
+          }
+        })
+      }, 200)
+    })
+    socket.on('open', opened)
+  }
+  attach(ws, async () => {
     try {
-      await send('initialize', {
-        clientInfo: { name: 'codex_cli_rs', version: VERSION_AT_KOLOFTS_MINIMUM },
-        capabilities: { experimentalApi: true }
-      })
-      ws.send(JSON.stringify({ method: 'initialized' }))
+      await initialize()
       const resume = argv.indexOf('resume')
       await open(
         resume >= 0 ? 'thread/resume' : 'thread/start',
