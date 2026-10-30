@@ -290,11 +290,6 @@ running TUI and app-server per build). Koloft kills a tab's process group by pid
 finds its app-server by an `app-server` argument, so both still work; a Workbench
 shell's title shows `codex` where it showed `node`.
 
-**A TUI whose app-server is killed keeps waiting.** 2026-10-30, 0.165.0 and 0.166.0, a
-real TUI on `--remote unix://…` to an `app-server --listen` of its own (not through
-Koloft's relay), the app-server sent SIGKILL: both TUIs drew "Reconnecting to server…
-⌃c quit" and were still running 45 s later.
-
 Koloft's own stop, ownership and retry rules are product rules, covered by
 `test/unit/codexTransport.test.ts`, not Codex facts.
 
@@ -379,8 +374,8 @@ keys per thread; the schema adds only the client methods `account/gcp/setup`,
 `accountSession/list` and `accountSession/switch`, the fields `ThreadItem.startedAtMs` /
 `completedAtMs`, `ThreadUsage.nativeUsageUsdMicros`, `HooksListParams.threadId`,
 `HookMetadata.environmentId` and `ProcessExitedNotification.outputDrainTimedOut`, and no
-server notification or request), 5 (the npm `codex` is now one process; a TUI whose
-app-server is killed waits to reconnect), 11 (a `never` / `danger-full-access` thread
+server notification or request), 5 (the npm `codex` is now one process), 34 (a TUI
+whose app-server is killed keeps trying to reconnect), 11 (a `never` / `danger-full-access` thread
 resumed by an app-server given other `-c` stays as it was; the other two shapes not
 rerun), 13/14 (`model/list` the same eight models, all priced, default `gpt-6.1-sol`;
 `total` keeps growing across a resume; reasoning tokens were 0 in every turn, so the
@@ -2783,4 +2778,9 @@ trusted. One run of each.
   `app-server generate-json-schema` output, not tried on the wire: `ClientRequest` lists
   none (`thread/queue/add` itself is not in the generated schema either), so a message
   queued again lands behind those still queued.
+- **A TUI whose app-server is killed keeps trying on 0.165.0 and 0.166.0 too.**
+  2026-10-30, a real TUI on `--remote unix://…` to an `app-server --listen` of its own
+  (no relay in between), the app-server sent SIGKILL: both drew "Reconnecting to
+  server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
+  reconnect recovery" was not told apart from 0.165.0 by this.
 
