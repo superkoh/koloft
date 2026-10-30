@@ -606,7 +606,15 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'survive a restart')
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.backendId === 'agy' && s.usage
+            ),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
       const { id } = await boundAgy(page)
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
