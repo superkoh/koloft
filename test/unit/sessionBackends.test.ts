@@ -250,9 +250,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local', 'muse/local', 'muse/ssh']
     ],
     [
-      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, only on this Mac: through tmux the title code it watches for never arrives, and other agents remove no worktree at exit',
+      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
       'worktreeRemovalFollowed',
-      ['claude/local']
+      ['claude/local', 'claude/ssh']
     ],
     [
       'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',

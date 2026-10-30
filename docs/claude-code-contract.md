@@ -858,8 +858,15 @@ as a taken name so a scheduled run never hands `-w` such a name.
   Koloft worktree with `node_modules`) took 3.5 s from `/exit` to exit, 2.6 s of it the
   delete, under the owner's own settings (fullscreen, Koloft's hooks and plugin);
   250k files took 9.5 s. The same title-then-line bytes came in normal and fullscreen
-  mode. Through Koloft's remote tmux (3.3a) the title code is not passed on, and the
-  line arrives as a redrawn screen row (`ESC[H` … `ESC[K`), like any other.
+  mode. Through tmux the title code reaches the tab only with tmux's `set-titles on` and
+  `set-titles-string '#{pane_title}'` (PLATFORM§35); tmux then sends the mode switches
+  `ESC[?12l ESC[?25h ESC[?2004l` between the empty title and `Removing worktree…` (and
+  before the resume hint when there is one). Measured 2026-10-29 on CC 2.1.312
+  linux-arm64 in the e2e SSH lab image (tmux 3.3a), `claude -w` with 60,000 ignored files,
+  `/exit` with and without a message: the title came 10–12 ms before the line, the folder
+  was gone at +0.39–0.70 s, and the SessionEnd hook ran only after that (+0.49–0.83 s), so
+  a mirrored SessionEnd record cannot mark the start of the removal. A `WorktreeRemove`
+  hook in `--settings` was not called for a worktree CC made itself.
 - **The folder goes first, the branch 60–140 ms later, and the process exits last.**
   Measured 2026-10-11 on CC 2.1.293 and 2.1.296 (two runs each; a `-w` session in a
   throwaway one-commit repo driven in a python pty, no login, `/exit` with no turn and
@@ -896,8 +903,8 @@ Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exit
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a local tab
-the moment its CC starts removing and finishes the removal if Koloft quits first.
+prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a tab, on this Mac or on a machine, the
+moment its CC starts removing, and on this Mac finishes the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 

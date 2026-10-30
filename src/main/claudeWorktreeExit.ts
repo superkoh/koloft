@@ -6,7 +6,9 @@ import { stripTerminalCodes } from './terminalCodes'
 // CC§4
 const CLAUDE_CLEARS_ITS_TITLE = '\x1b]0;\x07'
 // CC§4
-const CLAUDE_STARTS_REMOVING_THE_WORKTREE = 'Removing worktree…'
+const CLAUDE_STARTS_REMOVING_THE_WORKTREE = 'Removing worktree'
+// CC§4 PLATFORM§35
+const ITS_ELLIPSIS_AS_A_UTF8_OR_ANOTHER_TMUX_CLIENT_DRAWS_IT = ['…', '_']
 // CC§4
 const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
 // CC§4
@@ -15,6 +17,8 @@ const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
 const ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE = 512
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
+// CC§4 PLATFORM§35
+const MODE_SWITCHES_TMUX_SENDS_AFTER_THE_TITLE = /\x1b\[\?[0-9;]*[hl]/g
 
 function printedLines(s: string): string[] {
   return stripTerminalCodes(s)
@@ -24,7 +28,7 @@ function printedLines(s: string): string[] {
 }
 
 function nothingOrTheResumeHint(between: string): boolean {
-  if (between === '') return true
+  if (between.replace(MODE_SWITCHES_TMUX_SENDS_AFTER_THE_TITLE, '') === '') return true
   const lines = printedLines(between)
   return (
     lines.length === 2 &&
@@ -54,13 +58,17 @@ export class WorktreeRemovalWatch {
         removing >= 0 && removing - after <= ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE;
         removing = seen.indexOf(line, removing + 1)
       ) {
-        if (nothingOrTheResumeHint(seen.slice(after, removing))) {
-          this.saidSince = seen.slice(removing + line.length)
+        const ellipsis = seen[removing + line.length]
+        if (
+          ITS_ELLIPSIS_AS_A_UTF8_OR_ANOTHER_TMUX_CLIENT_DRAWS_IT.includes(ellipsis) &&
+          nothingOrTheResumeHint(seen.slice(after, removing))
+        ) {
+          this.saidSince = seen.slice(removing + line.length + ellipsis.length)
           this.pending = ''
           return true
         }
       }
-      if (seen.length - after < ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE + line.length)
+      if (seen.length - after <= ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE + line.length)
         keepFrom = Math.min(keepFrom, title)
     }
     this.pending = seen.slice(Math.max(0, keepFrom))
