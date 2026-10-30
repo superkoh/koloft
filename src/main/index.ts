@@ -66,7 +66,7 @@ import { museSignIn, storeMuseKey } from './museServe'
 import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
@@ -483,6 +483,7 @@ import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } fr
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   codexDialog,
+  isAskedCall,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -576,7 +577,7 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
-const claudeAsks = new Map<string, string>()
+const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -627,7 +628,7 @@ const sessionBackends = new SessionBackends({
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
-    claudeAsks.set(tabId, claudeAskLine(ask))
+    claudeAsks.set(tabId, ask)
     if (discordRelay) discordRelay.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
@@ -644,10 +645,8 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const line = claudeAsks.get(tabId)
-  if (line) return line
-  const held = discordRelay?.heldAsk(tabId)
-  return held && claudeAskLine(held)
+  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
+  return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
   if (tracker.statusOf(tabId) === 'approval')
@@ -3099,6 +3098,8 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
+    const ask = claudeAsks.get(tabId)
+    if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
