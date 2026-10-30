@@ -65,7 +65,10 @@ Working principles:
   line to 2 units. Commit the sheet next to the others, name its cells in
   `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
   `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
-  Only brand marks (Claude, Codex, Discord, GitHub) come from `react-icons/bs`.
+  Only brand marks (Claude, Codex, Meta, Discord, GitHub) come from `react-icons/bs`;
+  a brand it lacks (Antigravity) is that brand's own mark, its path copied from
+  `@lobehub/icons-static-svg` (MIT) into react-icons' `GenIcon` — never a parent
+  company's mark in its place.
 - Every feature covers every kind of session tab: each agent in `SESSION_BACKENDS`,
   in a local workspace and in a remote one reached over SSH (Secure Shell).
   A plan, design or PR says what each kind does: the same thing, a named
