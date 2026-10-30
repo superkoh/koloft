@@ -37,7 +37,6 @@ const sessionId = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
 function backendWithDirs(): {
   backend: ClaudeBackend
   events: unknown[]
-  statusLog: string
   agentExits(): void
   writeHookStart(): void
   writeTurn(): void
@@ -64,7 +63,6 @@ function backendWithDirs(): {
   return {
     backend,
     events,
-    statusLog,
     agentExits: () => {
       pty.alive = false
       backend.onPtyExit(tabId, true)
@@ -339,7 +337,7 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     await vi.waitFor(() => expect(t.events).toEqual([...inOrder, [tabId, { type: 'prompt' }]]))
   })
 
-  it('reports a tab whose claude died without an end report as exited, and takes no turn from its status log read again from the start after that, as a poll that caught the log before it was removed does', async () => {
+  it('reports a tab whose claude died without an end report as exited, and takes no turn from status lines read after that, which would turn its exited mark back into a finished turn', async () => {
     const t = backendWithDirs()
     t.watch()
     t.writeShimRegistration()
@@ -349,7 +347,6 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     t.agentExits()
     const exited = [tabId, { type: 'exited', clean: false, sessionId }]
     expect(t.events.slice(3)).toEqual([exited])
-    await vi.waitFor(() => expect(fs.existsSync(t.statusLog)).toBe(false))
     t.writeHookStart()
     t.writeTurn()
     await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))

@@ -522,9 +522,9 @@ export class ClaudeBackend implements SessionBackend {
 
   private dropStatusLog(regDir: string, tabId: string): void {
     const full = statusLogOf(regDir, tabId)
+    fs.rmSync(full, { force: true })
     this.statusLogCursors.delete(full)
     this.statusLogDraining.delete(full)
-    fs.rm(full, { force: true }, () => {})
   }
 
   private beforeItsShimRegistration(statusLog: string): boolean {
