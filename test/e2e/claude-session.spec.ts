@@ -1,3 +1,4 @@
+import fs from 'fs'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
 import {
@@ -93,6 +94,68 @@ test('C2: a live Claude Code row says under its branch what it did, while it wor
   await expect(row).toHaveClass(/\bst-working\b/, { timeout: 15_000 })
   await expect(line).toHaveText('Ran rm -rf build')
   await sessions.screenshot({ path: testInfo.outputPath('row-working.png') })
+})
+
+test('C2: a Claude Code row keeps its Asks: line while another tool of the turn finishes, and drops it once the asked tool itself finishes, though the row still waits', async ({
+  page,
+  env
+}) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  const line = row.locator('.ws-tab-act')
+  const title = row.locator('.ws-tab-title')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const sessionId = await boundSessionId(page, await row.getAttribute('data-tab-id'))
+  expect(sessionId).toBeTruthy()
+  const transcript = transcriptFile(env.home, env.workspaces.a, sessionId ?? '')
+  const cwd = env.workspaces.a
+  const append = (...records: object[]): void =>
+    fs.appendFileSync(transcript, records.map((r) => JSON.stringify(r) + '\n').join(''))
+  const toolResult = (id: string): object => ({
+    type: 'user',
+    timestamp: new Date().toISOString(),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+    cwd
+  })
+  const retitled = (customTitle: string): object => ({
+    type: 'custom-title',
+    customTitle,
+    sessionId
+  })
+
+  append({
+    type: 'assistant',
+    timestamp: new Date().toISOString(),
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', id: 'toolu_parallel_e2e', name: 'Grep', input: { pattern: 'x' } }
+      ]
+    },
+    cwd
+  })
+  await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+  await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Asks: Which colour?')
+
+  append(toolResult('toolu_parallel_e2e'), retitled('Parallel grep landed'))
+  await expect(title).toHaveText('Parallel grep landed', { timeout: 15_000 })
+  await expect(row).toHaveClass(/\bst-approval\b/)
+  await expect(line).toHaveText('Asks: Which colour?')
+
+  const askId = fs
+    .readFileSync(transcript, 'utf8')
+    .split('\n')
+    .flatMap((l) => (l ? (JSON.parse(l).message?.content ?? []) : []))
+    .findLast(
+      (b: { type?: string; name?: string }) =>
+        b?.type === 'tool_use' && b.name === 'AskUserQuestion'
+    ).id
+  append(toolResult(askId), retitled('Question answered'))
+  await expect(title).toHaveText('Question answered', { timeout: 15_000 })
+  await expect(row).toHaveClass(/\bst-approval\b/)
+  await expect(line).not.toHaveText('Asks: Which colour?')
 })
 
 test('when Claude Code moves the conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id', async ({
