@@ -6,7 +6,8 @@ import {
   type MachineTmp,
   NO_FILES_THERE,
   type MirrorStamps,
-  type RemoteGitInfo
+  type RemoteGitInfo,
+  type ShellReport
 } from './install'
 import { sessionIdOfTmux } from './launch'
 
@@ -53,6 +54,7 @@ export interface RemoteTarget {
   paths: string[]
   hasTabs: boolean
   busy: boolean
+  shellTabs?: string[]
 }
 
 export interface RemoteSyncDeps {
@@ -64,6 +66,7 @@ export interface RemoteSyncDeps {
   onHooksPulled?(host: string): void
   onConnected?(host: string): void
   onConnectedRound?(host: string): void
+  onShells?(host: string, shells: ShellReport[]): void
 }
 
 interface HostState {
@@ -282,7 +285,8 @@ export class RemoteSync {
             askGit ? target.paths : [],
             watched,
             slugsNow(),
-            extras.map((e) => e.from)
+            extras.map((e) => e.from),
+            target.shellTabs ?? []
           )
         )
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
@@ -294,6 +298,7 @@ export class RemoteSync {
         mirrors = parsed.mirrors
         this.noticeStamps(host, watched, parsed.stamps)
         st.tmp = parsed.tmp
+        if (parsed.shells.length) this.deps.onShells?.(host, parsed.shells)
         const prevAlive = st.alive
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)

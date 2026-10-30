@@ -3653,7 +3653,11 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
-        busy: busy.has(t.host)
+        busy: busy.has(t.host),
+        shellTabs: ptyMgr
+          .list()
+          .filter((h) => h.alive && h.utilMachine === t.host)
+          .map((h) => h.id)
       }))
     },
     onChange: (host) => {
@@ -3667,6 +3671,9 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
+    onShells: (_host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(s.tabId, s.name, s.cwd)
+    },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) =>
       void browserTunnels.sync(
@@ -3677,7 +3684,7 @@ app.whenReady().then(() => {
       )
   })
   ptyMgr.on('typed', (tabId: string) => {
-    const host = machineOfTab(tabId)
+    const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
@@ -5456,6 +5463,7 @@ function registerIpc(): void {
         resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
+        utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
       writeRelayEnv(ptyTabIds())

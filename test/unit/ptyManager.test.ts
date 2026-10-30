@@ -616,6 +616,30 @@ describe('PtyManager utility-shell process title', () => {
     expect(seen.map((t) => t.name)).toEqual(['zsh', 'node'])
   })
 
+  it('names a utility shell on another machine only from what the machine says, never from the ssh this Mac runs it through', () => {
+    const mgr = new PtyManager()
+    const seen = titles(mgr)
+    const cwds: { id: string; cwd: string }[] = []
+    mgr.on('cwd', (c: { id: string; cwd: string }) => cwds.push(c))
+    const h = mgr.create({
+      kind: 'shell',
+      koloftShim: SHIM,
+      cwd: os.tmpdir(),
+      util: true,
+      utilMachine: 'box'
+    })
+    mocks.state.processName = 'ssh'
+    mocks.state.data?.(`\x1b]7;file://${os.hostname()}/Users/me\x07`)
+    vi.advanceTimersByTime(10_000)
+    expect(seen).toEqual([])
+    expect(cwds).toEqual([])
+    mgr.shellOnMachineSaid(h.id, 'bash', '/home/u/proj')
+    mgr.shellOnMachineSaid(h.id, 'bash', '/home/u/proj')
+    mgr.shellOnMachineSaid(h.id, '/usr/bin/vim', '/home/u/a dir')
+    expect(seen.map((t) => t.name)).toEqual(['bash', 'vim'])
+    expect(cwds.map((c) => c.cwd)).toEqual(['ssh://box/home/u/proj', 'ssh://box/home/u/a dir'])
+  })
+
   it('stops polling once the shell exits', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
