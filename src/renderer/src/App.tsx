@@ -1428,8 +1428,7 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [])
   const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
-  const previewSlot =
-    !panelShown && previewFits && (panelOpenKnown || (!panelBound && !!landedTab?.alive))
+  const previewSlot = !panelShown && previewFits && (panelOpenKnown || !!landedTab?.alive)
   const previewShown = previewSlot && panelOpenKnown && panelReady
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()

@@ -20,6 +20,7 @@ import {
   newSessionInWith,
   openMenu,
   runIn,
+  seedJsonl,
   setWindowWidth,
   shownCenterTerm,
   startSessionIn,
@@ -30,6 +31,7 @@ import { setupChangeFixture } from './helpers/filesFixture'
 import {
   WORKBENCH,
   layoutState,
+  seedWorkbench,
   seedWorkbenchDefault,
   waitPanelAttached,
   wbActiveTab
@@ -46,6 +48,41 @@ const CANNED_STARTUP_TURN_WRITES = 'NOTES.md'
 const BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS = 6000
 const WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX = 1500
 const FIT_SETTLE_MS = 500
+
+function recordShownTermEveryFrame(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    const frames: string[] = []
+    const w = window as unknown as {
+      __termFrames: string[]
+      __stopTermFrames?: boolean
+      __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+    }
+    w.__termFrames = frames
+    w.__stopTermFrames = false
+    const tick = (): void => {
+      const masked = !!document.querySelector('.term-island .empty')
+      for (const t of masked ? [] : Object.values(w.__koloftTerms ?? {})) {
+        const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
+        if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
+          const left = Math.round(wrap.querySelector('.term')!.getBoundingClientRect().left)
+          const frame = `${t.cols} cols at ${left}px`
+          if (frames[frames.length - 1] !== frame) frames.push(frame)
+          break
+        }
+      }
+      if (!w.__stopTermFrames) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+}
+
+function recordedTermFrames(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __termFrames: string[]; __stopTermFrames?: boolean }
+    w.__stopTermFrames = true
+    return w.__termFrames
+  })
+}
 
 function collapsedWithoutTips(env: E2EEnv): void {
   seedWorkbenchDefault(env, false)
@@ -193,12 +230,65 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
         await expect.poll(() => shownCenterTerm(page), { timeout: 20_000 }).toBeDefined()
         await expect(page.locator('.terminals > .empty')).toHaveCount(0, { timeout: 20_000 })
         await page.waitForTimeout(FIT_SETTLE_MS)
-        const beforeBind = await shownCenterTerm(page)
+        await recordShownTermEveryFrame(page)
         await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1)
 
         await expect(card(page)).toBeVisible({ timeout: 60_000 })
         await page.waitForTimeout(FIT_SETTLE_MS)
-        expect(await shownCenterTerm(page)).toEqual(beforeBind)
+        expect(await recordedTermFrames(page)).toHaveLength(1)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  for (const tab of [
+    {
+      kind: 'a Claude Code session',
+      coldRow: async (env: E2EEnv) => {
+        const id = seedJsonl(env, env.workspaces.a, { summary: 'Resumed beside the card' })
+        seedWorkbench(env, id, { open: false, tabs: [] })
+        fs.writeFileSync(env.claudeDelayFile, String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS))
+        const { app, page } = await launchCollapsed(env)
+        const row = page.locator('.ws .ws-tab', { hasText: 'Resumed beside the card' })
+        await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        return { app, page, row }
+      }
+    },
+    {
+      kind: 'a Codex session',
+      coldRow: async (env: E2EEnv) => {
+        installCodex(env)
+        const { app, page } = await launchCollapsed(env)
+        await newSessionInWith(page, 'ws-a', 'Codex')
+        await waitPanelAttached(page)
+        const row = wsRows(page, 'ws-a').first()
+        await openMenu(page, row)
+        await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        fs.writeFileSync(
+          path.join(env.home, 'fake-codex-delay'),
+          String(BIND_WELL_AFTER_THE_TERMINAL_SHOWS_MS)
+        )
+        return { app, page, row }
+      }
+    }
+  ]) {
+    test(`WB-P10: resuming ${tab.kind} whose Workbench was left collapsed, the terminal shows where it stays once the card shows`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      const { app, page, row } = await tab.coldRow(env)
+      try {
+        await setWindowWidth(app, WINDOW_WHERE_THE_CARD_COSTS_COLUMNS_PX)
+        await page.waitForTimeout(FIT_SETTLE_MS)
+        await recordShownTermEveryFrame(page)
+        await row.click()
+
+        await expect(card(page)).toBeVisible({ timeout: 60_000 })
+        await expect(page.locator('.term-island .empty')).toHaveCount(0)
+        await page.waitForTimeout(FIT_SETTLE_MS)
+        expect(await recordedTermFrames(page)).toHaveLength(1)
       } finally {
         await quitAndClose(app)
       }
