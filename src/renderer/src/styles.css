@@ -1622,11 +1622,14 @@ input.switch:focus-visible {
   --bg-1: var(--bg-panel-sunk);
   --term-ground: var(--bg-1);
 }
-.wb-peek {
+.wb-peek,
+.wb-peek-slot {
   flex: 0 0 auto;
+  margin-left: 10px;
+}
+.wb-peek {
   align-self: flex-start;
   max-height: calc(100% - 10px);
-  margin-left: 10px;
   animation: none;
 }
 .wb-peek .wb-tabs {
