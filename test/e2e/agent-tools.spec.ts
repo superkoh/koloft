@@ -28,6 +28,7 @@ import {
   termIds,
   waitBooted,
   waitForCalls,
+  waitStartupTurnOver,
   wsGroup,
   wsRows
 } from './helpers/p1'
@@ -106,10 +107,14 @@ async function aChildWhoseParentTabWasClosed(
   page: Page,
   backend: 'claude' | 'codex'
 ): Promise<{ parentId: string; kidTab: string }> {
-  if (backend === 'claude') await startSessionIn(page, 'ws-a')
-  else await newSessionInWith(page, 'ws-a', 'Codex')
   const parentRow = wsRows(page, 'ws-a').first()
-  await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  if (backend === 'claude') {
+    await startSessionIn(page, 'ws-a')
+    await waitStartupTurnOver(page, 'ws-a')
+  } else {
+    await newSessionInWith(page, 'ws-a', 'Codex')
+    await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  }
   const parentTab = (await parentRow.getAttribute('data-tab-id'))!
   const parent = (await page.evaluate(() => window.api.sessions.list())).find(
     (s) => s.tabId === parentTab
