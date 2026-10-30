@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS, backendAvailable } from '@shared/sessionBackend'
-import { hasUsableAccount } from '@shared/accountUsage'
+import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { useStore } from '../store'
 import { relTime } from '../sessionRows'
@@ -101,19 +101,22 @@ function MiniSidebar({ folders }: { folders: Folder[] }): JSX.Element {
             <IconFolderOpen size={14} />
             <span>{basename(ws.path)}</span>
           </div>
-          {ws.rows.slice(0, SIDEBAR_ROWS_PER_FOLDER).map((r, ri) => (
-            <div
-              key={r.id}
-              className={'wl-row' + (r.running ? ' live' : '')}
-              style={{ animationDelay: `${wi * 180 + (ri + 1) * 140}ms` }}
-            >
-              <span className="wl-row-t">{r.title}</span>
-              <span className="wl-row-s">
-                <SessionBackendIcon backend={r.backendId} size={10} decorative />
-                {BACKEND_LABEL[r.backendId]} · {relTime(r.mtime, now)}
-              </span>
-            </div>
-          ))}
+          {[...ws.rows]
+            .sort((a, b) => b.mtime - a.mtime)
+            .slice(0, SIDEBAR_ROWS_PER_FOLDER)
+            .map((r, ri) => (
+              <div
+                key={r.id}
+                className={'wl-row' + (r.running ? ' live' : '')}
+                style={{ animationDelay: `${wi * 180 + (ri + 1) * 140}ms` }}
+              >
+                <span className="wl-row-t">{r.title}</span>
+                <span className="wl-row-s">
+                  <SessionBackendIcon backend={r.backendId} size={10} decorative />
+                  {BACKEND_LABEL[r.backendId]} · {relTime(r.mtime, now)}
+                </span>
+              </div>
+            ))}
         </div>
       ))}
     </div>
@@ -212,6 +215,8 @@ export function Welcome({
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
   const newAgent = chip ?? pick
   const signTabOpen = signingIn && pick !== 'claude' && !!signInTabId
+  const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
+  const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
   useEffect(() => {
     if (step !== 2 || found === null || folders.length > 0 || pinning) return
@@ -285,20 +290,20 @@ export function Welcome({
 
   const signIn = async (): Promise<void> => {
     setSignError(null)
-    const name = defaultAccountName(pick, accounts ?? [])
+    const name = accountName
     const failed =
       'Could not start the sign-in. Try again, or add the account in Settings ▸ Accounts.'
     if (pick === 'claude') {
-      beginLogin()
+      beginLogin(again)
       setLoginProgress({ phase: 'starting', name })
       setSigningIn(true)
-      if ((await window.api.accounts.startLogin(name)) !== 'ok') {
+      if ((await window.api.accounts.startLogin(name, !!again)) !== 'ok') {
         setSigningIn(false)
         setSignError(failed)
       }
       return
     }
-    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[pick], name)
+    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[pick], name, !!again)
     if (!r.ok) {
       setSignError(failed)
       return
@@ -578,8 +583,11 @@ export function Welcome({
               )}
               {signError && <div className="wl-sign-text bad">{signError}</div>}
               <div className="wl-sign-note">
-                The account is named “{defaultAccountName(pick, accounts ?? [])}”. Add more in
-                Settings ▸ Accounts: each new session then takes the one with the most left.
+                {again
+                  ? `This signs “${again}” in again.`
+                  : `The account is named “${accountName}”.`}{' '}
+                Add more in Settings ▸ Accounts: each new session then takes the one with the most
+                left.
               </div>
             </div>
           </>

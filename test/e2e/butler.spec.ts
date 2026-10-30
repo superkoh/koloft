@@ -924,16 +924,18 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
     }
   })
 
-  test('before Assist is set up, the butler row is grey and opens the Assist setup', async ({
+  test('before Assist is set up, the butler row is grey and opens the Assist setup only when clicked', async ({
     env
   }) => {
     const { page, close } = await launched(env, { assist: null })
     try {
       const setup = page.getByRole('dialog', { name: 'Koloft Assist' })
-      await expect(setup).toBeVisible()
       await expect(butlerRow(page)).toHaveClass(/\bcold\b/)
       await expect(butlerRow(page).locator('.ws-tab-title')).toHaveText('Alfred · Butler')
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText('Not set up — click to start')
+      await expect(setup).toHaveCount(0)
+      await butlerRow(page).click()
+      await expect(setup).toBeVisible()
       expect(readAllCalls(env)).toEqual([])
     } finally {
       await close()
