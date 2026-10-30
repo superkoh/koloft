@@ -3,7 +3,7 @@ import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
-import { newSessionInWith, startSessionIn, wsRows } from './p1'
+import { newSessionInWith, startSessionIn, waitStartupTurnOver, wsRows } from './p1'
 
 export interface CodexCall {
   pid: number
@@ -79,5 +79,5 @@ export async function startLocalSession(
 ): Promise<void> {
   if (backend === 'codex') return void (await startCodex(page, env))
   await startSessionIn(page, 'ws-a')
-  await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  await waitStartupTurnOver(page, 'ws-a')
 }

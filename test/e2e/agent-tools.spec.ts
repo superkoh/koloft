@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
@@ -104,13 +104,11 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
 
 async function aChildWhoseParentTabWasClosed(
   page: Page,
+  env: E2EEnv,
   backend: 'claude' | 'codex'
 ): Promise<{ parentId: string; kidTab: string }> {
-  if (backend === 'claude') await startSessionIn(page, 'ws-a')
-  else await newSessionInWith(page, 'ws-a', 'Codex')
-  const parentRow = wsRows(page, 'ws-a').first()
-  await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-  const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+  await startLocalSession(page, env, backend)
+  const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
   const parent = (await page.evaluate(() => window.api.sessions.list())).find(
     (s) => s.tabId === parentTab
   )!
@@ -333,7 +331,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, backend)
+        const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, env, backend)
         await page.evaluate(
           ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
           [kidTab, `/koloft session send ${parentId} all done`]
@@ -365,7 +363,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, 'codex')
+      const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, env, 'codex')
       fs.writeFileSync(path.join(env.home, 'fake-codex-server-dies-on'), ':) all done')
       await page.evaluate(
         ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
