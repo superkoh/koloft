@@ -209,7 +209,8 @@ export const CH = {
     rows: 'workspace:rows',
     fetchFreshness: 'workspace:fetchFreshness',
     pull: 'workspace:pull',
-    discover: 'workspace:discover'
+    discover: 'workspace:discover',
+    adopt: 'workspace:adopt'
   },
   project: {
     create: 'project:create'

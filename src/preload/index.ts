@@ -427,6 +427,7 @@ const api: KoloftApi = {
     fetchFreshness: (p) => ipcRenderer.invoke(CH.workspace.fetchFreshness, p),
     pull: (p, expect) => ipcRenderer.invoke(CH.workspace.pull, p, expect),
     discover: () => ipcRenderer.invoke(CH.workspace.discover),
+    adopt: (rows) => ipcRenderer.invoke(CH.workspace.adopt, rows),
     createProject: (parent, name) => ipcRenderer.invoke(CH.project.create, parent, name)
   },
   assist: {

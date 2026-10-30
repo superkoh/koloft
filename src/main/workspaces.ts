@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import type {
   BackendId,
   DiscoveredFolder,
+  FolderUse,
   LayoutV6,
   ProjectInfo,
   BackendSessionRow,
@@ -84,11 +85,26 @@ export interface LiveSession {
 }
 
 function addUse(into: Map<string, DiscoveredFolder>, at: string, use: DiscoveredFolder): void {
-  const prev = into.get(at)
-  if (prev) {
-    prev.sessions += use.sessions
-    prev.mtime = Math.max(prev.mtime, use.mtime)
-  } else into.set(at, { path: at, sessions: use.sessions, mtime: use.mtime })
+  const prev = into.get(at) ?? { path: at, sessions: 0, mtime: 0, agents: {} }
+  prev.sessions += use.sessions
+  prev.mtime = Math.max(prev.mtime, use.mtime)
+  for (const [agent, u] of Object.entries(use.agents) as [BackendId, FolderUse][]) {
+    const had = prev.agents[agent]
+    prev.agents[agent] = had
+      ? { sessions: had.sessions + u.sessions, mtime: Math.max(had.mtime, u.mtime) }
+      : { ...u }
+  }
+  into.set(at, prev)
+}
+
+function isUnder(dir: string, roots: readonly string[]): boolean {
+  return roots.some((r) => dir === r || dir.startsWith(r + path.sep))
+}
+
+const MAC_SCRATCH_ROOTS = ['/tmp', '/private/tmp', '/var/folders', '/private/var/folders']
+
+export function scratchRootsAround(home: string, tmpdir: string): string[] {
+  return [tmpdir, ...MAC_SCRATCH_ROOTS].filter((r) => !isUnder(home, [r]))
 }
 
 export interface WorkspaceManagerDeps {
@@ -118,6 +134,7 @@ export interface WorkspaceManagerDeps {
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
+  scratchRoots?: readonly string[]
   butlerFolder?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
@@ -384,6 +401,7 @@ export class WorkspaceManager {
       if (!there[i]) continue
       const root = this.deps.projectInfo(use.path).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
+      if (isUnder(root, this.deps.scratchRoots ?? [])) continue
       addUse(byRoot, root, use)
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
@@ -398,18 +416,15 @@ export class WorkspaceManager {
       const files = await this.listJsonl(projects, slug, stats)
       const cwd = await this.readFirstCwd(projects, slug, files, stats)
       if (!cwd) continue
-      used.push({
-        path: cwd,
-        sessions: files.length,
-        mtime: Math.max(...files.map((f) => f.mtime))
-      })
+      const use = { sessions: files.length, mtime: Math.max(...files.map((f) => f.mtime)) }
+      used.push({ path: cwd, ...use, agents: { claude: use } })
     }
     return used
   }
 
   private isConductorFolder(dir: string): boolean {
     const root = this.deps.conductorsRoot
-    return !!root && (dir === root || dir.startsWith(root + path.sep))
+    return !!root && isUnder(dir, [root])
   }
 
   async worktrees(wsPath: string): Promise<WorktreeInfo[]> {
@@ -559,14 +574,19 @@ export class WorkspaceManager {
   }
 
   onSessionBound(sessionId: string): void {
-    if (!sessionId || this.layout.members.includes(sessionId)) return
+    this.adopt([sessionId])
+  }
+
+  adopt(sessionIds: string[]): void {
+    const fresh = [...new Set(sessionIds)].filter((id) => id && !this.layout.members.includes(id))
+    if (fresh.length === 0) return
+    const panels = Object.fromEntries(
+      fresh.map((id) => [id, { open: this.layout.workbench.defaultOpen, tabs: [] }])
+    )
     this.layout = {
       ...this.layout,
-      members: [...this.layout.members, sessionId],
-      panels: {
-        [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] },
-        ...this.layout.panels
-      }
+      members: [...this.layout.members, ...fresh],
+      panels: { ...panels, ...this.layout.panels }
     }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()

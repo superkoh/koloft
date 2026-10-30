@@ -63,7 +63,7 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
-import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
+import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -81,6 +81,7 @@ import { SessionAccounts } from './sessionAccounts'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
+  backendAvailable,
   backendIdOf,
   capabilitiesFor,
   identityOf,
@@ -240,7 +241,7 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, type LiveSession } from './workspaces'
+import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import {
   dirExistsSync,
@@ -405,6 +406,7 @@ import type {
   AccountMeta,
   AccountView,
   ArtifactView,
+  BackendAvailability,
   BackendId,
   CodexLimits,
   CodexResetOutcome,
@@ -2004,6 +2006,7 @@ interface LoginWatch {
   startedAt: number
   sawUrl: boolean
   done: boolean
+  installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
@@ -2025,6 +2028,16 @@ function feedLoginWatcher(tabId: string, data: string): void {
   if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
     failLogin(tabId, 'Sign-in timed out')
     return
+  }
+  if (w.installing) {
+    const seen = w.installing.carry + data
+    const rest = afterOutputStart(seen)
+    if (rest === null) {
+      w.installing.carry = outputStartCarry(seen)
+      return
+    }
+    w.installing = undefined
+    data = rest
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
@@ -2068,7 +2081,7 @@ function cancelGuidedLogin(tabId: string): void {
   } catch {}
 }
 
-function startGuidedLogin(name: string): string {
+function startGuidedLogin(name: string, installFirst: boolean): string {
   const handle = ptyMgr.create({
     kind: 'shell',
     koloftShim: PLAIN_KOLOFT_SHIM,
@@ -2077,10 +2090,24 @@ function startGuidedLogin(name: string): string {
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
     rows: 50,
     setupCommand: setupLine(),
-    launchCommand: 'claude setup-token'
+    launchCommand: installFirst
+      ? installThen(
+          'claude',
+          (claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,
+          process.env.KOLOFT_TEST_TOOL_INSTALLER
+        )
+      : 'claude setup-token'
   })
-  loginWatchers.set(handle.id, { name, buf: '', startedAt: Date.now(), sawUrl: false, done: false })
+  loginWatchers.set(handle.id, {
+    name,
+    buf: '',
+    startedAt: Date.now(),
+    sawUrl: false,
+    done: false,
+    ...(installFirst && { installing: { carry: '' } })
+  })
   loginPtys.add(handle.id)
+  if (installFirst) toolInstallPtys.add(handle.id)
   sendLoginProgress({ phase: 'starting', name })
   return handle.id
 }
@@ -3354,6 +3381,7 @@ app.whenReady().then(() => {
     hiddenRow: (id) => !!butler?.isButlerSession(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
@@ -5503,13 +5531,15 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
-  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
-    if (recheck === true) sessionBackends.forgetAvailability()
-    return sessionBackends.availability((id) => ({
+  const backendStatus = (): Promise<BackendAvailability[]> =>
+    sessionBackends.availability((id) => ({
       id,
       available: false,
       reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
+  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
+    if (recheck === true) sessionBackends.forgetAvailability()
+    return backendStatus()
   })
   ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
     const id = backendIdOf(backend)
@@ -5614,7 +5644,7 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
@@ -5622,7 +5652,7 @@ function registerIpc(): void {
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name)
+    startGuidedLogin(name, !backendAvailable(await backendStatus(), 'claude'))
     return 'ok'
   })
   ipcMain.handle(
@@ -5880,6 +5910,20 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
     if (typeof id !== 'string' || !id) return null
     return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
+  })
+
+  ipcMain.handle(CH.workspace.adopt, (_e, rows: unknown) => {
+    if (!Array.isArray(rows)) return
+    const picked = rows.filter(
+      (r): r is { id: string; backendId: BackendId } =>
+        typeof r?.id === 'string' && typeof r?.backendId === 'string'
+    )
+    const idsOf = (backend: BackendId): string[] =>
+      picked.filter((r) => r.backendId === backend).map((r) => r.id)
+    workspaceMgr?.adopt(idsOf('claude'))
+    let stored = 0
+    for (const s of storedSessions()) stored += s.adopt(idsOf(s.id))
+    if (stored > 0) workspaceMgr?.onAdditionalSessionsChanged()
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
