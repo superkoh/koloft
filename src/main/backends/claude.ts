@@ -808,7 +808,6 @@ export class ClaudeBackend implements SessionBackend {
       cwd?: string
       reason?: string
       account?: string
-      ccVersion?: string
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
@@ -835,7 +834,6 @@ export class ClaudeBackend implements SessionBackend {
       obj.sessionId || '',
       obj.cwd || '',
       obj.account || '',
-      obj.ccVersion || '',
       obj.source || ''
     )
     this.d.pty.clearResumeIntent(obj.tabId)

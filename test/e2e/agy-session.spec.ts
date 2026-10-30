@@ -23,6 +23,7 @@ import {
   gitCommitAll,
   gitInit,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   processAlive,
   readAllCalls,
@@ -455,7 +456,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§12 AGY§17
-  test('work agy leaves running in the background shows breathing green with ↻ until it ends; /compact shows the row working while agy compacts and ends done, not working', async ({
+  test('a command agy leaves running in the background shows breathing green with ↻, named by its command line, until it ends; /compact shows the row working while agy compacts and ends done, not working', async ({
     env
   }) => {
     installAgy(env)
@@ -471,9 +472,12 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await waitBooted(page)
       await startAgy(page, env)
       const row = agyRows(page)
-      await runIn(page, centerTerm(page), '/bg sleep 4')
+      await runIn(page, centerTerm(page), '/bg sleep 6')
       await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/st-waiting/)
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('command · sleep 6 · working')
+      await page.keyboard.press('Escape')
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 20_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 20_000 })
 

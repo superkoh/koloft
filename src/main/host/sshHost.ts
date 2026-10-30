@@ -80,7 +80,9 @@ import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
+  AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
   agyHeldCmd,
+  agySendCmd,
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd,
@@ -1087,6 +1089,14 @@ export class SshHost implements Host {
 
   async agyHeldElsewhere(conversationId: string): Promise<boolean> {
     return (await this.deps.run(agyHeldCmd(conversationId))).code === AGY_HELD_ELSEWHERE_EXIT
+  }
+
+  async agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean> {
+    const r = await this.deps.run(agySendCmd(tmuxName, conversationId), {
+      input: Buffer.from(text),
+      timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
+    })
+    return r.code === 0
   }
 
   async agyConversations(): Promise<SummaryRow[]> {

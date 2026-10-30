@@ -64,7 +64,12 @@ Schema availability is distinguished from behavior actually seen on the wire.
 - **A signed-in start brings very large replies.** The TUI asks `plugin/list` (ids
   `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
   marketplace), and three came within about 75 seconds. A home with no login gets
-  `{"marketplaces":[],…}` (101 bytes).
+  `{"marketplaces":[],…}` (101 bytes). On 2026-10-29 (0.162.0, a ChatGPT-signed-in
+  `CODEX_HOME` in the real-model e2e case where a reopened Codex Alfred gets a Claude
+  helper's report, measured with a log in
+  `createCodexTransport`) a TUI resuming a thread asked four times as it opened; each
+  reply was 24,187,552 bytes and three reached Koloft within 60 ms, faster than the TUI
+  took them off its socket, so more than 64 MB waited to be sent to it at once.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
@@ -1084,6 +1089,18 @@ unauthorized (401)") instead of answering `account: null`, so a probe with no ne
 in an error and leaves the account's status alone. A real login whose access token ran out
 while offline was not tried.
 
+**Online, every made-up ChatGPT login reads as signed out; a made-up API key does not.**
+Checked 2026-10-29 with Codex CLI 0.162.0, no model turn, with the network on: a Node
+script ran `codex app-server` on stdio in throwaway `CODEX_HOME`s and sent `account/read`
+twice. An `auth.json` of only `{tokens: {access_token, account_id}}` (no `id_token`)
+answered `{account: null}` both times, and `codex login status` there printed "missing
+field `id_token`". A well-formed one with a made-up unsigned `id_token`, access and refresh
+token, not expired, tried to refresh against OpenAI (401 "token_expired") and answered the
+first `account/read` with the same `-32603` as the offline case above, the second with
+`{account: null}`. `{OPENAI_API_KEY: "<made up>"}` answered `{account: {type: "apiKey"}}`
+both times, with nothing on stderr. So a test that needs a Codex account to stay signed in
+without a real login can only use a made-up API key.
+
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
 home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
@@ -1863,9 +1880,24 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   `{answers: {colour: {answers: ["None of the above", "user_note: Purple with dots"]}}}`,
   as on a non-blocking one, and the model repeated the words. Not probed: Esc on it, and
   whether a non-null `autoResolutionMs` counts down on its own.
+- **Several questions by keys: one answer per question, the last one sends them all.**
+  2026-10-29, codex-cli 0.162.0, the full-screen `codex --no-daemon` in a python pty
+  (120×40, screen read through `pyte`), a throwaway `CODEX_HOME` whose `config.toml` points
+  `model_provider` at a fake Responses server on localhost (`wire_api = "responses"`, no
+  login), `features.default_mode_request_user_input=true`; the fake answered the first turn
+  with a `request_user_input` call of two questions (ids `fruit` and `size`, two options
+  each, no `isOther` sent by the fake) and logged the next request. The TUI drew
+  "Question 1/2 (2 unanswered)", each question with `3. None of the above` and "tab to add
+  notes | enter to submit answer | ←/→ to navigate questions". A digit on question 1 moved
+  to "Question 2/2 (1 unanswered)" ("enter to submit all"). Two runs, keys 300–400 ms
+  apart: `2`, then Down, Down, Tab, `Medium please`, Enter sent `{"answers":{"fruit":
+  {"answers":["Banana"]},"size":{"answers":["None of the above","user_note: Medium
+  please"]}}}`; Down, Down, Tab, `A ripe mango`, Enter on question 1, then `1`, sent
+  `{"size":{"answers":["Small"]},"fruit":{"answers":["None of the above","user_note: A ripe
+  mango"]}}`. So Koloft answers each question in turn by its own keys, with nothing after
+  the last.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
-  an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
-  those from Discord.
+  an elicitation `mode` other than `form`.
 
 ## 21. Slash commands typed into the TUI
 

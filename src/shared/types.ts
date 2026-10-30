@@ -1136,6 +1136,7 @@ export interface KoloftApi {
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
+    noAccountToResume(sessionId: string): Promise<string | null>
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>

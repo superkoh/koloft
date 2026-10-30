@@ -484,7 +484,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('restarting a Codex session once no Codex account can be used says why, and starts no Codex', async ({
+  test('restarting a Codex session once no Codex account can be used says why, keeps the running Codex, and starts no other', async ({
     env
   }) => {
     installCodex(env)
@@ -499,6 +499,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await clickAppMenuItem(app, page, 'restart-session')
       await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.codex)
+      await expect(codexRows(page)).toHaveClass(/\bst-(waiting|idle)\b/)
+      await expect(codexRows(page)).not.toHaveClass(/\bcold\b/)
       expect(codexCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
@@ -1056,7 +1058,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
       await expect(codexRows(page)).not.toHaveAttribute('data-tab-id', asleepTab ?? '')
       await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      expect(await termIds(page)).not.toContain(asleepTab)
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     } finally {
       await quitAndClose(app)
     }

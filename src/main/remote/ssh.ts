@@ -126,6 +126,7 @@ function runBytes(
       }
     )
     // PLATFORM§27
+    child.stdin?.on('error', () => {})
     child.stdin?.end(opts.input)
   })
 }
@@ -182,6 +183,24 @@ export function runSshBytes(
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
   }).then((r) => noteMasterRoom(host, r))
+}
+
+// PLATFORM§33 CC§13
+export async function writeToMachineSocket(
+  host: string,
+  socketPath: string,
+  data: string,
+  opts: { controlDir: string }
+): Promise<void> {
+  const r = await runBytes(
+    'ssh',
+    [...backgroundOptions(host, opts.controlDir), '-W', socketPath, host],
+    { timeoutMs: 10_000, maxBuffer: 1024 * 1024, input: Buffer.from(data) }
+  )
+  if (r.code !== 0)
+    throw new Error(
+      `the session on ${host} did not take the message (${r.stderr.trim() || `ssh exited with ${r.code}`}).`
+    )
 }
 
 // PLATFORM§34

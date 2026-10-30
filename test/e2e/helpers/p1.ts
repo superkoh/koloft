@@ -3,7 +3,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { expect } from './app'
+import { expect, pendingAttention } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
@@ -537,6 +537,17 @@ export async function startSessionIn(
   await expect(page.locator(SESSION_BOUND_ICON)).toHaveAttribute('aria-disabled', 'false', {
     timeout: 30_000
   })
+}
+
+export async function waitStartupTurnOver(page: Page, wsName: string): Promise<void> {
+  const titled = wsRows(page, wsName).filter({ hasText: FAKE_SESSION_TITLE })
+  const tabId = await titled.getAttribute('data-tab-id', { timeout: 60_000 })
+  await expect
+    .poll(async () => (await pendingAttention(page)).some((e) => e.tabId === tabId), {
+      timeout: 60_000
+    })
+    .toBe(true)
+  await expect(titled).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }
 
 const SESSION_BOUND_ICON = '.aux-ico[aria-label="Workbench"]'
