@@ -12,7 +12,7 @@ const {
   CodexRpc,
   codexEnvironment,
   createCodexTransport,
-  DEFAULT_MAX_QUEUED,
+  DEFAULT_MAX_FRAME,
   readFrame,
   TUI_STALLED_AFTER_MS
 } = await import('../../src/main/codexTransport')
@@ -435,7 +435,7 @@ describe('Codex TUI transport', () => {
         upstreams++
         return {
           ready: Promise.resolve(),
-          queueLimit: DEFAULT_MAX_QUEUED,
+          limit: DEFAULT_MAX_FRAME,
           write: (raw) => {
             const f = JSON.parse(raw.toString()) as CodexFrame
             if (f.method === 'initialize')
@@ -645,7 +645,7 @@ describe('Codex TUI transport', () => {
     expect(await first).toMatchObject({ id: 'start' })
   })
 
-  const BURST_QUEUE_LIMIT = 512 * 1024
+  const BURST_FRAME_LIMIT = 256 * 1024
   const BURST_REPLY_BYTES = 200 * 1024
   const BURST_REPLIES = 8
 
@@ -660,7 +660,7 @@ describe('Codex TUI transport', () => {
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
-      maxQueuedBytes: BURST_QUEUE_LIMIT,
+      maxFrameBytes: BURST_FRAME_LIMIT,
       onFrame: (direction, frame) => {
         if (direction === 'server' && frame.method === 'burst') reached++
       },

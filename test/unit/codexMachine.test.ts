@@ -11,7 +11,7 @@ import {
   ownerWordsLines
 } from '../../src/main/remote/codexMachine'
 import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
-import { DEFAULT_MAX_FRAME, DEFAULT_MAX_QUEUED } from '../../src/main/codexTransport'
+import { DEFAULT_MAX_FRAME } from '../../src/main/codexTransport'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
 const PLUGIN_LIST_PAST_32_MB = 33 * 1024 * 1024
@@ -145,7 +145,6 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
         machineCwd: () => '/home/someone/proj',
         stopServer: async () => {},
         maxFrameBytes: 1 << 20,
-        maxQueuedBytes: 2 << 20,
         report: () => {}
       },
       ({ parse }) => toTui.push(parse()),
@@ -224,7 +223,6 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
         machineCwd: () => '/home/someone/proj',
         stopServer: async () => {},
         maxFrameBytes: DEFAULT_MAX_FRAME,
-        maxQueuedBytes: DEFAULT_MAX_QUEUED,
         report: () => {}
       },
       ({ parse }) => toTui.push(parse()),
