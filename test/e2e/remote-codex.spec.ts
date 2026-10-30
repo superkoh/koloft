@@ -192,6 +192,9 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
           timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS
         })
         .toEqual(['0'])
+      await expect(wsRows(page, REMOTE_WS_NAME).locator('.ws-tab-act')).toHaveText(
+        'Last: Ran koloft help'
+      )
       expect(
         fs.readFileSync(
           path.join(machineHome(env), '.koloft', 'codex-home', 'skills', 'koloft', 'SKILL.md'),

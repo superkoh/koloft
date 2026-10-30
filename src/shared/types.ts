@@ -787,6 +787,7 @@ export interface BackendSessionInfo {
   lastTouched?: string
   lastWritten?: string
   liveWrites?: number
+  lastAction?: string
   account?: string
   pickedAccount?: string
   alive: boolean
@@ -805,8 +806,11 @@ export interface DocVerdict {
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   butler?: boolean
   turnOver?: boolean
+  asking?: string
   docVerdicts?: Record<string, DocVerdict>
 }
+
+export const PLAN_READY = 'Plan ready: implement it?'
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null

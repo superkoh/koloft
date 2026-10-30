@@ -29,6 +29,7 @@ export type SessionEvent =
   | { type: 'bound'; key: string; idleCompaction?: boolean }
   | { type: 'exited'; clean: boolean; title?: string; sessionId?: string }
   | { type: 'turn-ended'; turn: Turn }
+  | { type: 'did'; what: string | undefined }
   | {
       type: 'files-changed'
       files: PreviewItem[]
