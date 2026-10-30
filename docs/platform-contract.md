@@ -1587,24 +1587,25 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   ssh lab.)
 - **A local forward can be added to a live ControlMaster too, with no new login.**
   `ssh -O forward -L 127.0.0.1:<mac port>:localhost:<machine port> host` exits 0 at
-  once (about 5–15 ms) and prints nothing; sshd's log shows no new `Accepted` line, and
+  once (4–14 ms over two runs) and prints nothing; sshd's log shows no new `Accepted` line, and
   normal commands keep riding the master. A page served on the machine's 127.0.0.1 then
   answers on the Mac at `127.0.0.1:<mac port>` and at `localhost:<mac port>` (30 fetches
   at once all came back), and `localhost` on the machine side also reaches a server bound
   to `::1` only. Facts around it:
   - **`-L` refuses port `0`**: `Bad local forwarding specification`, exit 255 — unlike
     `-R`, ssh will not pick the Mac port, so the caller picks a free one itself.
-  - The same spec asked twice exits 0 (no second forward). The same Mac port aimed at
+  - The same spec asked twice exits 0 (whether a second listener appeared was not
+    checked). The same Mac port aimed at
     another machine port, or a Mac port another program already listens on, exits 255
     with `Port forwarding failed`; the master stays up.
-  - `-O cancel -L` must repeat the spec exactly; any other spelling (e.g. without the
-    `127.0.0.1:`) prints `port not forwarded` and still **exits 0**, and the forward
-    stays. A cancel of a forward already gone does the same.
+  - `-O cancel -L` with the spec written without its `127.0.0.1:` prints `port not
+forwarded` and still **exits 0**, and the forward stays; the spec exactly as asked
+    cancels it. A cancel of a forward already gone does the same.
   - When the master goes (`-O exit`), the forward goes with it (connection refused).
   - The forward is accepted even when nothing will answer: a machine port nothing listens
     on, and a login whose sshd has `AllowTcpForwarding no`, both give exit 0 to `-O
-    forward`, and then each connection is reset (`ECONNRESET`). The two cannot be told
-    apart from the Mac side.
+    forward`, and then each connection is reset (`ECONNRESET`). The two give the same
+    exit code, the same (empty) stderr and the same connection error.
   - With `MaxSessions 2` for that login and two `ssh host 'sleep 30'` started on the
     master 1.5 s earlier, the forward still carried a page (whether those two had opened
     their sessions by then was not checked).
