@@ -1622,6 +1622,10 @@ input.switch:focus-visible {
   --bg-1: var(--bg-panel-sunk);
   --term-ground: var(--bg-1);
 }
+.wb-peek-slot {
+  flex: 0 0 auto;
+  margin-left: 10px;
+}
 .wb-peek {
   flex: 0 0 auto;
   align-self: flex-start;
