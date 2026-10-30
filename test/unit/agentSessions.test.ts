@@ -1679,6 +1679,20 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
   })
 
+  it('new from a session or from the butler writes the agent’s folder trust, worktree or not, so nobody has to answer the trust question at the terminal', async () => {
+    const { verb, launched } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
+    await verb(['new', '--', 'fix it'], from('fix'))
+    await verb(
+      ['new', '--workspace', OTHER_WS, '--backend', 'codex', '--', 'check'],
+      from('butler')
+    )
+    expect(launched[0].worktree).toBeUndefined()
+    expect(launched.map((l) => [l.kind, l.trustFolder])).toEqual([
+      ['claude', true],
+      ['codex', true]
+    ])
+  })
+
   it('new from a session in a workspace is never told the butler’s goals', async () => {
     const { verb, launched } = harness(live, {}, [], conducting())
     await verb(['new', '--', 'fix it'], from('fix'))
