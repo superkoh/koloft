@@ -399,7 +399,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       expect(resumedId(calls[0])).toBe(id)
       await expect(masks).toHaveCount(0, { timeout: 15_000 })
       const tab = (await termIds(page)).find((t) => !before.has(t))!
-      expect(await terminalText(page, tab)).toContain('Quick safety check')
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: 15_000 })
+        .toContain('Quick safety check')
 
       await centerTerm(page).click()
       await page.keyboard.press('ArrowDown')
