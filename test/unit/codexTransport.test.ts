@@ -25,6 +25,7 @@ const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = PROCESS_SAMPLE_MS * 1.5
 const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
 const LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO = 3
 const RUNS_SO_ONE_BUSY_MOMENT_CANNOT_DECIDE = 3
+const PLUGIN_LIST_PAST_32_MB = 33 * 1024 * 1024
 
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-wire-test-'))
@@ -507,6 +508,33 @@ describe('Codex TUI transport', () => {
     expect(observed.some((frame) => frame.id === 'plugin-list-1')).toBe(false)
     expect(errors).toEqual([])
   })
+
+  // CODEX§1
+  it('a reply past 32 MB, as the plugin list a signed-in TUI asks for (24 MB and growing) would be, reaches the TUI whole and keeps the connection', async () => {
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(
+      JSON.stringify({
+        id: 'plugin-list-1',
+        method: 'thread/read',
+        params: { mode: 'big', bytes: PLUGIN_LIST_PAST_32_MB }
+      })
+    )
+    const dropped = once(socket, 'close').then(() => 'the TUI lost its connection')
+    const got = await Promise.race([reply, dropped])
+    expect(got).toMatchObject({ id: 'plugin-list-1' })
+    expect((got as { result: { pad: string } }).result.pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
+    expect(errors).toEqual([])
+  }, 30_000)
 
   // CODEX§20
   it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner with no timer, while the observer sees what Codex sent', async () => {
