@@ -3228,7 +3228,6 @@ app.whenReady().then(() => {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
       projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.machineOf(dir)!.sessionDirThere(dir),
       remoteTreeIo: machineTreeIo,
       remote: {
         ...museOnMachines,

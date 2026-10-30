@@ -225,7 +225,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
-  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: start a Claude Code, Codex or Muse session there, sign in in its tab, then start Antigravity again'
+  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -744,9 +744,8 @@ export class SshHost implements Host {
 
   async sessionDirThere(dir: string): Promise<boolean> {
     const r = await this.testDir(dir)
-    if (needsSignIn(r)) return true
-    if (sshLinkBroke(r)) throw new Error(problemOf(r))
-    return r.code === 0
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+    return r.code === 0 || sshLinkBroke(r)
   }
 
   async reachOrThrow(): Promise<void> {
