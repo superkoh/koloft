@@ -314,6 +314,8 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
+  MACHINE_PAGE_SCHEME,
+  machinePageOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -2656,6 +2658,7 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true
     }
   },
+  { scheme: MACHINE_PAGE_SCHEME, privileges: { standard: true, secure: true } },
   // PLATFORM§15
   { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
@@ -4448,8 +4451,36 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   })
 }
 
+// ADR-0045
+const MACHINE_PAGE_HEADERS = {
+  'content-security-policy':
+    'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
+}
+
+async function machinePageResponse(request: Request): Promise<Response> {
+  const page = machinePageOf(request.url)
+  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
+  const machine = page && known ? hosts.machine(page.host) : null
+  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  if (!page || !body)
+    return new Response(fileNotFoundHtml(page?.path ?? request.url), {
+      status: 404,
+      headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
+    })
+  return new Response(new Uint8Array(body), {
+    headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
+  })
+}
+
+// ADR-0045
+function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
+  if (!machinePageOf(details.url) || details.resourceType === 'mainFrame') return false
+  return !machinePageOf(details.webContents?.getURL() ?? '')
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
@@ -4537,7 +4568,10 @@ function setupBrowserPartition(): void {
   })
   // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+    if (
+      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+      machinePageRequestRefused(details)
+    )
       return callback({ cancel: true })
     const guest = details.webContentsId
     const fenced =
@@ -4548,7 +4582,8 @@ function setupBrowserPartition(): void {
     if (!fenced) return callback({})
     if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
       notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    if (details.url.startsWith('file:') || machinePageOf(details.url))
+      return callback({ cancel: true })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
@@ -4671,6 +4706,8 @@ async function openOnMachine(
 ): Promise<boolean> {
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const page = routeFor(keyed, 'agent')
+  if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true

@@ -7,6 +7,7 @@ import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
   addressValue,
   BROWSER,
+  guestByUrl,
   isPng,
   newWebTab,
   openPickPage,
@@ -17,6 +18,7 @@ import {
   typeInAddressBar
 } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import { machinePageUrl } from '../../src/shared/browserRoute'
 import {
   type E2EEnv,
   E2E_CLAUDE_ACCOUNT,
@@ -97,6 +99,11 @@ const A_REFUSED_LOAD_SETTLES_MS = 3000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
+
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64'
+)
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
   sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
@@ -757,41 +764,117 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-25: a page on the machine opens as source in the reading area, from a Browse row and from a markdown link', async ({
+  test('E-RW-25: a page on the machine opens as a web page in a web tab, with the stylesheet and picture next to it, from a Browse row and from a markdown link', async ({
     env
   }) => {
     test.setTimeout(300_000)
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
-      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>on the machine</h1>\n')
-      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](page.html)\n')
+      const machinePage = (title: string): string =>
+        `<!doctype html><title>${title}</title><link rel="stylesheet" href="style.css">` +
+        '<h1>on the machine</h1><img id="pic" src="img/pic.png">\n'
+      fs.writeFileSync(path.join(dir, 'page.html'), machinePage('from Browse'))
+      fs.writeFileSync(path.join(dir, 'linked.html'), machinePage('from a link'))
+      fs.writeFileSync(path.join(dir, 'style.css'), 'h1 { color: rgb(1, 2, 3); }\n')
+      fs.mkdirSync(path.join(dir, 'img'))
+      fs.writeFileSync(path.join(dir, 'img', 'pic.png'), PNG_1X1)
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](linked.html)\n')
 
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await wsRows(page, REMOTE_WS_NAME).first().click()
 
-      const title = page.locator(WORKBENCH.readingTitle)
-      const source = page.locator(`${WORKBENCH.readingBody} .code-body`)
+      const shownWhole = async (name: string): Promise<void> => {
+        const guest = await guestByUrl(app, new RegExp(`^koloft-machine://.*/${name}$`), {
+          timeout: 30_000
+        })
+        await expect
+          .poll(() =>
+            guest.evaluate(() => [
+              getComputedStyle(document.querySelector('h1')!).color,
+              (document.getElementById('pic') as HTMLImageElement).naturalWidth
+            ])
+          )
+          .toEqual(['rgb(1, 2, 3)', 1])
+      }
 
       await openInBrowse(page, `${remoteKey(env)}/page.html`)
-      await expect(title).toContainText('page.html', { timeout: 30_000 })
-      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+      await expect(wbActiveTab(page)).toContainText('from Browse', { timeout: 30_000 })
+      await shownWhole('page.html')
 
       await showBrowse(page)
       await browseRow(page, `${remoteKey(env)}/doc.md`).click()
-      await expect(title).toContainText('doc.md', { timeout: 30_000 })
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('doc.md', {
+        timeout: 30_000
+      })
       await page
         .locator(`${WORKBENCH.readingBody} .md-body a`, { hasText: 'the page' })
         .click({ timeout: 30_000 })
-      await expect(title).toContainText('page.html', { timeout: 30_000 })
-      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+      await expect(wbActiveTab(page)).toContainText('from a link', { timeout: 30_000 })
+      await shownWhole('linked.html')
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test("a file name typed in a remote tab's address bar opens the file on the machine in a file tab, a page as its source, and a path that climbs out of the session's folder searches instead", async ({
+  test("E-RW-50: a page on the machine cannot read the machine's other files, and a web page cannot load them", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'secret.js'), 'window.leaked = "the secret"\n')
+      fs.writeFileSync(
+        path.join(dir, 'reader.html'),
+        '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe><script>' +
+          'fetch("secret.js").then(() => { document.body.dataset.fetch = "read" }, ' +
+          '() => { document.body.dataset.fetch = "blocked" })</script>\n'
+      )
+      const secretUrl = machinePageUrl(REMOTE_HOST, path.join(dir, 'secret.js'))
+      const webPage = server.page(
+        '/pulls-a-machine-script',
+        `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
+          `onerror="document.body.dataset.script = 'refused'"></script>`
+      )
+
+      await openRemoteSessionWorkbench(page, env)
+      await openInBrowse(page, `${remoteKey(env)}/reader.html`)
+      const reader = await guestByUrl(app, /^koloft-machine:\/\/.*\/reader\.html$/, {
+        timeout: 30_000
+      })
+      await expect
+        .poll(() => reader.evaluate(() => document.body.dataset.fetch ?? ''), { timeout: 30_000 })
+        .toBe('blocked')
+      await expect
+        .poll(() =>
+          reader.evaluate(() => {
+            const frame = document.getElementById('f') as HTMLIFrameElement
+            try {
+              return frame.contentDocument === null ? 'unreadable' : 'readable'
+            } catch {
+              return 'unreadable'
+            }
+          })
+        )
+        .toBe('unreadable')
+
+      await newWebTab(page)
+      await typeInAddressBar(page, webPage)
+      const web = await guestByUrl(app, '/pulls-a-machine-script', { timeout: 30_000 })
+      await expect
+        .poll(() => web.evaluate(() => document.body.dataset.script ?? ''), { timeout: 30_000 })
+        .toBe('refused')
+      expect(await web.evaluate(() => (window as { leaked?: string }).leaked)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
+  test("a file name typed in a remote tab's address bar opens a page on the machine as a web page, and a path that climbs out of the session's folder searches instead", async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -805,12 +888,12 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await openRemoteSessionWorkbench(page, env)
       await newWebTab(page)
       await typeInAddressBar(page, 'page.html')
-      await expect(wbActiveTab(page)).toContainText('page.html', {
+      const typed = await guestByUrl(app, /^koloft-machine:\/\/.*\/page\.html$/, {
         timeout: 30_000
       })
-      await expect(artifactBody(page).locator('.code-body')).toContainText('typed on the machine', {
-        timeout: 30_000
-      })
+      await expect
+        .poll(() => typed.evaluate(() => document.body.textContent ?? ''), { timeout: 30_000 })
+        .toContain('typed on the machine')
 
       await newWebTab(page)
       await typeInAddressBar(page, '../outside.html')

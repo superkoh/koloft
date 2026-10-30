@@ -113,11 +113,11 @@ describe('Workbench preview card: the docs it lists', () => {
     expect(docs).toEqual([])
   })
 
-  it('opens Markdown rendered, a local page in a web tab, and a page on an ssh machine as source', () => {
+  it('opens Markdown rendered, and a page in a web tab whether it is on this Mac or an ssh machine', () => {
     const doc = (src: string, kind: PreviewDoc['kind']): PreviewDoc => ({ src, kind, at: 0 })
     expect(docLanding(doc('/repo/a.md', 'markdown'))).toBe('reading-rendered')
     expect(docLanding(doc('ssh://devbox/home/koh/a.md', 'markdown'))).toBe('reading-rendered')
     expect(docLanding(doc('/repo/a.html', 'page'))).toBe('web-tab')
-    expect(docLanding(doc('ssh://devbox/home/koh/a.html', 'page'))).toBe('reading-source')
+    expect(docLanding(doc('ssh://devbox/home/koh/a.html', 'page'))).toBe('web-tab')
   })
 })

@@ -223,6 +223,8 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
+const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
+
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
 const EXIT_GONE = 44
@@ -831,6 +833,10 @@ export class SshHost implements Host {
     })
     if (looksBinary(body)) throw new Error('KOLOFT_BINARY')
     return body.toString('utf8')
+  }
+
+  async readPageFile(file: string): Promise<Buffer> {
+    return (await this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES)).body
   }
 
   async openForEdit(file: string) {

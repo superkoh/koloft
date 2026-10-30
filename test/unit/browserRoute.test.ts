@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { routeFor, dedupKey, canOpenExternally, folderFileOf } from '@shared/browserRoute'
+import {
+  routeFor,
+  dedupKey,
+  canOpenExternally,
+  folderFileOf,
+  machinePageUrl,
+  MACHINE_PAGE_SCHEME,
+  pagePathOf
+} from '@shared/browserRoute'
 
 describe('routeFor — the §05B routing table', () => {
   it('sends http(s) to the Browser from every source, localhost included', () => {
@@ -107,6 +115,23 @@ describe('routeFor — the §05B routing table', () => {
         })
       }
     }
+  })
+
+  it('opens a page on an ssh machine as a machine page web tab that maps back to the same file, and keeps every other machine file out of the browser', () => {
+    for (const source of ['agent', 'user', 'address'] as const) {
+      const decision = routeFor('ssh://u@Box.lan/srv/my site/a#b.html', source)
+      expect(decision.dest).toBe('browser')
+      expect(decision.target.startsWith(`${MACHINE_PAGE_SCHEME}://`)).toBe(true)
+      expect(routeFor(decision.target, source)).toEqual(decision)
+      expect(pagePathOf(decision.target)).toBe('ssh://u@Box.lan/srv/my site/a#b.html')
+      expect(routeFor('ssh://box/srv/notes.md', source).dest).toBe('drop')
+      expect(routeFor('ssh://box/srv/run.sh', source).dest).toBe('drop')
+    }
+    expect(new URL('style.css', machinePageUrl('box', '/srv/site/a.html')).href).toBe(
+      machinePageUrl('box', '/srv/site/style.css')
+    )
+    expect(pagePathOf('file:///w/a.html')).toBe('/w/a.html')
+    expect(pagePathOf(`${MACHINE_PAGE_SCHEME}://zz/srv/a.html`)).toBeNull()
   })
 
   it('hands mailto:/tel: to the OS on a user action only (SEC-4)', () => {

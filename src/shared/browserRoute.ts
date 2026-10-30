@@ -1,5 +1,5 @@
 import { previewKindForPath, isWebPagePath } from './preview'
-import { resolveOnHost } from './remoteKey'
+import { formatRemoteKey, parseRemoteKey, resolveOnHost, type RemoteKey } from './remoteKey'
 
 export type RouteSource = 'agent' | 'user' | 'address'
 
@@ -26,8 +26,49 @@ export function schemeOf(target: string): string {
   return m ? m[0].toLowerCase() : ''
 }
 
+function encodedPath(p: string): string {
+  return p.split('/').map(encodeURIComponent).join('/')
+}
+
 function fileUrlFor(p: string): string {
-  return `file://${p.split('/').map(encodeURIComponent).join('/')}`
+  return `file://${encodedPath(p)}`
+}
+
+export const MACHINE_PAGE_SCHEME = 'koloft-machine'
+
+function hexOf(text: string): string {
+  return [...new TextEncoder().encode(text)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function textOfHex(hex: string): string {
+  return new TextDecoder().decode(Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16)))
+}
+
+export function machinePageUrl(host: string, p: string): string {
+  return `${MACHINE_PAGE_SCHEME}://${hexOf(host)}${encodedPath(p)}`
+}
+
+export function machinePageOf(url: string): RemoteKey | null {
+  const u = urlOrNull(url)
+  if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !/^(?:[0-9a-f]{2})+$/.test(u.hostname))
+    return null
+  try {
+    return parseRemoteKey(formatRemoteKey(textOfHex(u.hostname), decodeURIComponent(u.pathname)))
+  } catch {
+    return null
+  }
+}
+
+export function pagePathOf(url: string): string | null {
+  const machine = machinePageOf(url)
+  return machine ? formatRemoteKey(machine.host, machine.path) : fileUrlPath(url)
+}
+
+function machineTarget(key: string): RouteDecision {
+  const remote = parseRemoteKey(key)
+  return remote && isWebPagePath(remote.path)
+    ? { dest: 'browser', target: machinePageUrl(remote.host, remote.path) }
+    : drop('blocked-scheme')
 }
 
 function localTarget(p: string): RouteDecision {
@@ -75,7 +116,10 @@ export function routeFor(target: string, source: RouteSource): RouteDecision {
       return source === 'address' ? addressEntry(raw) : localTarget(raw)
     case 'http:':
     case 'https:':
+    case `${MACHINE_PAGE_SCHEME}:`:
       return { dest: 'browser', target: raw }
+    case 'ssh:':
+      return machineTarget(raw)
     case 'file:': {
       if (source === 'address') return { dest: 'browser', target: raw }
       const p = fileUrlPath(raw)

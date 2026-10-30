@@ -20,11 +20,8 @@ function docDir(src: string, root: string | null): string {
 function openDoc(tabId: string, doc: PreviewDoc): void {
   const st = useStore.getState()
   const label = basename(doc.src)
-  const landing = docLanding(doc)
-  if (landing === 'reading-rendered') st.setOpenFile({ src: doc.src, label }, tabId)
-  else if (landing === 'reading-source') {
-    st.setOpenFile({ src: doc.src, label, view: 'source' }, tabId)
-  } else {
+  if (docLanding(doc) === 'reading-rendered') st.setOpenFile({ src: doc.src, label }, tabId)
+  else {
     const decision = routeFor(doc.src, 'user')
     if (decision.dest === 'browser') {
       st.openWorkbenchTarget(tabId, { url: decision.target, source: 'user' })
