@@ -5772,6 +5772,11 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
+  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
+    if (typeof id !== 'string' || !id) return null
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
+  })
+
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
     sessionBackends.historyRows(p, (id, error) =>
       sendToRenderer(

@@ -801,7 +801,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('restarting a remote Claude Code session once no Claude account can be used says why, and starts no new claude on the machine', async ({
+  test('restarting a remote Claude Code session once no Claude account can be used says why, keeps the running claude, and starts no new claude on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -821,6 +821,8 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude, {
         timeout: 60_000
       })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
       expect(await waitForCalls(env, launches)).toHaveLength(launches)
     } finally {
       await quitAndClose(app)
