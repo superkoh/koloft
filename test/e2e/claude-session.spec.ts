@@ -1,3 +1,4 @@
+import fs from 'fs'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
 import {
@@ -93,6 +94,52 @@ test('C2: a live Claude Code row says under its branch what it did, while it wor
   await expect(row).toHaveClass(/\bst-working\b/, { timeout: 15_000 })
   await expect(line).toHaveText('Ran rm -rf build')
   await sessions.screenshot({ path: testInfo.outputPath('row-working.png') })
+})
+
+test('C2: a Claude Code row keeps its Asks: line while a subagent tool finishes before the question is answered', async ({
+  page,
+  env
+}) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  const line = row.locator('.ws-tab-act')
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const sessionId = await boundSessionId(page, await row.getAttribute('data-tab-id'))
+
+  await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+  await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })
+  await expect(line).toHaveText('Asks: Which colour?')
+
+  const landed = 'Subagent grep landed'
+  const at = new Date().toISOString()
+  const subagent = { isSidechain: true, agentId: 'side_e2e', timestamp: at, cwd: env.workspaces.a }
+  const records = [
+    {
+      ...subagent,
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_side_e2e', name: 'Grep', input: { pattern: 'x' } }]
+      }
+    },
+    {
+      ...subagent,
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_side_e2e', content: 'No matches' }]
+      }
+    },
+    { type: 'custom-title', customTitle: landed, sessionId }
+  ]
+  fs.appendFileSync(
+    transcriptFile(env.home, env.workspaces.a, sessionId ?? ''),
+    records.map((r) => JSON.stringify(r) + '\n').join('')
+  )
+  await expect(row.locator('.ws-tab-title')).toHaveText(landed, { timeout: 15_000 })
+  await expect(row).toHaveClass(/\bst-approval\b/)
+  await expect(line).toHaveText('Asks: Which colour?')
 })
 
 test('when Claude Code moves the conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id', async ({

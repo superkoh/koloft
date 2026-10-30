@@ -3099,7 +3099,6 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
-    claudeAsks.delete(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
