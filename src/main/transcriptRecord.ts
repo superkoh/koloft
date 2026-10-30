@@ -50,7 +50,6 @@ export interface TranscriptRecord {
   type?: string
   cwd?: string
   timestamp?: string
-  version?: string
   requestId?: string
   isSidechain?: boolean
   isMeta?: boolean

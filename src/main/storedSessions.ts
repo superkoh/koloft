@@ -63,7 +63,6 @@ export interface HistoryEntry {
   preview?: string
   createdAt?: number
   updatedAt?: number
-  cliVersion?: string
 }
 
 export interface HistoryListing<H extends HistoryEntry> {
@@ -855,7 +854,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       worktree: run.resource?.worktreeName,
       alive: true,
       ...this.runDetails(run),
-      cliVersion: entry.cliVersion,
       updatedAt: now
     }
     this.history.set(key, { ...entry, cwd: run.cwd })
