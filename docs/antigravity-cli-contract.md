@@ -815,6 +815,18 @@ only downloaded the public release.
   Antigravity CLI do instead?", end the turn and send 7501 `idle` with no `done`.
 - Question: "Question 1/1: <q>", the options plus "Write-in…". A digit picks that
   option at once; ↑/↓ then Enter picks too.
+- **Own words and several questions by keys.** 1.4.7 Linux arm64 in Docker with no
+  network, a fake Gemini server answering with an `ask_question` call, the TUI in tmux
+  160×50, keys by `tmux send-keys`, the model's next request read for the tool result,
+  2026-10-29. The digit of "Write-in..." (`N+1`) opens "Your answer:" ("enter Submit · esc
+  Back"); the words, then Enter, send it: the model got `A1: A ripe mango, please`. The
+  same `3`, words and Enter sent in one burst worked too. With two questions the box reads
+  "Question 1/2" ("→ Next · enter Select"); a digit, or a write-in and its Enter, moves to
+  "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
+  `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
+  `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
+  not tried.
 
 ## §15 Typing into it
 
@@ -870,6 +882,8 @@ only downloaded the public release.
   | `"permission":{"allow":false}` on a file | step ERROR, file untouched, the model goes on to `done` (key `2` ends the turn instead) |
   | `"runCommand":{"confirm":true,…}` | the ask closes but the command does **not** run |
   | `"askQuestion":{"responses":[{"question":"…","selectedOptionIds":["2"]}]}` | the model gets `A1: Banana` |
+  | `"askQuestion":{"responses":[{"question":"…","writeInResponse":"A ripe mango, please"}]}` | the model gets `A1: A ripe mango, please` (1.4.7, 2026-10-29; the field is `write_in_response` on `AskQuestionEntry` in the binary's strings) |
+  | two `responses`, one `selectedOptionIds`, one `writeInResponse`, for a call of two questions | the model gets `A1: A ripe mango\nA2: Large` (same day) |
   | `"askQuestion":{"cancelled":true}` | the question closes |
   | a step not waiting | `500 "input not registered for step <n>"` |
 

@@ -1876,9 +1876,24 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   `{answers: {colour: {answers: ["None of the above", "user_note: Purple with dots"]}}}`,
   as on a non-blocking one, and the model repeated the words. Not probed: Esc on it, and
   whether a non-null `autoResolutionMs` counts down on its own.
+- **Several questions by keys: one answer per question, the last one sends them all.**
+  2026-10-29, codex-cli 0.162.0, the full-screen `codex --no-daemon` in a python pty
+  (120×40, screen read through `pyte`), a throwaway `CODEX_HOME` whose `config.toml` points
+  `model_provider` at a fake Responses server on localhost (`wire_api = "responses"`, no
+  login), `features.default_mode_request_user_input=true`; the fake answered the first turn
+  with a `request_user_input` call of two questions (ids `fruit` and `size`, two options
+  each, no `isOther` sent by the fake) and logged the next request. The TUI drew
+  "Question 1/2 (2 unanswered)", each question with `3. None of the above` and "tab to add
+  notes | enter to submit answer | ←/→ to navigate questions". A digit on question 1 moved
+  to "Question 2/2 (1 unanswered)" ("enter to submit all"). Two runs, keys 300–400 ms
+  apart: `2`, then Down, Down, Tab, `Medium please`, Enter sent `{"answers":{"fruit":
+  {"answers":["Banana"]},"size":{"answers":["None of the above","user_note: Medium
+  please"]}}}`; Down, Down, Tab, `A ripe mango`, Enter on question 1, then `1`, sent
+  `{"size":{"answers":["Small"]},"fruit":{"answers":["None of the above","user_note: A ripe
+  mango"]}}`. So Koloft answers each question in turn by its own keys, with nothing after
+  the last.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
-  an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
-  those from Discord.
+  an elicitation `mode` other than `form`.
 
 ## 21. Slash commands typed into the TUI
 

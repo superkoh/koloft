@@ -56,7 +56,7 @@ let home: string
 let repo: string
 let gemini: string
 let sessions: AgySessions
-let pty: EventEmitter & { write: ReturnType<typeof vi.fn> }
+let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
 let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
@@ -211,6 +211,7 @@ beforeEach(() => {
     }),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
+    type: vi.fn(async () => undefined),
     wakeReady: vi.fn(),
     kill: vi.fn(),
     clearResumeIntent: vi.fn()
@@ -1026,7 +1027,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it("answers a question with the picked option's id through the API", async () => {
+  it("answers each question of an ask through the API, a picked option by its id and the owner's own words as a write-in", async () => {
     apiAnswers = true
     trajectory = waitingStep({
       askQuestion: {
@@ -1037,32 +1038,45 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
               { id: 'a', text: 'Apple' },
               { id: 'b', text: 'Banana' }
             ]
-          }
+          },
+          { question: 'Which size?', options: [{ id: 's', text: 'Small' }] }
         ]
       }
     })
     const id = await boundTab()
     say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
     await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
-    expect(sessions.openQuestion(id)).toMatchObject({
-      question: 'Which fruit?',
-      options: [{ label: 'Apple' }, { label: 'Banana' }]
-    })
-    expect(await sessions.answer(id, 'banana')).toBeUndefined()
+    expect(sessions.openQuestion(id)?.questions).toEqual([
+      {
+        question: 'Which fruit?',
+        options: [{ label: 'Apple' }, { label: 'Banana' }],
+        ownWords: true
+      },
+      { question: 'Which size?', options: [{ label: 'Small' }], ownWords: true }
+    ])
+    expect(await sessions.answer(id, 'banana')).toBe(false)
+    expect(sent('HandleCascadeUserInteraction')).toEqual([])
+    expect(await sessions.answer(id, 'banana\nMedium, please')).toBeUndefined()
     expect(sent('HandleCascadeUserInteraction')).toEqual([
       {
         cascadeId: A,
         interaction: {
           trajectoryId: 't9',
           stepIndex: 2,
-          askQuestion: { responses: [{ question: 'Which fruit?', selectedOptionIds: ['b'] }] }
+          askQuestion: {
+            responses: [
+              { question: 'Which fruit?', selectedOptionIds: ['b'] },
+              { question: 'Which size?', writeInResponse: 'Medium, please' }
+            ]
+          }
         }
       }
     ])
     expect(pty.write).not.toHaveBeenCalled()
+    expect(pty.type).not.toHaveBeenCalled()
   })
 
-  it("answers a question with the option's digit when the API does not answer, reading the options from the tool call", async () => {
+  it('reads a question from the tool call when the API does not answer, and leaves it open for the keys the relay presses', async () => {
     const id = await boundTab()
     hook(id, 'PreToolUse', {
       toolCall: {
@@ -1072,15 +1086,65 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     })
     await hooksTaken(id)
     say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
-    expect(sessions.openQuestion(id)).toMatchObject({
-      question: 'Which fruit?',
-      options: [{ label: 'Apple' }, { label: 'Banana' }]
+    const open = {
+      id: expect.any(String),
+      questions: [
+        {
+          question: 'Which fruit?',
+          options: [{ label: 'Apple' }, { label: 'Banana' }],
+          ownWords: true
+        }
+      ]
+    }
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(await sessions.answer(id, 'A ripe mango')).toBe(false)
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  // AGY§14
+  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+    const id = await boundTab()
+    const asked = async (multi: boolean): Promise<void> => {
+      hook(id, 'PreToolUse', {
+        toolCall: {
+          name: 'ask_question',
+          args: {
+            questions: [
+              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
+            ]
+          }
+        }
+      })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    }
+    await asked(true)
+    expect(sessions.openQuestion(id)).toBeUndefined()
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(await sessions.answer(id, '1')).toBe(false)
+
+    say(id, state('working'))
+    apiAnswers = true
+    trajectory = waitingStep({
+      askQuestion: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [
+              { id: '1', text: 'Apple' },
+              { id: '2', text: 'Banana' }
+            ],
+            isMultiSelect: true
+          }
+        ]
+      }
     })
-    expect(await sessions.answer(id, 'Cherry')).toBe(
-      'this Antigravity question takes the number or the name of one option.'
-    )
-    expect(await sessions.answer(id, '2')).toBeUndefined()
-    expect(pty.write.mock.calls).toEqual([[id, '2']])
+    await asked(false)
+    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
+    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(pty.write).not.toHaveBeenCalled()
   })
 
   it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {

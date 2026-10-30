@@ -6,7 +6,12 @@ import { spawnSync } from 'child_process'
 import type { SessionStatus } from '../../src/shared/types'
 import type { Turn } from '../../src/shared/turns'
 import type { DiscordMessage } from '../../src/main/discord/link'
-import { NO_OWN_WORDS, PICK_OR_OWN_WORDS, type CodexQuestion } from '../../src/main/discord/dialog'
+import {
+  NO_OWN_WORDS,
+  ONE_LINE_PER_QUESTION,
+  PICK_OR_OWN_WORDS,
+  type CodexQuestion
+} from '../../src/main/discord/dialog'
 import {
   answerItFirst,
   inputNotProbed,
@@ -578,8 +583,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(inputNotProbed('Codex'))
     question = {
       id: 0,
-      question: 'Which colour?',
-      options: [{ label: 'Red' }, { label: 'Green' }]
+      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]
     }
     expect(await relay.answerSession(MANAGED, '3')).toContain('one option')
     expect(await relay.answerSession(MANAGED, 'blue')).toContain('one option')
@@ -597,8 +601,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     let approval: { id: string } | undefined
     let question: CodexQuestion | undefined = {
       id: 'u1',
-      question: 'Which colour?',
-      options: [{ label: 'Red' }, { label: 'Blue' }]
+      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Blue' }] }]
     }
     const ready: string[] = []
     const { relay, writes } = setup({}, [], {
@@ -616,6 +619,54 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(writes.map((w) => w.data)).toEqual(['2', '\r', 'y'])
     expect(ready).toEqual(['ready', 'ready'])
   })
+
+  // CODEX§20
+  it('a Codex dialog of several questions takes one line per question, each pressed as its digit or as a note under "None of the above"; a reply of any other line count is refused and presses nothing', async () => {
+    const colours = [{ label: 'Red' }, { label: 'Green' }]
+    const question: CodexQuestion = {
+      id: 0,
+      questions: [
+        { question: 'Which colour?', options: colours, ownWords: true },
+        { question: 'Which size?', options: [{ label: 'Small' }, { label: 'Large' }] }
+      ]
+    }
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => 'codex',
+      pendingQuestion: () => question
+    })
+    expect(await relay.answerSession(MANAGED, 'Purple')).toBe(ONE_LINE_PER_QUESTION)
+    expect(await relay.answerSession(MANAGED, 'Purple\nHuge')).toBe(ONE_LINE_PER_QUESTION)
+    expect(writes).toEqual([])
+    expect(await relay.answerSession(MANAGED, 'Purple\nlarge')).toBeUndefined()
+    expect(writes.map((w) => w.data)).toEqual(['\x1b[B', '\x1b[B', '\t', 'Purple', '\r', '2'])
+  })
+
+  // MUSE§11
+  it('a Muse question takes the owner’s own words as a note under "None of the above", a reply of several lines typed as one, and its review page shows when more than one question or any note was given, so Koloft presses one more Enter then', async () => {
+    const colours = [{ label: 'Red' }, { label: 'Blue' }]
+    const one = { question: 'Which colour?', options: colours, ownWords: true as const }
+    let question: CodexQuestion = { id: 'u1', questions: [one] }
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => 'muse',
+      pendingQuestion: () => question
+    })
+    const pressed = async (reply: string): Promise<string[]> => {
+      writes.length = 0
+      expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
+      return writes.map((w) => w.data)
+    }
+    expect(await pressed('2')).toEqual(['2', '\r'])
+    expect(await pressed('A ripe\nmango')).toEqual([
+      '\x1b[B',
+      '\x1b[B',
+      '\t',
+      'A ripe mango',
+      '\r',
+      '\r'
+    ])
+    question = { id: 'u2', questions: [one, one] }
+    expect(await pressed('2\n1')).toEqual(['2', '\r', '1', '\r', '\r'])
+  })
 })
 
 describe('DiscordRelay: a Codex conductor’s own question', () => {
@@ -623,8 +674,12 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
   it('is posted once with its options; the owner’s number or option name presses that digit while it is open and is named as its answer, any other reply is told to tap a button or answer at the Mac, and once it closes a message goes to the conductor as usual', async () => {
     let question: CodexQuestion | undefined = {
       id: 'q1',
-      question: 'Which colour do you prefer?',
-      options: [{ label: 'Red', description: 'Choose red.' }, { label: 'Green' }]
+      questions: [
+        {
+          question: 'Which colour do you prefer?',
+          options: [{ label: 'Red', description: 'Choose red.' }, { label: 'Green' }]
+        }
+      ]
     }
     const queued: string[] = []
     const { relay, posts, writes, answered } = setup({}, [], {
@@ -657,9 +712,13 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
   it('one that offers "None of the above" takes the owner’s own words: Koloft moves to that option, opens its notes, types the words and sends them', async () => {
     const question: CodexQuestion = {
       id: 'q2',
-      question: 'Which colour do you prefer?',
-      options: [{ label: 'Red' }, { label: 'Green' }],
-      ownWords: true
+      questions: [
+        {
+          question: 'Which colour do you prefer?',
+          options: [{ label: 'Red' }, { label: 'Green' }],
+          ownWords: true
+        }
+      ]
     }
     const { relay, posts, writes } = setup({}, [], {
       backendOf: () => 'codex',
@@ -682,6 +741,44 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
       { timeout: 5000 }
     )
   })
+
+  // CODEX§20 AGY§14 MUSE§11
+  it('one that asks several questions is posted with all of them and no buttons, told to reply one line per question; the owner’s lines answer each in turn', async () => {
+    const question: CodexQuestion = {
+      id: 'q3',
+      questions: [
+        {
+          question: 'Which colour?',
+          options: [{ label: 'Red' }, { label: 'Green' }],
+          ownWords: true
+        },
+        {
+          question: 'Which size?',
+          options: [{ label: 'Small' }, { label: 'Large' }],
+          ownWords: true
+        }
+      ]
+    }
+    const { relay, posts, writes } = setup({}, [], {
+      backendOf: () => 'agy',
+      pendingQuestion: () => question
+    })
+    relay.codexAsked(TAB, question)
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toEqual([
+        `${butlerAsks('Assist')}\nWhich colour?\n1. Red\n2. Green\n\nWhich size?\n1. Small\n2. Large\n-# ${ONE_LINE_PER_QUESTION}`
+      ])
+    )
+    relay.onMessage(message('602', OWNER, 'green'))
+    await vi.waitFor(() =>
+      expect(posts.at(-1)).toEqual({ text: ONE_LINE_PER_QUESTION, replyTo: '602' })
+    )
+    relay.onMessage(message('603', OWNER, 'green\nMedium, please'))
+    await vi.waitFor(
+      () => expect(writes.map((w) => w.data)).toEqual(['2', '3', 'Medium, please', '\r']),
+      { timeout: 5000 }
+    )
+  })
 })
 
 describe('DiscordRelay: a helper the butler started in its own folder', () => {
@@ -690,9 +787,13 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
   it('posts its question to the butler’s channel under its own name as the butler’s helper; what the owner types then answers the newest card still waiting, and a slash command still goes to the butler', async () => {
     let helperQuestion: CodexQuestion | undefined = {
       id: 'h1',
-      question: 'Merge #41?',
-      options: [{ label: 'Merge' }, { label: 'Leave it' }],
-      ownWords: true
+      questions: [
+        {
+          question: 'Merge #41?',
+          options: [{ label: 'Merge' }, { label: 'Leave it' }],
+          ownWords: true
+        }
+      ]
     }
     const writesTo: { tab: string; data: string }[] = []
     const { relay, posts, commands } = setup({}, [], {
@@ -725,8 +826,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     let away = true
     let helperQuestion: CodexQuestion | undefined = {
       id: 'h1',
-      question: 'Merge #41?',
-      options: [{ label: 'Merge' }, { label: 'Leave it' }]
+      questions: [{ question: 'Merge #41?', options: [{ label: 'Merge' }, { label: 'Leave it' }] }]
     }
     const { relay, posts, reactions } = setup({}, [], {
       ownerAway: () => away,
@@ -745,7 +845,10 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     helperQuestion = undefined
     relay.turnEnded(HELPER, turn('Merged.', 'Merge #41?'))
     expect(relay.reaches(HELPER)).toBe(false)
-    helperQuestion = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
+    helperQuestion = {
+      id: 'h2',
+      questions: [{ question: 'Delete the branch?', options: [{ label: 'Yes' }] }]
+    }
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
     away = true
@@ -866,8 +969,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     let away = true
     let question: CodexQuestion = {
       id: 'h1',
-      question: 'Merge #41?',
-      options: [{ label: 'Merge' }]
+      questions: [{ question: 'Merge #41?', options: [{ label: 'Merge' }] }]
     }
     const writesTo: string[] = []
     const { relay, posts, bodies } = setup({}, [], {
@@ -881,7 +983,10 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts).toHaveLength(1)
 
     away = false
-    question = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
+    question = {
+      id: 'h2',
+      questions: [{ question: 'Delete the branch?', options: [{ label: 'Yes' }] }]
+    }
     relay.codexAsked(HELPER, question)
     relay.onMessage(message('706', OWNER, '1'))
     await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] 1']))
@@ -926,8 +1031,7 @@ describe('DiscordRelay: the owner at the Mac', () => {
     let away = false
     let question: CodexQuestion | undefined = {
       id: 'q1',
-      question: 'Ship it?',
-      options: [{ label: 'Yes' }, { label: 'No' }]
+      questions: [{ question: 'Ship it?', options: [{ label: 'Yes' }, { label: 'No' }] }]
     }
     const { relay, posts } = setup({}, [], {
       backendOf: () => 'codex',
@@ -945,7 +1049,7 @@ describe('DiscordRelay: the owner at the Mac', () => {
     ])
 
     away = false
-    question = { id: 'q2', question: 'Again?', options: [{ label: 'Yes' }] }
+    question = { id: 'q2', questions: [{ question: 'Again?', options: [{ label: 'Yes' }] }] }
     relay.codexAsked(TAB, question)
     question = undefined
     relay.checkHeld()
@@ -1008,8 +1112,7 @@ describe('DiscordRelay: the owner at the Mac', () => {
     let away = false
     let question: CodexQuestion | undefined = {
       id: 'q1',
-      question: 'Ship it?',
-      options: [{ label: 'Yes' }]
+      questions: [{ question: 'Ship it?', options: [{ label: 'Yes' }] }]
     }
     const { relay, posts } = setup({}, [], {
       backendOf: () => 'codex',
@@ -1020,7 +1123,7 @@ describe('DiscordRelay: the owner at the Mac', () => {
     question = undefined
 
     away = true
-    question = { id: 'q2', question: 'Again?', options: [{ label: 'Yes' }] }
+    question = { id: 'q2', questions: [{ question: 'Again?', options: [{ label: 'Yes' }] }] }
     relay.codexAsked(TAB, question)
     expect(posts).toHaveLength(1)
     relay.checkHeld()

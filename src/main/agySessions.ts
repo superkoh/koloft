@@ -93,9 +93,11 @@ import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles
 import { agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
-  codexOptionKey,
+  labelsOf,
+  questionAnswers,
   type CodexApproval,
-  type CodexQuestion
+  type CodexQuestion,
+  type Question
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
@@ -267,6 +269,12 @@ function agyArgs(
         ? ['-i', opts.firstPrompt]
         : [])
   ]
+}
+
+// AGY§14
+function agyQuestion(question: string, raw: unknown): Question {
+  const options = labelsOf(raw)
+  return { question, options, ...(options.length > 0 && { ownWords: true as const }) }
 }
 
 // AGY§8
@@ -1216,24 +1224,30 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const pending = await run.api?.pending(id).catch(() => undefined)
     if (!pending || run.waiting !== fromHook) return
     const askId = `${pending.trajectoryId}:${pending.stepIndex}`
-    const question = pending.questions?.[0]
+    const questions = pending.questions ?? []
     run.waiting = {
       pending,
-      ...(pending.kind === 'question' && question
+      ...(pending.kind !== 'question'
         ? {
-            question: {
-              id: askId,
-              question: question.question,
-              options: question.options.map((o) => ({ label: o.text }))
-            }
-          }
-        : {
             approval: {
               id: askId,
               command: pending.target,
               reason: pending.kind === 'file' ? 'Write this file' : undefined
             }
-          })
+          }
+        : questions.length && !questions.some((q) => q.multiSelect)
+          ? {
+              question: {
+                id: askId,
+                questions: questions.map((q) =>
+                  agyQuestion(
+                    q.question,
+                    q.options.map((o) => o.text)
+                  )
+                )
+              }
+            }
+          : {})
     }
   }
 
@@ -1243,13 +1257,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tool = run.lastTool
     if (status.kind === 'question' && tool?.name === 'ask_question') {
       const raw = record(tool.args).questions
-      const first = record(Array.isArray(raw) ? raw[0] : undefined)
-      const options = Array.isArray(first.options) ? first.options : []
+      const asked = (Array.isArray(raw) && raw.length ? raw : [undefined]).map(record)
+      if (asked.some((q) => q.is_multi_select === true)) return {}
       return {
         question: {
           id,
-          question: typeof first.question === 'string' ? first.question : (status.msg ?? ''),
-          options: options.map((o) => ({ label: String(o) }))
+          questions: asked.map((q) =>
+            agyQuestion(typeof q.question === 'string' ? q.question : (status.msg ?? ''), q.options)
+          )
         }
       }
     }
@@ -1296,20 +1311,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run?.info?.nativeSessionId
     if (!run || !ask || !id) return false
     if (ask.question) {
-      const key = codexOptionKey(ask.question, reply)
-      if (!key) return 'this Antigravity question takes the number or the name of one option.'
-      run.waiting = undefined
-      const option = ask.pending?.questions?.[0]?.options[Number(key) - 1]
+      const answers = questionAnswers(ask.question, reply)
       const viaApi =
-        ask.pending && option
-          ? await run.api?.pick(id, ask.pending, [option.id]).then(
+        answers && ask.pending
+          ? await run.api?.answer(id, ask.pending, answers).then(
               () => true,
               () => false
             )
           : false
-      if (!viaApi) this.deps.pty.write(tabId, key)
+      if (!viaApi) return false
+      run.waiting = undefined
       return undefined
     }
+    if (!ask.approval) return false
     const key = codexKeyFor(reply)
     if (!key) return 'an Antigravity approval takes yes or no.'
     const yes = key === 'y'
