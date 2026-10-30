@@ -197,8 +197,10 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         await expect(viewMode).toHaveText('Diff')
         await expect(page.locator(WORKBENCH.readingBody)).toContainText('a line the agent added')
 
-        expect(await koloftInSession(page, 'diff src/app.ts')).toBe('0')
+        expect(await koloftInSession(page, 'open src/app.ts')).toBe('0')
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('app.ts')
+        await expect(page.locator(WORKBENCH.readingBody)).toContainText('export const app = 1')
+        expect(await koloftInSession(page, 'diff src/app.ts')).toBe('0')
         await expect(viewMode).toHaveText('Diff')
         await expect(page.locator(WORKBENCH.readingBody)).toContainText('addedByTheAgent')
 

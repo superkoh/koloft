@@ -1545,13 +1545,15 @@ function notesFileOfScope(scope: string): string | undefined {
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) => {
+  open: async (tabId, target, view) => {
     const machine = machineOfTab(tabId)
     if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
-    const decision = routeFor(target, 'agent')
-    return decision.reason === 'unsupported-target' && !schemeOf(target)
-      ? openLocalFile(tabId, target, view)
-      : openInWorkbench(tabId, decision, 'agent', target, view)
+    const routed = routeFor(target, 'agent')
+    const decision: RouteDecision =
+      routed.reason === 'unsupported-target' && !schemeOf(target) && (await isRegularFile(target))
+        ? { dest: 'preview', target }
+        : routed
+    return openInWorkbench(tabId, decision, 'agent', target, view)
   },
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
@@ -4674,12 +4676,9 @@ async function openOnMachine(
   return true
 }
 
-async function openLocalFile(tabId: string, file: string, view?: ArtifactView): Promise<boolean> {
+async function isRegularFile(file: string): Promise<boolean> {
   const stat = await fs.promises.stat(file).catch(() => null)
-  if (!stat?.isFile()) return false
-  const payload: OpenRequest = { tabId, path: file, source: 'agent', view }
-  sendToRenderer(CH.preview.openFile, payload)
-  return true
+  return !!stat?.isFile()
 }
 
 function killTabFromMain(tabId: string): void {
