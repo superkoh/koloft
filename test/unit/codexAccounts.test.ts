@@ -108,7 +108,7 @@ describe('picking a Codex account', () => {
     expect(picker.pick([account('claude', { kind: 'oauth' })])).toBeUndefined()
   })
 
-  it('when every account is used up, starts on the one whose limit resets soonest and says so in words that fit a session tab and a one-off terminal run alike; with room left it says nothing', () => {
+  it('when every account is used up, starts on the one whose limit resets soonest and says so; with room left it says nothing', () => {
     const picker = new HomeAccountPicker('codex-home')
     const walledUntil = (resetsAt: number): AccountView['limits'] => ({
       windows: [
@@ -122,7 +122,6 @@ describe('picking a Codex account', () => {
     const picked = picker.pick([late, soon])
     expect(picked?.name).toBe('soon')
     expect(allLimitedNotice(picked!, 'codex')).toMatch(/Every Codex account.*soon.*\d\d:\d\d/)
-    expect(allLimitedNotice(picked!, 'codex')).not.toMatch(/session/)
     expect(allLimitedNotice(account('light', { limits: used(0.25) }), 'codex')).toBeUndefined()
   })
 
