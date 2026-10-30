@@ -1,8 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { BsClaude, BsMeta, BsOpenai } from 'react-icons/bs'
-import { GenIcon } from 'react-icons'
+import { GenIcon, type IconType } from 'react-icons'
 import type { BackendId } from '@shared/types'
-import type { IconType } from 'react-icons'
 
 const AntigravityMark: IconType = GenIcon({
   tag: 'svg',

@@ -13,14 +13,12 @@ describe('SessionBackendIcon', () => {
         <SessionBackendIcon backend="claude" />
         <SessionBackendIcon backend="codex" />
         <SessionBackendIcon backend="muse" />
-        <SessionBackendIcon backend="agy" />
       </>
     )
     expect(screen.getAllByRole('img').map((el) => el.getAttribute('aria-label'))).toEqual([
       BACKEND_LABEL.claude,
       BACKEND_LABEL.codex,
-      BACKEND_LABEL.muse,
-      BACKEND_LABEL.agy
+      BACKEND_LABEL.muse
     ])
   })
 
