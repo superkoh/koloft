@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { execFileSync, spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudePeerNames,
   messagingSocketOf,
+  tabSocketOnMachine,
   runningClaudePid,
   whenMessagingSocket
 } from '../../src/main/claudeSessionRegistry'
@@ -121,5 +124,38 @@ describe("claude's own session registry: the socket a session takes messages on"
     )
     const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
     expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
+  })
+})
+
+// CC§5 CC§11
+describe('the registry of a claude on another machine, read through ssh', () => {
+  const readOnMachine = (home: string): string =>
+    execFileSync('sh', ['-c', LIVE_REGISTRY_ON_A_MACHINE_SH], {
+      env: { ...process.env, HOME: home }
+    }).toString()
+
+  it('gives the socket of the claude running in the tab, not the entry a hard-killed claude left behind nor a /fork copy’s', () => {
+    const sessions = path.join(dir, '.claude', 'sessions')
+    fs.mkdirSync(sessions, { recursive: true })
+    const write = (pid: number | undefined, kind: string): void =>
+      fs.writeFileSync(
+        path.join(sessions, `${pid}.json`),
+        JSON.stringify(
+          { pid, sessionId: SID, kind, messagingSocketPath: `/tmp/cc-socks/${pid}.sock` },
+          null,
+          2
+        )
+      )
+    const gone = spawnSync('true').pid
+    write(gone, 'interactive')
+    write(process.ppid, 'bg')
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
+    write(process.pid, 'interactive')
+    fs.writeFileSync(path.join(sessions, `${process.pid}.0123abcd.key`), 'not json')
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBe(`/tmp/cc-socks/${process.pid}.sock`)
+  })
+
+  it('finds nothing on a machine where claude never ran', () => {
+    expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
   })
 })

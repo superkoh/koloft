@@ -54,6 +54,7 @@ export const CH = {
     setResident: 'sessions:setResident',
     forceClose: 'sessions:forceClose',
     transcriptExists: 'sessions:transcriptExists',
+    noAccountToResume: 'sessions:noAccountToResume',
     leftovers: 'sessions:leftovers',
     stopLeftover: 'sessions:stopLeftover',
     search: 'sessions:search',
@@ -143,6 +144,8 @@ export const CH = {
     clearData: 'browser:clear-data',
     openExternal: 'browser:open-external',
     devtools: 'browser:devtools',
+    pickElement: 'browser:pick-element',
+    pickStop: 'browser:pick-stop',
     permissionUndecided: 'browser:permission-undecided',
     linkBlocked: 'browser:link-blocked',
     openBackground: 'browser:open-background'

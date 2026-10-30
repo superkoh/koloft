@@ -1,6 +1,7 @@
 import { memo, type JSX, type RefObject } from 'react'
 import { IconEdit, IconExpand, IconOutline, IconReload, IconShrink } from '../icons'
 import type { ArtifactView, GitFileStatus } from '@shared/types'
+import { keepCaretInSessionTerminal } from '../keys'
 import type { ArtifactCaps } from './ArtifactPane'
 import type { EditProbe } from './EditPane'
 import { GIT_LETTER, splitPath } from './filesModel'
@@ -97,6 +98,7 @@ export const FileTabBar = memo(function FileTabBar({
               className={!editing && v === caps.current ? 'on' : undefined}
               aria-pressed={!editing && v === caps.current}
               disabled={v === 'diff' && !caps.hasDiff}
+              onMouseDown={keepCaretInSessionTerminal}
               onClick={() => {
                 if (editing) onExitEdit(tabId)
                 onView(tabId, v)

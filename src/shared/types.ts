@@ -1129,6 +1129,7 @@ export interface KoloftApi {
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
+    noAccountToResume(sessionId: string): Promise<string | null>
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
@@ -1183,6 +1184,8 @@ export interface KoloftApi {
     clearData(): Promise<void>
     openExternal(url: string): void
     toggleDevTools(guestId: number): void
+    pickElement(guestId: number, sessionTabId: string): Promise<string | null>
+    stopPick(guestId: number): void
   }
   extensions: {
     list(): Promise<ExtensionInfo[]>
@@ -1477,6 +1480,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  closing?: 'soon' | 'after-background-work'
   note?: string
 }
 

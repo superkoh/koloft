@@ -1,5 +1,6 @@
 import { session, WebContentsView, type WebContents } from 'electron'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
+import { within } from '../within'
 
 const SHOT_PARTITION = 'koloft-page-shot'
 const VIEW_WIDTH = 1280
@@ -21,14 +22,6 @@ interface Size {
 interface Shot {
   format: 'png' | 'jpeg'
   data: Buffer
-}
-
-function within<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(what)), ms)
-  })
-  return Promise.race([work, late]).finally(() => clearTimeout(timer))
 }
 
 let partitionReady = false

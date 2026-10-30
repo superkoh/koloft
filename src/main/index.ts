@@ -137,7 +137,9 @@ import {
   runMasterCommand,
   runSsh,
   runSshBytes,
-  sshOptions
+  problemOf,
+  sshOptions,
+  writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
@@ -189,7 +191,13 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  setupBundledGit,
+  stepAsideForTheUsersGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -331,6 +339,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { pickElement, pickText, stopPick } from './elementPick'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -491,7 +500,12 @@ import {
   type ConfigText,
   type McpServer
 } from './mcpServers'
-import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
+import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
+  claudeShowsAPanel,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+} from './claudeSessionRegistry'
 import {
   asPeerName,
   GLOBAL_SCOPE,
@@ -1154,6 +1168,11 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      try {
+        if (gitFirstBin) stepAsideForTheUsersGit(gitFirstBin, env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
     })
     .catch(() => undefined))
 }
@@ -1226,6 +1245,19 @@ const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
+
+function elementPicksDir(): string {
+  return path.join(app.getPath('userData'), 'element-picks')
+}
+
+async function savePickOnThisMac(png: Buffer): Promise<string> {
+  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
+  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
+  await fs.promises.writeFile(file, png)
+  return file
+}
 
 // CODEX§3 CODEX§20 MUSE§5
 async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
@@ -1585,10 +1617,28 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
-  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-  await writeLineInTurn(socket, line)
+  const host = tracker.remoteOf(tabId)?.host
+  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
+  if (!host) {
+    const socket = await whenMessagingSocket(sessionId, ms)
+    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+    return writeLineInTurn(socket, line)
+  }
+  await loginEnvReady()
+  const readLiveRegistry = async (): Promise<string> => {
+    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+      controlDir: remoteControlDir
+    })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout
+  }
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
+    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
+  )
 }
+const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
@@ -1690,10 +1740,14 @@ const sessionDeps: SessionVerbDeps = {
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
+  ready: tabTypable,
+  bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  press: (tabId, keys) => {
+    butler?.firstWordsComing(tabId)
+    return ptyMgr.type(tabId, keys)
+  },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -1757,9 +1811,9 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
-      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      machine: machineOfTab,
       pages: guestPagesOf,
-      open: openOnTabMachine,
+      open: openSignInEndOn,
       sleep
     }),
     gh: githubVerb({
@@ -2793,6 +2847,9 @@ app.whenReady().then(() => {
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
+  const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
+  pruneElementPicks()
+  setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -2806,7 +2863,10 @@ app.whenReady().then(() => {
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
-  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
@@ -4931,15 +4991,29 @@ function showsPromptBeforeBind(tabId: string): boolean {
   return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
+function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
+  return (
+    !!sessionOfTab(tabId)?.sessionId &&
+    tracker.statusOf(tabId) !== undefined &&
+    (!turnEnded || tracker.turnOver(tabId))
+  )
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => boundAndSettled(tabId, turnEnded), ms)
+}
+
+// AGY§8
+function tabTypable(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+    () => showsPromptBeforeBind(tabId) || boundAndSettled(tabId, turnEnded),
     ms
   )
+}
+
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
 function registerSlashCommands(): void {
@@ -4958,8 +5032,7 @@ async function secretAskerName(tabId: string): Promise<string> {
 const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
 
 // CODEX§15
-async function openOnTabMachine(tabId: string, url: string): Promise<string> {
-  const host = tracker.remoteOf(tabId)?.host
+async function openSignInEndOn(host: string | undefined, url: string): Promise<string> {
   if (!host) {
     const res = await fetch(url, {
       redirect: 'manual',
@@ -5746,6 +5819,11 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
+  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
+    if (typeof id !== 'string' || !id) return null
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
+  })
+
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
     sessionBackends.historyRows(p, (id, error) =>
       sendToRenderer(
@@ -5905,6 +5983,26 @@ function registerIpc(): void {
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
+  })
+  ipcMain.handle(CH.browser.pickElement, async (_e, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'number' || typeof tabId !== 'string') return null
+    const guest = webContents.fromId(id)
+    if (!guest || guest.getType() !== 'webview') return null
+    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
+    const picked = await pickElement(guest)
+    if (!picked) return null
+    const machine = machineOfTab(tabId)
+    const picture = picked.png
+      ? await (
+          machine
+            ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
+            : savePickOnThisMac(picked.png)
+        ).catch(() => null)
+      : null
+    return pickText(picked, picture)
+  })
+  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
+    if (typeof id === 'number') stopPick(id)
   })
   ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))

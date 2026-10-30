@@ -2,6 +2,10 @@ import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
+  newSessionInWith,
+  openSessionTerminal,
+  panelTerm,
+  runIn,
   startSessionIn,
   terminalText,
   waitBooted,
@@ -9,13 +13,22 @@ import {
   waitForCalls
 } from './helpers/p1'
 import {
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_HOST,
+  REMOTE_WS_NAME,
+  sshCommands
+} from './helpers/remote'
+import {
   OPEN_A_FORM,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
 } from './helpers/fakeDiscord'
 import { guestByUrl } from './helpers/browser'
-import { startEchoServer } from './helpers/fixtureServer'
+import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { FILLED_AND_EMPTIED } from '../../src/main/agentSecret'
 import { PASSED_ON } from '../../src/main/discord/secretAsks'
 
@@ -62,6 +75,13 @@ async function enter(fake: FakeDiscord, card: FakePost, typed: string): Promise<
     .toBe(card.buttons![0].id)
   fake.submit(OWNER, card.buttons![0].id, typed, card.channelId)
   await expect.poll(() => fake.callbacks.map((c) => c.data.content)).toContain(PASSED_ON)
+}
+
+function answerSignIn(server: FixtureServer): void {
+  server.route('/auth/callback', (_q, res) => {
+    res.writeHead(200)
+    res.end('signed in')
+  })
 }
 
 function nowhereInDiscord(fake: FakeDiscord, typed: string): void {
@@ -160,10 +180,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
     const server = await startEchoServer()
     const app = await launchApp(env)
     try {
-      server.route('/auth/callback', (_q, res) => {
-        res.writeHead(200)
-        res.end('signed in')
-      })
+      answerSignIn(server)
       const page = await app.firstWindow()
       await waitBooted(page)
       await expect.poll(() => fake.identifies).toBe(1)
@@ -185,6 +202,58 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await quitAndClose(app)
       await fake.close()
       await server.close()
+    }
+  })
+
+  test.describe('on another machine', () => {
+    test.afterEach(({ env }) => killFakeRemote(env))
+
+    for (const agent of [{ label: 'Claude' as const }, ...OTHER_AGENTS_ON_THE_MACHINE]) {
+      test(`koloft secret url, run in a ${agent.label} session on another machine, names that machine to the owner and opens the pasted 127.0.0.1 address there over ssh, not on this Mac`, async ({
+        env
+      }) => {
+        test.setTimeout(240_000)
+        const other = 'install' in agent ? agent : undefined
+        seedBinding(env)
+        other?.install(env)
+        const fake = await startFakeDiscord(env)
+        const server = await startEchoServer()
+        const { app, page } = await launchWithRemote(env)
+        try {
+          answerSignIn(server)
+          await expect.poll(() => fake.identifies).toBe(1)
+          await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+          await addRemoteWorkspace(page, env)
+          if (other) {
+            await newSessionInWith(page, REMOTE_WS_NAME, other.label)
+            await other.bound?.(page)
+          } else await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+          await openSessionTerminal(app, page)
+          await runIn(
+            page,
+            panelTerm(page),
+            'koloft secret url "https://auth.example.test/authorize?client=r"'
+          )
+          const card = await secretCard(fake, /needs the address a sign-in ends on/)
+          expect(card.content).toContain(`Koloft opens it on ${REMOTE_HOST}.`)
+          const pasted = server.url('/auth/callback?code=c-2&state=s-2')
+          await enter(fake, card, pasted)
+          await expect
+            .poll(() => server.requestsFor('/auth/callback').map((r) => r.search))
+            .toEqual(['?code=c-2&state=s-2'])
+          expect(
+            sshCommands(env).filter((c) => c.includes('curl') && c.includes(pasted))
+          ).toHaveLength(1)
+          await expect(panelTerm(page)).toContainText(
+            `Koloft opened the address on ${REMOTE_HOST}; it answered 200.`,
+            { timeout: 30_000 }
+          )
+        } finally {
+          await quitAndClose(app)
+          await fake.close()
+          await server.close()
+        }
+      })
     }
   })
 

@@ -143,15 +143,24 @@ describe('AgyApi (the local Connect API agy serves, AGY§16)', () => {
     expect(await api().pending('c1')).toBeUndefined()
   })
 
-  it('answers an approval with allow or deny and a question with the picked option ids, for the step that waits', async () => {
+  it('answers an approval with allow or deny, and each question of an ask with the picked option id or the owner’s own words, for the step that waits', async () => {
     const ask: PendingInteraction = {
       trajectoryId: 't1',
       stepIndex: 4,
       kind: 'question',
-      questions: [{ question: 'Which fruit?', options: [] }]
+      questions: [
+        {
+          question: 'Which fruit?',
+          options: [
+            { id: 'a', text: 'Apple' },
+            { id: 'b', text: 'Banana' }
+          ]
+        },
+        { question: 'Which size?', options: [{ id: 's', text: 'Small' }] }
+      ]
     }
     await api().allow('c1', { ...ask, kind: 'command' }, false)
-    await api().pick('c1', ask, ['2'])
+    await api().answer('c1', ask, [{ pick: 2 }, { words: 'Medium, please' }])
     expect(sent('HandleCascadeUserInteraction')).toEqual([
       {
         cascadeId: 'c1',
@@ -162,7 +171,12 @@ describe('AgyApi (the local Connect API agy serves, AGY§16)', () => {
         interaction: {
           trajectoryId: 't1',
           stepIndex: 4,
-          askQuestion: { responses: [{ question: 'Which fruit?', selectedOptionIds: ['2'] }] }
+          askQuestion: {
+            responses: [
+              { question: 'Which fruit?', selectedOptionIds: ['b'] },
+              { question: 'Which size?', writeInResponse: 'Medium, please' }
+            ]
+          }
         }
       }
     ])

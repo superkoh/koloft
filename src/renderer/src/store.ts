@@ -767,8 +767,12 @@ export const useStore = create<AppState>((set, get) => ({
       restarting.add(oldId)
       // CC§2
       let hasTranscript = false
+      let noAccount: string | null = null
       try {
-        hasTranscript = await window.api.sessions.transcriptExists(resumeId)
+        ;[hasTranscript, noAccount] = await Promise.all([
+          window.api.sessions.transcriptExists(resumeId),
+          window.api.sessions.noAccountToResume(resumeId)
+        ])
       } catch {
         restarting.delete(oldId)
         return
@@ -780,6 +784,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (!get().tabs.some((x) => x.id === oldId)) {
         restarting.delete(oldId)
+        return
+      }
+      if (noAccount) {
+        restarting.delete(oldId)
+        get().showToast(noAccount)
         return
       }
       restartedPtys.add(oldId)

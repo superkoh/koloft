@@ -135,7 +135,7 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     }
   })
 
-  test('a background shell the model is parked on shows green with ↻ through the spawn-ack ledger alone, with nothing written to disk', async ({
+  test('a background shell the Stop lists shows green with ↻ while the OS still sees its process, until it drains', async ({
     page
   }) => {
     test.setTimeout(120_000)
