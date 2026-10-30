@@ -286,9 +286,11 @@ Measured 2026-10-29, codex 0.166.0, a python pty 80×24, the owner's own `CODEX_
 the native binary (`execve`), so the pid that ran `node …/.bin/codex` becomes
 `…/codex-darwin-arm64/vendor/…/bin/codex` with the same arguments; on 0.165.0 the same
 command was a `node` process with the native binary as its child (2026-10-30, `ps` of a
-running TUI and app-server per build). Koloft kills a tab's process group by pid and
-finds its app-server by an `app-server` argument, so both still work; a Workbench
-shell's title shows `codex` where it showed `node`.
+running TUI and app-server per build). Koloft kills a tab's process group by pid, and
+finds a left-over or remote app-server by its `app-server --stdio` arguments, which
+`ps` showed kept; that both still work, and that a Workbench shell's title now shows
+`codex` where it showed `node`, is inferred from that `ps`, not run (the real-binary
+e2e specs passed on 0.166.0, section 7).
 
 Koloft's own stop, ownership and retry rules are product rules, covered by
 `test/unit/codexTransport.test.ts`, not Codex facts.
@@ -374,17 +376,17 @@ keys per thread; the schema adds only the client methods `account/gcp/setup`,
 `accountSession/list` and `accountSession/switch`, the fields `ThreadItem.startedAtMs` /
 `completedAtMs`, `ThreadUsage.nativeUsageUsdMicros`, `HooksListParams.threadId`,
 `HookMetadata.environmentId` and `ProcessExitedNotification.outputDrainTimedOut`, and no
-server notification or request), 5 (the npm `codex` is now one process), 34 (a TUI
-whose app-server is killed keeps trying to reconnect), 11 (a `never` / `danger-full-access` thread
-resumed by an app-server given other `-c` stays as it was; the other two shapes not
-rerun), 13/14 (`model/list` the same eight models, all priced, default `gpt-6.1-sol`;
-`total` keeps growing across a resume; reasoning tokens were 0 in every turn, so the
-notes' "reasoning-token accounting across resume and fork" was not reached), 15
-(`login status`, `auth.json` unchanged by a turn), 17 and 33 (an unsubscribed thread
-unloads within a minute and a message queued into it waits; `codex queue`'s options),
-25 (the same escape sequences under Koloft's `TERM`, OSC 7501 still sent; the `?u` and
-DA1 queries now come before `6n`), 27 (the same four events and keys; `cwd` is now the
-command's folder) and 28 (the start race, not fixed) were measured again, and the same
+server notification or request), 5 (the npm `codex` is now one process), 11 (a `never`
+/ `danger-full-access` thread resumed by an app-server given other `-c` stays as it was;
+the other two shapes not rerun), 13/14 (`model/list` the same eight models, all priced,
+default `gpt-6.1-sol`; `total` keeps growing across a resume; reasoning tokens were 0 in
+every turn, so the notes' "reasoning-token accounting across resume and fork" was not
+reached), 15 (`login status`, `auth.json` unchanged by a turn), 17 (an unsubscribed
+thread unloads within a minute and a message queued into it waits), 25 (OSC 7501 still
+sent; the `?u` and DA1 queries now come before `6n`), 27 (the same four events and
+keys; `cwd` is now the command's folder), 28 (the start race, not fixed), 33 (`codex
+queue`'s options) and 34 (a TUI whose app-server is killed keeps trying to reconnect)
+were measured again, and the same
 e2e specs passed, the remote ones (E-SSH-23/24/25) too. `codex
 --help`, `app-server --help`, `exec --help` and `resume --help` are byte-identical to
 0.165.0's; `queue --help` and `doctor --help` (`--network-only`) differ. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
@@ -1688,8 +1690,11 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   --message …` from another process (exit 0, `Queued message …`). A later
   `thread/resume` ran all three queued messages within 40 s. On 0.165.0 both kinds of
   queued message started a turn within 25 s. Koloft queues only into the thread a live
-  tab's own TUI holds, so it does not meet this; a queue in the first minute after the
-  unsubscribe was not run.
+  tab's TUI holds, through that tab's own stdio app-server; while the TUI reconnects to
+  Koloft's relay (section 34) the relay keeps that app-server's connection, or a new
+  app-server gets the TUI's `thread/resume` — so Koloft should not meet this (read from
+  `codexTransport.ts`, not run on 0.166.0). A queue in the first minute after the
+  unsubscribe, and a reconnect slower than a minute, were not run.
 
 ## 18. Which command lines open the full-screen TUI
 
@@ -2227,8 +2232,9 @@ the one before, the screen read back through `pyte`.
   Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
   `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
   for either CLI (issue #487). The startup and exit sequences are otherwise the same on
-  both versions and both env shapes: `?2004h`, `>7u`, `?1004h`, the `6n`, OSC 10/11
-  and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
+  both versions and both env shapes (on 0.166.0, 2026-10-30, Koloft's env shape, too,
+  except that the `?u` and DA1 queries now come before `6n`): `?2004h`, `>7u`,
+  `?1004h`, the `6n`, OSC 10/11 and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
   `?1006l ?1015l ?1003l ?1002l ?1000l <1u ?1007l ?1049l <u ?2004l ?1004l` — so the
   mouse modes are set at start and reset at exit, not both on the welcome screen as the
   bullet above says from 2026-10-13. No XTVERSION query is sent. 0.163.0's strings drop
@@ -2489,7 +2495,7 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   is the command's own folder**: a command the model ran in `work/sub` gave `…/work/sub`
   there, where 0.165.0 gave the thread's `…/work`; the keys and the order of the four
   events were the same on both (2026-10-30, one `gpt-6-luna` turn per build, throwaway
-  homes). Koloft reads `cwd` only from the start and end events.
+  homes). Koloft's Codex hooks (the reply-language and hold hooks) read no `cwd`.
 - **When each fires:** `SessionStart` at the first turn after `thread/start`,
   `thread/resume` or a compaction, not at `thread/start` itself. `UserPromptSubmit`, then
   `PreToolUse`/`PostToolUse` around each tool, then `Stop` at the end of each turn.

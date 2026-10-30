@@ -102,7 +102,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   skips and `"idleCompaction": false` read the same, and the path stays off for `bg` and
   `daemon` sessions (`strings`, 2026-10-30, not run). Its changelog says it now also runs
   for subscribers with telemetry off. So every interactive session past the floor on a
-  one-hour cache can compact while idle.
+  one-hour cache can compact while idle (inferred from those strings, not watched in a
+  session on 2.1.314).
 - **Every compaction ends by writing a summary record**, at about the moment SessionStart
   `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
   content "This session is being continued from a previous conversation that ran out of
@@ -1971,7 +1972,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli' | 'sdk-cli'`,
   `nameSource: 'derived' | 'user' | 'auto'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
-  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. A daemon-hosted
+  entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
+  key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
+  (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
+  reader parses the JSON and counts no keys. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2006,9 +2010,8 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     `idle_prompt` Notification. `busy` while a turn, a local command or a compaction
     runs. A reply that says "waiting on you" mid-sentence leaves it `idle` (0.1 s after
     Stop and for 6 s after, 3 interactive runs each on 2026-10-28, CC 2.1.311 and
-    2.1.312, the same 18 keys; on 2.1.314, 2026-10-30, one run, `idle` 0.1 s after Stop
-    and a 19th key, `asksForConvertedSkills`, a boolean or null, absent from 2.1.312's
-    strings — Koloft's registry reader parses the JSON and counts no keys); the binary sets `waiting` only from what is open on
+    2.1.312, the same 18 keys; on 2.1.314, 2026-10-30, one run, `idle` 0.1 s after
+    Stop); the binary sets `waiting` only from what is open on
     screen, never from the message text, so the 2.1.312 changelog's "showing as waiting
     on you" fix is the agent view's count, not this field.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
@@ -2605,10 +2608,12 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   hook still sees `Monitor`. A deny stops it, reported as `PreToolUse:Monitor hook
   error: <reason>`; an allow under `--permission-mode default` is ignored (the call
   still needed approval); an 8 s sleep started the monitor 8 s late, then it ran.
-  `PostToolUse` on `Bash` still does not fire for Monitor. So Koloft's hold hook,
-  which reads `tool_name` and `tool_input.command`, now also queues a Monitor's start
-  while the machine is busy, the same as a Bash call; `stale_pr_status` never sees it.
-  Not run: the interactive TUI, a subagent's Monitor.
+  `PostToolUse` on `Bash` still does not fire for Monitor. Koloft's hold hook matches
+  `"tool_name":"Bash"` and reads `tool_input.command`, so on a busy machine it should
+  now hold a background tab's Monitor start the way it holds a Bash call, and list its
+  command as held (inferred from these runs and the hook's text; the hold hook itself
+  was not run). `stale_pr_status` never sees a Monitor. Not run: the interactive TUI, a
+  subagent's Monitor.
 - **The transcript record of a call a `PreToolUse` hook denied is unchanged on
   2.1.314**: a `tool_result` `{type, content: "PreToolUse:<tool> hook error: <reason>",
   is_error: true, tool_use_id}` with `toolDenialKind: "permission-rule"` beside it, the
@@ -2699,7 +2704,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   and `next` and the download host's `latest` offered 2.1.311, `stable` still 2.1.308;
   on 2026-10-28 npm `latest` and `next` and the download host's `latest` offered
   2.1.312, `stable` still 2.1.308; on 2026-10-30 npm `latest` and `next` and the
-  download host's `latest` offered 2.1.314, npm `stable` still 2.1.308.
+  download host's `latest` offered 2.1.314, npm's and the download host's `stable` still
+  2.1.308.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
