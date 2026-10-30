@@ -35,7 +35,6 @@ export interface CodexThread {
   createdAt?: number
   updatedAt?: number
   path?: string | null
-  cliVersion?: string
   ephemeral?: boolean
   parentThreadId?: string | null
   threadSource?: string
@@ -63,7 +62,7 @@ export function userThread(value: unknown): CodexThread | null {
     Object.hasOwn(record(t.source), 'subAgent')
   )
     return null
-  for (const key of ['name', 'preview', 'path', 'cliVersion', 'model']) {
+  for (const key of ['name', 'preview', 'path', 'model']) {
     if (t[key] !== undefined && t[key] !== null && typeof t[key] !== 'string') return null
   }
   return t as unknown as CodexThread
