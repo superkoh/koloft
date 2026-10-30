@@ -494,10 +494,11 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await edCreateJob(page)
       await edRunNow(page)
 
-      await edExpectToast(page, `⏰ ${JOB} could not start: no usable account`)
+      const noClaudeAccount = 'No Claude account yet — add one in Settings ▸ Accounts.'
+      await edExpectToast(page, `⏰ ${JOB} could not start: ${noClaudeAccount}`)
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
-        .toBe('Could not start — no usable account')
+        .toBe(`Could not start — ${noClaudeAccount}`)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
       await app.close().catch(() => {})

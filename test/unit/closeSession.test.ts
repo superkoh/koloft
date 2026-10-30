@@ -10,6 +10,7 @@ import {
   unsavedBody,
   unsavedFilesPhrase
 } from '../../src/renderer/src/closeSession'
+import { meta } from './helpers/accounts'
 
 describe('unexpectedExitWanted', () => {
   const crash = { exitCode: 1, unexpected: true as const }
@@ -19,7 +20,7 @@ describe('unexpectedExitWanted', () => {
   })
   it('reports Codex crashes using its own source', () => {
     expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
-    expect(unexpectedExitNotice(crash, 'codex', true)).toContain('Codex')
+    expect(unexpectedExitNotice(crash, 'codex', true, null)).toContain('Codex')
   })
   it('does not want it for an exit main did not call unexpected, or for a tab that is not a conversation', () => {
     expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, {})).toBe(false)
@@ -172,30 +173,38 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
 // PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true)).toBe(
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true, null)).toBe(
       'Claude session ended: killed by signal 9'
     )
-    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', true)).toBe(
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', true, null)).toBe(
       'Claude session ended unexpectedly (exit code 1)'
     )
   })
 
   it('says the agent closed before the session started when the tab never bound one, keeping the code as the only clue left', () => {
-    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', false)).toBe(
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', false, null)).toBe(
       'Claude closed before the session started (exit code 1)'
     )
-    expect(unexpectedExitNotice({ exitCode: 3 }, 'codex', false)).toBe(
+    expect(unexpectedExitNotice({ exitCode: 3 }, 'codex', false, null)).toBe(
       'Codex closed before the session started (exit code 3)'
     )
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'codex', false)).toBe(
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'codex', false, null)).toBe(
       'Codex closed before the session started (killed by signal 9)'
     )
   })
 
   // ADR-0030
-  it('says Claude did not start for want of an account when the claude shim refused it', () => {
-    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude', false)).toBe(
+  it('says what is wrong with the Claude accounts when the claude shim refused a start, and the general line only when an account looked usable', () => {
+    const refused = { exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }
+    expect(unexpectedExitNotice(refused, 'claude', false, [meta({ kind: 'codex-home' })])).toBe(
+      'No Claude account yet — add one in Settings ▸ Accounts.'
+    )
+    expect(
+      unexpectedExitNotice(refused, 'claude', false, [meta({ name: 'me', status: 'expired' })])
+    ).toBe('"me" is not signed in — sign in again in Settings ▸ Accounts.')
+    expect(unexpectedExitNotice(refused, 'claude', false, [meta({ kind: 'apikey' })])).toBe(
       SHIM_FOUND_NO_ACCOUNT_NOTICE
     )
+    expect(unexpectedExitNotice(refused, 'claude', false, null)).toBe(SHIM_FOUND_NO_ACCOUNT_NOTICE)
   })
 })

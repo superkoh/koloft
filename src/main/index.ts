@@ -3735,7 +3735,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
-    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
