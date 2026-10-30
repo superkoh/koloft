@@ -144,7 +144,7 @@ import { UpdateModal } from './components/UpdateModal'
 import { AssistDialog } from './components/AssistDialog'
 import { useAssistSetup } from './useAssistSetup'
 import { useToolsChanged } from './useInstalledBackends'
-import { Onboarding } from './components/Onboarding'
+import { Welcome } from './components/Welcome'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
@@ -466,6 +466,16 @@ export default function App(): JSX.Element {
       }))
     },
     [requestNew, soleMethod, startNow]
+  )
+
+  const startFromWelcome = useCallback(
+    (wsPath: string, backend: SessionBackend, firstPrompt?: string): void =>
+      startNow(hostOf(wsPath), backend, async () => ({
+        cwd: wsPath,
+        trustFolder: true,
+        ...(firstPrompt && { firstPrompt })
+      })),
+    [startNow]
   )
 
   const globalNew = useCallback(
@@ -1101,14 +1111,10 @@ export default function App(): JSX.Element {
     if (activeTabWs) setLastWsPath(activeTabWs)
   }, [activeTabWs, setLastWsPath])
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
-  const welcomeActive = useStore((s) => s.welcomeActive)
   const setWelcomeActive = useStore((s) => s.setWelcomeActive)
   const onboardingSeen = useStore((s) => s.settings.onboardingSeen)
-  const noWorkspaces = workspaceRows.length === 0
-  useEffect(() => {
-    if (onboardingSeen) setWelcomeActive(false)
-    else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
-  }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
+  const welcomeOpen = rowsLoaded && !onboardingSeen
+  useEffect(() => setWelcomeActive(welcomeOpen), [welcomeOpen, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
   const butlerActive = useStore(
@@ -1272,19 +1278,8 @@ export default function App(): JSX.Element {
   // ADR-0030
   const assistSetup = useAssistSetup()
   const signInTabId = useStore((s) => s.signIn?.tabId)
-  const whatsNewOpen = useStore((s) => s.update.open)
-  const [assistSetupLater, setAssistSetupLater] = useState(false)
   const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
-  const assistDialogShown =
-    assistAsked ||
-    (rowsLoaded &&
-      assistSetup.loaded &&
-      !assistSetup.done &&
-      !assistSetupLater &&
-      !welcomeActive &&
-      !whatsNewOpen &&
-      !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landed = useStore(
     useShallow((s) => {
@@ -1754,9 +1749,7 @@ export default function App(): JSX.Element {
                 {resumeLaunch && <ResumingMask title={resumeLaunch.title} />}
                 {!activeTab &&
                   !resumeLaunch &&
-                  (welcomeActive ? (
-                    <Onboarding onAddWorkspace={addWorkspace} onStartIn={startIn} />
-                  ) : welcomeWs ? (
+                  (welcomeWs ? (
                     <div className="w-empty" tabIndex={-1}>
                       <div className="big">{basename(welcomeWs.workspace.path)}</div>
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
@@ -1996,14 +1989,14 @@ export default function App(): JSX.Element {
           <BindConductorDialog />
           <RenameButlerDialog />
           <UpdateModal />
-          {assistDialogShown && (
-            <AssistDialog
-              setup={assistSetup}
-              asked={assistAsked}
-              onNotNow={() => {
-                setAssistSetupLater(true)
-                setAssistAsked(false)
-              }}
+          {assistAsked && (
+            <AssistDialog setup={assistSetup} asked onNotNow={() => setAssistAsked(false)} />
+          )}
+          {welcomeOpen && (
+            <Welcome
+              onAddFolder={addWorkspace}
+              onAddRemote={() => setRemoteDialog(true)}
+              onStart={startFromWelcome}
             />
           )}
           <UnsavedDialog />
