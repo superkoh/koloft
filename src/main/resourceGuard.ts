@@ -23,7 +23,7 @@ export const HOLD_HOOK_TIMEOUT_S = 3600
 export const HOLD_GIVES_UP_BEFORE_THE_HOOK_TIMEOUT_S = 3500
 export const REMOTE_BUSY_BELOW_FREE_MEMORY_PERCENT = 10
 const HOLD_LOOKS_AROUND_EVERY_S = 5
-const RELEASE_CLAIM_SUFFIX = '.claim'
+export const RELEASE_CLAIM_SUFFIX = '.claim'
 const HELD_FILE = /^(.+)\.\d+\.held$/
 // CODEX§27 MUSE§9 AGY§13
 const SHELL_TOOLS = ['Bash', 'bash', 'run_command']
@@ -71,9 +71,12 @@ const HOLD_BRANCH = `  hold|hold-self)
       [ $((n % ${HOLD_LOOKS_AROUND_EVERY_S})) -eq 0 ] || continue
       kill -0 "$PPID" 2>/dev/null || exit 0
       [ "$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')" = "$gp" ] || exit 0
-      if ! busy && turn_now "$now" && mkdir "$reg/release-$(date +%s)${RELEASE_CLAIM_SUFFIX}" 2>/dev/null; then
-        printf '%s\\n' "$((now + ${GAP_AFTER_A_COMMAND_MS / 1000}))" > "$reg/${RELEASE_AFTER_FILE}"
+      if ! busy && turn_now "$now" && {
         find "$reg" -maxdepth 1 -name 'release-*${RELEASE_CLAIM_SUFFIX}' -mmin +1 -exec rmdir {} + 2>/dev/null
+        mkdir "$reg/release-\${after:-0}${RELEASE_CLAIM_SUFFIX}" 2>/dev/null
+      }; then
+        printf '%s\\n' "$((now + ${GAP_AFTER_A_COMMAND_MS / 1000}))" > "$reg/${RELEASE_AFTER_FILE}.$$"
+        mv -f "$reg/${RELEASE_AFTER_FILE}.$$" "$reg/${RELEASE_AFTER_FILE}"
         break
       fi
     done
