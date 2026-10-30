@@ -3,7 +3,6 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import {
-  discordSaidBeside,
   LANGUAGE_FNS,
   QUOTE_PROMPT_FN,
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
@@ -91,7 +90,8 @@ export function writeMuseHooks(
   context?: string,
   ownerWords?: string,
   hold?: MuseHold,
-  notice = ''
+  notice = '',
+  discordSaid = ''
 ): string {
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
@@ -104,7 +104,7 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(notice && discordSaidBeside(notice))}`,
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`,
       hold && `/bin/bash ${shq(hold.file)} ${shq(hold.regDir)} ${shq(hold.tabId)} hold`
     )
   )
