@@ -126,6 +126,7 @@ function runBytes(
       }
     )
     // PLATFORM§27
+    child.stdin?.on('error', () => {})
     child.stdin?.end(opts.input)
   })
 }

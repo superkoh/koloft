@@ -116,6 +116,7 @@ const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
   ' && git init -q && git add -A && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
+const NOT_ASCII = '中文 ⏺ …'
 
 function mirroredSaidFiles(env: E2EEnv): string[] {
   const root = path.join(env.userData, 'remote')
@@ -161,6 +162,10 @@ const STAND_IN_MODEL_CONFIG = [
   'trust_level = "trusted"',
   ''
 ].join('\n')
+// CODEX§15
+const A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN = JSON.stringify({
+  OPENAI_API_KEY: 'sk-not-a-real-key'
+})
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -622,6 +627,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
       }
+    })
+  })
+
+  // PLATFORM§35
+  test('E-SSH-34: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      expect(
+        execFileSync(
+          '/usr/bin/ssh',
+          ['-F', lab.config, '-o', 'BatchMode=yes', 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
+          { encoding: 'utf8', timeout: 10_000 }
+        ).trim()
+      ).toBe('[]')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`${NOT_ASCII}\r`)
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
+        .toContain(`handled: ${NOT_ASCII}`)
     })
   })
 
@@ -1372,7 +1399,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // ADR-0039 CODEX§16
-  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, no account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
     env
   }) => {
     test.skip(
@@ -1389,10 +1416,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
       NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
     )
-    addCodexAccount(
-      env,
-      JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
-    )
+    addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
     await withLab(

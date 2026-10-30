@@ -153,6 +153,7 @@ const api: KoloftApi = {
     setResident: (id, on) => ipcRenderer.send(CH.sessions.setResident, id, on),
     forceClose: (id) => ipcRenderer.invoke(CH.sessions.forceClose, id),
     transcriptExists: (id) => ipcRenderer.invoke(CH.sessions.transcriptExists, id),
+    noAccountToResume: (id) => ipcRenderer.invoke(CH.sessions.noAccountToResume, id),
     leftovers: () => ipcRenderer.invoke(CH.sessions.leftovers),
     onLeftovers: (cb) => {
       const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)

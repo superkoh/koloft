@@ -191,7 +191,13 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  setupBundledGit,
+  stepAsideForTheUsersGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -1158,6 +1164,11 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      try {
+        if (gitFirstBin) stepAsideForTheUsersGit(gitFirstBin, env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
     })
     .catch(() => undefined))
 }
@@ -1712,10 +1723,14 @@ const sessionDeps: SessionVerbDeps = {
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
+  ready: tabTypable,
+  bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  press: (tabId, keys) => {
+    butler?.firstWordsComing(tabId)
+    return ptyMgr.type(tabId, keys)
+  },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -1779,9 +1794,9 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
-      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      machine: machineOfTab,
       pages: guestPagesOf,
-      open: openOnTabMachine,
+      open: openSignInEndOn,
       sleep
     }),
     gh: githubVerb({
@@ -2828,7 +2843,10 @@ app.whenReady().then(() => {
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
-  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
@@ -4952,15 +4970,29 @@ function showsPromptBeforeBind(tabId: string): boolean {
   return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
 }
 
+function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
+  return (
+    !!sessionOfTab(tabId)?.sessionId &&
+    tracker.statusOf(tabId) !== undefined &&
+    (!turnEnded || tracker.turnOver(tabId))
+  )
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => boundAndSettled(tabId, turnEnded), ms)
+}
+
+// AGY§8
+function tabTypable(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+    () => showsPromptBeforeBind(tabId) || boundAndSettled(tabId, turnEnded),
     ms
   )
+}
+
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
 function registerSlashCommands(): void {
@@ -4979,8 +5011,7 @@ async function secretAskerName(tabId: string): Promise<string> {
 const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
 
 // CODEX§15
-async function openOnTabMachine(tabId: string, url: string): Promise<string> {
-  const host = tracker.remoteOf(tabId)?.host
+async function openSignInEndOn(host: string | undefined, url: string): Promise<string> {
   if (!host) {
     const res = await fetch(url, {
       redirect: 'manual',
@@ -5764,6 +5795,11 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).transcriptExists(id)
+  })
+
+  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
+    if (typeof id !== 'string' || !id) return null
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>

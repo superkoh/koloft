@@ -63,6 +63,7 @@ function openAiLong(inPerM: number, cacheReadPerM: number, outPerM: number): Lon
 // CODEX§13
 export const OPENAI_PRICING: Record<string, ModelPricing> = {
   'gpt-6.1-sol': openAi(2, 0.1, 10, openAiLong(4, 0.2, 15)),
+  'gpt-6.1-terra': openAi(1, 0.05, 5, openAiLong(2, 0.1, 7.5)),
   'gpt-6-astra': openAi(10, 1, 50, openAiLong(20, 2, 75)),
   'gpt-6-sol': openAi(2, 0.2, 10, openAiLong(4, 0.4, 15)),
   'gpt-6-luna': openAi(0.1, 0.01, 0.5, openAiLong(0.2, 0.02, 0.75)),

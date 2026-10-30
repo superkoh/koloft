@@ -34,6 +34,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
     c.stdout.on('data', (d: Buffer) => out.push(d))
     c.stderr.on('data', (d: Buffer) => (err += String(d)))
     c.on('close', (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }))
+    c.stdin.on('error', () => {})
     c.stdin.end(opts?.input)
   })
 }
@@ -730,16 +731,18 @@ describe('accounts for remote launches started together', () => {
 
 it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
   const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-  let answered = (): void => {}
+  let askForHeartbeat!: (answer: () => void) => void
+  const heartbeatAsked = new Promise<() => void>((asked) => (askForHeartbeat = asked))
   const alive = new Set<string>()
   const host = machine(runOnMachine, {
     alive: () => alive,
-    firstHeartbeatDone: () => new Promise((done) => (answered = done))
+    firstHeartbeatDone: () => new Promise((done) => askForHeartbeat(done))
   })
   const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
-  await new Promise((r) => setTimeout(r, 50))
+  const answer = await Promise.race([heartbeatAsked, launching.then(() => undefined)])
+  if (!answer) throw new Error('launch finished without asking for the first heartbeat')
   alive.add(live)
-  answered()
+  answer()
   const plan = await launching
   if (!plan.ok) throw new Error('launch refused')
   expect(plan.machine?.attachTo).toBe(live)

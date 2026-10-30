@@ -54,6 +54,7 @@ export const CH = {
     setResident: 'sessions:setResident',
     forceClose: 'sessions:forceClose',
     transcriptExists: 'sessions:transcriptExists',
+    noAccountToResume: 'sessions:noAccountToResume',
     leftovers: 'sessions:leftovers',
     stopLeftover: 'sessions:stopLeftover',
     search: 'sessions:search',
