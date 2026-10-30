@@ -166,12 +166,16 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     })
 
   for (const backend of ['claude', 'codex'] as const)
-    test(`koloft open and koloft diff from a ${backend} session show a file, then its change as a diff, in that session's Workbench, and koloft note reads and adds to its workspace note`, async ({
+    test(`koloft open and koloft diff from a ${backend} session show a file, then its change as a diff, in that session's Workbench, a source file too, and koloft note reads and adds to its workspace note`, async ({
       env
     }) => {
       test.setTimeout(120_000)
+      const appTs = path.join(env.workspaces.a, 'src', 'app.ts')
+      fs.mkdirSync(path.dirname(appTs), { recursive: true })
+      fs.writeFileSync(appTs, 'export const app = 1\n')
       setupChangeFixture(env.workspaces.a)
       fs.appendFileSync(path.join(env.workspaces.a, 'README.md'), 'a line the agent added\n')
+      fs.appendFileSync(appTs, 'export const addedByTheAgent = 2\n')
       const note = notesPath(env, env.workspaces.a)
       fs.mkdirSync(path.dirname(note), { recursive: true })
       fs.writeFileSync(note, 'from the owner')
@@ -192,6 +196,11 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         expect(await koloftInSession(page, 'diff README.md')).toBe('0')
         await expect(viewMode).toHaveText('Diff')
         await expect(page.locator(WORKBENCH.readingBody)).toContainText('a line the agent added')
+
+        expect(await koloftInSession(page, 'diff src/app.ts')).toBe('0')
+        await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('app.ts')
+        await expect(viewMode).toHaveText('Diff')
+        await expect(page.locator(WORKBENCH.readingBody)).toContainText('addedByTheAgent')
 
         expect(await koloftInSession(page, 'note')).toBe('0')
         expect(await shownTermText(page, CENTER)).toContain('from the owner')

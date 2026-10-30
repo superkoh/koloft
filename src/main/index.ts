@@ -1547,9 +1547,11 @@ function notesFileOfScope(scope: string): string | undefined {
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
     const machine = machineOfTab(tabId)
-    return machine && !schemeOf(target)
-      ? openOnMachine(tabId, machine, target, view)
-      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+    if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
+    const decision = routeFor(target, 'agent')
+    return decision.reason === 'unsupported-target' && !schemeOf(target)
+      ? openLocalFile(tabId, target, view)
+      : openInWorkbench(tabId, decision, 'agent', target, view)
   },
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
@@ -4668,6 +4670,14 @@ async function openOnMachine(
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
+  sendToRenderer(CH.preview.openFile, payload)
+  return true
+}
+
+async function openLocalFile(tabId: string, file: string, view?: ArtifactView): Promise<boolean> {
+  const stat = await fs.promises.stat(file).catch(() => null)
+  if (!stat?.isFile()) return false
+  const payload: OpenRequest = { tabId, path: file, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true
 }
