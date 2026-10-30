@@ -517,6 +517,18 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(machine(sshFails(null, '')).reachOrThrow()).resolves.toBeUndefined()
     await expect(machine().reachOrThrow()).resolves.toBeUndefined()
   })
+
+  it('the folder check before a Codex, Muse or Antigravity start lets a machine that only needs someone to sign in through, as the session tab asks, but still refuses one out of reach and a folder the machine says is gone', async () => {
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
+    const newHostKey = sshFails(255, 'Host key verification failed.')
+    expect(await machine(needsPassword).sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine(newHostKey).sessionDirThere(keyed(repo))).toBe(true)
+    await expect(machine(unreachable).sessionDirThere(keyed(repo))).rejects.toThrow(
+      'Operation timed out'
+    )
+    expect(await machine().sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine().sessionDirThere(keyed(path.join(repo, 'gone')))).toBe(false)
+  })
 })
 
 describe('each remote Workbench step is one ssh round trip', () => {

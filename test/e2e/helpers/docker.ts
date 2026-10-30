@@ -343,6 +343,21 @@ export function installFakeCodexOnTarget(lab: SshLab): void {
   ])
 }
 
+export function installFakeMuseOnTarget(lab: SshLab, users: string[]): void {
+  installOnTarget(lab, path.join(FIXTURES, 'fake-muse.js'), '/usr/local/bin/muse')
+  for (const user of users)
+    runOnTarget(
+      lab,
+      user,
+      `mkdir -p .config/muse && printf '%s' ${JSON.stringify(
+        JSON.stringify({
+          schema_version: 1,
+          projects: { [`/home/${user}/proj`]: { decision: 'trusted' } }
+        })
+      )} > .config/muse/trust.json`
+    )
+}
+
 export function installCurlOnTarget(lab: SshLab): void {
   dk([
     'exec',

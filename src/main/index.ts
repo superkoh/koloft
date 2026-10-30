@@ -3137,7 +3137,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
-    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
@@ -3228,7 +3228,7 @@ app.whenReady().then(() => {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
       projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
+      remoteDirExists: (dir) => hosts.machineOf(dir)!.sessionDirThere(dir),
       remoteTreeIo: machineTreeIo,
       remote: {
         ...museOnMachines,
