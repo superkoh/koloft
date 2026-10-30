@@ -12,6 +12,7 @@ import {
   openWorktreeSession,
   runIn,
   sendShortcut,
+  startSessionIn,
   terminalText,
   waitBooted,
   worktreeDialog,
@@ -26,6 +27,7 @@ import {
   installRemoteAgy,
   killFakeRemote,
   liveTmuxSessions,
+  machineAgyApiCalls,
   machineAgyCalls,
   machineHome,
   remoteDir,
@@ -249,6 +251,60 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await runIn(page, centerTerm(page), 'after the restart')
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§16 AGY§29
+  test("koloft session send from a session on this Mac reaches a remote Antigravity tab through agy's own API on that machine, not typed into its screen", async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'first turn' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
+      const agy = await boundRemoteAgy(page)
+
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      let sender = ''
+      await expect
+        .poll(async () => {
+          const all = await page.evaluate(() => window.api.sessions.list())
+          sender = all.find((s) => s.backendId === 'claude' && s.alive)?.tabId ?? ''
+          return sender
+        })
+        .not.toBe('')
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [sender, `/koloft session send ${agy.id} hello from the mac`]
+      )
+
+      await expect
+        .poll(async () => (await terminalText(page, sender)).replace(/\s+/g, ''), {
+          timeout: 60_000
+        })
+        .toMatch(/Sentto.+koloftexit=0/)
+      const sentThroughTheApi = machineAgyApiCalls(env)
+        .filter((c) => c.method === 'SendUserCascadeMessage' && c.authorized)
+        .map((c) => JSON.stringify(c.body))
+      expect(sentThroughTheApi.join('\n')).toMatch(
+        new RegExp(`"cascadeId":"${agy.id}".*hello from the mac`)
+      )
+      const typedIntoAgy = fs.readFileSync(
+        path.join(accountFolder(env), 'antigravity-cli', 'history.jsonl'),
+        'utf8'
+      )
+      expect(typedIntoAgy).toContain('first turn')
+      expect(typedIntoAgy).not.toContain('hello from the mac')
     } finally {
       await quitAndClose(app)
     }

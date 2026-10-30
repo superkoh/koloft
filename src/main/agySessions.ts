@@ -142,6 +142,7 @@ export interface AgyMachine {
   readAgyConfig(account: string): Promise<RemoteAgyConfig>
   agyHeldElsewhere(conversationId: string): Promise<boolean>
   agyConversations(): Promise<SummaryRow[]>
+  agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -1279,7 +1280,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const yes = key === 'y'
     run.waiting = undefined
     if (ask.plan) {
-      await this.deliverText(run, id, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
+      await this.deliverText(run, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
       return undefined
     }
     const viaApi = ask.pending
@@ -1296,16 +1297,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§15 AGY§16
-  private async deliverText(run: AgyRun, conversationId: string, text: string): Promise<void> {
-    const sent = await run.api?.send(conversationId, text).catch(() => false)
-    if (!sent) this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
+  private async deliverText(run: AgyRun, text: string): Promise<void> {
+    if (!(await this.deliver(run.tabId, text)))
+      this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
   }
 
-  // AGY§16
+  // AGY§16 AGY§29
   async deliver(tabId: string, text: string): Promise<boolean> {
     const run = this.runs.get(tabId)
     const id = run?.info?.nativeSessionId
-    if (!run?.api || !id) return false
-    return run.api.send(id, text).catch(() => false)
+    if (!run || !id) return false
+    const sent = run.remote
+      ? this.deps.remote.machine(run.remote.host).agySend(run.remote.tmuxName, id, text)
+      : run.api?.send(id, text)
+    return (await sent?.catch(() => false)) ?? false
   }
 }

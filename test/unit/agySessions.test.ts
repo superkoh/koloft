@@ -248,6 +248,7 @@ beforeEach(() => {
         readAgyConfig: async () => machine.config,
         agyHeldElsewhere: async () => machine.held,
         agyConversations: async () => machine.rows as SummaryRow[],
+        agySend: async () => false,
         endTmuxSession: async (name) => {
           machine.ended.push(name)
           return undefined

@@ -264,6 +264,18 @@ export function machineAgyCalls(env: E2EEnv): AgyCall[] {
   )
 }
 
+export function machineAgyApiCalls(
+  env: E2EEnv
+): { method: string; body: unknown; authorized: boolean }[] {
+  const file = path.join(machineHome(env), 'fake-agy-api.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { method: string; body: unknown; authorized: boolean })
+}
+
 export async function agyReady(page: Page): Promise<void> {
   await expect
     .poll(
