@@ -3,7 +3,18 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import { chromium, type Locator, type Page } from '@playwright/test'
-import { BROWSER, newWebTab, openBrowser } from './helpers/browser'
+import {
+  BROWSER,
+  PICKED_LABEL,
+  PICK_PAGE,
+  isPng,
+  newWebTab,
+  openBrowser,
+  openPickPage,
+  pickIntoSession,
+  picturePath
+} from './helpers/browser'
+import { startEchoServer } from './helpers/fixtureServer'
 import {
   test,
   expect,
@@ -2077,6 +2088,34 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('BP-06: an element picked in a Workbench web tab lands in the Codex composer as one paste with its picture on this Mac, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const server = await startEchoServer()
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+
+      await pickIntoSession(page, guest, '#buy', ' BP-06 codex')
+      const fromPick = (): string[] => codexPrompts(env).filter((p) => p.includes('BP-06'))
+      await expect.poll(fromPick, { timeout: 30_000 }).toHaveLength(1)
+      const [prompt] = fromPick()
+      expect(prompt).toContain('Element picked in the Workbench browser')
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      const picture = picturePath(prompt)
+      expect(picture.startsWith(path.join(env.userData, 'element-picks'))).toBe(true)
+      expect(isPng(picture)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 

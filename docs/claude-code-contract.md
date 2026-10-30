@@ -2748,6 +2748,13 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
   stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
   linux-arm64); the same held in 3 of 3 runs of the local real case.
+- **A picture path inside the paste is opened when the question needs it.** Measured
+  2026-10-28 on this Mac's signed-in claude, a python `pty` probe: a paste in Koloft's
+  element-pick shape whose `Picture:` line names a PNG of a canvas with the word ZEBRA
+  drawn on it (the word nowhere in the text), then "What word is drawn in the picked
+  element? Answer with the word only." typed after it and a CR: claude ran `Read` on the
+  PNG and answered `ZEBRA`. The run was in bypass-permissions mode, so whether default
+  mode asks before reading a picture outside the session's folder was not measured.
 
 ## §19 The PostToolUse hook adds text after every tool result
 

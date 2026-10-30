@@ -14,11 +14,21 @@ import {
   wsRows
 } from '../e2e/helpers/p1'
 import { claudePrompts } from '../e2e/helpers/workbench'
-import { cdpEndpointOf, connectCdp } from '../e2e/helpers/browser'
+import {
+  BROWSER,
+  INSPECT_MODE_SETTLES_MS,
+  PICKED_LABEL,
+  PICK_PAGE,
+  cdpEndpointOf,
+  connectCdp,
+  openPickPage
+} from '../e2e/helpers/browser'
 import { startEchoServer } from '../e2e/helpers/fixtureServer'
 import {
   ABC_LAYOUT,
   COMMAND_FLAG,
+  KEY_K,
+  KEY_O,
   KEY_P,
   KEY_RETURN,
   KEY_SPACE,
@@ -305,6 +315,55 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     } finally {
       selectInputSource(ABC_LAYOUT)
       await browser.close().catch(() => {})
+      await server.close()
+    }
+  })
+
+  test('an element picked with the real mouse lands in the session, and the words typed next on the real keyboard go to the session, not the page', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    const server = await startEchoServer()
+    try {
+      const tabId = await sessionIn(page, 'ws-a')
+      const url = server.page('/pick', PICK_PAGE)
+      const guest = await openPickPage(app, page, url)
+      await clickIntoTerminal(app, page)
+
+      realClick(await screenPointOf(app, page.locator(BROWSER.pickButton)))
+      await expect(page.locator(BROWSER.pickButton)).toHaveAttribute('aria-pressed', 'true')
+      await page.waitForTimeout(INSPECT_MODE_SETTLES_MS)
+      const content = await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getContentBounds()
+      )
+      const host = await page.evaluate((u) => {
+        const el = [...document.querySelectorAll('webview')].find(
+          (w) => (w as unknown as { getURL(): string }).getURL() === u
+        )
+        const r = el?.getBoundingClientRect()
+        return r ? { x: r.x, y: r.y } : null
+      }, url)
+      const inGuest = await guest.locator('#buy').boundingBox()
+      if (!host || !inGuest) throw new Error('the picked button has no place on screen')
+      realClick({
+        x: content.x + host.x + inGuest.x + inGuest.width / 2,
+        y: content.y + host.y + inGuest.y + inGuest.height / 2
+      })
+      await expect(page.locator(BROWSER.pickButton)).toHaveAttribute('aria-pressed', 'false')
+      await expect.poll(() => focusOwner(page)).toBe('tui')
+      realKey(KEY_O)
+      realKey(KEY_K)
+      realKey(KEY_RETURN)
+
+      await expect
+        .poll(() => promptsStartingWith(env, page, tabId, 'Element picked'), { timeout: 30_000 })
+        .toHaveLength(1)
+      const [prompt] = await promptsStartingWith(env, page, tabId, 'Element picked')
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      expect(prompt.endsWith('ok')).toBe(true)
+      expect(await guest.evaluate('window.clicks')).toBe(0)
+      screenshot(testInfo.outputPath('picked.png'))
+    } finally {
       await server.close()
     }
   })

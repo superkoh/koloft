@@ -144,6 +144,8 @@ export const CH = {
     clearData: 'browser:clear-data',
     openExternal: 'browser:open-external',
     devtools: 'browser:devtools',
+    pickElement: 'browser:pick-element',
+    pickStop: 'browser:pick-stop',
     permissionUndecided: 'browser:permission-undecided',
     linkBlocked: 'browser:link-blocked',
     openBackground: 'browser:open-background'

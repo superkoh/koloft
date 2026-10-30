@@ -19,6 +19,7 @@ import { CommitDialog } from './CommitDialog'
 import { useChangeTotals } from './FilesTabLabel'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
+import { PICK_MSG_PAGE_NOT_SHOWN, useElementPick } from './useElementPick'
 import type { GuestElement } from './BrowserGuest'
 import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
@@ -619,6 +620,21 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const guestOf = (id: string | undefined): GuestElement | undefined =>
     id ? els.current.get(id) : undefined
+
+  const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
+  const activeGuestId = useCallback(
+    () => (activeWebId ? guestIdOf(activeWebId) : 0),
+    [activeWebId, guestIdOf]
+  )
+  const pickBlocked =
+    gh.sendBlocked ?? (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
+  const pick = useElementPick(
+    session?.tabId ?? null,
+    activeGuestId,
+    visible ? activeWebId : null,
+    pickBlocked,
+    onReturnFocus
+  )
 
   const reload = useCallback((): void => {
     if (!activeTab) return
@@ -1317,6 +1333,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           onExternalOpen={() => {
             if (activeTab?.url) onExternalOpen(activeTab.url)
           }}
+          picking={pick.picking}
+          pickBlocked={pickBlocked}
+          onPick={pick.togglePick}
           actions={
             <>
               {backlink && (

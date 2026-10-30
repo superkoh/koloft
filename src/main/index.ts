@@ -339,6 +339,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { pickElement, pickText, stopPick } from './elementPick'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -1241,6 +1242,19 @@ const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
+
+function elementPicksDir(): string {
+  return path.join(app.getPath('userData'), 'element-picks')
+}
+
+async function savePickOnThisMac(png: Buffer): Promise<string> {
+  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
+  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
+  await fs.promises.writeFile(file, png)
+  return file
+}
 
 // CODEX§3 CODEX§20 MUSE§5
 async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
@@ -2830,6 +2844,9 @@ app.whenReady().then(() => {
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
+  const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
+  pruneElementPicks()
+  setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -5961,6 +5978,26 @@ function registerIpc(): void {
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
+  })
+  ipcMain.handle(CH.browser.pickElement, async (_e, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'number' || typeof tabId !== 'string') return null
+    const guest = webContents.fromId(id)
+    if (!guest || guest.getType() !== 'webview') return null
+    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
+    const picked = await pickElement(guest)
+    if (!picked) return null
+    const machine = machineOfTab(tabId)
+    const picture = picked.png
+      ? await (
+          machine
+            ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
+            : savePickOnThisMac(picked.png)
+        ).catch(() => null)
+      : null
+    return pickText(picked, picture)
+  })
+  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
+    if (typeof id === 'number') stopPick(id)
   })
   ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
