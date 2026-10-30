@@ -347,6 +347,33 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-51: koloft open of a page, typed in the Workbench shell of a session on the machine, opens it as a web page there', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'report.html'), '<h1>report on the machine</h1>\n')
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      await openSessionTerminal(app, page)
+      await runIn(page, panelTerm(page), 'koloft open report.html')
+      const tab = page.locator(BROWSER.tabOpen, { hasText: 'report.html' })
+      await expect(tab).toHaveCount(1, { timeout: 60_000 })
+      await tab.click()
+      const report = await guestByUrl(app, /^koloft-machine:\/\/.*\/report\.html$/, {
+        timeout: 60_000
+      })
+      await expect
+        .poll(() => report.evaluate(() => document.body.textContent ?? ''), { timeout: 30_000 })
+        .toContain('report on the machine')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('after ⇧⌘R on a Claude Code tab on the machine, koloft open typed in its Workbench shell still shows the file in that tab’s Workbench', async ({
     env
   }) => {
