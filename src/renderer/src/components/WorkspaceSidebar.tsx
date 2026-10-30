@@ -1297,8 +1297,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const rowStillRuns = (id: string): boolean => {
     const st = useStore.getState()
-    const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
-    return everyWorkspaceRows(st).some((w) =>
+    const lookNow = rowLookups(st.sessions, st.tabs, [])
+    return everyWorkspaceRows(shownRows(st)).some((w) =>
       w.rows.some((r) => r.id === id && !endedTabOf(r, st.tabs, st.sessions) && lookNow.running(r))
     )
   }
