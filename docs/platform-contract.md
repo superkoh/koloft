@@ -1661,6 +1661,25 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
+  `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
+  as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the
+  default string, which is never empty. No `terminal-features` line is needed for
+  `xterm*`: tmux 3.3a's default list already gives it `title`. Both options set with
+  `tmux set -g` on a server already running count for a session started after them
+  (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image, a client attached in a
+  python pty with `TERM=xterm-256color`).
+- **tmux sends a pane's new title when it next redraws the client, after the text that
+  came in the same read.** A program that writes `ESC ] 0 ; BEL` and a line in one write
+  reaches the client as the line, then the title; Claude Code writes them about 10 ms
+  apart, and the title came first in all six runs (2026-10-29, tmux 3.3a in the
+  `koloft-e2e-sshd` image: the real CC 2.1.312, and the e2e fake-claude writing both at
+  once).
+- **A tmux client whose login has no UTF-8 locale gets `_` for a character outside ASCII**,
+  so Claude Code's `Removing worktree…` reaches a Koloft remote tab as `Removing
+  worktree_`. Koloft sets no locale on the machine; the e2e SSH lab's ssh login has none
+  (2026-10-29, E-SSH-33 with the image's fake-claude, tmux 3.3a: the tab's screen read
+  `Removing worktree_`).
 - **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
   config naming them is an `invalid option` error, shown over the first window. `set -q`
   drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).

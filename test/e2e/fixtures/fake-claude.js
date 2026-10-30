@@ -611,13 +611,15 @@ function removalMs() {
 }
 
 // CC§4
+const CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS = 50
+
+// CC§4
 function removeWorktree(then) {
   const hasMessage = fs.existsSync(transcript) && fs.statSync(transcript).size > 0
   const resumeHint = hasMessage
     ? `\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude --resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22m`
     : ''
-  process.stdout.write(`\x1b]0;\x07${resumeHint}Removing worktree…\r\n`)
-  setTimeout(() => {
+  const remove = () => {
     if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
       process.stdout.write(
         `Could not finish removing the worktree at ${cwd}; it may be partly deleted. Delete the folder if you no longer need it.\r\n`
@@ -628,7 +630,12 @@ function removeWorktree(then) {
     git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
     process.stdout.write('Worktree removed.\r\n')
     then()
-  }, removalMs())
+  }
+  process.stdout.write('\x1b]0;\x07')
+  setTimeout(() => {
+    process.stdout.write(`${resumeHint}Removing worktree…\r\n`)
+    setTimeout(remove, removalMs())
+  }, CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS)
 }
 
 let worktreeChoicePending = false

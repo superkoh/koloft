@@ -279,6 +279,9 @@ npm install -g --prefix "${CODEX_CLI_DIR}" "@openai/codex@$want" </dev/null || {
 exit 0
 `
 
+// CC§4 PLATFORM§35
+export const TMUX_PASSES_THE_PANE_TITLE_ON = ['set-titles on', "set-titles-string '#{pane_title}'"]
+
 // PLATFORM§35
 export const TMUX_CONF = `set -g default-shell /bin/sh
 set -g status off
@@ -290,7 +293,7 @@ set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
 set -gq allow-passthrough on
-`
+${TMUX_PASSES_THE_PANE_TITLE_ON.map((option) => `set -g ${option}\n`).join('')}`
 
 export interface MachineTmp {
   tmpRoot: string
