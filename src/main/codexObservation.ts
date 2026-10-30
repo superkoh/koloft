@@ -118,12 +118,17 @@ export function codexTurns(turns: unknown): TurnLog {
 }
 
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
-const COMMAND_RAN = ['completed', 'failed']
+const OPEN_RAN = ['completed', 'failed']
 
-function itemDone(item: Record<string, unknown>): boolean {
-  return item.type === 'commandExecution'
-    ? COMMAND_RAN.includes(String(item.status))
-    : item.status === 'completed'
+// CODEX§4 CODEX§12
+function itemFinished(item: Record<string, unknown>): boolean {
+  if (item.status === 'completed') return true
+  return (
+    item.type === 'commandExecution' &&
+    item.status === 'failed' &&
+    typeof item.exitCode === 'number' &&
+    item.exitCode > 0
+  )
 }
 
 function openTarget(command: string, cwd: unknown): string | null {
@@ -464,7 +469,7 @@ export class CodexObservation {
     } else if (method === 'item/completed') {
       if (typeof item.id === 'string') this.editing.delete(item.id)
       const did =
-        item.type === 'plan' ? PLAN_READY : itemDone(item) ? codexItemDid(item) : undefined
+        item.type === 'plan' ? PLAN_READY : itemFinished(item) ? codexItemDid(item) : undefined
       if (!did) return
       this.planReady = did === PLAN_READY
       this.emit({ type: 'did', what: did })
@@ -590,7 +595,7 @@ export class CodexObservation {
 
   // CODEX§12
   private observeOpen(item: Record<string, unknown>): void {
-    if (item.type !== 'commandExecution' || !COMMAND_RAN.includes(String(item.status))) return
+    if (item.type !== 'commandExecution' || !OPEN_RAN.includes(String(item.status))) return
     if (!Array.isArray(item.commandActions)) return
     const targets = item.commandActions.flatMap((raw) => {
       const action = record(raw)
