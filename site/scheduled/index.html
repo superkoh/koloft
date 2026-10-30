@@ -208,9 +208,10 @@
         <p>
           Picking After each run… sets When done to Close it, so each run makes room for the next by
           itself. The list says <code>waits for the open run to end</code> while a run is open. In a
-          <a href="../remote/">remote folder</a>, a run's tab can stay after the agent there stops:
-          while the link is down it keeps trying to reconnect, and after an error it waits for you
-          to press Enter. The wait starts only once that tab is gone.
+          <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
+          reconnect, and the run stays open. A run whose agent quits with an error keeps its tab and
+          its last screen, like any <a href="../sessions/#quit">session</a>, but the run counts as
+          over at once, so the wait starts.
         </p>
 
         <h2>Where it runs</h2>
@@ -318,6 +319,17 @@
               <tr>
                 <td>Done — waiting for you</td>
                 <td>The run finished and is still open in the sidebar.</td>
+              </tr>
+              <tr>
+                <td>Done — closing</td>
+                <td>The run finished, and Close it is cleaning it up right now.</td>
+              </tr>
+              <tr>
+                <td>Done — still finishing</td>
+                <td>
+                  The run's turn is over, but work it started still runs in the background. Close it
+                  cleans up once that work is over; Koloft looks again every minute.
+                </td>
               </tr>
               <tr>
                 <td>Done — closed itself</td>
