@@ -3,8 +3,17 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp } from './app'
-import { agyCalls, installCodex, type AgyCall, type E2EEnv } from './env'
-import { encodeCwd, killSession, terminalText, termIds, waitBooted } from './p1'
+import { agyCalls, installAgy, installCodex, installMuse, type AgyCall, type E2EEnv } from './env'
+import {
+  type AgentName,
+  centerTerm,
+  encodeCwd,
+  killSession,
+  runIn,
+  terminalText,
+  termIds,
+  waitBooted
+} from './p1'
 import {
   PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
   PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
@@ -345,6 +354,35 @@ export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as MachineMuseCall)
 }
+
+export type OtherAgentName = Exclude<AgentName, 'Claude'>
+
+export const OTHER_AGENTS_ON_THE_MACHINE: {
+  label: OtherAgentName
+  install: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}[] = [
+  { label: 'Codex', install: installCodexOnFakeRemote },
+  {
+    label: 'Muse',
+    install: (env) => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+  },
+  {
+    label: 'Antigravity',
+    install: (env) => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    bound: async (page) => {
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      return boundRemoteAgy(page)
+    }
+  }
+]
 
 export function dropTmuxPassthrough(env: E2EEnv): void {
   fs.writeFileSync(path.join(stateDir(env), 'no-passthrough'), '')

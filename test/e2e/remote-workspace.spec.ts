@@ -10,10 +10,8 @@ import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   type E2EEnv,
   E2E_CLAUDE_ACCOUNT,
-  installAgy,
   installCodex,
   installFakeGh,
-  installMuse,
   seedNoClaudeAccountButStillSetUp,
   seedSettings,
   setGithubFixture,
@@ -21,17 +19,14 @@ import {
 } from './helpers/env'
 import {
   addRemoteWorkspace,
-  agyReady,
-  boundRemoteAgy,
   breakConnection,
   healConnection,
-  installCodexOnFakeRemote,
-  installMuseOnMachine,
-  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
   mirrorProjectDir,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  type OtherAgentName,
   REMOTE_HOST,
   REMOTE_WS_NAME,
   remoteDir,
@@ -110,35 +105,11 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
   await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 }
 
-const OTHER_AGENTS_ON_THE_MACHINE: {
-  id: string
-  label: AgentName
-  install: (env: E2EEnv) => void
-  bound?: (page: Page) => Promise<unknown>
-}[] = [
-  { id: 'E-RW-38', label: 'Codex', install: installCodexOnFakeRemote },
-  {
-    id: 'E-RW-39',
-    label: 'Muse',
-    install: (env: E2EEnv): void => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-  },
-  {
-    id: 'E-RW-40',
-    label: 'Antigravity',
-    install: (env: E2EEnv): void => {
-      installAgy(env)
-      installRemoteAgy(env)
-    },
-    bound: async (page: Page) => {
-      await agyReady(page)
-      await runIn(page, centerTerm(page), 'first words')
-      return boundRemoteAgy(page)
-    }
-  }
-]
+const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
+  Codex: 'E-RW-38',
+  Muse: 'E-RW-39',
+  Antigravity: 'E-RW-40'
+}
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -301,7 +272,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
-    test(`${agent.id}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
+    test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
       env
     }) => {
       test.setTimeout(240_000)
