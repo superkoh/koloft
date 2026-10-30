@@ -317,8 +317,12 @@ test('E2b: a Claude tab reopened after its only account was turned off while Kol
     await quitAndClose(app)
     const turnedOff = { ...acct(E2E_CLAUDE_ACCOUNT, 'apikey'), enabled: false }
     seedSettings(env, { accounts: [turnedOff] })
-    const accountIssue = noAccountLine([turnedOff as unknown as AccountView], 'claude')
     ;({ app, page } = await launchConfigured(env))
+    const accountIssue = noAccountLine(
+      await page.evaluate(() => window.api.accounts.list()),
+      'claude'
+    )
+    expect(accountIssue).toMatch(/^No Claude account can be used/)
     await expect(page.locator('.toast')).toContainText(accountIssue, { timeout: 30_000 })
     await expect(centerTerm(page)).toContainText(`[Koloft] ${accountIssue}`)
   } finally {
