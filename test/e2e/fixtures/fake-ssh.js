@@ -79,6 +79,18 @@ if (argv.includes('-t')) {
 
 // PLATFORM§33
 if (fs.existsSync(path.join(STATE, 'hb-fail'))) done(SSH_UNREACHABLE_EXIT)
+// CC§13
+if (argv.includes('-W')) {
+  const socket = require('net').connect(argv[argv.indexOf('-W') + 1])
+  socket.on('error', (e) => {
+    process.stderr.write(`Stdio forwarding request failed: ${e.message}\n`)
+    done(SSH_UNREACHABLE_EXIT)
+  })
+  socket.on('close', () => done(0))
+  socket.resume()
+  process.stdin.pipe(socket)
+  return
+}
 // PLATFORM§33
 if (argv.includes('-O')) {
   const control = argv[argv.indexOf('-O') + 1]

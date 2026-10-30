@@ -211,9 +211,13 @@ export class SessionBackends {
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const backend = this.get(options.kind)
-    // ADR-0030
-    if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))
-    return backend.create(options)
+    const refused = this.noUsableAccount(options.kind)
+    if (refused) return Promise.reject(new Error(refused))
+    return this.get(options.kind).create(options)
+  }
+
+  // ADR-0030
+  noUsableAccount(kind: BackendId): string | null {
+    return this.get(kind).accountUsable() ? null : NO_USABLE_ACCOUNT[kind]
   }
 }

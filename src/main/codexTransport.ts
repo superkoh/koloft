@@ -52,6 +52,7 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 const DEFAULT_TIMEOUT = 15_000
 const MOST_APP_SERVER_REPLACEMENTS_PER_TAB = 3
 export const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
+export const TUI_STALLED_AFTER_MS = 30_000
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -424,6 +425,7 @@ export async function createCodexTransport(
   let stopping: Promise<void> | undefined
   const pending: Buffer[] = []
   let pendingBytes = 0
+  let tuiTookAFrameAt = 0
   const own = new Map<string, PendingRequest>()
   let serverMetAScreen = false
   let replacements = 0
@@ -495,11 +497,19 @@ export async function createCodexTransport(
         const raw = questionThatWaitsForTheOwner(read)
         observe('server', read)
         if (client?.readyState === WebSocket.OPEN) {
-          if (client.bufferedAmount > upstream.limit * 2)
-            throw new Error('Codex output queue exceeds the size limit')
+          // CODEX§1
+          if (client.bufferedAmount === 0) tuiTookAFrameAt = performance.now()
+          else if (
+            client.bufferedAmount > upstream.limit * 2 &&
+            performance.now() - tuiTookAFrameAt > TUI_STALLED_AFTER_MS
+          )
+            throw new Error(
+              `the Codex TUI took none of its output for ${TUI_STALLED_AFTER_MS / 1000} s while more than the size limit waited for it`
+            )
           const to = client
           to.send(raw, { binary: false }, (error) => {
             if (error) to.terminate()
+            else tuiTookAFrameAt = performance.now()
           })
         } else if (!accepted) {
           pendingBytes += raw.length
@@ -560,6 +570,7 @@ export async function createCodexTransport(
       }
       accepted = true
       client = ws
+      tuiTookAFrameAt = performance.now()
       ws.on('error', (error) => {
         console.error(`[koloft] Codex screen connection to ${directory} failed: ${error.message}`)
         report(error)

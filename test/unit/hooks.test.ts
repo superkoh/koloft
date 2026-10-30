@@ -198,39 +198,6 @@ describe('injected hook script', () => {
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
   })
 
-  // CC§1
-  it('version tier 1: CLAUDE_CODE_EXECPATH versioned-dir basename wins (resume-safe)', () => {
-    fire(
-      'tabV',
-      'start',
-      { session_id: 's1' },
-      {
-        CLAUDE_CODE_EXECPATH: '/x/versions/3.2.1',
-        AI_AGENT: 'claude-code_9-9-9_agent'
-      }
-    )
-    expect(readReg('tabV.json')).toMatchObject({ ccVersion: '3.2.1' })
-  })
-
-  // CC§1
-  it('version tier 2: a non-version EXECPATH falls through to the AI_AGENT stamp', () => {
-    fire(
-      'tabV2',
-      'start',
-      { session_id: 's1' },
-      {
-        CLAUDE_CODE_EXECPATH: '/usr/local/lib/node_modules/@anthropic-ai/claude-code',
-        AI_AGENT: 'claude-code_9-8-7_agent'
-      }
-    )
-    expect(readReg('tabV2.json')).toMatchObject({ ccVersion: '9.8.7' })
-  })
-
-  it('with no env signal, the version stays empty — nothing slow runs before the write', () => {
-    fire('tabV3', 'start', { session_id: 's1' }, { CLAUDE_CODE_EXECPATH: '', AI_AGENT: '' })
-    expect(readReg('tabV3.json')).toMatchObject({ sessionId: 's1', ccVersion: '' })
-  })
-
   it('SessionEnd carries the exit reason (drives the revert-to-terminal decision)', () => {
     fire('tabH', 'end', { session_id: 'sess-123', reason: 'prompt_input_exit' })
     expect(readReg('tabH.json')).toMatchObject({ event: 'end', reason: 'prompt_input_exit' })

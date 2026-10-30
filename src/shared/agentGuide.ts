@@ -1,5 +1,5 @@
 import type { BackendId } from './types'
-import { BACKEND_LABEL, SESSION_BACKENDS, namedAtLaunch } from './sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, messagingOf, namedAtLaunch } from './sessionBackend'
 
 const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -14,6 +14,12 @@ const KINDS_BUT_CLAUDE = kindsOf(
 )
 const KINDS_UNNAMED_REMOTELY = kindsOf(
   SESSION_BACKENDS.filter((b) => !namedAtLaunch(b, true)),
+  'or'
+)
+const KINDS_TYPED_INTO = kindsOf(
+  SESSION_BACKENDS.filter((b) =>
+    [false, true].some((remote) => messagingOf(b, remote) === 'typed')
+  ),
   'or'
 )
 const UNNAMED_IN_A_REMOTE_WORKSPACE = `${/^[AEIOU]/.test(KINDS_UNNAMED_REMOTELY) ? 'An' : 'A'} ${KINDS_UNNAMED_REMOTELY}`
@@ -202,7 +208,7 @@ How to talk to a session you started:
     The butler: use "koloft session send" for every session, ${EVERY_KIND}.
 
 koloft session send <id or name> "<message>"
-    Send a message to any session in any workspace: ${EVERY_KIND}, except from one open Claude session to another on the same machine, which uses SendMessage. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
+    Send a message to any session in any workspace: ${EVERY_KIND}, except from one open Claude session to another on the same machine, which uses SendMessage. A closed one is resumed first, and a ${KINDS_TYPED_INTO} session, which Koloft types into, only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
     The butler: your message reaches the session marked as coming from you, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. When it ends the turn that follows your message, Koloft hands you its reply, unless it reported to you itself.
     Any session: report back to the session or the butler that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."

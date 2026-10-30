@@ -44,6 +44,7 @@ import {
   resumedId,
   waitForAllCalls,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -543,6 +544,34 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  // AGY§8
+  test('koloft session send from another session to an Antigravity butler opened with nothing to say long before types the message in as its first prompt, which binds it', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+
+      const sent = await koloftRun(page, 'session send Alfred "please tidy the notes"')
+      expect(sent.exit).toBe(0)
+      expect(sent.text).toContain('Typed into Alfred.')
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
+      expect((await terminalText(page, butlerTab)).replace(/\s+/g, '')).toContain(
+        'pleasetidythenotes'
+      )
+      await expectNoToastAtAnyMomentOfAWindow(page)
+      await expect(butlerRow(page)).toHaveAttribute('data-tab-id', butlerTab)
+    } finally {
+      await close()
+    }
+  })
+
   // AGY§5 AGY§8
   test('an Antigravity butler opened from the sidebar that is stuck on a setup screen is closed at the start deadline as "did not start", with nothing said to it', async ({
     env
@@ -609,6 +638,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const claudeId = (await waitForAllCalls(env, 1))[0].sessionId
+      await waitStartupTurnOver(page, 'ws-a')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
@@ -798,9 +828,11 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
   test('closing an ordinary session’s tab lands on the butler, opening it when it was not open; closing the butler’s own tab does not open it again', async ({
     env
   }) => {
+    test.setTimeout(240_000)
     const { app, page, close } = await launched(env)
     try {
       await startSessionIn(page, 'ws-a')
+      await waitStartupTurnOver(page, 'ws-a')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
@@ -808,6 +840,7 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
 
       await startSessionIn(page, 'ws-b')
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+      await waitStartupTurnOver(page, 'ws-b')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)

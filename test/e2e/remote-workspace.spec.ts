@@ -4,16 +4,25 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
-import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
+import {
+  addressValue,
+  BROWSER,
+  isPng,
+  newWebTab,
+  openPickPage,
+  PICKED_LABEL,
+  PICK_PAGE,
+  pickIntoSession,
+  picturePath,
+  typeInAddressBar
+} from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import {
   type E2EEnv,
   E2E_CLAUDE_ACCOUNT,
-  installAgy,
   installCodex,
   installFakeGh,
-  installMuse,
   seedNoClaudeAccountButStillSetUp,
   seedSettings,
   setGithubFixture,
@@ -21,17 +30,14 @@ import {
 } from './helpers/env'
 import {
   addRemoteWorkspace,
-  agyReady,
-  boundRemoteAgy,
   breakConnection,
   healConnection,
-  installCodexOnFakeRemote,
-  installMuseOnMachine,
-  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
   mirrorProjectDir,
+  OTHER_AGENTS_ON_THE_MACHINE,
+  type OtherAgentName,
   REMOTE_HOST,
   REMOTE_WS_NAME,
   remoteDir,
@@ -110,35 +116,11 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
   await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 }
 
-const OTHER_AGENTS_ON_THE_MACHINE: {
-  id: string
-  label: AgentName
-  install: (env: E2EEnv) => void
-  bound?: (page: Page) => Promise<unknown>
-}[] = [
-  { id: 'E-RW-38', label: 'Codex', install: installCodexOnFakeRemote },
-  {
-    id: 'E-RW-39',
-    label: 'Muse',
-    install: (env: E2EEnv): void => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-  },
-  {
-    id: 'E-RW-40',
-    label: 'Antigravity',
-    install: (env: E2EEnv): void => {
-      installAgy(env)
-      installRemoteAgy(env)
-    },
-    bound: async (page: Page) => {
-      await agyReady(page)
-      await runIn(page, centerTerm(page), 'first words')
-      return boundRemoteAgy(page)
-    }
-  }
-]
+const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
+  Codex: 'E-RW-38',
+  Muse: 'E-RW-39',
+  Antigravity: 'E-RW-40'
+}
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -301,7 +283,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
-    test(`${agent.id}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
+    test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -471,6 +453,43 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('BP-07: an element picked in a remote session’s web tab reaches claude on the machine as one unsent paste, its picture copied to the machine and named by the machine’s own path', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+
+      await pickIntoSession(page, guest, '#buy', ' BP-07 remote')
+      const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-07'))
+      await expect.poll(fromPick, { timeout: 90_000 }).toHaveLength(1)
+      const [prompt] = fromPick()
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      const picture = picturePath(prompt)
+      const picks = fs.realpathSync(path.join(machineHome(env), '.koloft', 'element-picks'))
+      expect(path.dirname(picture)).toBe(picks)
+      expect(isPng(picture)).toBe(true)
+      expect(fs.existsSync(path.join(env.userData, 'element-picks'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 
@@ -830,7 +849,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('restarting a remote Claude Code session once no Claude account can be used says why, and starts no new claude on the machine', async ({
+  test('restarting a remote Claude Code session once no Claude account can be used says why, keeps the running claude, and starts no new claude on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -850,6 +869,8 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude, {
         timeout: 60_000
       })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
       expect(await waitForCalls(env, launches)).toHaveLength(launches)
     } finally {
       await quitAndClose(app)

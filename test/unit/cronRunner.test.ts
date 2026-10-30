@@ -8,6 +8,7 @@ import {
 } from '../../src/main/cronRunner'
 import { sanitizeCron } from '../../src/main/cronStore'
 import type { TidyResult } from '../../src/main/sessionClose'
+import { lastRunOf } from '../../src/shared/cronHistory'
 import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
 import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
@@ -855,6 +856,45 @@ describe('CronRunner — a live run growing up', () => {
     expect(await h.runner.runNow('j1')).toEqual({ ok: true })
   })
 
+  it('with "Close it" on, the update sent as the turn ends already says the run is closing, before Koloft has looked at its folder', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.left = ['Changes not committed:\n?? report.md']
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+
+    expect(lastRunOf(h.jobs[0], h.states.at(-1)!.live, new Date(T0))?.words).toBe('done — closing')
+  })
+
+  it('a run that finished before "Close it" was switched on is not being closed, so it still says it waits for you', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    h.jobs[0].autoClose = true
+
+    expect(lastRunOf(h.jobs[0], h.runner.state().live, new Date(T0))?.words).toBe(
+      'done — waiting for you'
+    )
+  })
+
+  it('a run whose "Close it" was switched off at its next check, then on again, is no longer being closed, so it says it waits for you', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.busy = true
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    delete h.jobs[0].autoClose
+    await h.fireTimers(T0 + 1 * MIN)
+    h.jobs[0].autoClose = true
+
+    expect(lastRunOf(h.jobs[0], h.runner.state().live, new Date(T0))?.words).toBe(
+      'done — waiting for you'
+    )
+  })
+
   it('with "Close it" on, a finished run still working in the background stays open without a word, and closes at a later check once that work is over', async () => {
     const h = makeHarness([makeJob({ autoClose: true })])
     h.flags.busy = true
@@ -865,7 +905,10 @@ describe('CronRunner — a live run growing up', () => {
     await h.fireTimers(T0 + 1 * MIN)
 
     expect(h.closeForGood).not.toHaveBeenCalled()
-    expect(h.runner.state().live[0]).toMatchObject({ state: 'done' })
+    expect(h.runner.state().live[0]).toMatchObject({
+      state: 'done',
+      closing: 'after-background-work'
+    })
     expect(h.runner.state().live[0].kept).toBeUndefined()
     expect(h.notify).not.toHaveBeenCalled()
 

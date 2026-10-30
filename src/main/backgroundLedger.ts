@@ -1,10 +1,8 @@
 import type { ReportedTask } from '@shared/sessionEvent'
 import type { ToolUseResult } from './transcriptRecord'
 
-const PROMOTED = '\x00promoted'
 const TOOL_LABEL_CAP = 64
 const TOOL_LABEL_CHARS = 120
-const NOTHING_FINISHED: ReadonlySet<string> = new Set()
 
 // CC§8
 const BG_SPAWN_STATUSES = new Set(['async_launched', 'teammate_spawned', 'remote_launched'])
@@ -29,22 +27,9 @@ export function isBackgroundSpawnAck(tur: ToolUseResult | undefined): tur is Too
 }
 
 export class BackgroundLedger {
-  private live = new Set<string>()
   private taskLabels = new Map<string, string>()
   private monitors = new Set<string>()
   private toolLabels = new Map<string, string>()
-
-  get held(): boolean {
-    return this.live.size > 0
-  }
-
-  clear(): void {
-    this.live.clear()
-  }
-
-  promote(): void {
-    this.live.add(PROMOTED)
-  }
 
   labelOf(taskId: string): string | undefined {
     return this.taskLabels.get(taskId)
@@ -61,7 +46,6 @@ export class BackgroundLedger {
   }
 
   noteSpawnAck(tur: ToolUseResult, toolUseIds: string[]): ReportedTask | null {
-    for (const id of toolUseIds) this.live.add(id)
     let task: ReportedTask | null = null
     if (typeof tur.backgroundTaskId === 'string') task = { id: tur.backgroundTaskId, type: 'shell' }
     else if (typeof tur.taskId === 'string' && typeof tur.timeoutMs === 'number') {
@@ -89,7 +73,6 @@ export class BackgroundLedger {
     const blocks = [...text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)]
     const notices = blocks.length ? blocks.map(([notice]) => notice) : [text]
     const gone = new Set<string>()
-    let finished = false
     for (const notice of notices) {
       const ids = [...notice.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1])
       const st = notice
@@ -97,9 +80,6 @@ export class BackgroundLedger {
         ?.trim()
         .toLowerCase()
       if (st && TERMINAL_TASK_STATUSES.has(st)) {
-        finished = true
-        for (const m of notice.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g))
-          this.live.delete(m[1])
         for (const id of ids) gone.add(id)
         continue
       }
@@ -110,12 +90,10 @@ export class BackgroundLedger {
         if (!this.taskLabels.has(id)) this.taskLabels.set(id, monitorEvent[1])
       }
     }
-    if (!finished) return NOTHING_FINISHED
     for (const id of gone) {
       this.monitors.delete(id)
       this.taskLabels.delete(id)
     }
-    this.live.delete(PROMOTED)
     return gone
   }
 }

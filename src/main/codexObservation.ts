@@ -15,9 +15,9 @@ import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import {
   codexQuestionOf,
+  type Asked,
   type CodexApproval,
-  type CodexQuestion,
-  type Question
+  type CodexQuestion
 } from './discord/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
@@ -208,7 +208,7 @@ export class CodexObservation {
   private approvalThreads = new Map<string | number, string>()
   private approvalAsks = new Map<
     string | number,
-    { command?: string; reason?: string; question?: Question }
+    { command?: string; reason?: string; question?: Asked }
   >()
   private generation = 0
   private threadId?: string
