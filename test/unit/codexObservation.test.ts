@@ -649,13 +649,18 @@ describe('CodexObservation', () => {
     })
   })
 
-  it('says on the row what the session itself last finished, a ready plan until the next turn starts, and nothing declined, still running or from another thread', () => {
+  it('says on the row what the session itself last finished, a command that ran and failed too, a ready plan until the next turn starts, and nothing declined, failed to apply, still running or from another thread', () => {
     const f = fixture()
     const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    const ended = (status: string, run: string) => ({
+      item: { ...command(run, [{ type: 'unknown', command: run }]).item, status }
+    })
     f.bind()
     f.server('item/started', { item: { ...command('npm test', []).item, status: 'inProgress' } })
     expect(did()).toEqual([])
     f.server('item/completed', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server('item/completed', ended('failed', 'npm run lint'))
+    f.server('item/completed', ended('declined', 'rm -rf /'))
     f.server(
       'item/completed',
       patch('completed', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
@@ -663,6 +668,10 @@ describe('CodexObservation', () => {
     f.server(
       'item/completed',
       patch('declined', [{ path: '/repo/src/bar.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('failed', [{ path: '/repo/src/baz.ts', kind: { type: 'add' }, diff: 'x\n' }])
     )
     f.server('item/completed', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
     f.server(
@@ -678,6 +687,7 @@ describe('CodexObservation', () => {
     })
     expect(did()).toEqual([
       'Ran npm test',
+      'Ran npm run lint',
       'Edited foo.ts',
       'Read a.md',
       'Ran cat a.md && rm -rf build',
@@ -686,12 +696,12 @@ describe('CodexObservation', () => {
     f.server('turn/started', { turn: { id: 'next' } })
     expect(did().at(-1)).toBeUndefined()
     f.server('turn/started', { turn: { id: 'another' } })
-    expect(did()).toHaveLength(6)
+    expect(did()).toHaveLength(7)
     f.observer.receive('server', {
       method: 'item/completed',
       params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
     })
-    expect(did()).toHaveLength(6)
+    expect(did()).toHaveLength(7)
   })
 
   it('a patch Codex asks to apply names the file it would change', () => {
