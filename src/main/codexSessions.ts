@@ -61,6 +61,7 @@ import {
   playwrightEnvOverrides,
   seedAssistMemory,
   STATUS_LINE_CONFIG,
+  trustedInPlace,
   type KoloftHook
 } from './codexLaunchConfig'
 import {
@@ -225,14 +226,21 @@ function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promi
   let offset = 0
   return async () => {
     await pulled()
-    let all: Buffer
+    let fresh: Buffer
     try {
-      all = fs.readFileSync(file)
+      const fd = fs.openSync(file, 'r')
+      try {
+        const size = fs.fstatSync(fd).size
+        if (size < offset) offset = 0
+        const added = Buffer.alloc(size - offset)
+        fs.readSync(fd, added, 0, added.length, offset)
+        fresh = added.subarray(0, added.lastIndexOf(10) + 1)
+      } finally {
+        fs.closeSync(fd)
+      }
     } catch {
       return []
     }
-    if (all.length < offset) offset = 0
-    const fresh = all.subarray(offset, all.lastIndexOf(10) + 1)
     offset += fresh.length
     return fresh
       .toString('utf8')
@@ -893,7 +901,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.assertStarting()
       const serverConfig = [
         ...processOptions.configOverrides!,
-        ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
+        ...hookOverrides(trustedInPlace(hooks, trusted))
       ]
       const skills = agent && !machine ? agent.skillsFolder() : undefined
       transport = await this.startTransport({

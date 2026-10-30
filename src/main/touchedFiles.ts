@@ -43,6 +43,16 @@ export function touchedItem(src: string, acc: FileAcc): PreviewItem {
   return item
 }
 
+export function wroteEvent(touched: Map<string, FileAcc>, last: string, liveWrites: number) {
+  return {
+    type: 'files-changed' as const,
+    files: capTouched([...touched].map(([src, acc]) => touchedItem(src, acc))),
+    lastTouched: last,
+    lastWritten: last,
+    liveWrites
+  }
+}
+
 export function capTouched(all: PreviewItem[]): PreviewItem[] {
   return all.length <= MAX_FILES
     ? all

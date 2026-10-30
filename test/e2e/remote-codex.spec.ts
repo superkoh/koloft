@@ -181,7 +181,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
           async () => {
             const all = await page.evaluate(() => window.api.sessions.list())
             const codex = all.find((s) => s.backendId === 'codex' && s.alive)
-            return codex?.files.filter((f) => f.access === 'wrote').map((f) => barePath(f.src))
+            return codex?.files?.filter((f) => f.access === 'wrote').map((f) => barePath(f.src))
           },
           { timeout: 60_000 }
         )

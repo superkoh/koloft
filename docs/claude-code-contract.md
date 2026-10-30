@@ -2618,6 +2618,12 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   2.1.314**: a `tool_result` `{type, content: "PreToolUse:<tool> hook error: <reason>",
   is_error: true, tool_use_id}` with `toolDenialKind: "permission-rule"` beside it, the
   same keys as on 2.1.312 (2026-10-30, `claude -p`, one run per build).
+- **`PostToolUseFailure` is a settings hook event next to `PostToolUse`** in 2.1.314
+  (2026-10-30, `strings` on the binary: the settings hook list starts `PreToolUse,
+  PostToolUse, PostToolUseFailure, PostToolBatch, …`, and its hooks run per tool with
+  hook names `PostToolUseFailure:<tool>`). Not probed: whether a Bash call that exits
+  non-zero fires it instead of `PostToolUse`; Koloft's look at the folder after a shell
+  command listens on both, and the second of the two finds no saved "before" look.
 
 ## §16 `claude --version` and `claude update`
 

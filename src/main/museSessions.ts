@@ -57,14 +57,7 @@ import {
   textOfLogLine,
   type LogRecord
 } from './museSessionLog'
-import {
-  capTouched,
-  noteRead,
-  noteWrite,
-  shellWrittenFiles,
-  touchedItem,
-  type FileAcc
-} from './touchedFiles'
+import { noteRead, noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
 import { UUID, hostOfPath, museSessionKey } from './sessionStore'
 import {
   listMuseSessions,
@@ -841,6 +834,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         )
       case 'PostToolUse':
         return this.afterTool(run, input)
+      case 'PostToolUseFailure':
+        return this.noteShellWrote(run, input)
     }
   }
 
@@ -877,14 +872,14 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   private publishWrite(run: MuseRun, last: string): void {
-    run.liveWrites++
-    this.deps.events(run.tabId, {
-      type: 'files-changed',
-      files: capTouched([...run.touched].map(([src, acc]) => touchedItem(src, acc))),
-      lastTouched: last,
-      lastWritten: last,
-      liveWrites: run.liveWrites
-    })
+    this.deps.events(run.tabId, wroteEvent(run.touched, last, ++run.liveWrites))
+  }
+
+  private noteShellWrote(run: MuseRun, input: Record<string, unknown>): void {
+    const wrote = shellWrittenFiles(input[SHELL_WROTE_FIELD]).map((f) => cwdRelative(run.cwd, f))
+    if (!wrote.length) return
+    for (const file of wrote) noteWrite(run.touched, file, 0, 0, Date.now())
+    this.publishWrite(run, wrote[wrote.length - 1])
   }
 
   // MUSE§9
@@ -893,13 +888,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const response = responseOf(input)
     const did = museToolDid(tool, record(input.tool_input), response)
     if (did) this.deps.events(run.tabId, { type: 'did', what: did })
-    const shellWrote = shellWrittenFiles(input[SHELL_WROTE_FIELD]).map((f) =>
-      cwdRelative(run.cwd, f)
-    )
-    if (shellWrote.length) {
-      for (const file of shellWrote) noteWrite(run.touched, file, 0, 0, Date.now())
-      this.publishWrite(run, shellWrote[shellWrote.length - 1])
-    }
+    this.noteShellWrote(run, input)
     if (WRITING_TOOLS.has(tool) && typeof response.filePath === 'string') {
       const target = cwdRelative(run.cwd, response.filePath)
       const { added, removed } = patchDelta(response)

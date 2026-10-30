@@ -4,8 +4,8 @@ import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import {
   discordSaidBeside,
-  hookField,
   LANGUAGE_FNS,
+  shellCall,
   SHELL_WRITES_FNS,
   QUOTE_PROMPT_FN,
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
@@ -28,6 +28,7 @@ const EVENTS = [
   'StopFailure',
   'PreToolUse',
   'PostToolUse',
+  'PostToolUseFailure',
   'SubagentStart',
   'SubagentStop'
 ] as const
@@ -48,11 +49,10 @@ input="$(cat | tr -d '\\n')"
 [ "$event" = "Stop" ] && keep_going_for_the_notice && exit 0
 case "$input" in
   *'"tool_name":"bash"'*|*'"tool_name":"shell"'*)
-    where="$(printf '%s' "$input" | ${hookField('cwd')})"
-    key="$(shell_key "$(printf '%s' "$input" | ${hookField('session_id')})")"
+    ${shellCall('session_id')}
     case "$event" in
       PreToolUse) shell_before "$where" "$key" ;;
-      PostToolUse) input="\${input%\\}}$(shell_wrote "$where" "$key")}" ;;
+      PostToolUse|PostToolUseFailure) input="\${input%\\}}$(shell_wrote "$where" "$key")}" ;;
     esac ;;
 esac
 [ "$event" = "PreToolUse" ] && exit 0

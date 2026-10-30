@@ -159,12 +159,16 @@ save_quote() {
 export const hookField = (name: string): string =>
   `sed -n 's/.*"${name}"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p'`
 
+export const shellCall = (keyField: string): string =>
+  `where="$(printf '%s' "$input" | ${hookField('cwd')})"; key="$(shell_key "$(printf '%s' "$input" | ${hookField(keyField)})")"`
+
 export const SHELL_WROTE_FIELD = 'wrote'
 export const SHELL_WROTE_EVENT = 'shell-wrote'
 
 // CC§15 CODEX§27 MUSE§9 AGY§12
 export const SHELL_WRITES_FNS = `files_now() {
-  top="$(cd "$1" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)"
+  top="$(cd "$1" 2>/dev/null && inside="$(git rev-parse --show-prefix 2>/dev/null)" && here="$PWD/" && printf '%s' "\${here%"$inside"}")"
+  top="\${top%/}"
   [ -n "$top" ] || return 0
   printf '%s\\n' "$top"
   ( cd "$top" && git ls-files -z -m -o --exclude-standard 2>/dev/null |
@@ -254,8 +258,7 @@ ${SHELL_WRITES_FNS}
 case "$1" in
   shell-before|shell-after)
     input="$(cat | tr -d '\\n')"
-    where="$(printf '%s' "$input" | ${hookField('cwd')})"
-    key="$(shell_key "$(printf '%s' "$input" | ${hookField('tool_use_id')})")"
+    ${shellCall('tool_use_id')}
     if [ "$1" = shell-before ]; then shell_before "$where" "$key"; exit 0; fi
     wrote="$(shell_wrote "$where" "$key")"
     [ -n "$wrote" ] && [ -n "$${CODEX_SHELL_WROTE_ENV}" ] && printf '{"event":"${SHELL_WROTE_EVENT}"%s}\\n' "$wrote" >> "$${CODEX_SHELL_WROTE_ENV}"
@@ -405,9 +408,10 @@ case "$event" in
     log_ask
     ;;
   posttool) stale_pr_status "$input" ;;
-  shell-before) shell_before "$(printf '%s' "$input" | ${hookField('cwd')})" "$(shell_key "$(printf '%s' "$input" | ${hookField('tool_use_id')})")" ;;
+  shell-before) ${shellCall('tool_use_id')}; shell_before "$where" "$key" ;;
   shell-after)
-    wrote="$(shell_wrote "$(printf '%s' "$input" | ${hookField('cwd')})" "$(shell_key "$(printf '%s' "$input" | ${hookField('tool_use_id')})")")"
+    ${shellCall('tool_use_id')}
+    wrote="$(shell_wrote "$where" "$key")"
     [ -n "$wrote" ] && printf '{"tabId":"%s","event":"${SHELL_WROTE_EVENT}","sessionId":"%s","tmux":"%s"%s}\\n' "$tab" "$(session_id)" "$tm" "$wrote" >> "$log"
     ;;
   prompt|stop|notify)
@@ -589,6 +593,7 @@ export function hookSettings(
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
+  const shellAfter = { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('shell-after') }] }
   const settings: Record<string, unknown> = {
     skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
@@ -635,11 +640,12 @@ export function hookSettings(
       // CC§19 ADR-0031
       PostToolUse: [
         { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
-        { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('shell-after') }] },
+        shellAfter,
         ...(statusLine
           ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
           : [])
-      ]
+      ],
+      PostToolUseFailure: [shellAfter]
     }
   }
   if (statusLine) settings.statusLine = statusLine

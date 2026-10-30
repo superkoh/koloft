@@ -88,7 +88,7 @@ import { remoteMachineDir } from './remote/paths'
 import { keepKoloftSkillIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { capTouched, noteWrite, shellWrittenFiles, touchedItem, type FileAcc } from './touchedFiles'
+import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
 import {
   codexKeyFor,
@@ -1096,14 +1096,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private publishWrite(run: AgyRun, last: string): void {
-    run.liveWrites++
-    this.deps.events(run.tabId, {
-      type: 'files-changed',
-      files: capTouched([...run.touched].map(([src, acc]) => touchedItem(src, acc))),
-      lastTouched: last,
-      lastWritten: last,
-      liveWrites: run.liveWrites
-    })
+    this.deps.events(run.tabId, wroteEvent(run.touched, last, ++run.liveWrites))
   }
 
   // AGY§12 AGY§17

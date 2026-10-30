@@ -925,6 +925,18 @@ describe('injected hook script', () => {
     ])
   })
 
+  it('a Bash call that fails still gets the look at the folder after it', () => {
+    const settings = JSON.parse(
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPTF'), 'utf8')
+    )
+    expect(
+      settings.hooks.PostToolUseFailure.map(
+        (e: { matcher: string; hooks: { command: string }[] }) =>
+          `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`
+      )
+    ).toEqual(['Bash shell-after'])
+  })
+
   // CC§8
   // CC§8
   it('a Notification reaches Koloft only when claude stops to wait on the person, never for a mid-turn one', () => {
@@ -1320,12 +1332,23 @@ describe("a shell command's written files", () => {
     expect(fs.existsSync(path.join(regDir, 'tabShC.status.jsonl'))).toBe(false)
   })
 
-  it('a Codex Bash call appends the same list to the file its tab names, also when the script runs under a plain sh', () => {
+  it('a session whose folder is reached through a symlink gets its files under that same path, as its own edits name them', () => {
+    const repo = repoWithChanges()
+    const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-shell-link-')), 'proj')
+    fs.symlinkSync(repo, link)
+    const call = { session_id: 'sid-sh', cwd: link, tool_use_id: 'toolu_04' }
+    fire('tabShL', 'shell-before', call)
+    runTheCommand(repo)
+    fire('tabShL', 'shell-after', call)
+    expect(readStatusLog('tabShL')[0].wrote).toEqual(written(link))
+  })
+
+  it('a Codex Bash call appends the same list to the file its tab names, also under dash as on a Linux machine', () => {
     const repo = repoWithChanges()
     const out = path.join(regDir, 'tabCx.shell-wrote.jsonl')
     const call = JSON.stringify({ session_id: 'th', cwd: repo, tool_use_id: 'call_9' })
     const hook = (event: string): void => {
-      spawnSync('sh', [codexReplyLanguage, event], {
+      spawnSync('/bin/dash', [codexReplyLanguage, event], {
         input: call,
         env: { ...process.env, KOLOFT_SHELL_WROTE: out }
       })

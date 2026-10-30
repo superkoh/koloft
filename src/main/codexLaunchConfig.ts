@@ -84,6 +84,12 @@ export interface KoloftHook {
 }
 
 // CODEX§27
+export const trustedInPlace = (hooks: KoloftHook[], trusted: Set<string>): KoloftHook[] =>
+  hooks.filter((h, i) =>
+    hooks.slice(0, i + 1).every((o) => o.event !== h.event || trusted.has(o.command))
+  )
+
+// CODEX§27
 export const hookOverrides = (hooks: KoloftHook[]): string[] =>
   [...new Set(hooks.map((h) => h.event))].map(
     (event) =>
