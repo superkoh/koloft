@@ -447,7 +447,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startSessionIn(page, 'ws-a')
+        await startSessionIn(page, 'ws-a', { method: 'Claude' })
 
         expect(
           await koloftInSession(page, `session new --workspace ws-b --backend ${backend} -- hello`)
