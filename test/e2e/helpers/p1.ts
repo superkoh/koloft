@@ -198,22 +198,30 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
-export async function conversationOnceFirstTurnEnded(page: Page, tabId: string): Promise<string> {
-  let conversation: string | undefined
+export async function agyConversationOnceFirstTurnEnded(
+  page: Page,
+  tabId?: string
+): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
   await expect
     .poll(
       async () => {
-        const tab = await page.evaluate(
-          (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)),
-          tabId
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find(
+          (x) =>
+            x.backendId === 'agy' &&
+            x.alive &&
+            (tabId === undefined || x.tabId === tabId) &&
+            x.usage &&
+            x.nativeSessionId
         )
-        conversation = tab?.usage ? tab.nativeSessionId : undefined
-        return conversation
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
       },
       { timeout: 30_000 }
     )
-    .toBeTruthy()
-  return conversation!
+    .toBe(true)
+  return found!
 }
 
 export interface SeedOptions {

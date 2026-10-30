@@ -13,9 +13,9 @@ import {
 } from './helpers/env'
 import { codexCalls, codexRows } from './helpers/codex'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   clickAppMenuItem,
-  conversationOnceFirstTurnEnded,
   encodeCwd,
   gitInit,
   newSessionInWith,
@@ -386,7 +386,7 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       expect(processAlive(first.pid)).toBe(true)
 
       await runIn(page, centerTerm(page), 'now we have talked')
-      const conversation = await conversationOnceFirstTurnEnded(page, tabId)
+      const { id: conversation } = await agyConversationOnceFirstTurnEnded(page, tabId)
       expect(agySessionCalls(env)).toHaveLength(1)
 
       await restart(app, page)
