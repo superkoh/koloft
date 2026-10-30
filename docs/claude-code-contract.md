@@ -1942,6 +1942,11 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
+- **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
+  CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
+  (not the `ps -o lstart=` text below), `"tmux":"cc:@0.%0"`, `"pidDomain":
+  "linux::pid:[4026532380]"`, `"messagingSocketPath":"/tmp/cc-socks/60.sock"`, one entry
+  per file on one line; the other keys as on macOS.
 - **A `/fork` copy writes one too, with `kind: "bg"` and a `jobId`** (2026-10-27, CC
   2.1.311, §5), so a live entry for an id can belong to a background copy that
   `claude --resume` would attach to rather than run twice.
@@ -2189,6 +2194,23 @@ sessions.
   machine right now", and `SendMessage` to `home-session`: `{"success":false,"message":
   "No agent named 'home-session' is reachable."}`; nothing reached the receiver. Claude's
   own way across machines, Remote Control, refuses the token Koloft injects (§7).
+- **A line written from the Mac with `ssh -W <messagingSocketPath> <host>` reaches a
+  session on that machine** as one written on its own machine does. 2026-10-29, CC 2.1.312
+  (linux-arm64) in the e2e SSH lab image (Debian bookworm, OpenSSH 9.2 sshd), the Mac's
+  OpenSSH 10.3; an interactive `--dangerously-skip-permissions` receiver in tmux, model
+  haiku, an OAuth token. Its registry entry (§11) gave `/tmp/cc-socks/<pid>.sock`. Five
+  `bypass` envelopes, each one line on ssh's stdin: idle, it showed "Message from @peer: …"
+  and answered; written while a 20 s Bash call ran, it was folded into that turn and
+  answered at its end; written with a half-typed line in the box, it started its own turn
+  and the half-typed line stayed in the box. It went through a fresh connection, through a
+  ControlMaster another ssh had opened, and with Koloft's own option set
+  (`RemoteCommand=none`, `RequestTTY=no`, `ControlMaster=auto`, `ControlPersist=yes`,
+  `BatchMode=yes`) with no master yet, which left one behind; ssh exited 0 each time. The
+  transcript held the same `origin: {kind:"peer", fromMode:"bypass", body, verifiedPeerPid}`
+  as on one machine, `verifiedPeerPid` being sshd's process for that connection (the same
+  pid for every line through one master). A path with no socket behind it made ssh exit
+  255 with "Stdio forwarding request failed: Session open refused by peer" — the words
+  ssh also prints when a master has no room left (platform ledger §33).
 - **How a message from another session lands in the receiver's transcript** (2026-10-02,
   CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
   `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the

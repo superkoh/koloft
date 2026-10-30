@@ -768,7 +768,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, since SendMessage reaches no session on another machine', async ({
+  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, on the child’s message socket there through ssh, not typed into its terminal, since SendMessage reaches no session on another machine', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -807,10 +807,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await write(parentTab, `/koloft session send ${kidTab} keep going`)
       await expect
-        .poll(() => runOnTarget(lab, 'kuser', 'cat .claude/projects/*/*.jsonl'), {
+        .poll(() => runOnTarget(lab, 'kuser', 'cat fake-claude-peer.jsonl 2>/dev/null; :'), {
           timeout: 60_000
         })
-        .toContain('keep going')
+        .toMatch(/<cross-session-message from-mode=\\"\w+\\">\\n.*keep going/)
     })
   })
 

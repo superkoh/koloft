@@ -137,7 +137,9 @@ import {
   runMasterCommand,
   runSsh,
   runSshBytes,
-  sshOptions
+  problemOf,
+  sshOptions,
+  writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
@@ -496,7 +498,12 @@ import {
   type ConfigText,
   type McpServer
 } from './mcpServers'
-import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
+import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
+  claudeShowsAPanel,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+} from './claudeSessionRegistry'
 import {
   asPeerName,
   GLOBAL_SCOPE,
@@ -1593,10 +1600,28 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
-  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-  await writeLineInTurn(socket, line)
+  const host = tracker.remoteOf(tabId)?.host
+  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
+  if (!host) {
+    const socket = await whenMessagingSocket(sessionId, ms)
+    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+    return writeLineInTurn(socket, line)
+  }
+  await loginEnvReady()
+  const readLiveRegistry = async (): Promise<string> => {
+    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+      controlDir: remoteControlDir
+    })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout
+  }
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
+    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
+  )
 }
+const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')

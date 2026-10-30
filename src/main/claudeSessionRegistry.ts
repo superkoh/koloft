@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
+import { setTimeout as sleep } from 'timers/promises'
 
 const REGISTRY_DIR = path.join(os.homedir(), '.claude', 'sessions')
 const POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS = 500
@@ -154,6 +155,40 @@ export function whenMessagingSocket(
       }, POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS)
     check()
   })
+}
+
+// CC§11
+export const LIVE_REGISTRY_ON_A_MACHINE_SH = `for f in "$HOME"/.claude/sessions/*.json; do p=\${f##*/}; kill -0 "\${p%.json}" 2>/dev/null && cat "$f" && printf '\\0'; done; :`
+
+// CC§5 CC§11
+export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {
+  for (const text of liveRegistry.split('\0')) {
+    let entry: { sessionId?: unknown; kind?: unknown; messagingSocketPath?: unknown }
+    try {
+      entry = JSON.parse(text)
+    } catch {
+      continue
+    }
+    if (entry.sessionId !== sessionId || entry.kind === 'bg') continue
+    if (typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath)
+      return entry.messagingSocketPath
+  }
+  return null
+}
+
+const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
+
+export async function whenMessagingSocketOnMachine(
+  sessionId: string,
+  ms: number,
+  readLiveRegistry: () => Promise<string>
+): Promise<string | null> {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const socket = tabSocketOnMachine(await readLiveRegistry(), sessionId)
+    if (socket || Date.now() >= deadline) return socket
+    await sleep(REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS)
+  }
 }
 
 export function claudePeerNames(
