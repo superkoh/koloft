@@ -14,6 +14,7 @@ import {
   sendShortcut,
   snap,
   startSessionIn,
+  switchToRow,
   termIds,
   terminalText,
   waitBooted,
@@ -112,6 +113,40 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
       await expect(closed).toHaveClass(/\bcold\b/, { timeout: 20_000 })
       await expect(closed.locator('.ws-tab-sub')).toHaveText('main')
       expect(loggedExits(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Claude that koloft session new started and that dies before it starts keeps its row, and ⇧⌘R starts it again in the same tab', async ({
+    env
+  }) => {
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      fs.writeFileSync(env.claudeExitFile, '1')
+      await runIn(
+        page,
+        centerTerm(page),
+        '/koloft session new --workspace ws-b --name kid -- hello'
+      )
+      const kept = wsRows(page, 'ws-b')
+      await expect(kept.locator('.ws-tab-sub')).toContainText('exited (code 1)', {
+        timeout: 30_000
+      })
+      const callsBefore = readCalls(env).length
+
+      fs.rmSync(env.claudeExitFile)
+      await switchToRow(page, kept)
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => readCalls(env).length, { timeout: 30_000 }).toBe(callsBefore + 1)
+      expect(readCalls(env)[callsBefore].cwd).toMatch(/\/ws-b$/)
+      await expect(kept).toHaveCount(1)
+      await expect(kept).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(kept.locator('.ws-tab-sub')).not.toContainText('exited')
+      expect(await termIds(page)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }

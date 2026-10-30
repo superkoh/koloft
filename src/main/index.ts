@@ -1722,7 +1722,7 @@ const sessionDeps: SessionVerbDeps = {
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
-    return launchQuietTab(options, title)
+    return launchQuietTab(options, title, { launch: options })
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
@@ -4913,11 +4913,11 @@ function foldersInUse(leavingTabId?: string): Set<string> {
 async function launchQuietTab(
   options: CreateTabOptions & { kind: BackendId },
   title: string,
-  jobId?: string
+  more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
-  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
 }
@@ -5269,7 +5269,7 @@ async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
       name: req.name,
       scheduled: true
     }
-    const tabId = await launchQuietTab(options, req.name, req.jobId)
+    const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
