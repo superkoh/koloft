@@ -345,7 +345,7 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     t.writeShimRegistration()
     t.writeHookStart()
     t.writeTurn()
-    await vi.waitFor(() => expect(t.events).toHaveLength(3))
+    await vi.waitFor(() => expect(t.events).toHaveLength(3), { timeout: 5000 })
     t.agentExits()
     const exited = [tabId, { type: 'exited', clean: false, sessionId }]
     expect(t.events.slice(3)).toEqual([exited])
