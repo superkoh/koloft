@@ -581,6 +581,11 @@ t="$fresh"; k=fresh
 [ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
 printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
 
+const SAVE_PICK = `d="$HOME/.koloft/element-picks"
+mkdir -p "$d" && cd "$d" || exit 1
+find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
+cat > "$1.part" && mv -f "$1.part" "$1" && printf '%s/%s' "$(pwd -P)" "$1"`
+
 const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
@@ -928,6 +933,12 @@ export class SshHost implements Host {
 
   async answerAgent(requestId: string, reply: string): Promise<void> {
     await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  }
+
+  async savePick(name: string, png: Buffer): Promise<string> {
+    const r = await this.sh(SAVE_PICK, [name], { input: png })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout.toString('utf8')
   }
 
   notice(tabId: string): NoticeFile {

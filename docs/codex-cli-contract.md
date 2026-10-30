@@ -2042,6 +2042,13 @@ message" (3 runs).
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
 - The paste over ssh and tmux is not probed for Codex.
+- **A picture path in the message is opened when the question needs it.** Measured
+  2026-10-28, Codex CLI 0.162.0, `codex exec -s read-only` with Koloft's element-pick
+  text (its `Picture:` line names a PNG of a canvas with the word ZEBRA drawn on it; the
+  word nowhere in the text) and "What word is drawn in the picked element? Answer with
+  the word only.": it answered `ZEBRA`. The interactive TUI was not used for this: on
+  start it asked "Background server has incompatible feature settings" with a "Restart
+  with these settings" choice that would reach the other Codex sessions on the same Mac.
 
 ## 24. Searching the words of every thread
 

@@ -1,6 +1,14 @@
 import { useState, type JSX, type ReactNode, type RefObject } from 'react'
-import { IconBack, IconClose, IconForward, IconOpenOutside, IconReload } from '../icons'
+import {
+  IconBack,
+  IconClose,
+  IconForward,
+  IconOpenOutside,
+  IconPickElement,
+  IconReload
+} from '../icons'
 import { loadHistory, match } from '../browserHistory'
+import { PICK_BUTTON_LABEL } from './useElementPick'
 
 export function BrowserAddressBar({
   url,
@@ -15,6 +23,9 @@ export function BrowserAddressBar({
   onReload,
   onStop,
   onExternalOpen,
+  picking,
+  pickBlocked,
+  onPick,
   actions,
   overflow
 }: {
@@ -30,6 +41,9 @@ export function BrowserAddressBar({
   onReload: () => void
   onStop: () => void
   onExternalOpen: () => void
+  picking: boolean
+  pickBlocked: string | null
+  onPick: () => void
   actions?: ReactNode
   overflow?: ReactNode
 }): JSX.Element {
@@ -121,6 +135,16 @@ export function BrowserAddressBar({
           ))}
         </div>
       )}
+      <button
+        className={'bnav' + (picking ? ' on' : '') + (pickBlocked ? ' dis' : '')}
+        aria-label={PICK_BUTTON_LABEL}
+        aria-pressed={picking}
+        title={pickBlocked ?? 'Pick an element and paste it into the session'}
+        disabled={!!pickBlocked}
+        onClick={onPick}
+      >
+        <IconPickElement size={16} />
+      </button>
       {actions}
       <button
         className="bnav"
