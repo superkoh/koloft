@@ -17,12 +17,13 @@ import {
   seedRemoteWorkspace,
   sshCommands
 } from './helpers/remote'
-import { openGitPanel, snap, waitBooted } from './helpers/p1'
+import { dialogPrimary, openGitPanel, openWorktreeSession, snap, waitBooted } from './helpers/p1'
 import type { E2EEnv } from './helpers/env'
 
 const FIRST_HEARTBEAT_AND_FETCH_MS = 60_000
 const RECONNECT_AFTER_BACKED_OFF_HEARTBEATS_MS = 90_000
 const SEVERAL_FAILED_HEARTBEATS_MS = 8_000
+const DIALOG_SETTLE_MS = 3_000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -40,13 +41,15 @@ function machineCheckoutBehindOrigin(env: E2EEnv, behind: number): { author: str
   runGit(author, 'remote', 'add', 'origin', `file://${origin}`)
   runGit(author, 'push', '-q', '-u', 'origin', 'main')
   runGit(home, 'clone', '-q', `file://${origin}`, remoteDir(env))
-  for (let i = 1; i <= behind; i++) {
-    fs.writeFileSync(path.join(author, `upstream-${i}.txt`), `${i}\n`)
-    runGit(author, 'add', '-A')
-    runGit(author, 'commit', '-q', '-m', `upstream ${i}`)
-  }
-  if (behind > 0) runGit(author, 'push', '-q', 'origin', 'main')
+  for (let i = 1; i <= behind; i++) publishOnOrigin(author, `upstream-${i}`)
   return { author }
+}
+
+function publishOnOrigin(author: string, name: string): void {
+  fs.writeFileSync(path.join(author, `${name}.txt`), `${name}\n`)
+  runGit(author, 'add', '-A')
+  runGit(author, 'commit', '-q', '-m', name)
+  runGit(author, 'push', '-q', 'origin', 'main')
 }
 
 function fetchesSent(env: E2EEnv): string[] {
@@ -156,6 +159,51 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(pop.locator('.tbu-act.pull')).toBeDisabled()
       await expect(pop.locator('.tbu-act', { hasText: 'Fetch now' })).toBeDisabled()
       await snap(page, 'E-RW-37-away')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-43: the New Worktree Session dialog (C8) fetches on the machine when it opens, so its Pull & Start line counts a commit pushed since the last sweep; while the machine is away it fetches nothing and shows the last result', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    const { author } = machineCheckoutBehindOrigin(env, 2)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const badge = remoteHead(page).locator('.ws-behind')
+      await expect(badge).toHaveText('2', { timeout: FIRST_HEARTBEAT_AND_FETCH_MS })
+
+      publishOnOrigin(author, 'after-sweep')
+      const beforeOpen = fetchesSent(env).length
+      const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
+      const line = dlg.locator('.fresh-line.stale')
+      await expect(line).toContainText('main is 3 commits behind origin/main', {
+        timeout: 30_000
+      })
+      await expect(line).toContainText('Pull & Start will fast-forward first.')
+      await expect(dialogPrimary(dlg)).toContainText('Pull & Create worktree')
+      await page.waitForTimeout(DIALOG_SETTLE_MS)
+      expect(fetchesSent(env).length).toBe(beforeOpen + 1)
+      await snap(page, 'E-RW-43-fetched-on-open')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      breakConnection(env)
+      await expect(remoteHead(page).locator('.ws-conn')).not.toHaveClass(/\bon\b/, {
+        timeout: 60_000
+      })
+      publishOnOrigin(author, 'while-away')
+      const beforeAway = fetchesSent(env).length
+      const away = await openWorktreeSession(page, REMOTE_WS_NAME)
+      await expect(away.locator('.fresh-line.stale')).toContainText(
+        'main is 3 commits behind origin/main'
+      )
+      await page.waitForTimeout(DIALOG_SETTLE_MS)
+      expect(fetchesSent(env).length).toBe(beforeAway)
+      await snap(page, 'E-RW-43-away')
     } finally {
       await quitAndClose(app)
     }
