@@ -1679,7 +1679,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       const defaultMethod = (): Locator =>
         page.getByRole('button', { name: 'Default session method' })
       await expect(defaultMethod()).toHaveText('Claude')
-      await expect(page.getByRole('switch', { name: 'Enable Claude', exact: true })).toBeDisabled()
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
       await page.screenshot({

@@ -8,7 +8,7 @@ import {
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
-import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
+import { assistOnAMethodThatIsOn, backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
 
@@ -86,7 +86,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
   merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
-  merged.assist = sanitizeAssist(merged.assist)
+  merged.assist = assistOnAMethodThatIsOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
   merged.todoNotes = sanitizeTextMap(merged.todoNotes)
