@@ -222,11 +222,11 @@ async function frameOffset(wc: WebContents, frame: Frame): Promise<{ x: number; 
 }
 
 // PLATFORM§16
-export async function picture(
+async function pictureInView(
   wc: WebContents,
   root: Frame,
   box: PickedElement['box']
-): Promise<Pick<PickedElement, 'png' | 'pictureFailed'>> {
+): Promise<Buffer | null> {
   const { cssLayoutViewport: view } = (await send(wc, root, 'Page.getLayoutMetrics')) as {
     cssLayoutViewport: { clientWidth: number; clientHeight: number }
   }
@@ -234,23 +234,35 @@ export async function picture(
   const top = Math.max(0, box.y)
   const right = Math.min(view.clientWidth, box.x + box.width)
   const bottom = Math.min(view.clientHeight, box.y + box.height)
-  if (right <= left || bottom <= top) return { png: null, pictureFailed: null }
   const zoom = wc.getZoomFactor()
-  try {
-    const image = await within(
-      wc.capturePage({
-        x: Math.round(left * zoom),
-        y: Math.round(top * zoom),
-        width: Math.round((right - left) * zoom),
-        height: Math.round((bottom - top) * zoom)
-      }),
-      A_CAPTURE_ANSWERS_WITHIN_MS,
-      `the page did not answer within ${A_CAPTURE_ANSWERS_WITHIN_MS / 1000} s`
-    )
-    return { png: image.isEmpty() ? null : image.toPNG(), pictureFailed: null }
-  } catch (error) {
-    return { png: null, pictureFailed: error instanceof Error ? error.message : String(error) }
+  const rect = {
+    x: Math.round(left * zoom),
+    y: Math.round(top * zoom),
+    width: Math.round((right - left) * zoom),
+    height: Math.round((bottom - top) * zoom)
   }
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const image = await within(
+    wc.capturePage(rect),
+    A_CAPTURE_ANSWERS_WITHIN_MS,
+    `the page did not answer within ${A_CAPTURE_ANSWERS_WITHIN_MS / 1000} s`
+  )
+  if (image.isEmpty()) throw new Error('the page gave back an empty picture')
+  return image.toPNG()
+}
+
+export function pictureOf(
+  wc: WebContents,
+  root: Frame,
+  box: PickedElement['box']
+): Promise<Pick<PickedElement, 'png' | 'pictureFailed'>> {
+  return pictureInView(wc, root, box).then(
+    (png) => ({ png, pictureFailed: null }),
+    (error: unknown) => ({
+      png: null,
+      pictureFailed: error instanceof Error ? error.message : String(error)
+    })
+  )
 }
 
 async function readPick(
@@ -287,7 +299,7 @@ async function readPick(
     box,
     html: outerHTML,
     css: Object.fromEntries(computedStyle.map((c) => [c.name, c.value])),
-    ...(await picture(wc, root, box))
+    ...(await pictureOf(wc, root, box))
   }
 }
 

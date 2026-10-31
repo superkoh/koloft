@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cssLines, elementLabel, pickText, picture } from '../../src/main/elementPick'
+import { cssLines, elementLabel, pickText, pictureOf } from '../../src/main/elementPick'
 import {
   closeOwnSession,
   hiddenFromClients,
@@ -76,28 +76,39 @@ describe('the text a pick pastes into the session', () => {
 })
 
 describe('the picture of a picked element', () => {
-  const guestWhoseCaptureThrows = {
-    debugger: {
-      sendCommand: async () => ({ cssLayoutViewport: { clientWidth: 800, clientHeight: 600 } })
-    },
-    getZoomFactor: () => 1,
-    capturePage: () => Promise.reject(new Error('Current display surface not available'))
-  } as unknown as Parameters<typeof picture>[0]
+  const guestWhoseCapture = (
+    capturePage: () => Promise<unknown>
+  ): Parameters<typeof pictureOf>[0] =>
+    ({
+      debugger: {
+        sendCommand: async () => ({ cssLayoutViewport: { clientWidth: 800, clientHeight: 600 } })
+      },
+      getZoomFactor: () => 1,
+      capturePage
+    }) as unknown as Parameters<typeof pictureOf>[0]
+  const throws = guestWhoseCapture(() =>
+    Promise.reject(new Error('Current display surface not available'))
+  )
   const root = { session: 'S-1', targetId: 'PAGE-1', url: 'http://127.0.0.1:5173/', parent: null }
 
   it('carries the reason out when the capture fails, so the pick can say so', async () => {
-    expect(await picture(guestWhoseCaptureThrows, root, picked.box)).toEqual({
+    expect(await pictureOf(throws, root, picked.box)).toEqual({
       png: null,
       pictureFailed: 'Current display surface not available'
     })
   })
 
+  it('counts a capture that comes back empty as failed', async () => {
+    const empty = guestWhoseCapture(async () => ({ isEmpty: () => true }))
+    expect(await pictureOf(empty, root, picked.box)).toEqual({
+      png: null,
+      pictureFailed: 'the page gave back an empty picture'
+    })
+  })
+
   it('stays quiet for an element scrolled fully out of view', async () => {
     const below = { x: 10, y: 900, width: 200, height: 60 }
-    expect(await picture(guestWhoseCaptureThrows, root, below)).toEqual({
-      png: null,
-      pictureFailed: null
-    })
+    expect(await pictureOf(throws, root, below)).toEqual({ png: null, pictureFailed: null })
   })
 })
 
