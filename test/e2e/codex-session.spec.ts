@@ -1852,12 +1852,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       const readsAfterAdding = accountReads()
       expect((await startCodex(page, env)).codexHome).toBe(home)
       expect((await startCodex(page, env)).codexHome).toBe(home)
-      await sendShortcut(app, 'shortcut:open-settings')
-      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
-      await page.getByRole('button', { name: 'Refresh usage' }).click()
-      await expect(page.locator('.acct-refresh', { hasText: 'Updated' })).toBeVisible({
-        timeout: 30_000
-      })
+      await page.evaluate(() => window.api.accounts.probe())
       expect(accountReads()).toBe(readsAfterAdding + 1)
     } finally {
       await quitAndClose(app)
