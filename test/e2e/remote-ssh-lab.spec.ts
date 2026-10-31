@@ -282,10 +282,10 @@ function serveOnTheMac(port: number, body: string): Promise<http.Server> {
   })
 }
 
-function fetchOnTheMacOnAFreshConnection(port: number): Promise<string> {
+function fetchOnTheMacOnAFreshConnection(port: number, host = '127.0.0.1'): Promise<string> {
   return new Promise((resolve) => {
     http
-      .get({ host: '127.0.0.1', port, agent: false }, (r) => {
+      .get({ host, port, agent: false }, (r) => {
         let body = ''
         r.on('data', (c) => (body += c))
         r.on('end', () => resolve(body))
@@ -919,6 +919,9 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(first.locator('body')).toHaveText('first page on the machine')
         await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
         expect(await fetchOnTheMacOnAFreshConnection(free)).toContain('first page on the machine')
+        expect(await fetchOnTheMacOnAFreshConnection(free, '::1')).toContain(
+          'first page on the machine'
+        )
 
         await expect
           .poll(
@@ -950,6 +953,9 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           await webTabs.first().locator(BROWSER.tabCloseIn).click()
         await expect
           .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free, '::1'), { timeout: 30_000 })
           .toBe('refused')
         await expect
           .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })

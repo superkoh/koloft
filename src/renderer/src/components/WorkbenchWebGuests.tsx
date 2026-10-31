@@ -72,6 +72,10 @@ export function guestUrl(el: GuestElement | undefined): string {
   }
 }
 
+function refusedByKoloft(fail: GuestFailure): boolean {
+  return fail.description === 'ERR_BLOCKED_BY_CLIENT'
+}
+
 function isCertFailure(fail: GuestFailure): boolean {
   return /^ERR_(CERT|SSL)/.test(fail.description)
 }
@@ -166,7 +170,7 @@ export function WebPageState({
     <div className="berror">
       <div className="bstate-t">Can't reach {hostOf(fail.url)}</div>
       <div className="bstate-sub">{fail.description}</div>
-      {machine && loopbackPortOf(fail.url) !== null && (
+      {machine && loopbackPortOf(fail.url) !== null && !refusedByKoloft(fail) && (
         <div className="bempty-hint">
           Nothing answers on port {loopbackPortOf(fail.url)} on {machine}, or its ssh server does
           not allow port forwarding.

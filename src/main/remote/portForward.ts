@@ -26,10 +26,10 @@ export async function macPortFree(port: number): Promise<boolean> {
   return true
 }
 
-function portTheMacHandsOut(): Promise<number> {
-  return new Promise((resolve, reject) => {
+function portTheMacHandsOut(): Promise<number | null> {
+  return new Promise((resolve) => {
     const s = net.createServer()
-    s.once('error', reject)
+    s.once('error', () => resolve(null))
     s.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => {
       const port = (s.address() as net.AddressInfo).port
       s.close(() => resolve(port))
@@ -40,13 +40,17 @@ function portTheMacHandsOut(): Promise<number> {
 export async function anyFreeMacPort(): Promise<number | null> {
   for (let i = 0; i < FREE_PORT_TRIES; i++) {
     const port = await portTheMacHandsOut()
-    if (await macPortFree(port)) return port
+    if (port !== null && (await macPortFree(port))) return port
   }
   return null
 }
 
-export function pageForwardSpec(macPort: number, machinePort: number): string {
-  return `127.0.0.1:${macPort}:localhost:${machinePort}`
+const LOOPBACKS_A_BROWSER_TRIES_FOR_LOCALHOST = ['127.0.0.1', '[::1]']
+
+export function pageForwardSpecs(macPort: number, machinePort: number): string[] {
+  return LOOPBACKS_A_BROWSER_TRIES_FOR_LOCALHOST.map(
+    (bind) => `${bind}:${macPort}:localhost:${machinePort}`
+  )
 }
 
 export interface PageForwardDeps {
@@ -59,7 +63,7 @@ export interface PageForwardDeps {
 
 interface Forward {
   macPort: number
-  spec: string
+  specs: string[]
   pages: Set<number>
 }
 
@@ -107,17 +111,31 @@ export class PageForwards {
       known.pages.add(page)
       return Promise.resolve(known.macPort)
     }
-    if ([...st.forwards].some(([there, f]) => f.macPort === machinePort && there !== machinePort))
+    const handedOut = [...st.forwards].find(
+      ([there, f]) => f.macPort === machinePort && there !== machinePort
+    )?.[1]
+    if (handedOut) {
+      handedOut.pages.add(page)
       return Promise.resolve(machinePort)
+    }
     return this.inTurn(st, () => this.reach(host, st, machinePort, page))
   }
 
-  clearLeftovers(host: string): Promise<void> {
+  carries(page: number, macPort: number): boolean {
+    for (const st of this.hosts.values())
+      for (const f of st.forwards.values())
+        if (f.macPort === macPort && f.pages.has(page)) return true
+    return false
+  }
+
+  checkMaster(host: string): Promise<void> {
     const st = this.stateOf(host)
-    if (st.leftoversCleared) return Promise.resolve()
+    if (st.leftoversCleared && !st.forwards.size) return Promise.resolve()
     return this.inTurn(st, async () => {
       const pid = await this.livePid(host)
-      if (pid) await this.cancelLeftovers(host, st, pid)
+      if (!pid) return
+      await this.cancelLeftovers(host, st, pid)
+      this.forgetForwardsOfAnOldMaster(host, st, pid)
     })
   }
 
@@ -127,7 +145,7 @@ export class PageForwards {
         if (!f.pages.delete(page) || f.pages.size) continue
         st.forwards.delete(machinePort)
         this.save(host, st)
-        void this.inTurn(st, () => this.deps.master(host, ['-O', 'cancel', '-L', f.spec]))
+        void this.inTurn(st, () => this.cancel(host, f.specs))
       }
     }
   }
@@ -135,20 +153,31 @@ export class PageForwards {
   cancelOnQuit(): void {
     for (const [host, st] of this.hosts)
       for (const f of st.forwards.values())
-        this.deps.masterOutlivingKoloft(host, ['-O', 'cancel', '-L', f.spec])
+        for (const spec of f.specs)
+          this.deps.masterOutlivingKoloft(host, ['-O', 'cancel', '-L', spec])
   }
 
   private async livePid(host: string): Promise<string | null> {
     return parseMasterPid((await this.deps.master(host, ['-O', 'check'])).stderr)
   }
 
+  private async cancel(host: string, specs: string[]): Promise<void> {
+    for (const spec of specs) await this.deps.master(host, ['-O', 'cancel', '-L', spec])
+  }
+
   private async cancelLeftovers(host: string, st: HostState, pid: string): Promise<void> {
     if (st.leftoversCleared) return
     st.leftoversCleared = true
     const saved = this.load(host)
-    if (saved?.pid === pid)
-      for (const spec of saved.specs) await this.deps.master(host, ['-O', 'cancel', '-L', spec])
+    if (saved?.pid === pid) await this.cancel(host, saved.specs)
     if (saved) this.save(host, st)
+  }
+
+  private forgetForwardsOfAnOldMaster(host: string, st: HostState, pid: string): void {
+    if (st.pid === pid) return
+    st.pid = pid
+    st.forwards.clear()
+    this.save(host, st)
   }
 
   // ADR-0046 PLATFORM§33
@@ -161,10 +190,7 @@ export class PageForwards {
     const pid = await this.livePid(host)
     if (!pid) return null
     await this.cancelLeftovers(host, st, pid)
-    if (st.pid !== pid) {
-      st.pid = pid
-      st.forwards.clear()
-    }
+    this.forgetForwardsOfAnOldMaster(host, st, pid)
     const f = st.forwards.get(machinePort) ?? (await this.add(host, st, machinePort))
     f?.pages.add(page)
     return f?.macPort ?? null
@@ -175,9 +201,9 @@ export class PageForwards {
       ? machinePort
       : await this.deps.anyFreeMacPort()
     for (let tries = 2; macPort !== null && tries > 0; tries--) {
-      const spec = pageForwardSpec(macPort, machinePort)
-      if ((await this.deps.master(host, ['-O', 'forward', '-L', spec])).code === 0) {
-        const f: Forward = { macPort, spec, pages: new Set() }
+      const specs = pageForwardSpecs(macPort, machinePort)
+      if (await this.forwardAll(host, specs)) {
+        const f: Forward = { macPort, specs, pages: new Set() }
         st.forwards.set(machinePort, f)
         this.save(host, st)
         return f
@@ -185,6 +211,15 @@ export class PageForwards {
       macPort = await this.deps.anyFreeMacPort()
     }
     return null
+  }
+
+  private async forwardAll(host: string, specs: string[]): Promise<boolean> {
+    for (const [i, spec] of specs.entries()) {
+      if ((await this.deps.master(host, ['-O', 'forward', '-L', spec])).code === 0) continue
+      await this.cancel(host, specs.slice(0, i))
+      return false
+    }
+    return true
   }
 
   private load(host: string): Saved | undefined {
@@ -200,7 +235,8 @@ export class PageForwards {
     try {
       if (!st.forwards.size || !st.pid) return fs.rmSync(file, { force: true })
       fs.mkdirSync(path.dirname(file), { recursive: true })
-      const saved: Saved = { pid: st.pid, specs: [...st.forwards.values()].map((f) => f.spec) }
+      const specs = [...st.forwards.values()].flatMap((f) => f.specs)
+      const saved: Saved = { pid: st.pid, specs }
       writeWholeBeforeVisible(file, JSON.stringify(saved))
     } catch {}
   }

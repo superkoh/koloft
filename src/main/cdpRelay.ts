@@ -17,6 +17,7 @@ export interface RelayDeps {
   close(sessionId: string, targetId: string): Promise<void>
   stage(sessionId: string, targetId: string): Promise<void>
   setAttached(sessionId: string, targetIds: string[]): void
+  cameThroughAForward(guestId: number, url: string): boolean
 }
 
 // PLATFORM§9
@@ -27,27 +28,25 @@ const NO_MAC_FILES_FOR_A_MACHINE =
   'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
 
 // ADR-0046
-function isTheMachinesOwnLocalhost(url: string): boolean {
-  return loopbackPortOf(url) !== null
+function showsTheMachinesOwnLocalhost(url: string, guestId: number | null): boolean {
+  return guestId !== null && !!deps?.cameThroughAForward(guestId, url)
 }
 
-function showsThisMac(url: string): boolean {
+function showsThisMac(url: string, guestId: number | null): boolean {
   const u = urlOrNull(url)
-  if (u?.protocol === 'view-source:') return showsThisMac(u.pathname)
+  if (u?.protocol === 'view-source:') return showsThisMac(u.pathname, guestId)
   return (
     u?.protocol === 'file:' ||
     machinePageOf(url) !== null ||
-    (namesThisMacsServer(url) && !isTheMachinesOwnLocalhost(url))
+    (namesThisMacsServer(url) && !showsTheMachinesOwnLocalhost(url, guestId))
   )
 }
 
-async function reachesTheMac(url: string): Promise<boolean> {
-  return !isTheMachinesOwnLocalhost(url) && (await reachesThisMacsServer(url))
-}
-
+// ADR-0046
 async function opensThisMac(url: string): Promise<boolean> {
   const u = urlOrNull(url)
-  return !u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol) || (await reachesTheMac(url))
+  if (!u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol)) return true
+  return loopbackPortOf(url) === null && (await reachesThisMacsServer(url))
 }
 
 async function reachesThisMac(method: string, params: unknown): Promise<boolean> {
@@ -129,7 +128,7 @@ const machineTabs = new Set<string>()
 const machineDrivenGuests = new Set<number>()
 
 function visibleTo(client: Client, list: RelayTarget[]): RelayTarget[] {
-  return asTargets(client.onMachine ? list.filter((t) => !showsThisMac(t.url)) : list)
+  return asTargets(client.onMachine ? list.filter((t) => !showsThisMac(t.url, t.guestId)) : list)
 }
 
 export function guestDrivenFromAnotherMachine(guestId: number): boolean {
@@ -273,7 +272,9 @@ function backendFor(client: Client): RelayBackend {
       const wc = guestOf(guestId)
       if (client.onMachine) fenceForGood(guestId)
       const showsTheMac = async (): Promise<boolean> =>
-        showsThisMac(wc.getURL()) || (await reachesTheMac(wc.getURL()))
+        showsThisMac(wc.getURL(), guestId) ||
+        (!showsTheMachinesOwnLocalhost(wc.getURL(), guestId) &&
+          (await reachesThisMacsServer(wc.getURL())))
       await fence(showsTheMac)
       let release: () => void
       try {

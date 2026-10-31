@@ -3763,7 +3763,7 @@ app.whenReady().then(() => {
     },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) => {
-      void pageForwards.clearLeftovers(host)
+      void pageForwards.checkMaster(host)
       void browserTunnels.sync(
         host,
         ptyTabIds()
@@ -4157,8 +4157,18 @@ function reportedOwner(guestId: number): Promise<string | null> {
   const known = guestOwners.get(guest)
   if (known) return Promise.resolve(known)
   return new Promise((resolve) => {
-    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), resolve])
-    setTimeout(() => resolve(guestOwners.get(guest) ?? null), A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
+    const timer = setTimeout(() => {
+      ownerWaiters.set(
+        guestId,
+        (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
+      )
+      resolve(guestOwners.get(guest) ?? null)
+    }, A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
+    const answer = (owner: string | null): void => {
+      clearTimeout(timer)
+      resolve(owner)
+    }
+    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), answer])
   })
 }
 
@@ -4482,6 +4492,10 @@ function relayDeps(): RelayDeps {
     setAttached: (sessionId, targetIds) => {
       const payload: BrowserCdpAttached = { sessionId, targetIds }
       sendToRenderer(CH.browser.cdpAttached, payload)
+    },
+    cameThroughAForward: (guestId, url) => {
+      const port = loopbackPortOf(url)
+      return port !== null && pageForwards.carries(guestId, port)
     }
   }
 }
@@ -4634,6 +4648,7 @@ async function loopbackOnTheMachine(
   const frame = FRAME_LOADS.has(details.resourceType)
   if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
   const macPort = await pageForwards.macPortFor(host, machinePort, guest, frame)
+  if (!webContents.fromId(guest)) pageForwards.pageGone(guest)
   if (macPort === null) return { cancel: true }
   const there = onMacPort(details.url, macPort)
   if (there === details.url) return {}
@@ -4736,10 +4751,12 @@ function setupBrowserPartition(): void {
     )
       return callback({ cancel: true })
     const guest = details.webContentsId
-    const machinePort = workspaceMgr?.remoteTargets().length ? loopbackPortOf(details.url) : null
-    if (guest === undefined || machinePort === null) return fenceRequest(details, callback)
-    void loopbackOnTheMachine(details, guest, machinePort).then((answer) =>
-      answer ? callback(answer) : fenceRequest(details, callback)
+    const machinePort = loopbackPortOf(details.url)
+    if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
+      return fenceRequest(details, callback)
+    void loopbackOnTheMachine(details, guest, machinePort).then(
+      (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+      () => callback({ cancel: true })
     )
   })
   // PLATFORM§13

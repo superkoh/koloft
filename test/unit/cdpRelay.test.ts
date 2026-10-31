@@ -93,6 +93,7 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } =
 
 const TAB = 'tab-1'
 const SESSION = 'sess-1'
+const GUEST_ON_A_FORWARD = 18
 
 interface Harness extends RelayDeps {
   session: string | null
@@ -113,7 +114,8 @@ function makeDeps(): Harness {
     })),
     close: vi.fn(async () => {}),
     stage: vi.fn(async () => {}),
-    setAttached: vi.fn()
+    setAttached: vi.fn(),
+    cameThroughAForward: vi.fn((guestId: number) => guestId === GUEST_ON_A_FORWARD)
   } as unknown as Harness
   return h
 }
@@ -407,7 +409,7 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
   })
 
-  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server, even before the strip has caught up', async () => {
+  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server — a localhost page counts as the machine’s only when it came through a forward — even before the strip has caught up', async () => {
     relay.relayEndpointOnMachine(TAB)
     fakeGuest(11)
     fakeGuest(13, { url: NOTES })
@@ -416,7 +418,13 @@ describe("a session on another machine never reaches this Mac's files or local s
       ...deps.strip,
       { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
       { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
-      { targetId: 'bt6', url: 'http://dev.localhost:3000/', title: 'dev server', guestId: 16 },
+      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 },
+      {
+        targetId: 'bt8',
+        url: 'http://localhost:5173/',
+        title: 'machine dev server',
+        guestId: GUEST_ON_A_FORWARD
+      },
       {
         targetId: 'bt7',
         url: machinePageUrl('devbox', '/home/u/report.html'),
@@ -430,7 +438,11 @@ describe("a session on another machine never reaches this Mac's files or local s
     const listed = (await c.cmd('Target.getTargets')).result as {
       targetInfos: { targetId: string; url: string }[]
     }
-    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a', 'http://x/before'])
+    expect(listed.targetInfos.map((t) => t.url)).toEqual([
+      'http://x/a',
+      'http://x/before',
+      'http://localhost:5173/'
+    ])
     const lagging = listed.targetInfos[1]?.targetId ?? ''
     expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(REFUSED)
 

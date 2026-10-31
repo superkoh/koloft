@@ -249,13 +249,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const panelWorkspace = useStore((s) =>
     ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
   )
-  const panelMachineHost = useStore(
-    (s) => s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote?.host
-  )
-  const panelMachineConnected = useStore(
-    (s) =>
-      !!s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote
-        ?.connected
+  const panelMachine = useStore(
+    (s) => s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote
   )
 
   // PLATFORM§9
@@ -1333,9 +1328,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           url={activeTab?.url ?? ''}
           workspace={panelWorkspace}
           machine={
-            panelMachineHost && loopbackPortOf(activeTab?.url ?? '') !== null
-              ? { host: panelMachineHost, connected: panelMachineConnected }
-              : null
+            panelMachine && loopbackPortOf(activeTab?.url ?? '') !== null ? panelMachine : null
           }
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
@@ -1564,7 +1557,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             sessionCold={sessionCold}
             live={!!activeTab && live.includes(activeTab.id)}
             agentLabel={BACKEND_LABEL[ownerBackend]}
-            machine={panelMachineHost ?? null}
+            machine={panelMachine?.host ?? null}
             onLoad={(t) => activate(t.id)}
             onReloadCrashed={(t) =>
               patchRuntime(t.id, {

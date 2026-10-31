@@ -174,7 +174,6 @@ export function loopbackPortOf(url: string): number | null {
 
 export function onMacPort(url: string, macPort: number): string {
   const u = new URL(url)
-  if (u.hostname === '[::1]') u.hostname = '127.0.0.1'
   u.port = String(macPort)
   return u.toString()
 }

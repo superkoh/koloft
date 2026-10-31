@@ -1627,7 +1627,8 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   (2026-10-30, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, reached
   directly, the master opened with Koloft's own ssh options; the e2e Docker ssh lab image;
   a scratch script.) Through a ProxyJump bastion the same holds: the forward carries the
-  page, a second forward on another Mac port runs beside it, and `-O cancel -L` with the
+  page, a second forward with the same Mac port bound as `[::1]:<mac port>:…` carries it on
+  the Mac's `::1` too, a forward on another Mac port runs beside them, and `-O cancel -L` with the
   exact spec closes the Mac port (refused on a fresh connection), while a connection
   already open through it keeps answering. (2026-10-31, same versions, e2e E-SSH-40.)
 - **How long "does the machine answer" (`ssh host true`) takes.** With the master up and

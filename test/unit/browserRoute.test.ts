@@ -268,10 +268,9 @@ describe("loopbackPortOf and onMacPort — a remote tab's localhost goes through
     expect(loopbackPortOf('file:///tmp/a.html')).toBeNull()
   })
 
-  it('moves a page to its Mac port and an [::1] address onto 127.0.0.1, which is where the forward listens', () => {
+  it('moves a page to its Mac port, and leaves it as it is when the Mac port is the same', () => {
     expect(onMacPort('http://localhost:5173/a?b=1', 61000)).toBe('http://localhost:61000/a?b=1')
-    expect(onMacPort('http://[::1]:5173/', 5173)).toBe('http://127.0.0.1:5173/')
-    expect(onMacPort('http://localhost:5173/', 5173)).toBe('http://localhost:5173/')
+    expect(onMacPort('ws://[::1]:5173/', 5173)).toBe('ws://[::1]:5173/')
   })
 })
 
