@@ -51,6 +51,7 @@ export interface TodoVerbDeps {
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
   workLeft(row: SessionRow, merged: MergedHeads): Promise<string[] | null>
+  deleting(row: SessionRow): boolean
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
   pulls(workspace: string): Promise<TodoPulls | null>
@@ -84,6 +85,7 @@ type WorktreeCheck =
   | { state: 'skipped' }
   | { state: 'failed' }
   | { state: 'noWorktree' }
+  | { state: 'deleting' }
   | { state: 'checked'; left: string[] }
 
 interface PullsOfRepo {
@@ -94,6 +96,7 @@ interface PullsOfRepo {
 const NOTHING_LEFT = 'nothing left in its worktree'
 const NO_WORKTREE = 'closing it deletes no worktree'
 const COULD_NOT_CHECK = 'Koloft could not check what is left in its worktree'
+const DELETING = 'Koloft is deleting its worktree'
 
 type SessionGroup = 'asking' | 'turnDone' | 'asleep' | 'workLeft' | 'closed'
 
@@ -126,18 +129,24 @@ function groupOf(c: Candidate, d: TabState): SessionGroup {
 function worktreeFacts(check: WorktreeCheck, group: SessionGroup): string[] {
   const openAndNotAsking = group === 'turnDone' || group === 'asleep'
   if (check.state === 'failed') return [COULD_NOT_CHECK]
+  if (check.state === 'deleting') return [DELETING]
   if (check.state === 'noWorktree') return openAndNotAsking ? [NO_WORKTREE] : []
   if (check.state === 'skipped') return []
   if (check.left.length) return [leftSummary(check.left)]
   return openAndNotAsking ? [NOTHING_LEFT] : []
 }
 
-async function checkWorktree(workLeft: () => Promise<string[] | null>): Promise<WorktreeCheck> {
+async function checkWorktree(
+  workLeft: () => Promise<string[] | null>,
+  deleting: () => boolean
+): Promise<WorktreeCheck> {
+  if (deleting()) return { state: 'deleting' }
   try {
     const left = await workLeft()
+    if (deleting()) return { state: 'deleting' }
     return left ? { state: 'checked', left } : { state: 'noWorktree' }
   } catch {
-    return { state: 'failed' }
+    return deleting() ? { state: 'deleting' } : { state: 'failed' }
   }
 }
 
@@ -326,9 +335,13 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
         placed,
         busy,
         branch: tree?.branch,
-        check: checkable
-          ? await checkWorktree(() => d.workLeft(placed.row, mergedIn(placed.workspace)))
-          : { state: 'skipped' }
+        check:
+          checkable || d.deleting(placed.row)
+            ? await checkWorktree(
+                () => d.workLeft(placed.row, mergedIn(placed.workspace)),
+                () => d.deleting(placed.row)
+              )
+            : { state: 'skipped' }
       }
     })
   ])
