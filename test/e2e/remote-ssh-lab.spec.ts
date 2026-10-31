@@ -78,6 +78,7 @@ import {
   FAKE_RESPONSES_PORT,
   installCurlOnTarget,
   installFakeCodexOnTarget,
+  installFakeMuseOnTarget,
   installRealMuseOnTheMachine,
   installLabSsh,
   startFakeResponsesOnTarget,
@@ -291,6 +292,21 @@ async function connectsListsAndReads(page: Page, alias: LabAlias, user: string):
   expect(await readme(page, alias, user)).toBe(README(user))
 }
 
+const MACHINES_THAT_ASK_TO_SIGN_IN: {
+  alias: LabAlias
+  user: string
+  asks: string
+  answer: string
+}[] = [
+  { alias: 'kt-pw', user: 'puser', asks: 'password:', answer: LAB_PASSWORD },
+  { alias: 'kt-newhost', user: 'kuser', asks: 'continue connecting', answer: 'yes' }
+]
+
+async function answerInTheTab(page: Page, prompt: string, answer: string): Promise<void> {
+  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
+  await runIn(page, centerTerm(page), answer)
+}
+
 async function newSessionAnsweringAtTheTab(
   page: Page,
   alias: LabAlias,
@@ -301,8 +317,7 @@ async function newSessionAnsweringAtTheTab(
   await openMenu(page, page.locator('.ws-head', { hasText: alias }))
   await page.locator('.menu .mi', { hasText: 'New session' }).click()
   await expect(rows).toHaveCount(1, { timeout: 30_000 })
-  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
-  await runIn(page, centerTerm(page), answer)
+  await answerInTheTab(page, prompt, answer)
   await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(1, { timeout: 90_000 })
 }
 
@@ -424,6 +439,57 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       )
       await newSessionAnsweringAtTheTab(page, 'kt-newhost', 'continue connecting', 'yes')
       await connectsListsAndReads(page, 'kt-newhost', 'kuser')
+    })
+  })
+
+  for (const agent of ['Codex', 'Muse'] as const)
+    test(`E-SSH-37 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
+      env
+    }) => {
+      seedSettings(env, { hintsOff: true })
+      installCodexSignedInForTheLab(env)
+      installMuse(env)
+      await withLab(
+        env,
+        async ({ page }) => {
+          for (const { alias, user, asks, answer } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+            await addMachine(page, alias, user)
+            await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+              timeout: BACKGROUND_CONNECT_MS
+            })
+            await newSessionInWith(page, alias, agent)
+            await answerInTheTab(page, asks, answer)
+            await expect(wsRows(page, alias)).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+            await connectsListsAndReads(page, alias, user)
+          }
+        },
+        (lab) => {
+          installFakeCodexOnTarget(lab)
+          installFakeMuseOnTarget(
+            lab,
+            MACHINES_THAT_ASK_TO_SIGN_IN.map((m) => m.user)
+          )
+        }
+      )
+    })
+
+  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installAgy(env)
+    await withLab(env, async ({ page }) => {
+      for (const { alias, user } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+        await addMachine(page, alias, user)
+        await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+          timeout: BACKGROUND_CONNECT_MS
+        })
+        await newSessionInWith(page, alias, 'Antigravity')
+        await expect(
+          page.locator('.toast-msg', { hasText: /Claude Code, Codex or Muse session there/ })
+        ).toBeVisible({ timeout: 30_000 })
+        await expect(wsRows(page, alias)).toHaveCount(0)
+      }
     })
   })
 
