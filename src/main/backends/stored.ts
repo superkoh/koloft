@@ -46,6 +46,7 @@ export function storedBackend(
     aliveTabFor: (key) => sessions.aliveTabFor(key),
     stop: (tabId, restarting) => sessions.stop(tabId, undefined, restarting),
     archive: (key) => sessions.archive(key),
+    adopt: (keys) => sessions.adopt(keys),
     transcriptExists: (key) => sessions.transcriptExists(key),
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),

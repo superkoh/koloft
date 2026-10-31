@@ -10,19 +10,20 @@ import {
   IconWebPage,
   type Icon
 } from '../../icons'
+import { useStore } from '../../store'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
 const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
   {
     Icon: IconFolder,
-    title: 'Claude and Codex sessions',
-    body: 'Pin a folder, start with your default CLI or choose another, or restore a session from history. Codex runs locally.',
+    title: 'Claude Code, Codex, Muse and Antigravity sessions',
+    body: 'Pin a folder, start with your default agent or choose another, or restore a session from history. On this Mac or on a machine over SSH.',
     where: '⇧⌘O · sidebar'
   },
   {
     Icon: IconNewWorktree,
     title: 'Worktree sessions',
-    body: 'Run Claude and Codex sessions in separate worktrees so they do not share working files.',
+    body: 'Run sessions in separate worktrees so they do not share working files.',
     where: '⇧⌘N'
   },
   {
@@ -52,7 +53,7 @@ const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
   {
     Icon: IconScheduled,
     title: 'Scheduled jobs',
-    body: 'Run a Claude or Codex task on a timer, in its own worktree when the folder is a git repo, with a run history.',
+    body: 'Run an agent’s task on a timer, in its own worktree when the folder is a git repo, with a run history.',
     where: 'workspace menu ▸ Scheduled jobs…'
   },
   {
@@ -64,7 +65,7 @@ const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
 ]
 
 const DIFFS: [string, string, string][] = [
-  ['Real Claude Code and Codex terminals', 'yes', 'yes'],
+  ['Real Claude Code, Codex, Muse and Antigravity terminals', 'yes', 'yes'],
   ['Session list and history per folder', 'no', 'yes'],
   ['Working / needs your OK / done, at a glance', 'no', 'for sessions Koloft started'],
   ['Files changed, with diff, beside the chat', 'git diff by hand', 'yes'],
@@ -75,6 +76,8 @@ const DIFFS: [string, string, string][] = [
 
 export function WelcomePane(): JSX.Element {
   const update = useSettingsUpdate()
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
 
   return (
     <>
@@ -119,10 +122,16 @@ export function WelcomePane(): JSX.Element {
 
       <div className="set-row">
         <div>
-          <button className="mini" onClick={() => update({ onboardingSeen: false })}>
+          <button
+            className="mini"
+            onClick={() => {
+              setSettingsOpen(false)
+              setWelcomeReplay(true)
+            }}
+          >
             Show welcome again
           </button>
-          <div className="field-hint">Shows the next time no workspace is pinned.</div>
+          <div className="field-hint">Your folders, sessions and accounts stay as they are.</div>
         </div>
         <button className="mini" onClick={() => update({ hintsSeen: [], hintsOff: false })}>
           Reset tips

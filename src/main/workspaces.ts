@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import type {
   BackendId,
   DiscoveredFolder,
+  FolderUse,
   LayoutV6,
   ProjectInfo,
   BackendSessionRow,
@@ -57,6 +58,8 @@ import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
+import { isUnderAnyRoot } from './browserSecurity'
+import { mergeUse } from '@shared/firstRun'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
@@ -90,10 +93,16 @@ export interface LiveSession {
 
 function addUse(into: Map<string, DiscoveredFolder>, at: string, use: DiscoveredFolder): void {
   const prev = into.get(at)
-  if (prev) {
-    prev.sessions += use.sessions
-    prev.mtime = Math.max(prev.mtime, use.mtime)
-  } else into.set(at, { path: at, sessions: use.sessions, mtime: use.mtime })
+  const agents = { ...prev?.agents }
+  for (const [agent, u] of Object.entries(use.agents) as [BackendId, FolderUse][])
+    agents[agent] = mergeUse(agents[agent], u)
+  into.set(at, { path: at, ...mergeUse(prev, use), agents })
+}
+
+const MAC_SCRATCH_ROOTS = ['/tmp', '/private/tmp', '/var/folders', '/private/var/folders']
+
+export function scratchRootsAround(home: string, tmpdir: string): string[] {
+  return [tmpdir, ...MAC_SCRATCH_ROOTS].filter((r) => !isUnderAnyRoot(home, [r]))
 }
 
 export interface WorkspaceManagerDeps {
@@ -123,6 +132,7 @@ export interface WorkspaceManagerDeps {
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
+  scratchRoots?: readonly string[]
   butlerFolder?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
@@ -234,6 +244,7 @@ export class WorkspaceManager {
   private panelTimer?: NodeJS.Timeout
   private scanning = false
   private rescanQueued = false
+  private scanWaiters: (() => void)[] = []
   private lastRunningKey = ''
   private lastLiveKey = ''
   private disposed = false
@@ -389,6 +400,7 @@ export class WorkspaceManager {
       if (!there[i]) continue
       const root = this.deps.projectInfo(use.path).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
+      if (isUnderAnyRoot(root, this.deps.scratchRoots ?? [])) continue
       addUse(byRoot, root, use)
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
@@ -403,18 +415,15 @@ export class WorkspaceManager {
       const files = await this.listJsonl(projects, slug, stats)
       const cwd = await this.readFirstCwd(projects, slug, files, stats)
       if (!cwd) continue
-      used.push({
-        path: cwd,
-        sessions: files.length,
-        mtime: Math.max(...files.map((f) => f.mtime))
-      })
+      const use = { sessions: files.length, mtime: Math.max(...files.map((f) => f.mtime)) }
+      used.push({ path: cwd, ...use, agents: { claude: use } })
     }
     return used
   }
 
   private isConductorFolder(dir: string): boolean {
     const root = this.deps.conductorsRoot
-    return !!root && (dir === root || dir.startsWith(root + path.sep))
+    return !!root && isUnderAnyRoot(dir, [root])
   }
 
   async worktrees(wsPath: string): Promise<WorktreeInfo[]> {
@@ -582,14 +591,19 @@ export class WorkspaceManager {
   }
 
   onSessionBound(sessionId: string): void {
-    if (!sessionId || this.layout.members.includes(sessionId)) return
+    this.adopt([sessionId])
+  }
+
+  adopt(sessionIds: string[]): void {
+    const fresh = [...new Set(sessionIds)].filter((id) => id && !this.layout.members.includes(id))
+    if (fresh.length === 0) return
+    const panels = Object.fromEntries(
+      fresh.map((id) => [id, { open: this.layout.workbench.defaultOpen, tabs: [] }])
+    )
     this.layout = {
       ...this.layout,
-      members: [...this.layout.members, sessionId],
-      panels: {
-        [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] },
-        ...this.layout.panels
-      }
+      members: [...this.layout.members, ...fresh],
+      panels: { ...panels, ...this.layout.panels }
     }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
@@ -669,6 +683,7 @@ export class WorkspaceManager {
     this.disposed = true
     this.flushPanelSave()
     if (this.timer) clearTimeout(this.timer)
+    for (const done of this.scanWaiters.splice(0)) done()
     for (const w of this.rootWatchers.values()) w.close()
     this.rootWatchers.clear()
     for (const w of this.bucketWatchers.values()) w.close()
@@ -723,6 +738,14 @@ export class WorkspaceManager {
     )
   }
 
+  whenScanned(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.scanWaiters.push(resolve)
+      this.scheduleRescan()
+    })
+  }
+
   private scheduleRescan(): void {
     if (this.disposed || this.timer) return
     this.timer = setTimeout(() => {
@@ -738,10 +761,12 @@ export class WorkspaceManager {
       return
     }
     this.scanning = true
+    const waiting = this.scanWaiters.splice(0)
     try {
       await this.doRescan()
     } finally {
       this.scanning = false
+      for (const done of waiting) done()
       if (this.rescanQueued) {
         this.rescanQueued = false
         this.scheduleRescan()

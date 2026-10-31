@@ -822,10 +822,14 @@ export interface ReleaseNotes {
   notes: string
 }
 
-export interface DiscoveredFolder {
-  path: string
+export interface FolderUse {
   sessions: number
   mtime: number
+}
+
+export interface DiscoveredFolder extends FolderUse {
+  path: string
+  agents: Partial<Record<BackendId, FolderUse>>
 }
 
 export interface WhatsNew {
@@ -1285,6 +1289,7 @@ export interface KoloftApi {
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
+    pinRecent(paths: string[]): Promise<void>
     createProject(parent: string, name: string): Promise<ProjectCreateResult>
   }
   assist: {

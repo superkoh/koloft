@@ -196,7 +196,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   linux-arm64 (`strings`, 2026-10-27: the same 33 names in the same order), and on
   2.1.312, darwin-arm64 and linux-arm64 (`strings`, 2026-10-28: the same 33 names in the
   same order), and on 2.1.314, darwin-arm64 and linux-arm64 (`strings`, 2026-10-30: the
-  same 33 names in the same order).
+  same 33 names in the same order), and on 2.1.316, darwin-arm64 and linux-arm64
+  (`strings`, 2026-10-31: the same 33 names in the same order, the same SessionEnd
+  reasons and SessionStart sources).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -1212,6 +1214,17 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   sets; `tengu_*` gains 45 and loses 12, the one named in this ledger being
   `tengu_sunny_locket` (§1, idle compaction); all 49 names `src/` uses or passes are
   still there.
+  Between 2.1.314 and 2.1.316 (`strings -n 6`, 2026-10-31, darwin-arm64, and
+  linux-arm64 2.1.316 against darwin-arm64 2.1.316): `ANTHROPIC_*` and `*_MODEL`
+  identical at 71 and 14 (counted by a whole-word match, so not comparable with the 77
+  above), the 87 lowercase `anthropic-*` header names and the 54 dated beta names
+  identical; `CLAUDE_CODE_*` gains 12 (among them `SUBAGENT_EFFORT`,
+  `DISABLE_ULTRATHINK`, `SESSION_BEGAN_AS_COPY`) and loses none, none of which `src/`
+  sets (Koloft drops every inherited `CLAUDE_CODE_*` before a launch, §9); `tengu_*`
+  gains 38 and loses 3, none of the 11 named in this ledger among them; the linux-arm64
+  build names the same, apart from a few names `strings` glued to the next byte; the 14
+  `CLAUDE_CODE_*`, `ANTHROPIC_*`, `DISABLE_*` and `CLAUDE_CONFIG_DIR` names `src/`
+  spells out are in both builds.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1607,7 +1620,7 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
-2.1.312 (2026-10-28) and 2.1.314 (2026-10-30).
+2.1.312 (2026-10-28), 2.1.314 (2026-10-30) and 2.1.316 (2026-10-31).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1975,7 +1988,9 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
   key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
-  reader parses the JSON and counts no keys. A daemon-hosted
+  reader parses the JSON and counts no keys. That 2.1.316 writes the same keys is read
+  from `strings` of the code that writes `<pid>.json` (2026-10-31), not from a run:
+  inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2174,6 +2189,30 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   between them claude was still running 20 s later, its footer back to "Press Ctrl-C
   again to exit"; with 0.3 s it exited. Measured 2026-10-29, CC 2.1.312, a python pty
   80×24 through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR` with the folder trusted.
+- **Enter strips invisible characters from the input box; on 2.1.293 and 2.1.314 that
+  Enter does not send, on 2.1.316 a prompt goes on the first Enter but a command still
+  waits.** The versions between were not run.
+  Text with a U+200B or a tag character (U+E0041) in it, typed in 128-character pieces
+  0.3 s apart and then one CR: on 2.1.293 and 2.1.314 the character was removed, a
+  notice `Removed 1 invisible character · review and press Enter to send` showed above
+  the box for a few seconds, the cleaned text stayed in the box, and only a second CR
+  sent it; on 2.1.316 the first CR sent the cleaned text and the notice read `Removed 1
+  invisible character from your prompt`. A short bracketed paste holding a U+200B
+  followed by typed text behaved the same way on each version. An emoji ZWJ sequence
+  (👨‍👩‍👧), `❤️` (U+FE0F) and `请只回复 OK 👍` were kept as they were and sent on the first
+  CR on all three. On 2.1.316 `/context` and `/cost` with a U+200B appended were held
+  the same way as before, and a second CR ran them. Measured 2026-10-31, a python pty
+  120×40 drawn through `pyte`, a scratch `HOME`, haiku, one run per case (two for U+200B
+  on 2.1.314 and 2.1.316, and for the tag character on 2.1.316). Read from the
+  binaries' `strings` the same day: the character set removed is the same in 2.1.314
+  and 2.1.316 (C0/C1 controls except tab and LF, U+200B–200F, U+2028–202E,
+  U+2060–206F, U+FE00–FE0F, U+FEFF, U+E0000–E0FFF and a few more), but a ZWJ between
+  two emoji, a U+FE0F after an emoji and the tag characters of the England, Scotland and
+  Wales flags are kept; 2.1.316 still holds text that starts with `/` or `!`, is one of
+  `exit`, `quit`, `:q`, `:q!`, `:wq` or `:wq!`, or had a text-direction character
+  removed. A prompt handed over as a launch argument and holding such a character is
+  cleaned and sent without review, or put back in the box for review when it starts
+  with `/`: read from `strings` only, inferred, not checked.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
@@ -2652,7 +2691,10 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `self-hosted-runner` helps byte-identical to 2.1.311's) and 2.1.314 (`2.1.314 (Claude
   Code)`, 2026-10-30; its `--help` differs from 2.1.312's only in the wording of
   `auto-mode`'s line, and the same seven subcommand helps are byte-identical; 2.1.313
-  has no changelog section and was not downloaded).
+  has no changelog section and was not downloaded) and 2.1.316 (`2.1.316 (Claude
+  Code)`, 2026-10-31; its `--help` and the same seven subcommand helps, plus `auth`,
+  `update` and `project`, byte-identical to 2.1.314's; 2.1.315 has no changelog
+  section and was not downloaded).
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2715,7 +2757,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   on 2026-10-28 npm `latest` and `next` and the download host's `latest` offered
   2.1.312, `stable` still 2.1.308; on 2026-10-30 npm `latest` and `next` and the
   download host's `latest` offered 2.1.314, npm's and the download host's `stable` still
-  2.1.308.
+  2.1.308; on 2026-10-31 npm `latest` and `next` and the download host's `latest`
+  offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2737,7 +2780,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-27 `2.1.311/linux-arm64/claude` with 293,658,808 bytes (ETag the file's MD5),
   and on 2026-10-28 `2.1.312/linux-arm64/claude` with 293,462,200 bytes (ETag the
   file's MD5, strings stamp `2.1.312` only), and on 2026-10-30
-  `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5) — each ran as
+  `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5), and on
+  2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
+  strings stamp `2.1.316`) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt

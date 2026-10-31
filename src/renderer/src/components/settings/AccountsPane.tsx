@@ -440,8 +440,7 @@ export function SignInDialog({
   failed?: SignInFailure
   onClose(): void
 }): JSX.Element {
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
+  const openSignInTab = useStore((s) => s.openSignInTab)
   const [name, setName] = useState(again ?? failed?.name ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -468,14 +467,7 @@ export function SignInDialog({
       )
       return
     }
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `${label} sign in: ${nm}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    openSignInTab(r, `${label} sign in: ${nm}`)
     onClose()
   }
 

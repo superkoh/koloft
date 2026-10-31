@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { execFileSync } from 'child_process'
-import { WorkspaceManager, type LiveSession } from '../../src/main/workspaces'
+import { WorkspaceManager, scratchRootsAround, type LiveSession } from '../../src/main/workspaces'
 import { projectInfoFor } from '../../src/main/projectInfo'
 import { encodeCwd } from '../../src/main/sessionTracker'
 import {
@@ -1002,6 +1002,18 @@ describe('WorkspaceManager: restore from history (D5)', () => {
     expect(latest(plain).workspace.hasHistory).toBe(false)
   })
 
+  it('a history session the welcome adopts joins the sidebar and leaves the restore list', async () => {
+    writeJsonl(repo, 'hist-a')
+    writeJsonl(repo, 'hist-b')
+    mgr.start()
+    await mgr.firstScan
+
+    mgr.adopt(['hist-a'])
+
+    expect(mgr.isMember('hist-a')).toBe(true)
+    expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['hist-b'])
+  })
+
   it('finds an unowned row for the resume planner (the sidebar never showed it)', async () => {
     writeJsonl(repo, 'ext-9')
     mgr.start()
@@ -1257,29 +1269,73 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     writeCwdlessJsonl(e, 'e-1')
 
     expect(await mgr.discover()).toEqual([
-      { path: a, sessions: 3, mtime: 9000_000 },
-      { path: c, sessions: 3, mtime: 700_000 }
+      {
+        path: a,
+        sessions: 3,
+        mtime: 9000_000,
+        agents: { claude: { sessions: 3, mtime: 9000_000 } }
+      },
+      { path: c, sessions: 3, mtime: 700_000, agents: { claude: { sessions: 3, mtime: 700_000 } } }
     ])
   })
 
-  it('offers the folders Codex, Muse and Antigravity used too, counted with Claude’s, a worktree under its repo even once removed', async () => {
+  it('offers the folders Codex, Muse and Antigravity used too, counted with Claude’s and per agent, a worktree under its repo even once removed', async () => {
     const a = path.join(root, 'a')
     fs.mkdirSync(path.join(a, '.git'), { recursive: true })
     writeJsonl(a, 'a-1')
     setMtime(a, 'a-1', 1000)
     const x = path.join(root, 'x')
     fs.mkdirSync(x)
+    const use = (mtime: number): { sessions: number; mtime: number } => ({ sessions: 1, mtime })
     mgr = remoteMgr({
       additionalFolders: async () => [
-        { path: a, sessions: 1, mtime: 3000_000 },
-        { path: path.join(a, '.claude', 'worktrees', 'gone'), sessions: 1, mtime: 500_000 },
-        { path: x, sessions: 1, mtime: 2000_000 }
+        { path: a, ...use(3000_000), agents: { codex: use(3000_000) } },
+        {
+          path: path.join(a, '.claude', 'worktrees', 'gone'),
+          ...use(500_000),
+          agents: { muse: use(500_000) }
+        },
+        { path: x, ...use(2000_000), agents: { agy: use(2000_000) } }
       ]
     })
 
     expect(await mgr.discover()).toEqual([
-      { path: a, sessions: 3, mtime: 3000_000 },
-      { path: x, sessions: 1, mtime: 2000_000 }
+      {
+        path: a,
+        sessions: 3,
+        mtime: 3000_000,
+        agents: { claude: use(1000_000), codex: use(3000_000), muse: use(500_000) }
+      },
+      { path: x, sessions: 1, mtime: 2000_000, agents: { agy: use(2000_000) } }
+    ])
+  })
+
+  it('never offers a scratch folder outside home (a /tmp run, an agent scratchpad)', async () => {
+    const scratch = path.join(root, 'tmp')
+    const run = path.join(scratch, 'run-1')
+    fs.mkdirSync(run, { recursive: true })
+    writeJsonl(run, 'run-1')
+    const keep = path.join(root, 'keep')
+    fs.mkdirSync(keep)
+    writeJsonl(keep, 'keep-1')
+    mgr = remoteMgr({ scratchRoots: [scratch] })
+
+    expect((await mgr.discover()).map((f) => f.path)).toEqual([keep])
+  })
+
+  it('a scratch root that holds home itself is not scratch, so a home made in a temp folder keeps its folders', () => {
+    expect(scratchRootsAround('/Users/me', '/var/folders/ab/T')).toEqual([
+      '/var/folders/ab/T',
+      '/tmp',
+      '/private/tmp',
+      '/var/folders',
+      '/private/var/folders'
+    ])
+    expect(scratchRootsAround('/private/var/folders/ab/T/home', '/var/folders/ab/T')).toEqual([
+      '/var/folders/ab/T',
+      '/tmp',
+      '/private/tmp',
+      '/var/folders'
     ])
   })
 

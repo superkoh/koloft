@@ -63,7 +63,7 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
-import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
+import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
@@ -242,7 +242,8 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, type LiveSession } from './workspaces'
+import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
   sanitizeSessionWorkbench,
@@ -2025,6 +2026,7 @@ interface LoginWatch {
   startedAt: number
   sawUrl: boolean
   done: boolean
+  installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
@@ -2043,6 +2045,19 @@ function sendLoginProgress(p: LoginProgress): void {
 function feedLoginWatcher(tabId: string, data: string): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
+  if (w.installing) {
+    const seen = w.installing.carry + data
+    const rest = afterOutputStart(seen)
+    if (rest === null) {
+      w.installing.carry = outputStartCarry(seen)
+      w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
+      return
+    }
+    w.installing = undefined
+    w.startedAt = Date.now()
+    w.buf = ''
+    data = rest
+  }
   if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
     failLogin(tabId, 'Sign-in timed out')
     return
@@ -2089,7 +2104,7 @@ function cancelGuidedLogin(tabId: string): void {
   } catch {}
 }
 
-function startGuidedLogin(name: string): string {
+function startGuidedLogin(name: string, installFirst: boolean): string {
   const handle = ptyMgr.create({
     kind: 'shell',
     koloftShim: PLAIN_KOLOFT_SHIM,
@@ -2098,10 +2113,24 @@ function startGuidedLogin(name: string): string {
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
     rows: 50,
     setupCommand: setupLine(),
-    launchCommand: 'claude setup-token'
+    launchCommand: installFirst
+      ? installThen(
+          'claude',
+          (claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,
+          process.env.KOLOFT_TEST_TOOL_INSTALLER
+        )
+      : 'claude setup-token'
   })
-  loginWatchers.set(handle.id, { name, buf: '', startedAt: Date.now(), sawUrl: false, done: false })
+  loginWatchers.set(handle.id, {
+    name,
+    buf: '',
+    startedAt: Date.now(),
+    sawUrl: false,
+    done: false,
+    ...(installFirst && { installing: { carry: '' } })
+  })
   loginPtys.add(handle.id)
+  if (installFirst) toolInstallPtys.add(handle.id)
   sendLoginProgress({ phase: 'starting', name })
   return handle.id
 }
@@ -3090,7 +3119,13 @@ app.whenReady().then(() => {
       flowGates.delete(e.id)
       return
     }
-    if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
+    if (loginWatchers.has(e.id))
+      failLogin(
+        e.id,
+        loginWatchers.get(e.id)?.installing
+          ? 'Installing Claude Code failed'
+          : 'setup-token exited without printing a token'
+      )
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
@@ -3392,6 +3427,7 @@ app.whenReady().then(() => {
     hiddenRow: (id) => !!butler?.isButlerSession(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
@@ -5730,15 +5766,17 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
         : 'unknown'
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
+    claudeBackend.forgetAvailability()
+    const installFirst = !(await claudeBackend.availability()).available
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name)
+    startGuidedLogin(name, installFirst)
     return 'ok'
   })
   ipcMain.handle(
@@ -5783,10 +5821,36 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle(CH.workspace.add, (_e, p: string) => {
+  const historyPartlyUnread = (id: BackendId, error: unknown): void => {
+    sendToRenderer(
+      CH.cron.toast,
+      `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+    )
+  }
+  const pinWorkspace = (p: string): WorkspaceAddResult | undefined => {
     const r = addWorkspacePath(p)
     if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
+  }
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => pinWorkspace(p))
+  ipcMain.handle(CH.workspace.pinRecent, async (_e, paths: unknown) => {
+    if (!workspaceMgr || !Array.isArray(paths)) return
+    const pinned = paths.flatMap((p) => {
+      const r = typeof p === 'string' ? pinWorkspace(p) : undefined
+      return r && 'path' in r ? [r.path] : []
+    })
+    await workspaceMgr.whenScanned()
+    const now = Date.now()
+    const unread = new Map<BackendId, unknown>()
+    const lists = await Promise.allSettled(
+      pinned.map((p) => sessionBackends.historyRows(p, (id, error) => unread.set(id, error)))
+    )
+    for (const [id, error] of unread) historyPartlyUnread(id, error)
+    sessionBackends.adopt(
+      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
+    )
+    await workspaceMgr.whenScanned()
+    if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
@@ -6004,12 +6068,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, (id, error) =>
-      sendToRenderer(
-        CH.cron.toast,
-        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
-      )
-    )
+    sessionBackends.historyRows(p, historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({

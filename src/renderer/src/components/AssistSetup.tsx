@@ -24,19 +24,10 @@ export const ASSIST_COST_LINE =
   'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
 
 function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
+  const openSignInTab = useStore((s) => s.openSignInTab)
   const install = async (): Promise<void> => {
     const r = await window.api.sessions.installTool(backend)
-    if (!r) return
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `Install ${BACKEND_LABEL[backend]}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    if (r) openSignInTab(r, `Install ${BACKEND_LABEL[backend]}`)
   }
   return (
     <button className="choice" onClick={() => void install()}>

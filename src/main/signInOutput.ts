@@ -8,6 +8,15 @@ const CONTROL_BUT_TAB = /[\x00-\x08\x0b-\x1f\x7f]/g
 const KEPT_OUTPUT_MAX = 8192
 const TAIL_LINES = 8
 
+export function afterOutputStart(seen: string): string | null {
+  const at = seen.indexOf(OUTPUT_START_SEEN)
+  return at < 0 ? null : seen.slice(at + OUTPUT_START_SEEN.length)
+}
+
+export function outputStartCarry(seen: string): string {
+  return seen.slice(1 - OUTPUT_START_SEEN.length)
+}
+
 export class SignInOutput {
   private started = false
   private buf = ''
@@ -15,14 +24,14 @@ export class SignInOutput {
   feed(data: string): void {
     if (!this.started) {
       const seen = this.buf + data
-      const at = seen.indexOf(OUTPUT_START_SEEN)
-      if (at < 0) {
-        this.buf = seen.slice(1 - OUTPUT_START_SEEN.length)
+      const rest = afterOutputStart(seen)
+      if (rest === null) {
+        this.buf = outputStartCarry(seen)
         return
       }
       this.started = true
       this.buf = ''
-      data = seen.slice(at + OUTPUT_START_SEEN.length)
+      data = rest
     }
     this.buf = (this.buf + data).slice(-KEPT_OUTPUT_MAX)
   }

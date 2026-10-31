@@ -97,7 +97,7 @@ export function setupE2EEnv(): E2EEnv {
   fs.writeFileSync(
     path.join(userData, 'settings.json'),
     JSON.stringify({
-      onboardingSeen: false,
+      onboardingSeen: true,
       accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
       assist: { on: true, backend: 'claude' },
       skipPermissionsAgreed: true

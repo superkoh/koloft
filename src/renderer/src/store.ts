@@ -122,7 +122,7 @@ interface AppState {
   settingsPane: SettingsPaneId | null
   settingsFocus: SettingsFocus
   welcomeActive: boolean
-  onboardingStep: number
+  welcomeReplay: boolean
   accounts: AccountView[] | null
   signIn: { tabId: string; backToSettings: boolean } | null
   accountLogin: LoginFlowState | null
@@ -211,9 +211,10 @@ interface AppState {
   gitAccountsMachine: string | undefined
   openGitAccounts: (focus?: 'git-token', machine?: string) => void
   setWelcomeActive: (on: boolean) => void
-  setOnboardingStep: (step: number) => void
+  setWelcomeReplay: (on: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
+  openSignInTab: (tab: { tabId: string; cwd: string }, title: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -648,7 +649,7 @@ export const useStore = create<AppState>((set, get) => ({
   settingsFocus: null,
   gitAccountsMachine: undefined,
   welcomeActive: false,
-  onboardingStep: 1,
+  welcomeReplay: false,
   accounts: null,
   signIn: null,
   accountLogin: null,
@@ -1039,13 +1040,17 @@ export const useStore = create<AppState>((set, get) => ({
       settingsOpen: true
     }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
-  setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
+  setWelcomeReplay: (welcomeReplay) => set({ welcomeReplay }),
   setAccounts: (accounts) => set({ accounts }),
   showSignInTab: (tabId) =>
     set((s) => ({
       signIn: { tabId, backToSettings: s.settingsOpen },
       settingsOpen: false
     })),
+  openSignInTab: ({ tabId, cwd }, title) => {
+    get().showSignInTab(tabId)
+    get().addTab({ id: tabId, kind: 'shell', title, cwd, alive: true })
+  },
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),

@@ -50,18 +50,18 @@ function ownInstalls(): Record<string, string> {
 }
 
 function welcome(page: Page): Locator {
-  return page.locator('.w-empty.onboarding')
+  return page.locator('.wl')
 }
 
 function card(page: Page, title: string): Locator {
   return welcome(page)
-    .locator('.ob-choices .choice')
-    .filter({ has: page.locator('.choice-t', { hasText: new RegExp(`^${title}$`) }) })
+    .locator('.wl-agent')
+    .filter({ has: page.locator('.wl-agent-name', { hasText: new RegExp(`^${title}$`) }) })
 }
 
 async function installThrough(page: Page, title: string): Promise<void> {
-  await card(page, title).click()
-  await expect(welcome(page)).toHaveCount(0, { timeout: 20_000 })
+  await card(page, title).locator('button', { hasText: 'Install' }).click()
+  await expect(page.locator('.wl-aside')).toBeVisible({ timeout: 20_000 })
   await expect.poll(() => termIds(page), { timeout: 20_000 }).toHaveLength(1)
   await snap(page, `REAL-INSTALL-${title}-tab`)
   await expect(welcome(page)).toBeVisible({ timeout: OFFICIAL_INSTALL_MS })
@@ -80,40 +80,23 @@ test('REAL-INSTALL: the welcome installs Codex, then Claude Code, with the offic
   try {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
-    await expect(welcome(page)).toBeVisible({ timeout: 20_000 })
-    await welcome(page).locator('.btn-primary').click()
-    await expect(welcome(page).locator('.disc-row')).not.toHaveCount(0, { timeout: 20_000 })
-    await welcome(page).locator('.btn-primary').click()
-    await expect(welcome(page).locator('.eyebrow')).toHaveText('Welcome · 3 of 4', {
-      timeout: 20_000
-    })
+    await expect(welcome(page)).toHaveAttribute('data-step', '1', { timeout: 20_000 })
     await expect(card(page, 'Codex')).toContainText('Not on this Mac', { timeout: 30_000 })
-    await expect(card(page, 'Claude')).toContainText('Not on this Mac')
-    await welcome(page).locator('.btn-primary').click()
-    await expect(welcome(page).locator('.eyebrow')).toHaveText('Welcome · 4 of 4')
-    const primary = welcome(page).locator('.btn-primary')
-    await expect(primary).toHaveText('Check again', { timeout: 30_000 })
-    await primary.click()
-    await expect(primary).toHaveText('Check again', { timeout: 30_000 })
-    await snap(page, 'REAL-INSTALL-1-step4-nothing')
+    await expect(card(page, 'Claude Code')).toContainText('Not on this Mac')
+    await snap(page, 'REAL-INSTALL-1-nothing')
 
     await installThrough(page, 'Codex')
-    await expect(welcome(page).locator('.eyebrow')).toHaveText('Welcome · 4 of 4')
-    await expect(primary).toHaveText('＋ Start first session', { timeout: 30_000 })
-    await snap(page, 'REAL-INSTALL-2-step4-codex-found')
+    await expect(card(page, 'Codex')).toHaveClass(/\bready\b/, { timeout: 30_000 })
+    await snap(page, 'REAL-INSTALL-2-codex-found')
     expect(fs.existsSync(path.join(env.home, '.local', 'bin', 'codex'))).toBe(true)
     expect(fs.existsSync(path.join(env.home, '.codex', 'packages', 'standalone', 'current'))).toBe(
       true
     )
 
-    await welcome(page).locator('.ob-back').click()
-    await expect(welcome(page).locator('.eyebrow')).toHaveText('Welcome · 3 of 4')
-    await expect(card(page, 'Codex')).not.toContainText('Not on this Mac', { timeout: 30_000 })
-    await expect(card(page, 'Claude')).toContainText('Not on this Mac')
-    await installThrough(page, 'Claude')
-    await expect(welcome(page).locator('.eyebrow')).toHaveText('Welcome · 3 of 4')
-    await expect(card(page, 'Claude')).not.toContainText('Not on this Mac', { timeout: 30_000 })
-    await snap(page, 'REAL-INSTALL-3-step3-both-installed')
+    await expect(card(page, 'Claude Code')).toContainText('Not on this Mac')
+    await installThrough(page, 'Claude Code')
+    await expect(card(page, 'Claude Code')).toHaveClass(/\bready\b/, { timeout: 30_000 })
+    await snap(page, 'REAL-INSTALL-3-both-installed')
     expect(fs.existsSync(path.join(env.home, '.local', 'bin', 'claude'))).toBe(true)
 
     const found = await page.evaluate(() => window.api.sessions.backends(true))
