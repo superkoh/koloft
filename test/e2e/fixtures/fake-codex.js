@@ -86,6 +86,20 @@ if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 }
 
+if (argv[0] === 'login' && argv[1] === '--with-api-key') {
+  const key = fs.readFileSync(0, 'utf8').trim()
+  if (flag('fake-codex-key-login-fails')) {
+    console.error('Error: A default keychain could not be found')
+    process.exit(1)
+  }
+  fs.writeFileSync(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })
+  )
+  console.log('Successfully logged in')
+  process.exit(0)
+}
+
 if (argv[0] === 'login') {
   const usedPercent = Number(read('fake-codex-login-used')) || 30
   fs.writeFileSync(path.join(codexHome, 'auth.json'), JSON.stringify({ usedPercent }))
@@ -653,16 +667,28 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         return
       }
       if (method === 'account/read') {
+        const auth = signIn()
+        append('fake-codex-account-reads.jsonl', { codexHome })
         result(id, {
-          account: signIn()
-            ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
-            : null,
+          account: !auth
+            ? null
+            : auth.OPENAI_API_KEY
+              ? { type: 'apiKey' }
+              : { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' },
           requiresOpenaiAuth: false
         })
         return
       }
       if (method === 'account/rateLimits/read') {
         const auth = signIn()
+        // CODEX§15
+        if (auth?.OPENAI_API_KEY) {
+          emit({
+            id,
+            error: { code: -32600, message: 'chatgpt authentication required to read rate limits' }
+          })
+          return
+        }
         const now = Math.floor(Date.now() / 1000)
         result(id, {
           rateLimits:
@@ -735,7 +761,8 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         append('fake-codex-logins.jsonl', {
           type: p.type,
           accessToken: p.accessToken ?? null,
-          accountId: p.chatgptAccountId ?? null
+          accountId: p.chatgptAccountId ?? null,
+          ...(p.apiKey && { apiKey: p.apiKey })
         })
         loginFromTheClient = { type: 'chatgpt', usedPercent: 10 }
         result(id, {})

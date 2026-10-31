@@ -93,6 +93,7 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
+import { pipeSecretTo } from './secretOnStdin'
 import {
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
@@ -490,12 +491,17 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
+  private async binaryOrThrow(): Promise<string> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    return this.binary!
+  }
+
   private async withRpc<T>(
     home: string | undefined,
     use: (rpc: CodexRpc) => Promise<T>
   ): Promise<T> {
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
+    await this.binaryOrThrow()
     try {
       return await this.sideServers.ask(home, use)
     } catch (error) {
@@ -546,12 +552,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  async readAccount(home: string): Promise<{ signedIn: boolean; apiKey?: true; limits?: unknown }> {
     return this.withRpc(home, async (rpc) => {
       const account = record(await rpc.request('account/read', {}))
       if (!account.account) return { signedIn: false }
+      if (record(account.account).type === 'apiKey') return { signedIn: true, apiKey: true }
       return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
     })
+  }
+
+  // CODEX§15
+  async storeApiKey(home: string, key: string): Promise<void> {
+    const binary = await this.binaryOrThrow()
+    await pipeSecretTo(binary, ['login', '--with-api-key'], this.envFor(home), key)
+    await this.rereadSignIn(home)
   }
 
   // CODEX§15
