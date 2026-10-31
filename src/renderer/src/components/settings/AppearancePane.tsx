@@ -31,7 +31,7 @@ export function AppearancePane(): JSX.Element {
     <>
       <div className="set-ph">
         <h3>Appearance</h3>
-        <p>Terminal fonts, and how Claude sessions present themselves.</p>
+        <p>Terminal fonts, and how sessions present themselves.</p>
       </div>
 
       <div className="set-grp">Terminal font</div>

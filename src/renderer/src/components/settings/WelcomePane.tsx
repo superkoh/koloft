@@ -34,7 +34,7 @@ const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
   },
   {
     Icon: IconWebPage,
-    title: 'Claude drives your browser',
+    title: 'Your agent drives your browser',
     body: "Playwright tools use Koloft's tabs, with your logins. One switch turns it off.",
     where: 'Settings ▸ Extensions'
   },
@@ -70,7 +70,7 @@ const DIFFS: [string, string, string][] = [
   ['Working / needs your OK / done, at a glance', 'no', 'for sessions Koloft started'],
   ['Files changed, with diff, beside the chat', 'git diff by hand', 'yes'],
   ['Several accounts, auto-balanced', 'no', 'yes'],
-  ["Claude drives a browser you're logged into", 'no', 'yes, Playwright tools'],
+  ["Your agent drives a browser you're logged into", 'no', 'yes, Playwright tools'],
   ['Keep using a plain terminal any time', 'yes', 'yes']
 ]
 

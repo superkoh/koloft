@@ -852,6 +852,15 @@ only downloaded the public release.
   sends too.
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
+- A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
+  `first line`, LF, `second line` (one write each, 0.3 s apart) showed as two lines
+  in the box and the fake Gemini server got no call in the next 2 s; a CR then sent
+  them as one prompt, `<USER_REQUEST>\nfirst line\nsecond line\n</USER_REQUEST>`.
+- Esc during a turn stops it: with the model's answer held back, the footer read "esc to
+  cancel"; one Esc turned the turn into "⎿ Interrupted · What should Antigravity CLI do
+  instead?" and an empty prompt, and the answer that came 25 s later drew nothing.
+  Both measured 2026-10-31, agy 1.4.12, Linux arm64, Docker `--network none`, tmux 3.3a,
+  the API-key route against a fake Gemini server. macOS: not probed.
 
 ## §16 The local Connect API
 
