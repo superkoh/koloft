@@ -109,9 +109,7 @@ test.describe('Pick an element in a Workbench web tab and paste it into the sess
     page,
     env
   }) => {
-    const picks = path.join(env.userData, 'element-picks')
-    fs.rmSync(picks, { recursive: true, force: true })
-    fs.writeFileSync(picks, 'a file where the picks folder should be')
+    fs.writeFileSync(path.join(env.userData, 'element-picks'), 'not a folder')
     const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
 
     await startPick(page)
