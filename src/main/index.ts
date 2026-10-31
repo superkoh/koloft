@@ -6263,7 +6263,15 @@ function registerIpc(): void {
           machine
             ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
             : savePickOnThisMac(picked.png)
-        ).catch(() => null)
+        ).catch((error) => {
+          sendToRenderer(
+            CH.cron.toast,
+            machine
+              ? `The picture of the element could not be copied to ${machine}: ${error}`
+              : `The picture of the element could not be saved: ${error}`
+          )
+          return null
+        })
       : null
     return pickText(picked, picture)
   })

@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 import type { Browser, ElectronApplication, Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
@@ -101,6 +102,29 @@ test.describe('Pick an element in a Workbench web tab and paste it into the sess
     await expect(button).toHaveAttribute('aria-pressed', 'false')
     await runIn(page, centerTerm(page), 'back to work')
     await expect(button).toBeEnabled({ timeout: 30_000 })
+  })
+
+  test('BP-09: a picture that cannot be saved says so in a toast, and the pick still pastes, without the picture', async ({
+    app,
+    page,
+    env
+  }) => {
+    const picks = path.join(env.userData, 'element-picks')
+    fs.rmSync(picks, { recursive: true, force: true })
+    fs.writeFileSync(picks, 'a file where the picks folder should be')
+    const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+
+    await startPick(page)
+    await clickPicked(page, guest, '#buy')
+    await expect(page.locator('.toast')).toContainText(
+      'The picture of the element could not be saved:',
+      { timeout: 10_000 }
+    )
+    await typeAfterThePick(page, ' BP-09')
+
+    const prompt = await onePromptWith('BP-09')
+    expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+    expect(picturePath(prompt)).toBe('')
   })
 
   test('BP-02: Esc, the button again or a click outside the page stops picking and pastes nothing; the next pick pastes once', async ({
