@@ -26,7 +26,6 @@ export class UsageMeter {
   private costUsd = 0
   private unknownModel = false
   private model?: string
-  private ccVersion?: string
   private ctxTokens?: number
   private today = { dayKey: '', cost: 0 }
 
@@ -77,7 +76,6 @@ export class UsageMeter {
     if (updateContext) {
       if (model) this.model = model
       this.ctxTokens = line.inTok + line.cacheReadTok + line.cacheWriteTok
-      if (typeof obj.version === 'string' && obj.version) this.ccVersion = obj.version
     }
   }
 
@@ -93,7 +91,6 @@ export class UsageMeter {
       todayCostUsd: hasToday ? this.today.cost : undefined,
       todayDayKey: hasToday ? this.today.dayKey : undefined,
       model: this.model,
-      ccVersion: this.ccVersion,
       ctxTokens: this.ctxTokens,
       ctxPct
     }

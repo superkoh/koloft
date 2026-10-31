@@ -533,10 +533,12 @@ export class GitFreshnessEngine {
     if (this.stopped) return Promise.resolve(null)
     const inflight = this.inflight.get(wsPath)
     if (inflight) return inflight
+    const runner = this.deps.runner(wsPath)
+    if (!runner) return Promise.resolve(this.cache.get(wsPath) ?? null)
     const attemptAt = this.now()
     this.attemptedAt.set(wsPath, attemptAt)
     const p = (async () => {
-      const next = await this.measure(this.deps.runner(wsPath), wsPath, true, attemptAt)
+      const next = await this.measure(runner, wsPath, true, attemptAt)
       if (!next || next.state === 'error') {
         const streak = (this.errors.get(wsPath) ?? 0) + 1
         this.errors.set(wsPath, streak)

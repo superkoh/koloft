@@ -4,7 +4,7 @@ import { shq } from '@shared/shellQuote'
 import { AGENT_GUIDE } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
-import { NEWID_FN } from './openShimScript'
+import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
 
@@ -32,7 +32,7 @@ export const OWNER_TYPES_A_SECRET_WITHIN_MS = 9 * 60_000
 const SECRET_REPLY_OUTLIVES_THE_ASK_MS = 60_000
 const PAGE_PICTURES_REACH_DISCORD_WITHIN_MS = 10 * 60_000
 
-const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
+const body = (waitsMs: number, pollMs = SHIM_POLL_MS, afterWrite = ''): string => `
 ${NEWID_FN}
 id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
@@ -48,7 +48,7 @@ if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr
   echo "$unwritable" >&2
   exit 1
 fi
-waits=0
+${afterWrite}waits=0
 limit=${waitsMs / pollMs}
 [ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
 [ "$1" = discord ] && [ "$2" = shot ] && limit=${PAGE_PICTURES_REACH_DISCORD_WITHIN_MS / pollMs}
@@ -89,8 +89,13 @@ mkdir -p "$dir" 2>/dev/null
 tm=""
 [ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
+[ -n "$${NO_REPLY_ENV}" ] && tabfield="$tabfield\\"reply\\":false,"
 unwritable="${COULD_NOT_REACH_KOLOFT}"
-${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
+${body(
+  REMOTE_AGENT_SHIM_WAITS_MS,
+  REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS,
+  `[ -n "$${NO_REPLY_ENV}" ] && { trap - EXIT; exit 0; }\n`
+)}`
 
 const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
 

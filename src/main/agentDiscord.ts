@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import type { ConductorSaveResult } from '@shared/types'
-import { routeFor, schemeOf } from '@shared/browserRoute'
+import { machinePageOf, routeFor, schemeOf } from '@shared/browserRoute'
 import {
   answered,
   EXIT_USAGE,
@@ -68,7 +68,7 @@ async function send(
 
 function pageUrl(target: string, cwd: string): string | undefined {
   const route = routeFor(schemeOf(target) ? target : path.resolve(cwd, target), 'agent')
-  if (route.dest !== 'browser') return undefined
+  if (route.dest !== 'browser' || machinePageOf(route.target)) return undefined
   if (schemeOf(route.target) !== 'file:') return route.target
   return fs.statSync(fileURLToPath(route.target), { throwIfNoEntry: false })?.isFile()
     ? route.target

@@ -42,6 +42,9 @@ export function remotePtsFile(tabId: string): string {
   return `${REMOTE_HOME}/tabs/${tabId}.pts`
 }
 export const REMOTE_TABS_DIR = `${REMOTE_HOME}/tabs`
+export function remoteShellPidFile(tabId: string): string {
+  return `${REMOTE_TABS_DIR}/${tabId}.shell`
+}
 export function remoteBrowserAddressFile(tabId: string): string {
   return `${REMOTE_TABS_DIR}/${tabId}.cdp`
 }

@@ -1167,7 +1167,7 @@ describe('SessionTracker — per-session usage', () => {
     cwd: o.cwd
   })
 
-  it('captures the CLI version and the hook-reported account (info-card metadata)', async () => {
+  it('captures the hook-reported account (info-card metadata)', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabUM', cwd)
@@ -1181,12 +1181,10 @@ describe('SessionTracker — per-session usage', () => {
       cr: 0,
       cwd
     })
-    rec.version = '2.0.0-test'
     const file = writeJsonl(cwd, SID, [rec])
     tracker.bindSession('tabUM', file, SID, cwd, 'acct-x')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabUM' && !!x.usage)
-    expect(s.usage!.ccVersion).toBe('2.0.0-test')
     expect(s.account).toBe('acct-x')
   })
 

@@ -85,6 +85,15 @@ exit 0
 `
 }
 
+export const NO_REPLY_ENV = 'KOLOFT_NO_REPLY'
+
+export const REMOTE_OPEN_SHIM = `${OPEN_SHIM_HEAD}
+[ -n "$KOLOFT_TAB_ID" ] || passthrough "$@"
+${OPEN_SHIM_TARGET}
+${NO_REPLY_ENV}=1 "$self_dir/koloft" open "$abs$url" >/dev/null 2>&1 || passthrough "$@"
+exit 0
+`
+
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
 
 // PLATFORM§2

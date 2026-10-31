@@ -745,7 +745,6 @@ export interface SessionUsage {
   todayCostUsd?: number
   todayDayKey?: string
   model?: string
-  ccVersion?: string
   ctxTokens?: number
   ctxPct?: number
 }
@@ -767,7 +766,6 @@ export interface SessionSource {
 }
 
 export interface BackendSessionInfo {
-  cliVersion?: string
   background?: BackgroundItem[]
   nativeSessionId?: string
   tabId: string
@@ -879,7 +877,7 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+export type GithubTarget = 'repo' | 'issues' | 'pulls' | 'pr' | 'compare'
 
 export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
 
@@ -1048,6 +1046,7 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
+  accountIssue?: string
 }
 
 export interface UnexpectedExitScreen {
@@ -1515,6 +1514,7 @@ export interface SpawnedTab {
   title: string
   jobId?: string
   sessionId?: string
+  launch?: CreateTabOptions
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {
@@ -1523,10 +1523,8 @@ export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'wait
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }
-  | {
-      ok: false
-      reason: 'skipped' | 'failed' | 'folder-missing' | 'no-account' | 'not-ready' | 'unknown-job'
-    }
+  | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
+  | { ok: false; reason: 'no-account'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 
@@ -1589,6 +1587,7 @@ export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
   resident?: string[]
+  workspacePanels?: Record<string, SessionWorkbenchState>
 }
 
 // CC§2

@@ -1,6 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
-import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
+import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
 import {
   ENSURE_AGY_MINIMUM_FN,
   ENSURE_CLAUDE_MINIMUM_FN,
@@ -309,6 +309,16 @@ const STAMP_LINE = 'stamp '
 const TRANSCRIPTS_LINE = 'transcripts '
 const HOOKS_LINE = 'hooks '
 const EXTRA_LINE = 'extra '
+const SHELL_LINE = 'shell '
+// PLATFORM§37
+const EACH_SHELLS_FOREGROUND_AND_FOLDER =
+  `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +
+  `[ -n "$p" ] && printf '%s%s\\t%s\\t%s\\n' '${SHELL_LINE}' "$1" ` +
+  '"$(ps -o comm= -p $(ps -o tpgid= -p "$p" 2>/dev/null) 2>/dev/null)" ' +
+  `"$(if [ -d /proc ]; then readlink "/proc/$p/cwd"; else lsof -a -d cwd -p "$p" -Fn | sed -n 's/^n//p'; fi 2>/dev/null)"; ` +
+  'shift; k=$((k - 1)); done'
+// PLATFORM§37
+const A_REMOVED_FOLDER_ON_LINUX = ' (deleted)'
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
@@ -322,7 +332,8 @@ export function heartbeatCmd(
   paths: string[],
   watched: string[] = [],
   projectSlugs: string[] = [],
-  extraDirs: string[] = []
+  extraDirs: string[] = [],
+  shellTabs: string[] = []
 ): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
@@ -333,6 +344,7 @@ export function heartbeatCmd(
       'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
       `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
       `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
+      `${EACH_SHELLS_FOREGROUND_AND_FOLDER}; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
@@ -343,6 +355,8 @@ export function heartbeatCmd(
       projectSlugs.join(' '),
       String(extraDirs.length),
       ...extraDirs,
+      String(shellTabs.length),
+      ...shellTabs,
       ...paths
     ]
   )
@@ -362,15 +376,23 @@ export interface RemoteGitInfo {
   real?: string
 }
 
+export interface ShellReport {
+  tabId: string
+  name: string
+  cwd: string
+}
+
 export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
   stamps: string[]
   mirrors: MirrorStamps
+  shells: ShellReport[]
 } {
   const alive: string[] = []
   const stamps: string[] = []
+  const shells: ShellReport[] = []
   const mirrors: MirrorStamps = { extras: [] }
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
@@ -402,6 +424,14 @@ export function parseHeartbeat(stdout: string): {
       mirrors.hooks = line.slice(HOOKS_LINE.length)
     } else if (!current && line.startsWith(EXTRA_LINE)) {
       mirrors.extras.push(line.slice(EXTRA_LINE.length))
+    } else if (!current && line.startsWith(SHELL_LINE)) {
+      const [tabId, name, ...rest] = line.slice(SHELL_LINE.length).split('\t')
+      const cwd = rest.join('\t')
+      shells.push({
+        tabId,
+        name: name ?? '',
+        cwd: cwd.endsWith(A_REMOVED_FOLDER_ON_LINUX) ? '' : cwd
+      })
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -413,7 +443,14 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps, mirrors }
+  return {
+    alive,
+    git,
+    tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined,
+    stamps,
+    mirrors,
+    shells
+  }
 }
 
 export const UTIL_BASH_LOGIN_FILE = 'util-login.bash'
@@ -441,6 +478,7 @@ ${utilShellPath('$M')}
 export KOLOFT_UTIL KOLOFT_TAB_ID PATH
 cd "$1" 2>/dev/null || cd
 ${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', `sh '$M/util.sh' . $2`)}
+mkdir -p "${REMOTE_TABS_DIR}" 2>/dev/null && echo $$ > "${remoteShellPidFile('$2')}"
 case "\${SHELL:-/bin/sh}" in */bash) exec "$SHELL" --init-file "$M/${UTIL_BASH_LOGIN_FILE}" -i ;; esac
 exec "\${SHELL:-/bin/sh}" -l
 `

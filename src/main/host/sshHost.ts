@@ -61,6 +61,7 @@ import {
   backgroundOptions,
   ensureControlDir,
   machineOutOfReach,
+  needsSignIn,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -222,6 +223,12 @@ command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
 node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
+
+const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
+  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
+const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
+const MACHINE_PAGE_READ_MS = 120_000
+const MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -575,6 +582,7 @@ const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
 const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
@@ -600,6 +608,8 @@ export class SshHost implements Host {
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
+  private pageReads = 0
+  private pageReadsWaiting: (() => void)[] = []
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -738,6 +748,12 @@ export class SshHost implements Host {
     return r.code === 0
   }
 
+  async sessionDirThere(dir: string): Promise<boolean> {
+    const r = await this.testDir(dir)
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+    return r.code === 0 || sshLinkBroke(r)
+  }
+
   async reachOrThrow(): Promise<void> {
     const r = await this.sh('true', [])
     if (machineOutOfReach(r)) throw new Error(problemOf(r))
@@ -815,8 +831,8 @@ export class SshHost implements Host {
     return this.git.gitFileDiffFull(this.bare(file), base, untracked)
   }
 
-  private async readWithHeader(file: string, maxBytes: number) {
-    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)])
+  private async readWithHeader(file: string, maxBytes: number, timeoutMs?: number) {
+    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)], { timeoutMs })
     if (r.code !== 0) throw failure(r, 'KOLOFT_READ_FAILED')
     const { header, body } = headerAndBody(r.stdout)
     const parts = header.split(' ')
@@ -831,6 +847,19 @@ export class SshHost implements Host {
     })
     if (looksBinary(body)) throw new Error('KOLOFT_BINARY')
     return body.toString('utf8')
+  }
+
+  async readPageFile(file: string): Promise<Buffer> {
+    while (this.pageReads >= MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
+      await new Promise<void>((free) => this.pageReadsWaiting.push(free))
+    this.pageReads++
+    try {
+      const read = this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES, MACHINE_PAGE_READ_MS)
+      return (await read).body
+    } finally {
+      this.pageReads--
+      this.pageReadsWaiting.shift()?.()
+    }
   }
 
   async openForEdit(file: string) {
@@ -931,8 +960,9 @@ export class SshHost implements Host {
     return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
   }
 
-  async answerAgent(requestId: string, reply: string): Promise<void> {
-    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  async answerAgent(requestId: string, reply: string | null): Promise<void> {
+    if (reply === null) await this.sh(TAKE_AWAY_AGENT_REQUEST, [requestId])
+    else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
   async savePick(name: string, png: Buffer): Promise<string> {
@@ -1094,6 +1124,7 @@ export class SshHost implements Host {
   async readAgyConfig(account: string): Promise<RemoteAgyConfig> {
     await this.deps.sshEnvReady?.()
     const r = await this.deps.run(readAgyConfigCmd(account))
+    if (needsSignIn(r)) throw new Error(AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN)
     if (sshLinkBroke(r)) throw new Error(problemOf(r))
     return parseAgyConfig(r.stdout.toString('utf8'))
   }

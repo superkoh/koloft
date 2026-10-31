@@ -78,7 +78,7 @@ export function codexItemDid(item: Record<string, unknown>): string | undefined 
   if (item.type !== 'commandExecution') return undefined
   const actions = records(item.commandActions)
   const only = actions.length === 1 ? actions[0] : undefined
-  const readPath = only?.type === 'read' ? str(only.path) : undefined
+  const readPath = only?.type === 'read' && item.status === 'completed' ? str(only.path) : undefined
   if (readPath) return read(readPath)
   const command = str(only?.command) ?? str(item.command)
   return command && ran(SHELL_WRAPPED.exec(command)?.[1] ?? command)

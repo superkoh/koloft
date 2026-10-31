@@ -275,13 +275,15 @@ export interface FilesBarProps {
   changedCount: number
   full: boolean
   onToggleFull: () => void
+  sessionOwned: boolean
 }
 
 export const FilesBar = memo(function FilesBar({
   c,
   changedCount,
   full,
-  onToggleFull
+  onToggleFull,
+  sessionOwned
 }: FilesBarProps): JSX.Element {
   const closeOnEsc = (e: ReactKeyboardEvent): void => {
     if (e.key === 'Escape') c.setMenu(null)
@@ -398,15 +400,17 @@ export const FilesBar = memo(function FilesBar({
             ]}
             onPick={(v) => c.setFilters({ ...c.filters, status: v as ChangeFilters['status'] })}
           />
-          <FilterGroup
-            label="Ownership"
-            value={c.filters.owner}
-            options={[
-              ['all', 'All changes'],
-              ['session', 'This session wrote']
-            ]}
-            onPick={(v) => c.setFilters({ ...c.filters, owner: v as ChangeFilters['owner'] })}
-          />
+          {sessionOwned && (
+            <FilterGroup
+              label="Ownership"
+              value={c.filters.owner}
+              options={[
+                ['all', 'All changes'],
+                ['session', 'This session wrote']
+              ]}
+              onPick={(v) => c.setFilters({ ...c.filters, owner: v as ChangeFilters['owner'] })}
+            />
+          )}
           <FilterGroup
             label="Type"
             value={c.filters.type}

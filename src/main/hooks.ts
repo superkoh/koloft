@@ -674,10 +674,6 @@ export function discordSaidFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${DISCORD_SAID_SUFFIX}`)
 }
 
-export function discordSaidBeside(notice: string): string {
-  return notice.slice(0, -NOTICE_SUFFIX.length) + DISCORD_SAID_SUFFIX
-}
-
 // ADR-0028
 export function noteDiscordSaid(regDir: string, tabId: string, text: string): void {
   fs.appendFileSync(discordSaidFile(regDir, tabId), `${JSON.stringify(text).slice(1, -1)}\n`)

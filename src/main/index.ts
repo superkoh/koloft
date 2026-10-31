@@ -66,7 +66,7 @@ import { museSignIn, storeMuseKey } from './museServe'
 import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
@@ -174,11 +174,13 @@ import {
   mirrorHookDir,
   mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
+  remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
@@ -241,7 +243,11 @@ import {
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
-import { sanitizeSessionWorkbench } from '@shared/workbenchState'
+import {
+  isWorkspaceWorkbenchKey,
+  sanitizeSessionWorkbench,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
 import {
   dirExistsSync,
   gitProbes,
@@ -314,6 +320,8 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
+  MACHINE_PAGE_SCHEME,
+  machinePageOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -382,7 +390,9 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountLine,
   noAccountMessage,
+  SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -483,6 +493,7 @@ import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } fr
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   codexDialog,
+  isAskedCall,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -576,7 +587,7 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
-const claudeAsks = new Map<string, string>()
+const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -627,7 +638,7 @@ const sessionBackends = new SessionBackends({
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
-    claudeAsks.set(tabId, claudeAskLine(ask))
+    claudeAsks.set(tabId, ask)
     if (discordRelay) discordRelay.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
@@ -644,10 +655,8 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const line = claudeAsks.get(tabId)
-  if (line) return line
-  const held = discordRelay?.heldAsk(tabId)
-  return held && claudeAskLine(held)
+  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
+  return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
   if (tracker.statusOf(tabId) === 'approval')
@@ -1220,6 +1229,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
@@ -1726,7 +1736,7 @@ const sessionDeps: SessionVerbDeps = {
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
-    return launchQuietTab(options, title)
+    return launchQuietTab(options, title, { launch: options })
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
@@ -1968,6 +1978,8 @@ function terminalPickOf(
   )
 }
 
+const shimAccountRefusals = new Map<string, string>()
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -1990,6 +2002,9 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     return
   }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
+  if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
+  else shimAccountRefusals.delete(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
@@ -2657,6 +2672,7 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true
     }
   },
+  { scheme: MACHINE_PAGE_SCHEME, privileges: { standard: true, secure: true } },
   // PLATFORM§15
   { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
@@ -2693,8 +2709,16 @@ function mimeOf(p: string): string {
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
     '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
     '.css': 'text/css',
     '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.wasm': 'application/wasm',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
     '.json': 'application/json',
     '.txt': 'text/plain'
   }
@@ -3048,6 +3072,7 @@ app.whenReady().then(() => {
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
+    if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -3086,6 +3111,11 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    const accountIssue = shimAccountRefusals.get(e.id)
+    shimAccountRefusals.delete(e.id)
+    // ADR-0030
+    if (accountIssue && !e.signal && e.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+      sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {
@@ -3099,7 +3129,8 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
-    claudeAsks.delete(tabId)
+    const ask = claudeAsks.get(tabId)
+    if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
@@ -3137,7 +3168,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
-    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
@@ -3230,7 +3261,6 @@ app.whenReady().then(() => {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
       projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
       remoteTreeIo: machineTreeIo,
       remote: {
         ...museOnMachines,
@@ -3623,10 +3653,16 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
-      const live = new Set([
-        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...codexMachines
-      ])
+      const live = new Set(codexMachines)
+      const shellTabsOn = new Map<string, string[]>()
+      for (const h of ptyMgr.list()) {
+        if (!h.alive) continue
+        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.utilMachine) {
+          live.add(h.utilMachine)
+          shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
+        }
+      }
       const busy = new Set(
         allSessions().flatMap((s) => {
           const host = s.alive && machineOfTab(s.tabId)
@@ -3655,7 +3691,8 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
-        busy: busy.has(t.host)
+        busy: busy.has(t.host),
+        shellTabs: shellTabsOn.get(t.host)
       }))
     },
     onChange: (host) => {
@@ -3669,6 +3706,9 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
+    onShells: (host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
+    },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) =>
       void browserTunnels.sync(
@@ -3679,7 +3719,7 @@ app.whenReady().then(() => {
       )
   })
   ptyMgr.on('typed', (tabId: string) => {
-    const host = machineOfTab(tabId)
+    const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
@@ -3737,7 +3777,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
-    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
@@ -4450,8 +4490,38 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   })
 }
 
+// ADR-0045
+const MACHINE_PAGE_HEADERS = {
+  'content-security-policy':
+    'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
+}
+
+async function machinePageResponse(request: Request): Promise<Response> {
+  const page = machinePageOf(request.url)
+  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
+  const machine = page && known ? hosts.machine(page.host) : null
+  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  if (!page || !body)
+    return new Response(fileNotFoundHtml(page?.path ?? request.url), {
+      status: 404,
+      headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
+    })
+  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+    headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
+  })
+}
+
+const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
+
+// ADR-0045
+function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
+  if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
+  return !machinePageOf(details.frame?.url ?? '')
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
@@ -4539,7 +4609,10 @@ function setupBrowserPartition(): void {
   })
   // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+    if (
+      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+      machinePageRequestRefused(details)
+    )
       return callback({ cancel: true })
     const guest = details.webContentsId
     const fenced =
@@ -4550,7 +4623,8 @@ function setupBrowserPartition(): void {
     if (!fenced) return callback({})
     if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
       notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    if (details.url.startsWith('file:') || machinePageOf(details.url))
+      return callback({ cancel: true })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
@@ -4673,6 +4747,8 @@ async function openOnMachine(
 ): Promise<boolean> {
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const page = routeFor(keyed, 'agent')
+  if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true
@@ -4924,11 +5000,11 @@ function foldersInUse(leavingTabId?: string): Set<string> {
 async function launchQuietTab(
   options: CreateTabOptions & { kind: BackendId },
   title: string,
-  jobId?: string
+  more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
-  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
 }
@@ -4959,6 +5035,12 @@ function forgetFreeOnMachine(tabId: string): void {
   if (!host) return
   freedOnMachine.delete(tabId)
   void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
+function forgetShellOnMachine(host: string, tabId: string): void {
+  void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
     controlDir: remoteControlDir
   }).catch(() => undefined)
 }
@@ -5280,7 +5362,7 @@ async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
       name: req.name,
       scheduled: true
     }
-    const tabId = await launchQuietTab(options, req.name, req.jobId)
+    const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
@@ -5458,8 +5540,10 @@ function registerIpc(): void {
         resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
+        utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
+      if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }
@@ -5509,6 +5593,8 @@ function registerIpc(): void {
   ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
+    startedSessions.moved(oldTabId, newTabId)
+    sessionCommand.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
   })
@@ -5848,7 +5934,12 @@ function registerIpc(): void {
     if (!workspaceMgr) return
     workspaceMgr.setWorkbenchState(
       sessionId,
-      sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
+      sanitizeSessionWorkbench(
+        state,
+        isWorkspaceWorkbenchKey(sessionId)
+          ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+          : workspaceMgr.defaultOpen()
+      )
     )
   })
   ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
@@ -6298,7 +6389,14 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
+    if (
+      what !== 'repo' &&
+      what !== 'issues' &&
+      what !== 'pulls' &&
+      what !== 'pr' &&
+      what !== 'compare'
+    )
+      return null
     return hosts.of(root).github.target(root, what)
   })
   ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {

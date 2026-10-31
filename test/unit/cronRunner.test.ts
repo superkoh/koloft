@@ -13,6 +13,7 @@ import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
 import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
 
+const ACCOUNT_CHECK_REASON = 'the reason the account check gave'
 const T0 = new Date(2026, 8, 2, 10, 0, 0, 0).getTime()
 const SEC = 1000
 const MIN = 60 * SEC
@@ -127,7 +128,7 @@ function makeHarness(
     tidyRun,
     foldersInUse: () => new Set(flags.inUse),
     quitting: () => flags.quitting,
-    accountUsable: () => flags.account,
+    noUsableAccount: () => (flags.account ? null : ACCOUNT_CHECK_REASON),
     trusted: () => true,
     ready: () => flags.ready,
     endpointAccountWithModelOf: () => undefined,
@@ -352,18 +353,22 @@ describe('CronRunner — reasons a run does not start', () => {
     expect(h.save).toHaveBeenCalled()
   })
 
-  it('writes "no usable account" and never launches', async () => {
+  it('passes the account check’s own reason to the history, the toast and the caller, and never launches', async () => {
     const h = makeHarness([makeJob()])
     h.flags.account = false
-    expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'no-account' })
+    expect(await h.runner.runNow('j1')).toEqual({
+      ok: false,
+      reason: 'no-account',
+      why: ACCOUNT_CHECK_REASON
+    })
     expect(h.launch).not.toHaveBeenCalled()
     expect(h.jobs[0].history[0]).toEqual({
       dueAt: T0,
       state: 'failed',
-      note: 'no usable account',
+      note: ACCOUNT_CHECK_REASON,
       manual: true
     })
-    expect(h.toasts).toEqual(['⏰ Nightly report could not start: no usable account'])
+    expect(h.toasts).toEqual([`⏰ Nightly report could not start: ${ACCOUNT_CHECK_REASON}`])
   })
 
   it('writes "Claude exited before it started" as failed, never skipped, when the launch itself is refused', async () => {
@@ -1037,15 +1042,15 @@ describe('CronRunner — a Codex job', () => {
   // CODEX§14
   it("launches on Codex with the permission it saved, checks Codex's own trust, and names Codex when it does not start", async () => {
     const trusted = vi.fn(() => false)
-    const accountUsable = vi.fn(() => true)
+    const noUsableAccount = vi.fn(() => null)
     const h = makeHarness([makeJob({ backend: 'codex', permission: 'acceptEdits' })], {
       bindDeadlineMs: 5 * SEC,
       trusted,
-      accountUsable
+      noUsableAccount
     })
     await h.runner.runNow('j1')
     expect(h.launches[0]).toMatchObject({ backend: 'codex', permission: 'acceptEdits' })
-    expect(accountUsable).toHaveBeenCalledWith('codex')
+    expect(noUsableAccount).toHaveBeenCalledWith('codex')
     await h.fireTimers(T0 + 5 * SEC)
     expect(trusted).toHaveBeenCalledWith('/ws/a', 'codex')
     expect(h.jobs[0].history[0]).toMatchObject({
