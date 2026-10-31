@@ -100,15 +100,20 @@ describe('Codex shell runtime', () => {
   })
 
   it.each([
-    { printed: '0.160.9', verified: false },
-    { printed: '0.161.0', verified: true },
-    { printed: '0.161.3', verified: true },
-    { printed: '0.162.0', verified: false }
-  ])('reads Codex $printed (verified $verified)', async ({ printed, verified }) => {
-    fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
-    const runtime = await resolveCodexRuntime({ env: environment })
-    expect(runtime).toMatchObject({ version: printed, verified })
-  })
+    { printed: MIN_CODEX_VERSION, verified: true },
+    { printed: '0.163.2', verified: true },
+    { printed: '0.166.0', verified: true },
+    { printed: '0.166.4', verified: true },
+    { printed: '0.167.0', verified: false },
+    { printed: '1.0.0', verified: false }
+  ])(
+    'counts Codex $printed as tested only up to the last rechecked line, whatever the minimum (verified $verified)',
+    async ({ printed, verified }) => {
+      fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
+      const runtime = await resolveCodexRuntime({ env: environment })
+      expect(runtime).toMatchObject({ version: printed, verified })
+    }
+  )
 
   it('passes the same resolved user configuration to the native PTY without Claude integration', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
