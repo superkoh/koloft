@@ -215,7 +215,8 @@ type MuseSignIn = 'subscription' | 'apiKey' | 'none'
 // MUSE§13
 const SIGN_IN_OF_STATE: Record<string, MuseSignIn> = {
   accountLogin: 'subscription',
-  apiKey: 'apiKey'
+  apiKey: 'apiKey',
+  envKey: 'apiKey'
 }
 
 // MUSE§13

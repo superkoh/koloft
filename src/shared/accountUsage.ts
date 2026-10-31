@@ -526,7 +526,14 @@ export function accountLine(
   ].join(' · ')
 }
 
+export const METERED_NOTE = 'Metered — used only when every subscription is rate-limited'
+
+export function meteredTag(name: string): string {
+  return `${name} (API key, metered)`
+}
+
 export function launchLine(a: AccountView, nowMs: number): string {
+  if (a.apiKey) return `koloft: → ${meteredTag(a.name)}`
   if (a.limits)
     return accountLine(
       a.name,

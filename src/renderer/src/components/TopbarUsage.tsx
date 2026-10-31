@@ -23,6 +23,7 @@ import {
   codexWalled,
   windowLabel,
   meteredArmed,
+  METERED_NOTE,
   oldestAt,
   poolGlyph,
   poolSnapshot,
@@ -132,23 +133,26 @@ export function TopbarUsage(): JSX.Element | null {
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
   const muse = accounts.filter((a) => a.kind === 'muse-home' && a.enabled)
   const agy = accounts.filter((a) => a.kind === 'agy-home' && a.enabled && a.quota)
-  if (members.length === 0 && codex.length === 0 && muse.length === 0 && agy.length === 0)
-    return null
+  const agyRows = accounts.filter(
+    (a) => a.kind === 'agy-home' && a.enabled && (a.quota || a.apiKey)
+  )
   const homePools = [
     { label: 'Codex', accounts: codex },
     { label: 'Muse', accounts: muse }
   ]
-    .filter((h) => h.accounts.length > 0)
+    .map((h) => ({ ...h, subscriptions: h.accounts.filter((a) => !a.apiKey) }))
+    .filter((h) => h.subscriptions.length > 0)
     .map((h) => {
-      const pool = codexPoolSnapshot(h.accounts, now)
+      const pool = codexPoolSnapshot(h.subscriptions, now)
       return {
         ...h,
-        glyphs: h.accounts.map((a) => codexGlyph(a, now)),
-        total: codexPoolGlyph(h.accounts, now),
+        glyphs: h.subscriptions.map((a) => codexGlyph(a, now)),
+        total: codexPoolGlyph(h.subscriptions, now),
         pool,
         windows: pool.windows.map((w) => w.minutes)
       }
     })
+  if (members.length === 0 && homePools.length === 0 && agy.length === 0) return null
 
   const claude = members.length > 0
   const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
@@ -219,7 +223,7 @@ export function TopbarUsage(): JSX.Element | null {
         {homePools.map((h) => (
           <span key={h.label} className="tbu-group">
             {h.total && <CapsuleBar glyph={h.total} total />}
-            {h.accounts.map((a, i) => (
+            {h.subscriptions.map((a, i) => (
               <CapsuleBar key={`${a.kind}:${a.name}`} glyph={h.glyphs[i]} />
             ))}
           </span>
@@ -288,7 +292,7 @@ export function TopbarUsage(): JSX.Element | null {
                     title={h.label}
                     columns={h.windows.map(windowLabel)}
                     pool={
-                      h.accounts.length >= 2 && (
+                      h.subscriptions.length >= 2 && (
                         <PoolRow
                           p={h.pool}
                           cells={h.pool.windows.map((w) => ({
@@ -312,7 +316,7 @@ export function TopbarUsage(): JSX.Element | null {
               {(claude || homePools.length > 0) && agy.length > 0 && <div className="tbu-sep" />}
               {agy.length > 0 && (
                 <Section title="Antigravity" columns={[]} pool={false}>
-                  {agy.map((a) => (
+                  {agyRows.map((a) => (
                     <QuotaRow key={a.name} a={a} now={now} />
                   ))}
                 </Section>
@@ -345,11 +349,18 @@ function QuotaRow({ a, now }: { a: AccountView; now: number }): JSX.Element {
   const dead = a.status !== 'ok'
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>
-      <RowHead a={a} walled={quotaGlyph(a).kind === 'walled'} stale={null} />
+      <RowHead
+        a={a}
+        walled={quotaGlyph(a).kind === 'walled'}
+        stale={null}
+        badges={a.apiKey && <ApiKeyBadge />}
+      />
       {dead ? (
         <div className="tbu-row-note">
           <span className="acct-note">Not signed in — sign in again from Settings</span>
         </div>
+      ) : a.apiKey ? (
+        <MeteredNote />
       ) : (
         <QuotaMeters quota={a.quota ?? []} now={now} />
       )}
@@ -547,7 +558,7 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
         stale={stale}
         badges={
           <>
-            {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
+            {a.kind === 'apikey' && <ApiKeyBadge />}
             {a.kind === 'custom' && <span className="acct-badge api">ENDPOINT</span>}
             {a.kind === 'oauth' && a.fable === 'yes' && (
               <span className="acct-badge fable">FABLE</span>
@@ -556,11 +567,7 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
         }
       />
       {a.kind === 'apikey' ? (
-        <div className="tbu-row-note">
-          <span className="acct-note">
-            Metered — used only when every subscription is rate-limited
-          </span>
-        </div>
+        <MeteredNote />
       ) : a.kind === 'custom' ? (
         <div className="tbu-row-note">
           <span className="acct-note">
@@ -666,6 +673,18 @@ function RowHead({
   )
 }
 
+function ApiKeyBadge(): JSX.Element {
+  return <span className="acct-badge api">API KEY</span>
+}
+
+function MeteredNote(): JSX.Element {
+  return (
+    <div className="tbu-row-note">
+      <span className="acct-note">{METERED_NOTE}</span>
+    </div>
+  )
+}
+
 function NotProbedNote({ a }: { a: AccountView }): JSX.Element {
   return (
     <div className="tbu-row-note">
@@ -712,6 +731,7 @@ function CodexRow({
         a={a}
         walled={!dead && !!l && codexWalled(l)}
         stale={l ? ageLabel(l.at, now) : null}
+        badges={a.apiKey && <ApiKeyBadge />}
         action={
           codexResetOffered(a) &&
           !confirm && (
@@ -725,6 +745,8 @@ function CodexRow({
         <div className="tbu-row-note">
           <span className="acct-note">Not signed in — sign in again from Settings</span>
         </div>
+      ) : a.apiKey ? (
+        <MeteredNote />
       ) : l && l.windows.length > 0 ? (
         <div className="tbu-grid two">
           {windows.map((m) => {

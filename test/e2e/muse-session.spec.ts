@@ -188,6 +188,67 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§13
+  test('a Muse API key pasted in Settings ▸ Accounts is marked API KEY and metered there and in the usage panel, draws no bar in the capsule, and a Muse tab starts on it only once the Meta sign-in is at its limit, its account line saying it is metered', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    const quota = path.join(env.home, 'fake-muse-quota.json')
+    fs.writeFileSync(quota, JSON.stringify({ current: 40, weekly: 7 }))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page
+        .locator('.set-grp', { hasText: /^Muse$/ })
+        .locator('xpath=following-sibling::div[1]')
+        .getByRole('button', { name: 'Paste API key' })
+        .click()
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Add Muse API key')
+      await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
+      await dialog.locator('input[type="password"]').fill('meta-made-up-key')
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 })
+      const metered = 'Metered — used only when every subscription is rate-limited'
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^metered$/ })
+      })
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(row.locator('.acct-note')).toHaveText(metered)
+      await expect(row.locator('.acct-status')).toHaveCount(0)
+      await page.keyboard.press('Escape')
+
+      await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
+      await page.locator('.tbu').click()
+      const popRow = page.locator('.tbu-pop .tbu-row', { hasText: 'metered' })
+      await expect(popRow.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(popRow.locator('.acct-note')).toHaveText(metered)
+      await page.keyboard.press('Escape')
+
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
+      )
+      fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 7 }))
+      await page.evaluate(() => window.api.accounts.probe())
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'koloft: → metered (API key, metered)'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
   test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
     env
   }) => {

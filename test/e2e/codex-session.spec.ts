@@ -1794,7 +1794,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row reads Signed in with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
     env
   }) => {
     installCodex(env)
@@ -1839,7 +1839,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       const row = page.locator('.acct-row', {
         has: page.locator('.acct-name', { hasText: /^metered$/ })
       })
-      await expect(row.locator('.acct-note')).toHaveText('Signed in')
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(row.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited'
+      )
       await expect(row.locator('.acct-status')).toHaveCount(0)
       await expect(row.locator('.acct-meter')).toHaveCount(0)
       expect(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8'))).toMatchObject({
