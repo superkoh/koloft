@@ -89,12 +89,14 @@
         <p>
           Every session in Koloft runs on a Claude, Codex, Muse or Antigravity account you add here,
           never on the login this Mac already has. So the first time Koloft opens, it asks you to
-          sign in to one of them (the welcome step "Sign in, and pick your
-          <a href="#assist">Assist</a>"). A Koloft you updated asks too, if no account was added
-          yet. Sign in to Codex, Sign in to Muse and Antigravity's Sign in with Google install the
-          tool first when this Mac has none: the dialog says so, and the same terminal tab runs the
-          official installer, then signs in. For these three, the sign-in tab closes itself when the
-          tool ends (in Antigravity, type <code>/exit</code> once you are signed in). If Koloft then
+          sign in to one of them (the welcome screen "One sign-in. Koloft does the rest."). It picks
+          the agent you used last, and names the account after it, like <code>Codex</code>. An
+          account that needs signing in again is signed in again, not added twice. Claude's Sign in
+          installs Claude Code first when this Mac has none, then opens your browser. Sign in to
+          Codex, Sign in to Muse and Antigravity's Sign in with Google install the tool first when
+          this Mac has none: the dialog says so, and the same terminal tab runs the official
+          installer, then signs in. For these three, the sign-in tab closes itself when the tool
+          ends (in Antigravity, type <code>/exit</code> once you are signed in). If Koloft then
           finds you are not signed in (you pressed Cancel above the sign-in terminal, say), it says
           <code>Sign-in did not complete.</code> with the last lines the tool printed and a
           <code>Try again</code> button, and takes a new account off the list.
@@ -485,7 +487,6 @@
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
-          <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
             close a session on another machine
             <span class="why">(Koloft cannot check what closing it there would lose)</span>

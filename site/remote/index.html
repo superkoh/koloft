@@ -116,7 +116,9 @@
 
         <p>
           Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it once
-          in a tab, and Koloft's own checks use that login after that.
+          in a tab, and Koloft's own checks use that login after that. A Claude Code, Codex or Muse
+          tab asks for it, and for a yes to a machine ssh has never met. An Antigravity tab cannot
+          ask yet: sign in through one of the other three there first.
         </p>
         <p>These work too:</p>
         <ul class="dash">
@@ -218,6 +220,11 @@ your Mac                     the other machine
             its own settings once.
           </li>
           <li>
+            A Claude Code session there needs no <code>claude</code> on your Mac: the one on the
+            machine runs, so a remote folder offers Claude Code even when your Mac has none. Codex,
+            Muse and Antigravity still need theirs on your Mac.
+          </li>
+          <li>
             For a session there, the sidebar is a few seconds behind the machine: its light, its
             title, and the <a href="../sessions/#last-step">line that says what it did last</a>.
           </li>
@@ -284,7 +291,18 @@ your Mac                     the other machine
           <li>links inside a Markdown file, and <code>path:line</code> links</li>
           <li>the card you see with the Workbench folded</li>
         </ul>
-        <p>An HTML file in that card opens as its source, not as a page.</p>
+        <p>
+          An HTML file there opens as a web page, with the styles, scripts and pictures next to it,
+          all read from the machine. Its address starts with <code>koloft-machine://</code>. Such a
+          page cannot keep anything in the browser: it has no <code>localStorage</code>, IndexedDB
+          or cookies (the places a page saves its own data).
+        </p>
+        <p>
+          When the agent runs a plain <code>open</code> with a file the Workbench can show, or with
+          a web address, the file or page shows in that session's Workbench, as it does on your Mac.
+          A <code>localhost</code> address still means your Mac, not the machine. With "Let agents
+          use Koloft" off, a plain <code>open</code> there does nothing.
+        </p>
         <p>The count of changed files there catches up at most every 10 seconds.</p>
         <p>
           A file that changes on the machine shows up by itself: a file you have open reloads, an
@@ -302,7 +320,6 @@ your Mac                     the other machine
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>Images and PDFs (document files) from the machine do not show a preview.</li>
-          <li>An agent's <code>open &lt;url&gt;</code> does not reach the Workbench.</li>
           <li>
             Only a Claude Code session there can drive your web tabs; Codex, Muse and Antigravity
             cannot yet. See <a href="../agents/#remote-browser">Agents can use Koloft too</a>.
