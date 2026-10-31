@@ -88,6 +88,10 @@ if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
 
 if (argv[0] === 'login' && argv[1] === '--with-api-key') {
   const key = fs.readFileSync(0, 'utf8').trim()
+  if (flag('fake-codex-key-login-fails')) {
+    console.error('Error: A default keychain could not be found')
+    process.exit(1)
+  }
   fs.writeFileSync(
     path.join(codexHome, 'auth.json'),
     JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })

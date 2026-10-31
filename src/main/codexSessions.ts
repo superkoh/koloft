@@ -93,6 +93,7 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
+import { pipeSecretTo } from './secretOnStdin'
 import {
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
@@ -559,21 +560,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   async storeApiKey(home: string, key: string): Promise<void> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(this.binary!, ['login', '--with-api-key'], {
-        cwd: os.homedir(),
-        env: this.envFor(home),
-        stdio: ['pipe', 'ignore', 'pipe']
-      })
-      let said = ''
-      child.stderr.on('data', (chunk) => (said += String(chunk)))
-      child.on('error', reject)
-      child.stdin.on('error', reject)
-      child.on('exit', (code) =>
-        code === 0 ? resolve() : reject(new Error(said.trim() || 'codex login failed'))
-      )
-      child.stdin.end(key)
-    })
+    await pipeSecretTo(this.binary!, ['login', '--with-api-key'], this.envFor(home), key)
     await this.rereadSignIn(home)
   }
 

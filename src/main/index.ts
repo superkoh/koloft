@@ -2292,7 +2292,7 @@ function pickCodexHome(
   )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean =>
-    !a.apiKey && (!a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS)
+    a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
@@ -2339,12 +2339,15 @@ async function addCodexKey(name: string, key: string): Promise<AccountAddResult>
   const v = validateNewAccount(name, 'codex-home')
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = key.trim()
-  if (!trimmed || !codexSessions || !(await codexSessions.availability()).available)
-    return { ok: false, error: 'unknown' }
+  if (!trimmed || !codexSessions) return { ok: false, error: 'unknown' }
   const home = codexHomeOf(app.getPath('userData'), name)
   prepareCodexHome(home, codexSharedConfig())
+  const saved = await codexSessions.storeApiKey(home, trimmed).then(
+    () => true,
+    () => false
+  )
+  if (!saved) return { ok: false, error: 'unknown' }
   noteHomeAccount(name, 'codex-home')
-  await codexSessions.storeApiKey(home, trimmed).catch(() => undefined)
   await probeCodexAccount(name)
   const account = accountViews().find((a) => a.kind === 'codex-home' && a.name === name)
   return { ok: account?.status === 'ok', account }

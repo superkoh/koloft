@@ -1794,7 +1794,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder, its row reads Signed in with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row reads Signed in with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
     env
   }) => {
     installCodex(env)
@@ -1823,8 +1823,17 @@ test.describe('Codex sessions through the real method chooser, process transport
       const dialog = page.locator('.acct-add')
       await expect(dialog.locator('.acct-add-title')).toHaveText('Add OpenAI API key')
       await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
+      const loginFails = path.join(env.home, 'fake-codex-key-login-fails')
+      fs.writeFileSync(loginFails, '')
       await dialog.locator('input[type="password"]').fill(key)
-      await dialog.getByRole('button', { name: 'Verify and save' }).click()
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog.locator('.acct-add-err')).toHaveText('Could not save', {
+        timeout: 30_000
+      })
+      await expect(page.locator('.acct-name', { hasText: /^metered$/ })).toHaveCount(0)
+      fs.rmSync(loginFails)
+      await dialog.locator('input[type="password"]').fill(key)
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
       await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 
       const row = page.locator('.acct-row', {
