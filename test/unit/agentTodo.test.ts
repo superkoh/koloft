@@ -284,7 +284,7 @@ describe('koloft todo', () => {
     expect(sessions).not.toContain('nothing left')
   })
 
-  it('says Koloft is deleting the worktree, among the closed sessions, when a removal is under way before, during or by the end of the check, or after git let go of the worktree, never naming the half-deleted files as work left or the check as failed (#1299)', async () => {
+  it('says Koloft is deleting the worktree, among the closed sessions, when a removal is under way before, during or by the end of the check, or after git let go of the worktree, never naming the half-deleted files as work left or the check as failed', async () => {
     const tree = (name: string): string => `${SHOP}/.claude/worktrees/${name}`
     const before = row('before', { cwd: tree('before') })
     const during = row('during', { cwd: tree('during') })
