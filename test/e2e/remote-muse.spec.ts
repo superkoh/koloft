@@ -91,7 +91,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       })
       expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
-        `koloft: → ${E2E_MUSE_ACCOUNT}`
+        `koloft: → ${E2E_MUSE_ACCOUNT} (API key, metered)`
       )
       const row = remoteRows(page)
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })

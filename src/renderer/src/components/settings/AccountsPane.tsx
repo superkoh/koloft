@@ -5,7 +5,13 @@ import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
 import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
-import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
+import {
+  ACCOUNT_KINDS_OF,
+  METERED_NOTE,
+  measuredAt,
+  needsSignInAgain,
+  windowLabel
+} from '@shared/accountUsage'
 
 // AGY§5
 const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
@@ -14,6 +20,7 @@ const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
   agy: 'agy'
 }
 import {
+  ApiKeyBadge,
   Meter,
   QuotaMeters,
   ageLabel,
@@ -204,7 +211,7 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Codex</div>
       {section(
         codexAccounts,
-        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in, and every Codex session picks the least-used one.',
+        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
@@ -221,7 +228,7 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Muse</div>
       {section(
         museAccounts,
-        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key, and Muse sessions take turns between them.',
+        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
@@ -238,7 +245,7 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Antigravity</div>
       {section(
         agyAccounts,
-        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key, and Antigravity sessions take turns between them.',
+        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
@@ -547,7 +554,7 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
+        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
         {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
         {a.kind === 'oauth' && a.fable === 'yes' && (
           <span
@@ -606,6 +613,8 @@ function AccountRow({
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
+          ) : a.apiKey && !a.probeError ? (
+            <span className="acct-note">{METERED_NOTE}</span>
           ) : a.limits && a.limits.windows.length > 0 ? (
             a.limits.windows.map((w) => (
               <Meter
@@ -636,9 +645,7 @@ function AccountRow({
         </div>
       ) : a.kind === 'apikey' ? (
         <div className="acct-meters">
-          <span className="acct-note">
-            Metered — used only when every subscription is rate-limited
-          </span>
+          <span className="acct-note">{METERED_NOTE}</span>
         </div>
       ) : u ? (
         <div className="acct-meters">
@@ -672,6 +679,7 @@ export function AddAccountDialog({
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const openSignInTab = useStore((s) => s.openSignInTab)
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -682,9 +690,20 @@ export function AddAccountDialog({
       secret,
       kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
     )
-    setBusy(false)
     // ADR-0002
     setSecret('')
+    if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
+      const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
+      setBusy(false)
+      if (!setup.ok) {
+        setError('Saved, but agy could not be opened — use Sign in again on its row')
+        return
+      }
+      openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+      onClose()
+      return
+    }
+    setBusy(false)
     if (r.ok || r.account) {
       onClose()
     } else {
@@ -771,16 +790,22 @@ export function AddAccountDialog({
             busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
           }
         >
-          {kind === 'codex-home' ? 'Save' : busy ? 'Verifying…' : 'Verify and save'}
+          {SIGN_IN_FOLDER_KINDS.includes(kind)
+            ? busy
+              ? 'Saving…'
+              : 'Save'
+            : busy
+              ? 'Verifying…'
+              : 'Verify and save'}
         </button>
       </div>
       <span className="field-hint">
         {kind === 'codex-home'
           ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
           : kind === 'muse-home'
-            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. A key muse cannot use still saves the account, marked UNVERIFIED.'
+            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Muse does not check the key here: a wrong one shows as signed in and fails once a session starts.'
             : kind === 'agy-home'
-              ? 'The key goes into your Keychain and is handed to agy when a session starts. The account stays UNVERIFIED until you use Sign in again once to pick a colour scheme and answer Google’s Terms screen in agy.'
+              ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
               : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
