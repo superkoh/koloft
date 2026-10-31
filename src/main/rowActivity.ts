@@ -1,6 +1,6 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { toolFilePath } from './claudeTouchedFiles'
+import { toolFilePath, WRITE_TOOLS } from './claudeTouchedFiles'
 import { planOf, questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
 
 const LINE_KEEPS_CHARS = 200
@@ -134,7 +134,8 @@ export function claudeAskLine(p: AskPayload): string {
   const command = str(p.tool_input?.command)
   if (command) return `Wants to run: ${oneLine(command)}`
   const file = toolFilePath(p.tool_input)
-  if (file) return `Wants to edit: ${basename(file)}`
+  if (file && WRITE_TOOLS.has(p.tool_name ?? '')) return `Wants to edit: ${basename(file)}`
+  if (file && p.tool_name === 'Read') return `Wants to read: ${basename(file)}`
   return `Wants to use: ${oneLine(p.tool_name ?? 'a tool')}`
 }
 

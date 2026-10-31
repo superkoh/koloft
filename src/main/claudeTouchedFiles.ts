@@ -1,6 +1,6 @@
 import { noteRead, noteWrite, type FileAcc } from './touchedFiles'
 
-const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+export const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 
 export function toolFilePath(input: unknown): string | null {
   if (!input || typeof input !== 'object') return null
