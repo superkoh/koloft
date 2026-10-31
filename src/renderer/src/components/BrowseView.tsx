@@ -215,6 +215,7 @@ export function BrowseView({
 
   const home = window.api.home
   const scratchpadDir = scratchpadDirOf(session)
+  const backendId = session?.backendId
 
   const loadDir = useCallback(async (dir: string): Promise<void> => {
     if (loadedRef.current.has(dir)) return
@@ -390,8 +391,13 @@ export function BrowseView({
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
 
   const scratchEntries = useMemo(
-    () => scratchpadEntries(scratchpadDir ? children[scratchpadDir] : undefined, scratchpadDir),
-    [children, scratchpadDir]
+    () =>
+      scratchpadEntries(
+        scratchpadDir ? children[scratchpadDir] : undefined,
+        scratchpadDir,
+        backendId
+      ),
+    [children, scratchpadDir, backendId]
   )
   const scratchListed = useMemo(() => {
     const s = new Set<string>()
@@ -734,7 +740,8 @@ export function BrowseView({
     const entries = children[dir]
     if (!entries)
       return loading.has(dir) ? <div className="ft-hint bv-loading">Loading…</div> : <></>
-    const visible = section === 'scratchpad' ? scratchpadEntries(entries, scratchpadDir) : entries
+    const visible =
+      section === 'scratchpad' ? scratchpadEntries(entries, scratchpadDir, backendId) : entries
     const hidden = hiddenTouchedUnder(dir, visible, idx.touchedInProject)
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)

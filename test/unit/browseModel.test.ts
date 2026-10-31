@@ -145,28 +145,35 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       { name: 'tasks', path: SCRATCH + '/tasks', isDir: true },
       { name: 'plan.md', path: SCRATCH + '/plan.md', isDir: false }
     ]
-    expect(scratchpadEntries(entries, SCRATCH).map((e) => e.name)).toEqual(['plan.md'])
-    expect(scratchpadEntries(undefined, SCRATCH)).toEqual([])
+    expect(scratchpadEntries(entries, SCRATCH, 'claude').map((e) => e.name)).toEqual(['plan.md'])
+    expect(scratchpadEntries(undefined, SCRATCH, 'claude')).toEqual([])
   })
 
   // AGY§8 AGY§19
-  it('an Antigravity conversation folder shows its artifacts and scratch/, never agy’s own logs, uploads folder or an artifact’s metadata file', () => {
+  it('an Antigravity conversation folder shows its artifacts and scratch/, never agy’s own logs, uploads folder or an artifact’s metadata file; files of those names the model made deeper down, or in another agent’s scratchpad, still show', () => {
     const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
-    const entries: DirEntry[] = [
-      { name: '.system_generated', path: brain + '/.system_generated', isDir: true },
-      { name: '.user_uploaded', path: brain + '/.user_uploaded', isDir: true },
-      { name: 'scratch', path: brain + '/scratch', isDir: true },
-      { name: 'implementation_plan.md', path: brain + '/implementation_plan.md', isDir: false },
-      {
-        name: 'implementation_plan.md.metadata.json',
-        path: brain + '/implementation_plan.md.metadata.json',
-        isDir: false
-      }
+    const entry = (dir: string, name: string, isDir = false): DirEntry => ({
+      name,
+      path: `${dir}/${name}`,
+      isDir
+    })
+    const top: DirEntry[] = [
+      entry(brain, '.system_generated', true),
+      entry(brain, '.user_uploaded', true),
+      entry(brain, 'scratch', true),
+      entry(brain, 'implementation_plan.md'),
+      entry(brain, 'implementation_plan.md.metadata.json'),
+      entry(brain, 'tasks', true)
     ]
-    expect(scratchpadEntries(entries, brain).map((e) => e.name)).toEqual([
+    expect(scratchpadEntries(top, brain, 'agy').map((e) => e.name)).toEqual([
       'scratch',
-      'implementation_plan.md'
+      'implementation_plan.md',
+      'tasks'
     ])
+    const deeper = [entry(brain + '/scratch', 'run.md.metadata.json')]
+    expect(scratchpadEntries(deeper, brain, 'agy')).toEqual(deeper)
+    const claudes = [entry(SCRATCH, 'build.md.metadata.json')]
+    expect(scratchpadEntries(claudes, SCRATCH, 'claude')).toEqual(claudes)
   })
 })
 

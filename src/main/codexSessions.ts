@@ -134,15 +134,19 @@ const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath +
 const rolloutOnThisMac = (listedPath: string): boolean =>
   rolloutFiles(listedPath).some((f) => fs.existsSync(f))
 
-// CODEX§12 CODEX§13
-export function codexImagesDir(
+// CODEX§12
+const IMAGES_FOLDER = 'generated_images'
+
+// CODEX§12
+export function machineImagesDir(
+  machine: string,
   threadId: string,
-  where: { homeOnThisMac: string } | { machine: string; rollout?: string | null }
+  rollout: string | null | undefined
 ): string | undefined {
-  if ('homeOnThisMac' in where) return path.join(where.homeOnThisMac, 'generated_images', threadId)
-  const at = where.rollout?.lastIndexOf('/sessions/') ?? -1
-  if (at <= 0) return undefined
-  return keyedOn(where.machine, `${where.rollout!.slice(0, at)}/generated_images/${threadId}`)
+  const at = rollout?.lastIndexOf('/sessions/') ?? -1
+  return at > 0
+    ? keyedOn(machine, `${rollout!.slice(0, at)}/${IMAGES_FOLDER}/${threadId}`)
+    : undefined
 }
 
 async function* everyPage(
@@ -292,7 +296,7 @@ interface CodexRun extends StoredRun {
   transport: CodexTransport
   account: string
   machine?: string
-  homeOnThisMac?: string
+  home: string
 }
 
 interface CodexLaunch {
@@ -997,7 +1001,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         permission,
         bypassing: permission === 'bypass',
         machine,
-        homeOnThisMac: machine ? undefined : home,
+        home,
         releaseTools: openShim?.release ?? ((): void => {})
       }
       bound = run
@@ -1156,10 +1160,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return { details: { codex: { observation: 'live' } }, pickedAccount: run.account }
   }
 
+  // CODEX§12 CODEX§15
   protected scratchpadOf(run: CodexRun, thread: CodexThread): string | undefined {
-    return run.homeOnThisMac
-      ? codexImagesDir(thread.id, { homeOnThisMac: run.homeOnThisMac })
-      : codexImagesDir(thread.id, { machine: run.machine!, rollout: thread.path })
+    return run.machine
+      ? machineImagesDir(run.machine, thread.id, thread.path)
+      : path.join(run.home, IMAGES_FOLDER, thread.id)
   }
 
   protected degradedDetails(): BackendSessionInfo['details'] {

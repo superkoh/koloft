@@ -880,8 +880,11 @@ the same folder and told the model "Generated images are saved to <that folder>"
 0.166.0 binary's image skill says to copy an image into the workspace when the project
 needs it and leaves it at `$CODEX_HOME/generated_images/...` otherwise. The binary names
 no scratch or plan folder; a Plan-mode plan is a `plan` item, not a file (section 19).
-`generated_images/` is not one of the folders Koloft links between account homes, so a
-thread resumed under another account writes its next images into that account's home.
+The same probe run again with `$CODEX_HOME/generated_images` a symlink to a folder
+elsewhere: the image landed in `<that folder>/<thread id>/` and the link stayed a link,
+so the folder can be shared between account homes like `sessions/` (section 15). A
+second, fresh app-server's `thread/resume` of that thread answered the same non-null
+`path` under `$CODEX_HOME/sessions/`.
 
 ## 13. Token counts and the price table
 

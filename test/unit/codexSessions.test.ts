@@ -4,7 +4,11 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { CodexSessions, codexImagesDir, type CodexSessionDeps } from '../../src/main/codexSessions'
+import {
+  CodexSessions,
+  machineImagesDir,
+  type CodexSessionDeps
+} from '../../src/main/codexSessions'
 import { storedBackend } from '../../src/main/backends/stored'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
@@ -535,13 +539,13 @@ describe('CodexSessions', () => {
     expect(sessions.list()[0].scratchpadDir).toBe(`/homes/work/generated_images/${A}`)
   })
 
-  // CODEX§12 CODEX§13
+  // CODEX§12
   it("a remote Codex thread's images folder is found under the machine's CODEX_HOME that holds its rollout, and is unknown while the thread names no rollout", () => {
     const rollout = `/home/u/.koloft/codex-home/sessions/2026/10/31/rollout-x-${A}.jsonl`
-    expect(codexImagesDir(A, { machine: 'box', rollout })).toBe(
+    expect(machineImagesDir('box', A, rollout)).toBe(
       keyedOn('box', `/home/u/.koloft/codex-home/generated_images/${A}`)
     )
-    expect(codexImagesDir(A, { machine: 'box', rollout: null })).toBeUndefined()
+    expect(machineImagesDir('box', A, null)).toBeUndefined()
   })
 
   it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
