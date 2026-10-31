@@ -167,7 +167,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // ADR-0039 CODEX§15 CODEX§16
-  test('E-RC-12: a Codex session there whose Mac account is a pasted OpenAI API key signs the machine’s app-server in with that key, which never lands on the machine, and binds in the sidebar', async ({
+  test('E-RC-14: a Codex session there whose Mac account is a pasted OpenAI API key signs the machine’s app-server in with that key, which never lands on the machine, and binds in the sidebar', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
