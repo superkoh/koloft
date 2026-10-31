@@ -757,7 +757,8 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         append('fake-codex-logins.jsonl', {
           type: p.type,
           accessToken: p.accessToken ?? null,
-          accountId: p.chatgptAccountId ?? null
+          accountId: p.chatgptAccountId ?? null,
+          ...(p.apiKey && { apiKey: p.apiKey })
         })
         loginFromTheClient = { type: 'chatgpt', usedPercent: 10 }
         result(id, {})

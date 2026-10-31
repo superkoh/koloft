@@ -38,7 +38,7 @@ import {
   remoteKey,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 
 test.setTimeout(180_000)
@@ -161,6 +161,29 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
       await expect.poll(() => serverAlive(env, server.tabId!), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0039 CODEX§15 CODEX§16
+  test('E-RC-12: a Codex session there whose Mac account is a pasted OpenAI API key signs the machine’s app-server in with that key, which never lands on the machine, and binds in the sidebar', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const key = 'sk-proj-e2e-made-up-key'
+    fs.writeFileSync(
+      path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'),
+      JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })
+    )
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
+        { type: 'apiKey', accessToken: null, accountId: null, apiKey: key }
+      ])
+      expect(fs.existsSync(path.join(server.codexHome, 'auth.json'))).toBe(false)
     } finally {
       await quitAndClose(app)
     }
