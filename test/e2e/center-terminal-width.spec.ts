@@ -12,11 +12,13 @@ import {
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  openMenu,
   openSessionTerminal,
   setWindowWidth,
   shownCenterTerm,
   startSessionIn,
-  waitBooted
+  waitBooted,
+  wsRows
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
 
@@ -25,8 +27,52 @@ const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
 const WIDE_WINDOW_PX = 1720
+const FRAMES_A_BUSY_RENDERER_RUNS_FRAME_CALLBACKS_LATE = 4
+const SHOWN_LONG_ENOUGH_TO_SETTLE_MS = 1500
 
 test.afterEach(({ env }) => killFakeRemote(env))
+
+function recordUnmaskedColsWithLateFrameCallbacks(page: Page): Promise<void> {
+  return page.evaluate((late) => {
+    const w = window as unknown as {
+      __unmaskedCols: number[]
+      __stopUnmaskedCols?: boolean
+      __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+    }
+    const onTime = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = (cb) => {
+      let left = late
+      const step = (t: number): void => {
+        if (left-- > 0) onTime(step)
+        else cb(t)
+      }
+      return onTime(step)
+    }
+    w.__unmaskedCols = []
+    w.__stopUnmaskedCols = false
+    const tick = (): void => {
+      const masked = !!document.querySelector('.term-island .empty')
+      for (const t of masked ? [] : Object.values(w.__koloftTerms ?? {})) {
+        const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
+        if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
+          const seen = w.__unmaskedCols
+          if (seen[seen.length - 1] !== t.cols) seen.push(t.cols)
+          break
+        }
+      }
+      if (!w.__stopUnmaskedCols) onTime(tick)
+    }
+    onTime(tick)
+  }, FRAMES_A_BUSY_RENDERER_RUNS_FRAME_CALLBACKS_LATE)
+}
+
+function recordedUnmaskedCols(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __unmaskedCols: number[]; __stopUnmaskedCols?: boolean }
+    w.__stopUnmaskedCols = true
+    return w.__unmaskedCols
+  })
+}
 
 async function shownCenterCols(page: Page): Promise<number | undefined> {
   return (await shownCenterTerm(page))?.cols
@@ -163,6 +209,72 @@ test.describe('the center session terminal stops at 140 columns and sits centred
       await quitAndClose(app)
     }
   })
+
+  for (const tab of [
+    {
+      kind: 'a new local Claude Code tab',
+      open: async (env: E2EEnv) => {
+        const { app, page } = await launchWithPanelShut(env)
+        await setWindowWidth(app, WIDE_WINDOW_PX)
+        return { app, page, start: () => startSessionIn(page, 'ws-a') }
+      }
+    },
+    {
+      kind: 'a new local Codex tab',
+      open: async (env: E2EEnv) => {
+        installCodex(env)
+        const { app, page } = await launchWithPanelShut(env)
+        await setWindowWidth(app, WIDE_WINDOW_PX)
+        return { app, page, start: () => startSessionIn(page, 'ws-a', { method: 'Codex' }) }
+      }
+    },
+    {
+      kind: 'a new remote Claude Code tab',
+      open: async (env: E2EEnv) => {
+        seedWorkbenchDefault(env, false)
+        seedSettings(env, { hintsOff: true })
+        const { app, page } = await launchWithRemote(env)
+        await setWindowWidth(app, WIDE_WINDOW_PX)
+        await addRemoteWorkspace(page, env)
+        return {
+          app,
+          page,
+          start: () => startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+        }
+      }
+    },
+    {
+      kind: 'a resumed Codex session',
+      open: async (env: E2EEnv) => {
+        installCodex(env)
+        const { app, page } = await launchWithPanelShut(env)
+        await setWindowWidth(app, WIDE_WINDOW_PX)
+        await startSessionIn(page, 'ws-a', { method: 'Codex' })
+        const row = wsRows(page, 'ws-a').first()
+        await openMenu(page, row)
+        await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        return { app, page, start: () => row.click() }
+      }
+    }
+  ]) {
+    test(`${tab.kind} shows at its full width from its first unmasked frame, even when frame callbacks run late`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const { app, page, start } = await tab.open(env)
+      try {
+        await recordUnmaskedColsWithLateFrameCallbacks(page)
+        await start()
+        await expect.poll(() => shownCenterCols(page), { timeout: 30_000 }).toBe(CENTER_MAX_COLS)
+        await expect(page.locator('.term-island .empty')).toHaveCount(0, { timeout: 30_000 })
+        await page.waitForTimeout(SHOWN_LONG_ENOUGH_TO_SETTLE_MS)
+        expect(await recordedUnmaskedCols(page)).toEqual([CENTER_MAX_COLS])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('a remote Claude tab stops at 140 columns too', async ({ env }) => {
     test.setTimeout(240_000)
