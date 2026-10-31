@@ -1214,11 +1214,17 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   sets; `tengu_*` gains 45 and loses 12, the one named in this ledger being
   `tengu_sunny_locket` (§1, idle compaction); all 49 names `src/` uses or passes are
   still there.
-  Between 2.1.314 and 2.1.316 (`strings -n 6`, 2026-10-31, darwin-arm64): the 87
-  `anthropic-*` names and the 54 dated beta names identical; `CLAUDE_CODE_*` gains 12
-  (among them `SUBAGENT_EFFORT`, `DISABLE_ULTRATHINK`, `SESSION_BEGAN_AS_COPY`) and
-  loses none, none of which `src/` sets (Koloft drops every inherited `CLAUDE_CODE_*`
-  before a launch, §9); all 49 names `src/` uses or passes are still there.
+  Between 2.1.314 and 2.1.316 (`strings -n 6`, 2026-10-31, darwin-arm64, and
+  linux-arm64 2.1.316 against darwin-arm64 2.1.316): `ANTHROPIC_*` and `*_MODEL`
+  identical at 71 and 14 (counted by a whole-word match, so not comparable with the 77
+  above), the 87 lowercase `anthropic-*` header names and the 54 dated beta names
+  identical; `CLAUDE_CODE_*` gains 12 (among them `SUBAGENT_EFFORT`,
+  `DISABLE_ULTRATHINK`, `SESSION_BEGAN_AS_COPY`) and loses none, none of which `src/`
+  sets (Koloft drops every inherited `CLAUDE_CODE_*` before a launch, §9); `tengu_*`
+  gains 38 and loses 3, none of the 11 named in this ledger among them; the linux-arm64
+  build names the same, apart from a few names `strings` glued to the next byte; the 14
+  `CLAUDE_CODE_*`, `ANTHROPIC_*`, `DISABLE_*` and `CLAUDE_CONFIG_DIR` names `src/`
+  spells out are in both builds.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1982,8 +1988,9 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
   key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
-  reader parses the JSON and counts no keys. 2.1.316 writes the same keys (`strings`
-  of the code that writes `<pid>.json`, 2026-10-31). A daemon-hosted
+  reader parses the JSON and counts no keys. That 2.1.316 writes the same keys is read
+  from `strings` of the code that writes `<pid>.json` (2026-10-31), not from a run:
+  inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2182,14 +2189,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   between them claude was still running 20 s later, its footer back to "Press Ctrl-C
   again to exit"; with 0.3 s it exited. Measured 2026-10-29, CC 2.1.312, a python pty
   80×24 through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR` with the folder trusted.
-- **Enter strips invisible characters from the input box; up to 2.1.314 that Enter does
-  not send, since 2.1.316 a prompt goes on the first Enter but a command still waits.**
+- **Enter strips invisible characters from the input box; on 2.1.293 and 2.1.314 that
+  Enter does not send, on 2.1.316 a prompt goes on the first Enter but a command still
+  waits.** The versions between were not run.
   Text with a U+200B or a tag character (U+E0041) in it, typed in 128-character pieces
   0.3 s apart and then one CR: on 2.1.293 and 2.1.314 the character was removed, a
   notice `Removed 1 invisible character · review and press Enter to send` showed above
   the box for a few seconds, the cleaned text stayed in the box, and only a second CR
   sent it; on 2.1.316 the first CR sent the cleaned text and the notice read `Removed 1
-invisible character from your prompt`. A short bracketed paste holding a U+200B
+  invisible character from your prompt`. A short bracketed paste holding a U+200B
   followed by typed text behaved the same way on each version. An emoji ZWJ sequence
   (👨‍👩‍👧), `❤️` (U+FE0F) and `请只回复 OK 👍` were kept as they were and sent on the first
   CR on all three. On 2.1.316 `/context` and `/cost` with a U+200B appended were held
@@ -2202,8 +2210,9 @@ invisible character from your prompt`. A short bracketed paste holding a U+200B
   two emoji, a U+FE0F after an emoji and the tag characters of the England, Scotland and
   Wales flags are kept; 2.1.316 still holds text that starts with `/` or `!`, is one of
   `exit`, `quit`, `:q`, `:q!`, `:wq` or `:wq!`, or had a text-direction character
-  removed. A prompt handed over as a launch argument is cleaned and sent without
-  review, unless it starts with `/` (`strings`, not run).
+  removed. A prompt handed over as a launch argument and holding such a character is
+  cleaned and sent without review, or put back in the box for review when it starts
+  with `/`: read from `strings` only, inferred, not checked.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
