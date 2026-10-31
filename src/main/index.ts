@@ -4847,7 +4847,7 @@ function archiveSession(id: string): boolean {
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
-const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 3_000
+const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
 const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
   AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 
@@ -4884,11 +4884,32 @@ function aliveSessionsIn(treeRoot: string, exceptTabId?: string): SessionInfo[] 
   )
 }
 
+const TAB_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
+
 async function whatClosingWouldLose(
   target: ClosableSession,
   info?: ProjectInfo
 ): Promise<string[]> {
-  if (!(await treeRemovals.settledWithin(target.treeRoot, A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS)))
+  if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked =
+    target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
+      ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
+      : []
+  const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  let left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  if (left.length && treeRemovals.has(target.treeRoot))
+    left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  return [...asked, ...left]
+}
+
+async function leftOnceRemovalsEnd(
+  target: ClosableSession,
+  info: ProjectInfo | undefined,
+  waitUntil: number
+): Promise<string[]> {
+  if (!(await treeRemovals.settledWithin(target.treeRoot, waitUntil - Date.now())))
     return [
       `Koloft is still deleting the worktree ${target.treeRoot}. Close the session again in a minute.`
     ]
@@ -4913,7 +4934,8 @@ async function closeSessionFully(
 ): Promise<boolean> {
   await treeRemovals.settled(target.treeRoot)
   const where = info ?? projectInfoFor(target.treeRoot)
-  return treeRemovals.run(where.treeRoot, () => endAndRemove(target, where, tell))
+  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
 }
 
 async function endAndRemove(
@@ -4932,6 +4954,14 @@ async function endAndRemove(
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const leftSinceTheCheck =
+    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+  if (leftSinceTheCheck.length) {
+    tell(
+      `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
+    )
+    return false
+  }
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     tell(
@@ -4976,22 +5006,15 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
-const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
-const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
-  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
-  // CODEX§20
-  const asked = codexSessions?.questionWentUnanswered(tabId)
-    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
-    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
-  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
+  if (!session) return [NO_SESSION_FOR_THE_RUN]
+  return whatClosingWouldLose(session, cronRunTree(root, worktree))
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {

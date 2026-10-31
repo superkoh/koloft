@@ -748,7 +748,10 @@ async function sessionOnThisComputer(
       `koloft session close: ${title} runs on another machine, where Koloft cannot check what closing it would lose.`
     )
   const target = d.closable().find((s) => s.sessionId === row.id)
-  return target ? { ok: true, value: target } : fail(`koloft session close: ${title} is gone.`)
+  if (!target) return fail(`koloft session close: ${title} is gone.`)
+  if (target.tabId && d.isButler(target.tabId))
+    return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
+  return { ok: true, value: target }
 }
 
 interface StartedSessionsToClose {

@@ -974,7 +974,7 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['grand-session', 'grand-session'])
   })
 
-  it('closes a session it did not start, ended or still open, in any workspace', async () => {
+  it('closes a session it did not start, ended or still open, in any workspace, and closes nothing for a ref that names no session', async () => {
     const someoneElses: ClosableSession = {
       sessionId: 'cold-session',
       backendId: 'claude',
@@ -993,6 +993,9 @@ describe('koloft session close', () => {
       },
       [someoneElses]
     )
+    for (const ref of ['other', ''])
+      expect((await verb(['close', ref], from('me'))).exit).not.toBe(0)
+    expect(closed).toEqual([])
     expect((await verb(['close', 'Old run'], from('me'))).exit).toBe(0)
     expect((await verb(['close', 'other title'], from('me'))).exit).toBe(0)
     expect(closed).toEqual(['cold-session', 'other-session'])
@@ -1596,7 +1599,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ended('site-id', 'claude', 'site-build')
   ]
 
-  it('close takes a session on this computer, Claude or Codex, ended or open, in any workspace, off the list, and refuses, closing nothing, one on another machine', async () => {
+  it('close takes a session on this computer, Claude or Codex, ended or open, in any workspace, off the list, and refuses, closing nothing, one on another machine and the open butler', async () => {
     const withEnded = sidebar([
       [
         WS,
@@ -1607,13 +1610,15 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
         ]
       ],
       ['ssh://box/srv/api', [row('api-old', { title: 'api-old', host: 'ssh' })]],
-      [OTHER_WS, [row('site-id', { title: 'site-build' })]]
+      [OTHER_WS, [row('site-id', { title: 'site-build' })]],
+      ['/conductors/global', [row('cond-id', { title: 'Alfred', running: true })]]
     ])
     const { verb, closed } = harness(live, {}, [], conducting({ sidebar: withEnded }), ENDED)
     expect((await verb(['close', 'old-work'], from('butler'))).exit).toBe(0)
     expect((await verb(['close', OTHER_THREAD], from('butler'))).exit).toBe(0)
     expect(closed).toEqual(['old-id', ENDED_CODEX])
     expect((await verb(['close', 'api-old'], from('butler'))).text).toContain('another machine')
+    expect((await verb(['close', 'Alfred'], from('fix'))).text).toContain('is the butler')
     expect(closed).toEqual(['old-id', ENDED_CODEX])
     expect((await verb(['close', 'fix-login'], from('butler'))).exit).toBe(0)
     expect((await verb(['close', 'site-build'], from('butler'))).exit).toBe(0)
