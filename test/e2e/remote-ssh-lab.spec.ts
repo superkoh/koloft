@@ -37,7 +37,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER } from './helpers/browser'
+import { BROWSER, guestByUrl } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -583,14 +583,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as source', async ({
+  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as a web page', async ({
     env
   }) => {
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
     const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
     expect(fs.existsSync(scratch)).toBe(false)
-    await withLab(env, async ({ page, lab }) => {
+    await withLab(env, async ({ app, page, lab }) => {
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
@@ -618,10 +618,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await htmlRow.click()
       await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('y.html')
-      await expect(
-        page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
-      ).toHaveText('Source')
+      await guestByUrl(app, /^koloft-machine:\/\/.*\/y\.html$/, { timeout: 30_000 })
     })
   })
 
