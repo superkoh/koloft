@@ -7,6 +7,7 @@ import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
+  agentRow,
   centerTerm,
   chooseBackend,
   gitInit,
@@ -552,6 +553,14 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect(methodSwitch('Codex')).toBeChecked()
       await expect(methodSwitch('Codex')).toBeDisabled()
       await expect(methodSwitch('Claude')).toBeEnabled()
+      await page.getByRole('tab', { name: 'Assist', exact: true }).click()
+      const runsOn = page.getByRole('button', { name: 'Koloft Assist runs on' })
+      await expect(runsOn).toHaveText('Codex')
+      await runsOn.click()
+      await expect(agentRow(page, 'Claude')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Claude')).toContainText('Off')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
       await page.keyboard.press('Escape')
       await expect(page.locator('.set-main')).toHaveCount(0)
 
