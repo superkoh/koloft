@@ -99,7 +99,7 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
 export const FIVE_HOUR_STOP = 0.9
 
 export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
-  return u.has5h && !resetElapsed(u.r5, nowSec) && u.u5 >= FIVE_HOUR_STOP
+  return !resetElapsed(u.r5, nowSec) && u.u5 >= FIVE_HOUR_STOP
 }
 
 export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95

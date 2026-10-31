@@ -75,8 +75,9 @@ describe('U1 · parseRatelimitHeaders', () => {
     expect(parseRatelimitHeaders(fullHeaders(), NOW_MS)!.usage.has5h).toBe(true)
   })
 
-  it('missing 7d → probe failure (null)', () => {
+  it('neither a 5h nor a 7d bucket → probe failure (null)', () => {
     const h = fullHeaders()
+    delete h['anthropic-ratelimit-unified-5h-utilization']
     delete h['anthropic-ratelimit-unified-7d-utilization']
     expect(parseRatelimitHeaders(h, NOW_MS)).toBeNull()
   })
@@ -95,8 +96,7 @@ describe('U1 · parseRatelimitHeaders', () => {
   it('mixed-case header names and CR-terminated values parse fine', () => {
     const h: Record<string, string> = {
       'Anthropic-Ratelimit-Unified-5h-Utilization': '0.5\r',
-      'ANTHROPIC-RATELIMIT-UNIFIED-5H-STATUS': 'allowed\r',
-      'Anthropic-Ratelimit-Unified-7d-Utilization': '0.25\r'
+      'ANTHROPIC-RATELIMIT-UNIFIED-5H-STATUS': 'allowed\r'
     }
     const p = parseRatelimitHeaders(h, NOW_MS)
     expect(p).not.toBeNull()

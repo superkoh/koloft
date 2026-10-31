@@ -90,7 +90,8 @@ export function parseRatelimitHeaders(
     return Number.isFinite(n) ? n : 0
   }
   const str = (key: string): string => h[pre + key] ?? '?'
-  if (h[pre + '7d-utilization'] === undefined) return null
+  const has5h = h[pre + '5h-utilization'] !== undefined
+  if (!has5h && h[pre + '7d-utilization'] === undefined) return null
   return {
     usage: {
       u5: num('5h-utilization'),
@@ -103,7 +104,7 @@ export function parseRatelimitHeaders(
       r7: num('7d-reset'),
       roi: num('7d_oi-reset'),
       overage: str('overage-status'),
-      has5h: h[pre + '5h-utilization'] !== undefined,
+      has5h,
       hasOi: h[pre + '7d_oi-utilization'] !== undefined,
       at
     }

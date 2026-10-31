@@ -164,8 +164,8 @@ export function AccountsPane(): JSX.Element {
         <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
-            Off, accounts are picked purely by weekly use — use that when fable is nearly spent and
-            one account is taking every session.
+            Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
+            that when fable is nearly spent and one account is taking every session.
           </small>
         </div>
         <Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />
@@ -641,9 +641,7 @@ function AccountRow({
           <Meter label="7d" v={u.u7} win="7d" />
           {u.hasOi && <Meter label="fable" v={u.uoi} win="oi" soi={u.soi} />}
           {/* CC§7 */}
-          {u.has5h && u.r5 > 0 && (
-            <span className="acct-note">5h resets {resetLabel(u.r5, now)}</span>
-          )}
+          {u.r5 > 0 && <span className="acct-note">5h resets {resetLabel(u.r5, now)}</span>}
         </div>
       ) : (
         <div className="acct-meters">

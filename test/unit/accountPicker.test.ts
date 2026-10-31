@@ -402,6 +402,23 @@ describe('U4 · the 5-hour stop', () => {
     })
   })
 
+  it('an account walled on its week never wins over one that is only at its 5h stop', async () => {
+    const h = makeHarness([meta({ name: 'walled' }), meta({ name: 'hot' })])
+    h.setProbe('walled', {
+      ok: true,
+      usage: usage({ u5: 0.1, u7: 1, s7: 'rejected', r7: NOW_S + 3 * 86_400 })
+    })
+    h.setProbe('hot', { ok: true, usage: usage({ u5: 0.92, u7: 0.5, r5: NOW_S + 3600 }) })
+    expect((await h.picker.pick()).account).toBe('hot')
+  })
+
+  it('every account at its 5h stop and one with no 5h reset time → a known reset wins over the unknown one', async () => {
+    const h = makeHarness([meta({ name: 'unknown' }), meta({ name: 'known' })])
+    h.setProbe('unknown', { ok: true, usage: usage({ u5: 0.95, r5: 0 }) })
+    h.setProbe('known', { ok: true, usage: usage({ u5: 0.95, r5: NOW_S + 3600 }) })
+    expect((await h.picker.pick()).account).toBe('known')
+  })
+
   it('every account at its 5h stop → the one whose 5h resets first', async () => {
     const h = makeHarness([meta({ name: 'later' }), meta({ name: 'sooner' })])
     h.setProbe('later', { ok: true, usage: usage({ u5: 0.92, u7: 0.1, r5: NOW_S + 3 * 3600 }) })

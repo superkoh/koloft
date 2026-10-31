@@ -155,10 +155,9 @@ export function TopbarUsage(): JSX.Element | null {
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
   const claudePool = poolSnapshot(members, now)
-  const measuredSubs = enabled.filter((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage)
   const cols: Columns = {
-    fiveHour: measuredSubs.length === 0 || measuredSubs.some((a) => a.usage?.has5h),
-    fable: measuredSubs.some((a) => a.usage?.hasOi)
+    fiveHour: claudePool.measured === 0 || claudePool.t5 !== null,
+    fable: claudePool.tfable !== null
   }
 
   const schedule = (ms: number, fn: () => void): void => {
@@ -549,10 +548,7 @@ interface Columns {
 function NoFiveHourCell(): JSX.Element {
   return (
     <div className="tbu-cell" role="group" aria-label="no 5-hour limit">
-      <span className="acct-meter none" data-win="5h">
-        <span className="m-track" />
-        <span className="m-pct">—</span>
-      </span>
+      <Meter v={null} win="5h" />
       <span className="tbu-cell-sub" aria-hidden>
         no 5-hour limit
       </span>

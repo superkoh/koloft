@@ -117,8 +117,22 @@ function fableFree(u: UsageSnapshot, nowSec: number): boolean {
   return !fableExhausted(u)
 }
 
-function firstFiveHourBack<T extends { snap: UsageSnapshot }>(stopped: T[]): T {
-  return stopped.reduce((best, s) => (s.snap.r5 < best.snap.r5 ? s : best))
+function fiveHourBackAt(u: UsageSnapshot): number {
+  return u.r5 > 0 ? u.r5 : Infinity
+}
+
+function wallBackAt(u: UsageSnapshot): number {
+  const backs: number[] = []
+  if (u.s5 === 'rejected' && u.r5 > 0) backs.push(u.r5)
+  if (u.s7 === 'rejected' && u.r7 > 0) backs.push(u.r7)
+  return backs.length > 0 ? Math.max(...backs) : Infinity
+}
+
+function soonest<T extends { snap: UsageSnapshot }>(
+  list: T[],
+  backAt: (u: UsageSnapshot) => number
+): T {
+  return list.reduce((a, b) => (backAt(b.snap) < backAt(a.snap) ? b : a))
 }
 
 function withLoad(score: Score, liveSessions: number): Score {
@@ -276,8 +290,14 @@ export class AccountPicker {
     }
 
     const routed = route === 'fable' ? scored.filter((s) => fableHosts.includes(s.meta)) : scored
-    const open = routed.filter((s) => !fiveHourStopped(s.snap, nowSec))
-    const pool = open.length > 0 ? open : [firstFiveHourBack(routed)]
+    const runnable = routed.filter((s) => !s.score.hardLimited)
+    const open = runnable.filter((s) => !fiveHourStopped(s.snap, nowSec))
+    const pool =
+      open.length > 0
+        ? open
+        : runnable.length > 0
+          ? [soonest(runnable, fiveHourBackAt)]
+          : [soonest(routed, wallBackAt)]
     const cands: Candidate[] = pool.map((s) => ({ name: s.meta.name, score: s.score }))
     const finalists = leximaxFinalists(cands)
     const winner =
