@@ -5310,10 +5310,13 @@ const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
 
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
+  const { enabled } = loadSettings().sessionMethods
   return startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
     ownerWords: words,
-    backend: HAS_WORKBENCH_BROWSER.includes(butler.backendId) ? butler.backendId : 'claude'
+    backend: HAS_WORKBENCH_BROWSER.includes(butler.backendId)
+      ? butler.backendId
+      : (HAS_WORKBENCH_BROWSER.find((b) => enabled[b]) ?? HAS_WORKBENCH_BROWSER[0])
   }))
 }
 

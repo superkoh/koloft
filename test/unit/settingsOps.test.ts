@@ -307,21 +307,48 @@ describe('session methods', () => {
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })
-  it('keeps Claude enabled and replaces a disabled or unknown default', () => {
-    for (const raw of [
-      null,
-      'codex',
-      { defaultBackend: 'unknown' },
-      { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
-    ]) {
+  it('replaces a disabled or unknown default with the first method still on', () => {
+    for (const raw of [null, 'codex', { defaultBackend: 'unknown' }]) {
       const methods = sanitizeLoadedSettings({ sessionMethods: raw }).sessionMethods
       expect(methods.defaultBackend).toBe('claude')
       expect(methods.enabled.claude).toBe(true)
     }
     expect(
       sanitizeLoadedSettings({
+        sessionMethods: { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'muse',
+      enabled: { claude: false, codex: false, muse: true, agy: true }
+    })
+    expect(
+      sanitizeLoadedSettings({
         sessionMethods: { defaultBackend: 'codex', enabled: { codex: true } }
       }).sessionMethods.defaultBackend
     ).toBe('codex')
+  })
+  it('lets Claude be off while another method is on, and turns Claude back on when nothing is', () => {
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'claude',
+          enabled: { claude: false, codex: true, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'codex',
+      enabled: { claude: false, codex: true, muse: false, agy: false }
+    })
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'agy',
+          enabled: { claude: false, codex: false, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'claude',
+      enabled: { claude: true, codex: false, muse: false, agy: false }
+    })
   })
 })

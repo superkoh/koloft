@@ -162,7 +162,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const ownerBackend = useStore(
-    (s) => backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ?? 'claude'
+    (s) =>
+      backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ??
+      s.settings.sessionMethods.defaultBackend
   )
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})

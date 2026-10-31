@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
-  ALWAYS_ON_BACKEND,
   BACKEND_LABEL,
   SESSION_BACKENDS,
+  lastOneOn,
   normalizeSessionMethods
 } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
@@ -12,7 +12,7 @@ import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
 const METHOD_NOTE: Record<BackendId, string> = {
-  claude: 'Always enabled',
+  claude: 'Runs on a Claude account from Settings ▸ Accounts',
   codex: 'Runs on a Codex account from Settings ▸ Accounts',
   muse: 'Runs on a Muse account from Settings ▸ Accounts',
   agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'
@@ -75,33 +75,36 @@ export function SessionMethodsSection() {
           }
         />
       </div>
-      {SESSION_BACKENDS.map((backend) => (
-        <div className="set-row" key={backend}>
-          <div className="set-lab">
-            <b>{BACKEND_LABEL[backend]}</b>
-            <small>{METHOD_NOTE[backend]}</small>
-            <small>{status(backend)}</small>
-          </div>
-          <Switch
-            checked={methods.enabled[backend]}
-            disabled={backend === ALWAYS_ON_BACKEND}
-            ariaLabel={`Enable ${BACKEND_LABEL[backend]}`}
-            title={
-              backend === ALWAYS_ON_BACKEND
-                ? `${BACKEND_LABEL[backend]} is always enabled`
-                : `Enable ${BACKEND_LABEL[backend]} for new sessions`
-            }
-            onChange={(on) =>
-              update({
-                sessionMethods: normalizeSessionMethods({
-                  ...methods,
-                  enabled: { ...methods.enabled, [backend]: on }
+      {SESSION_BACKENDS.map((backend) => {
+        const last = methods.enabled[backend] && lastOneOn(methods, backend)
+        return (
+          <div className="set-row" key={backend}>
+            <div className="set-lab">
+              <b>{BACKEND_LABEL[backend]}</b>
+              <small>{METHOD_NOTE[backend]}</small>
+              <small>{status(backend)}</small>
+            </div>
+            <Switch
+              checked={methods.enabled[backend]}
+              disabled={last}
+              ariaLabel={`Enable ${BACKEND_LABEL[backend]}`}
+              title={
+                last
+                  ? `Turn on another method before turning ${BACKEND_LABEL[backend]} off`
+                  : `Enable ${BACKEND_LABEL[backend]} for new sessions`
+              }
+              onChange={(on) =>
+                update({
+                  sessionMethods: normalizeSessionMethods({
+                    ...methods,
+                    enabled: { ...methods.enabled, [backend]: on }
+                  })
                 })
-              })
-            }
-          />
-        </div>
-      ))}
+              }
+            />
+          </div>
+        )
+      })}
     </>
   )
 }
