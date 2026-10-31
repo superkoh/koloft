@@ -390,7 +390,9 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountLine,
   noAccountMessage,
+  SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -1976,6 +1978,8 @@ function terminalPickOf(
   )
 }
 
+const shimAccountRefusals = new Map<string, string>()
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -1998,6 +2002,9 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     return
   }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
+  if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
+  else shimAccountRefusals.delete(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
@@ -3104,6 +3111,11 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    const accountIssue = shimAccountRefusals.get(e.id)
+    shimAccountRefusals.delete(e.id)
+    // ADR-0030
+    if (accountIssue && !e.signal && e.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+      sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {
@@ -3764,7 +3776,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
-    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,

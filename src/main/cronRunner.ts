@@ -136,7 +136,7 @@ export interface RunnerDeps {
   tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult>
   foldersInUse(leavingTabId?: string): Set<string>
   quitting(): boolean
-  accountUsable(backend: BackendId): boolean
+  noUsableAccount(backend: BackendId): string | null
   trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
   launch(req: LaunchRequest): LaunchResult | Promise<LaunchResult>
@@ -446,9 +446,10 @@ export class CronRunner {
       }
 
       const backend = cronBackend(job)
-      if (!this.d.accountUsable(backend)) {
-        this.fail(job, dueAt, mark, 'no usable account')
-        return { ok: false, reason: 'no-account' }
+      const noAccount = this.d.noUsableAccount(backend)
+      if (noAccount) {
+        this.fail(job, dueAt, mark, noAccount)
+        return { ok: false, reason: 'no-account', why: noAccount }
       }
 
       if (!this.d.ready()) {

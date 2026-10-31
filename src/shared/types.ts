@@ -1046,6 +1046,7 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
+  accountIssue?: string
 }
 
 export interface UnexpectedExitScreen {
@@ -1522,10 +1523,8 @@ export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'wait
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }
-  | {
-      ok: false
-      reason: 'skipped' | 'failed' | 'folder-missing' | 'no-account' | 'not-ready' | 'unknown-job'
-    }
+  | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
+  | { ok: false; reason: 'no-account'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 
