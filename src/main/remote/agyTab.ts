@@ -32,7 +32,7 @@ export const AGY_TITLE_FILE = 'agy-title.sh'
 export const AGY_LIST_FILE = 'agy-list.mjs'
 export const AGY_STATUSLINE_FILE = 'statusline/agy.sh'
 
-const REMOTE_GEMINI = '$HOME/.gemini'
+const REMOTE_GEMINI = `$HOME/${AGY_REMOTE_GEMINI}`
 const REMOTE_NODE = `${REMOTE_HOME}/node/bin/node`
 
 // AGY§4

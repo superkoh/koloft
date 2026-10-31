@@ -10,6 +10,7 @@ import type {
   LaunchPermission
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
@@ -522,9 +523,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§4 AGY§8
-  transcriptFile(key: string): string | undefined {
-    const gemini = hostOfKey(key) ? path.posix.join('~', AGY_REMOTE_GEMINI) : this.gemini
-    return agyTranscript(gemini, this.nativeId(key))
+  transcriptPlaces(key: string): TranscriptPlaces {
+    const onThisMac = this.transcriptOf(key)
+    if (!hostOfKey(key)) return { onThisMac }
+    const onMachine = agyTranscript(path.posix.join('~', AGY_REMOTE_GEMINI), this.nativeId(key))
+    return { onThisMac, onMachine }
   }
 
   get cliBinary(): string | undefined {

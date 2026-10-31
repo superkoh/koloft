@@ -247,6 +247,28 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-53: koloft session list run in a Claude Code session on the machine gives its transcript as the file in that machine’s home, which the session there can read, never the copy mirrored to this Mac', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const tabId = await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id')
+      const listed = path.join(remoteDir(env), 'listed.txt')
+      await agentShell(page, tabId!, 60_000)(`koloft session list > ${listed}`)
+      const transcript = /· transcript: (\S+)$/m.exec(fs.readFileSync(listed, 'utf8'))?.[1]
+      expect(transcript).toBe(
+        `~/.claude/projects/${encodeCwd(remoteDir(env))}/${first.sessionId}.jsonl`
+      )
+      expect(fs.existsSync(path.join(machineHome(env), transcript!.slice('~/'.length)))).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-02: a remote session has a Workbench on the machine — Files lists its folder, Changes shows its edits, and a terminal opens there that refuses an interactive claude', async ({
     env
   }) => {

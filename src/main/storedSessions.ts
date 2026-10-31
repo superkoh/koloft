@@ -16,6 +16,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { TranscriptPlaces } from './sessionBackends'
 import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
@@ -283,6 +284,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
   abstract transcriptExists(key: string): Promise<boolean>
   abstract readTurns(key: string, n: number): Promise<Turn[]>
+  abstract transcriptPlaces(key: string): TranscriptPlaces | undefined
 
   protected get label(): string {
     return BACKEND_LABEL[this.id]

@@ -57,6 +57,7 @@ import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
+import type { TranscriptPlaces } from './sessionBackends'
 
 export interface ButlerHelperTask {
   prompt: string
@@ -152,18 +153,24 @@ function sendMessageReaches(
   )
 }
 
-function transcriptPart(info: SessionInfo, me: SessionInfo, file: string | undefined): string[] {
+function transcriptPart(
+  info: SessionInfo,
+  me: SessionInfo,
+  places: TranscriptPlaces | undefined
+): string[] {
   const machine = info.remote?.host
-  if (!file || (!machine && me.remote)) return []
-  const readable = machine && machine !== me.remote?.host ? remoteCopyText(machine, file) : file
-  return [`transcript: ${readable}`]
+  const reachedOverSsh = machine && places?.onMachine && remoteCopyText(machine, places.onMachine)
+  const readable = me.remote
+    ? machine === me.remote.host && places?.onMachine
+    : (places?.onThisMac ?? reachedOverSsh)
+  return readable ? [`transcript: ${readable}`] : []
 }
 
 function openSessionLines(
   sessions: ListedSession[],
   me: SessionInfo,
   asking: (tabId: string) => boolean,
-  transcriptFile: (key: string) => string | undefined
+  transcriptPlaces: (key: string) => TranscriptPlaces | undefined
 ): string[] {
   return sessions.map(({ info, peerName, starter }) => {
     const parts = [
@@ -175,7 +182,7 @@ function openSessionLines(
       parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
-    parts.push(...transcriptPart(info, me, transcriptFile(info.sessionId)))
+    parts.push(...transcriptPart(info, me, transcriptPlaces(info.sessionId)))
     return parts.join(' · ')
   })
 }
@@ -419,7 +426,7 @@ export interface SessionVerbDeps {
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
-  transcriptFile(key: string): string | undefined
+  transcriptPlaces(key: string): TranscriptPlaces | undefined
   quotedPrompt(tabId: string): string | undefined
   butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
@@ -513,7 +520,7 @@ async function listSessions(
   const open = new Set(sessions.map((s) => s.sessionId))
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
-    ...openSessionLines(listed, me, d.asking, d.transcriptFile),
+    ...openSessionLines(listed, me, d.asking, d.transcriptPlaces),
     ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]

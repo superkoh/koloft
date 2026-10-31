@@ -40,7 +40,7 @@ function stubBackend(
     accountUsable: () => true,
     trustsFolder: () => true,
     turns: async () => [],
-    transcriptFile: () => undefined,
+    transcriptPlaces: () => undefined,
     permissionClass: () => 'prompting' as const,
     peerNames: () => async () => null,
     runningElsewhere: () => false

@@ -14,6 +14,7 @@ import type {
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import {
   CodexObservation,
   codexTurns,
@@ -737,9 +738,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
-  // CODEX§19
-  transcriptFile(key: string): string | undefined {
-    return this.history.get(key)?.path ?? undefined
+  // CODEX§1
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    const file = this.history.get(key)?.path
+    if (!file) return undefined
+    return hostOfKey(key) ? { onMachine: file } : { onThisMac: file }
   }
 
   // CODEX§11

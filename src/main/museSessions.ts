@@ -11,6 +11,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
@@ -511,10 +512,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§2 MUSE§5
-  transcriptFile(key: string): string | undefined {
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
     const listed = this.history.get(key)?.logPath
-    if (listed || hostOfKey(key)) return listed
-    return museSessionLog(this.env, this.nativeId(key))
+    if (hostOfKey(key)) return listed ? { onMachine: listed } : undefined
+    const followed = [...this.runs.values()].find((r) => r.info?.sessionId === key)?.log?.tail.file
+    const file = listed ?? followed
+    return file ? { onThisMac: file } : undefined
   }
 
   get cliBinary(): string | undefined {

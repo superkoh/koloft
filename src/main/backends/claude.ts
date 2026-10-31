@@ -17,7 +17,7 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { SessionBackend } from '../sessionBackends'
+import type { SessionBackend, TranscriptPlaces } from '../sessionBackends'
 import type { PtyManager } from '../ptyManager'
 import type { SessionTracker } from '../sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
@@ -271,8 +271,8 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
 
-  transcriptFile(key: string): string | undefined {
-    return this.d.tracker.transcriptOnMachine(key)
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    return this.d.tracker.transcriptPlaces(key)
   }
 
   async turns(key: string, n: number): Promise<Turn[]> {
