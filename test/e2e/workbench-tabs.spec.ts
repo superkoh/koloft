@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { seedSettings } from './helpers/env'
 import {
   centerTerm,
   clickAppMenuItem,
@@ -98,6 +99,40 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await wbTabs(page).nth(1).click()
     await expect(wbActiveTab(page)).toHaveText(/alpha/)
     expect(await focusOwner(page)).toBe('panel')
+  })
+
+  test('a click on the collapsed Workbench’s files button or on one of its docs opens the panel and leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await centerTerm(page).click()
+      expect(await focusOwner(page)).toBe('tui')
+
+      await page.locator(WORKBENCH.previewDiff).click()
+      await expect.poll(() => layoutState(page)).toBe('T2')
+      await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+      expect(await focusOwner(page)).toBe('tui')
+      await page.keyboard.type('/answer looks good')
+      await page.keyboard.press('Enter')
+      await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
+
+      await page.locator('.aux-ico.wb-toggle').click()
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await centerTerm(page).click()
+      await page.locator(WORKBENCH.previewDocs).filter({ hasText: 'NOTES.md' }).click()
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('NOTES.md')
+      expect(await focusOwner(page)).toBe('tui')
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('a click on a view switch inside the Changes tab (Diff / Source, Changes / Browse) leaves the caret in the session terminal, so the next typed line reaches the session', async ({
