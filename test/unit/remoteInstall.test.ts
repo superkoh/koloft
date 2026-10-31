@@ -513,6 +513,12 @@ describe('the heartbeat question', () => {
     expect(ask([nasty]).git.get(nasty)?.isGit).toBe(true)
   })
 
+  // PLATFORM§37
+  it('passes on no folder for a Workbench shell whose folder was removed under it on Linux', () => {
+    const [shell] = parseHeartbeat('shell pty-1\tbash\t/home/u/build (deleted)\n').shells
+    expect(shell).toEqual({ tabId: 'pty-1', name: 'bash', cwd: '' })
+  })
+
   // CC§2
   it("tells the machine's resolved /tmp and its user id, where claude keeps each session's scratchpad", () => {
     expect(ask([]).tmp).toEqual({ tmpRoot: fs.realpathSync('/tmp'), uid: process.getuid!() })

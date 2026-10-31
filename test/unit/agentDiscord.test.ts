@@ -135,12 +135,16 @@ describe('koloft discord shot', () => {
     expect(shot).toEqual(['http://localhost:5173/'])
   })
 
-  it('refuses a file that is not there or not a web page, a second page, and any session that is not the butler', async () => {
+  it('refuses a file that is not there or not a web page, a page on an ssh machine, a second page, and any session that is not the butler', async () => {
     fs.writeFileSync(path.join(cwd, 'a.html'), 'a')
     fs.writeFileSync(path.join(cwd, 'notes.txt'), 'n')
     const butler = verb(true)
     expect(await butler.call(['shot', 'missing.html'])).toEqual({ text: NOT_A_PAGE, exit: 1 })
     expect(await butler.call(['shot', 'notes.txt'])).toEqual({ text: NOT_A_PAGE, exit: 1 })
+    expect(await butler.call(['shot', 'ssh://devbox/home/u/report.html'])).toEqual({
+      text: NOT_A_PAGE,
+      exit: 1
+    })
     expect((await butler.call(['shot', 'a.html', 'a.html'])).exit).toBe(EXIT_USAGE)
     const other = verb(false)
     expect(await other.call(['shot', 'a.html'])).toEqual({ text: NOT_THE_BUTLER, exit: 1 })

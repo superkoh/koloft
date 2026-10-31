@@ -174,6 +174,7 @@ import {
   mirrorHookDir,
   mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
+  remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
@@ -314,6 +315,8 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
+  MACHINE_PAGE_SCHEME,
+  machinePageOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -2656,6 +2659,7 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true
     }
   },
+  { scheme: MACHINE_PAGE_SCHEME, privileges: { standard: true, secure: true } },
   // PLATFORM§15
   { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
@@ -2692,8 +2696,16 @@ function mimeOf(p: string): string {
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
     '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
     '.css': 'text/css',
     '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.wasm': 'application/wasm',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
     '.json': 'application/json',
     '.txt': 'text/plain'
   }
@@ -3047,6 +3059,7 @@ app.whenReady().then(() => {
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
+    if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -3620,10 +3633,16 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
-      const live = new Set([
-        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...codexMachines
-      ])
+      const live = new Set(codexMachines)
+      const shellTabsOn = new Map<string, string[]>()
+      for (const h of ptyMgr.list()) {
+        if (!h.alive) continue
+        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.utilMachine) {
+          live.add(h.utilMachine)
+          shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
+        }
+      }
       const busy = new Set(
         allSessions().flatMap((s) => {
           const host = s.alive && machineOfTab(s.tabId)
@@ -3652,7 +3671,8 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
-        busy: busy.has(t.host)
+        busy: busy.has(t.host),
+        shellTabs: shellTabsOn.get(t.host)
       }))
     },
     onChange: (host) => {
@@ -3666,6 +3686,9 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
+    onShells: (host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
+    },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) =>
       void browserTunnels.sync(
@@ -3676,7 +3699,7 @@ app.whenReady().then(() => {
       )
   })
   ptyMgr.on('typed', (tabId: string) => {
-    const host = machineOfTab(tabId)
+    const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
@@ -4447,8 +4470,38 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   })
 }
 
+// ADR-0045
+const MACHINE_PAGE_HEADERS = {
+  'content-security-policy':
+    'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
+}
+
+async function machinePageResponse(request: Request): Promise<Response> {
+  const page = machinePageOf(request.url)
+  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
+  const machine = page && known ? hosts.machine(page.host) : null
+  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  if (!page || !body)
+    return new Response(fileNotFoundHtml(page?.path ?? request.url), {
+      status: 404,
+      headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
+    })
+  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+    headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
+  })
+}
+
+const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
+
+// ADR-0045
+function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
+  if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
+  return !machinePageOf(details.frame?.url ?? '')
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
@@ -4536,7 +4589,10 @@ function setupBrowserPartition(): void {
   })
   // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+    if (
+      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+      machinePageRequestRefused(details)
+    )
       return callback({ cancel: true })
     const guest = details.webContentsId
     const fenced =
@@ -4547,7 +4603,8 @@ function setupBrowserPartition(): void {
     if (!fenced) return callback({})
     if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
       notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    if (details.url.startsWith('file:') || machinePageOf(details.url))
+      return callback({ cancel: true })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
@@ -4670,6 +4727,8 @@ async function openOnMachine(
 ): Promise<boolean> {
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const page = routeFor(keyed, 'agent')
+  if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true
@@ -4956,6 +5015,12 @@ function forgetFreeOnMachine(tabId: string): void {
   if (!host) return
   freedOnMachine.delete(tabId)
   void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
+function forgetShellOnMachine(host: string, tabId: string): void {
+  void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
     controlDir: remoteControlDir
   }).catch(() => undefined)
 }
@@ -5455,8 +5520,10 @@ function registerIpc(): void {
         resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
+        utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
+      if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }

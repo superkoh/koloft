@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, capabilitiesFor, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, identityOf, type LaunchMenu } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
@@ -33,7 +33,14 @@ import {
   IconPullRequest,
   IconScheduled
 } from '../icons'
-import type { BackendId, HeldCommand, MachineState, QueuedLaunch, SessionRow } from '@shared/types'
+import type {
+  BackendId,
+  HeldCommand,
+  HostId,
+  MachineState,
+  QueuedLaunch,
+  SessionRow
+} from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
 import { noAccountLine, popoverX } from '@shared/accountUsage'
@@ -73,7 +80,7 @@ import { fitGithubCounts } from '../wsHeadFit'
 import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
-import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { ButlerRow } from './ButlerRow'
 import { everyWorkspaceRows } from '../butlerRows'
@@ -592,8 +599,7 @@ interface FloatingCtl {
 
 function SidebarFloating({
   ctl,
-  namedMethods,
-  soleMethod,
+  launchable,
   onNewSession,
   onNewWorktreeSession,
   onRestoreSession,
@@ -601,8 +607,7 @@ function SidebarFloating({
   onRemoveWorkspace
 }: {
   ctl: RefObject<FloatingCtl | null>
-  namedMethods: BackendId[] | null
-  soleMethod: BackendId
+  launchable: Record<HostId, LaunchMenu>
   onNewSession: (wsPath: string, backend?: BackendId) => void
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
@@ -790,6 +795,7 @@ function SidebarFloating({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
+      const { named: namedMethods, sole: soleMethod } = launchable[hostOf(target.wsPath)]
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
         const shut = accounts && noAccountLine(accounts, backend ?? soleMethod)
         return (
@@ -1082,15 +1088,13 @@ function SidebarFloating({
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
-  namedMethods,
-  soleMethod,
+  launchable,
   onNewWorktreeSession,
   onRestoreSession,
   onScheduledJobs
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
-  namedMethods: BackendId[] | null
-  soleMethod: BackendId
+  launchable: Record<HostId, LaunchMenu>
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
@@ -1554,8 +1558,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         <>
           <SidebarFloating
             ctl={floating}
-            namedMethods={namedMethods}
-            soleMethod={soleMethod}
+            launchable={launchable}
             onNewSession={onNewSession}
             onNewWorktreeSession={onNewWorktreeSession}
             onRestoreSession={onRestoreSession}

@@ -7,7 +7,7 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
 import { hiddenFromClients, holdDebugger } from './guestDebugger'
-import { urlOrNull } from '@shared/browserRoute'
+import { machinePageOf, urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
 export interface RelayDeps {
@@ -29,7 +29,7 @@ const NO_MAC_FILES_FOR_A_MACHINE =
 function showsThisMac(url: string): boolean {
   const u = urlOrNull(url)
   if (u?.protocol === 'view-source:') return showsThisMac(u.pathname)
-  return u?.protocol === 'file:' || namesThisMacsServer(url)
+  return u?.protocol === 'file:' || machinePageOf(url) !== null || namesThisMacsServer(url)
 }
 
 async function opensThisMac(url: string): Promise<boolean> {

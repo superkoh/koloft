@@ -1785,6 +1785,18 @@ command by hand:
   shells are bash, fish and tcsh.) On a macOS machine, `path_helper` in
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
+- **A shell's foreground program and folder, asked from outside it.** `ps -o tpgid= -p <shell pid>`
+  gives the group that owns the shell's terminal, and `ps -o comm= -p <that group>` its name:
+  `bash`, `tcsh`, `fish` at the prompt, `sleep` while `sleep 60` runs. On Linux that name is
+  cut to 15 characters (`a-very-long-pro`), and `readlink /proc/<pid>/cwd` gives the folder,
+  with ` (deleted)` put after it once that folder is removed (`/tmp/gone (deleted)`);
+  Debian 12's slim image has no `lsof`. On macOS there is no `/proc`, `ps -o comm=` may give the
+  full path, and `lsof -a -d cwd -p <pid> -Fn` gives the folder on its `n` line, resolved
+  (`/private/tmp` for `/tmp`), in about 30 ms. Both give the resolved folder, where a shell's
+  own OSC 7 gives `$PWD` with its symlinks kept — inferred, not checked. A shell that `exec`s keeps its pid, so `echo $$` written just
+  before `exec "$SHELL" -l` names the login shell. (2026-10-30: the e2e sshd image, Debian
+  12.15 with procps-ng 4.0.2, as users whose login shells are bash, tcsh and fish; and this
+  Mac, macOS 27, behind the fake ssh.)
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
 - **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
   then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's

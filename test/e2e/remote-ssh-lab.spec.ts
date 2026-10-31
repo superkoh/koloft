@@ -37,7 +37,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER } from './helpers/browser'
+import { BROWSER, guestByUrl } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -180,6 +180,12 @@ const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
 const ONE_MACHINE_PER_LOGIN_SHELL = MACHINES_FOR_THE_KOLOFT_COMMAND.filter(
   ([alias]) => alias !== 'kt-few'
 )
+const LOGIN_SHELL_OF: Record<string, string> = {
+  'kt-key': 'bash',
+  'kt-tcsh': 'tcsh',
+  'kt-fish': 'fish'
+}
+const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -643,14 +649,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as source', async ({
+  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as a web page', async ({
     env
   }) => {
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
     const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
     expect(fs.existsSync(scratch)).toBe(false)
-    await withLab(env, async ({ page, lab }) => {
+    await withLab(env, async ({ app, page, lab }) => {
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
@@ -678,10 +684,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await htmlRow.click()
       await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('y.html')
-      await expect(
-        page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
-      ).toHaveText('Source')
+      await guestByUrl(app, /^koloft-machine:\/\/.*\/y\.html$/, { timeout: 30_000 })
     })
   })
 
@@ -760,6 +763,34 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(artifactBody(page)).toContainText(`koloft-ssh-lab marker for ${user}`, {
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
+      }
+    })
+  })
+
+  test('E-SSH-35: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+        const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'sleep 60')
+        await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        await page.keyboard.press('Control+C')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'cd /tmp')
+        await expect(folder).toHaveAttribute('title', `ssh://${alias}/tmp`, {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await expect(folder).toHaveText(/\/tmp$/)
       }
     })
   })
