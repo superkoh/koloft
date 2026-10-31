@@ -579,6 +579,42 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     }
   })
 
+  test('T-OB-21: with Codex used last but switched off in Settings ▸ Sessions, the welcome never offers it: screen 3 has no Codex tab, the last screen resumes the newest other session, and Tab walks past Codex', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    firstRun(env, {
+      sessionMethods: {
+        defaultBackend: 'claude',
+        enabled: { claude: true, codex: false, muse: true, agy: true }
+      }
+    })
+    installCodex(env)
+    terminalSession(env, env.workspaces.a, 'Claude one', 3 * DAY)
+    codexThreadIn(env, env.workspaces.a, 'Codex one', 600)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 3)
+      const tabs = welcome(page).locator('.wl-seg button')
+      await expect(tabs).toHaveText([/Claude Code/, /Muse/, /Antigravity/])
+      await expect(welcome(page).locator('.wl-seg button.on')).toContainText('Claude Code')
+      await expect(primary(page)).toBeEnabled()
+      await primary(page).click()
+      await expectStep(page, 4)
+      await expect(primary(page)).toHaveText(/Resume “Claude one”/)
+      const ask = welcome(page).locator('.wl-ask input')
+      const tag = welcome(page).locator('.wl-agtag')
+      await expect(tag).toContainText('Claude')
+      await ask.press('Tab')
+      await expect(tag).toContainText('Muse')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // ADR-0030 CODEX§15
   test('T-OB-19: an account that has to sign in again is signed in again on screen 3, never shadowed by a second one', async ({
     env
