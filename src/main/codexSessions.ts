@@ -546,12 +546,35 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  async readAccount(home: string): Promise<{ signedIn: boolean; apiKey?: true; limits?: unknown }> {
     return this.withRpc(home, async (rpc) => {
       const account = record(await rpc.request('account/read', {}))
       if (!account.account) return { signedIn: false }
+      if (record(account.account).type === 'apiKey') return { signedIn: true, apiKey: true }
       return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
     })
+  }
+
+  // CODEX§15
+  async storeApiKey(home: string, key: string): Promise<void> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(this.binary!, ['login', '--with-api-key'], {
+        cwd: os.homedir(),
+        env: this.envFor(home),
+        stdio: ['pipe', 'ignore', 'pipe']
+      })
+      let said = ''
+      child.stderr.on('data', (chunk) => (said += String(chunk)))
+      child.on('error', reject)
+      child.stdin.on('error', reject)
+      child.on('exit', (code) =>
+        code === 0 ? resolve() : reject(new Error(said.trim() || 'codex login failed'))
+      )
+      child.stdin.end(key)
+    })
+    await this.rereadSignIn(home)
   }
 
   // CODEX§15

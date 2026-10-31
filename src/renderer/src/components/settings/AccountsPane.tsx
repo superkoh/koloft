@@ -205,13 +205,18 @@ export function AccountsPane(): JSX.Element {
       {section(
         codexAccounts,
         'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in, and every Codex session picks the least-used one.',
-        <button
-          className="mini"
-          onClick={() => setSignIn({ backend: 'codex' })}
-          title="Runs codex login in a terminal tab for a new Codex account"
-        >
-          <IconWebPage size={14} /> Sign in to Codex
-        </button>
+        <>
+          <button
+            className="mini"
+            onClick={() => setSignIn({ backend: 'codex' })}
+            title="Runs codex login in a terminal tab for a new Codex account"
+          >
+            <IconWebPage size={14} /> Sign in to Codex
+          </button>
+          <button className="mini" onClick={() => setAdding('codex-home')}>
+            <IconPlus size={14} /> Paste API key
+          </button>
+        </>
       )}
       <div className="set-grp">Muse</div>
       {section(
@@ -700,11 +705,13 @@ export function AddAccountDialog({
       ? 'Paste token'
       : kind === 'apikey'
         ? 'Add API key'
-        : kind === 'muse-home'
-          ? 'Add Muse API key'
-          : kind === 'agy-home'
-            ? 'Add Gemini API key'
-            : 'Add custom endpoint'
+        : kind === 'codex-home'
+          ? 'Add OpenAI API key'
+          : kind === 'muse-home'
+            ? 'Add Muse API key'
+            : kind === 'agy-home'
+              ? 'Add Gemini API key'
+              : 'Add custom endpoint'
 
   return (
     <div className="acct-add">
@@ -741,11 +748,13 @@ export function AddAccountDialog({
             ? 'sk-ant-oat01-… (from claude setup-token)'
             : kind === 'apikey'
               ? 'sk-ant-api03-…'
-              : kind === 'muse-home'
-                ? 'Meta API key'
-                : kind === 'agy-home'
-                  ? 'Gemini API key'
-                  : 'Key issued by that endpoint'
+              : kind === 'codex-home'
+                ? 'sk-proj-… (OpenAI API key)'
+                : kind === 'muse-home'
+                  ? 'Meta API key'
+                  : kind === 'agy-home'
+                    ? 'Gemini API key'
+                    : 'Key issued by that endpoint'
         }
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
@@ -766,11 +775,13 @@ export function AddAccountDialog({
         </button>
       </div>
       <span className="field-hint">
-        {kind === 'muse-home'
-          ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. A key muse cannot use still saves the account, marked UNVERIFIED.'
-          : kind === 'agy-home'
-            ? 'The key goes into your Keychain and is handed to agy when a session starts. The account stays UNVERIFIED until you use Sign in again once to pick a colour scheme and answer Google’s Terms screen in agy.'
-            : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
+        {kind === 'codex-home'
+          ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
+          : kind === 'muse-home'
+            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. A key muse cannot use still saves the account, marked UNVERIFIED.'
+            : kind === 'agy-home'
+              ? 'The key goes into your Keychain and is handed to agy when a session starts. The account stays UNVERIFIED until you use Sign in again once to pick a colour scheme and answer Google’s Terms screen in agy.'
+              : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}

@@ -1794,6 +1794,68 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
+  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder, its row reads Signed in with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: accounts.filter((a) => a.kind !== 'codex-home')
+    })
+    const key = 'sk-proj-e2e-made-up-key'
+    const home = path.join(env.userData, 'codex-homes', 'metered')
+    const accountReads = (): number =>
+      fakeCodexLog<{ codexHome: string }>(env, 'fake-codex-account-reads.jsonl').filter(
+        (r) => r.codexHome === home
+      ).length
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page
+        .locator('.set-grp', { hasText: /^Codex$/ })
+        .locator('xpath=following-sibling::div[1]')
+        .getByRole('button', { name: 'Paste API key' })
+        .click()
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Add OpenAI API key')
+      await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
+      await dialog.locator('input[type="password"]').fill(key)
+      await dialog.getByRole('button', { name: 'Verify and save' }).click()
+      await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^metered$/ })
+      })
+      await expect(row.locator('.acct-note')).toHaveText('Signed in')
+      await expect(row.locator('.acct-status')).toHaveCount(0)
+      await expect(row.locator('.acct-meter')).toHaveCount(0)
+      expect(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8'))).toMatchObject({
+        OPENAI_API_KEY: key
+      })
+      expect(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')).not.toContain(key)
+      await snap(page, 'codex-api-key-row')
+      await page.keyboard.press('Escape')
+
+      const readsAfterAdding = accountReads()
+      expect((await startCodex(page, env)).codexHome).toBe(home)
+      expect((await startCodex(page, env)).codexHome).toBe(home)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Refresh usage' }).click()
+      await expect(page.locator('.acct-refresh', { hasText: 'Updated' })).toBeVisible({
+        timeout: 30_000
+      })
+      expect(accountReads()).toBe(readsAfterAdding + 1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
   test('a Codex sign-in that worked but whose first check after it fails keeps the new account’s row and says nothing failed, and a later Refresh usage shows its weekly use', async ({
     env
   }) => {

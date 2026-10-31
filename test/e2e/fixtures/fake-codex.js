@@ -86,6 +86,16 @@ if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 }
 
+if (argv[0] === 'login' && argv[1] === '--with-api-key') {
+  const key = fs.readFileSync(0, 'utf8').trim()
+  fs.writeFileSync(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })
+  )
+  console.log('Successfully logged in')
+  process.exit(0)
+}
+
 if (argv[0] === 'login') {
   const usedPercent = Number(read('fake-codex-login-used')) || 30
   fs.writeFileSync(path.join(codexHome, 'auth.json'), JSON.stringify({ usedPercent }))
@@ -653,11 +663,23 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         return
       }
       if (method === 'account/read') {
+        const auth = signIn()
+        append('fake-codex-account-reads.jsonl', { codexHome })
         result(id, {
-          account: signIn()
-            ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
-            : null,
+          account: !auth
+            ? null
+            : auth.OPENAI_API_KEY
+              ? { type: 'apiKey' }
+              : { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' },
           requiresOpenaiAuth: false
+        })
+        return
+      }
+      // CODEX§15
+      if (method === 'account/rateLimits/read' && signIn()?.OPENAI_API_KEY) {
+        emit({
+          id,
+          error: { code: -32600, message: 'chatgpt authentication required to read rate limits' }
         })
         return
       }
