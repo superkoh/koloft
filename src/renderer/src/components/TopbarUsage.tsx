@@ -36,6 +36,7 @@ import {
 } from '@shared/accountUsage'
 import { useStore } from '../store'
 import {
+  ApiKeyBadge,
   Meter,
   QuotaMeters,
   ageLabel,
@@ -132,10 +133,10 @@ export function TopbarUsage(): JSX.Element | null {
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
   const muse = accounts.filter((a) => a.kind === 'muse-home' && a.enabled)
-  const agy = accounts.filter((a) => a.kind === 'agy-home' && a.enabled && a.quota)
   const agyRows = accounts.filter(
     (a) => a.kind === 'agy-home' && a.enabled && (a.quota || a.apiKey)
   )
+  const agy = agyRows.filter((a) => a.quota)
   const homePools = [
     { label: 'Codex', accounts: codex },
     { label: 'Muse', accounts: muse }
@@ -349,12 +350,7 @@ function QuotaRow({ a, now }: { a: AccountView; now: number }): JSX.Element {
   const dead = a.status !== 'ok'
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>
-      <RowHead
-        a={a}
-        walled={quotaGlyph(a).kind === 'walled'}
-        stale={null}
-        badges={a.apiKey && <ApiKeyBadge />}
-      />
+      <RowHead a={a} walled={quotaGlyph(a).kind === 'walled'} stale={null} />
       {dead ? (
         <div className="tbu-row-note">
           <span className="acct-note">Not signed in — sign in again from Settings</span>
@@ -558,7 +554,6 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
         stale={stale}
         badges={
           <>
-            {a.kind === 'apikey' && <ApiKeyBadge />}
             {a.kind === 'custom' && <span className="acct-badge api">ENDPOINT</span>}
             {a.kind === 'oauth' && a.fable === 'yes' && (
               <span className="acct-badge fable">FABLE</span>
@@ -663,6 +658,7 @@ function RowHead({
       <span className="acct-name" title={a.name}>
         {a.name}
       </span>
+      {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
       {badges}
       {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
       {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
@@ -671,10 +667,6 @@ function RowHead({
       {stale && <span className="tbu-age">{stale}</span>}
     </div>
   )
-}
-
-function ApiKeyBadge(): JSX.Element {
-  return <span className="acct-badge api">API KEY</span>
 }
 
 function MeteredNote(): JSX.Element {
@@ -731,7 +723,6 @@ function CodexRow({
         a={a}
         walled={!dead && !!l && codexWalled(l)}
         stale={l ? ageLabel(l.at, now) : null}
-        badges={a.apiKey && <ApiKeyBadge />}
         action={
           codexResetOffered(a) &&
           !confirm && (
@@ -745,7 +736,7 @@ function CodexRow({
         <div className="tbu-row-note">
           <span className="acct-note">Not signed in — sign in again from Settings</span>
         </div>
-      ) : a.apiKey ? (
+      ) : a.apiKey && !a.probeError ? (
         <MeteredNote />
       ) : l && l.windows.length > 0 ? (
         <div className="tbu-grid two">

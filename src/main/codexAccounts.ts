@@ -153,11 +153,11 @@ export class HomeAccountPicker {
     const usable = usableAccounts(accounts, [this.kind])
     if (usable.length === 0) return undefined
     const nowSec = Math.floor(Date.now() / 1000)
-    const subscriptions = usable.filter((a) => !a.apiKey)
-    const keys = usable.filter((a) => a.apiKey)
-    const everySubscriptionFull = subscriptions.every((a) => homeRoom(a, nowSec)?.walled)
-    const pool = keys.length > 0 && everySubscriptionFull ? keys : subscriptions
-    const rooms = pool.map((a) => ({ a, room: homeRoom(a, nowSec) }))
+    const all = usable.map((a) => ({ a, room: homeRoom(a, nowSec) }))
+    const subscriptions = all.filter(({ a }) => !a.apiKey)
+    const keys = all.filter(({ a }) => a.apiKey)
+    const everySubscriptionFull = subscriptions.every(({ room }) => room?.walled)
+    const rooms = keys.length > 0 && everySubscriptionFull ? keys : subscriptions
     const same = rooms.find(({ a }) => a.name === resumedOn)
     if (same && (!same.room || (!same.room.walled && same.room.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
       return same.a

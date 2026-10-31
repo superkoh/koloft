@@ -60,6 +60,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
@@ -2219,12 +2220,11 @@ async function addAccount(
   secret: string,
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
-  if (kind === 'codex-home' || kind === 'muse-home' || kind === 'agy-home')
-    return addHomeKey(kind, name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
+  if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
   if (kind === 'custom' && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
@@ -2622,6 +2622,12 @@ function probeAgyAccounts(): Promise<void> {
   return agyProbeRound
 }
 
+function markKeyAccountsSavedOnDisk(): void {
+  for (const a of listAccounts())
+    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](app.getPath('userData'), a.name))
+      usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
+}
+
 const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
   // CODEX§15
   'codex-home': async (name, key) => {
@@ -2648,12 +2654,8 @@ async function addHomeKey(
   name: string,
   key: string
 ): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, kind)
-  if (v !== 'ok') return { ok: false, error: v }
-  const trimmed = key.trim()
-  if (!trimmed) return { ok: false, error: 'unknown' }
   try {
-    await storeHomeKey[kind](name, trimmed)
+    await storeHomeKey[kind](name, key)
   } catch {
     return { ok: false, error: 'unknown' }
   }
@@ -3924,6 +3926,7 @@ app.whenReady().then(() => {
   screen.on('display-removed', requestWebglRepair)
   screen.on('display-metrics-changed', requestWebglRepair)
 
+  markKeyAccountsSavedOnDisk()
   createWindow()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
