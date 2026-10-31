@@ -539,6 +539,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   (read in Electron 43.8.1's `electron.d.ts`), and Chromium resolves the name on its own.
   A host name can only be judged by a separate DNS lookup made first, so a name whose
   answer changes between the two lookups (DNS rebinding) gets past such a check.
+- **`onBeforeRequest` cannot move a websocket.** A page's `new WebSocket('ws://127.0.0.1:A/x')`
+  reaches the listener with `resourceType: 'webSocket'` and the page's `webContentsId`;
+  answered `{ redirectURL: 'ws://127.0.0.1:B/x' }`, the socket still opens to A, `ws.url`
+  stays A's, and B never sees an upgrade. An http `fetch` redirected the same way reaches B.
+  Answered `{ cancel: true }`, the page gets `error` then `close` 1006 with no reason, and A
+  sees nothing. (2026-10-31, Electron 43.8.1, a hidden window on its own partition and two
+  local servers with a hand-written websocket upgrade; scratch script.)
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -1185,6 +1192,13 @@ inferred, not checked.
   20 000-file node_modules was 1 240 022 bytes).
 - **`execFileSync` with `cwd: undefined` quietly runs in `process.cwd()`** (seen: a
   fixture helper ran `git init` and a commit in the checkout it was started from).
+- **On macOS a server holding a port on one address does not stop a bind on another**, so
+  "is this Mac port free" needs a test bind on each of the four. Measured with
+  `net.createServer().listen({ host, port, exclusive: true })`: a server on `::`
+  (Node's default, both families) blocks only a test bind on `::` and on `0.0.0.0`; one on
+  `0.0.0.0` blocks only `0.0.0.0`; one on `127.0.0.1` only `127.0.0.1`; one on `::1` (and one
+  on `localhost`, which lands there) only `::1`. (2026-10-31, Node 24.13.0
+  on macOS 27, a scratch script; pinned by a unit test.)
 - **`https.get` throws synchronously on a non-https URL**; during a redirect that throw
   is inside the parent response callback and escapes to `uncaughtException`.
 - **A failed `fetch`'s error `cause` chain can turn the request options into text,
@@ -1611,8 +1625,11 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     their sessions by then was not checked).
 
   (2026-10-30, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, reached
-  directly — through a ProxyJump bastion not checked — the master opened with Koloft's
-  own ssh options; the e2e Docker ssh lab image; script and output on the #431 branch.)
+  directly, the master opened with Koloft's own ssh options; the e2e Docker ssh lab image;
+  a scratch script.) Through a ProxyJump bastion the same holds: the forward carries the
+  page, a second forward on another Mac port runs beside it, and `-O cancel -L` with the
+  exact spec closes the Mac port (refused on a fresh connection), while a connection
+  already open through it keeps answering. (2026-10-31, same versions, e2e E-SSH-40.)
 - **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
   the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
   opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection

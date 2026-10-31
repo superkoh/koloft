@@ -1,4 +1,5 @@
 import { memo, useMemo, type JSX } from 'react'
+import { loopbackPortOf } from '@shared/browserRoute'
 import { BrowserGuest, type GuestElement, type GuestFailure } from './BrowserGuest'
 import type { WorkbenchTab } from './workbenchTabs'
 
@@ -123,6 +124,7 @@ export function WebPageState({
   sessionCold,
   live,
   agentLabel,
+  machine,
   onLoad,
   onReloadCrashed,
   onCertProceed,
@@ -133,6 +135,7 @@ export function WebPageState({
   sessionCold: boolean
   live: boolean
   agentLabel: string
+  machine: string | null
   onLoad: (tab: WorkbenchTab) => void
   onReloadCrashed: (tab: WorkbenchTab) => void
   onCertProceed: (tab: WorkbenchTab, url: string) => void
@@ -163,6 +166,12 @@ export function WebPageState({
     <div className="berror">
       <div className="bstate-t">Can't reach {hostOf(fail.url)}</div>
       <div className="bstate-sub">{fail.description}</div>
+      {machine && loopbackPortOf(fail.url) !== null && (
+        <div className="bempty-hint">
+          Nothing answers on port {loopbackPortOf(fail.url)} on {machine}, or its ssh server does
+          not allow port forwarding.
+        </div>
+      )}
       <button onClick={() => onRetry(tab, fail.url)}>Retry</button>
     </div>
   ) : tab && !tab.url ? (

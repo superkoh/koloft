@@ -1,6 +1,8 @@
 import { execFileSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
+import http from 'http'
+import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -37,7 +39,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER, guestByUrl } from './helpers/browser'
+import { BROWSER, addressValue, guestByUrl } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -61,6 +63,7 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
+  switchToRow,
   terminalText,
   termIds,
   waitBooted,
@@ -87,6 +90,7 @@ import {
   remoteKeyFor,
   runOnBastion,
   runOnTarget,
+  servePageOnTarget,
   startSshLab,
   stopMachine,
   stopSshLab,
@@ -261,6 +265,33 @@ function publishOnOrigin(lab: SshLab, from: number, to: number): void {
     'kuser',
     `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
   )
+}
+
+function portFreeOnTheMac(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as net.AddressInfo
+      s.close(() => resolve(port))
+    })
+  })
+}
+
+function serveOnTheMac(port: number, body: string): Promise<http.Server> {
+  return new Promise((resolve) => {
+    const s = http.createServer((_q, r) => r.end(body)).listen(port, () => resolve(s))
+  })
+}
+
+function fetchOnTheMacOnAFreshConnection(port: number): Promise<string> {
+  return new Promise((resolve) => {
+    http
+      .get({ host: '127.0.0.1', port, agent: false }, (r) => {
+        let body = ''
+        r.on('data', (c) => (body += c))
+        r.on('end', () => resolve(body))
+      })
+      .on('error', () => resolve('refused'))
+  })
 }
 
 async function addMachine(page: Page, alias: LabAlias, user: string): Promise<void> {
@@ -850,6 +881,68 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       })
     } finally {
       await server.close()
+    }
+  })
+
+  // PLATFORM§33
+  test('E-SSH-40: a localhost page the agent opens in a session on a machine behind the jump host, while a session on this Mac is the one selected, is the machine’s, through a forward on that ssh connection that keeps the port while the Mac has it free, takes another while a Mac server holds it, and goes when its web tab closes', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [free, heldOnMac] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const macServer = await serveOnTheMac(heldOnMac, 'from the Mac')
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(lab, free, '<title>first</title><body>first page on the machine</body>')
+        servePageOnTarget(
+          lab,
+          heldOnMac,
+          '<title>second</title><body>second page on the machine</body>'
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+        await startSessionIn(page, 'ws-a')
+
+        await page.evaluate(
+          ([t, l]) => window.api.terminal.write(t, l + '\r'),
+          [remoteTab, `/open http://localhost:${free}/`]
+        )
+        await expect
+          .poll(() => terminalText(page, remoteTab), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain(`opened http://localhost:${free}/`)
+        await switchToRow(page, remoteRow)
+        const first = await guestByUrl(app, `localhost:${free}/`)
+        await expect(first.locator('body')).toHaveText('first page on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+        expect(await fetchOnTheMacOnAFreshConnection(free)).toContain('first page on the machine')
+
+        await runIn(page, centerTerm(page), `/open http://localhost:${heldOnMac}/`)
+        const second = await guestByUrl(
+          app,
+          new RegExp(`localhost:(?!${free}/|${heldOnMac}/)\\d+/$`),
+          { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS }
+        )
+        await expect(second.locator('body')).toHaveText('second page on the machine')
+        const macPort = Number(new URL(second.url()).port)
+        await expect.poll(() => addressValue(page)).toBe(`http://localhost:${macPort}/`)
+        expect(await fetchOnTheMacOnAFreshConnection(heldOnMac)).toBe('from the Mac')
+
+        const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
+        while ((await webTabs.count()) > 0)
+          await webTabs.first().locator(BROWSER.tabCloseIn).click()
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
+          .toBe('refused')
+      })
+    } finally {
+      macServer.close()
     }
   })
 

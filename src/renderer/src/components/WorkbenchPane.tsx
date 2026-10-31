@@ -10,7 +10,7 @@ import {
   type JSX
 } from 'react'
 import { IconDownload, IconMore } from '../icons'
-import { folderFileOf, routeFor } from '@shared/browserRoute'
+import { folderFileOf, loopbackPortOf, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -248,6 +248,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const countedUrl = useRef(new Map<string, string>())
   const panelWorkspace = useStore((s) =>
     ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
+  )
+  const panelMachineHost = useStore(
+    (s) => s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote?.host
+  )
+  const panelMachineConnected = useStore(
+    (s) =>
+      !!s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote
+        ?.connected
   )
 
   // PLATFORM§9
@@ -1324,6 +1332,11 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         <BrowserAddressBar
           url={activeTab?.url ?? ''}
           workspace={panelWorkspace}
+          machine={
+            panelMachineHost && loopbackPortOf(activeTab?.url ?? '') !== null
+              ? { host: panelMachineHost, connected: panelMachineConnected }
+              : null
+          }
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
           canForward={activeRuntime.canForward}
@@ -1551,6 +1564,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             sessionCold={sessionCold}
             live={!!activeTab && live.includes(activeTab.id)}
             agentLabel={BACKEND_LABEL[ownerBackend]}
+            machine={panelMachineHost ?? null}
             onLoad={(t) => activate(t.id)}
             onReloadCrashed={(t) =>
               patchRuntime(t.id, {

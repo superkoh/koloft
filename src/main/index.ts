@@ -143,6 +143,7 @@ import {
   writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
+import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
 import {
   ENSURE_CODEX_SH,
@@ -170,6 +171,7 @@ import {
 import {
   browserForwardFile,
   machinePackageBase,
+  pageForwardsFile,
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
@@ -246,6 +248,7 @@ import { WorkspaceManager, scratchRootsAround, type LiveSession } from './worksp
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
+  workspaceOfWorkbenchKey,
   sanitizeSessionWorkbench,
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
@@ -321,8 +324,10 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
+  loopbackPortOf,
   MACHINE_PAGE_SCHEME,
   machinePageOf,
+  onMacPort,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -1197,6 +1202,14 @@ const browserTunnels = new BrowserTunnels({
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
   endpointOnMachine: relayEndpointOnMachine,
   renewEndpointOnMachine: renewRelayEndpointOnMachine
+})
+const pageForwards = new PageForwards({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  macPortFree,
+  anyFreeMacPort,
+  forwardFile: (host) => pageForwardsFile(app.getPath('userData'), host)
 })
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
@@ -2906,6 +2919,7 @@ app.whenReady().then(() => {
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
+  setupGuestForwardsEnd()
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
@@ -3748,13 +3762,15 @@ app.whenReady().then(() => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
     onConnected: (host) => void freshness?.machineUp(host),
-    onConnectedRound: (host) =>
+    onConnectedRound: (host) => {
+      void pageForwards.clearLeftovers(host)
       void browserTunnels.sync(
         host,
         ptyTabIds()
           .filter((id) => remoteHostOfTab(id) === host)
           .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
       )
+    }
   })
   ptyMgr.on('typed', (tabId: string) => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
@@ -3961,6 +3977,7 @@ app.on('before-quit', (e) => {
   if (!quitCommitted) {
     rememberOpenTabs()
     browserTunnels.cancelOnQuit()
+    pageForwards.cancelOnQuit()
   }
   quitCommitted = true
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
@@ -4129,6 +4146,37 @@ const guestOwners = new WeakMap<WebContents, string>()
 
 function tabOwningGuest(guest: WebContents): string | null {
   return guestOwners.get(guest) ?? uiActiveTabId
+}
+
+const A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS = 3000
+const ownerWaiters = new Map<number, ((owner: string | null) => void)[]>()
+
+function reportedOwner(guestId: number): Promise<string | null> {
+  const guest = webContents.fromId(guestId)
+  if (!guest || overlayGuests.has(guestId)) return Promise.resolve(null)
+  const known = guestOwners.get(guest)
+  if (known) return Promise.resolve(known)
+  return new Promise((resolve) => {
+    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), resolve])
+    setTimeout(() => resolve(guestOwners.get(guest) ?? null), A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
+  })
+}
+
+function machineOfOwner(owner: string): string | undefined {
+  return isWorkspaceWorkbenchKey(owner)
+    ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
+    : machineOfTab(owner)
+}
+
+function setupGuestForwardsEnd(): void {
+  app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return
+    const id = contents.id
+    contents.once('destroyed', () => {
+      ownerWaiters.delete(id)
+      pageForwards.pageGone(id)
+    })
+  })
 }
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
@@ -4557,6 +4605,41 @@ function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDeta
   return !machinePageOf(details.frame?.url ?? '')
 }
 
+function fenceRequest(
+  details: Electron.OnBeforeRequestListenerDetails,
+  callback: (response: Electron.CallbackResponse) => void
+): void {
+  const guest = details.webContentsId
+  const fenced =
+    guest !== undefined
+      ? guestDrivenFromAnotherMachine(guest)
+      : details.initiatorOrigin !== undefined &&
+        originDrivenFromAnotherMachine(details.initiatorOrigin)
+  if (!fenced) return callback({})
+  if (FRAME_LOADS.has(details.resourceType)) notePageOpenedForAMachine(details.url)
+  if (details.url.startsWith('file:') || machinePageOf(details.url))
+    return callback({ cancel: true })
+  void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
+}
+
+// ADR-0046 PLATFORM§12 PLATFORM§33
+async function loopbackOnTheMachine(
+  details: Electron.OnBeforeRequestListenerDetails,
+  guest: number,
+  machinePort: number
+): Promise<Electron.CallbackResponse | null> {
+  const owner = await reportedOwner(guest)
+  const host = owner ? machineOfOwner(owner) : undefined
+  if (!host) return null
+  const frame = FRAME_LOADS.has(details.resourceType)
+  if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
+  const macPort = await pageForwards.macPortFor(host, machinePort, guest, frame)
+  if (macPort === null) return { cancel: true }
+  const there = onMacPort(details.url, macPort)
+  if (there === details.url) return {}
+  return details.resourceType === 'webSocket' ? { cancel: true } : { redirectURL: there }
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
   ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
@@ -4653,17 +4736,11 @@ function setupBrowserPartition(): void {
     )
       return callback({ cancel: true })
     const guest = details.webContentsId
-    const fenced =
-      guest !== undefined
-        ? guestDrivenFromAnotherMachine(guest)
-        : details.initiatorOrigin !== undefined &&
-          originDrivenFromAnotherMachine(details.initiatorOrigin)
-    if (!fenced) return callback({})
-    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
-      notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:') || machinePageOf(details.url))
-      return callback({ cancel: true })
-    void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
+    const machinePort = workspaceMgr?.remoteTargets().length ? loopbackPortOf(details.url) : null
+    if (guest === undefined || machinePort === null) return fenceRequest(details, callback)
+    void loopbackOnTheMachine(details, guest, machinePort).then((answer) =>
+      answer ? callback(answer) : fenceRequest(details, callback)
+    )
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -6208,6 +6285,8 @@ function registerIpc(): void {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
     const guest = webContents.fromId(guestId)
     if (guest) guestOwners.set(guest, ownerTabId)
+    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(ownerTabId)
+    ownerWaiters.delete(guestId)
   })
   ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
