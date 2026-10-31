@@ -3,6 +3,7 @@ import { IconFile, IconFiles, IconWebPage } from '../icons'
 import { routeFor } from '@shared/browserRoute'
 import { basename, dirname } from '@shared/preview'
 import { useStore } from '../store'
+import { keepCaretInSessionTerminal } from '../keys'
 import { CHANGES_MSG } from './changesModel'
 import { splitPath } from './filesModel'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
@@ -68,6 +69,7 @@ export function WorkbenchPreview({
             className="wb-tab pinned"
             role="button"
             title={totals?.files ? CHANGES_MSG.totals(totals) : 'Open Changes'}
+            onMouseDown={keepCaretInSessionTerminal}
             onClick={() => useStore.getState().openChanges(tabId)}
           >
             <span className="ic">
