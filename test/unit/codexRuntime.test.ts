@@ -101,6 +101,7 @@ describe('Codex shell runtime', () => {
 
   it.each([
     { printed: MIN_CODEX_VERSION, verified: true },
+    { printed: '0.163.2', verified: true },
     { printed: '0.166.0', verified: true },
     { printed: '0.166.4', verified: true },
     { printed: '0.167.0', verified: false },

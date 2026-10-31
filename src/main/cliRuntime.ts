@@ -3,6 +3,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { LoginShellError, readLoginShell } from './loginShell'
+import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
 
@@ -79,11 +80,10 @@ export async function resolveCliRuntime(
   const parsed = spec.version.exec(stdout)
   if (!parsed) throw new Error(`${spec.cliName} did not report a version Koloft understands.`)
   const [major, minor, patch] = parsed.slice(1, 4).map(Number)
-  const [testedMajor, testedMinor] = spec.testedLine.split('.').map(Number)
   return {
     binary,
     env,
     version: `${major}.${minor}.${patch}`,
-    verified: major < testedMajor || (major === testedMajor && minor <= testedMinor)
+    verified: !isNewer(`${major}.${minor}`, spec.testedLine)
   }
 }

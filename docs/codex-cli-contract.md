@@ -334,7 +334,7 @@ archived afterwards.
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
 0.164.0, 0.165.0 or 0.166.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
-`src/main/cliMinimums.ts`, now 0.166) apart from its minimum (`MIN_CODEX_VERSION`),
+`src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
 `src/main/cliRuntime.ts`, pinned by `test/unit/codexRuntime.test.ts`) and warns on
 anything newer. A recheck on a newer Codex moves the tested line, not the minimum. The
