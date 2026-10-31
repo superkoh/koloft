@@ -39,7 +39,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER, addressValue, guestByUrl } from './helpers/browser'
+import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -1619,6 +1619,27 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect([listening(), pidFiles()]).toEqual(['1', '1'])
         await sendShortcut(app, 'shortcut:close-tab')
         await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // PLATFORM§33
+  test('E-SSH-41: a localhost address typed into a web tab of a Codex session on a machine behind the jump host opens the machine’s page there, as in a Claude Code tab', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    const port = await portFreeOnTheMac()
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        servePageOnTarget(lab, port, '<body>a page Codex serves on the machine</body>')
+        await codexTabOnKtKey(page)
+        await newWebTab(page)
+        await typeInAddressBar(page, `localhost:${port}`)
+        const guest = await guestByUrl(app, `localhost:${port}/`)
+        await expect(guest.locator('body')).toHaveText('a page Codex serves on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
       },
       (lab) => installFakeCodexOnTarget(lab)
     )
