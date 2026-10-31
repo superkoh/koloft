@@ -179,7 +179,7 @@ import {
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
-import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { AGENT_SHIM_WAITS_MS, OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -559,6 +559,7 @@ import {
   type MergedHeads,
   type TidyResult
 } from './sessionClose'
+import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
@@ -789,6 +790,7 @@ interface ClaudeTabExit {
 const claudeTabExits = new Map<string, ClaudeTabExit>()
 const sessionsLeavingTheirWorktree = new Set<string>()
 const closedTabs = new Map<string, LeftTab | null>()
+const treeRemovals = new TreeRemovals()
 
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
@@ -4845,6 +4847,9 @@ function archiveSession(id: string): boolean {
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
+const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
+const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
+  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 
 function closableSessions(): ClosableSession[] {
   const live: ClosableSession[] = allSessions()
@@ -4879,11 +4884,36 @@ function aliveSessionsIn(treeRoot: string, exceptTabId?: string): SessionInfo[] 
   )
 }
 
+const TAB_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
+
 async function whatClosingWouldLose(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
+  info?: ProjectInfo
 ): Promise<string[]> {
-  const tree = await closingTree(hostGitOut, info)
+  if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked =
+    target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
+      ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
+      : []
+  const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  let left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  if (left.length && treeRemovals.has(target.treeRoot))
+    left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  return [...asked, ...left]
+}
+
+async function leftOnceRemovalsEnd(
+  target: ClosableSession,
+  info: ProjectInfo | undefined,
+  waitUntil: number
+): Promise<string[]> {
+  if (!(await treeRemovals.settledWithin(target.treeRoot, waitUntil - Date.now())))
+    return [
+      `Koloft is still deleting the worktree ${target.treeRoot}. Close the session again in a minute.`
+    ]
+  const tree = await closingTree(hostGitOut, info ?? projectInfoFor(target.treeRoot))
   if (!tree) return []
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
@@ -4899,8 +4929,19 @@ function tellTheOwner(text: string): void {
 
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot),
+  info?: ProjectInfo,
   tell = tellTheOwner
+): Promise<boolean> {
+  await treeRemovals.settled(target.treeRoot)
+  const where = info ?? projectInfoFor(target.treeRoot)
+  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+}
+
+async function endAndRemove(
+  target: ClosableSession,
+  info: ProjectInfo,
+  tell: (text: string) => void
 ): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
@@ -4913,6 +4954,14 @@ async function closeSessionFully(
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const leftSinceTheCheck =
+    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+  if (leftSinceTheCheck.length) {
+    tell(
+      `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
+    )
+    return false
+  }
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     tell(
@@ -4938,12 +4987,15 @@ async function removeUntouchedWorktree(
   const tree = resource.worktreePath
   if (sleeperTrees().includes(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
-  const problem = await removeTree(hostGitOut, {
-    root: resource.originalCwd,
-    treeRoot: tree,
-    worktreeName: resource.worktreeName,
-    branches: [`worktree-${resource.worktreeName}`]
-  })
+  if (treeRemovals.has(tree)) return
+  const problem = await treeRemovals.run(tree, () =>
+    removeTree(hostGitOut, {
+      root: resource.originalCwd,
+      treeRoot: tree,
+      worktreeName: resource.worktreeName,
+      branches: [`worktree-${resource.worktreeName}`]
+    })
+  )
   if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
 }
 
@@ -4954,22 +5006,15 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
-const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
-const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
-  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
-  // CODEX§20
-  const asked = codexSessions?.questionWentUnanswered(tabId)
-    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
-    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
-  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
+  if (!session) return [NO_SESSION_FOR_THE_RUN]
+  return whatClosingWouldLose(session, cronRunTree(root, worktree))
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -5013,11 +5058,8 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(
-    hostGitOut,
-    info,
-    (d) => hosts.of(d).dirExistsOrThrow(d),
-    mergedHeads
+  const result = await treeRemovals.run(info.treeRoot, () =>
+    tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
   )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
