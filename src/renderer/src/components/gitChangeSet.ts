@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BaseChoice, GitNumstatMap, GitStatusMap } from '@shared/types'
+import type { BackendSessionInfo, BaseChoice, GitNumstatMap, GitStatusMap } from '@shared/types'
 
 export interface GitChangeSet {
   git: GitStatusMap
@@ -26,18 +26,20 @@ function sameMap<V>(
 
 export function useWatchlessRefresh(
   enabled: boolean,
-  activityAt: number | undefined,
+  session: Pick<BackendSessionInfo, 'updatedAt' | 'liveWrites'> | null | undefined,
   throttleMs: number,
   refresh: () => void
 ): void {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activityAt = session?.updatedAt
+  const writes = session?.liveWrites
   useEffect(() => {
     if (!enabled || timer.current) return
     timer.current = setTimeout(() => {
       timer.current = null
       refresh()
     }, throttleMs)
-  }, [enabled, activityAt, throttleMs, refresh])
+  }, [enabled, activityAt, writes, throttleMs, refresh])
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
