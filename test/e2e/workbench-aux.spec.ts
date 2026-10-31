@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import type { Locator } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import {
   auxIcon,
@@ -22,6 +21,7 @@ import {
   openInBrowse,
   sessionWorkbenchOnDisk,
   waitPanelAttached,
+  WELCOME_PAGE,
   WORKBENCH,
   workbenchPanel
 } from './helpers/workbench'
@@ -32,16 +32,10 @@ function shellOpenPinnedAheadOfSystemOpen(env: E2EEnv, cwd: string, target: stri
   return `export PATH="${env.shimDir}:${env.fakeBin}:$PATH"; hash -r; cd '${cwd}'; open ${target}`
 }
 
-function styleOf(loc: Locator, prop: string): Promise<string> {
-  return loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop) as Promise<string>
-}
-
-const pressEvenThoughAriaDisabled = { force: true }
-
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
 
 test.describe('Workbench titlebar toggle, and the panel seam with the retired aux column', () => {
-  test('T-AUX-01: the Workbench icon owns the panel — a greyed but real button that swallows a press without a session, lit with one', async ({
+  test('T-AUX-01: the Workbench icon owns the panel — live but shut on the welcome page, lit with a session, and a press shuts it', async ({
     page,
     env
   }) => {
@@ -49,12 +43,10 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
     gitInit(env.workspaces.a)
     const workbench = auxIcon(page, 'Workbench')
 
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
-    await expect(workbench).toHaveAttribute('aria-disabled', 'true')
-    expect(await styleOf(workbench, 'opacity')).toBe('0.35')
-    await workbench.click(pressEvenThoughAriaDisabled)
-    await page.waitForTimeout(1000)
+    await expect(page.locator(WELCOME_PAGE)).toBeVisible({ timeout: 20_000 })
+    await expect(workbench).toHaveAttribute('aria-disabled', 'false')
     await expect(workbenchPanel(page)).toBeHidden()
+    await expect(workbench).not.toHaveClass(/\bon\b/)
 
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible()
