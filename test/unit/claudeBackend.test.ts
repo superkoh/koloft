@@ -110,7 +110,7 @@ function machineBackend(): {
   boundTo: Map<string, string>
   binds: [string, string][]
   answeredFor: (string | undefined)[]
-  sent: [string, string, string][]
+  sent: [string, string, string | null][]
   drop(name: string, body: unknown): void
   appendLog(name: string, lines: unknown[]): void
 } {
@@ -118,7 +118,7 @@ function machineBackend(): {
   const boundTo = new Map(Object.keys(MACHINE_TABS).map((id) => [id, `sid-of-${id}`]))
   const binds: [string, string][] = []
   const answeredFor: (string | undefined)[] = []
-  const sent: [string, string, string][] = []
+  const sent: [string, string, string | null][] = []
   const backend = new ClaudeBackend({
     pty: {
       get: (id: string) =>
@@ -128,7 +128,7 @@ function machineBackend(): {
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
-        answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])
+        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply])
       })
     },
     tracker: {
@@ -251,6 +251,19 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
       r9: replyJson(answered('for pty-cx')),
       r10: replyJson(answered('for undefined'))
     })
+  })
+
+  it('carries out a request that wants no answer, as a plain open sends, and only takes it away on the machine, even one from no tab of its own', async () => {
+    const m = machineBackend()
+    m.drop('req-r11.json', { ...(request('pty-a', 'k-sa') as object), reply: false })
+    m.drop('req-r12.json', { ...(request('pty-gone', 'k-gone') as object), reply: false })
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+
+    expect(m.sent.sort()).toEqual([
+      ['devbox', 'r11', null],
+      ['devbox', 'r12', null]
+    ])
+    expect(m.answeredFor).toEqual(['pty-a'])
   })
 })
 

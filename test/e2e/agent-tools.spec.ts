@@ -3,9 +3,9 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
-import { installStallingGit } from './helpers/gitSpawnLog'
+import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
@@ -37,6 +37,7 @@ const PANEL = '.wb-panel .wb-term'
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
 const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
+const A_REMOVAL_STILL_DELETING_WHEN_CLOSE_ASKS_MS = 3_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 
@@ -104,13 +105,11 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
 
 async function aChildWhoseParentTabWasClosed(
   page: Page,
+  env: E2EEnv,
   backend: 'claude' | 'codex'
 ): Promise<{ parentId: string; kidTab: string }> {
-  if (backend === 'claude') await startSessionIn(page, 'ws-a')
-  else await newSessionInWith(page, 'ws-a', 'Codex')
-  const parentRow = wsRows(page, 'ws-a').first()
-  await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-  const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+  await startLocalSession(page, env, backend)
+  const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
   const parent = (await page.evaluate(() => window.api.sessions.list())).find(
     (s) => s.tabId === parentTab
   )!
@@ -333,7 +332,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, backend)
+        const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, env, backend)
         await page.evaluate(
           ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
           [kidTab, `/koloft session send ${parentId} all done`]
@@ -365,7 +364,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, 'codex')
+      const { parentId, kidTab } = await aChildWhoseParentTabWasClosed(page, env, 'codex')
       fs.writeFileSync(path.join(env.home, 'fake-codex-server-dies-on'), ':) all done')
       await page.evaluate(
         ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
@@ -547,6 +546,59 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       expect(runGit(fx.clone, 'worktree', 'list')).not.toContain('done')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('koloft session close right after koloft session stop on a scheduled run waits while Koloft is still deleting the run’s worktree, then closes it on the first try: row, worktree and branch; a run still open closes the same way with no stop first', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupGitFixture(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('caller')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+      expect(await koloftInSession(page, 'cron add --name tidy --daily 09:00 -- hello')).toBe('0')
+      expect(await koloftInSession(page, 'cron run tidy')).toBe('0')
+      const runRow = rows.filter({ has: page.locator('.ws-tab-cron') })
+      await expect(runRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const run = readCalls(env).find((c) => c.argv[c.argv.indexOf('-w') + 1]?.startsWith('tidy-'))!
+      const wt = run.argv[run.argv.indexOf('-w') + 1]
+      const tree = path.join(fx.clone, '.claude', 'worktrees', wt)
+
+      const halfWay = installHalfWayWorktreeRemoval(
+        env,
+        wt,
+        A_REMOVAL_STILL_DELETING_WHEN_CLOSE_ASKS_MS
+      )
+      expect(await koloftInSession(page, `session stop ${run.sessionId}`)).toBe('0')
+      await expect.poll(() => fs.existsSync(halfWay), { timeout: 30_000 }).toBe(true)
+      expect(await koloftInSession(page, `session close ${run.sessionId}`)).toBe('0')
+      await expect(runRow).toHaveCount(0, { timeout: 30_000 })
+      expect(fs.existsSync(tree)).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', `worktree-${wt}`).trim()).toBe('')
+      await expect(rows).toHaveCount(1)
+
+      const before = readCalls(env).length
+      expect(await koloftInSession(page, 'cron run tidy')).toBe('0')
+      const next = (await waitForCalls(env, before + 1))[before]
+      const nextWt = next.argv[next.argv.indexOf('-w') + 1]
+      const nextTree = path.join(fx.clone, '.claude', 'worktrees', nextWt)
+      await expect(runRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      expect(await koloftInSession(page, `session close ${next.sessionId}`)).toBe('0')
+      await expect(runRow).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(nextTree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', `worktree-${nextWt}`).trim()).toBe('')
     } finally {
       await quitAndClose(app)
     }

@@ -360,7 +360,7 @@ test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
           .poll(() => runOnTarget(lab, 'kuser', 'cat /tmp/gh-calls.txt 2>/dev/null || true'))
           .toContain(`github.com ${REMOTE_GH_TOKEN} api graphql`)
         const panel = await openGitPanel(page, 'kt-key')
-        await expect(panel.locator('.fx-counts')).toContainText('12 open issues')
+        await expect(panel.locator('.tbu-act', { hasText: '12 open issues' })).toBeVisible()
         await expect(panel.locator('.tbu-pop-head', { hasText: 'GitHub' })).toContainText('as bob')
         await page.mouse.move(1, 1)
 

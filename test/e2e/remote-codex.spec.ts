@@ -4,10 +4,12 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
+import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
   centerTerm,
   chooseBackend,
+  gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   menuItemTexts,
@@ -18,6 +20,7 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
+  switchToRow,
   terminalText,
   termIds,
   worktreeDialog,
@@ -32,6 +35,7 @@ import {
   machineHome,
   MAC_CODEX_ACCESS_TOKEN,
   remoteDir,
+  remoteKey,
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
@@ -162,6 +166,33 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
+  // CODEX§27
+  test("E-RC-11: a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      gitInit(remoteDir(env))
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await runIn(page, centerTerm(page), '/sh printf made > shell-made.txt')
+      const made = path.join(fs.realpathSync(remoteDir(env)), 'shell-made.txt')
+      await expect
+        .poll(
+          async () => {
+            const all = await page.evaluate(() => window.api.sessions.list())
+            const codex = all.find((s) => s.backendId === 'codex' && s.alive)
+            return codex?.files?.filter((f) => f.access === 'wrote').map((f) => barePath(f.src))
+          },
+          { timeout: 60_000 }
+        )
+        .toEqual([made])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RC-08: a remote Codex whose screen on this Mac dies before its session starts keeps its tab, row and last screen, and ⇧⌘R starts it again in that tab', async ({
     env
   }) => {
@@ -190,6 +221,41 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
       await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
       expect(await termIds(page)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-10: a remote Codex that koloft session new started from a session on this Mac and whose screen dies before its session starts keeps its row, and ⇧⌘R starts it again in that tab', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { hintsOff: true })
+    const failOnStart = path.join(env.home, 'fake-codex-exit')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      fs.writeFileSync(failOnStart, '3')
+      await runIn(
+        page,
+        centerTerm(page),
+        `/koloft session new --backend codex --workspace ${remoteKey(env)} --name kid -- hello`
+      )
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 3)', {
+        timeout: 60_000
+      })
+
+      fs.rmSync(failOnStart)
+      const servers = machineServers(env).length
+      await switchToRow(page, row)
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(servers + 1)
+      await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
+      expect(await termIds(page)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }

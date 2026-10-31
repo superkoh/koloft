@@ -15,6 +15,7 @@ import {
   type UsageLine,
   type UsageRange
 } from '../../usageModel'
+import { plural } from '../../sessionRows'
 import '../../accounts.css'
 import '../../costs.css'
 
@@ -41,8 +42,6 @@ const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {
 const GRID_STEPS = [0, 0.25, 0.5, 0.75]
 const TIP_FLIPS_PAST = 0.6
 const NO_PRICE_TITLE = 'No price for this model yet'
-
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function workspaceName(workspace: string): string {
   if (!workspace) return 'Other'

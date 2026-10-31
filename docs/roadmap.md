@@ -23,7 +23,7 @@ place and edited in one place.
    `pr-<n>` worktree for a session started from a pull request, on that pull request's
    own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
    branch (#218); and any session, the butler included, may `koloft session close` an
-   ended local session (#337), relaying what the owner said — Koloft never decides on its
+   open or ended local session (#337), relaying what the owner said — Koloft never decides on its
    own that a session goes.
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
@@ -39,7 +39,7 @@ when it works. That is what "judged against" means.
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
   Every session also reads what any session said, and sends to, resumes, stops and
-  starts any session in any workspace, of any kind, closes an ended one on this computer,
+  starts any session in any workspace, of any kind, closes any one on this computer,
   and runs any `gh` command but `gh auth` through `koloft gh`. The butler (Alfred, Koloft's
   own session for all workspaces) does all of that too from a folder of its own, with no
   gate: its prompt asks it to pass project work to that project's workspace (ADR-0029).
@@ -80,14 +80,9 @@ Reopen one of these only with new evidence, not a new argument.
   a sibling session through messages (Claude Code's own `SendMessage`, and
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
-  Three exceptions, all the owner's decisions. First, a `koloft session send`
-  to a Claude session on another machine over ssh is typed into its terminal, because
-  that session's message socket is on the other machine where Koloft cannot reach it.
-  Koloft types only when that session's turn has ended and it shows no dialog; its state
-  arrives a mirror pull late, so a message can still land in a turn that just began,
-  where Claude queues it. Second, `koloft session command` types a slash
+  Two exceptions, both the owner's decisions. First, `koloft session command` types a slash
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
-  types it only when that session is idle with no question or menu showing. Third,
+  types it only when that session is idle with no question or menu showing. Second,
   `koloft session keys` presses keys in a session (CC§12, CODEX§25). Koloft's own
   notice — the default branch moved, or another open session of the repository changed
   a file this one changed too — is neither typed nor sent: a session at work gets it at

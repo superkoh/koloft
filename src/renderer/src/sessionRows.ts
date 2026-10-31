@@ -13,6 +13,7 @@ import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
+import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
 import { everyWorkspaceRows } from './butlerRows'
 
 export { statusUnavailable }
@@ -147,6 +148,8 @@ export function sessionsNeedYou(n: number): string {
 export function sessionsInside(n: number): string {
   return n > 1 ? `${n} sessions inside` : '1 session inside'
 }
+
+export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
 export interface RowNode<R extends { id: string; parentId?: string }> {
   row: R
@@ -412,6 +415,7 @@ export function workspaceOfTab(
   sessions: readonly SessionInfo[],
   tabId: string
 ): string | null {
+  if (isWorkspaceWorkbenchKey(tabId)) return workspaceOfWorkbenchKey(tabId)
   return workspaceOfRow(rows, rowIdOfTab(sessions, tabId))
 }
 

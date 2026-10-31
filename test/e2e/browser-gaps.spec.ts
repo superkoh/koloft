@@ -617,7 +617,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     }
   })
 
-  test('BB-C33: with no selected running session the Workbench icon is disabled', async ({
+  test('BB-C33: with no selected running session the Workbench icon is the welcome page workspace’s, and no Preview or Terminal icon shows', async ({
     page
   }) => {
     test.setTimeout(120_000)
@@ -627,7 +627,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     await expect(page.locator('.aux-icons .aux-ico')).toHaveCount(1, { timeout: 20_000 })
     await expect(auxIcon(page, 'Preview')).toHaveCount(0)
     await expect(globeIcon(page)).toBeVisible({ timeout: 20_000 })
-    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'true')
+    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'false')
     await expect(auxIcon(page, 'Terminal')).toHaveCount(0)
   })
 

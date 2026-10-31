@@ -1,12 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Page } from '@playwright/test'
+import type { Frame, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
   addressValue,
   BROWSER,
+  guestByUrl,
   isPng,
   newWebTab,
   openPickPage,
@@ -16,7 +17,10 @@ import {
   picturePath,
   typeInAddressBar
 } from './helpers/browser'
+import { codexCalls } from './helpers/codex'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import { PNG_1X1 } from './helpers/filesFixture'
+import { machinePageUrl } from '../../src/shared/browserRoute'
 import {
   type E2EEnv,
   E2E_CLAUDE_ACCOUNT,
@@ -94,6 +98,7 @@ import {
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
+const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
@@ -293,6 +298,47 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test("E-RW-52: a file a shell command of a session on the machine made shows under Changes' Ownership ▸ This session wrote, and a change the session did not make stays out", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      const rows = page.locator('.wb-panel .cv-row')
+      const shown = (): Promise<string[]> =>
+        rows.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+
+      await runIn(page, centerTerm(page), '/run printf made > shell-made.txt')
+      await expect(centerTerm(page)).toContainText('ran printf made', { timeout: 60_000 })
+      await expect.poll(shown, { timeout: 60_000 }).toEqual(['shell-made.txt', 'tracked.txt'])
+
+      const menu = page.locator('.wb-bar .fv-menu')
+      await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
+      await expect(menu).toBeVisible()
+      await page
+        .locator('.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]')
+        .click()
+      await page.keyboard.press('Escape')
+      await expect.poll(shown, { timeout: 30_000 }).toEqual(['shell-made.txt'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
     test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
       env
@@ -340,6 +386,33 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-51: koloft open of a page, typed in the Workbench shell of a session on the machine, opens it as a web page there', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'report.html'), '<h1>report on the machine</h1>\n')
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      await openSessionTerminal(app, page)
+      await runIn(page, panelTerm(page), 'koloft open report.html')
+      const tab = page.locator(BROWSER.tabOpen, { hasText: 'report.html' })
+      await expect(tab).toHaveCount(1, { timeout: 60_000 })
+      await tab.click()
+      const report = await guestByUrl(app, /^koloft-machine:\/\/.*\/report\.html$/, {
+        timeout: 60_000
+      })
+      await expect
+        .poll(() => report.evaluate(() => document.body.textContent ?? ''), { timeout: 30_000 })
+        .toContain('report on the machine')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('after ⇧⌘R on a Claude Code tab on the machine, koloft open typed in its Workbench shell still shows the file in that tab’s Workbench', async ({
     env
   }) => {
@@ -361,6 +434,35 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await runIn(page, panelTerm(page), 'koloft open after-restart.md')
       await expect(artifactBody(page)).toContainText('shown after restart', { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-44: the Workbench shell of a remote session is named for the program running on the machine, not ssh, and its folder follows cd there as a path on that machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.mkdirSync(path.join(remoteDir(env), 'sub'))
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await openSessionTerminal(app, page)
+      const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+      const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+
+      await runIn(page, panelTerm(page), 'sleep 60')
+      await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+      await page.keyboard.press('Control+C')
+      await expect(shellTab).toHaveText(path.basename(process.env.SHELL || '/bin/sh'), {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await runIn(page, panelTerm(page), 'cd sub')
+      await expect(folder).toHaveAttribute('title', /^ssh:\/\/[^/]+\/.*\/sub$/, {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await expect(folder).toHaveText(/\/sub$/)
     } finally {
       await quitAndClose(app)
     }
@@ -617,6 +719,39 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-43: with no claude on this Mac, a remote workspace’s menu still offers "New Claude session" and starts claude on the machine, while a local workspace’s menu offers only Codex', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      const localItems = await menuItemTexts(page)
+      expect(localItems.some((t) => t.startsWith('New session'))).toBe(true)
+      expect(localItems.some((t) => t.includes('Claude'))).toBe(false)
+      await page.keyboard.press('Escape')
+
+      const menu = await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      const remoteItems = await menuItemTexts(page)
+      expect(remoteItems.filter((t) => t.startsWith('New ') && t.includes(' session'))).toEqual([
+        'New Claude session⌘N',
+        'New Codex session'
+      ])
+      await menu.locator('.mi', { hasText: 'New Claude session' }).click()
+
+      const [first] = await waitForCalls(env, 1)
+      expect(first.cwd).toBe(remoteDir(env))
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+      expect(codexCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-03: remote menus drop the local-only items, keep Scheduled jobs, and Copy path gives machine:/path', async ({
     env
   }) => {
@@ -757,41 +892,129 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-25: a page on the machine opens as source in the reading area, from a Browse row and from a markdown link', async ({
+  test('E-RW-25: a page on the machine opens as a web page in a web tab, with the stylesheet and picture next to it, from a Browse row and from a markdown link', async ({
     env
   }) => {
     test.setTimeout(300_000)
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
-      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>on the machine</h1>\n')
-      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](page.html)\n')
+      const machinePage = (title: string): string =>
+        `<!doctype html><title>${title}</title><link rel="stylesheet" href="style.css">` +
+        '<h1>on the machine</h1><img id="pic" src="img/pic.png">\n'
+      fs.writeFileSync(path.join(dir, 'page.html'), machinePage('from Browse'))
+      fs.writeFileSync(path.join(dir, 'linked.html'), machinePage('from a link'))
+      fs.writeFileSync(path.join(dir, 'style.css'), 'h1 { color: rgb(1, 2, 3); }\n')
+      fs.mkdirSync(path.join(dir, 'img'))
+      fs.writeFileSync(path.join(dir, 'img', 'pic.png'), Buffer.from(PNG_1X1, 'base64'))
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](linked.html)\n')
 
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await wsRows(page, REMOTE_WS_NAME).first().click()
 
-      const title = page.locator(WORKBENCH.readingTitle)
-      const source = page.locator(`${WORKBENCH.readingBody} .code-body`)
+      const shownWhole = async (name: string): Promise<void> => {
+        const guest = await guestByUrl(app, new RegExp(`^koloft-machine://.*/${name}$`), {
+          timeout: 30_000
+        })
+        await expect
+          .poll(() =>
+            guest.evaluate(() => [
+              getComputedStyle(document.querySelector('h1')!).color,
+              (document.getElementById('pic') as HTMLImageElement).naturalWidth
+            ])
+          )
+          .toEqual(['rgb(1, 2, 3)', 1])
+      }
 
       await openInBrowse(page, `${remoteKey(env)}/page.html`)
-      await expect(title).toContainText('page.html', { timeout: 30_000 })
-      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+      await expect(wbActiveTab(page)).toContainText('from Browse', { timeout: 30_000 })
+      await shownWhole('page.html')
 
       await showBrowse(page)
       await browseRow(page, `${remoteKey(env)}/doc.md`).click()
-      await expect(title).toContainText('doc.md', { timeout: 30_000 })
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('doc.md', {
+        timeout: 30_000
+      })
       await page
         .locator(`${WORKBENCH.readingBody} .md-body a`, { hasText: 'the page' })
         .click({ timeout: 30_000 })
-      await expect(title).toContainText('page.html', { timeout: 30_000 })
-      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+      await expect(wbActiveTab(page)).toContainText('from a link', { timeout: 30_000 })
+      await shownWhole('linked.html')
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test("a file name typed in a remote tab's address bar opens the file on the machine in a file tab, a page as its source, and a path that climbs out of the session's folder searches instead", async ({
+  test("E-RW-50: a page on the machine cannot read the machine's other files, and a web page cannot load them, not even from inside a page on the machine", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'secret.js'), 'window.leaked = "the secret"\n')
+      const secretUrl = machinePageUrl(REMOTE_HOST, path.join(dir, 'secret.js'))
+      const webPage = server.page(
+        '/pulls-a-machine-script',
+        `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
+          `onerror="document.body.dataset.script = 'refused'"></script>`
+      )
+      fs.writeFileSync(
+        path.join(dir, 'reader.html'),
+        '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe>' +
+          `<iframe src="${webPage}"></iframe><script>` +
+          'fetch("secret.js").then(() => { document.body.dataset.fetch = "read" }, ' +
+          '() => { document.body.dataset.fetch = "blocked" })</script>\n'
+      )
+      const pulledBy = async (frame: Frame): Promise<void> => {
+        await expect
+          .poll(() => frame.evaluate(() => document.body?.dataset.script ?? ''), {
+            timeout: 30_000
+          })
+          .toBe('refused')
+        expect(await frame.evaluate(() => (window as { leaked?: string }).leaked)).toBeUndefined()
+      }
+
+      await openRemoteSessionWorkbench(page, env)
+      await openInBrowse(page, `${remoteKey(env)}/reader.html`)
+      const reader = await guestByUrl(app, /^koloft-machine:\/\/.*\/reader\.html$/, {
+        timeout: 30_000
+      })
+      await expect
+        .poll(() => reader.evaluate(() => document.body.dataset.fetch ?? ''), { timeout: 30_000 })
+        .toBe('blocked')
+      const secretFrame = (): Frame | undefined =>
+        reader.frames().find((f) => f.url().endsWith('/secret.js'))
+      await expect
+        .poll(async () => (await secretFrame()?.evaluate(() => document.body.innerText)) ?? '', {
+          timeout: 30_000
+        })
+        .toContain('the secret')
+      expect(
+        await reader.evaluate(
+          () => (document.getElementById('f') as HTMLIFrameElement).contentDocument
+        )
+      ).toBeNull()
+      await expect
+        .poll(() => reader.frames().some((f) => f.url().endsWith('/pulls-a-machine-script')), {
+          timeout: 30_000
+        })
+        .toBe(true)
+      await pulledBy(reader.frames().find((f) => f.url().endsWith('/pulls-a-machine-script'))!)
+
+      await newWebTab(page)
+      await typeInAddressBar(page, webPage)
+      const web = await guestByUrl(app, '/pulls-a-machine-script', { timeout: 30_000 })
+      await pulledBy(web.mainFrame())
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
+  test("a file name typed in a remote tab's address bar opens a page on the machine as a web page, and a path that climbs out of the session's folder searches instead", async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -805,12 +1028,12 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await openRemoteSessionWorkbench(page, env)
       await newWebTab(page)
       await typeInAddressBar(page, 'page.html')
-      await expect(wbActiveTab(page)).toContainText('page.html', {
+      const typed = await guestByUrl(app, /^koloft-machine:\/\/.*\/page\.html$/, {
         timeout: 30_000
       })
-      await expect(artifactBody(page).locator('.code-body')).toContainText('typed on the machine', {
-        timeout: 30_000
-      })
+      await expect
+        .poll(() => typed.evaluate(() => document.body.textContent ?? ''), { timeout: 30_000 })
+        .toContain('typed on the machine')
 
       await newWebTab(page)
       await typeInAddressBar(page, '../outside.html')

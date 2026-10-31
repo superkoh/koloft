@@ -736,20 +736,22 @@ async function readSession(d: SessionVerbDeps, rest: string[]): Promise<AgentRep
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
 }
 
-async function endedSession(d: SessionVerbDeps, ref: string): Promise<Parsed<ClosableSession>> {
+async function sessionOnThisComputer(
+  d: SessionVerbDeps,
+  ref: string
+): Promise<Parsed<ClosableSession>> {
   const found = await findRow(d, 'close', ref)
   if (!found.ok) return found
-  const { row, title, live, workspace } = found.value
-  if (live)
-    return fail(
-      `koloft session close: ${title} is open. Stop it first with koloft session stop, then close it.`
-    )
+  const { row, title, workspace } = found.value
   if (isRemoteKey(workspace))
     return fail(
       `koloft session close: ${title} runs on another machine, where Koloft cannot check what closing it would lose.`
     )
-  const ended = d.closable().find((s) => s.sessionId === row.id)
-  return ended ? { ok: true, value: ended } : fail(`koloft session close: ${title} is gone.`)
+  const target = d.closable().find((s) => s.sessionId === row.id)
+  if (!target) return fail(`koloft session close: ${title} is gone.`)
+  if (target.tabId && d.isButler(target.tabId))
+    return fail(`koloft session close: ${title} is the butler, which only closes itself.`)
+  return { ok: true, value: target }
 }
 
 interface StartedSessionsToClose {
@@ -899,6 +901,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
+  tabMoved(oldTabId: string, newTabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
@@ -1293,7 +1296,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
         let hit = await findClosable(mine, ref, d.peerNames())
-        if (!hit.ok) hit = await endedSession(d, ref)
+        if (!hit.ok) hit = await sessionOnThisComputer(d, ref)
         if (!hit.ok) return refused(hit.error)
         target = hit.value
       }
@@ -1338,7 +1341,14 @@ export function sessionVerb(d: SessionVerbDeps): {
       )
     )?.tabId ?? null
 
-  return { verb, turnEnded, waitsOnAnother, startButlerHelper }
+  const tabMoved = (oldTabId: string, newTabId: string): void => {
+    const owed = replyOwed.get(oldTabId)
+    if (owed === undefined) return
+    replyOwed.delete(oldTabId)
+    replyOwed.set(newTabId, owed)
+  }
+
+  return { verb, turnEnded, waitsOnAnother, startButlerHelper, tabMoved }
 }
 
 export interface WorkspaceVerbDeps {

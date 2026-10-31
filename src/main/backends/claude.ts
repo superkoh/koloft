@@ -47,6 +47,7 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
   STATUS_LOG_SUFFIX,
   statusLogOf
@@ -260,6 +261,10 @@ export class ClaudeBackend implements SessionBackend {
 
   archive(key: string): boolean {
     return this.d.workspaces()?.archiveSession(key) ?? false
+  }
+
+  adopt(keys: string[]): void {
+    this.d.workspaces()?.adopt(keys)
   }
 
   transcriptExists(key: string): boolean {
@@ -609,9 +614,14 @@ export class ClaudeBackend implements SessionBackend {
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
     const tabId = this.callerOnMachine(machine, raw)
-    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) return
+    const host = this.d.hosts.machine(machine)
+    const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
+    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) {
+      if (noOneWaits) void host.answerAgent(requestId, null)
+      return
+    }
     void this.agentReply(tabId, raw).then((reply) =>
-      this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
+      host.answerAgent(requestId, noOneWaits ? null : replyJson(reply))
     )
   }
 
@@ -623,6 +633,7 @@ export class ClaudeBackend implements SessionBackend {
       wake?: number
       ask?: unknown
       trigger?: string
+      wrote?: unknown
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId || !this.d.pty.get(obj.tabId)?.alive) return
@@ -637,6 +648,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
+    if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
   }

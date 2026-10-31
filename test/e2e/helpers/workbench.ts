@@ -53,7 +53,13 @@ export const WORKBENCH = {
   previewDocs: '.wb-peek .ft-node'
 } as const
 
+export const WELCOME_PAGE = '.w-empty'
+const WELCOME_HAS_A_LIVE_WORKBENCH_TOO = 'a session is on screen, not a workspace welcome page'
+
 export async function waitPanelAttached(page: Page, timeout = 60_000): Promise<void> {
+  await expect(page.locator(WELCOME_PAGE), WELCOME_HAS_A_LIVE_WORKBENCH_TOO).toHaveCount(0, {
+    timeout
+  })
   await expect(workbenchIcon(page)).toHaveAttribute('aria-disabled', 'false', { timeout })
 }
 

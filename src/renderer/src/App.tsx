@@ -3,14 +3,7 @@ import { SessionBackendIcon } from './components/SessionBackendIcon'
 import type { AgentChoice } from './agentChoice'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import { WelcomeLaunch } from './components/WelcomeLaunch'
-import {
-  backendAvailable,
-  BACKEND_LABEL,
-  byBackend,
-  effectiveBackend,
-  listedBackends,
-  SESSION_BACKENDS
-} from '@shared/sessionBackend'
+import { backendAvailable, BACKEND_LABEL, byBackend, launchMenus } from '@shared/sessionBackend'
 import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
@@ -50,7 +43,6 @@ import { SIDEBAR_MIN } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
-  boundSessionId,
   workbenchOwnerLive,
   consumeRestartExit,
   keptTabsToClose,
@@ -62,8 +54,11 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
-  tabEverBound
+  tabEverBound,
+  welcomeWorkbenchKey,
+  workbenchStoreKey
 } from './store'
+import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
@@ -142,9 +137,9 @@ import { TopbarUsage } from './components/TopbarUsage'
 import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
 import { AssistDialog } from './components/AssistDialog'
-import { useAssistSetup } from './useAssistSetup'
 import { useToolsChanged } from './useInstalledBackends'
-import { Onboarding } from './components/Onboarding'
+import { Welcome } from './components/Welcome'
+import { aDialogIsOpen } from './dialogOpen'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
@@ -183,10 +178,6 @@ function focusedWorkbench(): HTMLElement | null {
 
 const NOTES_ISLAND = '.isl-notes'
 
-function aDialogIsOpen(): boolean {
-  return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')
-}
-
 function caretInNote(): boolean {
   return !!document.activeElement?.matches(`${NOTES_ISLAND} .ed-area`)
 }
@@ -203,7 +194,7 @@ function panelActionTab(): string | undefined {
   if (!id) return undefined
   const tab = st.tabs.find((t) => t.id === id)
   if (tab?.resuming) return undefined
-  return boundSessionId(st, id) ? id : undefined
+  return workbenchStoreKey(st, id) ? id : undefined
 }
 
 function terminalActionTab(): string | undefined {
@@ -218,7 +209,11 @@ function activeTabIsWeb(): boolean {
   const tabId = panelTabId(st)
   if (!tabId) return false
   if (!panelIsOpen(st, tabId)) return false
-  if (!st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)) return false
+  if (
+    !isWorkspaceWorkbenchKey(tabId) &&
+    !st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)
+  )
+    return false
   const set = st.workbench[tabId]
   if (!set) return false
   return set.tabs.find((t) => t.id === set.activeId)?.kind === 'web'
@@ -372,6 +367,7 @@ export default function App(): JSX.Element {
     if (nextFull) setPanelFocus((n) => n + 1)
   }, [])
   const [rowsLoaded, setRowsLoaded] = useState(false)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const [probed, setProbed] = useState<Record<SessionBackend, boolean> | null>(null)
   const toolsChanged = useToolsChanged()
@@ -389,21 +385,11 @@ export default function App(): JSX.Element {
       alive = false
     }
   }, [toolsChanged])
-  const installed = useMemo(
-    () => new Set(probed ? SESSION_BACKENDS.filter((b) => probed[b]) : SESSION_BACKENDS),
-    [probed]
-  )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const listed = useMemo(
-    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+  const launchable = useMemo(
+    () => launchMenus(sessionMethods, probed && ((b) => probed[b])),
     [probed, sessionMethods]
   )
-  const namedMethods = useMemo((): SessionBackend[] | null => {
-    const { defaultBackend } = sessionMethods
-    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
-    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
-  }, [listed, sessionMethods])
-  const soleMethod = effectiveBackend(sessionMethods, installed)
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -461,11 +447,21 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath, undefined, backend)
         return
       }
-      startNow(hostOf(wsPath), backend ?? soleMethod, async () => ({
+      const host = hostOf(wsPath)
+      startNow(host, backend ?? launchable[host].sole, async () => ({
         cwd: wsPath
       }))
     },
-    [requestNew, soleMethod, startNow]
+    [requestNew, launchable, startNow]
+  )
+
+  const startFromWelcome = useCallback(
+    (wsPath: string, backend: SessionBackend, firstPrompt?: string): void =>
+      startNow(hostOf(wsPath), backend, async () => ({
+        cwd: wsPath,
+        ...(firstPrompt && { firstPrompt })
+      })),
+    [startNow]
   )
 
   const globalNew = useCallback(
@@ -731,6 +727,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
       const st = useStore.getState()
+      if (isWorkspaceWorkbenchKey(r.tabId)) {
+        st.openWorkbenchTarget(r.tabId, { url: r.url, source: r.source })
+        return
+      }
       const named = { ...r, tabId: conversationTabFor(r.tabId) }
       const sess = browserOpenTargetSession(st.sessions, named, st.activeTabId)
       const fromShell = named.tabId !== r.tabId
@@ -851,13 +851,17 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('click', close)
   }, [addMenu])
   useEffect(
-    () => window.api.shortcuts.onOpenSettings(() => setSettingsOpen(true)),
+    () =>
+      window.api.shortcuts.onOpenSettings(() => {
+        if (!useStore.getState().welcomeActive) setSettingsOpen(true)
+      }),
     [setSettingsOpen]
   )
   useEffect(
     () =>
       window.api.shortcuts.onCommandPalette(() => {
-        if (rowsLoaded && !aDialogIsOpen()) setPaletteOpen(true)
+        if (rowsLoaded && !aDialogIsOpen() && !useStore.getState().welcomeActive)
+          setPaletteOpen(true)
       }),
     [rowsLoaded]
   )
@@ -941,6 +945,7 @@ export default function App(): JSX.Element {
         cwd: t.cwd,
         alive: true,
         jobId: t.jobId,
+        launch: t.launch && launchToStartAgain(t.launch, t.cwd),
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })
@@ -1062,6 +1067,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.api.settings.get().then((s) => {
       setSettings(s)
+      setSettingsLoaded(true)
       setWorkbenchWidth(s.workbenchWidth)
       setSidebarWidth(Math.max(SIDEBAR_MIN, s.sidebarWidth))
       setNotesHeight(s.notesHeight)
@@ -1101,14 +1107,17 @@ export default function App(): JSX.Element {
     if (activeTabWs) setLastWsPath(activeTabWs)
   }, [activeTabWs, setLastWsPath])
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
-  const welcomeActive = useStore((s) => s.welcomeActive)
   const setWelcomeActive = useStore((s) => s.setWelcomeActive)
   const onboardingSeen = useStore((s) => s.settings.onboardingSeen)
-  const noWorkspaces = workspaceRows.length === 0
-  useEffect(() => {
-    if (onboardingSeen) setWelcomeActive(false)
-    else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
-  }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
+  const welcomeReplay = useStore((s) => s.welcomeReplay)
+  const firstSidebarWasEmpty = useRef<boolean | null>(null)
+  if (rowsLoaded && firstSidebarWasEmpty.current === null)
+    firstSidebarWasEmpty.current = workspaceRows.length === 0
+  const welcomeOpen =
+    rowsLoaded &&
+    settingsLoaded &&
+    (welcomeReplay || (!onboardingSeen && !!firstSidebarWasEmpty.current))
+  useEffect(() => setWelcomeActive(welcomeOpen), [welcomeOpen, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
   const butlerActive = useStore(
@@ -1269,22 +1278,9 @@ export default function App(): JSX.Element {
   const activeSessionTitle = useStore((s) =>
     activeTab ? s.sessions.find((x) => x.tabId === activeTab.id)?.title : undefined
   )
-  // ADR-0030
-  const assistSetup = useAssistSetup()
   const signInTabId = useStore((s) => s.signIn?.tabId)
-  const whatsNewOpen = useStore((s) => s.update.open)
-  const [assistSetupLater, setAssistSetupLater] = useState(false)
   const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
-  const assistDialogShown =
-    assistAsked ||
-    (rowsLoaded &&
-      assistSetup.loaded &&
-      !assistSetup.done &&
-      !assistSetupLater &&
-      !welcomeActive &&
-      !whatsNewOpen &&
-      !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landed = useStore(
     useShallow((s) => {
@@ -1292,19 +1288,26 @@ export default function App(): JSX.Element {
       return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
     })
   )
-  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
+  const welcomeKey = useStore(welcomeWorkbenchKey)
+  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : landedTab ? undefined : welcomeKey
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
     useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
-  const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
+  const liveTabs = useMemo(
+    () =>
+      new Set(
+        panelTab && isWorkspaceWorkbenchKey(panelTab) ? [...liveTabIds, panelTab] : liveTabIds
+      ),
+    [liveTabIds, panelTab]
+  )
   const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
   }, [panelTab, panelSid])
 
-  const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
+  const panelBound = useStore((s) => !!panelTab && !!workbenchStoreKey(s, panelTab))
   const panelReady = panelBound && !landedTab?.resuming
 
   const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
@@ -1325,13 +1328,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const paletteChoice: AgentChoice = {
-    listed,
-    lead: soleMethod,
+  const paletteChoice = (host: HostId): AgentChoice => ({
+    listed: launchable[host].listed,
+    lead: launchable[host].sole,
     defaultBackend: sessionMethods.defaultBackend,
     issue: () => '',
     note: () => ''
-  }
+  })
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landed.treeRoot,
@@ -1597,8 +1600,7 @@ export default function App(): JSX.Element {
         <div className="dock-left" ref={dockRef}>
           <WorkspaceSidebar
             onNewSession={startIn}
-            namedMethods={namedMethods}
-            soleMethod={soleMethod}
+            launchable={launchable}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onScheduledJobs={openScheduledJobs}
@@ -1755,9 +1757,7 @@ export default function App(): JSX.Element {
                 {resumeLaunch && <ResumingMask title={resumeLaunch.title} />}
                 {!activeTab &&
                   !resumeLaunch &&
-                  (welcomeActive ? (
-                    <Onboarding onAddWorkspace={addWorkspace} onStartIn={startIn} />
-                  ) : welcomeWs ? (
+                  (welcomeWs ? (
                     <div className="w-empty" tabIndex={-1}>
                       <div className="big">{basename(welcomeWs.workspace.path)}</div>
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
@@ -1943,7 +1943,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              choice={paletteChoice}
+              choices={{ local: paletteChoice('local'), ssh: paletteChoice('ssh') }}
             />
           )}
           {newRequest && (
@@ -2005,14 +2005,12 @@ export default function App(): JSX.Element {
           <BindConductorDialog />
           <RenameButlerDialog />
           <UpdateModal />
-          {assistDialogShown && (
-            <AssistDialog
-              setup={assistSetup}
-              asked={assistAsked}
-              onNotNow={() => {
-                setAssistSetupLater(true)
-                setAssistAsked(false)
-              }}
+          {assistAsked && <AssistDialog onNotNow={() => setAssistAsked(false)} />}
+          {welcomeOpen && (
+            <Welcome
+              onAddFolder={addWorkspace}
+              onAddRemote={() => setRemoteDialog(true)}
+              onStart={startFromWelcome}
             />
           )}
           <UnsavedDialog />

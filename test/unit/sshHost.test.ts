@@ -348,14 +348,16 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ])
     })
 
-    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply', async () => {
+    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {
       const hookDir = path.join(home, '.koloft', 'hook-sessions')
       fs.mkdirSync(hookDir, { recursive: true })
       fs.writeFileSync(path.join(hookDir, 'req-r1.json'), '{}')
+      fs.writeFileSync(path.join(hookDir, 'req-r3.json'), '{}')
       const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
 
       await machine().answerAgent('r1', reply)
       await machine().answerAgent('r2', reply)
+      await machine().answerAgent('r3', null)
 
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
@@ -443,6 +445,26 @@ function publishTwo(publisher: string): void {
 }
 
 // PLATFORM§30
+describe('a web page on the machine', () => {
+  it('reads every file a page pulls in byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
+    let now = 0
+    let most = 0
+    const host = machine(async (cmd, opts) => {
+      most = Math.max(most, ++now)
+      try {
+        return await runOnMachine(cmd, opts)
+      } finally {
+        now--
+      }
+    })
+    const files = Array.from({ length: 12 }, (_, i) => path.join(repo, `pic-${i}.bin`))
+    files.forEach((f, i) => fs.writeFileSync(f, Buffer.from([0, 255, i, 10])))
+    const read = await Promise.all(files.map((f) => host.readPageFile(keyed(f))))
+    expect(read).toEqual(files.map((_, i) => Buffer.from([0, 255, i, 10])))
+    expect(most).toBe(4)
+  })
+})
+
 describe('freshness of a checkout on the machine', () => {
   it('a fetch the machine cannot do says so, and keeps the time of the last fetch from before it', async () => {
     withOrigin()
@@ -516,6 +538,19 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(machine(needsPassword).reachOrThrow()).resolves.toBeUndefined()
     await expect(machine(sshFails(null, '')).reachOrThrow()).resolves.toBeUndefined()
     await expect(machine().reachOrThrow()).resolves.toBeUndefined()
+  })
+
+  it('the folder check before a Codex, Muse or Antigravity start lets through what a Claude start lets through — a machine that only needs someone to sign in, which the session tab asks for, or ssh merely slow — but still refuses one out of reach and a folder the machine says is gone', async () => {
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
+    const newHostKey = sshFails(255, 'Host key verification failed.')
+    expect(await machine(needsPassword).sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine(newHostKey).sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine(sshFails(null, '')).sessionDirThere(keyed(repo))).toBe(true)
+    await expect(machine(unreachable).sessionDirThere(keyed(repo))).rejects.toThrow(
+      'Operation timed out'
+    )
+    expect(await machine().sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine().sessionDirThere(keyed(path.join(repo, 'gone')))).toBe(false)
   })
 })
 

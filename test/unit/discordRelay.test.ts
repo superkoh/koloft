@@ -29,8 +29,7 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
   discordSaidFile,
-  NOT_FROM_THE_RELAY,
-  noticeFile
+  NOT_FROM_THE_RELAY
 } from '../../src/main/hooks'
 import { writeMuseHooks } from '../../src/main/museHooks'
 
@@ -433,7 +432,10 @@ describe('DiscordRelay: an owner message to a Codex or Muse butler', () => {
     const shimDir = fs.mkdtempSync(path.join(dir, 'muse-shim-'))
     const hooks = JSON.parse(
       fs.readFileSync(
-        writeMuseHooks(shimDir, shimDir, undefined, undefined, undefined, noticeFile(dir, TAB)),
+        writeMuseHooks(shimDir, shimDir, undefined, undefined, undefined, {
+          regDir: dir,
+          tabId: TAB
+        }),
         'utf8'
       )
     )

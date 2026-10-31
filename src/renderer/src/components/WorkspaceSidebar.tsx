@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, capabilitiesFor, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, identityOf, type LaunchMenu } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
@@ -33,7 +33,14 @@ import {
   IconPullRequest,
   IconScheduled
 } from '../icons'
-import type { BackendId, HeldCommand, MachineState, QueuedLaunch, SessionRow } from '@shared/types'
+import type {
+  BackendId,
+  HeldCommand,
+  HostId,
+  MachineState,
+  QueuedLaunch,
+  SessionRow
+} from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { attentionReason } from '@shared/types'
 import { noAccountLine, popoverX } from '@shared/accountUsage'
@@ -73,7 +80,7 @@ import { fitGithubCounts } from '../wsHeadFit'
 import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
-import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { ButlerRow } from './ButlerRow'
 import { everyWorkspaceRows } from '../butlerRows'
@@ -265,6 +272,7 @@ interface SidebarActions {
   gitEnter: (e: MouseEvent, path: string) => void
   gitLeave: (e: MouseEvent, path: string) => void
   behindClick: (e: MouseEvent, path: string) => void
+  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
   openDoor: (path: string, isGit: boolean) => void
 }
 
@@ -481,6 +489,7 @@ const WorkspaceHead = memo(function WorkspaceHead({
 }): JSX.Element {
   const mq = useMarquee()
   const door = doorFor(isGit)
+  const listsReachable = remoteHost === undefined || remoteConnected
   return (
     <div
       className={'ws-head' + (missing ? ' missing' : '') + (active ? ' active' : '')}
@@ -541,16 +550,24 @@ const WorkspaceHead = memo(function WorkspaceHead({
           {(issues > 0 || prs > 0) && (
             <span className="ws-gh">
               {issues > 0 && (
-                <span aria-label={openIssuesLabel(issues)}>
+                <button
+                  aria-label={openIssuesLabel(issues)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'issues')}
+                >
                   <IconIssue size={12} />
                   {countLabel(issues)}
-                </span>
+                </button>
               )}
               {prs > 0 && (
-                <span aria-label={openPullsLabel(prs)}>
+                <button
+                  aria-label={openPullsLabel(prs)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'pulls')}
+                >
                   <IconPullRequest size={12} />
                   {countLabel(prs)}
-                </span>
+                </button>
               )}
             </span>
           )}
@@ -592,8 +609,7 @@ interface FloatingCtl {
 
 function SidebarFloating({
   ctl,
-  namedMethods,
-  soleMethod,
+  launchable,
   onNewSession,
   onNewWorktreeSession,
   onRestoreSession,
@@ -601,8 +617,7 @@ function SidebarFloating({
   onRemoveWorkspace
 }: {
   ctl: RefObject<FloatingCtl | null>
-  namedMethods: BackendId[] | null
-  soleMethod: BackendId
+  launchable: Record<HostId, LaunchMenu>
   onNewSession: (wsPath: string, backend?: BackendId) => void
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
@@ -790,6 +805,7 @@ function SidebarFloating({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
+      const { named: namedMethods, sole: soleMethod } = launchable[hostOf(target.wsPath)]
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
         const shut = accounts && noAccountLine(accounts, backend ?? soleMethod)
         return (
@@ -1082,15 +1098,13 @@ function SidebarFloating({
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
-  namedMethods,
-  soleMethod,
+  launchable,
   onNewWorktreeSession,
   onRestoreSession,
   onScheduledJobs
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
-  namedMethods: BackendId[] | null
-  soleMethod: BackendId
+  launchable: Record<HostId, LaunchMenu>
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
@@ -1259,6 +1273,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       behindClick: (e, path) => {
         e.stopPropagation()
         floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
+      },
+      openList: (e, path, what) => {
+        e.stopPropagation()
+        floating.current?.closeAll()
+        useStore.getState().openWorkspaceList(path, what)
       },
       openDoor: (path, isGit) => {
         floating.current?.dismissMenu()
@@ -1554,8 +1573,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         <>
           <SidebarFloating
             ctl={floating}
-            namedMethods={namedMethods}
-            soleMethod={soleMethod}
+            launchable={launchable}
             onNewSession={onNewSession}
             onNewWorktreeSession={onNewWorktreeSession}
             onRestoreSession={onRestoreSession}

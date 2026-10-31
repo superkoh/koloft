@@ -38,6 +38,12 @@ const A = '01a13795-6b09-7531-bdd6-84ce54f976ea'
 const B = '01a13796-77a9-7ee3-805e-e14ad0a7b22c'
 const CHILD = '9cb2b3b7-f145-4411-bf47-ebd0341e75ff'
 const ESC = '\x1b'
+const lookBefore = (entry: { hooks: { command: string }[] }) => ({
+  hooks: entry.hooks.map((h) => ({
+    ...h,
+    command: h.command.replace(' PostToolUse ', ' PreToolUse ')
+  }))
+})
 const osc = (body: string): string => `${ESC}]7501;${body}${ESC}\\`
 
 let home: string
@@ -407,8 +413,8 @@ describe('The butler on Muse', () => {
     await launch({ tabId: 'pty-bg' })
     const hooksOf = (n: number) =>
       JSON.parse(fs.readFileSync(created[n].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
-    expect(hooksOf(0).PreToolUse).toBeUndefined()
-    const [entry] = hooksOf(1).PreToolUse[0].hooks
+    expect(hooksOf(0).PreToolUse).toEqual(hooksOf(0).PostToolUse.map(lookBefore))
+    const [entry] = hooksOf(1).PreToolUse[1].hooks
     expect(entry.timeout).toBe(HOLD_HOOK_TIMEOUT_S)
     fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
     const kid = spawn('/bin/sh', ['-c', entry.command], { env: { PATH: '/usr/bin:/bin' } })
@@ -424,13 +430,13 @@ describe('The butler on Muse', () => {
   })
 
   // ADR-0029
-  it('no session gets a tool gate, the butler included', async () => {
+  it('no session gets a tool gate, the butler included: its only PreToolUse hook is the same script its PostToolUse runs, which looks at the folder before a shell command', async () => {
     await launch()
     assist = { role: 'r' }
     await launch()
     for (const tab of created) {
       const hooks = JSON.parse(fs.readFileSync(tab.env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
-      expect(hooks.PreToolUse).toBeUndefined()
+      expect(hooks.PreToolUse).toEqual(hooks.PostToolUse.map(lookBefore))
     }
   })
 })

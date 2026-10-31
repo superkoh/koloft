@@ -253,11 +253,12 @@ describe('GithubLookup.info', () => {
 })
 
 describe('GithubLookup.target', () => {
-  it('sends a click to the pull request, the repository or the list', async () => {
+  it('sends a click to the pull request, the repository or either list', async () => {
     const gh = make()
     await settled(gh, root)
     expect(await gh.target(root, 'pr')).toBe('https://github.com/acme/widgets/pull/265')
     expect(await gh.target(root, 'repo')).toBe('https://github.com/acme/widgets')
+    expect(await gh.target(root, 'issues')).toBe('https://github.com/acme/widgets/issues')
     expect(await gh.target(root, 'pulls')).toBe('https://github.com/acme/widgets/pulls')
   })
 

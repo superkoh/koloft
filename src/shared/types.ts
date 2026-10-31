@@ -745,7 +745,6 @@ export interface SessionUsage {
   todayCostUsd?: number
   todayDayKey?: string
   model?: string
-  ccVersion?: string
   ctxTokens?: number
   ctxPct?: number
 }
@@ -767,7 +766,6 @@ export interface SessionSource {
 }
 
 export interface BackendSessionInfo {
-  cliVersion?: string
   background?: BackgroundItem[]
   nativeSessionId?: string
   tabId: string
@@ -824,10 +822,14 @@ export interface ReleaseNotes {
   notes: string
 }
 
-export interface DiscoveredFolder {
-  path: string
+export interface FolderUse {
   sessions: number
   mtime: number
+}
+
+export interface DiscoveredFolder extends FolderUse {
+  path: string
+  agents: Partial<Record<BackendId, FolderUse>>
 }
 
 export interface WhatsNew {
@@ -879,7 +881,7 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+export type GithubTarget = 'repo' | 'issues' | 'pulls' | 'pr' | 'compare'
 
 export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
 
@@ -1048,6 +1050,7 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
+  accountIssue?: string
 }
 
 export interface UnexpectedExitScreen {
@@ -1286,6 +1289,7 @@ export interface KoloftApi {
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
+    pinRecent(paths: string[]): Promise<void>
     createProject(parent: string, name: string): Promise<ProjectCreateResult>
   }
   assist: {
@@ -1515,6 +1519,7 @@ export interface SpawnedTab {
   title: string
   jobId?: string
   sessionId?: string
+  launch?: CreateTabOptions
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {
@@ -1523,10 +1528,8 @@ export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'wait
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }
-  | {
-      ok: false
-      reason: 'skipped' | 'failed' | 'folder-missing' | 'no-account' | 'not-ready' | 'unknown-job'
-    }
+  | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
+  | { ok: false; reason: 'no-account'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 
@@ -1589,6 +1592,7 @@ export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
   resident?: string[]
+  workspacePanels?: Record<string, SessionWorkbenchState>
 }
 
 // CC§2

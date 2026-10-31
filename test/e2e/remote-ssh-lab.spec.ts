@@ -37,7 +37,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER } from './helpers/browser'
+import { BROWSER, guestByUrl } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -78,6 +78,7 @@ import {
   FAKE_RESPONSES_PORT,
   installCurlOnTarget,
   installFakeCodexOnTarget,
+  installFakeMuseOnTarget,
   installRealMuseOnTheMachine,
   installLabSsh,
   startFakeResponsesOnTarget,
@@ -179,6 +180,12 @@ const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
 const ONE_MACHINE_PER_LOGIN_SHELL = MACHINES_FOR_THE_KOLOFT_COMMAND.filter(
   ([alias]) => alias !== 'kt-few'
 )
+const LOGIN_SHELL_OF: Record<string, string> = {
+  'kt-key': 'bash',
+  'kt-tcsh': 'tcsh',
+  'kt-fish': 'fish'
+}
+const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -285,6 +292,21 @@ async function connectsListsAndReads(page: Page, alias: LabAlias, user: string):
   expect(await readme(page, alias, user)).toBe(README(user))
 }
 
+const MACHINES_THAT_ASK_TO_SIGN_IN: {
+  alias: LabAlias
+  user: string
+  asks: string
+  answer: string
+}[] = [
+  { alias: 'kt-pw', user: 'puser', asks: 'password:', answer: LAB_PASSWORD },
+  { alias: 'kt-newhost', user: 'kuser', asks: 'continue connecting', answer: 'yes' }
+]
+
+async function answerInTheTab(page: Page, prompt: string, answer: string): Promise<void> {
+  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
+  await runIn(page, centerTerm(page), answer)
+}
+
 async function newSessionAnsweringAtTheTab(
   page: Page,
   alias: LabAlias,
@@ -295,8 +317,7 @@ async function newSessionAnsweringAtTheTab(
   await openMenu(page, page.locator('.ws-head', { hasText: alias }))
   await page.locator('.menu .mi', { hasText: 'New session' }).click()
   await expect(rows).toHaveCount(1, { timeout: 30_000 })
-  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
-  await runIn(page, centerTerm(page), answer)
+  await answerInTheTab(page, prompt, answer)
   await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(1, { timeout: 90_000 })
 }
 
@@ -418,6 +439,57 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       )
       await newSessionAnsweringAtTheTab(page, 'kt-newhost', 'continue connecting', 'yes')
       await connectsListsAndReads(page, 'kt-newhost', 'kuser')
+    })
+  })
+
+  for (const agent of ['Codex', 'Muse'] as const)
+    test(`E-SSH-37 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
+      env
+    }) => {
+      seedSettings(env, { hintsOff: true })
+      installCodexSignedInForTheLab(env)
+      installMuse(env)
+      await withLab(
+        env,
+        async ({ page }) => {
+          for (const { alias, user, asks, answer } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+            await addMachine(page, alias, user)
+            await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+              timeout: BACKGROUND_CONNECT_MS
+            })
+            await newSessionInWith(page, alias, agent)
+            await answerInTheTab(page, asks, answer)
+            await expect(wsRows(page, alias)).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+            await connectsListsAndReads(page, alias, user)
+          }
+        },
+        (lab) => {
+          installFakeCodexOnTarget(lab)
+          installFakeMuseOnTarget(
+            lab,
+            MACHINES_THAT_ASK_TO_SIGN_IN.map((m) => m.user)
+          )
+        }
+      )
+    })
+
+  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installAgy(env)
+    await withLab(env, async ({ page }) => {
+      for (const { alias, user } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+        await addMachine(page, alias, user)
+        await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+          timeout: BACKGROUND_CONNECT_MS
+        })
+        await newSessionInWith(page, alias, 'Antigravity')
+        await expect(
+          page.locator('.toast-msg', { hasText: /Claude Code, Codex or Muse session there/ })
+        ).toBeVisible({ timeout: 30_000 })
+        await expect(wsRows(page, alias)).toHaveCount(0)
+      }
     })
   })
 
@@ -577,14 +649,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as source', async ({
+  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as a web page', async ({
     env
   }) => {
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
     const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
     expect(fs.existsSync(scratch)).toBe(false)
-    await withLab(env, async ({ page, lab }) => {
+    await withLab(env, async ({ app, page, lab }) => {
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
@@ -612,10 +684,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await htmlRow.click()
       await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('y.html')
-      await expect(
-        page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
-      ).toHaveText('Source')
+      await guestByUrl(app, /^koloft-machine:\/\/.*\/y\.html$/, { timeout: 30_000 })
     })
   })
 
@@ -682,6 +751,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-35: the plain open the agent runs in a session on the machine shows a file there in that session’s Workbench, as koloft open does', async ({
+    env
+  }) => {
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await waitPanelAttached(page)
+      expect(await layoutState(page)).toBe('T1')
+
+      await runIn(page, centerTerm(page), '/open README.md')
+      await expect
+        .poll(() => layoutState(page), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toBe('T2')
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('README.md')
+      await expect(artifactBody(page)).toContainText('koloft-ssh-lab marker for kuser')
+    })
+  })
+
   test('E-SSH-27: koloft open, typed in the Workbench shell of a session on the machine, shows a file there in that session’s Workbench, on machines whose login shell is bash (whose /etc/profile resets PATH), tcsh and fish', async ({
     env
   }) => {
@@ -694,6 +785,34 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(artifactBody(page)).toContainText(`koloft-ssh-lab marker for ${user}`, {
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
+      }
+    })
+  })
+
+  test('E-SSH-35: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+        const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'sleep 60')
+        await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        await page.keyboard.press('Control+C')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'cd /tmp')
+        await expect(folder).toHaveAttribute('title', `ssh://${alias}/tmp`, {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await expect(folder).toHaveText(/\/tmp$/)
       }
     })
   })

@@ -35,7 +35,6 @@ export interface CodexThread {
   createdAt?: number
   updatedAt?: number
   path?: string | null
-  cliVersion?: string
   ephemeral?: boolean
   parentThreadId?: string | null
   threadSource?: string
@@ -63,7 +62,7 @@ export function userThread(value: unknown): CodexThread | null {
     Object.hasOwn(record(t.source), 'subAgent')
   )
     return null
-  for (const key of ['name', 'preview', 'path', 'cliVersion', 'model']) {
+  for (const key of ['name', 'preview', 'path', 'model']) {
     if (t[key] !== undefined && t[key] !== null && typeof t[key] !== 'string') return null
   }
   return t as unknown as CodexThread
@@ -120,6 +119,17 @@ export function codexTurns(turns: unknown): TurnLog {
 
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
+
+// CODEX§4 CODEX§12
+function itemFinished(item: Record<string, unknown>): boolean {
+  if (item.status === 'completed') return true
+  return (
+    item.type === 'commandExecution' &&
+    item.status === 'failed' &&
+    typeof item.exitCode === 'number' &&
+    item.exitCode > 0
+  )
+}
 
 function openTarget(command: string, cwd: unknown): string | null {
   const m = OPEN_ONE_TARGET.exec(command.trim())
@@ -236,7 +246,20 @@ export class CodexObservation {
   unsubscribed = false
   turns = new TurnLog()
 
-  constructor(private emit: (event: CodexEvent) => void) {}
+  constructor(
+    private emit: (event: CodexEvent) => void,
+    private takeShellWrites: () => Promise<string[]> = async () => []
+  ) {}
+
+  private async noteShellWrites(): Promise<void> {
+    const thread = this.threadId
+    const wrote = await this.takeShellWrites()
+    if (!wrote.length || thread !== this.threadId) return
+    for (const file of wrote) noteWrite(this.touched, file, 0, 0, Date.now())
+    this.lastTouched = this.lastWritten = wrote[wrote.length - 1]
+    this.liveWrites++
+    this.publishFiles()
+  }
 
   // CODEX§17
   queuedMessage(clientId: string, text: string, sentAgain = false): void {
@@ -432,6 +455,7 @@ export class CodexObservation {
     }
     if (method === 'item/completed') {
       if (this.noteFiles(item, true)) this.publishFiles()
+      if (item.type === 'commandExecution') void this.noteShellWrites()
       this.observeOpen(item)
       const at = typeof p.completedAtMs === 'number' ? p.completedAtMs : Date.now()
       const line = ownedChild ? null : codexTurnLine(item, at)
@@ -459,11 +483,7 @@ export class CodexObservation {
     } else if (method === 'item/completed') {
       if (typeof item.id === 'string') this.editing.delete(item.id)
       const did =
-        item.type === 'plan'
-          ? PLAN_READY
-          : item.status === 'completed'
-            ? codexItemDid(item)
-            : undefined
+        item.type === 'plan' ? PLAN_READY : itemFinished(item) ? codexItemDid(item) : undefined
       if (!did) return
       this.planReady = did === PLAN_READY
       this.emit({ type: 'did', what: did })
@@ -488,6 +508,7 @@ export class CodexObservation {
             this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
+      void this.noteShellWrites()
       for (const [id, owner] of this.approvalThreads) {
         if (owner === this.threadId) {
           this.approvals.delete(id)

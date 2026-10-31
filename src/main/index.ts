@@ -63,10 +63,10 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
-import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
+import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
@@ -174,11 +174,13 @@ import {
   mirrorHookDir,
   mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
+  remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
-import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { AGENT_SHIM_WAITS_MS, OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
@@ -240,8 +242,13 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, type LiveSession } from './workspaces'
-import { sanitizeSessionWorkbench } from '@shared/workbenchState'
+import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import { rowsToAdopt } from '@shared/firstRun'
+import {
+  isWorkspaceWorkbenchKey,
+  sanitizeSessionWorkbench,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
 import {
   dirExistsSync,
   gitProbes,
@@ -314,6 +321,8 @@ import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
+  MACHINE_PAGE_SCHEME,
+  machinePageOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -382,7 +391,9 @@ import {
   AUTO_PROBE_MS,
   launchLine,
   launchUsageProbe,
+  noAccountLine,
   noAccountMessage,
+  SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
 import {
@@ -483,6 +494,7 @@ import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } fr
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   codexDialog,
+  isAskedCall,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -547,6 +559,7 @@ import {
   type MergedHeads,
   type TidyResult
 } from './sessionClose'
+import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
@@ -576,7 +589,7 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
-const claudeAsks = new Map<string, string>()
+const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -627,7 +640,7 @@ const sessionBackends = new SessionBackends({
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
-    claudeAsks.set(tabId, claudeAskLine(ask))
+    claudeAsks.set(tabId, ask)
     if (discordRelay) discordRelay.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
@@ -644,10 +657,8 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const line = claudeAsks.get(tabId)
-  if (line) return line
-  const held = discordRelay?.heldAsk(tabId)
-  return held && claudeAskLine(held)
+  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
+  return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
   if (tracker.statusOf(tabId) === 'approval')
@@ -779,6 +790,7 @@ interface ClaudeTabExit {
 const claudeTabExits = new Map<string, ClaudeTabExit>()
 const sessionsLeavingTheirWorktree = new Set<string>()
 const closedTabs = new Map<string, LeftTab | null>()
+const treeRemovals = new TreeRemovals()
 
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
@@ -1220,6 +1232,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
@@ -1726,7 +1739,7 @@ const sessionDeps: SessionVerbDeps = {
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
-    return launchQuietTab(options, title)
+    return launchQuietTab(options, title, { launch: options })
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
@@ -1968,6 +1981,8 @@ function terminalPickOf(
   )
 }
 
+const shimAccountRefusals = new Map<string, string>()
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -1990,6 +2005,9 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     return
   }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
+  if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
+  else shimAccountRefusals.delete(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
@@ -2008,6 +2026,7 @@ interface LoginWatch {
   startedAt: number
   sawUrl: boolean
   done: boolean
+  installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
@@ -2026,6 +2045,19 @@ function sendLoginProgress(p: LoginProgress): void {
 function feedLoginWatcher(tabId: string, data: string): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
+  if (w.installing) {
+    const seen = w.installing.carry + data
+    const rest = afterOutputStart(seen)
+    if (rest === null) {
+      w.installing.carry = outputStartCarry(seen)
+      w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
+      return
+    }
+    w.installing = undefined
+    w.startedAt = Date.now()
+    w.buf = ''
+    data = rest
+  }
   if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
     failLogin(tabId, 'Sign-in timed out')
     return
@@ -2072,7 +2104,7 @@ function cancelGuidedLogin(tabId: string): void {
   } catch {}
 }
 
-function startGuidedLogin(name: string): string {
+function startGuidedLogin(name: string, installFirst: boolean): string {
   const handle = ptyMgr.create({
     kind: 'shell',
     koloftShim: PLAIN_KOLOFT_SHIM,
@@ -2081,10 +2113,24 @@ function startGuidedLogin(name: string): string {
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
     rows: 50,
     setupCommand: setupLine(),
-    launchCommand: 'claude setup-token'
+    launchCommand: installFirst
+      ? installThen(
+          'claude',
+          (claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,
+          process.env.KOLOFT_TEST_TOOL_INSTALLER
+        )
+      : 'claude setup-token'
   })
-  loginWatchers.set(handle.id, { name, buf: '', startedAt: Date.now(), sawUrl: false, done: false })
+  loginWatchers.set(handle.id, {
+    name,
+    buf: '',
+    startedAt: Date.now(),
+    sawUrl: false,
+    done: false,
+    ...(installFirst && { installing: { carry: '' } })
+  })
   loginPtys.add(handle.id)
+  if (installFirst) toolInstallPtys.add(handle.id)
   sendLoginProgress({ phase: 'starting', name })
   return handle.id
 }
@@ -2657,6 +2703,7 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true
     }
   },
+  { scheme: MACHINE_PAGE_SCHEME, privileges: { standard: true, secure: true } },
   // PLATFORM§15
   { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
@@ -2693,8 +2740,16 @@ function mimeOf(p: string): string {
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
     '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
     '.css': 'text/css',
     '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.wasm': 'application/wasm',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
     '.json': 'application/json',
     '.txt': 'text/plain'
   }
@@ -3048,6 +3103,7 @@ app.whenReady().then(() => {
     guard?.forget(e.id)
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
+    if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -3063,7 +3119,13 @@ app.whenReady().then(() => {
       flowGates.delete(e.id)
       return
     }
-    if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
+    if (loginWatchers.has(e.id))
+      failLogin(
+        e.id,
+        loginWatchers.get(e.id)?.installing
+          ? 'Installing Claude Code failed'
+          : 'setup-token exited without printing a token'
+      )
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
@@ -3086,6 +3148,11 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    const accountIssue = shimAccountRefusals.get(e.id)
+    shimAccountRefusals.delete(e.id)
+    // ADR-0030
+    if (accountIssue && !e.signal && e.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+      sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {
@@ -3099,7 +3166,8 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
-    claudeAsks.delete(tabId)
+    const ask = claudeAsks.get(tabId)
+    if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
@@ -3137,7 +3205,7 @@ app.whenReady().then(() => {
     pty: ptyMgr,
     runtime: tracker,
     projectInfo: projectInfoOnHost,
-    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
@@ -3169,7 +3237,9 @@ app.whenReady().then(() => {
         machinePackage,
         tabDir: (tabId) => tabPackageDir(userData, tabId),
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
-        keyed: pinnedKeyOn
+        keyed: pinnedKeyOn,
+        mirrorDir: (host) => mirrorHookDir(userData, host),
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -3228,7 +3298,6 @@ app.whenReady().then(() => {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
       projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
       remoteTreeIo: machineTreeIo,
       remote: {
         ...museOnMachines,
@@ -3358,6 +3427,7 @@ app.whenReady().then(() => {
     hiddenRow: (id) => !!butler?.isButlerSession(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
@@ -3621,10 +3691,16 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
-      const live = new Set([
-        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...codexMachines
-      ])
+      const live = new Set(codexMachines)
+      const shellTabsOn = new Map<string, string[]>()
+      for (const h of ptyMgr.list()) {
+        if (!h.alive) continue
+        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.utilMachine) {
+          live.add(h.utilMachine)
+          shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
+        }
+      }
       const busy = new Set(
         allSessions().flatMap((s) => {
           const host = s.alive && machineOfTab(s.tabId)
@@ -3653,7 +3729,8 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
-        busy: busy.has(t.host)
+        busy: busy.has(t.host),
+        shellTabs: shellTabsOn.get(t.host)
       }))
     },
     onChange: (host) => {
@@ -3667,6 +3744,9 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
+    onShells: (host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
+    },
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) =>
       void browserTunnels.sync(
@@ -3677,7 +3757,7 @@ app.whenReady().then(() => {
       )
   })
   ptyMgr.on('typed', (tabId: string) => {
-    const host = machineOfTab(tabId)
+    const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
@@ -3735,7 +3815,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
-    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
@@ -4448,8 +4528,38 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   })
 }
 
+// ADR-0045
+const MACHINE_PAGE_HEADERS = {
+  'content-security-policy':
+    'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
+}
+
+async function machinePageResponse(request: Request): Promise<Response> {
+  const page = machinePageOf(request.url)
+  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
+  const machine = page && known ? hosts.machine(page.host) : null
+  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  if (!page || !body)
+    return new Response(fileNotFoundHtml(page?.path ?? request.url), {
+      status: 404,
+      headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
+    })
+  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+    headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
+  })
+}
+
+const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
+
+// ADR-0045
+function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
+  if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
+  return !machinePageOf(details.frame?.url ?? '')
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
@@ -4537,7 +4647,10 @@ function setupBrowserPartition(): void {
   })
   // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+    if (
+      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+      machinePageRequestRefused(details)
+    )
       return callback({ cancel: true })
     const guest = details.webContentsId
     const fenced =
@@ -4548,7 +4661,8 @@ function setupBrowserPartition(): void {
     if (!fenced) return callback({})
     if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
       notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    if (details.url.startsWith('file:') || machinePageOf(details.url))
+      return callback({ cancel: true })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
@@ -4671,6 +4785,8 @@ async function openOnMachine(
 ): Promise<boolean> {
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const page = routeFor(keyed, 'agent')
+  if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
   sendToRenderer(CH.preview.openFile, payload)
   return true
@@ -4731,6 +4847,9 @@ function archiveSession(id: string): boolean {
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
+const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
+const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
+  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 
 function closableSessions(): ClosableSession[] {
   const live: ClosableSession[] = allSessions()
@@ -4765,11 +4884,36 @@ function aliveSessionsIn(treeRoot: string, exceptTabId?: string): SessionInfo[] 
   )
 }
 
+const TAB_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
+
 async function whatClosingWouldLose(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
+  info?: ProjectInfo
 ): Promise<string[]> {
-  const tree = await closingTree(hostGitOut, info)
+  if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked =
+    target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
+      ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
+      : []
+  const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  let left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  if (left.length && treeRemovals.has(target.treeRoot))
+    left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  return [...asked, ...left]
+}
+
+async function leftOnceRemovalsEnd(
+  target: ClosableSession,
+  info: ProjectInfo | undefined,
+  waitUntil: number
+): Promise<string[]> {
+  if (!(await treeRemovals.settledWithin(target.treeRoot, waitUntil - Date.now())))
+    return [
+      `Koloft is still deleting the worktree ${target.treeRoot}. Close the session again in a minute.`
+    ]
+  const tree = await closingTree(hostGitOut, info ?? projectInfoFor(target.treeRoot))
   if (!tree) return []
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
@@ -4785,8 +4929,19 @@ function tellTheOwner(text: string): void {
 
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot),
+  info?: ProjectInfo,
   tell = tellTheOwner
+): Promise<boolean> {
+  await treeRemovals.settled(target.treeRoot)
+  const where = info ?? projectInfoFor(target.treeRoot)
+  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+}
+
+async function endAndRemove(
+  target: ClosableSession,
+  info: ProjectInfo,
+  tell: (text: string) => void
 ): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
@@ -4799,6 +4954,14 @@ async function closeSessionFully(
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const leftSinceTheCheck =
+    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+  if (leftSinceTheCheck.length) {
+    tell(
+      `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
+    )
+    return false
+  }
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     tell(
@@ -4824,12 +4987,15 @@ async function removeUntouchedWorktree(
   const tree = resource.worktreePath
   if (sleeperTrees().includes(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
-  const problem = await removeTree(hostGitOut, {
-    root: resource.originalCwd,
-    treeRoot: tree,
-    worktreeName: resource.worktreeName,
-    branches: [`worktree-${resource.worktreeName}`]
-  })
+  if (treeRemovals.has(tree)) return
+  const problem = await treeRemovals.run(tree, () =>
+    removeTree(hostGitOut, {
+      root: resource.originalCwd,
+      treeRoot: tree,
+      worktreeName: resource.worktreeName,
+      branches: [`worktree-${resource.worktreeName}`]
+    })
+  )
   if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
 }
 
@@ -4840,22 +5006,15 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
-const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
-const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
-  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
-  // CODEX§20
-  const asked = codexSessions?.questionWentUnanswered(tabId)
-    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
-    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
-  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
+  if (!session) return [NO_SESSION_FOR_THE_RUN]
+  return whatClosingWouldLose(session, cronRunTree(root, worktree))
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -4899,11 +5058,8 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(
-    hostGitOut,
-    info,
-    (d) => hosts.of(d).dirExistsOrThrow(d),
-    mergedHeads
+  const result = await treeRemovals.run(info.treeRoot, () =>
+    tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
   )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
@@ -4922,11 +5078,11 @@ function foldersInUse(leavingTabId?: string): Set<string> {
 async function launchQuietTab(
   options: CreateTabOptions & { kind: BackendId },
   title: string,
-  jobId?: string
+  more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
-  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
   sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
 }
@@ -4957,6 +5113,12 @@ function forgetFreeOnMachine(tabId: string): void {
   if (!host) return
   freedOnMachine.delete(tabId)
   void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
+function forgetShellOnMachine(host: string, tabId: string): void {
+  void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
     controlDir: remoteControlDir
   }).catch(() => undefined)
 }
@@ -5278,7 +5440,7 @@ async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
       name: req.name,
       scheduled: true
     }
-    const tabId = await launchQuietTab(options, req.name, req.jobId)
+    const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
@@ -5456,8 +5618,10 @@ function registerIpc(): void {
         resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
+        utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
+      if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }
@@ -5507,6 +5671,8 @@ function registerIpc(): void {
   ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
+    startedSessions.moved(oldTabId, newTabId)
+    sessionCommand.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
   })
@@ -5623,15 +5789,17 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
         : 'unknown'
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
+    claudeBackend.forgetAvailability()
+    const installFirst = !(await claudeBackend.availability()).available
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name)
+    startGuidedLogin(name, installFirst)
     return 'ok'
   })
   ipcMain.handle(
@@ -5676,10 +5844,36 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle(CH.workspace.add, (_e, p: string) => {
+  const historyPartlyUnread = (id: BackendId, error: unknown): void => {
+    sendToRenderer(
+      CH.cron.toast,
+      `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+    )
+  }
+  const pinWorkspace = (p: string): WorkspaceAddResult | undefined => {
     const r = addWorkspacePath(p)
     if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
+  }
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => pinWorkspace(p))
+  ipcMain.handle(CH.workspace.pinRecent, async (_e, paths: unknown) => {
+    if (!workspaceMgr || !Array.isArray(paths)) return
+    const pinned = paths.flatMap((p) => {
+      const r = typeof p === 'string' ? pinWorkspace(p) : undefined
+      return r && 'path' in r ? [r.path] : []
+    })
+    await workspaceMgr.whenScanned()
+    const now = Date.now()
+    const unread = new Map<BackendId, unknown>()
+    const lists = await Promise.allSettled(
+      pinned.map((p) => sessionBackends.historyRows(p, (id, error) => unread.set(id, error)))
+    )
+    for (const [id, error] of unread) historyPartlyUnread(id, error)
+    sessionBackends.adopt(
+      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
+    )
+    await workspaceMgr.whenScanned()
+    if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
@@ -5846,7 +6040,12 @@ function registerIpc(): void {
     if (!workspaceMgr) return
     workspaceMgr.setWorkbenchState(
       sessionId,
-      sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
+      sanitizeSessionWorkbench(
+        state,
+        isWorkspaceWorkbenchKey(sessionId)
+          ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+          : workspaceMgr.defaultOpen()
+      )
     )
   })
   ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
@@ -5892,12 +6091,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
-    sessionBackends.historyRows(p, (id, error) =>
-      sendToRenderer(
-        CH.cron.toast,
-        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
-      )
-    )
+    sessionBackends.historyRows(p, historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({
@@ -6296,7 +6490,14 @@ function registerIpc(): void {
   })
   ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
+    if (
+      what !== 'repo' &&
+      what !== 'issues' &&
+      what !== 'pulls' &&
+      what !== 'pr' &&
+      what !== 'compare'
+    )
+      return null
     return hosts.of(root).github.target(root, what)
   })
   ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
