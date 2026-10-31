@@ -679,16 +679,16 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         })
         return
       }
-      // CODEX§15
-      if (method === 'account/rateLimits/read' && signIn()?.OPENAI_API_KEY) {
-        emit({
-          id,
-          error: { code: -32600, message: 'chatgpt authentication required to read rate limits' }
-        })
-        return
-      }
       if (method === 'account/rateLimits/read') {
         const auth = signIn()
+        // CODEX§15
+        if (auth?.OPENAI_API_KEY) {
+          emit({
+            id,
+            error: { code: -32600, message: 'chatgpt authentication required to read rate limits' }
+          })
+          return
+        }
         const now = Math.floor(Date.now() / 1000)
         result(id, {
           rateLimits:

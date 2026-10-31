@@ -771,13 +771,7 @@ export function AddAccountDialog({
             busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
           }
         >
-          {kind === 'codex-home'
-            ? busy
-              ? 'Saving…'
-              : 'Save'
-            : busy
-              ? 'Verifying…'
-              : 'Verify and save'}
+          {kind === 'codex-home' ? 'Save' : busy ? 'Verifying…' : 'Verify and save'}
         </button>
       </div>
       <span className="field-hint">

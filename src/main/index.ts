@@ -1328,16 +1328,7 @@ const BOOT_TIME = Date.now()
 let rendererReady = false
 
 // CC§7
-const usageViews = new Map<
-  string,
-  {
-    usage?: UsageSnapshot
-    limits?: CodexLimits
-    quota?: QuotaBucket[]
-    probeError?: ProbeErrorKind
-    apiKey?: true
-  }
->()
+const usageViews = new Map<string, Omit<AccountView, keyof AccountMeta>>()
 
 function viewKey(name: string, kind: AccountKind): string {
   return `${kind}:${name.toLowerCase()}`
@@ -2342,11 +2333,11 @@ async function addCodexKey(name: string, key: string): Promise<AccountAddResult>
   if (!trimmed || !codexSessions) return { ok: false, error: 'unknown' }
   const home = codexHomeOf(app.getPath('userData'), name)
   prepareCodexHome(home, codexSharedConfig())
-  const saved = await codexSessions.storeApiKey(home, trimmed).then(
-    () => true,
-    () => false
-  )
-  if (!saved) return { ok: false, error: 'unknown' }
+  try {
+    await codexSessions.storeApiKey(home, trimmed)
+  } catch {
+    return { ok: false, error: 'unknown' }
+  }
   noteHomeAccount(name, 'codex-home')
   await probeCodexAccount(name)
   const account = accountViews().find((a) => a.kind === 'codex-home' && a.name === name)

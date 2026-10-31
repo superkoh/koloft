@@ -491,12 +491,17 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
+  private async binaryOrThrow(): Promise<string> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    return this.binary!
+  }
+
   private async withRpc<T>(
     home: string | undefined,
     use: (rpc: CodexRpc) => Promise<T>
   ): Promise<T> {
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
+    await this.binaryOrThrow()
     try {
       return await this.sideServers.ask(home, use)
     } catch (error) {
@@ -558,9 +563,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§15
   async storeApiKey(home: string, key: string): Promise<void> {
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
-    await pipeSecretTo(this.binary!, ['login', '--with-api-key'], this.envFor(home), key)
+    const binary = await this.binaryOrThrow()
+    await pipeSecretTo(binary, ['login', '--with-api-key'], this.envFor(home), key)
     await this.rereadSignIn(home)
   }
 
