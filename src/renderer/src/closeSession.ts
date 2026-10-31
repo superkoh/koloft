@@ -76,7 +76,11 @@ export function endedRowNote(exit: { exitCode: number; signal?: number }): strin
 
 export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
->(tab: T | undefined, exit: { unexpected?: true }): tab is T & { kind: SessionBackend } {
+>(
+  tab: T | undefined,
+  exit: { unexpected?: true },
+  everBound: boolean
+): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind) || !exit.unexpected) return false
-  return !(tab.jobId !== undefined && tab.sessionId === undefined)
+  return !(tab.jobId !== undefined && tab.sessionId === undefined && !everBound)
 }

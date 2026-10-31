@@ -38,6 +38,7 @@ import {
   encodeCwd,
   focusOwner,
   gitInit,
+  killSession,
   menuItemTexts,
   openMenu,
   openWorktreeSession,
@@ -548,6 +549,38 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect((await histLines(page))[0].wt).toBe(` · ${wt}`)
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M34: a run whose agent dies after the run started keeps its tab with its last screen, as any session tab does, and History counts the run over', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      killSession(call.pid, env)
+
+      await expect(toastMsg(page)).toHaveText(/^Claude session ended: killed by signal \d+$/, {
+        timeout: 20_000
+      })
+      await expect(row.locator('.ws-tab-sub')).toContainText(/killed \(signal \d+\)/)
+      await expect.poll(() => tabDisplays(page)).toHaveLength(1)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Closed by you')
+    } finally {
+      await quitAndClose(app)
     }
   })
 

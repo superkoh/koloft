@@ -14,21 +14,26 @@ import {
 describe('unexpectedExitWanted', () => {
   const crash = { exitCode: 1, unexpected: true as const }
   it('keeps an ordinary claude tab that main says ended badly on its own', () => {
-    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, crash)).toBe(true)
-    expect(unexpectedExitWanted({ kind: 'claude' }, crash)).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, crash, true)).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'claude' }, crash, false)).toBe(true)
   })
   it('reports Codex crashes using its own source', () => {
-    expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash, true)).toBe(
+      true
+    )
     expect(unexpectedExitNotice(crash, 'codex', true)).toContain('Codex')
   })
   it('does not want it for an exit main did not call unexpected, or for a tab that is not a conversation', () => {
-    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, {})).toBe(false)
-    expect(unexpectedExitWanted({ kind: 'terminal' }, crash)).toBe(false)
-    expect(unexpectedExitWanted(undefined, crash)).toBe(false)
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, {}, true)).toBe(false)
+    expect(unexpectedExitWanted({ kind: 'terminal' }, crash, false)).toBe(false)
+    expect(unexpectedExitWanted(undefined, crash, false)).toBe(false)
   })
-  it('stands aside for a scheduled run that never bound, but not for one that did', () => {
-    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash)).toBe(false)
-    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash)).toBe(true)
+  it('stands aside for a scheduled run that never bound, but not for one that did, though a fresh run’s tab carries no session id of its own', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash, false)).toBe(false)
+    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash, true)).toBe(true)
+    expect(
+      unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash, true)
+    ).toBe(true)
   })
 })
 

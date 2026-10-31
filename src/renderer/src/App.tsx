@@ -1010,8 +1010,9 @@ export default function App(): JSX.Element {
       if (consumeRestoreExit(e.id)) useStore.getState().showToast(RESTORE_FAILED_NOTICE)
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
-      if (unexpectedExitWanted(tab, e)) {
-        const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
+      const everBound = tabEverBound(e.id)
+      if (unexpectedExitWanted(tab, e, everBound)) {
+        const notice = unexpectedExitNotice(e, tab.kind, everBound)
         useStore.getState().showToast(notice)
         if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
           void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {

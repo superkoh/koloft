@@ -211,9 +211,9 @@
           itself. The list says <code>waits for the open run to end</code> while a run is open. In a
           <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
           reconnect, and the run stays open. If the agent quits with an error after the run has
-          started, the run is over at once: the wait starts, and History says
-          <code>Closed by you</code>. If the agent quits before the run starts, History says
-          <code>Could not start</code>.
+          started, the run is over at once: the wait starts, its tab stays open with its last
+          screen, and History says <code>Closed by you</code>. If the agent quits before the run
+          starts, its tab closes and History says <code>Could not start</code>.
         </p>
 
         <h2>Where it runs</h2>
