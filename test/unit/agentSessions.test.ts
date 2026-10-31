@@ -13,6 +13,7 @@ import {
   type Target
 } from '../../src/main/agentSessions'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
+import type { TranscriptPlaces } from '../../src/main/sessionBackends'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
@@ -70,6 +71,7 @@ interface Conducting {
   scopes?: Record<string, string>
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
+  transcripts?: Record<string, TranscriptPlaces>
   quotedPrompts?: Record<string, string>
   conductors?: Record<string, Target>
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
@@ -186,6 +188,7 @@ function harness(
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)
     },
+    transcriptPlaces: (key) => conducting.transcripts?.[key],
     quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
     butlerTarget: (ref) => conducting.conductors?.[ref],
     resume: async (r) => {
@@ -353,33 +356,78 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude or Muse session’s name, a Claude transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
+  it('shows each session’s state, a Claude or Muse session’s name, the transcript of a session of any kind that has one, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
-        session('me', 'claude', {
-          status: 'working',
-          details: { claude: { jsonlPath: '/home/.claude/projects/app/me.jsonl' } }
-        }),
+        session('me', 'claude', { status: 'working' }),
         session('cx', 'codex', { status: 'approval', nativeSessionId: CODEX_THREAD }),
         session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
         session('idle', 'claude', { status: 'idle' }),
-        session('mu', 'muse', { status: 'working', nativeSessionId: MUSE_ID })
+        session('mu', 'muse', { status: 'working', nativeSessionId: MUSE_ID }),
+        session('ag', 'agy', { status: 'idle' })
       ],
       { 'me-session': 'planner', 'mu-session': 'iron-libra' },
       [],
-      { asking: ['q'] }
+      {
+        asking: ['q'],
+        transcripts: {
+          'me-session': { onThisMac: '/home/.claude/projects/app/me.jsonl' },
+          'cx-session': { onThisMac: '/home/.codex/sessions/rollout-cx.jsonl' },
+          'mu-session': { onThisMac: '/home/.local/share/muse/sessions/mu/session.jsonl' },
+          'ag-session': { onThisMac: '/home/.gemini/antigravity-cli/brain/ag/transcript.jsonl' }
+        }
+      }
     )
     const reply = await verb(['list'], from('me'))
     expect(reply.exit).toBe(0)
     expect(reply.text.split('\n')).toEqual([
       'me title (you) · Claude · working · name: planner · transcript: /home/.claude/projects/app/me.jsonl',
-      `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD}`,
+      `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD} · transcript: /home/.codex/sessions/rollout-cx.jsonl`,
       `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
       'done title · Claude · finished its turn',
       'idle title · Claude · idle',
-      `mu title · Muse · working · id: ${MUSE_ID} · name: iron-libra`
+      `mu title · Muse · working · id: ${MUSE_ID} · name: iron-libra · transcript: /home/.local/share/muse/sessions/mu/session.jsonl`,
+      'ag title · Antigravity · idle · id: ag-session · transcript: /home/.gemini/antigravity-cli/brain/ag/transcript.jsonl'
     ])
+  })
+
+  it('gives each caller the transcript it can read where it runs: a session on its own machine by its path there, a remote one to a caller on this Mac by the copy kept here or else as machine:path, and nothing of a Mac session to a caller on another machine', async () => {
+    const REMOTE_WS = 'ssh://box/srv/api'
+    const onBox = { cwd: REMOTE_WS, treeRoot: REMOTE_WS, remote: { host: 'box' } }
+    const transcripts = {
+      'mirrored-session': {
+        onThisMac: '/mirror/box/projects/-srv-api/mirrored.jsonl',
+        onMachine: '~/.claude/projects/-srv-api/mirrored.jsonl'
+      },
+      'unmirrored-session': { onMachine: '/home/u/.codex/sessions/rollout-x.jsonl' },
+      'here-session': { onThisMac: '/Users/me/.claude/projects/-work-app/here.jsonl' }
+    }
+    const sessions = [
+      session('mirrored', 'claude', { ...onBox, status: 'idle' }),
+      session('unmirrored', 'codex', { ...onBox, status: 'idle', nativeSessionId: CODEX_THREAD }),
+      session('here', 'claude', { status: 'idle' })
+    ]
+    const { verb: onTheBox } = harness([session('me', 'claude', onBox), ...sessions], {}, [], {
+      transcripts
+    })
+    const fromBox = { tabId: 'me', cwd: REMOTE_WS }
+    expect((await onTheBox(['list'], fromBox)).text.split('\n').slice(1)).toEqual([
+      'mirrored title · Claude · idle · transcript: ~/.claude/projects/-srv-api/mirrored.jsonl',
+      `unmirrored title · Codex · idle · id: ${CODEX_THREAD} · transcript: /home/u/.codex/sessions/rollout-x.jsonl`
+    ])
+    expect((await onTheBox(['list', '--workspace', WS], fromBox)).text).toBe(
+      'here title · Claude · idle · id: here-session'
+    )
+    const { verb: onTheMac } = harness([session('mac', 'claude'), ...sessions], {}, [], {
+      transcripts
+    })
+    expect((await onTheMac(['list', '--workspace', REMOTE_WS], from('mac'))).text).toBe(
+      [
+        'mirrored title · Claude · idle · id: mirrored-session · transcript: /mirror/box/projects/-srv-api/mirrored.jsonl',
+        `unmirrored title · Codex · idle · id: ${CODEX_THREAD} · transcript: box:/home/u/.codex/sessions/rollout-x.jsonl`
+      ].join('\n')
+    )
   })
 
   it('--workspace lists another workspace’s sessions, and refuses a name not in the sidebar or any other option', async () => {

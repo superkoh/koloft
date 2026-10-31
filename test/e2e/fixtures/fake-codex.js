@@ -43,7 +43,6 @@ const savedThreads = () =>
     .map((n) => load(n.slice(0, -5)))
     .filter(Boolean)
 const persistTurn = (thread, text) => {
-  thread.path = path.join(sessions, thread.id + '.jsonl')
   thread.preview ||= text
   fs.appendFileSync(
     thread.path,
@@ -53,10 +52,11 @@ const persistTurn = (thread, text) => {
 }
 const newThread = (cwd, predecessor) => {
   const now = Math.floor(Date.now() / 1000)
+  const id = crypto.randomUUID()
   return {
-    id: crypto.randomUUID(),
+    id,
     cwd,
-    path: null,
+    path: path.join(sessions, id + '.jsonl'),
     name: null,
     preview: predecessor?.preview || '',
     createdAt: now,

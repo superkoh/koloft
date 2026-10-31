@@ -772,6 +772,18 @@ describe('SessionTracker — binding', () => {
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.cwd === rcwd + '/sub')
       expect(s.treeRoot).toBe(rcwd)
     })
+
+    it('places the transcript of a tab on another machine both in that machine’s home, for a session there, and in the copy mirrored to this Mac', async () => {
+      const rcwd = '/home/koh/api'
+      const mirror = path.join(home, 'remote', 'pinbox', 'projects')
+      const tracker = newTracker()
+      tracker.track('tabTR11', rcwd, { host: 'pinbox', projectsRoot: mirror, tmuxName: `k-${SID}` })
+      tracker.bindSession('tabTR11', '', SID, rcwd)
+      expect(tracker.transcriptPlaces(SID)).toEqual({
+        onThisMac: path.join(mirror, encodeCwd(rcwd), `${SID}.jsonl`),
+        onMachine: `~/.claude/projects/${encodeCwd(rcwd)}/${SID}.jsonl`
+      })
+    })
   })
 
   describe('aliveTabFor (F7 force-close): what it resolves is what gets killed', () => {

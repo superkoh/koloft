@@ -778,7 +778,7 @@ export interface BackendSessionInfo {
   relocated?: boolean
   // CC§2
   details?: {
-    claude?: { jsonlPath: string | null; scratchpadDir?: string }
+    claude?: { scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]

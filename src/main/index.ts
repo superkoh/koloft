@@ -1773,6 +1773,7 @@ const sessionDeps: SessionVerbDeps = {
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
+  transcriptPlaces: (key) => sessionBackends.transcriptPlaces(key),
   quotedPrompt: (tabId) => {
     const host = tracker.remoteOf(tabId)?.host
     const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir

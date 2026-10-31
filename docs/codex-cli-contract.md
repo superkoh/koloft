@@ -116,6 +116,17 @@ A fresh, empty session returned a non-null rollout `path` whose file **did not y
 exist**. A path in a start response does not prove that a session can already be
 restored from disk. This was checked before submitting any prompt in the worktree probe.
 
+**That `path` is the thread's whole record, readable as plain JSONL once a turn has run.**
+2026-10-31, codex-cli 0.166.0, a Node client on `codex app-server` in a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), one real turn
+("Reply with the single word PELICAN"): `thread/start` answered a non-null
+`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl` that did not exist
+yet; after `turn/completed`, `thread/list` gave the same `path`, and the file held 18
+lines, every one JSON (`session_meta`, `turn_context`, `response_item` messages,
+`event_msg` items, `token_usage_record`, …), with the prompt's words and the reply
+`PELICAN` in an assistant record. So an agent handed that path can read what the
+session was asked and said.
+
 **Archived history is not directly resumable.** A separate probe archived one of its
 own persisted threads with `thread/archive`, then launched the real TUI with
 `resume <that UUID>`. The TUI sent `thread/resume` and received error `-32600`, stating

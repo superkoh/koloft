@@ -48,6 +48,7 @@ export function storedBackend(
     archive: (key) => sessions.archive(key),
     adopt: (keys) => sessions.adopt(keys),
     transcriptExists: (key) => sessions.transcriptExists(key),
+    transcriptPlaces: (key) => sessions.transcriptPlaces(key),
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     // ADR-0028
