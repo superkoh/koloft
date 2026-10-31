@@ -1430,6 +1430,26 @@ another connection's thread until it resumed it, then every turn notification.
 `app-server daemon bootstrap` ("durable local app-server management for SSH-driven use")
 was only read in help.
 
+**A working turn outlives its only client; the thread unloads 60 s after it goes idle.**
+Measured 2026-10-31, `@openai/codex@0.166.0` by npm in `node:22-bookworm-slim` (Docker,
+arm64) as a non-root user, no account: a stand-in Responses server on a local port as
+the model provider with a made-up API key in `auth.json`, `danger-full-access`,
+`approval_policy = "never"`, `RUST_LOG=info`. The server ran as `setsid nohup codex
+app-server --listen unix://…`; a Node client over WebSocket sent `initialize`,
+`thread/start`, `turn/start`, and `ws.terminate()`d (no `thread/unsubscribe`) at the
+command's `item/started`, 0.3 s in. When the stand-in kept the turn working — after each
+"Process running" tool result it answered with a `write_stdin` (empty `chars`,
+`yield_time_ms` 20000) — seven model requests came with no client connected, the `sleep
+100` command wrote its file, and the turn completed about 100 s after the drop; a new
+client then saw the thread loaded, `idle`, the turn `completed`, the command `completed`
+with exit 0. When the stand-in ended the turn at the command's 10 s yield instead, leaving
+`sleep 100` running, the log said `thread <id> has no subscribers and is idle; shutting
+down` exactly 60.0 s after the turn ended, and the command died with it (`failed`, exit
+-1, its file never written). Both runs logged that line 60.0 s after the turn ended, not
+after the drop. A later client's `thread/loaded/list` and `thread/read` did not hold the
+thread; the app-server process itself stayed up after the unload, and `thread/read` and
+`thread/resume` still returned the whole turn.
+
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
