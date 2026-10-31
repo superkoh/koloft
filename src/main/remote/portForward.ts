@@ -106,17 +106,17 @@ export class PageForwards {
     askMaster: boolean
   ): Promise<number | null> {
     const st = this.stateOf(host)
-    const known = st.forwards.get(machinePort)
-    if (known && !askMaster) {
-      known.pages.add(page)
-      return Promise.resolve(known.macPort)
-    }
     const handedOut = [...st.forwards].find(
       ([there, f]) => f.macPort === machinePort && there !== machinePort
     )?.[1]
     if (handedOut) {
       handedOut.pages.add(page)
       return Promise.resolve(machinePort)
+    }
+    const known = st.forwards.get(machinePort)
+    if (known && !askMaster) {
+      known.pages.add(page)
+      return Promise.resolve(known.macPort)
     }
     return this.inTurn(st, () => this.reach(host, st, machinePort, page))
   }
@@ -133,8 +133,7 @@ export class PageForwards {
     if (st.leftoversCleared && !st.forwards.size) return Promise.resolve()
     return this.inTurn(st, async () => {
       const pid = await this.livePid(host)
-      if (!pid) return
-      await this.cancelLeftovers(host, st, pid)
+      if (pid) await this.cancelLeftovers(host, st, pid)
       this.forgetForwardsOfAnOldMaster(host, st, pid)
     })
   }
@@ -173,9 +172,9 @@ export class PageForwards {
     if (saved) this.save(host, st)
   }
 
-  private forgetForwardsOfAnOldMaster(host: string, st: HostState, pid: string): void {
+  private forgetForwardsOfAnOldMaster(host: string, st: HostState, pid: string | null): void {
     if (st.pid === pid) return
-    st.pid = pid
+    st.pid = pid ?? undefined
     st.forwards.clear()
     this.save(host, st)
   }

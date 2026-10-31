@@ -323,6 +323,7 @@ import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
+  aPageOnTheMachineAsks,
   canOpenExternally,
   loopbackPortOf,
   MACHINE_PAGE_SCHEME,
@@ -4158,10 +4159,9 @@ function reportedOwner(guestId: number): Promise<string | null> {
   if (known) return Promise.resolve(known)
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      ownerWaiters.set(
-        guestId,
-        (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
-      )
+      const left = (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
+      if (left.length) ownerWaiters.set(guestId, left)
+      else ownerWaiters.delete(guestId)
       resolve(guestOwners.get(guest) ?? null)
     }, A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
     const answer = (owner: string | null): void => {
@@ -4645,6 +4645,7 @@ async function loopbackOnTheMachine(
   const owner = await reportedOwner(guest)
   const host = owner ? machineOfOwner(owner) : undefined
   if (!host) return null
+  if (!aPageOnTheMachineAsks(details.resourceType, details.initiatorOrigin)) return { cancel: true }
   const frame = FRAME_LOADS.has(details.resourceType)
   if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
   const macPort = await pageForwards.macPortFor(host, machinePort, guest, frame)
@@ -6297,6 +6298,9 @@ function registerIpc(): void {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
+    if (!on) return
+    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(null)
+    ownerWaiters.delete(guestId)
   })
   ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return

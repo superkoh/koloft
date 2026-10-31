@@ -140,6 +140,37 @@ describe('PageForwards', () => {
     expect([...m.live]).toEqual(pageForwardSpecs(5173, 5173))
   })
 
+  it('forgets its forwards once a check finds no ssh connection at all', async () => {
+    const f = new PageForwards(deps)
+    await f.macPortFor(HOST, 5173, PAGE_A, true)
+    m.pid = null
+    m.live.clear()
+    await f.checkMaster(HOST)
+    expect(f.carries(PAGE_A, 5173)).toBe(false)
+  })
+
+  it('leaves a working forward to a page that asked for the port while the last page of the old one was closing', async () => {
+    const f = new PageForwards(deps)
+    await f.macPortFor(HOST, 5173, PAGE_A, true)
+    const asked = f.macPortFor(HOST, 5173, PAGE_B, true)
+    f.pageGone(PAGE_A)
+    const macPort = await asked
+    await f.checkMaster(HOST)
+    expect(macPort).not.toBeNull()
+    expect([...m.live]).toEqual(pageForwardSpecs(macPort!, 5173))
+    expect(f.carries(PAGE_B, macPort!)).toBe(true)
+  })
+
+  it('reads a port it handed out on the Mac as that forward, for a page load and a later request alike', async () => {
+    m.heldByOthers.add('127.0.0.1 5173')
+    const f = new PageForwards(deps)
+    expect(await f.macPortFor(HOST, 5173, PAGE_A, true)).toBe(61000)
+    m.nextFreePort = 62000
+    expect(await f.macPortFor(HOST, 61000, PAGE_A, false)).toBe(61000)
+    expect(await f.macPortFor(HOST, 61000, PAGE_A, true)).toBe(61000)
+    expect([...m.live]).toEqual(pageForwardSpecs(61000, 5173))
+  })
+
   it('cancels its forwards on quit with ssh commands that outlive Koloft', async () => {
     const f = new PageForwards(deps)
     await f.macPortFor(HOST, 5173, PAGE_A, true)

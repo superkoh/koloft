@@ -170,10 +170,11 @@ export function WebPageState({
     <div className="berror">
       <div className="bstate-t">Can't reach {hostOf(fail.url)}</div>
       <div className="bstate-sub">{fail.description}</div>
-      {machine && loopbackPortOf(fail.url) !== null && !refusedByKoloft(fail) && (
+      {machine && loopbackPortOf(fail.url) !== null && (
         <div className="bempty-hint">
-          Nothing answers on port {loopbackPortOf(fail.url)} on {machine}, or its ssh server does
-          not allow port forwarding.
+          {refusedByKoloft(fail)
+            ? `Koloft could not forward port ${loopbackPortOf(fail.url)} from ${machine} over its ssh connection.`
+            : `Nothing answers on port ${loopbackPortOf(fail.url)} on ${machine}, or its ssh server does not allow port forwarding.`}
         </div>
       )}
       <button onClick={() => onRetry(tab, fail.url)}>Retry</button>

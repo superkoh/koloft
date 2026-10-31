@@ -3,6 +3,7 @@ import {
   routeFor,
   dedupKey,
   canOpenExternally,
+  aPageOnTheMachineAsks,
   folderFileOf,
   loopbackPortOf,
   onMacPort,
@@ -266,6 +267,16 @@ describe("loopbackPortOf and onMacPort — a remote tab's localhost goes through
     expect(loopbackPortOf('http://localhost/')).toBe(80)
     expect(loopbackPortOf('http://example.com:5173/')).toBeNull()
     expect(loopbackPortOf('file:///tmp/a.html')).toBeNull()
+  })
+
+  it('forwards a page load, and a request a localhost page makes, but not a request another site makes to localhost', () => {
+    expect(aPageOnTheMachineAsks('mainFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('subFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'http://localhost:5173')).toBe(true)
+    expect(aPageOnTheMachineAsks('webSocket', 'http://127.0.0.1:61000')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', undefined)).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'https://example.com')).toBe(false)
+    expect(aPageOnTheMachineAsks('image', 'null')).toBe(false)
   })
 
   it('moves a page to its Mac port, and leaves it as it is when the Mac port is the same', () => {

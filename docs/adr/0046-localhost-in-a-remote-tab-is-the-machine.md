@@ -11,7 +11,9 @@ that machine. Koloft adds `ssh -O forward -L` on the machine's shared ssh connec
 both `127.0.0.1` and `[::1]` of the Mac (a browser tries both for `localhost`), when such a
 page first asks for the port, with the same Mac port whenever nothing on the Mac holds it
 (on any of its four addresses), and another port only then. A forward goes when the last web
-page that used it closes, and on quit. The machine's playwright-cli may open and read such a
+page that used it closes, and on quit. Only a page load, or a request a localhost page
+makes, gets a forward: a request another site's script makes to localhost is refused, so a
+web page cannot make Koloft open a forward for every port. The machine's playwright-cli may open and read such a
 page only once it came through a forward, never a Mac page it reached some other way.
 **Cost**: while a forward lives, every program on the Mac that opens `localhost:5173`
 reaches the machine, and a server started on the Mac then finds 5173 taken. A remote tab
