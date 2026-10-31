@@ -704,7 +704,10 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
 
       await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
       const seeded = page.locator('.acct-row', { hasText: E2E_AGY_ACCOUNT })
-      await expect(seeded).toContainText('Signed in')
+      await expect(seeded.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(seeded.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited'
+      )
       await page.getByRole('button', { name: 'Paste Gemini API key' }).click()
       await expect(page.locator('.acct-add-title')).toHaveText('Add Gemini API key')
       await page.locator('.acct-add input[type="text"]').fill('second')

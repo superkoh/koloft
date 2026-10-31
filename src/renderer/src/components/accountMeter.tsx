@@ -42,6 +42,10 @@ export function probeErrorLabel(e: NonNullable<AccountView['probeError']>): stri
   }
 }
 
+export function ApiKeyBadge(): JSX.Element {
+  return <span className="acct-badge api">API KEY</span>
+}
+
 export function noLimitsLabel(a: AccountView): string {
   if (a.probeError) return probeErrorLabel(a.probeError)
   return a.kind === 'muse-home' || a.kind === 'agy-home' ? 'Signed in' : 'Not probed yet'

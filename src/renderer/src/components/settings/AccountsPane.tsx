@@ -20,6 +20,7 @@ const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
   agy: 'agy'
 }
 import {
+  ApiKeyBadge,
   Meter,
   QuotaMeters,
   ageLabel,
@@ -553,7 +554,7 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {(a.kind === 'apikey' || a.apiKey) && <span className="acct-badge api">API KEY</span>}
+        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
         {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
         {a.kind === 'oauth' && a.fable === 'yes' && (
           <span
@@ -612,7 +613,7 @@ function AccountRow({
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
-          ) : a.apiKey ? (
+          ) : a.apiKey && !a.probeError ? (
             <span className="acct-note">{METERED_NOTE}</span>
           ) : a.limits && a.limits.windows.length > 0 ? (
             a.limits.windows.map((w) => (
@@ -689,14 +690,21 @@ export function AddAccountDialog({
       secret,
       kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
     )
-    setBusy(false)
     // ADR-0002
     setSecret('')
-    if (r.ok || r.account) {
-      if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
-        const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
-        if (setup.ok) openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+    if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
+      const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
+      setBusy(false)
+      if (!setup.ok) {
+        setError('Saved, but agy could not be opened — use Sign in again on its row')
+        return
       }
+      openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+      onClose()
+      return
+    }
+    setBusy(false)
+    if (r.ok || r.account) {
       onClose()
     } else {
       setError(
@@ -782,7 +790,13 @@ export function AddAccountDialog({
             busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
           }
         >
-          {SIGN_IN_FOLDER_KINDS.includes(kind) ? 'Save' : busy ? 'Verifying…' : 'Verify and save'}
+          {SIGN_IN_FOLDER_KINDS.includes(kind)
+            ? busy
+              ? 'Saving…'
+              : 'Save'
+            : busy
+              ? 'Verifying…'
+              : 'Verify and save'}
         </button>
       </div>
       <span className="field-hint">
