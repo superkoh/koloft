@@ -579,6 +579,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
         .toBe('Closed by you')
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect(fs.existsSync(runTree(env.workspaces.a, worktreeOf(call)))).toBe(true)
     } finally {
       await quitAndClose(app)
     }
