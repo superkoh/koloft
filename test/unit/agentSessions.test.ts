@@ -1054,7 +1054,7 @@ describe('koloft session close', () => {
     expect(reply.text).not.toContain('Under dirty')
   })
 
-  it('answers within the shim’s reply limit when every worktree along its chain of started sessions is being deleted: one wait for the whole close, not one per level (#1300)', async () => {
+  it('answers within the shim’s reply limit when every worktree along its chain of started sessions is being deleted: one wait for the whole close, not one per level', async () => {
     vi.useFakeTimers()
     try {
       const ended = (id: string) => ({
