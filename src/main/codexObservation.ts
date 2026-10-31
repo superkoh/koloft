@@ -275,6 +275,10 @@ export class CodexObservation {
     return true
   }
 
+  turnRunning(): boolean {
+    return this.publishedTurn === 'working'
+  }
+
   // CODEX§34
   screenLeft(): void {
     this.requests.clear()

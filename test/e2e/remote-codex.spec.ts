@@ -46,6 +46,7 @@ test.setTimeout(180_000)
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
+const TURN_OUTLIVES_THE_QUIT_MS = 15_000
 
 interface TuiCall {
   argv: string[]
@@ -439,6 +440,56 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
     const [side] = sideServers(env)
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
+  })
+
+  // ADR-0039
+  test("E-RC-13: quitting Koloft leaves on the machine only the app-server of a remote Codex tab whose turn is working, which finishes that turn with no screen connected; an idle tab's server ends, and the next Koloft start ends the one left behind", async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    fs.writeFileSync(
+      path.join(machineHome(env), 'fake-codex-busy-ms'),
+      String(TURN_OUTLIVES_THE_QUIT_MS)
+    )
+    const answers = (): string[] =>
+      codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+    const first = await launchWithRemote(env)
+    let idleTab = ''
+    let workingTab = ''
+    try {
+      await addRemoteWorkspace(first.page, env)
+      idleTab = (await startRemoteCodex(first.page, env)).tabId!
+      await newSessionInWith(first.page, REMOTE_WS_NAME, 'Codex')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(2)
+      workingTab = machineServers(env)[1].tabId!
+      const rows = wsRows(first.page, REMOTE_WS_NAME)
+      await expect(rows.and(first.page.locator('.st-waiting'))).toHaveCount(2, {
+        timeout: 60_000
+      })
+      await first.page.evaluate(
+        ([id, line]) => window.api.terminal.write(id, line),
+        [workingTab, '/busy\r']
+      )
+      await expect(rows.and(first.page.locator('.st-working'))).toHaveCount(1, {
+        timeout: 30_000
+      })
+      expect(answers()).not.toContain('Codex fixture answered: /busy')
+    } finally {
+      await quitAndClose(first.app)
+    }
+    await expect.poll(() => serverAlive(env, idleTab), { timeout: 30_000 }).toBe(false)
+    expect(serverAlive(env, workingTab)).toBe(true)
+    await expect
+      .poll(answers, { timeout: TURN_OUTLIVES_THE_QUIT_MS + 30_000 })
+      .toContain('Codex fixture answered: /busy')
+    expect(serverAlive(env, workingTab)).toBe(true)
+
+    const again = await launchWithRemote(env)
+    try {
+      await expect.poll(() => serverAlive(env, workingTab), { timeout: 60_000 }).toBe(false)
+    } finally {
+      await quitAndClose(again.app)
+    }
   })
 
   test('E-RC-06: an idle remote Codex session goes to sleep — its app-server on the machine ends while its row, red dot and tab stay — and clicking it wakes the same thread on a new server there', async ({

@@ -910,7 +910,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(machine && {
           upstream: (frame, failure) =>
             new MachineCodexUpstream(
-              this.machineUpstream(machine, tabId, home, () => bound?.cwd ?? cwd),
+              this.machineUpstream(
+                machine,
+                tabId,
+                home,
+                () => bound?.cwd ?? cwd,
+                () => observer.turnRunning()
+              ),
               frame,
               failure
             )
@@ -1024,7 +1030,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     machine: string,
     tabId: string,
     home: string,
-    cwdNow: () => string
+    cwdNow: () => string,
+    turnRunning: () => boolean
   ): MachineUpstreamOptions {
     const m = this.machineDeps()
     return {
@@ -1036,6 +1043,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
       stopServer: async () => {
+        if (this.shuttingDown && turnRunning()) return
         await m.run(machine, stopCodexServerCmd(m.instance, tabId))
       },
       maxFrameBytes: DEFAULT_MAX_FRAME,
