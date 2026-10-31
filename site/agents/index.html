@@ -191,9 +191,12 @@
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
             had one. The ended sessions it started are closed with it, and so are the ones those
             started; Koloft names any it left (still open, or holding work). When you ask, it may
-            also close any other session on this Mac that has ended (an open one is refused: stop it
-            first). Koloft says no, and lists what is left, while:
+            also close any other session on this Mac, open or ended (an open one is ended first);
+            your butler and a session on another machine are refused. Koloft says no, and lists what
+            is left, while:
             <ul class="dash">
+              <li>its Workbench has unsaved edits</li>
+              <li>a Codex session asked you a question nobody answered</li>
               <li>a file is not committed</li>
               <li>
                 a commit is not on the remote yet
@@ -295,15 +298,15 @@
           differs by tool.
         </p>
 
-        <h3>playwright-cli, for Claude Code and Codex</h3>
+        <h3>playwright-cli, for every agent</h3>
         <p>
           <code>playwright-cli</code> (a command that controls a browser: open a page, click, type,
-          read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code or Codex session on
-          this Mac can run it by name, with nothing to install. With "Let agents drive this Browser"
-          on, it opens its pages as new web tabs of that session, marked as driven by the agent.
-          With it off, it starts a hidden browser of its own. A session's web tabs take one tool at
-          a time. If the Playwright MCP tools below (an MCP server is a box of tools an agent can
-          call) are already driving them, the second tool is refused.
+          read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code, Codex, Muse or
+          Antigravity session on this Mac can run it by name, with nothing to install. With "Let
+          agents drive this Browser" on, it opens its pages as new web tabs of that session, marked
+          as driven by the agent. With it off, it starts a hidden browser of its own. A session's
+          web tabs take one tool at a time. If the Playwright MCP tools below (an MCP server is a
+          box of tools an agent can call) are already driving them, the second tool is refused.
         </p>
         <h3>Claude Code</h3>
         <ul class="dash">
