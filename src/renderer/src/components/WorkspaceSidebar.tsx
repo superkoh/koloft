@@ -643,12 +643,14 @@ function SidebarFloating({
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const menuWaitsForMove = useRef<{ el: HTMLElement; target: MenuTarget } | null>(null)
 
   const clearTimers = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
     hoverTimer.current = null
     leaveTimer.current = null
+    menuWaitsForMove.current = null
   }
 
   const closeAll = (): void => {
@@ -696,14 +698,26 @@ function SidebarFloating({
     setMenu({ target, ...pos })
   }
 
-  const armMenu = (e: MouseEvent, el: HTMLElement, target: MenuTarget): void => {
+  const armMenu = (e: { buttons: number }, el: HTMLElement, target: MenuTarget): void => {
     const draggingThrough = e.buttons !== 0
     if (draggingThrough) return
     hoverTimer.current = setTimeout(() => openMenuAt(el, target), HOVER_MENU_MS)
   }
+  // PLATFORM§24
+  useEffect(() => {
+    const armOnFirstMove = (e: globalThis.MouseEvent): void => {
+      const waiting = menuWaitsForMove.current
+      if (!waiting) return
+      menuWaitsForMove.current = null
+      armMenu(e, waiting.el, waiting.target)
+    }
+    window.addEventListener('mousemove', armOnFirstMove)
+    return () => window.removeEventListener('mousemove', armOnFirstMove)
+  })
   const scheduleClose = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     hoverTimer.current = null
+    menuWaitsForMove.current = null
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
     leaveTimer.current = setTimeout(() => setMenu(null), MENU_LEAVE_MS)
   }
@@ -737,7 +751,7 @@ function SidebarFloating({
     armMenu,
     hoverMenu: (e, target) => {
       clearTimers()
-      armMenu(e, e.currentTarget as HTMLElement, target)
+      menuWaitsForMove.current = { el: e.currentTarget as HTMLElement, target }
     },
     menuNow: (e, target) => {
       e.preventDefault()
