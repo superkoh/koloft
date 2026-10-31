@@ -338,6 +338,11 @@ describe("a session on another machine never reaches this Mac's files or local s
       ['Page.navigate', { url: NAME_FOR_THE_MAC }],
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
       ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
+      [
+        'Network.loadNetworkResource',
+        { url: 'http://localhost:3000/', frameId: 'f', options: {} }
+      ],
+      ['Fetch.continueRequest', { requestId: 'r', url: 'http://127.0.0.1:3000/' }],
       ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
       ['DOM.getFileInfo', { objectId: 'file-1' }],
       ['Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/Users/me/Library' }],

@@ -43,20 +43,22 @@ function showsThisMac(url: string, guestId: number | null): boolean {
 }
 
 // ADR-0046
-async function opensThisMac(url: string): Promise<boolean> {
+async function opensThisMac(url: string, pageLoadForwardsLocalhost: boolean): Promise<boolean> {
   const u = urlOrNull(url)
   if (!u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol)) return true
-  return loopbackPortOf(url) === null && (await reachesThisMacsServer(url))
+  if (pageLoadForwardsLocalhost && loopbackPortOf(url) !== null) return false
+  return await reachesThisMacsServer(url)
 }
 
 async function reachesThisMac(method: string, params: unknown): Promise<boolean> {
   const p = (params ?? {}) as { url?: unknown; data?: { files?: unknown[] } }
   switch (method) {
     case 'Page.navigate':
+      return await opensThisMac(String(p.url ?? ''), true)
     case 'Network.loadNetworkResource':
-      return await opensThisMac(String(p.url ?? ''))
+      return await opensThisMac(String(p.url ?? ''), false)
     case 'Fetch.continueRequest':
-      return p.url !== undefined && (await opensThisMac(String(p.url)))
+      return p.url !== undefined && (await opensThisMac(String(p.url), false))
     case 'DOM.setFileInputFiles':
     case 'DOM.getFileInfo':
     case 'Page.setDownloadBehavior':
@@ -160,7 +162,7 @@ export async function openForMachine(
   url: string,
   create: (sessionId: string, url: string) => Promise<RelayTarget>
 ): Promise<RelayTarget | null> {
-  if (await opensThisMac(url)) return null
+  if (await opensThisMac(url, true)) return null
   const t = await create(sessionId, BLANK)
   if (t.guestId === null) throw new Error('could not create a tab')
   fenceForGood(t.guestId)
