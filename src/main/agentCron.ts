@@ -207,7 +207,7 @@ export function newJobInput(
     backend,
     model: patch.model,
     effort: patch.effort,
-    permission: patch.permission ?? NEW_JOB_PERMISSION[backend],
+    permission: patch.permission ?? NEW_JOB_PERMISSION,
     ...(patch.autoClose ? { autoClose: true } : {}),
     enabled: true
   }

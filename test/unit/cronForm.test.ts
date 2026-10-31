@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CronJob, LiveRun, Schedule, SkillSuggestion } from '@shared/types'
 import { describeSchedule } from '@shared/schedule'
+import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import { histEnd, histText, histWhen, liveWords } from '@shared/cronHistory'
 import {
   emptyFields,
   fieldsToSchedule,
-  permissionAfterSwitch,
   forecastFor,
   modelValue,
   scheduleToFields,
@@ -433,15 +433,7 @@ describe('forecastFor', () => {
 })
 
 describe('a new job', () => {
-  it('starts a Codex job on "Never ask", the way scheduled Codex runs have always run, and a Claude or Muse job on "Same as my other sessions"', () => {
-    expect(emptyFields('codex').permission).toBe('skipAll')
-    expect(emptyFields('claude').permission).toBe('same')
-    expect(emptyFields('muse').permission).toBe('same')
-  })
-
-  it('takes the other backend’s starting permission when switched before the permission was changed, and keeps a permission the user picked', () => {
-    expect(permissionAfterSwitch(emptyFields('claude'), 'codex')).toBe('skipAll')
-    expect(permissionAfterSwitch(emptyFields('codex'), 'claude')).toBe('same')
-    expect(permissionAfterSwitch(f({ permission: 'acceptEdits' }), 'codex')).toBe('acceptEdits')
+  it('starts on "Same as my other sessions" whatever agent it runs in', () => {
+    for (const backend of SESSION_BACKENDS) expect(emptyFields(backend).permission).toBe('same')
   })
 })

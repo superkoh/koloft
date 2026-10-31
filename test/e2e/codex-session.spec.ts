@@ -1976,13 +1976,13 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§14
-  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, never asking, and counts as running once Codex binds', async ({
+  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, starting on "Same as my other sessions", which with Skip permission prompts on never asks, and counts as running once Codex binds', async ({
     env
   }) => {
     const TASK = '/daily-report now'
     installCodex(env)
     gitInit(env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
+    seedSettings(env, { hintsOff: true, skipPermissions: true })
     fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
     fs.writeFileSync(
       path.join(env.home, '.codex', 'config.toml'),
@@ -2002,7 +2002,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click()
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
       await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
-      await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
       await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-6-luna · high`)
