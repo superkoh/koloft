@@ -388,11 +388,12 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           (await page.evaluate(() => window.api.sessions.list())).find(
             (s) => !s.butler && s.alive && s.sessionId
           )
-        await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
+        const postedBefore = said(fake).length
+        // AGY§8
         if (reported === 'agy') await agyReady(page)
+        else await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
         if (reported === 'muse')
           await expect(wsRows(page, workspace)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        const postedBefore = said(fake).length
         await runIn(page, centerTerm(page), 'hello')
         await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
         const reportedId = (await reportedSession())!.sessionId
