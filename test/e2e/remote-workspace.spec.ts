@@ -130,22 +130,28 @@ const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
   Antigravity: 'E-RW-40'
 }
 
-const CHANGES_MID_TURN_CASE_OF: Record<OtherAgentName, string> = {
-  Codex: 'E-RW-53',
-  Muse: 'E-RW-54',
-  Antigravity: 'E-RW-55'
-}
+const FAKE_CODEX_NEVER_ENDS_A_TURN_WHOSE_PROMPT_SAYS_HOLD = 'hold.txt'
+const HELD_FILE = FAKE_CODEX_NEVER_ENDS_A_TURN_WHOSE_PROMPT_SAYS_HOLD
 
-const HELD_FILE = 'hold.txt'
-const WRITE_LANDS_LATE_IN_THE_TURN = [
-  'fake-codex-write-at-ms',
-  'fake-muse-write-at-ms',
-  'fake-agy-write-at-ms'
-]
-const TURN_HOLDS_AFTER_ITS_WRITE = ['fake-muse-delay', 'fake-agy-after-write-ms']
+const CHANGES_MID_TURN: Record<
+  OtherAgentName,
+  { caseId: string; writeLandsLate: string; turnHoldsAfterTheWrite?: string }
+> = {
+  Codex: { caseId: 'E-RW-53', writeLandsLate: 'fake-codex-write-at-ms' },
+  Muse: {
+    caseId: 'E-RW-54',
+    writeLandsLate: 'fake-muse-write-at-ms',
+    turnHoldsAfterTheWrite: 'fake-muse-delay'
+  },
+  Antigravity: {
+    caseId: 'E-RW-55',
+    writeLandsLate: 'fake-agy-write-at-ms',
+    turnHoldsAfterTheWrite: 'fake-agy-after-write-ms'
+  }
+}
 const WELL_PAST_THE_TURN_START_REFRESH_MS = 10_000
 const A_TURN_LONGER_THAN_THE_WAIT_MS = 120_000
-const A_WRITE_REACHES_CHANGES_MS = 30_000
+const A_WRITE_REACHES_CHANGES_MS = 60_000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -360,7 +366,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
-    test(`${CHANGES_MID_TURN_CASE_OF[agent.label]}: a file a ${agent.label} session on the machine edits shows under Changes while its turn still runs, not only once the turn ends`, async ({
+    test(`${CHANGES_MID_TURN[agent.label].caseId}: a file a ${agent.label} session on the machine edits shows under Changes while its turn still runs, not only once the turn ends`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -390,15 +396,15 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
             .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
         await expect.poll(shown, { timeout: 30_000 }).toEqual(['tracked.txt'])
 
-        for (const hold of TURN_HOLDS_AFTER_ITS_WRITE)
+        const { writeLandsLate, turnHoldsAfterTheWrite } = CHANGES_MID_TURN[agent.label]
+        fs.writeFileSync(
+          path.join(machineHome(env), writeLandsLate),
+          String(WELL_PAST_THE_TURN_START_REFRESH_MS)
+        )
+        if (turnHoldsAfterTheWrite)
           fs.writeFileSync(
-            path.join(machineHome(env), hold),
+            path.join(machineHome(env), turnHoldsAfterTheWrite),
             String(A_TURN_LONGER_THAN_THE_WAIT_MS)
-          )
-        for (const late of WRITE_LANDS_LATE_IN_THE_TURN)
-          fs.writeFileSync(
-            path.join(machineHome(env), late),
-            String(WELL_PAST_THE_TURN_START_REFRESH_MS)
           )
         await runIn(page, centerTerm(page), `/write ${HELD_FILE}`)
         await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
