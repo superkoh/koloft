@@ -47,7 +47,7 @@ export function WorkbenchPreview({
   const [refreshNonce, setRefreshNonce] = useState(0)
   const { git, numstat, base, watchDead } = useGitChangeSet(root, true, baseChoice, refreshNonce)
   const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
-  useWatchlessRefresh(watchDead, session?.updatedAt, WATCHLESS_REFRESH_SPARING_SSH_MS, refresh)
+  useWatchlessRefresh(watchDead, session, WATCHLESS_REFRESH_SPARING_SSH_MS, refresh)
 
   const totals = useChangeTotals(git, numstat, root, base)
   const docs = useMemo(

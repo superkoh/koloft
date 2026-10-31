@@ -388,32 +388,36 @@ function tui() {
     }
     status(`state=blocked:app=muse:kind=${kind}`)
   }
+  const write = (target, turnId, text) => {
+    const denied = denial(
+      fire('PreToolUse', {
+        turn_id: turnId,
+        tool_name: 'write_file',
+        tool_input: { path: target, content: 'written by fake muse\n' }
+      })
+    )
+    if (denied) return later(() => say(turnId, `Blocked: ${denied.permissionDecisionReason}`, text))
+    fs.writeFileSync(path.resolve(process.cwd(), target), 'written by fake muse\n')
+    fire('PostToolUse', {
+      turn_id: turnId,
+      tool_name: 'write_file',
+      tool_input: { path: target },
+      tool_response: {
+        filePath: target,
+        structuredPatch: [
+          { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+written by fake muse'] }
+        ]
+      }
+    })
+    return later(() => say(turnId, `Wrote ${target}`, text))
+  }
   const command = (text) => {
     if (text.startsWith('/write ')) {
       const target = text.slice('/write '.length).trim()
       const turnId = turn(text)
-      const denied = denial(
-        fire('PreToolUse', {
-          turn_id: turnId,
-          tool_name: 'write_file',
-          tool_input: { path: target, content: 'written by fake muse\n' }
-        })
-      )
-      if (denied)
-        return later(() => say(turnId, `Blocked: ${denied.permissionDecisionReason}`, text))
-      fs.writeFileSync(path.resolve(process.cwd(), target), 'written by fake muse\n')
-      fire('PostToolUse', {
-        turn_id: turnId,
-        tool_name: 'write_file',
-        tool_input: { path: target },
-        tool_response: {
-          filePath: target,
-          structuredPatch: [
-            { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+written by fake muse'] }
-          ]
-        }
-      })
-      return later(() => say(turnId, `Wrote ${target}`, text))
+      const writeAtMs = Number(read('fake-muse-write-at-ms', '0'))
+      if (writeAtMs) return setTimeout(() => write(target, turnId, text), writeAtMs)
+      return write(target, turnId, text)
     }
     if (text.startsWith('/sh ')) {
       const cmd = text.slice('/sh '.length).trim()

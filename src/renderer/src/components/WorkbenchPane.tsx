@@ -1025,12 +1025,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     closeFind()
   }, [activeTab?.id, ownerTab])
 
-  useWatchlessRefresh(
-    watchDead && visible,
-    session?.updatedAt,
-    WATCHLESS_REFRESH_THROTTLE_MS,
-    reread
-  )
+  useWatchlessRefresh(watchDead && visible, session, WATCHLESS_REFRESH_THROTTLE_MS, reread)
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {
     setCaps((prev) => (sameCaps(prev[tabId] ?? NO_CAPS, next) ? prev : { ...prev, [tabId]: next }))
