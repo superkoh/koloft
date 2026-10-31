@@ -3,8 +3,9 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import {
-  discordSaidBeside,
+  discordSaidFile,
   LANGUAGE_FNS,
+  noticeFile,
   QUOTE_PROMPT_FN,
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
@@ -84,6 +85,11 @@ export function sessionStartContext(text: string): string {
 
 export type MuseHold = HoldScript & { tabId: string }
 
+export interface MuseRelayFiles {
+  regDir: string
+  tabId: string
+}
+
 // MUSE§9
 export function writeMuseHooks(
   shimDir: string,
@@ -91,8 +97,10 @@ export function writeMuseHooks(
   context?: string,
   ownerWords?: string,
   hold?: MuseHold,
-  notice = ''
+  relay?: MuseRelayFiles
 ): string {
+  const notice = relay ? noticeFile(relay.regDir, relay.tabId) : ''
+  const discordSaid = relay ? discordSaidFile(relay.regDir, relay.tabId) : ''
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
   const contextFile = path.join(shimDir, 'session-start.json')
@@ -104,7 +112,7 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(notice && discordSaidBeside(notice))}`,
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)} ${shq(discordSaid)}`,
       hold && `/bin/bash ${shq(hold.file)} ${shq(hold.regDir)} ${shq(hold.tabId)} hold`
     )
   )
