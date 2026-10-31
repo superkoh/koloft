@@ -11,8 +11,10 @@ import {
   ownerWordsLines
 } from '../../src/main/remote/codexMachine'
 import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
+import { DEFAULT_MAX_FRAME } from '../../src/main/codexTransport'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
+const PLUGIN_LIST_PAST_32_MB = 33 * 1024 * 1024
 
 type Frame = Record<string, unknown>
 
@@ -195,4 +197,45 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
     )
     expect(toTui.map((f) => f.method ?? f.id)).toEqual(['account/login/completed'])
   })
+
+  // CODEX§1
+  it('hands the TUI a reply past 32 MB from the machine whole, as the plugin list a signed-in TUI asks for (24 MB and growing) would be, without dropping the line', async () => {
+    const machine = await machineServer()
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-home-'))
+    const toTui: Frame[] = []
+    const errors: Error[] = []
+    let lines = 0
+    const upstream = new MachineCodexUpstream(
+      {
+        connect: () => {
+          lines++
+          return spawn(
+            process.execPath,
+            [FAKE_CODEX, 'app-server', 'proxy', '--sock', machine.sock],
+            {
+              stdio: 'pipe',
+              env: { ...process.env, HOME: home, CODEX_HOME: home }
+            }
+          )
+        },
+        login: { params: async () => undefined, refreshed: async () => ({}) },
+        macCwd: '/Users/someone',
+        machineCwd: () => '/home/someone/proj',
+        stopServer: async () => {},
+        maxFrameBytes: DEFAULT_MAX_FRAME,
+        report: () => {}
+      },
+      ({ parse }) => toTui.push(parse()),
+      (error) => errors.push(error)
+    )
+    stops.push(() => upstream.stop(), machine.close)
+
+    upstream.write(JSON.stringify({ id: 1, method: 'initialize', params: {} }))
+    await vi.waitFor(() => expect(machine.got.map((f) => f.method)).toEqual(['initialize']))
+    machine.send({ id: 1, result: { pad: 'x'.repeat(PLUGIN_LIST_PAST_32_MB) } })
+    await vi.waitFor(() => expect(toTui).toHaveLength(1), { timeout: 20_000 })
+    expect((toTui[0].result as { pad: string }).pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
+    expect(lines).toBe(1)
+    expect(errors).toEqual([])
+  }, 30_000)
 })

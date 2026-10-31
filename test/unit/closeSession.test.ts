@@ -193,7 +193,11 @@ describe('unexpectedExitNotice (the one account of a session that died)', () => 
   })
 
   // ADR-0030
-  it('says Claude did not start for want of an account when the claude shim refused it', () => {
+  it('says what is wrong with the Claude accounts when the claude shim refused a start, and the general line when main found nothing wrong with them', () => {
+    const accountIssue = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    expect(
+      unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT, accountIssue }, 'claude', false)
+    ).toBe(accountIssue)
     expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude', false)).toBe(
       SHIM_FOUND_NO_ACCOUNT_NOTICE
     )

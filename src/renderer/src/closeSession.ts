@@ -55,14 +55,14 @@ export function sessionEndedBody(title: string, files: string[]): string {
 }
 
 export function unexpectedExitNotice(
-  exit: { exitCode: number; signal?: number },
+  exit: { exitCode: number; signal?: number; accountIssue?: string },
   backend: SessionBackend,
   everBound: boolean
 ): string {
   const agent = BACKEND_LABEL[backend]
   // ADR-0030
   if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
-    return SHIM_FOUND_NO_ACCOUNT_NOTICE
+    return exit.accountIssue || SHIM_FOUND_NO_ACCOUNT_NOTICE
   // PLATFORM§29
   const how = exit.signal ? `killed by signal ${exit.signal}` : `exit code ${exit.exitCode}`
   if (!everBound) return `${agent} closed before the session started (${how})`

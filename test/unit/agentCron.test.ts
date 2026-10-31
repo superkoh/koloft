@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CronRunner, type RunnerDeps } from '../../src/main/cronRunner'
 import {
   cronVerb,
@@ -338,6 +338,16 @@ describe('koloft cron: changing tasks', () => {
   it('finds a task whose name has spaces by its unquoted words, not a task named by only the first of them', async () => {
     const c = cron([job({ name: 'Nightly' }), job({ id: 'j2', name: 'Nightly tests' })])
     expect((await c.run('show', 'Nightly', 'tests')).text).toMatch(/^2\. Nightly tests\nId: j2/)
+  })
+
+  it('run refused for want of an account answers with the reason the account check gave', async () => {
+    const c = cron([job()])
+    const why = 'the reason the account check gave'
+    vi.spyOn(c.runner, 'runNow').mockResolvedValue({ ok: false, reason: 'no-account', why })
+    expect(await c.run('run', '1')).toMatchObject({
+      exit: 1,
+      text: `koloft cron: nightly did not start: ${why}`
+    })
   })
 
   it('a bad command line exits with the usage code', async () => {

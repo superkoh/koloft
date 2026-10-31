@@ -228,12 +228,47 @@ export function identityOf(key: string): SessionIdentity {
   return { backendId: 'claude', sourceId: 'local', nativeSessionId: key }
 }
 
+// CC§10 CODEX§16
+export function checkedOnThisMac(backend: BackendId, host: HostId): boolean {
+  return host === 'local' || backend !== 'claude'
+}
+
 export function listedBackends(
   methods: SessionMethods,
-  installed: ((backend: BackendId) => boolean) | null
+  installed: ((backend: BackendId) => boolean) | null,
+  host: HostId
 ): BackendId[] {
-  const listed = installed ? SESSION_BACKENDS.filter((b) => methods.enabled[b] && installed(b)) : []
+  const listed = installed
+    ? SESSION_BACKENDS.filter(
+        (b) => methods.enabled[b] && (installed(b) || !checkedOnThisMac(b, host))
+      )
+    : []
   return listed.length ? listed : [methods.defaultBackend]
+}
+
+export interface LaunchMenu {
+  listed: BackendId[]
+  named: BackendId[] | null
+  sole: BackendId
+}
+
+export function launchMenus(
+  methods: SessionMethods,
+  installed: ((backend: BackendId) => boolean) | null
+): Record<HostId, LaunchMenu> {
+  const on = (host: HostId): LaunchMenu => {
+    const listed = listedBackends(methods, installed, host)
+    const { defaultBackend } = methods
+    return {
+      listed,
+      named:
+        listed.length < 2 || !listed.includes(defaultBackend)
+          ? null
+          : backendsFrom(defaultBackend).filter((b) => listed.includes(b)),
+      sole: effectiveBackend(methods, new Set(listed))
+    }
+  }
+  return { local: on('local'), ssh: on('ssh') }
 }
 
 export function effectiveBackend(

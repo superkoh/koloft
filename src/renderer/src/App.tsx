@@ -3,14 +3,7 @@ import { SessionBackendIcon } from './components/SessionBackendIcon'
 import type { AgentChoice } from './agentChoice'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import { WelcomeLaunch } from './components/WelcomeLaunch'
-import {
-  backendAvailable,
-  BACKEND_LABEL,
-  byBackend,
-  effectiveBackend,
-  listedBackends,
-  SESSION_BACKENDS
-} from '@shared/sessionBackend'
+import { backendAvailable, BACKEND_LABEL, byBackend, launchMenus } from '@shared/sessionBackend'
 import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
@@ -50,7 +43,6 @@ import { SIDEBAR_MIN } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
-  boundSessionId,
   workbenchOwnerLive,
   consumeRestartExit,
   keptTabsToClose,
@@ -62,8 +54,11 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
-  tabEverBound
+  tabEverBound,
+  welcomeWorkbenchKey,
+  workbenchStoreKey
 } from './store'
+import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
@@ -199,7 +194,7 @@ function panelActionTab(): string | undefined {
   if (!id) return undefined
   const tab = st.tabs.find((t) => t.id === id)
   if (tab?.resuming) return undefined
-  return boundSessionId(st, id) ? id : undefined
+  return workbenchStoreKey(st, id) ? id : undefined
 }
 
 function terminalActionTab(): string | undefined {
@@ -214,7 +209,11 @@ function activeTabIsWeb(): boolean {
   const tabId = panelTabId(st)
   if (!tabId) return false
   if (!panelIsOpen(st, tabId)) return false
-  if (!st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)) return false
+  if (
+    !isWorkspaceWorkbenchKey(tabId) &&
+    !st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)
+  )
+    return false
   const set = st.workbench[tabId]
   if (!set) return false
   return set.tabs.find((t) => t.id === set.activeId)?.kind === 'web'
@@ -386,21 +385,11 @@ export default function App(): JSX.Element {
       alive = false
     }
   }, [toolsChanged])
-  const installed = useMemo(
-    () => new Set(probed ? SESSION_BACKENDS.filter((b) => probed[b]) : SESSION_BACKENDS),
-    [probed]
-  )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const listed = useMemo(
-    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+  const launchable = useMemo(
+    () => launchMenus(sessionMethods, probed && ((b) => probed[b])),
     [probed, sessionMethods]
   )
-  const namedMethods = useMemo((): SessionBackend[] | null => {
-    const { defaultBackend } = sessionMethods
-    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
-    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
-  }, [listed, sessionMethods])
-  const soleMethod = effectiveBackend(sessionMethods, installed)
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -458,11 +447,12 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath, undefined, backend)
         return
       }
-      startNow(hostOf(wsPath), backend ?? soleMethod, async () => ({
+      const host = hostOf(wsPath)
+      startNow(host, backend ?? launchable[host].sole, async () => ({
         cwd: wsPath
       }))
     },
-    [requestNew, soleMethod, startNow]
+    [requestNew, launchable, startNow]
   )
 
   const startFromWelcome = useCallback(
@@ -737,6 +727,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
       const st = useStore.getState()
+      if (isWorkspaceWorkbenchKey(r.tabId)) {
+        st.openWorkbenchTarget(r.tabId, { url: r.url, source: r.source })
+        return
+      }
       const named = { ...r, tabId: conversationTabFor(r.tabId) }
       const sess = browserOpenTargetSession(st.sessions, named, st.activeTabId)
       const fromShell = named.tabId !== r.tabId
@@ -951,6 +945,7 @@ export default function App(): JSX.Element {
         cwd: t.cwd,
         alive: true,
         jobId: t.jobId,
+        launch: t.launch && launchToStartAgain(t.launch, t.cwd),
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })
@@ -1293,19 +1288,26 @@ export default function App(): JSX.Element {
       return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
     })
   )
-  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
+  const welcomeKey = useStore(welcomeWorkbenchKey)
+  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : landedTab ? undefined : welcomeKey
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
     useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
-  const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
+  const liveTabs = useMemo(
+    () =>
+      new Set(
+        panelTab && isWorkspaceWorkbenchKey(panelTab) ? [...liveTabIds, panelTab] : liveTabIds
+      ),
+    [liveTabIds, panelTab]
+  )
   const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
   }, [panelTab, panelSid])
 
-  const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
+  const panelBound = useStore((s) => !!panelTab && !!workbenchStoreKey(s, panelTab))
   const panelReady = panelBound && !landedTab?.resuming
 
   const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
@@ -1326,13 +1328,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const paletteChoice: AgentChoice = {
-    listed,
-    lead: soleMethod,
+  const paletteChoice = (host: HostId): AgentChoice => ({
+    listed: launchable[host].listed,
+    lead: launchable[host].sole,
     defaultBackend: sessionMethods.defaultBackend,
     issue: () => '',
     note: () => ''
-  }
+  })
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landed.treeRoot,
@@ -1598,8 +1600,7 @@ export default function App(): JSX.Element {
         <div className="dock-left" ref={dockRef}>
           <WorkspaceSidebar
             onNewSession={startIn}
-            namedMethods={namedMethods}
-            soleMethod={soleMethod}
+            launchable={launchable}
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onScheduledJobs={openScheduledJobs}
@@ -1942,7 +1943,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              choice={paletteChoice}
+              choices={{ local: paletteChoice('local'), ssh: paletteChoice('ssh') }}
             />
           )}
           {newRequest && (

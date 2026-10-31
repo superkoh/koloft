@@ -357,6 +357,13 @@ describe('AgySessions launch', () => {
     expect(created[3].argv.slice(2)).toEqual([`--conversation=${A}`])
   })
 
+  it("puts the tab's own open, gh and playwright-cli commands first on agy's PATH", async () => {
+    await launch()
+    const first = created[0].env.PATH!.split(':')[0]
+    for (const tool of ['open', 'gh', 'playwright-cli'])
+      expect(fs.existsSync(path.join(first, tool))).toBe(true)
+  })
+
   it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
     await launch()
     expect(created[0].env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(

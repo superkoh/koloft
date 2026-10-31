@@ -1785,6 +1785,18 @@ command by hand:
   shells are bash, fish and tcsh.) On a macOS machine, `path_helper` in
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
+- **A shell's foreground program and folder, asked from outside it.** `ps -o tpgid= -p <shell pid>`
+  gives the group that owns the shell's terminal, and `ps -o comm= -p <that group>` its name:
+  `bash`, `tcsh`, `fish` at the prompt, `sleep` while `sleep 60` runs. On Linux that name is
+  cut to 15 characters (`a-very-long-pro`), and `readlink /proc/<pid>/cwd` gives the folder,
+  with ` (deleted)` put after it once that folder is removed (`/tmp/gone (deleted)`);
+  Debian 12's slim image has no `lsof`. On macOS there is no `/proc`, `ps -o comm=` may give the
+  full path, and `lsof -a -d cwd -p <pid> -Fn` gives the folder on its `n` line, resolved
+  (`/private/tmp` for `/tmp`), in about 30 ms. Both give the resolved folder, where a shell's
+  own OSC 7 gives `$PWD` with its symlinks kept — inferred, not checked. A shell that `exec`s keeps its pid, so `echo $$` written just
+  before `exec "$SHELL" -l` names the login shell. (2026-10-30: the e2e sshd image, Debian
+  12.15 with procps-ng 4.0.2, as users whose login shells are bash, tcsh and fish; and this
+  Mac, macOS 27, behind the fake ssh.)
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
 - **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
   then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
@@ -2446,19 +2458,31 @@ server unless a line says so.
   `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
   separated. Before that, a booted clone held a row denying Accessibility to
   `sshd-keygen-wrapper`.
-- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
-  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
-  system private window picker…' (Allow / Open System Settings) even with the TCC rows
-  above; the capture itself was written. Left alone, the dialog stayed on screen and the
-  real-window cases still passed with it in their screenshots. A real click on Allow
-  closed it, but later captures raised it again. After Allow, macOS records the answer in
+- **macOS 27 asks about screen capture from SSH.** A `screencapture` run over SSH raised
+  a dialog '"com.apple.sshd-session" is requesting to bypass the system private window
+  picker…' (Allow / Open System Settings) even with the TCC rows above; the capture
+  itself was written. macOS keeps the record in
   `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
   keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
   `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
   `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
   2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
   before boot was replaced when the user logged in (the group container was re-created).
-  macOS 26.6.2 on GitHub's runner did not ask.
+  macOS 26.6.2 on GitHub's runner did not ask. Measured 2026-10-12; on that day a real
+  click on Allow closed the dialog and later captures raised it again.
+- **The screen-capture dialog may be drawn late, stays until answered, and is skipped when
+  the record is already on file** (measured 2026-10-30, macOS 27.0 26A428, same tart base
+  image). The dialog is a `UserNotificationCenter` window; replayd writes the plist entry
+  when it asks, and Allow leaves the entry unchanged. Unanswered, the dialog stays on
+  screen and takes key focus: in two real-window runs the first three captures did not
+  show it and the fourth did, so it landed in the middle of a later case, where it hid
+  the banners and took the Pinyin keys. After Allow, 8 more captures over a minute raised
+  nothing. On a fresh clone, the logged-in user (over SSH, before any capture) creating
+  the group container folder and writing the entry with all five keys (last-alerted and
+  last-used now, privacy-hint date 30 days on, policy 2592000, count 1) stopped the
+  dialog: 18 captures, none asked, and containermanagerd adopted the folder (it added its
+  metadata plist, the usage count kept rising). On a VM whose replayd had already asked,
+  a hand-written entry was overwritten from replayd's memory within a capture.
 - **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
   `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
   its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
@@ -2470,6 +2494,13 @@ server unless a line says so.
   performing Allow answers it. Until it is answered the app's notifications are kept
   as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
   2026-10-12 in the tart VM above.
+- **A freshly re-signed bundle can be unknown to Notification Center until LaunchServices
+  registers it again.** In some tart runs, every `requestAuthorization` from the bundle
+  signed moments before came back `didGrant: 0 hasError: 1` while usernoted logged
+  "Failed to find or validate client of identifier com.github.Electron": no question, no
+  banner for the whole run, though the Dock badge was still drawn. `lsregister -f` on the
+  bundle right after `codesign` gave `didGrant: 1 hasError: 0` and the question. Measured
+  2026-10-30, macOS 27.0 26A428, Electron 43.8.1, in the tart VM above.
 
 ## §53 An SSH remote sent over https, and a server that refuses https
 

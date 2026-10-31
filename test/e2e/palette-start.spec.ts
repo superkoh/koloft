@@ -682,6 +682,30 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       }
     })
 
+    test('remote Claude with no claude on this Mac: ⏎ on a request @ the ssh workspace starts Claude Code on that machine, not the Codex this Mac has', async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installCodex(env)
+      env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+      installFakeRemote(env)
+      seedRemoteWorkspace(env)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await ask(app, page, `@${REMOTE_HOST}`)
+        await page.keyboard.press('Tab')
+        await page.keyboard.type('read the logs')
+        await page.keyboard.press('Enter')
+        const [onRemote] = await waitForAllCalls(env, 1, 90_000)
+        expect(onRemote.cwd).toBe(remoteDir(env))
+        expect(codexCalls(env)).toHaveLength(0)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
     test('remote Claude: a request starts at once in the ssh workspace with its title and first prompt, and a new project is made on the machine, added, and started there', async ({
       env
     }) => {

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { IconAiStart, IconFolder, IconSearch } from '../icons'
-import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
+import type { BackendId, HostId, SearchSnippet, SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
-import { parseRemoteKey } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey } from '@shared/remoteKey'
 import { askRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
@@ -100,13 +100,13 @@ export function CommandPalette({
   onClose,
   onRouted,
   onOpenHit,
-  choice
+  choices
 }: {
   actions: PaletteAction[]
   onClose: () => void
   onRouted: PaletteRouted
   onOpenHit: (hit: SessionSearchHit) => void
-  choice: AgentChoice
+  choices: Record<HostId, AgentChoice>
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
   const sessions = useStore((s) => s.sessions)
@@ -134,6 +134,7 @@ export function CommandPalette({
   const showBackend = mixesBackends(sessionItems.map((s) => s.row))
   const named = namedWorkspaces(query, workspaceItems)
   const pin = pinnedWorkspace(query, named)
+  const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
   const asksAssist = assistOn && !pin
   const typed = (pin ? pin.prompt : query).trim()

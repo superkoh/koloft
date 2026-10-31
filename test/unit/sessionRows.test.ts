@@ -25,8 +25,13 @@ import {
   endedTabOf,
   endedTabsLiveElsewhere,
   withEndedRows,
+  workspaceOfTab,
   type RowNode
 } from '../../src/renderer/src/sessionRows'
+
+it('a workspace row’s own Workbench belongs to that workspace, so its pages are kept in that workspace’s history', () => {
+  expect(workspaceOfTab([], [], 'ws:ssh://devbox/p')).toBe('ssh://devbox/p')
+})
 
 describe('withEndedRows (a tab whose agent died on its own keeps one row until it is closed)', () => {
   const ws = (path: string, ids: string[]): WorkspaceRows => ({

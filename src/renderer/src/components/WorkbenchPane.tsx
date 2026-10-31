@@ -14,6 +14,7 @@ import { folderFileOf, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
 import type { ArtifactView, BrowserCdpOp, EditFingerprint, GithubTarget } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
 import { useChangeTotals } from './FilesTabLabel'
@@ -213,6 +214,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const activeCaps = (activeTab && caps[activeTab.id]) || NO_CAPS
   const editProbe = useEditProbe(activeKind === 'file' ? (activeTab?.path ?? null) : null)
   const sessionCold = !!ownerTab && !liveTabs.has(ownerTab)
+  const ofWorkspace = isWorkspaceWorkbenchKey(ownerTab)
+  const canTerminal = !sessionCold && !ofWorkspace
   const liveTabsRef = useRef(liveTabs)
   liveTabsRef.current = liveTabs
 
@@ -550,9 +553,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   }, [openHere])
 
   const newTerminal = useCallback((): void => {
-    if (!ownerTab || sessionCold) return
+    if (!ownerTab || !canTerminal) return
     useStore.getState().openTerminalTab(ownerTab)
-  }, [ownerTab, sessionCold])
+  }, [ownerTab, canTerminal])
 
   const openFileTab = useCallback(
     (path: string): void => {
@@ -1309,7 +1312,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
       {newMenuOpen && (
         <NewTabMenu
-          canTerminal={!sessionCold}
+          canTerminal={canTerminal}
           onClose={() => setNewMenuOpen(false)}
           onWeb={newWebTab}
           onFile={openFilePicker}
@@ -1417,7 +1420,13 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           onToggleOutline={toggleOutline}
         />
       ) : (
-        <FilesBar c={files} changedCount={changedCount} full={full} onToggleFull={onToggleFull} />
+        <FilesBar
+          c={files}
+          changedCount={changedCount}
+          full={full}
+          onToggleFull={onToggleFull}
+          sessionOwned={!ofWorkspace}
+        />
       )}
 
       {dlOpen && (

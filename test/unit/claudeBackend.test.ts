@@ -37,6 +37,7 @@ const sessionId = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
 function backendWithDirs(): {
   backend: ClaudeBackend
   events: unknown[]
+  agentExits(): void
   writeHookStart(): void
   writeTurn(): void
   writePrompt(): void
@@ -49,8 +50,9 @@ function backendWithDirs(): {
   fs.mkdirSync(shimRegDir)
   fs.mkdirSync(hookRegDir)
   const events: unknown[] = []
+  const pty = { alive: true }
   const backend = new ClaudeBackend({
-    pty: { get: () => ({}), pidOf: () => 4242, clearResumeIntent: () => {} },
+    pty: { get: () => pty, pidOf: () => 4242, clearResumeIntent: () => {} },
     tracker: fakeTracker(),
     workspaces: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
@@ -61,6 +63,10 @@ function backendWithDirs(): {
   return {
     backend,
     events,
+    agentExits: () => {
+      pty.alive = false
+      backend.onPtyExit(tabId, true)
+    },
     writeHookStart: () => {
       const note = { event: 'start', source: 'startup', cwd: root, [START_IN_STATUS_LOG]: true }
       fs.writeFileSync(
@@ -104,7 +110,7 @@ function machineBackend(): {
   boundTo: Map<string, string>
   binds: [string, string][]
   answeredFor: (string | undefined)[]
-  sent: [string, string, string][]
+  sent: [string, string, string | null][]
   drop(name: string, body: unknown): void
   appendLog(name: string, lines: unknown[]): void
 } {
@@ -112,17 +118,17 @@ function machineBackend(): {
   const boundTo = new Map(Object.keys(MACHINE_TABS).map((id) => [id, `sid-of-${id}`]))
   const binds: [string, string][] = []
   const answeredFor: (string | undefined)[] = []
-  const sent: [string, string, string][] = []
+  const sent: [string, string, string | null][] = []
   const backend = new ClaudeBackend({
     pty: {
       get: (id: string) =>
-        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
+        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? { alive: true } : undefined),
       clearResumeIntent: () => {}
     },
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
-        answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])
+        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply])
       })
     },
     tracker: {
@@ -246,6 +252,19 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
       r10: replyJson(answered('for undefined'))
     })
   })
+
+  it('carries out a request that wants no answer, as a plain open sends, and only takes it away on the machine, even one from no tab of its own', async () => {
+    const m = machineBackend()
+    m.drop('req-r11.json', { ...(request('pty-a', 'k-sa') as object), reply: false })
+    m.drop('req-r12.json', { ...(request('pty-gone', 'k-gone') as object), reply: false })
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+
+    expect(m.sent.sort()).toEqual([
+      ['devbox', 'r11', null],
+      ['devbox', 'r12', null]
+    ])
+    expect(m.answeredFor).toEqual(['pty-a'])
+  })
 })
 
 describe('ClaudeBackend: waiting for a remote session to end before its folder is tidied (#22)', () => {
@@ -329,6 +348,22 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     await vi.waitFor(() => expect(t.events).toEqual(inOrder))
     t.writePrompt()
     await vi.waitFor(() => expect(t.events).toEqual([...inOrder, [tabId, { type: 'prompt' }]]))
+  })
+
+  it('reports a tab whose claude died without an end report as exited, and takes no turn from status lines read after that, which would turn its exited mark back into a finished turn', async () => {
+    const t = backendWithDirs()
+    t.watch()
+    t.writeShimRegistration()
+    t.writeHookStart()
+    t.writeTurn()
+    await vi.waitFor(() => expect(t.events).toHaveLength(3), { timeout: 5000 })
+    t.agentExits()
+    const exited = [tabId, { type: 'exited', clean: false, sessionId }]
+    expect(t.events.slice(3)).toEqual([exited])
+    t.writeHookStart()
+    t.writeTurn()
+    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
+    expect(t.events.slice(3)).toEqual([exited])
   })
 
   // PLATFORM§28

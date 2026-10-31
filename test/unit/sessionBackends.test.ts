@@ -5,6 +5,7 @@ import {
   capabilitiesFor,
   effectiveBackend,
   identityOf,
+  launchMenus,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
@@ -304,11 +305,12 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
   })
 })
 
+const methods = (defaultBackend: BackendId, codex = true) => ({
+  defaultBackend,
+  enabled: { claude: true, codex, muse: true, agy: true }
+})
+
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
-  const methods = (defaultBackend: BackendId, codex = true) => ({
-    defaultBackend,
-    enabled: { claude: true, codex, muse: true, agy: true }
-  })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 
   it('takes the saved default whenever it can run', () => {
@@ -332,5 +334,36 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
 
   it('keeps the default when nothing is installed — main refuses it and says why', () => {
     expect(effectiveBackend(methods('codex'), have())).toBe('codex')
+  })
+})
+
+describe('launchMenus (the agents a New session menu offers, by where the workspace is)', () => {
+  const only =
+    (...ids: BackendId[]) =>
+    (b: BackendId): boolean =>
+      ids.includes(b)
+
+  it('with only Codex on this Mac, a local workspace offers Codex alone while a remote one offers Claude Code first, then Codex', () => {
+    const menus = launchMenus(methods('claude'), only('codex'))
+    expect(menus.local).toEqual({ listed: ['codex'], named: null, sole: 'codex' })
+    expect(menus.ssh).toEqual({
+      listed: ['claude', 'codex'],
+      named: ['claude', 'codex'],
+      sole: 'claude'
+    })
+  })
+
+  it('a remote workspace offers Codex, Muse and Antigravity only when this Mac has them, as their tabs need this Mac', () => {
+    expect(launchMenus(methods('muse'), only()).ssh).toEqual({
+      listed: ['claude'],
+      named: null,
+      sole: 'claude'
+    })
+    expect(launchMenus(methods('claude'), only('codex', 'muse', 'agy')).ssh.listed).toEqual([
+      'claude',
+      'codex',
+      'muse',
+      'agy'
+    ])
   })
 })

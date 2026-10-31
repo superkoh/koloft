@@ -7,8 +7,10 @@ those sessions straight from each tool's own storage (`~/.claude/projects`; for 
 `thread/list` on each `CODEX_HOME`'s app-server, `docs/codex-cli-contract.md` §1, §15)
 and hangs one helper panel — the Workbench: changed files, a file browser, web pages,
 a shell — off each session, and one plain-text note
-off each workspace (the Notes island under the sessions list; the Workbench is the
-session's, the note is the workspace's).
+off each workspace (the Notes island under the sessions list).
+Each session tab has its Workbench, keyed by the tab; each workspace row has one too —
+Files of the workspace folder and web pages, no shell, and no agent drives it. The note
+stays the workspace's, in the sidebar.
 A session tab is not a session: the tab is the terminal `claude` or `codex` runs in, and
 `/clear`, a resume or a restart swaps the session inside it while the tab stays —
 the Workbench, its web pages and the shim's env are keyed by the tab.

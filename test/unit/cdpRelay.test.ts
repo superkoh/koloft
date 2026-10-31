@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import WebSocket from 'ws'
 import type { RelayTarget } from '../../src/main/cdpProtocol'
 import type { RelayDeps } from '../../src/main/cdpRelay'
+import { machinePageUrl } from '../../src/shared/browserRoute'
 
 let userData = ''
 const guests = new Map<number, FakeGuest>()
@@ -396,7 +397,7 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
   })
 
-  it('never shows it, or lets it attach to, a tab on a Mac file or local server, even before the strip has caught up', async () => {
+  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server, even before the strip has caught up', async () => {
     relay.relayEndpointOnMachine(TAB)
     fakeGuest(11)
     fakeGuest(13, { url: NOTES })
@@ -405,7 +406,13 @@ describe("a session on another machine never reaches this Mac's files or local s
       ...deps.strip,
       { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
       { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
-      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 }
+      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 },
+      {
+        targetId: 'bt7',
+        url: machinePageUrl('devbox', '/home/u/report.html'),
+        title: 'report',
+        guestId: 17
+      }
     ])
     const c = await registered()
     await c.cmd('Target.setDiscoverTargets', { discover: true })

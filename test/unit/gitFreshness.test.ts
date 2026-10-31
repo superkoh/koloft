@@ -830,6 +830,29 @@ describe('remote workspaces', () => {
     expect(asked).toHaveLength(1)
   })
 
+  it('a fetch asked for while the machine is away keeps the last result and never delays the fetch on reconnect', async () => {
+    const asked: string[] = []
+    let connected = true
+    const h = harness({
+      paths: [REMOTE],
+      missing: [],
+      machine: () => (connected ? machineRunner(asked) : null)
+    })
+    const start = 1_700_000_000_000
+    await h.engine.machineUp('devbox')
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+
+    connected = false
+    h.setNow(start + 2 * 60_000)
+    expect(f(await h.engine.fetchNow(REMOTE))).toMatchObject({ state: 'ok', behind: 2 })
+    expect(asked).toHaveLength(1)
+
+    connected = true
+    h.setNow(start + 2 * 60_000 + 30_000)
+    await h.engine.machineUp('devbox')
+    expect(asked).toEqual([`${REMOTE} +fetch`, `${REMOTE} +fetch`])
+  })
+
   it('a window-focus or wake-up sweep fetches only the local pins, never over ssh', async () => {
     const w = loggingGitBin('git-local-sweep')
     const asked: string[] = []

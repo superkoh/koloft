@@ -315,7 +315,7 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     }
   })
 
-  test('WB-P04: a remote (ssh) session lists the docs it wrote on the machine, and opens a page there as source', async ({
+  test('WB-P04: a remote (ssh) session lists the docs it wrote on the machine, and opens a page there as a web page', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -344,9 +344,10 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
 
       await mock.click()
       await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'browse')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('mock.html')
-      await expect(readingView(page)).toHaveText('Source')
+      await expect(wbActiveTab(page)).toHaveAttribute(
+        'title',
+        /^koloft-machine:\/\/m[0-9a-f]+\/.*\/mock\.html$/
+      )
     } finally {
       await quitAndClose(app)
     }

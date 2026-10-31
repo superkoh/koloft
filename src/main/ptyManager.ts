@@ -7,6 +7,7 @@ import path from 'path'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
+import { formatRemoteKey } from '@shared/remoteKey'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import { bracketedPaste, typeKeys, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
@@ -23,6 +24,8 @@ export interface PtyHandle {
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
   remoteHost?: string
+  utilMachine?: string
+  title?: string
 }
 
 interface CreateArgs {
@@ -44,6 +47,7 @@ interface CreateArgs {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   remoteHost?: string
+  utilMachine?: string
   banner?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
@@ -245,7 +249,8 @@ export class PtyManager extends EventEmitter {
       ownerTabId: args.ownerTabId,
       resized: args.resized,
       startedAt: Date.now(),
-      remoteHost: args.remoteHost
+      remoteHost: args.remoteHost,
+      utilMachine: args.utilMachine
     }
     this.ptys.set(id, handle)
     this.track(proc)
@@ -274,7 +279,8 @@ export class PtyManager extends EventEmitter {
         .join('')
     )
 
-    const cwdParser = args.util ? new OscCwdParser() : undefined
+    const followsThisMac = args.util && !args.utilMachine
+    const cwdParser = followsThisMac ? new OscCwdParser() : undefined
     let banner = args.banner ? `${args.banner}\r\n` : ''
     proc.onData((output) => {
       const data = banner + output
@@ -282,10 +288,7 @@ export class PtyManager extends EventEmitter {
       watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
-      if (cwd && cwd !== handle.cwd) {
-        handle.cwd = cwd
-        this.emit('cwd', { id, cwd })
-      }
+      if (cwd) this.noticeCwd(handle, cwd)
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
@@ -295,8 +298,7 @@ export class PtyManager extends EventEmitter {
       this.emit('exit', { id, exitCode, signal, endedByKoloft: this.ptys.get(id) !== handle })
     })
 
-    if (args.util) {
-      let last: string | undefined
+    if (followsThisMac) {
       titlePoll = setInterval(() => {
         let reported: unknown
         try {
@@ -304,14 +306,31 @@ export class PtyManager extends EventEmitter {
         } catch {
           return
         }
-        const name = foregroundName(reported)
-        if (name === null || name === last) return
-        last = name
-        this.emit('process-title', { id, name })
+        this.noticeTitle(handle, reported)
       }, UTIL_TITLE_POLL_MS)
     }
 
     return handle
+  }
+
+  shellOnMachineSaid(machine: string, id: string, reported: string, cwd: string): void {
+    const handle = this.ptys.get(id)
+    if (!handle?.alive || handle.utilMachine !== machine) return
+    this.noticeTitle(handle, reported)
+    if (cwd.startsWith('/')) this.noticeCwd(handle, formatRemoteKey(machine, cwd))
+  }
+
+  private noticeTitle(handle: PtyHandle, reported: unknown): void {
+    const name = foregroundName(reported)
+    if (name === null || name === handle.title) return
+    handle.title = name
+    this.emit('process-title', { id: handle.id, name })
+  }
+
+  private noticeCwd(handle: PtyHandle, cwd: string): void {
+    if (cwd === handle.cwd) return
+    handle.cwd = cwd
+    this.emit('cwd', { id: handle.id, cwd })
   }
 
   write(id: string, data: string): void {

@@ -1,4 +1,4 @@
-import { fileUrlPath, opensAsWebTab } from '@shared/browserRoute'
+import { pagePathOf } from '@shared/browserRoute'
 import { isWebPagePath, previewKindForPath, writtenForTheAgent } from '@shared/preview'
 import type { DocVerdict, GitNumstatMap, GitStatusMap, PreviewItem } from '@shared/types'
 import type { OpenFile } from '../store'
@@ -38,16 +38,11 @@ export function previewDocs(input: {
     if (v.show && !latest.has(src)) note(src, v.at)
   }
   for (const t of input.webTabs) {
-    const p = t.kind === 'web' && t.url ? fileUrlPath(t.url) : null
+    const p = t.kind === 'web' && t.url ? pagePathOf(t.url) : null
     if (p) note(p, t.agentOpenedAt)
   }
   if (input.openFile) note(input.openFile.src, input.openFile.openedAt)
   return [...latest.values()].sort((a, b) => b.at - a.at)
-}
-
-export function docLanding(doc: PreviewDoc): 'reading-rendered' | 'reading-source' | 'web-tab' {
-  if (doc.kind === 'markdown') return 'reading-rendered'
-  return opensAsWebTab(doc.src) ? 'web-tab' : 'reading-source'
 }
 
 export function changeTotals(

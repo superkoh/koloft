@@ -526,9 +526,9 @@ export class ClaudeBackend implements SessionBackend {
 
   private dropStatusLog(regDir: string, tabId: string): void {
     const full = statusLogOf(regDir, tabId)
+    fs.rmSync(full, { force: true })
     this.statusLogCursors.delete(full)
     this.statusLogDraining.delete(full)
-    fs.rm(full, { force: true }, () => {})
   }
 
   private beforeItsShimRegistration(statusLog: string): boolean {
@@ -613,9 +613,14 @@ export class ClaudeBackend implements SessionBackend {
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
     const tabId = this.callerOnMachine(machine, raw)
-    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) return
+    const host = this.d.hosts.machine(machine)
+    const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
+    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) {
+      if (noOneWaits) void host.answerAgent(requestId, null)
+      return
+    }
     void this.agentReply(tabId, raw).then((reply) =>
-      this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
+      host.answerAgent(requestId, noOneWaits ? null : replyJson(reply))
     )
   }
 
@@ -629,7 +634,7 @@ export class ClaudeBackend implements SessionBackend {
       trigger?: string
     }
     obj.tabId = this.liveTabFor(obj)
-    if (!obj.tabId) return
+    if (!obj.tabId || !this.d.pty.get(obj.tabId)?.alive) return
     // CC§1
     if (obj.event === 'start') {
       if (obj.source !== 'compact' && obj.sessionId === this.sessionIdOf(obj.tabId)) return

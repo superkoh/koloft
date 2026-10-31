@@ -7,6 +7,7 @@ import type { AccountView } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
+  E2E_CLAUDE_ACCOUNT,
   E2E_CODEX_ACCOUNT,
   E2E_MUSE_ACCOUNT,
   installAgy,
@@ -18,7 +19,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import { centerTerm, clickAppMenuItem, openMenu, startSessionIn, waitBooted } from './helpers/p1'
-import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
+import { noAccountLine, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
   alpha: 'sk-ant-oat01-fixture-alpha',
@@ -296,6 +297,34 @@ test('E2: a session whose Koloft account cannot be read does not start, and says
       timeout: 30_000
     })
     expect(readCalls(env)).toEqual([])
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+// ADR-0030
+test('E2b: a Claude tab reopened after its only account was turned off while Koloft was shut says what is wrong with the accounts, not the general line', async ({
+  env
+}) => {
+  test.setTimeout(150_000)
+  let { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(
+      page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+    ).toBeVisible({ timeout: 40_000 })
+    await quitAndClose(app)
+    const turnedOff = { ...acct(E2E_CLAUDE_ACCOUNT, 'apikey'), enabled: false }
+    seedSettings(env, { accounts: [turnedOff] })
+    ;({ app, page } = await launchConfigured(env))
+    const accountIssue = noAccountLine(
+      await page.evaluate(() => window.api.accounts.list()),
+      'claude'
+    )
+    expect(accountIssue).toMatch(/^No Claude account can be used/)
+    await expect(page.locator('.toast')).toContainText(accountIssue, { timeout: 30_000 })
+    await expect(centerTerm(page)).toContainText(`[Koloft] ${accountIssue}`)
   } finally {
     await app.close().catch(() => {})
   }
