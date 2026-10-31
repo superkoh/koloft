@@ -297,7 +297,7 @@ function QueuedRowView({
       className="ws-tab st-queued"
       data-tab-id={launch.tabId}
       onContextMenu={(e) => floating.current?.menuNow(e, target)}
-      onMouseEnter={(e) => floating.current?.hoverMenu(e, target)}
+      onMouseEnter={(e) => floating.current?.hoverMenu(e, () => target)}
       onMouseLeave={() => floating.current?.scheduleClose()}
     >
       <div className="ws-tab-main">
@@ -596,8 +596,8 @@ const WorkspaceHead = memo(function WorkspaceHead({
 })
 
 interface FloatingCtl {
-  armMenu: (e: MouseEvent, el: HTMLElement, target: MenuTarget) => void
-  hoverMenu: (e: MouseEvent, target: MenuTarget) => void
+  armMenu: (e: { buttons: number }, el: HTMLElement, target: MenuTarget) => void
+  hoverMenu: (e: MouseEvent, targetWhenItOpens: () => MenuTarget) => void
   menuNow: (e: MouseEvent, target: MenuTarget) => void
   scheduleClose: () => void
   dismissMenu: () => void
@@ -643,7 +643,7 @@ function SidebarFloating({
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const menuWaitsForMove = useRef<{ el: HTMLElement; target: MenuTarget } | null>(null)
+  const menuWaitsForMove = useRef<{ el: HTMLElement; target: () => MenuTarget } | null>(null)
 
   const clearTimers = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -703,22 +703,22 @@ function SidebarFloating({
     if (draggingThrough) return
     hoverTimer.current = setTimeout(() => openMenuAt(el, target), HOVER_MENU_MS)
   }
+  const latestArmMenu = useRef(armMenu)
+  latestArmMenu.current = armMenu
   // PLATFORM§24
   useEffect(() => {
-    const armOnFirstMove = (e: globalThis.MouseEvent): void => {
+    const armOnFirstMoveOverRow = (e: globalThis.MouseEvent): void => {
       const waiting = menuWaitsForMove.current
       if (!waiting) return
       menuWaitsForMove.current = null
-      armMenu(e, waiting.el, waiting.target)
+      if (!waiting.el.contains(e.target as Node)) return
+      latestArmMenu.current(e, waiting.el, waiting.target())
     }
-    window.addEventListener('mousemove', armOnFirstMove)
-    return () => window.removeEventListener('mousemove', armOnFirstMove)
-  })
+    window.addEventListener('mousemove', armOnFirstMoveOverRow)
+    return () => window.removeEventListener('mousemove', armOnFirstMoveOverRow)
+  }, [])
   const scheduleClose = (): void => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current)
-    hoverTimer.current = null
-    menuWaitsForMove.current = null
-    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    clearTimers()
     leaveTimer.current = setTimeout(() => setMenu(null), MENU_LEAVE_MS)
   }
   const keepMenu = (): void => {
@@ -749,9 +749,9 @@ function SidebarFloating({
 
   useImperativeHandle(ctl, () => ({
     armMenu,
-    hoverMenu: (e, target) => {
+    hoverMenu: (e, targetWhenItOpens) => {
       clearTimers()
-      menuWaitsForMove.current = { el: e.currentTarget as HTMLElement, target }
+      menuWaitsForMove.current = { el: e.currentTarget as HTMLElement, target: targetWhenItOpens }
     },
     menuNow: (e, target) => {
       e.preventDefault()
@@ -1259,7 +1259,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         openSessionRow(row, wsPath)
       },
       rowMenu: (e, id) => floating.current?.menuNow(e, rowTarget(id)),
-      rowEnter: (e, id) => floating.current?.hoverMenu(e, rowTarget(id)),
+      rowEnter: (e, id) => floating.current?.hoverMenu(e, () => rowTarget(id)),
       leave: () => floating.current?.scheduleClose(),
       openParked: (e, id) => {
         e.stopPropagation()
@@ -1269,7 +1269,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       selectWs: (path) => useStore.getState().selectWorkspace(path),
       toggleCollapsed: (path) => setCollapsed((c) => ({ ...c, [path]: !c[path] })),
       headMenu: (e, path) => floating.current?.menuNow(e, wsTarget(path)),
-      headEnter: (e, path) => floating.current?.hoverMenu(e, wsTarget(path)),
+      headEnter: (e, path) => floating.current?.hoverMenu(e, () => wsTarget(path)),
       dragStart: (e, path) => {
         floating.current?.closeAll()
         e.dataTransfer.effectAllowed = 'move'
