@@ -117,8 +117,9 @@
         <p>
           Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it once
           in a tab, and Koloft's own checks use that login after that. A Claude Code, Codex or Muse
-          tab asks for it, and for a yes to a machine ssh has never met. An Antigravity tab cannot
-          ask yet: sign in through one of the other three there first.
+          tab asks you for it there. On a machine ssh has never seen before, it also asks you to say
+          yes to that machine's key. An Antigravity tab cannot ask yet: sign in through one of the
+          other three there first.
         </p>
         <p>These work too:</p>
         <ul class="dash">
@@ -301,7 +302,8 @@ your Mac                     the other machine
           When the agent runs a plain <code>open</code> with a file the Workbench can show, or with
           a web address, the file or page shows in that session's Workbench, as it does on your Mac.
           A <code>localhost</code> address still means your Mac, not the machine. With "Let agents
-          use Koloft" off, a plain <code>open</code> there does nothing.
+          use Koloft" off, a plain <code>open</code> there never reaches the Workbench: it goes to
+          the machine's own <code>open</code>, if it has one.
         </p>
         <p>The count of changed files there catches up at most every 10 seconds.</p>
         <p>
