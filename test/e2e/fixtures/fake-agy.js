@@ -20,7 +20,6 @@ const VERSION = '1.4.0'
 const ESC = '\x1b'
 const BEL = '\x07'
 const ENTER = '\r'
-const ENTER_ARRIVES_AS_LINE_FEED = !!process.env.KOLOFT_FAKE_TMUX_IO
 const BACKSPACE = '\x7f'
 const UP = '\u0000up'
 const DOWN = '\u0000down'
@@ -2116,10 +2115,6 @@ function feed(chunk) {
       }
     }
     const ch = text[i++]
-    if (ch === '\n' && !ENTER_ARRIVES_AS_LINE_FEED && phase === 'prompt' && !pendingAsk && !panel) {
-      typed += '\n'
-      continue
-    }
     onKey(ch === '\n' ? ENTER : ch === '\b' ? BACKSPACE : ch === '\x03' ? ESC : ch)
   }
 }

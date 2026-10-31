@@ -184,6 +184,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Closes the first thing open, in this order: image zoom, find bar, menu, then full width back to side-by-side.'
           },
           { where: 'Terminal tab', what: 'Goes to the shell.' },
+          // CODEX§25 MUSE§7 AGY§15
           { where: 'Conversation', what: 'Goes to the agent, which stops a running turn.' },
           { where: 'Note', what: 'Sends the caret back to where it was.' },
           { where: 'Dialog', what: 'Closes it.' }
@@ -242,6 +243,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       {
         keys: ['⇧⏎'],
         name: 'New line',
+        // CC§12 CODEX§2 MUSE§7 AGY§15
         uses: [{ what: "Adds a line in the agent's input box without sending." }]
       }
     ]
