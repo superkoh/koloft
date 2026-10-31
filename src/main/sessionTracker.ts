@@ -16,7 +16,7 @@ import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
-import { capTouched, touchedItem } from './touchedFiles'
+import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
@@ -943,6 +943,15 @@ export class SessionTracker extends SessionRuntime {
 
   infoOf(tabId: string): SessionInfo | undefined {
     return this.tracked.get(tabId)?.info
+  }
+
+  noteShellWrites(tabId: string, wrote: unknown): void {
+    const t = this.tracked.get(tabId)
+    const files = shellWrittenFiles(wrote)
+    if (!t || !files.length) return
+    for (const abs of files) t.touched.noteShellWrite(abs, Date.now())
+    t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
+    this.recompute(t)
   }
 
   setRemoteTmuxName(tabId: string, tmuxName: string): void {

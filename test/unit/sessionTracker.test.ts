@@ -224,6 +224,16 @@ describe('SessionTracker — file extraction from tool_use', () => {
     const s3 = await waitFor(tracker, (x) => x.tabId === 'tabA' && (x.liveWrites ?? 0) > 1)
     expect(s3.liveWrites).toBe(2)
     expect(s3.lastWritten).toMatch(/hello\.js$/)
+
+    const made = path.join(cwd, 'made.txt')
+    fs.writeFileSync(made, 'from a shell command\n')
+    tracker.noteShellWrites('tabA', [made])
+    const s4 = await waitFor(
+      tracker,
+      (x) => x.tabId === 'tabA' && !!x.lastWritten?.endsWith('made.txt')
+    )
+    expect(s4.liveWrites).toBe(3)
+    expect(s4.files.find((f) => f.label === 'made.txt')?.access).toBe('wrote')
   })
 })
 

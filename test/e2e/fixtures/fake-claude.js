@@ -284,6 +284,18 @@ const EVENT_KEY = {
   ask: 'PermissionRequest',
   compacting: 'PreCompact'
 }
+function fireToolHooks(event, payload) {
+  for (const group of hooks?.[event] ?? []) {
+    if (group.matcher !== '*' && group.matcher !== payload.tool_name) continue
+    for (const hook of group.hooks ?? [])
+      try {
+        cp.execSync(hook.command, {
+          input: JSON.stringify({ session_id: sessionId, ...payload }),
+          stdio: ['pipe', 'ignore', 'ignore']
+        })
+      } catch {}
+  }
+}
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
   if (!cmd) return ''
@@ -1346,6 +1358,45 @@ function handleLine(line) {
       fireHook('stop', { hook_event_name: 'Stop' })
       process.stdout.write(`[fake-claude] wrote ${rel}\r\n> `)
     }, MID_TURN_WRITE_HOLD_MS_OUTLASTING_500MS_JSONL_POLL)
+    return
+  }
+  if (text.startsWith('/run ')) {
+    const command = text.slice('/run '.length).trim()
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+    const meta = usageMeta()
+    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: meta.id, cwd }
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: { role: 'user', content: text },
+        cwd
+      },
+      {
+        type: 'assistant',
+        version: FAKE_CLAUDE_VERSION,
+        requestId: meta.requestId,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          id: meta.id,
+          model: meta.model,
+          content: [{ type: 'tool_use', id: meta.id, name: 'Bash', input: { command } }],
+          usage: meta.usage
+        },
+        cwd
+      }
+    ])
+    fireToolHooks('PreToolUse', { hook_event_name: 'PreToolUse', ...call })
+    cp.execFile('/bin/sh', ['-c', command], { cwd, env: process.env }, (e, out, err) => {
+      fireToolHooks('PostToolUse', {
+        hook_event_name: 'PostToolUse',
+        ...call,
+        tool_response: { stdout: out, stderr: err }
+      })
+      fireHook('stop', { hook_event_name: 'Stop' })
+      process.stdout.write(`[fake-claude] ran ${command}\r\n> `)
+    })
     return
   }
   // CC§2

@@ -6,6 +6,8 @@ import {
   discordSaidFile,
   LANGUAGE_FNS,
   noticeFile,
+  shellCall,
+  SHELL_WRITES_FNS,
   QUOTE_PROMPT_FN,
   QUOTE_THE_OWNER_OR_FLAG_A_FALSE_DISCORD,
   REMIND_REPLY_LANGUAGE_FN,
@@ -25,7 +27,9 @@ const EVENTS = [
   'UserPromptSubmit',
   'Stop',
   'StopFailure',
+  'PreToolUse',
   'PostToolUse',
+  'PostToolUseFailure',
   'SubagentStart',
   'SubagentStop'
 ] as const
@@ -41,8 +45,18 @@ ${head}
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 ${QUOTE_PROMPT_FN}
+${SHELL_WRITES_FNS}
 input="$(cat | tr -d '\\n')"
 [ "$event" = "Stop" ] && keep_going_for_the_notice && exit 0
+case "$input" in
+  *'"tool_name":"bash"'*|*'"tool_name":"shell"'*)
+    ${shellCall('session_id')}
+    case "$event" in
+      PreToolUse) shell_before "$where" "$key" ;;
+      PostToolUse|PostToolUseFailure) input="\${input%\\}}$(shell_wrote "$where" "$key")}" ;;
+    esac ;;
+esac
+[ "$event" = "PreToolUse" ] && exit 0
 ${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
@@ -127,6 +141,7 @@ function hooksJson(command: (event: MuseHookName) => string, hold?: string): str
   // ADR-0043 MUSE§9
   if (hold)
     hooks.PreToolUse = [
+      ...run(command('PreToolUse')),
       { hooks: [{ type: 'command', command: hold, timeout: HOLD_HOOK_TIMEOUT_S }] }
     ]
   return JSON.stringify({ hooks })

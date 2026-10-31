@@ -156,6 +156,44 @@ save_quote() {
   if [ ! -s "$said" ] || shows_language "$q"; then printf '%s\\n' "$q" > "$said"; fi
 }`
 
+export const hookField = (name: string): string =>
+  `sed -n 's/.*"${name}"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p'`
+
+export const shellCall = (keyField: string): string =>
+  `where="$(printf '%s' "$input" | ${hookField('cwd')})"; key="$(shell_key "$(printf '%s' "$input" | ${hookField(keyField)})")"`
+
+export const SHELL_WROTE_FIELD = 'wrote'
+export const SHELL_WROTE_EVENT = 'shell-wrote'
+
+// CC§15 CODEX§27 MUSE§9 AGY§12
+export const SHELL_WRITES_FNS = `files_now() {
+  top="$(cd "$1" 2>/dev/null && inside="$(git rev-parse --show-prefix 2>/dev/null)" && here="$PWD/" && printf '%s' "\${here%"$inside"}")"
+  top="\${top%/}"
+  [ -n "$top" ] || return 0
+  printf '%s\\n' "$top"
+  ( cd "$top" && git ls-files -z -m -o --exclude-standard 2>/dev/null |
+    if stat -c %s . >/dev/null 2>&1; then xargs -0 stat -c '%.9Y %s %n'; else xargs -0 stat -f '%Fm %z %N'; fi 2>/dev/null )
+}
+shell_key() {
+  printf '%s' "$1" | tr -cd 'A-Za-z0-9_-'
+}
+shell_before() {
+  [ -n "$2" ] || return 0
+  files_now "$1" | LC_ALL=C sort > "\${TMPDIR:-/tmp}/koloft-shell-$2" 2>/dev/null
+}
+shell_wrote() {
+  was="\${TMPDIR:-/tmp}/koloft-shell-$2"
+  [ -n "$2" ] && [ -f "$was" ] || return 0
+  files_now "$1" | LC_ALL=C sort > "$was.now" 2>/dev/null
+  top="$(head -n 1 "$was.now")"
+  if [ -n "$top" ] && [ "$top" = "$(head -n 1 "$was")" ]; then
+    wrote="$(LC_ALL=C comm -13 "$was" "$was.now" | sed 's/^[^ ]* [^ ]* //' |
+      awk -v top="$top" '{ print top "/" $0 }' | LC_ALL=C grep -v '["\\\\[:cntrl:]]' | sed 's/.*/"&"/' | paste -s -d , -)"
+    [ -n "$wrote" ] && printf ',"${SHELL_WROTE_FIELD}":[%s]' "$wrote"
+  fi
+  rm -f "$was" "$was.now"
+}`
+
 const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
 // ADR-0031
 export const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
@@ -194,6 +232,14 @@ export const CODEX_REPLY_LANGUAGE_HOOKS = [
   { event: 'Stop', command: codexReplyLanguageHook('stop') }
 ]
 
+export const CODEX_SHELL_WROTE_ENV = 'KOLOFT_SHELL_WROTE'
+export const SHELL_WROTE_SUFFIX = '.shell-wrote.jsonl'
+// CODEX§27
+export const CODEX_SHELL_WRITES_HOOKS: KoloftHook[] = [
+  { event: 'PreToolUse', matcher: 'Bash', command: codexReplyLanguageHook('shell-before') },
+  { event: 'PostToolUse', matcher: 'Bash', command: codexReplyLanguageHook('shell-after') }
+]
+
 export const CODEX_HOLD_SCRIPT_ENV = 'KOLOFT_HOLD_SCRIPT'
 export const CODEX_HOLD_REG_ENV = 'KOLOFT_HOLD_REG'
 // CODEX§30
@@ -208,6 +254,16 @@ export const codexHoldHook = (event: HoldEvent): KoloftHook => ({
 
 // ADR-0031 CODEX§27
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
+${SHELL_WRITES_FNS}
+case "$1" in
+  shell-before|shell-after)
+    input="$(cat | tr -d '\\n')"
+    ${shellCall('tool_use_id')}
+    if [ "$1" = shell-before ]; then shell_before "$where" "$key"; exit 0; fi
+    wrote="$(shell_wrote "$where" "$key")"
+    [ -n "$wrote" ] && [ -n "$${CODEX_SHELL_WROTE_ENV}" ] && printf '{"event":"${SHELL_WROTE_EVENT}"%s}\\n' "$wrote" >> "$${CODEX_SHELL_WROTE_ENV}"
+    exit 0 ;;
+esac
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
 notice="$${NOTICE_ENV}"
@@ -291,6 +347,7 @@ session_id() {
 }
 ${QUOTE_PROMPT_FN}
 ${STALE_PR_STATUS_FN}
+${SHELL_WRITES_FNS}
 log_ask() {
   printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
 }
@@ -351,6 +408,12 @@ case "$event" in
     log_ask
     ;;
   posttool) stale_pr_status "$input" ;;
+  shell-before) ${shellCall('tool_use_id')}; shell_before "$where" "$key" ;;
+  shell-after)
+    ${shellCall('tool_use_id')}
+    wrote="$(shell_wrote "$where" "$key")"
+    [ -n "$wrote" ] && printf '{"tabId":"%s","event":"${SHELL_WROTE_EVENT}","sessionId":"%s","tmux":"%s"%s}\\n' "$tab" "$(session_id)" "$tm" "$wrote" >> "$log"
+    ;;
   prompt|stop|notify)
     [ "$event" = "stop" ] && keep_going_for_the_notice && exit 0
     msg="$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
@@ -530,25 +593,29 @@ export function hookSettings(
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
+  const shellAfter = { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('shell-after') }] }
   const settings: Record<string, unknown> = {
     skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
       // CC§15
-      ...(hold && {
-        PreToolUse: [
-          {
-            matcher: 'Bash',
-            hooks: [
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('shell-before') }] },
+        ...(hold
+          ? [
               {
-                type: 'command',
-                command: `bash ${quote(hold.script)} ${quote(regDir)} ${quote(tabId)} ${hold.event}`,
-                timeout: HOLD_HOOK_TIMEOUT_S
+                matcher: 'Bash',
+                hooks: [
+                  {
+                    type: 'command',
+                    command: `bash ${quote(hold.script)} ${quote(regDir)} ${quote(tabId)} ${hold.event}`,
+                    timeout: HOLD_HOOK_TIMEOUT_S
+                  }
+                ]
               }
             ]
-          }
-        ]
-      }),
+          : [])
+      ],
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
@@ -573,10 +640,12 @@ export function hookSettings(
       // CC§19 ADR-0031
       PostToolUse: [
         { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
+        shellAfter,
         ...(statusLine
           ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
           : [])
-      ]
+      ],
+      PostToolUseFailure: [shellAfter]
     }
   }
   if (statusLine) settings.statusLine = statusLine
