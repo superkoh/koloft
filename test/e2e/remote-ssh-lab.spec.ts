@@ -789,7 +789,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-35: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
+  test('E-SSH-36: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
     env
   }) => {
     await withLab(env, async ({ app, page }) => {
