@@ -7,6 +7,7 @@ import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
   addressValue,
   BROWSER,
+  clickPicked,
   guestByUrl,
   isPng,
   newWebTab,
@@ -15,6 +16,8 @@ import {
   PICK_PAGE,
   pickIntoSession,
   picturePath,
+  startPick,
+  typeAfterThePick,
   typeInAddressBar
 } from './helpers/browser'
 import { codexCalls } from './helpers/codex'
@@ -623,6 +626,46 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       expect(path.dirname(picture)).toBe(picks)
       expect(isPng(picture)).toBe(true)
       expect(fs.existsSync(path.join(env.userData, 'element-picks'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+
+  test('BP-10: a picture that cannot be copied to the machine says so in a toast, and the pick still reaches claude there, without the picture', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.mkdirSync(path.join(machineHome(env), '.koloft'), { recursive: true })
+      fs.writeFileSync(path.join(machineHome(env), '.koloft', 'element-picks'), 'not a folder')
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        remoteDir(env),
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+
+      await startPick(page)
+      await clickPicked(page, guest, '#buy')
+      await expect(page.locator('.toast')).toContainText(
+        `The picture of the element could not be copied to ${REMOTE_HOST}:`,
+        { timeout: 30_000 }
+      )
+      await typeAfterThePick(page, ' BP-10 remote')
+      const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-10'))
+      await expect.poll(fromPick, { timeout: 90_000 }).toHaveLength(1)
+      const [prompt] = fromPick()
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      expect(picturePath(prompt)).toBe('')
     } finally {
       await quitAndClose(app)
       await server.close()
