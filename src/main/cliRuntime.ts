@@ -79,10 +79,11 @@ export async function resolveCliRuntime(
   const parsed = spec.version.exec(stdout)
   if (!parsed) throw new Error(`${spec.cliName} did not report a version Koloft understands.`)
   const [major, minor, patch] = parsed.slice(1, 4).map(Number)
+  const [testedMajor, testedMinor] = spec.testedLine.split('.').map(Number)
   return {
     binary,
     env,
     version: `${major}.${minor}.${patch}`,
-    verified: `${major}.${minor}` === spec.testedLine
+    verified: major < testedMajor || (major === testedMajor && minor <= testedMinor)
   }
 }
