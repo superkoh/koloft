@@ -23,16 +23,15 @@ describe('realFilesThere', () => {
 describe('RealFiles', () => {
   const item = (src: string) => ({ src, label: src, access: 'wrote' as const, wroteAt: 1 })
 
-  it('keeps listing a file under the path the agent gave when the machine cannot be asked', async () => {
+  it('keeps listing a file under the path the agent gave when the machine cannot be asked, but not a ~/ path no one can open', async () => {
     const found = vi.fn()
     const real = new RealFiles(async () => {
       throw new Error('ssh: connect to host devbox: Connection refused')
     }, found)
-    expect(real.merge([item('/home/koh/a.md')])).toEqual([])
+    const given = [item('/home/koh/a.md'), item('~/notes.md')]
+    expect(real.merge(given)).toEqual([])
     await vi.waitFor(() => expect(found).toHaveBeenCalled())
-    expect(real.merge([item('/home/koh/a.md')])).toEqual([
-      expect.objectContaining({ src: '/home/koh/a.md' })
-    ])
+    expect(real.merge(given)).toEqual([expect.objectContaining({ src: '/home/koh/a.md' })])
   })
 
   it('asks again about a file that was not there at most once per gap, however often the list changes', async () => {

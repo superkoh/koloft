@@ -1,6 +1,6 @@
 import fs from 'fs'
 import { basename } from '@shared/preview'
-import { barePath, formatRemoteKey } from '@shared/remoteKey'
+import { barePath, formatRemoteKey, isAbsoluteOnHost } from '@shared/remoteKey'
 import type { PreviewItem } from '@shared/types'
 
 export type RealFilesLookup = (files: string[]) => Promise<Map<string, string>>
@@ -96,7 +96,7 @@ export class RealFiles {
     try {
       found = await this.lookup(files)
     } catch {
-      found = new Map(files.map((f) => [f, f]))
+      found = new Map(files.filter(isAbsoluteOnHost).map((f) => [f, f]))
     }
     for (const file of files) this.asking.delete(file)
     for (const [file, real] of found) this.known.set(file, real)
