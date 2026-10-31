@@ -364,7 +364,7 @@ export function TerminalView({
         }
         if (!wasHidden) return
         wasHidden = false
-        safeFit()
+        fitWhenSettled()
         forceRepaint()
       },
       { threshold: 0 }

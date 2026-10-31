@@ -1,17 +1,20 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { closeSettings, openSettings } from './helpers/extensions'
 import {
   addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
-  REMOTE_WS_NAME
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  type OtherAgentName
 } from './helpers/remote'
 import {
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  newSessionInWith,
   openMenu,
   openSessionTerminal,
   setWindowWidth,
@@ -40,13 +43,27 @@ function recordUnmaskedColsWithLateFrameCallbacks(page: Page): Promise<void> {
       __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
     }
     const onTime = window.requestAnimationFrame.bind(window)
+    const cancelOnTime = window.cancelAnimationFrame.bind(window)
+    const pendingHop = new Map<number, number>()
+    let lastId = 0
     window.requestAnimationFrame = (cb) => {
+      const id = ++lastId
       let left = late
       const step = (t: number): void => {
-        if (left-- > 0) onTime(step)
-        else cb(t)
+        if (left-- > 0) {
+          pendingHop.set(id, onTime(step))
+        } else {
+          pendingHop.delete(id)
+          cb(t)
+        }
       }
-      return onTime(step)
+      pendingHop.set(id, onTime(step))
+      return id
+    }
+    window.cancelAnimationFrame = (id) => {
+      const hop = pendingHop.get(id)
+      if (hop !== undefined) cancelOnTime(hop)
+      pendingHop.delete(id)
     }
     w.__unmaskedCols = []
     w.__stopUnmaskedCols = false
@@ -119,6 +136,23 @@ function centerLayout(page: Page): Promise<{
       termMaxWidth: termEl.style.maxWidth
     }
   })
+}
+
+const LOCAL_OTHER_AGENTS: { label: OtherAgentName; install: (env: E2EEnv) => void }[] = [
+  { label: 'Codex', install: (env) => installCodex(env) },
+  { label: 'Muse', install: installMuse },
+  { label: 'Antigravity', install: installAgy }
+]
+
+async function launchRemoteWithPanelShut(
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page }> {
+  seedWorkbenchDefault(env, false)
+  seedSettings(env, { hintsOff: true })
+  const { app, page } = await launchWithRemote(env)
+  await setWindowWidth(app, WIDE_WINDOW_PX)
+  await addRemoteWorkspace(page, env)
+  return { app, page }
 }
 
 async function launchWithPanelShut(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
@@ -219,23 +253,19 @@ test.describe('the center session terminal stops at 140 columns and sits centred
         return { app, page, start: () => startSessionIn(page, 'ws-a') }
       }
     },
-    {
-      kind: 'a new local Codex tab',
+    ...LOCAL_OTHER_AGENTS.map((agent) => ({
+      kind: `a new local ${agent.label} tab`,
       open: async (env: E2EEnv) => {
-        installCodex(env)
+        agent.install(env)
         const { app, page } = await launchWithPanelShut(env)
         await setWindowWidth(app, WIDE_WINDOW_PX)
-        return { app, page, start: () => startSessionIn(page, 'ws-a', { method: 'Codex' }) }
+        return { app, page, start: () => newSessionInWith(page, 'ws-a', agent.label) }
       }
-    },
+    })),
     {
       kind: 'a new remote Claude Code tab',
       open: async (env: E2EEnv) => {
-        seedWorkbenchDefault(env, false)
-        seedSettings(env, { hintsOff: true })
-        const { app, page } = await launchWithRemote(env)
-        await setWindowWidth(app, WIDE_WINDOW_PX)
-        await addRemoteWorkspace(page, env)
+        const { app, page } = await launchRemoteWithPanelShut(env)
         return {
           app,
           page,
@@ -243,6 +273,14 @@ test.describe('the center session terminal stops at 140 columns and sits centred
         }
       }
     },
+    ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({
+      kind: `a new remote ${agent.label} tab`,
+      open: async (env: E2EEnv) => {
+        agent.install(env)
+        const { app, page } = await launchRemoteWithPanelShut(env)
+        return { app, page, start: () => newSessionInWith(page, REMOTE_WS_NAME, agent.label) }
+      }
+    })),
     {
       kind: 'a resumed Codex session',
       open: async (env: E2EEnv) => {
