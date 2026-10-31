@@ -738,7 +738,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
-  // CODEX§1
+  // CODEX§2
   transcriptPlaces(key: string): TranscriptPlaces | undefined {
     const file = this.history.get(key)?.path
     if (!file) return undefined

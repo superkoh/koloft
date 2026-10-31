@@ -977,7 +977,7 @@ export class SessionTracker extends SessionRuntime {
 
   transcriptPlaces(sessionId: string): TranscriptPlaces | undefined {
     for (const t of this.tracked.values()) {
-      const file = t.info.alive && t.info.sessionId === sessionId && t.info.jsonlPath
+      const file = t.info.sessionId === sessionId && t.info.jsonlPath
       if (!file) continue
       if (!t.remote) return { onThisMac: file }
       const inProjects = path.relative(t.remote.projectsRoot, file)

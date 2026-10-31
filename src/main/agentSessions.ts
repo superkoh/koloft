@@ -159,11 +159,10 @@ function transcriptPart(
   places: TranscriptPlaces | undefined
 ): string[] {
   const machine = info.remote?.host
-  const reachedOverSsh = machine && places?.onMachine && remoteCopyText(machine, places.onMachine)
-  const readable = me.remote
-    ? machine === me.remote.host && places?.onMachine
-    : (places?.onThisMac ?? reachedOverSsh)
-  return readable ? [`transcript: ${readable}`] : []
+  const shown = (file: string | undefined): string[] => (file ? [`transcript: ${file}`] : [])
+  if (me.remote) return machine === me.remote.host ? shown(places?.onMachine) : []
+  if (places?.onThisMac) return shown(places.onThisMac)
+  return machine && places?.onMachine ? shown(remoteCopyText(machine, places.onMachine)) : []
 }
 
 function openSessionLines(

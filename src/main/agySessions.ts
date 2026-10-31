@@ -524,10 +524,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§4 AGY§8
   transcriptPlaces(key: string): TranscriptPlaces {
-    const onThisMac = this.transcriptOf(key)
-    if (!hostOfKey(key)) return { onThisMac }
-    const onMachine = agyTranscript(path.posix.join('~', AGY_REMOTE_GEMINI), this.nativeId(key))
-    return { onThisMac, onMachine }
+    const id = this.nativeId(key)
+    const host = hostOfKey(key)
+    if (!host) return { onThisMac: agyTranscript(this.gemini, id) }
+    return {
+      onThisMac: agyTranscript(this.deps.remote.mirrorGemini(host), id),
+      onMachine: agyTranscript(path.posix.join('~', AGY_REMOTE_GEMINI), id)
+    }
   }
 
   get cliBinary(): string | undefined {
