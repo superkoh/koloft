@@ -51,4 +51,7 @@ export function remoteBrowserAddressFile(tabId: string): string {
 export function browserForwardFile(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'browser-forward.json')
 }
+export function pageForwardsFile(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'page-forwards.json')
+}
 export const dq = (s: string): string => `"${s}"`
