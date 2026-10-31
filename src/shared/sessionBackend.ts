@@ -184,12 +184,13 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   claude: {
     local: EVERYTHING,
     // PLATFORM§33
-    ssh: { ...ON_A_MACHINE, browserControl: true, worktreeRemovalFollowed: true }
+    ssh: { ...ON_A_MACHINE, browserControl: true, panelSeen: true, worktreeRemovalFollowed: true }
   },
+  // CODEX§21
   codex: {
-    local: OUTSIDE_LOCAL_CLAUDE,
+    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
     // CODEX§16
-    ssh: ON_A_MACHINE
+    ssh: { ...ON_A_MACHINE, panelSeen: true }
   },
   muse: {
     local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },

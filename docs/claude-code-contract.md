@@ -2029,6 +2029,13 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     Stop); the binary sets `waiting` only from what is open on
     screen, never from the message text, so the 2.1.312 changelog's "showing as waiting
     on you" fix is the agent view's count, not this field.
+    **The same on Linux inside tmux** (2026-10-31, CC 2.1.316 linux-arm64 in tmux
+    3.3a, 120×40, in a Debian bookworm container with no network as a plain user, a
+    fake `apiKeyHelper` key; each command typed, Esc, Enter, the entry read 2.5 s
+    later, then one Esc): `/cost` (it opened the Usage tab of the settings panel),
+    `/status` and the `/model` picker each read `waiting` while open and `idle` 0.5 s
+    after the Esc; `/config` kept `waiting` after one Esc, whose first press only
+    left its filter box, and its screen still showed the list.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
     e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
     `procStart`" tells a live entry from a stale one whose pid was reused. Re-checked

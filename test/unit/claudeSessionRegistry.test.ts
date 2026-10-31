@@ -6,6 +6,7 @@ import path from 'path'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudePeerNames,
+  claudeShowsAPanelOnMachine,
   messagingSocketOf,
   tabSocketOnMachine,
   runningClaudePid,
@@ -157,5 +158,21 @@ describe('the registry of a claude on another machine, read through ssh', () => 
 
   it('finds nothing on a machine where claude never ran', () => {
     expect(tabSocketOnMachine(readOnMachine(dir), SID)).toBeNull()
+  })
+
+  it('says a panel is open while the claude running in the tab reads waiting, not while a hard-killed one’s entry still does, and cannot say without an entry', () => {
+    const sessions = path.join(dir, '.claude', 'sessions')
+    fs.mkdirSync(sessions, { recursive: true })
+    const write = (pid: number | undefined, status: string): void =>
+      fs.writeFileSync(
+        path.join(sessions, `${pid}.json`),
+        JSON.stringify({ pid, sessionId: SID, kind: 'interactive', status })
+      )
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBeUndefined()
+    write(spawnSync('true').pid, 'waiting')
+    write(process.pid, 'idle')
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBe(false)
+    write(process.pid, 'waiting')
+    expect(claudeShowsAPanelOnMachine(readOnMachine(dir), SID)).toBe(true)
   })
 })

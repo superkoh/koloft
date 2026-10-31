@@ -160,20 +160,41 @@ export function whenMessagingSocket(
 // CC§11
 export const LIVE_REGISTRY_ON_A_MACHINE_SH = `for f in "$HOME"/.claude/sessions/*.json; do p=\${f##*/}; kill -0 "\${p%.json}" 2>/dev/null && cat "$f" && printf '\\0'; done; :`
 
+interface EntryOnMachine {
+  sessionId?: unknown
+  kind?: unknown
+  messagingSocketPath?: unknown
+  status?: unknown
+}
+
 // CC§5 CC§11
-export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {
-  for (const text of liveRegistry.split('\0')) {
-    let entry: { sessionId?: unknown; kind?: unknown; messagingSocketPath?: unknown }
+function tabEntriesOnMachine(liveRegistry: string, sessionId: string): EntryOnMachine[] {
+  return liveRegistry.split('\0').flatMap((text) => {
+    let entry: EntryOnMachine
     try {
       entry = JSON.parse(text)
     } catch {
-      continue
+      return []
     }
-    if (entry.sessionId !== sessionId || entry.kind === 'bg') continue
-    if (typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath)
-      return entry.messagingSocketPath
-  }
+    return entry.sessionId === sessionId && entry.kind !== 'bg' ? [entry] : []
+  })
+}
+
+export function tabSocketOnMachine(liveRegistry: string, sessionId: string): string | null {
+  for (const { messagingSocketPath } of tabEntriesOnMachine(liveRegistry, sessionId))
+    if (typeof messagingSocketPath === 'string' && messagingSocketPath) return messagingSocketPath
   return null
+}
+
+// CC§11
+export function claudeShowsAPanelOnMachine(
+  liveRegistry: string,
+  sessionId: string
+): boolean | undefined {
+  const status = tabEntriesOnMachine(liveRegistry, sessionId).find(
+    (entry) => typeof entry.status === 'string'
+  )?.status
+  return status === undefined ? undefined : status === 'waiting'
 }
 
 const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000

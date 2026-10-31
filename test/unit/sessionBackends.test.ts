@@ -247,9 +247,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local']
     ],
     [
-      'Koloft sees whether a menu or panel is open in Claude Code on this Mac (its session registry) and in Muse anywhere (its screen); in every other tab a slash command from Discord presses Esc to be safe',
+      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex and Muse (their screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
       'panelSeen',
-      ['claude/local', 'muse/local', 'muse/ssh']
+      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh', 'muse/local', 'muse/ssh']
     ],
     [
       'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
