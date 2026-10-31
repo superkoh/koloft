@@ -94,6 +94,7 @@ import {
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
+const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
@@ -361,6 +362,35 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await runIn(page, panelTerm(page), 'koloft open after-restart.md')
       await expect(artifactBody(page)).toContainText('shown after restart', { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-44: the Workbench shell of a remote session is named for the program running on the machine, not ssh, and its folder follows cd there as a path on that machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.mkdirSync(path.join(remoteDir(env), 'sub'))
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await openSessionTerminal(app, page)
+      const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+      const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+
+      await runIn(page, panelTerm(page), 'sleep 60')
+      await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+      await page.keyboard.press('Control+C')
+      await expect(shellTab).toHaveText(path.basename(process.env.SHELL || '/bin/sh'), {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await runIn(page, panelTerm(page), 'cd sub')
+      await expect(folder).toHaveAttribute('title', /^ssh:\/\/[^/]+\/.*\/sub$/, {
+        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+      })
+      await expect(folder).toHaveText(/\/sub$/)
     } finally {
       await quitAndClose(app)
     }
