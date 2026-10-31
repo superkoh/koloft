@@ -597,7 +597,8 @@ only downloaded the public release.
 - `artifactDirectoryPath` is a plain absolute path on the machine agy runs on,
   `<geminiDir>/antigravity-cli/brain/<conversationId>` (no `file://`), in every event
   from the first `SessionStart` on (2026-10-29, agy 1.4.7 Linux in Docker,
-  `--gemini_dir=/work/g`, a fake Gemini server, three turns in tmux). That folder holds
+  `--gemini_dir=/work/g`, a fake Gemini server, three turns in tmux; no subagent ran, so
+  a subagent's hooks are **not probed yet**). That folder holds
   the conversation's artifacts and its `scratch/` (§8, §19); 1.3.6's system prompt tells
   the model to put scratch scripts and files in `{{ArtifactDirectoryPath}}/scratch/`,
   "They will be persisted" (not rechecked on 1.4).

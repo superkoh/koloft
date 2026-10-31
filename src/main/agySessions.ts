@@ -551,7 +551,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private learnBrain(run: AgyRun, artifactDir: unknown): void {
     if (typeof artifactDir !== 'string' || !artifactDir.startsWith('/')) return
     const brain = path.posix.dirname(artifactDir)
-    if (run.brain === brain) return
+    if (run.brain === brain || path.posix.basename(brain) !== 'brain') return
     run.brain = brain
     if (!run.info) return
     run.info.scratchpadDir = this.scratchpadOf(run, { id: run.info.nativeSessionId!, cwd: run.cwd })

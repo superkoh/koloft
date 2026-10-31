@@ -6,10 +6,12 @@ import {
   gitInit,
   newSessionInWith,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { barePath } from '../../src/shared/remoteKey'
 import {
   E2E_AGY_ACCOUNT,
   agySessionCalls,
@@ -18,14 +20,18 @@ import {
   seedSettings,
   trustInAgy
 } from './helpers/env'
-import { startCodex } from './helpers/codex'
+import { codexAnswers, startCodex, type CodexWireLine } from './helpers/codex'
 import {
   REMOTE_WS_NAME,
+  addRemoteWorkspace,
   agyReady,
   boundRemoteAgy,
+  installCodexOnFakeRemote,
   installFakeRemote,
   installRemoteAgy,
   killFakeRemote,
+  launchWithRemote,
+  machineCodexLog,
   machineHome,
   seedRemoteWorkspace
 } from './helpers/remote'
@@ -152,6 +158,45 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
       await expect(scratchpadNode(page)).toBeVisible({ timeout: 40_000 })
       await expect(scratchpadNode(page)).toHaveAttribute('data-path', images)
       await expect.poll(() => scratchpadNames(page)).toEqual(['exec-1.png'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§12
+  test('a remote Codex tab lists the images Codex saved for its thread on that machine, under the Codex home that holds the thread’s rollout, once the thread has one', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await runIn(page, centerTerm(page), 'draw it')
+      await expect
+        .poll(() => codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')), {
+          timeout: 60_000
+        })
+        .toContain('Codex fixture answered: draw it')
+      await sendShortcut(app, 'shortcut:restart-session')
+
+      const scratchpadDir = async (): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === 'codex' && s.alive
+        )?.scratchpadDir
+      await expect.poll(scratchpadDir, { timeout: 60_000 }).toMatch(/^ssh:\/\//)
+      const images = barePath((await scratchpadDir())!)
+      expect(images.startsWith(machineHome(env) + path.sep)).toBe(true)
+      expect(path.basename(path.dirname(images))).toBe('generated_images')
+      fs.mkdirSync(images, { recursive: true })
+      fs.writeFileSync(path.join(images, 'exec-1.png'), ONE_PIXEL_PNG)
+
+      await showBrowse(page)
+      await expect(scratchpadNode(page)).toBeVisible({ timeout: 60_000 })
+      await expect.poll(() => scratchpadNames(page), { timeout: 30_000 }).toEqual(['exec-1.png'])
     } finally {
       await quitAndClose(app)
     }
