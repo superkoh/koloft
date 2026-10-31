@@ -68,6 +68,18 @@ describe('what a row says while the session waits on you', () => {
     )
   })
 
+  it('Claude Code: the verb for a file follows the tool, so a read never says edit', () => {
+    const ask = (tool_name: string, tool_input: Record<string, unknown>): string =>
+      claudeAskLine({ tool_name, tool_input })
+    expect(ask('Write', { file_path: '/r/w.ts' })).toBe('Wants to edit: w.ts')
+    expect(ask('MultiEdit', { file_path: '/r/m.ts' })).toBe('Wants to edit: m.ts')
+    expect(ask('NotebookEdit', { notebook_path: '/r/n.ipynb' })).toBe('Wants to edit: n.ipynb')
+    expect(ask('Read', { file_path: '/etc/hosts' })).toBe('Wants to read: hosts')
+    expect(ask('Grep', { pattern: 'x', path: '/elsewhere' })).toBe('Wants to read: elsewhere')
+    expect(ask('Glob', { pattern: '*.ts', path: '/elsewhere' })).toBe('Wants to read: elsewhere')
+    expect(ask('mcp__fs__read_file', { path: '/a/b.txt' })).toBe('Wants to use: read_file')
+  })
+
   it('Codex, Muse Code and Antigravity: a question, a command, a file edit or a plan', () => {
     expect(
       storedAskLine({
