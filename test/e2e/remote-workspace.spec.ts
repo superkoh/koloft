@@ -130,6 +130,23 @@ const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
   Antigravity: 'E-RW-40'
 }
 
+const CHANGES_MID_TURN_CASE_OF: Record<OtherAgentName, string> = {
+  Codex: 'E-RW-53',
+  Muse: 'E-RW-54',
+  Antigravity: 'E-RW-55'
+}
+
+const HELD_FILE = 'hold.txt'
+const WRITE_LANDS_LATE_IN_THE_TURN = [
+  'fake-codex-write-at-ms',
+  'fake-muse-write-at-ms',
+  'fake-agy-write-at-ms'
+]
+const TURN_HOLDS_AFTER_ITS_WRITE = ['fake-muse-delay', 'fake-agy-after-write-ms']
+const WELL_PAST_THE_TURN_START_REFRESH_MS = 10_000
+const A_TURN_LONGER_THAN_THE_WAIT_MS = 120_000
+const A_WRITE_REACHES_CHANGES_MS = 30_000
+
 test.afterEach(({ env }) => killFakeRemote(env))
 
 test.describe('remote workspaces: a workspace on another machine over ssh, with no Koloft installed there', () => {
@@ -341,6 +358,62 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await quitAndClose(app)
     }
   })
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${CHANGES_MID_TURN_CASE_OF[agent.label]}: a file a ${agent.label} session on the machine edits shows under Changes while its turn still runs, not only once the turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const dir = remoteDir(env)
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+        fs.writeFileSync(path.join(dir, HELD_FILE), 'one\n')
+        gitInit(dir)
+        gitCommitAll(dir)
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await page
+          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+          .filter({ hasText: 'Changes' })
+          .click()
+        const shown = (): Promise<string[]> =>
+          page
+            .locator('.wb-panel .cv-row')
+            .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+        await expect.poll(shown, { timeout: 30_000 }).toEqual(['tracked.txt'])
+
+        for (const hold of TURN_HOLDS_AFTER_ITS_WRITE)
+          fs.writeFileSync(
+            path.join(machineHome(env), hold),
+            String(A_TURN_LONGER_THAN_THE_WAIT_MS)
+          )
+        for (const late of WRITE_LANDS_LATE_IN_THE_TURN)
+          fs.writeFileSync(
+            path.join(machineHome(env), late),
+            String(WELL_PAST_THE_TURN_START_REFRESH_MS)
+          )
+        await runIn(page, centerTerm(page), `/write ${HELD_FILE}`)
+        await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+        await expect
+          .poll(() => fs.readFileSync(path.join(dir, HELD_FILE), 'utf8'), { timeout: 30_000 })
+          .not.toBe('one\n')
+        await expect
+          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .toEqual([HELD_FILE, 'tracked.txt'])
+        await expect(row).toHaveClass(/st-working/)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
     test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
