@@ -141,7 +141,7 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     const h = makeHarness([meta({ name: 'hot' }), meta({ name: 'cool' })])
     h.setProbe('hot', {
       ok: true,
-      usage: usage({ u5: 0.86, uoi: 0.1, soi: 'allowed', hasOi: true })
+      usage: usage({ u5: 0.9, uoi: 0.1, soi: 'allowed', hasOi: true })
     })
     h.setProbe('cool', { ok: true, usage: usage({ u5: 0.2 }) })
     const r = await h.picker.pick()
@@ -212,11 +212,11 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
       meta({ name: 'plain', fable: 'no' })
     ])
     badged.setProbe('badged', { ok: true, usage: usage({ u5: 0.4, u7: 0.2 }) })
-    badged.setProbe('plain', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    badged.setProbe('plain', { ok: true, usage: usage({ u5: 0.1, u7: 0.1 }) })
     expect(await badged.picker.pick()).toEqual({
       account: 'plain',
       kind: 'oauth',
-      banner: 'koloft: → plain · 5h 10% · 7d 20%',
+      banner: 'koloft: → plain · 5h 10% · 7d 10%',
       warning: FABLE_GONE
     })
 
@@ -351,14 +351,14 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
     const pool = [meta({ name: 'busy' }), meta({ name: 'spare' })]
     const usages: [string, UsageSnapshot][] = [
       ['busy', usage({ u5: 0.6, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })],
-      ['spare', usage({ u5: 0.05, u7: 0.1, uoi: 0.8, soi: 'allowed', hasOi: true })]
+      ['spare', usage({ u5: 0.05, u7: 0.02, uoi: 0.8, soi: 'allowed', hasOi: true })]
     ]
     const off = makeHarness(pool, { fablePriority: false })
     for (const [n, u] of usages) off.setProbe(n, { ok: true, usage: u })
     expect(await off.picker.pick()).toEqual({
       account: 'spare',
       kind: 'oauth',
-      banner: 'koloft: → spare · 5h 5% · 7d 10%'
+      banner: 'koloft: → spare · 5h 5% · 7d 2%'
     })
 
     const on = makeHarness(pool)
@@ -370,15 +370,43 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
     const h = makeHarness([meta({ name: 'hot-a' }), meta({ name: 'hot-b' })])
     h.setProbe('hot-a', {
       ok: true,
-      usage: usage({ u5: 0.86, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })
+      usage: usage({ u5: 0.9, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })
     })
     h.setProbe('hot-b', {
       ok: true,
-      usage: usage({ u5: 0.9, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })
+      usage: usage({ u5: 0.95, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })
     })
     const r = await h.picker.pick()
     expect(r.account).toBe('hot-a')
     if (r.account) expect(r.warning).toBeUndefined()
+  })
+})
+
+describe('U4 · the 5-hour stop', () => {
+  it('an account at 90% of its 5h is skipped for a new session even when its week is the lightest', async () => {
+    const h = makeHarness([meta({ name: 'hot' }), meta({ name: 'busy' })])
+    h.setProbe('hot', { ok: true, usage: usage({ u5: 0.9, u7: 0.05, r5: NOW_S + 3600 }) })
+    h.setProbe('busy', { ok: true, usage: usage({ u5: 0.2, u7: 0.7 }) })
+    expect((await h.picker.pick()).account).toBe('busy')
+  })
+
+  it('an account with no 5-hour limit is balanced on its week alone, and its banner has no 5h part', async () => {
+    const h = makeHarness([meta({ name: 'max' }), meta({ name: 'ultra' })])
+    h.setProbe('max', { ok: true, usage: usage({ u5: 0.1, u7: 0.6 }) })
+    h.setProbe('ultra', { ok: true, usage: usage({ has5h: false, u7: 0.3 }) })
+    expect(await h.picker.pick()).toEqual({
+      account: 'ultra',
+      kind: 'oauth',
+      banner: 'koloft: → ultra · 7d 30%',
+      warning: FABLE_GONE
+    })
+  })
+
+  it('every account at its 5h stop → the one whose 5h resets first', async () => {
+    const h = makeHarness([meta({ name: 'later' }), meta({ name: 'sooner' })])
+    h.setProbe('later', { ok: true, usage: usage({ u5: 0.92, u7: 0.1, r5: NOW_S + 3 * 3600 }) })
+    h.setProbe('sooner', { ok: true, usage: usage({ u5: 0.95, u7: 0.6, r5: NOW_S + 3600 }) })
+    expect((await h.picker.pick()).account).toBe('sooner')
   })
 })
 
@@ -620,7 +648,7 @@ describe('U4 · degradation ladder', () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', {
       ok: true,
-      usage: usage({ u5: 0.8, u7: 0.5, r5: NOW_S + 3600, r7: NOW_S + 3600 })
+      usage: usage({ u5: 0.8, u7: 0.9, r5: NOW_S + 3600, r7: NOW_S + 5 * 3600 })
     })
     h.setProbe('b', {
       ok: true,

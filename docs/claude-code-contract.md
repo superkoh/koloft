@@ -1119,16 +1119,25 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   "utilization present, status missing"); **utilization can exceed 1** (overage);
   no header field reveals plan/quota size — only percentages, so any cross-account
   aggregation can only weight accounts equally. Other headers seen live:
-  `overage-disabled-reason`, `representative-claim`, and one logged
-  as `fallback-percentage` on 2026-08-17 — the CC 2.1.263 binary knows only
-  `anthropic-ratelimit-unified-fallback`, so that name is unconfirmed until the next
-  live curl. The same binary also names header families this ledger has never seen
+  `overage-disabled-reason`, `representative-claim`, and
+  `fallback-percentage` (logged 2026-08-17, seen again 2026-10-31 — the CC 2.1.263
+  binary knows only `anthropic-ratelimit-unified-fallback`). The same binary also names header families this ledger has never seen
   live (`grace-*`, `slow-*`, `overage-period-*`, `upgrade-paths`; strings read
   2026-09-06) — recorded here as a pointer, not as a contract. The 2.1.276 binary also
   reads plan usage from `/api/oauth/usage` (fields seen in `strings`, 2026-09-18:
   `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `seven_day_oauth_apps`,
   `seven_day_overage_included`, each with `utilization` and `resets_at`); the live
   response shape is unmeasured — a pointer only.
+- **A verified Ultra account answers with no `5h` bucket at all.** Anthropic renamed Max
+  20x to Ultra on 2026-10-30 and dropped the 5-hour limit for verified Ultra accounts
+  (an unverified one keeps a temporary 5-hour limit until verified; Max, ex-5x, keeps
+  it; support article "What is the Ultra plan?"). Measured 2026-10-31 with the probe
+  request above on four of the owner's subscription accounts (`claude-sonnet-5` on all
+  four, `claude-fable-5` on the Ultra one; only `anthropic-ratelimit-*` headers
+  printed): three answered the usual `5h` + `7d` trio; the Ultra one answered no
+  `5h-utilization`, `5h-status` or `5h-reset` at all, its `7d` trio as usual, the
+  `7d_oi` trio on the fable probe, and `representative-claim: seven_day`. A missing 5h
+  bucket is therefore a reading, not a failed probe.
 - **fable capability detection**: only fable-model probes return the 7d_oi bucket;
   an account without fable answers a fable probe with 400, 403 or 404, while 408 and a
   headerless 429 are passing failures that say nothing about fable (inferred, not
@@ -1259,8 +1268,13 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
   official login flow for a long-lived, inference-only token (scope below): it prints the authorization URL and, on success, the token on
-  its output. **CC's Bash-tool children inherit the parent claude's full env**, so
-  nested claude calls inherit the injected token (inferred, not checked).
+  its output. **CC's Bash-tool children do NOT see `CLAUDE_CODE_OAUTH_TOKEN`**:
+  measured 2026-10-31 on CC 2.1.316 in a session the shim had launched with an
+  account's token, a Bash tool call read `typeof process.env.CLAUDE_CODE_OAUTH_TOKEN` as
+  `'undefined'` (twice) while the shim's `ANT_ACCOUNT`, exported in the
+  same step, was there; the 2.1.316 binary's child-env builder lists
+  `CLAUDE_CODE_OAUTH_TOKEN` first in the names it strips (`strings`). So a nested
+  `claude` goes back through the shim and picks an account of its own.
 - **Since 2.1.310 a gateway that refuses the effort beta or `role: "system"` turns
   gets the request again without them, and Koloft's hook text still arrives.**
   Measured 2026-10-25 on CC 2.1.309 and 2.1.310: `claude -p` with one Bash tool call

@@ -63,9 +63,21 @@ describe('U1 · parseRatelimitHeaders', () => {
     expect(p!.usage.hasOi).toBe(false)
   })
 
-  it('missing u5 → probe failure (null)', () => {
+  // CC§7
+  it('no 5h bucket (a verified Ultra account) → a reading with no 5-hour limit, not a failure', () => {
     const h = fullHeaders()
     delete h['anthropic-ratelimit-unified-5h-utilization']
+    delete h['anthropic-ratelimit-unified-5h-status']
+    delete h['anthropic-ratelimit-unified-5h-reset']
+    const p = parseRatelimitHeaders(h, NOW_MS)
+    expect(p).not.toBeNull()
+    expect(p!.usage).toMatchObject({ has5h: false, u5: 0, s5: '?', r5: 0, u7: 0.41 })
+    expect(parseRatelimitHeaders(fullHeaders(), NOW_MS)!.usage.has5h).toBe(true)
+  })
+
+  it('missing 7d → probe failure (null)', () => {
+    const h = fullHeaders()
+    delete h['anthropic-ratelimit-unified-7d-utilization']
     expect(parseRatelimitHeaders(h, NOW_MS)).toBeNull()
   })
 
@@ -83,7 +95,8 @@ describe('U1 · parseRatelimitHeaders', () => {
   it('mixed-case header names and CR-terminated values parse fine', () => {
     const h: Record<string, string> = {
       'Anthropic-Ratelimit-Unified-5h-Utilization': '0.5\r',
-      'ANTHROPIC-RATELIMIT-UNIFIED-5H-STATUS': 'allowed\r'
+      'ANTHROPIC-RATELIMIT-UNIFIED-5H-STATUS': 'allowed\r',
+      'Anthropic-Ratelimit-Unified-7d-Utilization': '0.25\r'
     }
     const p = parseRatelimitHeaders(h, NOW_MS)
     expect(p).not.toBeNull()

@@ -62,6 +62,7 @@ interface BucketScript {
   u7?: number
   uoi?: number
   s5?: string
+  no5h?: boolean
   status?: number
   hang?: boolean
   answerAfterMs?: number
@@ -99,13 +100,17 @@ async function startProbeMock(): Promise<ProbeMock> {
       }
       res.writeHead(200, {
         'content-type': 'application/json',
-        'anthropic-ratelimit-unified-5h-utilization': String(s.u5 ?? 0.1),
+        ...(s.no5h
+          ? {}
+          : {
+              'anthropic-ratelimit-unified-5h-utilization': String(s.u5 ?? 0.1),
+              'anthropic-ratelimit-unified-5h-status': s.s5 ?? 'allowed',
+              'anthropic-ratelimit-unified-5h-reset': String(nowSec + 7200)
+            }),
         'anthropic-ratelimit-unified-7d-utilization': String(s.u7 ?? 0.2),
         'anthropic-ratelimit-unified-7d_oi-utilization': String(s.uoi ?? 0.3),
-        'anthropic-ratelimit-unified-5h-status': s.s5 ?? 'allowed',
         'anthropic-ratelimit-unified-7d-status': 'allowed',
         'anthropic-ratelimit-unified-7d_oi-status': 'allowed',
-        'anthropic-ratelimit-unified-5h-reset': String(nowSec + 7200),
         'anthropic-ratelimit-unified-7d-reset': String(nowSec + 200000),
         'anthropic-ratelimit-unified-7d_oi-reset': String(nowSec + 200000)
       })
@@ -657,6 +662,53 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
       const sub = row.locator('.tbu-cell').first().locator('.tbu-cell-sub')
       await expect(sub).toContainText('back')
       await expect(sub).toHaveClass(/alarm/)
+    } finally {
+      await app.close().catch(() => {})
+      await mock.close()
+    }
+  })
+
+  // CC§7
+  test('pool: an account that answers with no 5-hour bucket (a verified Ultra) is measured, shows “—” for 5h, and stays out of the pool’s 5h mean; once no account has one, the 5h column goes', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const mock = await startProbeMock()
+    mock.script.set(TOKENS.alpha, { u5: 0.2, u7: 0.2 })
+    mock.script.set(TOKENS.bravo, { u5: 0.6, u7: 0.2 })
+    mock.script.set(TOKENS.charlie, { no5h: true, u7: 0.5 })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+    seedPool(env)
+    const { app, page } = await launchConfigured(env)
+    try {
+      const capsule = page.locator('.tbu')
+      await capsule.waitFor({ state: 'visible' })
+      await expect.poll(() => mock.requests.length, { timeout: 20_000 }).toBe(4)
+      await expect(capsule.locator('.tbu-bar:not(.total) .tbu-fill')).toHaveCount(3)
+
+      await capsule.hover()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop).toBeVisible()
+      const pool = pop.locator('.tbu-row.pool')
+      await expect(pool.locator('.tbu-pool-meta')).toContainText('3 measured')
+      await expect(pool.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('40%')
+      const charlie = pop.locator('.tbu-row', { hasText: 'charlie' })
+      await expect(charlie.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('—')
+      await expect(charlie).toContainText('no 5-hour limit')
+      await expect(charlie.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('50%')
+
+      for (const t of [TOKENS.alpha, TOKENS.bravo]) mock.script.set(t, { no5h: true, u7: 0.3 })
+      await pop.locator('.tbu-act', { hasText: 'Probe now' }).click()
+      await expect(pop.locator('.tbu-colhead')).not.toContainText('5h', { timeout: 20_000 })
+      await expect(pop.locator('.acct-meter[data-win="5h"]')).toHaveCount(0)
+      await expect(pop.locator('.tbu-colhead')).toContainText('7d')
+
+      await page.mouse.move(5, 5)
+      await openSettings(page)
+      const row = claudeAccounts(page).locator('.acct-row', { hasText: 'charlie' })
+      await expect(row.locator('.acct-meter[data-win="7d"]')).toBeVisible()
+      await expect(row.locator('.acct-meter[data-win="5h"]')).toHaveCount(0)
+      await expect(row).not.toContainText('5h resets')
     } finally {
       await app.close().catch(() => {})
       await mock.close()

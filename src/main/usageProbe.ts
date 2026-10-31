@@ -1,11 +1,8 @@
 import type { AccountKind, AccountMeta, ProbeErrorKind, UsageSnapshot } from '@shared/types'
 import { GRACE, hardLimited } from '@shared/accountUsage'
 
-export const D5 = 10_800
 export const DW = 21_600
 export { GRACE }
-export const RAMP_LO = 0.7
-export const RAMP_HI = 0.95
 export const OI_WEIGHT = 1.25
 export const EPS = 0.05
 
@@ -25,7 +22,6 @@ export function disc(r: number, d: number, now: number): number {
 export interface Score {
   s1: number
   s2: number
-  s3: number
   tiebreak: number
   pen: number
   hardLimited: boolean
@@ -34,9 +30,7 @@ export interface Score {
 export type ScoreRoute = 'fable' | 'opus'
 
 export function scoreSnapshot(u: UsageSnapshot, now: number, route: ScoreRoute): Score {
-  const p5 = u.u5 * disc(u.r5, D5, now)
-  const rampRaw = (u.u7 * disc(u.r7, DW, now) - RAMP_LO) / (RAMP_HI - RAMP_LO)
-  const ramp = rampRaw < 0 ? 0 : rampRaw
+  const week = u.u7 * disc(u.r7, DW, now)
   const oi = route === 'fable' ? u.uoi * disc(u.roi, DW, now) * OI_WEIGHT : 0
 
   const penFor = (status: string, r: number): number => {
@@ -46,12 +40,11 @@ export function scoreSnapshot(u: UsageSnapshot, now: number, route: ScoreRoute):
   }
   const pen = Math.max(penFor(u.s5, u.r5), penFor(u.s7, u.r7))
 
-  const parts = [p5, ramp, oi].sort((a, b) => b - a)
+  const [heavier, lighter] = [week, oi].sort((a, b) => b - a)
   const weekReset = route === 'fable' ? u.roi : u.r7
   return {
-    s1: parts[0] + pen,
-    s2: parts[1],
-    s3: parts[2],
+    s1: heavier + pen,
+    s2: lighter,
     tiebreak: weekReset > now ? weekReset : 0,
     pen,
     hardLimited: hardLimited(u, now)
@@ -69,7 +62,7 @@ const tbOf = (c: Candidate): number => (c.score.tiebreak > 0 ? c.score.tiebreak 
 
 export function leximaxFinalists(cands: Candidate[]): Candidate[] {
   let survivors = cands
-  for (const key of ['s1', 's2', 's3'] as const) {
+  for (const key of ['s1', 's2'] as const) {
     if (survivors.length <= 1) break
     const min = Math.min(...survivors.map((c) => c.score[key]))
     survivors = survivors.filter((c) => c.score[key] <= min + EPS)
@@ -97,7 +90,7 @@ export function parseRatelimitHeaders(
     return Number.isFinite(n) ? n : 0
   }
   const str = (key: string): string => h[pre + key] ?? '?'
-  if (h[pre + '5h-utilization'] === undefined) return null
+  if (h[pre + '7d-utilization'] === undefined) return null
   return {
     usage: {
       u5: num('5h-utilization'),
@@ -110,6 +103,7 @@ export function parseRatelimitHeaders(
       r7: num('7d-reset'),
       roi: num('7d_oi-reset'),
       overage: str('overage-status'),
+      has5h: h[pre + '5h-utilization'] !== undefined,
       hasOi: h[pre + '7d_oi-utilization'] !== undefined,
       at
     }
