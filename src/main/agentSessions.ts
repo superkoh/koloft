@@ -400,7 +400,7 @@ export interface SessionVerbDeps {
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
-  whatIsLeft(target: ClosableSession): Promise<string[]>
+  whatIsLeft(target: ClosableSession, waitUntil: number): Promise<string[]>
   closeSoon(
     inOrder: ClosableSession[],
     tellStarter: (closed: ClosableSession, text: string) => void
@@ -763,7 +763,8 @@ interface StartedSessionsToClose {
 async function startedSessionsToClose(
   d: SessionVerbDeps,
   target: ClosableSession,
-  callerTab: string
+  callerTab: string,
+  waitUntil: number
 ): Promise<StartedSessionsToClose> {
   const found: StartedSessionsToClose = { close: [], kept: [], open: [] }
   const all = d.closable()
@@ -780,7 +781,7 @@ async function startedSessionsToClose(
       return false
     })
     const lefts = await Promise.all(
-      ended.map((kid) => (kid.treeRoot === target.treeRoot ? [] : d.whatIsLeft(kid)))
+      ended.map((kid) => (kid.treeRoot === target.treeRoot ? [] : d.whatIsLeft(kid, waitUntil)))
     )
     const closing = ended.filter((kid, i) => {
       if (!lefts[i].length) return true
@@ -809,6 +810,9 @@ export const THAT_IS_YOU = 'That is you.'
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
 const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
   AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS
+const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
+export const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
+  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 const RESUME_USAGE =
   'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."'
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
@@ -1288,6 +1292,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, forTheOwner)
     if (sub === 'close') {
+      const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
       const queued = ref !== undefined ? queuedStartedBy(d, caller.session, ref) : undefined
@@ -1300,12 +1305,12 @@ export function sessionVerb(d: SessionVerbDeps): {
         if (!hit.ok) return refused(hit.error)
         target = hit.value
       }
-      const left = await d.whatIsLeft(target)
+      const left = await d.whatIsLeft(target, waitUntil)
       if (left.length > 0)
         return refused(
           `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
-      const started = await startedSessionsToClose(d, target, caller.tabId)
+      const started = await startedSessionsToClose(d, target, caller.tabId, waitUntil)
       d.closeSoon([target, ...started.close], (closed, text) => {
         const [id] = d.startedSessions.startersOf(closed)
         const starter = id === undefined ? undefined : sessionTarget(d, id)
