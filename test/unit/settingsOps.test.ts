@@ -351,4 +351,19 @@ describe('session methods', () => {
       enabled: { claude: true, codex: false, muse: false, agy: false }
     })
   })
+  it('moves Assist off a method that is switched off, to the default method, and leaves it on one that is on', () => {
+    const off = { claude: false, codex: true, muse: true, agy: true }
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: true, backend: 'claude' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: true, backend: 'muse' })
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: false, backend: 'agy' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: false, backend: 'agy' })
+  })
 })

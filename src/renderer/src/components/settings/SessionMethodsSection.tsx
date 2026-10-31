@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  assistOnAMethodThatIsOn,
   BACKEND_LABEL,
   SESSION_BACKENDS,
   lastOneOn,
@@ -38,12 +39,7 @@ export function SessionMethodsSection() {
       ...methods,
       enabled: { ...methods.enabled, [backend]: on }
     })
-    update({
-      sessionMethods: next,
-      ...(assist && !next.enabled[assist.backend]
-        ? { assist: { ...assist, backend: next.defaultBackend } }
-        : {})
-    })
+    update({ sessionMethods: next, assist: assistOnAMethodThatIsOn(assist, next) })
   }
   const [detected, setDetected] = useState<Detected | 'error' | null>(null)
   useEffect(() => {

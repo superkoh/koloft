@@ -87,7 +87,8 @@ import {
   backendsFrom,
   messagingOf,
   reachedBySendMessage,
-  preferredAssistBackend
+  preferredAssistBackend,
+  effectiveBackend
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
@@ -5310,14 +5311,18 @@ const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
 
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
-  const { enabled } = loadSettings().sessionMethods
   return startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
     ownerWords: words,
-    backend: HAS_WORKBENCH_BROWSER.includes(butler.backendId)
-      ? butler.backendId
-      : (HAS_WORKBENCH_BROWSER.find((b) => enabled[b]) ?? HAS_WORKBENCH_BROWSER[0])
+    backend: discordHelperBackend(butler.backendId)
   }))
+}
+
+function discordHelperBackend(butlerBackend: BackendId): BackendId {
+  const methods = loadSettings().sessionMethods
+  return HAS_WORKBENCH_BROWSER.includes(butlerBackend) && methods.enabled[butlerBackend]
+    ? butlerBackend
+    : effectiveBackend(methods, new Set(HAS_WORKBENCH_BROWSER))
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
