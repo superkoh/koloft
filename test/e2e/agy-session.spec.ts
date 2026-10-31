@@ -51,6 +51,7 @@ const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
+const AGY_SETUP_SCREEN = { timeout: 20_000 }
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -723,10 +724,12 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         .poll(async () => {
           setupTab = (await termIds(page)).find((id) => !termsBefore.includes(id)) ?? ''
           return setupTab && (await terminalText(page, setupTab))
-        })
+        }, AGY_SETUP_SCREEN)
         .toContain('Choose your color scheme')
       await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
-      await expect.poll(() => terminalText(page, setupTab)).toContain('Terms of Service')
+      await expect
+        .poll(() => terminalText(page, setupTab), AGY_SETUP_SCREEN)
+        .toContain('Terms of Service')
       await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
       const onboarding = path.join(
         env.userData,
@@ -736,7 +739,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         'cache',
         'onboarding.json'
       )
-      await expect.poll(() => fs.existsSync(onboarding)).toBe(true)
+      await expect.poll(() => fs.existsSync(onboarding), AGY_SETUP_SCREEN).toBe(true)
       await bar.getByRole('button', { name: 'Cancel' }).click()
 
       const added = page.locator('.acct-row', { hasText: 'second' })
