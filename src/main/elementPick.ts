@@ -48,6 +48,7 @@ export interface PickedElement {
   html: string
   css: Record<string, string>
   png: Buffer | null
+  pictureFailed: string | null
 }
 
 const SHORTHAND_PARTS: Record<string, string[]> = {
@@ -99,7 +100,10 @@ export function elementLabel(node: { localName: string; attributes?: string[] })
 }
 
 // CC§18 CODEX§23
-export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null): string {
+export function pickText(
+  p: Omit<PickedElement, 'png' | 'pictureFailed'>,
+  picture: string | null
+): string {
   const html =
     p.html.length > HTML_KEPT_CHARS
       ? `${p.html.slice(0, HTML_KEPT_CHARS)}… ${p.html.length - HTML_KEPT_CHARS} more characters`
@@ -218,11 +222,11 @@ async function frameOffset(wc: WebContents, frame: Frame): Promise<{ x: number; 
 }
 
 // PLATFORM§16
-async function picture(
+export async function picture(
   wc: WebContents,
   root: Frame,
   box: PickedElement['box']
-): Promise<Buffer | null> {
+): Promise<Pick<PickedElement, 'png' | 'pictureFailed'>> {
   const { cssLayoutViewport: view } = (await send(wc, root, 'Page.getLayoutMetrics')) as {
     cssLayoutViewport: { clientWidth: number; clientHeight: number }
   }
@@ -230,19 +234,23 @@ async function picture(
   const top = Math.max(0, box.y)
   const right = Math.min(view.clientWidth, box.x + box.width)
   const bottom = Math.min(view.clientHeight, box.y + box.height)
-  if (right <= left || bottom <= top) return null
+  if (right <= left || bottom <= top) return { png: null, pictureFailed: null }
   const zoom = wc.getZoomFactor()
-  const image = await within(
-    wc.capturePage({
-      x: Math.round(left * zoom),
-      y: Math.round(top * zoom),
-      width: Math.round((right - left) * zoom),
-      height: Math.round((bottom - top) * zoom)
-    }),
-    A_CAPTURE_ANSWERS_WITHIN_MS,
-    'capture'
-  ).catch(() => null)
-  return image && !image.isEmpty() ? image.toPNG() : null
+  try {
+    const image = await within(
+      wc.capturePage({
+        x: Math.round(left * zoom),
+        y: Math.round(top * zoom),
+        width: Math.round((right - left) * zoom),
+        height: Math.round((bottom - top) * zoom)
+      }),
+      A_CAPTURE_ANSWERS_WITHIN_MS,
+      `the page did not answer within ${A_CAPTURE_ANSWERS_WITHIN_MS / 1000} s`
+    )
+    return { png: image.isEmpty() ? null : image.toPNG(), pictureFailed: null }
+  } catch (error) {
+    return { png: null, pictureFailed: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 async function readPick(
@@ -279,7 +287,7 @@ async function readPick(
     box,
     html: outerHTML,
     css: Object.fromEntries(computedStyle.map((c) => [c.name, c.value])),
-    png: await picture(wc, root, box)
+    ...(await picture(wc, root, box))
   }
 }
 

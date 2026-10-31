@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cssLines, elementLabel, pickText } from '../../src/main/elementPick'
+import { cssLines, elementLabel, pickText, picture } from '../../src/main/elementPick'
 import {
   closeOwnSession,
   hiddenFromClients,
@@ -72,6 +72,32 @@ describe('the text a pick pastes into the session', () => {
     const text = pickText({ ...picked, html: 'x'.repeat(4500) }, null)
     expect(text).toContain(`${'x'.repeat(4000)}… 500 more characters`)
     expect(text).not.toContain('x'.repeat(4001))
+  })
+})
+
+describe('the picture of a picked element', () => {
+  const guestWhoseCaptureThrows = {
+    debugger: {
+      sendCommand: async () => ({ cssLayoutViewport: { clientWidth: 800, clientHeight: 600 } })
+    },
+    getZoomFactor: () => 1,
+    capturePage: () => Promise.reject(new Error('Current display surface not available'))
+  } as unknown as Parameters<typeof picture>[0]
+  const root = { session: 'S-1', targetId: 'PAGE-1', url: 'http://127.0.0.1:5173/', parent: null }
+
+  it('carries the reason out when the capture fails, so the pick can say so', async () => {
+    expect(await picture(guestWhoseCaptureThrows, root, picked.box)).toEqual({
+      png: null,
+      pictureFailed: 'Current display surface not available'
+    })
+  })
+
+  it('stays quiet for an element scrolled fully out of view', async () => {
+    const below = { x: 10, y: 900, width: 200, height: 60 }
+    expect(await picture(guestWhoseCaptureThrows, root, below)).toEqual({
+      png: null,
+      pictureFailed: null
+    })
   })
 })
 
