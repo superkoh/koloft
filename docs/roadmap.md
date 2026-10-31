@@ -80,14 +80,9 @@ Reopen one of these only with new evidence, not a new argument.
   a sibling session through messages (Claude Code's own `SendMessage`, and
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
-  Three exceptions, all the owner's decisions. First, a `koloft session send`
-  to a Claude session on another machine over ssh is typed into its terminal, because
-  that session's message socket is on the other machine where Koloft cannot reach it.
-  Koloft types only when that session's turn has ended and it shows no dialog; its state
-  arrives a mirror pull late, so a message can still land in a turn that just began,
-  where Claude queues it. Second, `koloft session command` types a slash
+  Two exceptions, both the owner's decisions. First, `koloft session command` types a slash
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
-  types it only when that session is idle with no question or menu showing. Third,
+  types it only when that session is idle with no question or menu showing. Second,
   `koloft session keys` presses keys in a session (CC§12, CODEX§25). Koloft's own
   notice — the default branch moved, or another open session of the repository changed
   a file this one changed too — is neither typed nor sent: a session at work gets it at
