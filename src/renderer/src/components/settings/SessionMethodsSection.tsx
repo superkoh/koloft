@@ -31,7 +31,20 @@ function statusLine(found: Detected[number] | undefined): string {
 
 export function SessionMethodsSection() {
   const methods = useStore((s) => s.settings.sessionMethods)
+  const assist = useStore((s) => s.settings.assist)
   const update = useSettingsUpdate()
+  const switchMethod = (backend: BackendId, on: boolean): void => {
+    const next = normalizeSessionMethods({
+      ...methods,
+      enabled: { ...methods.enabled, [backend]: on }
+    })
+    update({
+      sessionMethods: next,
+      ...(assist && !next.enabled[assist.backend]
+        ? { assist: { ...assist, backend: next.defaultBackend } }
+        : {})
+    })
+  }
   const [detected, setDetected] = useState<Detected | 'error' | null>(null)
   useEffect(() => {
     let alive = true
@@ -93,14 +106,7 @@ export function SessionMethodsSection() {
                   ? `Turn on another method before turning ${BACKEND_LABEL[backend]} off`
                   : `Enable ${BACKEND_LABEL[backend]} for new sessions`
               }
-              onChange={(on) =>
-                update({
-                  sessionMethods: normalizeSessionMethods({
-                    ...methods,
-                    enabled: { ...methods.enabled, [backend]: on }
-                  })
-                })
-              }
+              onChange={(on) => switchMethod(backend, on)}
             />
           </div>
         )

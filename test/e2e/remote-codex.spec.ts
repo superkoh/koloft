@@ -20,6 +20,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   startSessionIn,
   switchToRow,
   terminalText,
@@ -527,7 +528,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
-  test('E-RC-12: with Claude switched off in Settings ▸ Sessions, Codex becomes the default, the last method left on cannot be switched off, and the New session menus of this Mac and of the remote workspace offer no Claude and start Codex', async ({
+  test('E-RC-12: with Claude switched off in Settings ▸ Sessions, Codex becomes the default and what Koloft Assist runs on, the last method left on cannot be switched off, and the New session menus of this Mac and of the remote workspace offer no Claude and start Codex', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -541,8 +542,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       const methodSwitch = (name: string): Locator =>
         page.getByRole('switch', { name: `Enable ${name}`, exact: true })
       await expect(defaultMethod).toHaveText('Claude')
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
       await methodSwitch('Claude').uncheck()
       await expect(defaultMethod).toHaveText('Codex')
+      await expect.poll(() => settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
       await methodSwitch('Muse').uncheck()
       await expect(methodSwitch('Codex')).toBeEnabled()
       await methodSwitch('Antigravity').uncheck()
