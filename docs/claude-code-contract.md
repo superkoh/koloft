@@ -2182,6 +2182,28 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   between them claude was still running 20 s later, its footer back to "Press Ctrl-C
   again to exit"; with 0.3 s it exited. Measured 2026-10-29, CC 2.1.312, a python pty
   80×24 through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR` with the folder trusted.
+- **Enter strips invisible characters from the input box; up to 2.1.314 that Enter does
+  not send, since 2.1.316 a prompt goes on the first Enter but a command still waits.**
+  Text with a U+200B or a tag character (U+E0041) in it, typed in 128-character pieces
+  0.3 s apart and then one CR: on 2.1.293 and 2.1.314 the character was removed, a
+  notice `Removed 1 invisible character · review and press Enter to send` showed above
+  the box for a few seconds, the cleaned text stayed in the box, and only a second CR
+  sent it; on 2.1.316 the first CR sent the cleaned text and the notice read `Removed 1
+invisible character from your prompt`. A short bracketed paste holding a U+200B
+  followed by typed text behaved the same way on each version. An emoji ZWJ sequence
+  (👨‍👩‍👧), `❤️` (U+FE0F) and `请只回复 OK 👍` were kept as they were and sent on the first
+  CR on all three. On 2.1.316 `/context` and `/cost` with a U+200B appended were held
+  the same way as before, and a second CR ran them. Measured 2026-10-31, a python pty
+  120×40 drawn through `pyte`, a scratch `HOME`, haiku, one run per case (two for U+200B
+  on 2.1.314 and 2.1.316, and for the tag character on 2.1.316). Read from the
+  binaries' `strings` the same day: the character set removed is the same in 2.1.314
+  and 2.1.316 (C0/C1 controls except tab and LF, U+200B–200F, U+2028–202E,
+  U+2060–206F, U+FE00–FE0F, U+FEFF, U+E0000–E0FFF and a few more), but a ZWJ between
+  two emoji, a U+FE0F after an emoji and the tag characters of the England, Scotland and
+  Wales flags are kept; 2.1.316 still holds text that starts with `/` or `!`, is one of
+  `exit`, `quit`, `:q`, `:q!`, `:wq` or `:wq!`, or had a text-direction character
+  removed. A prompt handed over as a launch argument is cleaned and sent without
+  review, unless it starts with `/` (`strings`, not run).
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
