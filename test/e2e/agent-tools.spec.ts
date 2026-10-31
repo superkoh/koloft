@@ -575,8 +575,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const run = readCalls(env).find((c) => c.argv[c.argv.indexOf('-w') + 1]?.startsWith('tidy-'))!
       const wt = run.argv[run.argv.indexOf('-w') + 1]
       const tree = path.join(fx.clone, '.claude', 'worktrees', wt)
-      await expect.poll(() => fs.existsSync(path.join(tree, 'NOTES.md'))).toBe(true)
-      fs.rmSync(path.join(tree, 'NOTES.md'))
 
       const halfWay = installHalfWayWorktreeRemoval(
         env,
@@ -597,8 +595,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const nextWt = next.argv[next.argv.indexOf('-w') + 1]
       const nextTree = path.join(fx.clone, '.claude', 'worktrees', nextWt)
       await expect(runRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      await expect.poll(() => fs.existsSync(path.join(nextTree, 'NOTES.md'))).toBe(true)
-      fs.rmSync(path.join(nextTree, 'NOTES.md'))
       expect(await koloftInSession(page, `session close ${next.sessionId}`)).toBe('0')
       await expect(runRow).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(nextTree), { timeout: 30_000 }).toBe(false)
