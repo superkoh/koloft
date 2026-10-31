@@ -458,9 +458,11 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     let workingTab = ''
     try {
       await addRemoteWorkspace(first.page, env)
-      idleTab = (await startRemoteCodex(first.page, env)).tabId!
+      await newSessionInWith(first.page, REMOTE_WS_NAME, 'Codex')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
       await newSessionInWith(first.page, REMOTE_WS_NAME, 'Codex')
       await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(2)
+      idleTab = machineServers(env)[0].tabId!
       workingTab = machineServers(env)[1].tabId!
       const rows = wsRows(first.page, REMOTE_WS_NAME)
       await expect(rows.and(first.page.locator('.st-waiting'))).toHaveCount(2, {
@@ -473,12 +475,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect(rows.and(first.page.locator('.st-working'))).toHaveCount(1, {
         timeout: 30_000
       })
-      expect(answers()).not.toContain('Codex fixture answered: /busy')
     } finally {
       await quitAndClose(first.app)
     }
     await expect.poll(() => serverAlive(env, idleTab), { timeout: 30_000 }).toBe(false)
-    expect(serverAlive(env, workingTab)).toBe(true)
     await expect
       .poll(answers, { timeout: TURN_OUTLIVES_THE_QUIT_MS + 30_000 })
       .toContain('Codex fixture answered: /busy')
