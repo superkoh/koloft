@@ -1513,6 +1513,7 @@ export interface SpawnedTab {
   title: string
   jobId?: string
   sessionId?: string
+  launch?: CreateTabOptions
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {

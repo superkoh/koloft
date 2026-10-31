@@ -925,6 +925,7 @@ export default function App(): JSX.Element {
         cwd: t.cwd,
         alive: true,
         jobId: t.jobId,
+        launch: t.launch && launchToStartAgain(t.launch, t.cwd),
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })

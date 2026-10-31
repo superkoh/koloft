@@ -15,6 +15,13 @@ export class StartedSessions {
     this.parentOfWaitingTab.set(childTabId, parentSessionId)
   }
 
+  moved(oldTabId: string, newTabId: string): void {
+    const parent = this.parentOfWaitingTab.get(oldTabId)
+    if (parent === undefined) return
+    this.parentOfWaitingTab.delete(oldTabId)
+    this.parentOfWaitingTab.set(newTabId, parent)
+  }
+
   bound(tabId: string, sessionId: string): void {
     const parents = this.parents()
     let changed = false
