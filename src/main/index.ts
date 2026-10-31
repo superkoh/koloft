@@ -684,10 +684,20 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
-const panelOpenOn: Record<
-  BackendId,
-  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
-> = {
+type PanelOpen = (
+  tabId: string,
+  sessionId: string,
+  screen?: string[]
+) => Promise<boolean | undefined>
+
+function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
+  return async (tabId, _sessionId, screen) => {
+    const lines = screen ?? (await screenLines(tabId))
+    return lines && shows(lines)
+  }
+}
+
+const panelOpenOn: Record<BackendId, PanelOpen> = {
   claude: async (tabId, sessionId) => {
     if (!sessionId) return undefined
     const host = tracker.remoteOf(tabId)?.host
@@ -695,14 +705,8 @@ const panelOpenOn: Record<
     const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
     return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
-  codex: async (tabId, _sessionId, screen) => {
-    const lines = screen ?? (await screenLines(tabId))
-    return lines && codexShowsAPanel(lines)
-  },
-  muse: async (tabId, _sessionId, screen) => {
-    const lines = screen ?? (await screenLines(tabId))
-    return lines && !museShowsItsInputBox(lines)
-  },
+  codex: panelOnScreen(codexShowsAPanel),
+  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
   agy: async () => undefined
 }
 

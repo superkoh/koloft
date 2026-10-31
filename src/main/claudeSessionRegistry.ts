@@ -108,13 +108,16 @@ export async function messagingSocketOf(
 }
 
 // CC§11
+function panelFromStatus(status: string | undefined): boolean | undefined {
+  return status === undefined ? undefined : status === 'waiting'
+}
+
 export async function claudeShowsAPanel(
   sessionId: string,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<boolean | undefined> {
-  const status = (await liveEntryOf(sessionId, dir, startOf))?.status
-  return status === undefined ? undefined : status === 'waiting'
+  return panelFromStatus((await liveEntryOf(sessionId, dir, startOf))?.status)
 }
 
 export function whenMessagingSocket(
@@ -191,10 +194,11 @@ export function claudeShowsAPanelOnMachine(
   liveRegistry: string,
   sessionId: string
 ): boolean | undefined {
-  const status = tabEntriesOnMachine(liveRegistry, sessionId).find(
-    (entry) => typeof entry.status === 'string'
-  )?.status
-  return status === undefined ? undefined : status === 'waiting'
+  return panelFromStatus(
+    tabEntriesOnMachine(liveRegistry, sessionId)
+      .map((entry) => entry.status)
+      .find((status): status is string => typeof status === 'string')
+  )
 }
 
 const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000

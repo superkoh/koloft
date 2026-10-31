@@ -1,5 +1,3 @@
-import { withoutBlankEdges } from './messageText'
-
 const INPUT_BOX_RULE = /^─.*─{8,}$/
 const INPUT_ROW_MARK = '❯'
 const CODEX_COMPOSER_MARK = '›'
@@ -23,11 +21,9 @@ export function codexComposerDraft(lines: string[]): string | undefined {
 }
 
 const CODEX_PANEL_KEY_HINT = /\b(esc (back|close|exit)|q close)\b/
-const CODEX_PANEL_HINT_WITHIN_BOTTOM_ROWS = 8
 
 // CODEX§21
-export function codexShowsAPanel(lines: string[]): boolean {
-  return withoutBlankEdges(lines)
-    .slice(-CODEX_PANEL_HINT_WITHIN_BOTTOM_ROWS)
-    .some((line) => CODEX_PANEL_KEY_HINT.test(line))
+export function codexShowsAPanel(lines: string[]): true | undefined {
+  const lastMarkedRow = lines.findLastIndex((line) => line.startsWith(CODEX_COMPOSER_MARK))
+  return lines.slice(lastMarkedRow + 1).some((line) => CODEX_PANEL_KEY_HINT.test(line)) || undefined
 }

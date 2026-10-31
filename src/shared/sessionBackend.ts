@@ -170,7 +170,6 @@ const EVERYTHING: Capabilities = {
 const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
   ...EVERYTHING,
   askHookWaitsForDiscord: PENDING,
-  panelSeen: PENDING,
   worktreeRemovalFollowed: PENDING
 }
 
@@ -184,21 +183,20 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   claude: {
     local: EVERYTHING,
     // PLATFORM§33
-    ssh: { ...ON_A_MACHINE, browserControl: true, panelSeen: true, worktreeRemovalFollowed: true }
+    ssh: { ...ON_A_MACHINE, browserControl: true, worktreeRemovalFollowed: true }
   },
-  // CODEX§21
   codex: {
-    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
+    local: OUTSIDE_LOCAL_CLAUDE,
     // CODEX§16
-    ssh: { ...ON_A_MACHINE, panelSeen: true }
+    ssh: ON_A_MACHINE
   },
   muse: {
-    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
-    ssh: { ...ON_A_MACHINE, panelSeen: true }
-  },
-  agy: {
     local: OUTSIDE_LOCAL_CLAUDE,
     ssh: ON_A_MACHINE
+  },
+  agy: {
+    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: PENDING },
+    ssh: { ...ON_A_MACHINE, panelSeen: PENDING }
   }
 }
 

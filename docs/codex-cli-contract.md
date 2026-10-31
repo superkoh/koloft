@@ -2047,8 +2047,11 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   footer (`<model> · <folder>`, `? for shortcuts`), and Esc after them changes nothing
   there. Esc at the empty composer of a thread with no message printed "No previous
   message to edit." (the "esc again …" hint below needs a sent message, not raised
-  here). So "a panel is open" is read as one of those key hints in the last few rows,
-  not as a missing `›` row.
+  here). An empty composer draws its placeholder as text (`› Ask Codex to do anything`),
+  so the screen does not tell an empty composer from one holding a leftover command.
+  So "a panel is open" is read as one of those key hints below the last row that starts
+  with `›` (the whole screen when none does), never from a missing `›` row, and no hint
+  is not read as "no panel".
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two

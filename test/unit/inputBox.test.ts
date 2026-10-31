@@ -6,9 +6,9 @@ const COMPOSER = ['› Ask Codex to do anything', ...FOOTER]
 const RULE = '─'.repeat(100)
 
 // CODEX§21
-describe('Codex shows a panel: what its TUI draws at the bottom of the screen', () => {
-  it('sees no panel at the idle composer, after /status or /mcp drew their answer above it, or after an Esc at the composer', () => {
-    expect(codexShowsAPanel(['  >_ OpenAI Codex (v0.166.0)', '', ...COMPOSER])).toBe(false)
+describe('Codex shows a panel: the closing key a menu, list or pager names under its last › row', () => {
+  it('never answers "no panel", since a command left unsent in the composer looks like an empty one, and a reply above the composer that names those keys is not a panel', () => {
+    expect(codexShowsAPanel(['  >_ OpenAI Codex (v0.166.0)', '', ...COMPOSER])).toBeUndefined()
     expect(
       codexShowsAPanel([
         '/status',
@@ -17,17 +17,13 @@ describe('Codex shows a panel: what its TUI draws at the bottom of the screen', 
         '',
         ...COMPOSER
       ])
-    ).toBe(false)
+    ).toBeUndefined()
     expect(
-      codexShowsAPanel(['/mcp', '🔌  MCP Tools', '  • docs: connected (3 tools)', '', ...COMPOSER])
-    ).toBe(false)
-    expect(codexShowsAPanel(['• No previous message to edit.', '', ...COMPOSER])).toBe(false)
-    expect(
-      codexShowsAPanel(['› Ask Codex to do anything', '', '  esc again to edit previous message'])
-    ).toBe(false)
+      codexShowsAPanel(['• The pager says q close, and the picker says esc back.', '', ...COMPOSER])
+    ).toBeUndefined()
   })
 
-  it('sees the pickers /model, /permissions and /review, the /keymap list and the /mention menu over the composer', () => {
+  it('sees the pickers /model, /permissions and /review and the /keymap list, whose highlighted row carries the › mark', () => {
     expect(
       codexShowsAPanel([
         '  Select Model and Effort',
@@ -44,23 +40,6 @@ describe('Codex shows a panel: what its TUI draws at the bottom of the screen', 
         '  Composer       Submit                     enter',
         '↓',
         '  left/right group · enter edit shortcut · * custom · - unbound · esc close'
-      ])
-    ).toBe(true)
-    expect(
-      codexShowsAPanel([
-        '  Mentions',
-        '› Image Gen        Generate or edit images for websites, games, and more   Skill',
-        '  OpenAI Docs      OpenAI and Codex docs for models, skills, tasks, and setup   Skill',
-        '',
-        '',
-        '',
-        '',
-        '  enter/tab insert · esc close · ↑/↓ select · ←/→ filter',
-        '',
-        '› @',
-        '',
-        '  GPT-6.1-Sol default · ~/work',
-        ''
       ])
     ).toBe(true)
   })

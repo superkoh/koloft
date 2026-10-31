@@ -23,6 +23,7 @@ import {
   openWorktreeSession,
   startSessionIn,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
@@ -1027,6 +1028,74 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       )
       expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toMatch(/koloft/)
       expect(fs.existsSync(path.join(env.home, '.codex', 'skills', 'koloft'))).toBe(false)
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
+function handedToTheCaller(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => (JSON.parse(l) as { message: { content: string } }).message.content)
+    .filter((m) => m.includes('(From Koloft:) '))
+}
+
+const A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS = 60_000
+
+// CODEX§21
+test.describe('koloft session command in a REAL Codex tab: an opt-in case; it runs no model turn', () => {
+  test('/model opens a picker, which Koloft closes with Esc and says so; the next command, /status, is typed into the composer, not the picker, and its answer comes back on the screen', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(240_000)
+    useRealCodex(env, [env.workspaces.a])
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-b')
+      await waitStartupTurnOver(page, 'ws-b')
+      const caller = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const thread = (await boundSessionId(page, tabId))!
+      const runInCodex = async (command: string): Promise<string> => {
+        const before = handedToTheCaller(env).length
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [caller, `/koloft session command ${thread} ${command}\r`]
+        )
+        await expect
+          .poll(() => handedToTheCaller(env).length, {
+            timeout: A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS
+          })
+          .toBeGreaterThan(before)
+        return handedToTheCaller(env)[before]
+      }
+
+      const model = await runInCodex('/model')
+      expect(model).toMatch(/ran \/model:[\s\S]*Select Model and Effort[\s\S]*esc back/)
+      expect(model).toContain('Koloft pressed Esc')
+
+      const status = await runInCodex('/status')
+      expect(status).toMatch(/ran \/status:[\s\S]*Model:/)
+      expect(status).not.toContain('esc back')
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
       throw e
