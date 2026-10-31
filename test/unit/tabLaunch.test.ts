@@ -196,7 +196,9 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       tabDir: (tabId) => path.join(tabDirs, tabId),
       fileExists: async () => false,
-      keyed: (machine, p) => `ssh://${machine}${p}`
+      keyed: (machine, p) => `ssh://${machine}${p}`,
+      mirrorDir: () => tabDirs,
+      nextPull: async () => {}
     },
     changed: () => {},
     events: () => {},

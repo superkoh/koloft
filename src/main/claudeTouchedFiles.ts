@@ -55,4 +55,10 @@ export class ClaudeTouchedFiles {
     }
     return false
   }
+
+  noteShellWrite(abs: string, at: number): void {
+    noteWrite(this.files, abs, 0, 0, at)
+    this.lastTouched = abs
+    this.lastWritten = abs
+  }
 }

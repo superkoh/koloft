@@ -143,9 +143,20 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       .map((k) => process.env[k])
   })
   // CODEX§27
+  const STRING = '("(?:[^"\\\\]|\\\\.)*")'
   const sessionHooks = argv.flatMap((value) => {
-    const m = /^hooks\.(\w+)=.*command=("(?:[^"\\]|\\.)*")/.exec(value)
-    return m ? [{ event: m[1], command: JSON.parse(m[2]) }] : []
+    const event = /^hooks\.(\w+)=/.exec(value)?.[1]
+    if (!event) return []
+    const groups = new RegExp(
+      `\\{(?:matcher=${STRING},)?hooks=\\[\\{type="command",command=${STRING}`,
+      'g'
+    )
+    return [...value.matchAll(groups)].map((m, group) => ({
+      event,
+      group,
+      matcher: m[1] ? JSON.parse(m[1]) : undefined,
+      command: JSON.parse(m[2])
+    }))
   })
   const snakeCase = (event) => event.replace(/[A-Z]/g, (c, i) => (i ? '_' : '') + c.toLowerCase())
   const gateHooks = () => {
@@ -155,8 +166,8 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     } catch {}
     const lines = config.split('\n')
     const hooks = []
-    for (const { event, command } of sessionHooks) {
-      const key = `/<session-flags>/config.toml:${snakeCase(event)}:0:0`
+    for (const { event, group, matcher, command } of sessionHooks) {
+      const key = `/<session-flags>/config.toml:${snakeCase(event)}:${group}:0`
       const table = `[hooks.state."${key}"]`
       const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
       if (lines.filter((line) => line.trim() === table).length > 1)
@@ -172,20 +183,36 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
             ? 'modified'
             : 'untrusted'
       const eventName = event.charAt(0).toLowerCase() + event.slice(1)
-      hooks.push({ key, eventName, command, source: 'sessionFlags', currentHash, trustStatus })
+      hooks.push({
+        key,
+        eventName,
+        command,
+        matcher,
+        source: 'sessionFlags',
+        currentHash,
+        trustStatus
+      })
     }
     return { hooks, errors: [] }
   }
   const runHook = (event, payload) => {
     const eventName = event.charAt(0).toLowerCase() + event.slice(1)
-    const hook = gateHooks().hooks.find((h) => h.eventName === eventName)
-    if (hook?.trustStatus !== 'trusted') return
-    const ran = spawnSync('/bin/sh', ['-c', hook.command], {
-      input: JSON.stringify({ ...payload, hook_event_name: event }),
-      encoding: 'utf8'
-    })
-    append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
-    return ran.stdout
+    const hooks = gateHooks().hooks.filter(
+      (h) =>
+        h.eventName === eventName &&
+        h.trustStatus === 'trusted' &&
+        (!h.matcher || h.matcher === payload.tool_name)
+    )
+    let stdout = ''
+    for (const hook of hooks) {
+      const ran = spawnSync('/bin/sh', ['-c', hook.command], {
+        input: JSON.stringify({ ...payload, hook_event_name: event }),
+        encoding: 'utf8'
+      })
+      append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
+      stdout += ran.stdout
+    }
+    return hooks.length ? stdout : undefined
   }
   const threadsWorkingHere = new Set()
   const serve = (write) => {
@@ -328,6 +355,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       if (ran) {
         const [, tool, rest] = ran
         const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
+        const call = {
+          session_id: thread.id,
+          cwd: thread.cwd,
+          tool_name: 'Bash',
+          tool_input: { command },
+          tool_use_id: `call-${turn.id}`
+        }
+        runHook('PreToolUse', call)
         execFile(SHELL, [SHELL_FLAG, command], { cwd: thread.cwd }, (e, out, err) => {
           const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
           event('item/completed', {
@@ -344,7 +379,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
               commandActions: [{ type: 'unknown', command }]
             }
           })
-          runHook('PostToolUse', { session_id: thread.id, cwd: thread.cwd, tool_name: 'Bash' })
+          runHook('PostToolUse', call)
           complete(thread, turn)
         })
         return

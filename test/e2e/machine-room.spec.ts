@@ -55,7 +55,10 @@ test.describe('while the Mac is busy, a session started for someone else does no
           timeout: 30_000
         })
         .toBe(true)
-      expect(settingsOf(env, helper!).hooks.PreToolUse).toBeUndefined()
+      const before = settingsOf(env, helper!).hooks.PreToolUse as { hooks: { command: string }[] }[]
+      expect(before.flatMap((e) => e.hooks.map((h) => h.command.split(' ').pop()))).toEqual([
+        'shell-before'
+      ])
     } finally {
       await app.close().catch(() => {})
     }

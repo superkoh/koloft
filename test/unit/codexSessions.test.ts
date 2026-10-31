@@ -11,7 +11,11 @@ import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/
 import type { MachineLogin } from '../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
-import { CODEX_REPLY_LANGUAGE_HOOKS, codexHoldHook } from '../../src/main/hooks'
+import {
+  CODEX_REPLY_LANGUAGE_HOOKS,
+  CODEX_SHELL_WRITES_HOOKS,
+  codexHoldHook
+} from '../../src/main/hooks'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { execFileSync, spawn } from 'child_process'
@@ -103,11 +107,15 @@ const RESERVED_TAB_PLAYWRIGHT_ENV = {
   PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
 }
 
-const REPLY_LANGUAGE_LISTED = CODEX_REPLY_LANGUAGE_HOOKS.map(({ event, command }) => ({
-  key: `/<session-flags>/config.toml:${event}:0:0`,
-  eventName: event.charAt(0).toLowerCase() + event.slice(1),
-  command
-}))
+const SHELL_LOOK_BEFORE = `hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command=${JSON.stringify(CODEX_SHELL_WRITES_HOOKS[0].command)}}]}`
+
+const REPLY_LANGUAGE_LISTED = [...CODEX_REPLY_LANGUAGE_HOOKS, ...CODEX_SHELL_WRITES_HOOKS].map(
+  ({ event, command }, i) => ({
+    key: `/<session-flags>/config.toml:${event}:${i}:0`,
+    eventName: event.charAt(0).toLowerCase() + event.slice(1),
+    command
+  })
+)
 
 function hookListing(trustStatus: string, listed = REPLY_LANGUAGE_LISTED) {
   return {
@@ -142,6 +150,8 @@ function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
     tabDir: () => directory,
     fileExists: async () => false,
     keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
+    mirrorDir: () => directory,
+    nextPull: async () => {},
     ...overrides
   }
 }
@@ -1350,7 +1360,9 @@ describe('CodexSessions', () => {
 
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
     const tab = transports[2].options
-    expect(tab.configOverrides!.some((o) => o.startsWith('hooks.PreToolUse='))).toBe(false)
+    expect(tab.configOverrides!.filter((o) => o.startsWith('hooks.PreToolUse='))).toEqual([
+      `${SHELL_LOOK_BEFORE}]`
+    ])
     expect(tab.configOverrides).toContain(CODEX_ASKS_AND_WAITS)
     expect(replyHooks(tab)).toHaveLength(2)
     const checker = mocks.rpcOptions.at(-1)!
@@ -1404,7 +1416,7 @@ describe('CodexSessions', () => {
     const listed = [
       ...REPLY_LANGUAGE_LISTED,
       {
-        key: '/<session-flags>/config.toml:pre_tool_use:0:0',
+        key: '/<session-flags>/config.toml:pre_tool_use:1:0',
         eventName: 'preToolUse',
         command: hold.command
       }
@@ -1415,9 +1427,9 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     await sessions.launch({ kind: 'codex', cwd: repo, tabId: 'pty-bg' })
     const [owner, background] = transports.map((t) => t.options)
-    expect(owner.configOverrides!.some((o) => o.startsWith('hooks.PreToolUse='))).toBe(false)
+    expect(owner.configOverrides).toContain(`${SHELL_LOOK_BEFORE}]`)
     expect(background.configOverrides).toContain(
-      `hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command=${JSON.stringify(hold.command)},timeout=60}]}]`
+      `${SHELL_LOOK_BEFORE},{matcher="Bash",hooks=[{type="command",command=${JSON.stringify(hold.command)},timeout=60}]}]`
     )
     expect(hold.command).toMatch(/ 25$/)
     fs.writeFileSync(path.join(reg, BUSY_MARKER), '')

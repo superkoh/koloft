@@ -354,6 +354,29 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       hook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command', args: {} } })
     ).toBe('')
   })
+
+  it("a run_command's PostToolUse line carries the files the command changed in its Cwd's repository since its PreToolUse, and the agy log reads them, under dash as on a Linux machine", () => {
+    const repo = path.join(dir, 'repo')
+    fs.mkdirSync(repo)
+    spawnSync('git', ['init', '-q'], { cwd: repo })
+    const call = {
+      conversationId: 'conv-1',
+      workspacePaths: [repo],
+      stepIdx: 4,
+      toolCall: { args: { CommandLine: 'printf x > made.txt', Cwd: repo }, name: 'run_command' }
+    }
+    const underDash = (event: string, input: unknown): string =>
+      run(commandFor(event).replace(/^\/bin\/sh /, '/bin/dash '), JSON.stringify(input), {
+        KOLOFT_AGY_LOG: log,
+        PATH: process.env.PATH!
+      })
+    underDash('PreToolUse', call)
+    fs.writeFileSync(path.join(repo, 'made.txt'), 'x')
+    underDash('PostToolUse', { ...call, error: '' })
+    expect(logged().at(-1)).toMatchObject({
+      hook: { event: 'PostToolUse', input: { wrote: [path.join(repo, 'made.txt')] } }
+    })
+  })
 })
 
 // PLATFORM§36 AGY§12

@@ -10,6 +10,7 @@ import {
 import {
   HOLD_FILE,
   HOLD_TAB_ENV,
+  hookField,
   JSON_STRING_BODY,
   KEEP_GOING_FOR_THE_NOTICE_FN,
   LANGUAGE_FNS,
@@ -17,6 +18,7 @@ import {
   NOTICE_THIS_TURN,
   QUOTED_NOTE_BYTES,
   QUOTED_PROMPT_BYTES,
+  SHELL_WRITES_FNS,
   STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE,
@@ -63,6 +65,15 @@ ${KEEP_GOING_FOR_THE_NOTICE_FN}
 ${LANGUAGE_FNS}
 ${LAST_REPLY_FN}
 ${STALE_PR_STATUS_FN}
+${SHELL_WRITES_FNS}
+case "$event:$input" in
+  PreToolUse:*'"name":"run_command"'*|PostToolUse:*'"name":"run_command"'*)
+    where="$(printf '%s' "$input" | tr -d '\\n' | ${hookField('Cwd')})"
+    [ -n "$where" ] || where="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"workspacePaths"[[:space:]]*:[[:space:]]*\\[[[:space:]]*"\\([^"]*\\)".*/\\1/p')"
+    key="$(shell_key "$(printf '%s' "$input" | tr -d '\\n' | ${hookField('conversationId')})-$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"stepIdx"[[:space:]]*:[[:space:]]*\\([0-9]*\\).*/\\1/p')")"
+    if [ "$event" = PreToolUse ]; then shell_before "$where" "$key"
+    else input="\${input%\\}}$(shell_wrote "$where" "$key")}"; fi ;;
+esac
 if [ "$event" = "Stop" ]; then
   keep_going_for_the_notice && exit 0
   [ -n "$turn" ] && rm -f "$turn"

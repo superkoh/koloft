@@ -58,7 +58,7 @@ import {
   textOfLogLine,
   type LogRecord
 } from './museSessionLog'
-import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { noteRead, noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
 import { UUID, hostOfPath, museSessionKey } from './sessionStore'
 import {
   listMuseSessions,
@@ -81,6 +81,7 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { museToolDid } from './rowActivity'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
+import { SHELL_WROTE_FIELD } from './hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -834,6 +835,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         )
       case 'PostToolUse':
         return this.afterTool(run, input)
+      case 'PostToolUseFailure':
+        return this.noteShellWrote(run, input)
     }
   }
 
@@ -869,24 +872,29 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (changed) this.publishBackground(run)
   }
 
+  private publishWrite(run: MuseRun, last: string): void {
+    this.deps.events(run.tabId, wroteEvent(run.touched, last, ++run.liveWrites))
+  }
+
+  private noteShellWrote(run: MuseRun, input: Record<string, unknown>): void {
+    const wrote = shellWrittenFiles(input[SHELL_WROTE_FIELD]).map((f) => cwdRelative(run.cwd, f))
+    if (!wrote.length) return
+    for (const file of wrote) noteWrite(run.touched, file, 0, 0, Date.now())
+    this.publishWrite(run, wrote[wrote.length - 1])
+  }
+
   // MUSE§9
   private afterTool(run: MuseRun, input: Record<string, unknown>): void {
     const tool = String(input.tool_name)
     const response = responseOf(input)
     const did = museToolDid(tool, record(input.tool_input), response)
     if (did) this.deps.events(run.tabId, { type: 'did', what: did })
+    this.noteShellWrote(run, input)
     if (WRITING_TOOLS.has(tool) && typeof response.filePath === 'string') {
       const target = cwdRelative(run.cwd, response.filePath)
       const { added, removed } = patchDelta(response)
       noteWrite(run.touched, target, added, removed, Date.now())
-      run.liveWrites++
-      this.deps.events(run.tabId, {
-        type: 'files-changed',
-        files: capTouched([...run.touched].map(([src, acc]) => touchedItem(src, acc))),
-        lastTouched: target,
-        lastWritten: target,
-        liveWrites: run.liveWrites
-      })
+      this.publishWrite(run, target)
     } else if (tool === 'read_file' && typeof record(input.tool_input).path === 'string') {
       noteRead(run.touched, cwdRelative(run.cwd, String(record(input.tool_input).path)))
     } else if (
