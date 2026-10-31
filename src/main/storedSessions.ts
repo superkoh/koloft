@@ -12,7 +12,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
-import { isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -22,10 +22,10 @@ import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './s
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import {
+  MACHINE_ASKS_AT_MOST_EVERY_MS,
   RealFiles,
   realFilesHere,
   realFilesThere,
-  type RealFilesLookup,
   type RealFilesOnMachine
 } from './realFiles'
 import {
@@ -822,24 +822,28 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   private showFiles(run: R): void {
-    const info = run.info,
-      event = run.filesEvent
-    if (!info || !event) return
-    const real = (run.realFiles ??= new RealFiles(this.realFilesLookup(run.cwd), () => {
-      if (this.runs.get(run.tabId) === run) this.showFiles(run)
-    }))
-    info.files = real.merge(event.files)
-    info.lastTouched = event.lastTouched ? (real.of(event.lastTouched) ?? undefined) : undefined
-    info.lastWritten = event.lastWritten ? (real.of(event.lastWritten) ?? undefined) : undefined
-    info.liveWrites = event.liveWrites
+    const event = run.filesEvent
+    if (!run.info || !event) return
+    const real = (run.realFiles ??= this.realFilesFor(run))
+    run.info.files = real.merge(event.files)
+    run.info.lastTouched = event.lastTouched ? (real.of(event.lastTouched) ?? undefined) : undefined
+    run.info.lastWritten = event.lastWritten ? (real.of(event.lastWritten) ?? undefined) : undefined
+    run.info.liveWrites = event.liveWrites
     this.changedSoon()
   }
 
-  private realFilesLookup(cwd: string): RealFilesLookup {
-    const machine = parseRemoteKey(cwd)?.host
-    if (!machine) return realFilesHere
-    const onMachine = this.deps.realFilesOn
-    return onMachine ? realFilesThere(machine, onMachine) : async () => new Map()
+  private realFilesFor(run: R): RealFiles {
+    const machine = hostOfPath(run.cwd)
+    const found = (): void => {
+      if (this.runs.get(run.tabId) === run) this.showFiles(run)
+    }
+    return machine
+      ? new RealFiles(
+          realFilesThere(machine, this.deps.realFilesOn!),
+          found,
+          MACHINE_ASKS_AT_MOST_EVERY_MS
+        )
+      : new RealFiles(realFilesHere, found)
   }
 
   protected markDegraded(run: R | undefined): void {
@@ -893,6 +897,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     run.resumeKey = undefined
     run.launchName = undefined
+    run.filesEvent = undefined
     this.deps.runtime.forget(run.tabId)
     run.info = {
       tabId: run.tabId,

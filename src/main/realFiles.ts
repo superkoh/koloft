@@ -1,18 +1,28 @@
 import fs from 'fs'
 import { basename } from '@shared/preview'
-import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { barePath, formatRemoteKey } from '@shared/remoteKey'
 import type { PreviewItem } from '@shared/types'
 
 export type RealFilesLookup = (files: string[]) => Promise<Map<string, string>>
 export type RealFilesOnMachine = (host: string, files: string[]) => Promise<Map<string, string>>
 
+export const MACHINE_ASKS_AT_MOST_EVERY_MS = 2000
+
+export async function localFile(p: string): Promise<string | null> {
+  try {
+    const real = await fs.promises.realpath(p)
+    return (await fs.promises.stat(real)).isFile() ? real : null
+  } catch {
+    return null
+  }
+}
+
 export async function realFilesHere(files: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   await Promise.all(
     files.map(async (file) => {
-      try {
-        if ((await fs.promises.stat(file)).isFile()) out.set(file, await fs.promises.realpath(file))
-      } catch {}
+      const real = await localFile(file)
+      if (real) out.set(file, real)
     })
   )
   return out
@@ -20,13 +30,12 @@ export async function realFilesHere(files: string[]): Promise<Map<string, string
 
 export function realFilesThere(host: string, onMachine: RealFilesOnMachine): RealFilesLookup {
   return async (files) => {
-    const bare = files.map((f) => parseRemoteKey(f)?.path ?? f)
-    const found = await onMachine(host, bare)
+    const found = await onMachine(host, files.map(barePath))
     const out = new Map<string, string>()
-    files.forEach((file, i) => {
-      const real = found.get(bare[i])
-      if (real) out.set(file, parseRemoteKey(file) ? formatRemoteKey(host, real) : real)
-    })
+    for (const file of files) {
+      const real = found.get(barePath(file))
+      if (real) out.set(file, formatRemoteKey(host, real))
+    }
     return out
   }
 }
@@ -35,10 +44,12 @@ export class RealFiles {
   private known = new Map<string, string>()
   private asking = new Set<string>()
   private wanted: string[] = []
+  private lastAskMs = 0
 
   constructor(
     private lookup: RealFilesLookup,
-    private found: () => void
+    private found: () => void,
+    private askGapMs = 0
   ) {}
 
   of(file: string): string | null {
@@ -46,7 +57,7 @@ export class RealFiles {
     if (real !== undefined) return real
     if (!this.asking.has(file)) {
       this.asking.add(file)
-      if (this.wanted.push(file) === 1) queueMicrotask(() => void this.ask())
+      if (this.wanted.push(file) === 1) this.askSoon()
     }
     return null
   }
@@ -71,13 +82,22 @@ export class RealFiles {
     return [...byReal.values()]
   }
 
+  private askSoon(): void {
+    const wait = this.lastAskMs + this.askGapMs - Date.now()
+    if (wait > 0) setTimeout(() => void this.ask(), wait)
+    else queueMicrotask(() => void this.ask())
+  }
+
   private async ask(): Promise<void> {
     const files = this.wanted
     this.wanted = []
-    let found = new Map<string, string>()
+    this.lastAskMs = Date.now()
+    let found: Map<string, string>
     try {
       found = await this.lookup(files)
-    } catch {}
+    } catch {
+      found = new Map(files.map((f) => [f, f]))
+    }
     for (const file of files) this.asking.delete(file)
     for (const [file, real] of found) this.known.set(file, real)
     if (found.size) this.found()

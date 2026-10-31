@@ -271,7 +271,7 @@ function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
   return { header, body: buf.subarray(body) }
 }
 
-const REAL_FILES = `for f do
+const REAL_FILES = `while IFS= read -r f; do
   case $f in '~/'*) p=$HOME/\${f#\\~/} ;; *) p=$f ;; esac
   [ -f "$p" ] || continue
   r=$(realpath "$p" 2>/dev/null || readlink -f "$p" 2>/dev/null) || r=
@@ -775,9 +775,9 @@ export class SshHost implements Host {
   }
 
   async realFiles(files: string[]): Promise<Map<string, string>> {
-    const r = await this.sh(REAL_FILES, files)
+    const r = await this.sh(REAL_FILES, [], { input: Buffer.from(files.join('\n') + '\n') })
+    if (r.code !== 0) throw new Error(problemOf(r))
     const out = new Map<string, string>()
-    if (r.code !== 0) return out
     const parts = r.stdout.toString('utf8').split('\0')
     for (let i = 0; i + 1 < parts.length; i += 2) out.set(parts[i], parts[i + 1])
     return out

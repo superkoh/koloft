@@ -1,12 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type {
-  ClaudeSessionInfo as SessionInfo,
-  PreviewItem,
-  SessionStatus,
-  BackgroundItem
-} from '@shared/types'
+import type { ClaudeSessionInfo as SessionInfo, SessionStatus, BackgroundItem } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
@@ -17,7 +12,12 @@ import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
-import { RealFiles, realFilesHere, realFilesThere, type RealFilesOnMachine } from './realFiles'
+import {
+  MACHINE_ASKS_AT_MOST_EVERY_MS,
+  RealFiles,
+  realFilesHere,
+  type RealFilesOnMachine
+} from './realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
@@ -526,15 +526,18 @@ export class SessionTracker extends SessionRuntime {
   realFilesOn?: RealFilesOnMachine
 
   private realFilesOf(tabId: string, remote: RemoteTab | undefined): RealFiles {
-    const lookup = remote
-      ? realFilesThere(remote.host, (host, files) =>
-          this.realFilesOn ? this.realFilesOn(host, files) : Promise.resolve(new Map())
+    const real: RealFiles = remote
+      ? new RealFiles(
+          (files) => this.realFilesOn!(remote.host, files),
+          () => found(),
+          MACHINE_ASKS_AT_MOST_EVERY_MS
         )
-      : realFilesHere
-    return new RealFiles(lookup, () => {
+      : new RealFiles(realFilesHere, () => found())
+    const found = (): void => {
       const t = this.tracked.get(tabId)
-      if (t) this.recompute(t)
-    })
+      if (t?.real === real) this.recompute(t)
+    }
+    return real
   }
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
