@@ -338,18 +338,23 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       if (text.startsWith('/write ')) {
         const target = path.join(thread.cwd, text.slice('/write '.length).trim())
         const diff = 'written by Codex\n'
-        fs.writeFileSync(target, diff)
-        // CODEX§12
-        event('item/completed', {
-          threadId: thread.id,
-          turnId: turn.id,
-          item: {
-            type: 'fileChange',
-            id: 'write-' + turn.id,
-            status: 'completed',
-            changes: [{ path: target, kind: { type: 'add' }, diff }]
-          }
-        })
+        const write = () => {
+          fs.writeFileSync(target, diff)
+          // CODEX§12
+          event('item/completed', {
+            threadId: thread.id,
+            turnId: turn.id,
+            item: {
+              type: 'fileChange',
+              id: 'write-' + turn.id,
+              status: 'completed',
+              changes: [{ path: target, kind: { type: 'add' }, diff }]
+            }
+          })
+        }
+        const writeAtMs = Number(read('fake-codex-write-at-ms', '0'))
+        if (writeAtMs) setTimeout(write, writeAtMs)
+        else write()
       }
       const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
       if (ran) {
