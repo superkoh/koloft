@@ -180,6 +180,7 @@ import {
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
@@ -1222,6 +1223,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
