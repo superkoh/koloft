@@ -35,6 +35,7 @@ export interface SessionBackend {
   aliveTabFor(key: string): string | undefined
   stop(tabId: string, restarting?: boolean): void | Promise<void>
   archive(key: string): boolean
+  adopt(keys: string[]): void
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void
   occupantOf(dir: string): string | null
@@ -203,6 +204,11 @@ export class SessionBackends {
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
     return rows.filter((r) => !this.isButlerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+  }
+
+  adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {
+    for (const backend of this.adapters.values())
+      backend.adopt(rows.filter((r) => r.backendId === backend.id).map((r) => r.id))
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {

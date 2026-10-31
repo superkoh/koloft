@@ -122,6 +122,7 @@ export interface SessionsWithStore {
   workspacesFor(cwds: string[]): string[]
   localHistoryFolders(): Promise<DiscoveredFolder[]>
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
+  adopt(keys: string[]): void
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -405,11 +406,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
   async localHistoryFolders(): Promise<DiscoveredFolder[]> {
     if (this.refreshing || !this.listedAt.has(undefined)) await this.refreshHistory()
-    return [...this.history].flatMap(([key, t]) =>
-      hostOfKey(key) || this.archivedIds.has(key)
-        ? []
-        : [{ path: t.cwd, sessions: 1, mtime: this.mtimeOf(t) }]
-    )
+    return [...this.history].flatMap(([key, t]) => {
+      if (hostOfKey(key) || this.archivedIds.has(key)) return []
+      const use = { sessions: 1, mtime: this.mtimeOf(t) }
+      return [{ path: t.cwd, ...use, agents: { [this.id]: use } }]
+    })
   }
   private mtimeOf(t: H): number {
     return (t.updatedAt ?? t.createdAt ?? 0) * 1000
@@ -433,6 +434,25 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       t.preview?.slice(0, 100) ||
       PLACEHOLDER_TITLES[this.id]
     )
+  }
+  adopt(keys: string[]): void {
+    let adopted = 0
+    for (const key of keys) {
+      const t = this.history.get(key)
+      if (!t || this.store.getMember(key)) continue
+      const mtime = this.mtimeOf(t)
+      this.store.upsertMember({
+        id: t.id,
+        key,
+        workspacePath: this.workspaceFor(t.cwd),
+        cwd: t.cwd,
+        title: this.titleOf(key, t),
+        createdAt: t.createdAt ? t.createdAt * 1000 : mtime,
+        updatedAt: mtime
+      })
+      adopted++
+    }
+    if (adopted > 0) this.changed()
   }
   members(): Set<string> {
     return new Set([
