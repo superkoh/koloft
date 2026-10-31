@@ -811,6 +811,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
     const id = await boundTab()
     const made = path.join(repo, 'new.md')
+    fs.writeFileSync(made, 'a\nb\nc\n')
     hook(id, 'PostToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: made } } })
     hook(id, 'PostToolUse', {
       toolCall: {
@@ -820,6 +821,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     })
     await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
     const edited = path.join(repo, 'old.md')
+    fs.writeFileSync(edited, 'y\nz\nw\n')
     appendConversation(gemini, A, [
       {
         type: 'GENERIC',
@@ -840,6 +842,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it("lists a file agy 1.4.7 wrote with write_file, from its Path, with the Content's lines as added", async () => {
     const id = await boundTab()
     const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\ntwo\n')
     hook(id, 'PostToolUse', {
       toolCall: { name: 'write_file', args: { Path: made, Content: 'one\ntwo\n' } }
     })
@@ -852,6 +855,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it('lists a file agy 1.4.7 edited with edit_file, from its Path, counting only the lines where Target and Replacement differ', async () => {
     const id = await boundTab()
     const edited = path.join(repo, 'edited.txt')
+    fs.writeFileSync(edited, 'one\nTWO\n2b\nthree')
     hook(id, 'PostToolUse', {
       toolCall: {
         name: 'edit_file',
@@ -873,6 +877,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     const id = await boundTab()
     const missed = path.join(repo, 'missed.txt')
     const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\n')
     hook(id, 'PostToolUse', {
       toolCall: { name: 'edit_file', args: { Path: missed, Target: 'absent', Replacement: 'x' } },
       error: 'target not found'

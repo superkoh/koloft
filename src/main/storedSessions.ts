@@ -22,6 +22,13 @@ import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './s
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import {
+  MACHINE_ASKS_AT_MOST_EVERY_MS,
+  RealFiles,
+  realFilesHere,
+  realFilesThere,
+  type RealFilesOnMachine
+} from './realFiles'
+import {
   dirExistsSync as dirExists,
   occupantName,
   rebuildsTheWorktree,
@@ -82,8 +89,12 @@ export interface StoredRun {
   permission: LaunchPermission
   bypassing: boolean
   launchName?: string
+  filesEvent?: FilesChanged
+  realFiles?: RealFiles
   releaseTools(): void
 }
+
+type FilesChanged = Extract<SessionEvent, { type: 'files-changed' }>
 
 export interface StoredSessionDeps {
   pty: PtyManager
@@ -100,6 +111,7 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  realFilesOn?: RealFilesOnMachine
   skipPermissions?(): boolean
   holdWhileBusy?(tabId: string): boolean
   holdScript?: HoldScript
@@ -800,16 +812,38 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       case 'title':
         return this.retitle(info, event.title)
       case 'files-changed':
-        info.files = event.files
-        info.lastTouched = event.lastTouched
-        info.lastWritten = event.lastWritten
-        info.liveWrites = event.liveWrites
-        return this.changedSoon()
+        run.filesEvent = event
+        return this.showFiles(run)
       case 'did':
         if (info.lastAction === event.what) return
         info.lastAction = event.what
         return this.changedSoon()
     }
+  }
+
+  private showFiles(run: R): void {
+    const event = run.filesEvent
+    if (!run.info || !event) return
+    const real = (run.realFiles ??= this.realFilesFor(run))
+    run.info.files = real.merge(event.files)
+    run.info.lastTouched = event.lastTouched ? (real.of(event.lastTouched) ?? undefined) : undefined
+    run.info.lastWritten = event.lastWritten ? (real.of(event.lastWritten) ?? undefined) : undefined
+    run.info.liveWrites = event.liveWrites
+    this.changedSoon()
+  }
+
+  private realFilesFor(run: R): RealFiles {
+    const machine = hostOfPath(run.cwd)
+    const found = (): void => {
+      if (this.runs.get(run.tabId) === run) this.showFiles(run)
+    }
+    return machine
+      ? new RealFiles(
+          realFilesThere(machine, this.deps.realFilesOn!),
+          found,
+          MACHINE_ASKS_AT_MOST_EVERY_MS
+        )
+      : new RealFiles(realFilesHere, found)
   }
 
   protected markDegraded(run: R | undefined): void {
@@ -863,6 +897,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     run.resumeKey = undefined
     run.launchName = undefined
+    run.filesEvent = undefined
     this.deps.runtime.forget(run.tabId)
     run.info = {
       tabId: run.tabId,

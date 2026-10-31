@@ -1,4 +1,3 @@
-import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { DocVerdict, SessionInfo } from '@shared/types'
@@ -7,6 +6,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from './assist'
 import { PrivateRecordFile } from './privateFile'
+import { localFile } from './realFiles'
 
 const SAID_CHARS_SENT = 1500
 const REPLY_CHARS_SENT = 8000
@@ -61,15 +61,6 @@ function docIn(text: string, cwd: string, host: string | undefined): string | nu
   const abs = path.posix.resolve(cwd, p)
   const src = host ? formatRemoteKey(host, abs) : abs
   return writtenForTheAgent(src) ? null : src
-}
-
-async function localFile(p: string): Promise<string | null> {
-  try {
-    const real = await fs.promises.realpath(p)
-    return (await fs.promises.stat(real)).isFile() ? real : null
-  } catch {
-    return null
-  }
 }
 
 export class ReaderDocs {

@@ -915,6 +915,7 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
     const file = path.join(repo, 'notes.txt')
+    fs.writeFileSync(file, 'new\n')
     transports[0].options.onFrame('server', {
       method: 'item/completed',
       params: {
@@ -927,11 +928,47 @@ describe('CodexSessions', () => {
         }
       }
     })
-    expect(sessions.list()[0]).toMatchObject({
-      files: [{ src: file, access: 'wrote', added: 1 }],
-      lastWritten: file,
-      liveWrites: 1
+    await vi.waitFor(() =>
+      expect(sessions.list()[0]).toMatchObject({
+        files: [{ src: file, access: 'wrote', added: 1 }],
+        lastWritten: file,
+        liveWrites: 1
+      })
+    )
+  })
+
+  it('lists a file a Codex patch reached through a symlinked folder once, under its real path, and leaves out a file that is gone', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    fs.mkdirSync(path.join(repo, 'real'))
+    fs.symlinkSync(path.join(repo, 'real'), path.join(repo, 'link'))
+    const real = path.join(repo, 'real', 'a.txt')
+    fs.writeFileSync(real, 'one\ntwo\n')
+    const update = (file: string): unknown => ({
+      path: file,
+      kind: { type: 'update', move_path: null },
+      diff: '+x\n'
     })
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'fileChange',
+          id: 'patch',
+          status: 'completed',
+          changes: [
+            update(path.join(repo, 'link', 'a.txt')),
+            update(real),
+            update(path.join(repo, 'gone.txt'))
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files).toEqual([
+      expect.objectContaining({ src: real, label: 'a.txt', access: 'wrote', added: 2 })
+    ])
   })
 
   it('hands an open command Codex ran to the Workbench for that tab', async () => {
