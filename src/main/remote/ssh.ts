@@ -63,12 +63,12 @@ const NEEDS_SOMEONE_TO_SIGN_IN =
 // PLATFORM§34
 const SHELL_PRINTS_AT_LOGIN = /unexpected tag|protocol version mismatch|is your shell clean/i
 
+export function needsSignIn(r: { code: number | null; stderr: string }): boolean {
+  return r.code === SSH_LINK_BROKE_EXIT && NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr)
+}
+
 export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
-  return (
-    r.code === SSH_LINK_BROKE_EXIT &&
-    !NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr) &&
-    !r.stderr.includes(MASTER_FULL)
-  )
+  return r.code === SSH_LINK_BROKE_EXIT && !needsSignIn(r) && !r.stderr.includes(MASTER_FULL)
 }
 
 export function problemOf(r: { code: number | null; stderr: string }): string {

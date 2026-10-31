@@ -343,6 +343,25 @@ export function installFakeCodexOnTarget(lab: SshLab): void {
   ])
 }
 
+// MUSE§10
+function trustMuseProjOnTarget(lab: SshLab, user: string): void {
+  runOnTarget(
+    lab,
+    user,
+    `mkdir -p .config/muse && printf '%s' ${JSON.stringify(
+      JSON.stringify({
+        schema_version: 1,
+        projects: { [`/home/${user}/proj`]: { decision: 'trusted' } }
+      })
+    )} > .config/muse/trust.json`
+  )
+}
+
+export function installFakeMuseOnTarget(lab: SshLab, users: string[]): void {
+  installOnTarget(lab, path.join(FIXTURES, 'fake-muse.js'), '/usr/local/bin/muse')
+  for (const user of users) trustMuseProjOnTarget(lab, user)
+}
+
 export function installCurlOnTarget(lab: SshLab): void {
   dk([
     'exec',
@@ -451,16 +470,7 @@ export function installRealMuseOnTheMachine(lab: SshLab, user: string): void {
   fs.writeFileSync(launcher, MUSE_ON_THE_ECHO_MODEL)
   installOnTarget(lab, launcher, `${home}/.local/bin/muse`)
   fs.rmSync(path.dirname(launcher), { recursive: true, force: true })
-  runOnTarget(
-    lab,
-    user,
-    `mkdir -p .config/muse && printf '%s' ${JSON.stringify(
-      JSON.stringify({
-        schema_version: 1,
-        projects: { [`${home}/proj`]: { decision: 'trusted' } }
-      })
-    )} > .config/muse/trust.json`
-  )
+  trustMuseProjOnTarget(lab, user)
 }
 
 export function useRealClaudeOnTheMachine(

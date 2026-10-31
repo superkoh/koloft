@@ -61,6 +61,7 @@ import {
   backgroundOptions,
   ensureControlDir,
   machineOutOfReach,
+  needsSignIn,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -223,6 +224,8 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
+const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
+  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
 const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const MACHINE_PAGE_READ_MS = 120_000
 const MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
@@ -745,6 +748,12 @@ export class SshHost implements Host {
     return r.code === 0
   }
 
+  async sessionDirThere(dir: string): Promise<boolean> {
+    const r = await this.testDir(dir)
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+    return r.code === 0 || sshLinkBroke(r)
+  }
+
   async reachOrThrow(): Promise<void> {
     const r = await this.sh('true', [])
     if (machineOutOfReach(r)) throw new Error(problemOf(r))
@@ -1115,6 +1124,7 @@ export class SshHost implements Host {
   async readAgyConfig(account: string): Promise<RemoteAgyConfig> {
     await this.deps.sshEnvReady?.()
     const r = await this.deps.run(readAgyConfigCmd(account))
+    if (needsSignIn(r)) throw new Error(AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN)
     if (sshLinkBroke(r)) throw new Error(problemOf(r))
     return parseAgyConfig(r.stdout.toString('utf8'))
   }
