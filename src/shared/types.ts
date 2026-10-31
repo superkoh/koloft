@@ -248,6 +248,8 @@ export interface UsageSnapshot {
   roi: number
   overage: string
   // CC§7
+  has5h: boolean
+  // CC§7
   hasOi: boolean
   at: number
 }

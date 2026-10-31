@@ -96,6 +96,12 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
   )
 }
 
+export const FIVE_HOUR_STOP = 0.9
+
+export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
+  return !resetElapsed(u.r5, nowSec) && u.u5 >= FIVE_HOUR_STOP
+}
+
 export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
 
 export function resetElapsed(r: number, nowSec: number): boolean {
@@ -306,7 +312,7 @@ export interface PoolSnapshot {
   usable: number
   walled: number
   tension: number
-  t5: number
+  t5: number | null
   t7: number
   tfable: number | null
   fableSpentAll: boolean
@@ -323,7 +329,10 @@ export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapsho
   const walledRows = M.filter(isWalled)
   const usable = live.filter((a) => !a.usage || !accountWalled(a.usage, nowSec)).length
   const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
-  const t5 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1))) : 0
+  const with5h = M.filter((a) => (a.usage as UsageSnapshot).has5h)
+  const t5 = with5h.length
+    ? mean(with5h.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1)))
+    : null
   const t7 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u7, 1))) : 0
   const tension = M.length
     ? mean(

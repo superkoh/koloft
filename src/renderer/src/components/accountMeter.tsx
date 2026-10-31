@@ -80,10 +80,18 @@ export function Meter({
   soi
 }: {
   label?: string
-  v: number
+  v: number | null
   win: string
   soi?: string
 }): JSX.Element {
+  if (v === null)
+    return (
+      <span className="acct-meter none" data-win={win}>
+        {label && <span className="m-label">{label}</span>}
+        <span className="m-track" />
+        <span className="m-pct">—</span>
+      </span>
+    )
   const pct = Math.min(100, Math.round(v * 100))
   const level = win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)
   return (
