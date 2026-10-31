@@ -11,10 +11,10 @@ import {
   wsRows
 } from './helpers/p1'
 import {
+  E2E_AGY_ACCOUNT,
   agySessionCalls,
   installAgy,
   installCodex,
-  ownersGemini,
   seedSettings,
   trustInAgy
 } from './helpers/env'
@@ -175,7 +175,9 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
       await showBrowse(page)
       await expect(scratchpadNode(page)).toBeVisible({ timeout: 40_000 })
       const dir = (await scratchpadNode(page).getAttribute('data-path'))!
-      expect(path.dirname(dir)).toBe(path.join(ownersGemini(env), 'antigravity-cli', 'brain'))
+      expect(path.dirname(dir)).toBe(
+        path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli', 'brain')
+      )
       await expect
         .poll(() => scratchpadNames(page), { timeout: 30_000 })
         .toEqual(['scratch', 'implementation_plan.md'])
