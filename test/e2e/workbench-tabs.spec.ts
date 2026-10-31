@@ -101,7 +101,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     expect(await focusOwner(page)).toBe('panel')
   })
 
-  test('a click on the collapsed Workbench’s files button opens the panel and leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+  test('a click on the collapsed Workbench’s files button or on one of its docs opens the panel and leaves the caret in the session terminal, so the next typed line reaches the session', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -123,6 +123,13 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
       await page.keyboard.type('/answer looks good')
       await page.keyboard.press('Enter')
       await expect(centerTerm(page)).toContainText('answered: looks good', { timeout: 30_000 })
+
+      await page.locator('.aux-ico.wb-toggle').click()
+      await expect.poll(() => layoutState(page)).toBe('T1')
+      await centerTerm(page).click()
+      await page.locator(WORKBENCH.previewDocs).filter({ hasText: 'NOTES.md' }).click()
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('NOTES.md')
+      expect(await focusOwner(page)).toBe('tui')
     } finally {
       await quitAndClose(app)
     }

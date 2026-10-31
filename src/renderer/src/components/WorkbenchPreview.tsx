@@ -89,6 +89,7 @@ export function WorkbenchPreview({
               className="ft-node ft-file"
               data-path={d.src}
               title={d.src}
+              onMouseDown={keepCaretInSessionTerminal}
               onClick={() => openDoc(tabId, d)}
             >
               <span className="ft-icon">
