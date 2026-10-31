@@ -12,7 +12,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
-import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
+import { isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -21,6 +21,13 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
+import {
+  RealFiles,
+  realFilesHere,
+  realFilesThere,
+  type RealFilesLookup,
+  type RealFilesOnMachine
+} from './realFiles'
 import {
   dirExistsSync as dirExists,
   occupantName,
@@ -82,8 +89,12 @@ export interface StoredRun {
   permission: LaunchPermission
   bypassing: boolean
   launchName?: string
+  filesEvent?: FilesChanged
+  realFiles?: RealFiles
   releaseTools(): void
 }
+
+type FilesChanged = Extract<SessionEvent, { type: 'files-changed' }>
 
 export interface StoredSessionDeps {
   pty: PtyManager
@@ -100,6 +111,7 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  realFilesOn?: RealFilesOnMachine
   skipPermissions?(): boolean
   holdWhileBusy?(tabId: string): boolean
   holdScript?: HoldScript
@@ -800,16 +812,34 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       case 'title':
         return this.retitle(info, event.title)
       case 'files-changed':
-        info.files = event.files
-        info.lastTouched = event.lastTouched
-        info.lastWritten = event.lastWritten
-        info.liveWrites = event.liveWrites
-        return this.changedSoon()
+        run.filesEvent = event
+        return this.showFiles(run)
       case 'did':
         if (info.lastAction === event.what) return
         info.lastAction = event.what
         return this.changedSoon()
     }
+  }
+
+  private showFiles(run: R): void {
+    const info = run.info,
+      event = run.filesEvent
+    if (!info || !event) return
+    const real = (run.realFiles ??= new RealFiles(this.realFilesLookup(run.cwd), () => {
+      if (this.runs.get(run.tabId) === run) this.showFiles(run)
+    }))
+    info.files = real.merge(event.files)
+    info.lastTouched = event.lastTouched ? (real.of(event.lastTouched) ?? undefined) : undefined
+    info.lastWritten = event.lastWritten ? (real.of(event.lastWritten) ?? undefined) : undefined
+    info.liveWrites = event.liveWrites
+    this.changedSoon()
+  }
+
+  private realFilesLookup(cwd: string): RealFilesLookup {
+    const machine = parseRemoteKey(cwd)?.host
+    if (!machine) return realFilesHere
+    const onMachine = this.deps.realFilesOn
+    return onMachine ? realFilesThere(machine, onMachine) : async () => new Map()
   }
 
   protected markDegraded(run: R | undefined): void {

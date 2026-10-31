@@ -17,6 +17,7 @@ import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
+import { RealFiles, realFilesHere, realFilesThere, type RealFilesOnMachine } from './realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
@@ -426,8 +427,7 @@ interface Tracked {
   tailBuf: Buffer
   titles: TitleSources
   touched: ClaudeTouchedFiles
-  fileCache: Map<string, string>
-  canonPending: Set<string>
+  real: RealFiles
   parsePromise?: Promise<void>
   parseAgain: boolean
   statusSeq: number
@@ -523,6 +523,19 @@ export class SessionTracker extends SessionRuntime {
     )
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
+  realFilesOn?: RealFilesOnMachine
+
+  private realFilesOf(tabId: string, remote: RemoteTab | undefined): RealFiles {
+    const lookup = remote
+      ? realFilesThere(remote.host, (host, files) =>
+          this.realFilesOn ? this.realFilesOn(host, files) : Promise.resolve(new Map())
+        )
+      : realFilesHere
+    return new RealFiles(lookup, () => {
+      const t = this.tracked.get(tabId)
+      if (t) this.recompute(t)
+    })
+  }
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -552,8 +565,7 @@ export class SessionTracker extends SessionRuntime {
       tailBuf: Buffer.alloc(0),
       titles: new TitleSources(),
       touched: new ClaudeTouchedFiles(),
-      fileCache: new Map(),
-      canonPending: new Set(),
+      real: this.realFilesOf(tabId, remote),
       sidecarTitle: null,
       parseAgain: false,
       statusSeq: 0,
@@ -1047,7 +1059,7 @@ export class SessionTracker extends SessionRuntime {
     t.tailBuf = Buffer.alloc(0)
     t.titles = new TitleSources()
     t.touched = new ClaudeTouchedFiles()
-    t.fileCache = new Map()
+    t.real = this.realFilesOf(t.info.tabId, t.remote)
     t.relocatedCwd = undefined
     t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
@@ -1145,7 +1157,7 @@ export class SessionTracker extends SessionRuntime {
     if (p === '~' || p === '~/') return null
     if (p.startsWith('~/')) {
       // ADR-0025
-      if (t.remote) return null
+      if (t.remote) return p
       p = path.join(os.homedir(), p.slice(2))
     } else if (!path.isAbsolute(p)) p = path.resolve(t.info.cwd, p)
     return p
@@ -1575,54 +1587,17 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private recompute(t: Tracked): void {
-    const byCanon = new Map<string, PreviewItem>()
-    for (const [abs, acc] of t.touched.files) {
-      const canon = this.canonFile(t, abs)
-      if (!canon) continue
-      const ex = byCanon.get(canon)
-      if (ex) {
-        ex.added = (ex.added ?? 0) + acc.added
-        ex.removed = (ex.removed ?? 0) + acc.removed
-        if (acc.access === 'wrote') {
-          ex.access = 'wrote'
-          ex.wroteAt = Math.max(ex.wroteAt ?? 0, acc.wroteAt)
-        }
-      } else {
-        byCanon.set(canon, touchedItem(canon, acc))
-      }
-    }
-    const files = capTouched([...byCanon.values()])
+    const files = capTouched(
+      t.real.merge([...t.touched.files].map(([abs, acc]) => touchedItem(abs, acc)))
+    )
 
     t.info.title = t.titles.title(t.sidecarTitle)
     t.info.files = files
     const { lastTouched, lastWritten } = t.touched
-    t.info.lastTouched = lastTouched ? (this.canonFile(t, lastTouched) ?? undefined) : undefined
-    t.info.lastWritten = lastWritten ? (this.canonFile(t, lastWritten) ?? undefined) : undefined
+    t.info.lastTouched = lastTouched ? (t.real.of(lastTouched) ?? undefined) : undefined
+    t.info.lastWritten = lastWritten ? (t.real.of(lastWritten) ?? undefined) : undefined
     t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
     this.emitUpdate()
-  }
-
-  private canonFile(t: Tracked, abs: string): string | null {
-    const cached = t.fileCache.get(abs)
-    if (cached !== undefined) return cached
-    // ADR-0025
-    if (t.remote) return abs
-    if (!t.canonPending.has(abs)) {
-      t.canonPending.add(abs)
-      void this.resolveCanon(t, abs)
-    }
-    return null
-  }
-
-  private async resolveCanon(t: Tracked, abs: string): Promise<void> {
-    let real: string | undefined
-    try {
-      if ((await fs.promises.stat(abs)).isFile()) real = await fs.promises.realpath(abs)
-    } catch {}
-    t.canonPending.delete(abs)
-    if (real === undefined || this.tracked.get(t.info.tabId) !== t) return
-    t.fileCache.set(abs, real)
-    this.recompute(t)
   }
 }

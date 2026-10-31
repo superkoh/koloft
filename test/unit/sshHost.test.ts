@@ -108,6 +108,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(all.filter((e) => e.ignored).map((e) => e.name)).toEqual(['.git', 'build'])
     })
 
+    it('gives the real path of each file asked about in one call, ~/ paths included, and leaves out what is not a file there', async () => {
+      fs.symlinkSync(repo, path.join(home, 'link'))
+      const asked = [
+        path.join(home, 'link', 'sub', 'b.txt'),
+        '~/proj/a.txt',
+        path.join(repo, 'gone.txt'),
+        path.join(repo, 'broken'),
+        path.join(repo, 'sub')
+      ]
+      const calls: string[] = []
+      const host = machine((cmd, opts) => (calls.push(cmd), runOnMachine(cmd, opts)))
+      expect(await host.realFiles(asked)).toEqual(
+        new Map([
+          [asked[0], path.join(repo, 'sub', 'b.txt')],
+          [asked[1], path.join(repo, 'a.txt')]
+        ])
+      )
+      expect(calls).toHaveLength(1)
+    })
+
     it('finds files by name and text on the machine, keyed by the machine', async () => {
       const byName = await machine().search(keyed(repo), 'b.txt')
       expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
