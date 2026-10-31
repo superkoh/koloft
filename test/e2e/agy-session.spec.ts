@@ -623,7 +623,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level', async ({
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -656,6 +656,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(dlg.locator('.chip.on', { hasText: /^Same as usual$/ })).toHaveCount(1)
       await chip('Gemini 4 Argon').click()
       await expect(dlg.locator('.chip.on', { hasText: /^Medium$/ })).toHaveCount(1)
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gemini-4-argon · medium`)
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()

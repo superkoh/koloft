@@ -35,7 +35,6 @@ import {
   effortOf,
   emptyFields,
   modelValue,
-  permissionAfterSwitch,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
@@ -454,7 +453,6 @@ export function CronJobsDialog({
                   onClick={() =>
                     patch({
                       backend: b,
-                      permission: permissionAfterSwitch(fields, b),
                       ...(fields.model === 'other' || namedModel(b, fields.model)
                         ? {}
                         : { model: '' })
