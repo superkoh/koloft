@@ -13,6 +13,7 @@ import {
 } from './helpers/workbench'
 
 const LOOSE_STALL_CEILING_FOR_SHARED_RUNNERS_MS = 20_000
+const BASELINE_RESOLUTIONS_BY_THE_WELCOME_PAGES_SHUT_WORKBENCH = 1
 const BASELINE_RESOLUTIONS_ON_COLD_OPEN = 1
 const AGGREGATE_DIFFS_ON_COLD_OPEN_BASE_AND_STATUS_ARRIVE_TOGETHER = 1
 
@@ -70,7 +71,7 @@ test.describe('Workbench Changes cost: the first screenful of a large change set
     await waitBooted(p)
 
     try {
-      await expect(p.locator(WORKBENCH.previewDiffLabel)).toHaveText(/2 files/, {
+      await expect(p.locator(WORKBENCH.previewDiffLabel)).toHaveText(/^2 files/, {
         timeout: 20_000
       })
       await waitGitQuiet(env, { root: ws })
@@ -78,6 +79,9 @@ test.describe('Workbench Changes cost: the first screenful of a large change set
         baselines: countGitSpawns(env, { root: ws, subcommand: 'merge-base' }),
         aggregateDiffs: countGitSpawns(env, { root: ws, argv: isAggregateDiff })
       }
+      expect(readByTheWelcomePagesOwnWorkbench.baselines).toBe(
+        BASELINE_RESOLUTIONS_BY_THE_WELCOME_PAGES_SHUT_WORKBENCH
+      )
 
       await startSessionIn(p, 'ws-a')
       await expect(workbenchPanel(p)).toBeVisible({ timeout: 25_000 })

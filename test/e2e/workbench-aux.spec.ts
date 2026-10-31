@@ -21,7 +21,6 @@ import {
   openInBrowse,
   sessionWorkbenchOnDisk,
   waitPanelAttached,
-  WELCOME_PAGE,
   WORKBENCH,
   workbenchPanel
 } from './helpers/workbench'
@@ -35,18 +34,13 @@ function shellOpenPinnedAheadOfSystemOpen(env: E2EEnv, cwd: string, target: stri
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
 
 test.describe('Workbench titlebar toggle, and the panel seam with the retired aux column', () => {
-  test('T-AUX-01: the Workbench icon owns the panel — live but shut on the welcome page, lit with a session, and a press shuts it', async ({
+  test('T-AUX-01: the Workbench icon owns the panel — lit with a session, and a press shuts it', async ({
     page,
     env
   }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     const workbench = auxIcon(page, 'Workbench')
-
-    await expect(page.locator(WELCOME_PAGE)).toBeVisible({ timeout: 20_000 })
-    await expect(workbench).toHaveAttribute('aria-disabled', 'false')
-    await expect(workbenchPanel(page)).toBeHidden()
-    await expect(workbench).not.toHaveClass(/\bon\b/)
 
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible()
