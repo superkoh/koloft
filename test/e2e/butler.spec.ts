@@ -99,13 +99,17 @@ function butlerSettingsOf(call: { argv: string[] }): {
 }
 
 function gateSays(call: { argv: string[] }, event: unknown): string {
-  const command = butlerSettingsOf(call).hooks.PreToolUse?.[0].hooks[0].command
-  if (!command) return 'no gate'
-  const res = spawnSync('/bin/sh', ['-c', command], {
-    input: JSON.stringify(event),
-    encoding: 'utf8'
-  })
-  return res.stdout === '' ? 'allow' : JSON.parse(res.stdout).hookSpecificOutput.permissionDecision
+  const commands = (butlerSettingsOf(call).hooks.PreToolUse ?? []).flatMap((e) =>
+    e.hooks.map((h) => h.command)
+  )
+  for (const command of commands) {
+    const res = spawnSync('/bin/sh', ['-c', command], {
+      input: JSON.stringify(event),
+      encoding: 'utf8'
+    })
+    if (res.stdout !== '') return JSON.parse(res.stdout).hookSpecificOutput.permissionDecision
+  }
+  return 'no gate'
 }
 
 function channelRow(dlg: Locator, name: string): Locator {
@@ -457,7 +461,14 @@ test.describe('The butler: one global session at the top of the sessions list, k
       ).toBe(true)
       for (const s of servers) {
         expect(s.codexGate).toBeNull()
-        expect(s.argv.some((a) => a.startsWith('hooks.PreToolUse='))).toBe(false)
+        const beforeTools = s.argv
+          .filter((a) => a.startsWith('hooks.PreToolUse='))
+          .flatMap((a) =>
+            [...a.matchAll(/command=("(?:[^"\\]|\\.)*")/g)].map((m) =>
+              (JSON.parse(m[1]) as string).split(' ').pop()
+            )
+          )
+        expect(beforeTools.filter((hook) => hook !== 'shell-before')).toEqual([])
       }
       const tui = firstCodexCall(env)
       expect(tui.cwd).toBe(butlerFolder(env))

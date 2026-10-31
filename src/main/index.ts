@@ -3200,7 +3200,9 @@ app.whenReady().then(() => {
         machinePackage,
         tabDir: (tabId) => tabPackageDir(userData, tabId),
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
-        keyed: pinnedKeyOn
+        keyed: pinnedKeyOn,
+        mirrorDir: (host) => mirrorHookDir(userData, host),
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,

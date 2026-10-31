@@ -298,6 +298,47 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test("E-RW-52: a file a shell command of a session on the machine made shows under Changes' Ownership ▸ This session wrote, and a change the session did not make stays out", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      const rows = page.locator('.wb-panel .cv-row')
+      const shown = (): Promise<string[]> =>
+        rows.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+
+      await runIn(page, centerTerm(page), '/run printf made > shell-made.txt')
+      await expect(centerTerm(page)).toContainText('ran printf made', { timeout: 60_000 })
+      await expect.poll(shown, { timeout: 60_000 }).toEqual(['shell-made.txt', 'tracked.txt'])
+
+      const menu = page.locator('.wb-bar .fv-menu')
+      await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
+      await expect(menu).toBeVisible()
+      await page
+        .locator('.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]')
+        .click()
+      await page.keyboard.press('Escape')
+      await expect.poll(shown, { timeout: 30_000 }).toEqual(['shell-made.txt'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
     test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
       env

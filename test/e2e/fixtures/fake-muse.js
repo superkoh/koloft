@@ -415,6 +415,15 @@ function tui() {
       })
       return later(() => say(turnId, `Wrote ${target}`, text))
     }
+    if (text.startsWith('/sh ')) {
+      const cmd = text.slice('/sh '.length).trim()
+      const turnId = turn(text)
+      const call = { turn_id: turnId, tool_name: 'bash', tool_input: { command: cmd } }
+      fire('PreToolUse', call)
+      const ran = spawnSync('/bin/sh', ['-c', cmd], { cwd: process.cwd(), encoding: 'utf8' })
+      fire('PostToolUse', { ...call, tool_response: ran.stdout })
+      return later(() => say(turnId, `Ran: ${cmd}`, text))
+    }
     if (text === '/approve') {
       const turnId = turn(text)
       return block(

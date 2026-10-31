@@ -106,7 +106,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
     output and `koloft exit=<code>`, with no hook and no transcript line), `/sh <command>`
     (the same for any shell command, as Claude's Bash tool would run it with the
-    session's env, ending `sh exit=<code>`), `/clear`,
+    session's env, ending `sh exit=<code>`), `/run <command>` (the same command as a
+    Bash tool call: its PreToolUse and PostToolUse hooks around it, then Stop; ends
+    `ran <command>`), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
     writes), `/compact-while-idle` (Claude compacting a finished session on its own:
     the `idle_prompt` Notification, then an `auto` PreCompact and a compact

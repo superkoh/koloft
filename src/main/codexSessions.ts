@@ -61,6 +61,7 @@ import {
   playwrightEnvOverrides,
   seedAssistMemory,
   STATUS_LINE_CONFIG,
+  trustedInPlace,
   type KoloftHook
 } from './codexLaunchConfig'
 import {
@@ -70,13 +71,18 @@ import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
+  CODEX_SHELL_WRITES_HOOKS,
+  CODEX_SHELL_WROTE_ENV,
   codexHoldHook,
   discordSaidFile,
   HOLD_TAB_ENV,
   NOTICE_ENV,
   noticeFile,
-  seedHandedOverOwnerWords
+  seedHandedOverOwnerWords,
+  SHELL_WROTE_FIELD,
+  SHELL_WROTE_SUFFIX
 } from './hooks'
+import { shellWrittenFiles } from './touchedFiles'
 import {
   acceptCodexHookTrust,
   codexConfigFile,
@@ -212,6 +218,41 @@ export interface CodexMachineDeps {
   tabDir(tabId: string): string
   fileExists(file: string): Promise<boolean>
   keyed(machine: string, onMachine: string): string
+  mirrorDir(machine: string): string
+  nextPull(machine: string): Promise<void>
+}
+
+function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promise<string[]> {
+  let offset = 0
+  return async () => {
+    await pulled()
+    let fresh: Buffer
+    try {
+      const fd = fs.openSync(file, 'r')
+      try {
+        const size = fs.fstatSync(fd).size
+        if (size < offset) offset = 0
+        const added = Buffer.alloc(size - offset)
+        fs.readSync(fd, added, 0, added.length, offset)
+        fresh = added.subarray(0, added.lastIndexOf(10) + 1)
+      } finally {
+        fs.closeSync(fd)
+      }
+    } catch {
+      return []
+    }
+    offset += fresh.length
+    return fresh
+      .toString('utf8')
+      .split('\n')
+      .flatMap((line) => {
+        try {
+          return shellWrittenFiles(JSON.parse(line)[SHELL_WROTE_FIELD])
+        } catch {
+          return []
+        }
+      })
+  }
 }
 
 export interface CodexSessionDeps extends StoredSessionDeps {
@@ -781,7 +822,17 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
     const said = openShim && path.join(openShim.shimDir, 'said')
     if (said && opts.ownerWords) seedHandedOverOwnerWords(said, opts.ownerWords)
-    const observer = new CodexObservation(observe)
+    const shellWroteDir = machine ? this.machineDeps().mirrorDir(machine) : this.deps.hookRegDir
+    const shellWrote = shellWroteDir && path.join(shellWroteDir, tabId + SHELL_WROTE_SUFFIX)
+    if (shellWrote) fs.rmSync(shellWrote, { force: true })
+    const observer = new CodexObservation(
+      observe,
+      shellWrote
+        ? shellWritesFrom(shellWrote, async () => {
+            if (machine) await this.machineDeps().nextPull(machine)
+          })
+        : undefined
+    )
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
       ...(role ? [role] : [])
@@ -800,7 +851,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           [CODEX_SAID_ENV]: said,
           ...(this.deps.hookRegDir && {
             [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId),
-            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId)
+            [CODEX_DISCORD_SAID_ENV]: discordSaidFile(this.deps.hookRegDir, tabId),
+            [CODEX_SHELL_WROTE_ENV]: path.join(this.deps.hookRegDir, tabId + SHELL_WROTE_SUFFIX)
           })
         }),
         ...(holdHere && {
@@ -820,9 +872,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ]
     }
     // ADR-0043
-    const hooks: KoloftHook[] = (machine ? holding : holdHere)
-      ? [...CODEX_REPLY_LANGUAGE_HOOKS, codexHoldHook(machine ? 'hold-self' : 'hold')]
-      : CODEX_REPLY_LANGUAGE_HOOKS
+    const hooks: KoloftHook[] = [
+      ...CODEX_REPLY_LANGUAGE_HOOKS,
+      ...CODEX_SHELL_WRITES_HOOKS,
+      ...((machine ? holding : holdHere) ? [codexHoldHook(machine ? 'hold-self' : 'hold')] : [])
+    ]
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
@@ -847,7 +901,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.assertStarting()
       const serverConfig = [
         ...processOptions.configOverrides!,
-        ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
+        ...hookOverrides(trustedInPlace(hooks, trusted))
       ]
       const skills = agent && !machine ? agent.skillsFolder() : undefined
       transport = await this.startTransport({
