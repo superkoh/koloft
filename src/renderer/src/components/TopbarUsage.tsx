@@ -155,9 +155,10 @@ export function TopbarUsage(): JSX.Element | null {
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
   const claudePool = poolSnapshot(members, now)
-  const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)
-    ? 3
-    : 2
+  const cols: Columns = {
+    fiveHour: claudePool.measured === 0 || claudePool.t5 !== null,
+    fable: claudePool.tfable !== null
+  }
 
   const schedule = (ms: number, fn: () => void): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -252,15 +253,21 @@ export function TopbarUsage(): JSX.Element | null {
               {claude && (
                 <Section
                   title="Claude"
-                  columns={['5h', '7d', ...(cols === 3 ? ['fable'] : [])]}
+                  columns={[
+                    ...(cols.fiveHour ? ['5h'] : []),
+                    '7d',
+                    ...(cols.fable ? ['fable'] : [])
+                  ]}
                   pool={
                     members.length >= 2 && (
                       <PoolRow
                         p={claudePool}
                         cells={[
-                          { win: '5h', v: claudePool.t5 },
+                          ...(cols.fiveHour
+                            ? [claudePool.t5 === null ? null : { win: '5h', v: claudePool.t5 }]
+                            : []),
                           { win: '7d', v: claudePool.t7 },
-                          ...(cols === 3
+                          ...(cols.fable
                             ? [
                                 claudePool.tfable === null
                                   ? null
@@ -268,7 +275,7 @@ export function TopbarUsage(): JSX.Element | null {
                               ]
                             : [])
                         ]}
-                        two={cols === 2}
+                        two={!(cols.fiveHour && cols.fable)}
                         now={now}
                         probing={probing}
                         fallback={armed && claudePool.usable === 0}
@@ -533,7 +540,23 @@ function PoolRow({
   )
 }
 
-function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number }): JSX.Element {
+interface Columns {
+  fiveHour: boolean
+  fable: boolean
+}
+
+function NoFiveHourCell(): JSX.Element {
+  return (
+    <div className="tbu-cell" role="group" aria-label="no 5-hour limit">
+      <Meter v={null} win="5h" />
+      <span className="tbu-cell-sub" aria-hidden>
+        no 5-hour limit
+      </span>
+    </div>
+  )
+}
+
+function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: Columns }): JSX.Element {
   const u = a.usage
   const nowSec = Math.floor(now / 1000)
   const stale = u ? ageLabel(u.at, now) : null
@@ -577,10 +600,15 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
           </span>
         </div>
       ) : u ? (
-        <div className={'tbu-grid' + (cols === 2 ? ' two' : '')}>
-          <GridCell label="5h" win="5h" v={u.u5} sub={sublineFor('5h', u, nowSec)} now={now} />
+        <div className={'tbu-grid' + (cols.fiveHour && cols.fable ? '' : ' two')}>
+          {cols.fiveHour &&
+            (u.has5h ? (
+              <GridCell label="5h" win="5h" v={u.u5} sub={sublineFor('5h', u, nowSec)} now={now} />
+            ) : (
+              <NoFiveHourCell />
+            ))}
           <GridCell label="7d" win="7d" v={u.u7} sub={sublineFor('7d', u, nowSec)} now={now} />
-          {cols === 3 &&
+          {cols.fable &&
             (u.hasOi ? (
               <GridCell
                 label="fable"
