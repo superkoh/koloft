@@ -23,6 +23,7 @@ import {
   openWorktreeSession,
   startSessionIn,
   waitBooted,
+  terminalText,
   waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
@@ -1049,10 +1050,12 @@ function handedToTheCaller(env: E2EEnv): string[] {
 }
 
 const A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS = 60_000
+// CODEX§21
+const CODEX_TAKES_ESC_AND_ENTER_AS_SEPARATE_KEYS_MS = 500
 
 // CODEX§21
 test.describe('koloft session command in a REAL Codex tab: an opt-in case; it runs no model turn', () => {
-  test('/model opens a picker, which Koloft closes with Esc and says so; the next command, /status, is typed into the composer, not the picker, and its answer comes back on the screen', async ({
+  test('a command is not typed into a picker the owner left open; /model run by Koloft opens one, which Koloft closes with Esc and says so; the next command, /status, is typed into the composer and its answer comes back on the screen', async ({
     env
   }) => {
     test.skip(
@@ -1066,7 +1069,7 @@ test.describe('koloft session command in a REAL Codex tab: an opt-in case; it ru
     const page = await app.firstWindow()
     try {
       await waitBooted(page)
-      await startSessionIn(page, 'ws-b')
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
       await waitStartupTurnOver(page, 'ws-b')
       const caller = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
       await newSessionInWith(page, 'ws-a', 'Codex')
@@ -1088,6 +1091,18 @@ test.describe('koloft session command in a REAL Codex tab: an opt-in case; it ru
           .toBeGreaterThan(before)
         return handedToTheCaller(env)[before]
       }
+
+      const press = (keys: string): Promise<void> =>
+        page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
+      for (const keys of ['/model', '\x1b', '\r']) {
+        await press(keys)
+        await page.waitForTimeout(CODEX_TAKES_ESC_AND_ENTER_AS_SEPARATE_KEYS_MS)
+      }
+      await expect.poll(() => terminalText(page, tabId)).toContain('esc back')
+      const refused = await runInCodex('/status')
+      expect(refused).toMatch(/shows a menu or a panel right now, so \/status was not typed/)
+      await press('\x1b')
+      await expect.poll(() => terminalText(page, tabId)).not.toContain('esc back')
 
       const model = await runInCodex('/model')
       expect(model).toMatch(/ran \/model:[\s\S]*Select Model and Effort[\s\S]*esc back/)
