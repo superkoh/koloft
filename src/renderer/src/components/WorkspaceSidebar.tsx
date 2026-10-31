@@ -272,6 +272,7 @@ interface SidebarActions {
   gitEnter: (e: MouseEvent, path: string) => void
   gitLeave: (e: MouseEvent, path: string) => void
   behindClick: (e: MouseEvent, path: string) => void
+  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
   openDoor: (path: string, isGit: boolean) => void
 }
 
@@ -488,6 +489,7 @@ const WorkspaceHead = memo(function WorkspaceHead({
 }): JSX.Element {
   const mq = useMarquee()
   const door = doorFor(isGit)
+  const listsReachable = remoteHost === undefined || remoteConnected
   return (
     <div
       className={'ws-head' + (missing ? ' missing' : '') + (active ? ' active' : '')}
@@ -548,16 +550,24 @@ const WorkspaceHead = memo(function WorkspaceHead({
           {(issues > 0 || prs > 0) && (
             <span className="ws-gh">
               {issues > 0 && (
-                <span aria-label={openIssuesLabel(issues)}>
+                <button
+                  aria-label={openIssuesLabel(issues)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'issues')}
+                >
                   <IconIssue size={12} />
                   {countLabel(issues)}
-                </span>
+                </button>
               )}
               {prs > 0 && (
-                <span aria-label={openPullsLabel(prs)}>
+                <button
+                  aria-label={openPullsLabel(prs)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'pulls')}
+                >
                   <IconPullRequest size={12} />
                   {countLabel(prs)}
-                </span>
+                </button>
               )}
             </span>
           )}
@@ -1263,6 +1273,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       behindClick: (e, path) => {
         e.stopPropagation()
         floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
+      },
+      openList: (e, path, what) => {
+        e.stopPropagation()
+        floating.current?.closeAll()
+        useStore.getState().openWorkspaceList(path, what)
       },
       openDoor: (path, isGit) => {
         floating.current?.dismissMenu()

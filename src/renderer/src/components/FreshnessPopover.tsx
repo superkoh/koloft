@@ -6,8 +6,10 @@ import {
   IconClose,
   IconCopy,
   IconDownload,
+  IconIssue,
   IconOpenOutside,
   IconPlus,
+  IconPullRequest,
   IconReload,
   IconSignIn
 } from '../icons'
@@ -447,6 +449,10 @@ export function FreshnessPopover({
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
   const offline = !!remote && !remote.connected
+  const openList = (what: 'issues' | 'pulls'): void => {
+    onClose()
+    useStore.getState().openWorkspaceList(wsPath, what)
+  }
   const eligible = !!f && canPull(f)
   const note: PullNote | null = failed
     ? { text: failed, tone: 'alarm' }
@@ -525,17 +531,23 @@ export function FreshnessPopover({
                 <span>GitHub · {github.repo}</span>
                 {acct && <span className="age">as {acct.login}</span>}
               </div>
-              <div className="tbu-row">
-                <div className="fx-counts">
-                  <span>{openIssuesLabel(github.issues)}</span>
-                  <span>{openPullsLabel(github.prs)}</span>
+              <button className="tbu-act" disabled={offline} onClick={() => openList('issues')}>
+                <IconIssue size={14} />
+                {openIssuesLabel(github.issues)}
+              </button>
+              <button className="tbu-act" disabled={offline} onClick={() => openList('pulls')}>
+                <IconPullRequest size={14} />
+                {openPullsLabel(github.prs)}
+              </button>
+              {gitNotes.length > 0 && (
+                <div className="tbu-row">
+                  {gitNotes.map((n) => (
+                    <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+                      {n.text}
+                    </div>
+                  ))}
                 </div>
-                {gitNotes.map((n) => (
-                  <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
-                    {n.text}
-                  </div>
-                ))}
-              </div>
+              )}
               {gitBlock}
             </>
           )}

@@ -3,7 +3,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { installCodex, seedSettings } from './helpers/env'
 import { claudeRows, codexRows, startCodex } from './helpers/codex'
 import { clickAppMenuItem, startSessionIn, waitBooted } from './helpers/p1'
-import { layoutState, workbenchPanel } from './helpers/workbench'
+import { WELCOME_PAGE, layoutState, workbenchPanel } from './helpers/workbench'
 
 async function toggleFull(app: ElectronApplication, page: Page): Promise<void> {
   await clickAppMenuItem(app, page, 'toggle-focus-mode')
@@ -77,7 +77,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     expect(await layoutState(page)).toBe('T2')
   })
 
-  test('WB-B02: ⌘⇧F does nothing without a session, else expands to T2, activates Files and focuses search; a second press closes and clears it but keeps T2', async ({
+  test('WB-B02: ⌘⇧F with no session searches the welcome page workspace’s own Workbench; in a session it expands to T2, activates Files and focuses search; a second press closes and clears it but keeps T2', async ({
     app,
     page
   }) => {
@@ -85,7 +85,10 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     const searchInput = page.locator('.wb-panel .ft-search-input')
 
     await findFiles()
-    await expect(workbenchPanel(page)).toHaveCount(0)
+    await expect(searchInput).toBeFocused()
+    await expect(page.locator(WELCOME_PAGE)).toBeVisible()
+    await clickAppMenuItem(app, page, 'toggle-browser')
+    await expect.poll(() => layoutState(page)).toBe('T1')
 
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })

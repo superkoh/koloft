@@ -385,13 +385,15 @@ export class GithubLookup {
     const url =
       what === 'repo'
         ? now.repoUrl
-        : what === 'pulls'
-          ? now.pullsUrl
-          : what === 'compare' && now.branch
-            ? compareUrlOf(now.repoUrl, now.branch)
-            : what === 'pr' && now.pr
-              ? `${now.repoUrl}/pull/${now.pr}`
-              : now.repoUrl
+        : what === 'issues'
+          ? `${now.repoUrl}/issues`
+          : what === 'pulls'
+            ? now.pullsUrl
+            : what === 'compare' && now.branch
+              ? compareUrlOf(now.repoUrl, now.branch)
+              : what === 'pr' && now.pr
+                ? `${now.repoUrl}/pull/${now.pr}`
+                : now.repoUrl
     if (this.fixture) return url
     return (await this.signedIn()) ? url : loginUrlFor(url)
   }

@@ -877,7 +877,7 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+export type GithubTarget = 'repo' | 'issues' | 'pulls' | 'pr' | 'compare'
 
 export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
 
@@ -1588,6 +1588,7 @@ export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
   resident?: string[]
+  workspacePanels?: Record<string, SessionWorkbenchState>
 }
 
 // CC§2

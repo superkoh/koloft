@@ -43,7 +43,6 @@ import { SIDEBAR_MIN } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
-  boundSessionId,
   workbenchOwnerLive,
   consumeRestartExit,
   keptTabsToClose,
@@ -55,8 +54,11 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
-  tabEverBound
+  tabEverBound,
+  welcomeWorkbenchKey,
+  workbenchStoreKey
 } from './store'
+import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
@@ -196,7 +198,7 @@ function panelActionTab(): string | undefined {
   if (!id) return undefined
   const tab = st.tabs.find((t) => t.id === id)
   if (tab?.resuming) return undefined
-  return boundSessionId(st, id) ? id : undefined
+  return workbenchStoreKey(st, id) ? id : undefined
 }
 
 function terminalActionTab(): string | undefined {
@@ -211,7 +213,11 @@ function activeTabIsWeb(): boolean {
   const tabId = panelTabId(st)
   if (!tabId) return false
   if (!panelIsOpen(st, tabId)) return false
-  if (!st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)) return false
+  if (
+    !isWorkspaceWorkbenchKey(tabId) &&
+    !st.sessions.some((s) => s.tabId === tabId && s.sessionId && s.alive)
+  )
+    return false
   const set = st.workbench[tabId]
   if (!set) return false
   return set.tabs.find((t) => t.id === set.activeId)?.kind === 'web'
@@ -715,6 +721,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
       const st = useStore.getState()
+      if (isWorkspaceWorkbenchKey(r.tabId)) {
+        st.openWorkbenchTarget(r.tabId, { url: r.url, source: r.source })
+        return
+      }
       const named = { ...r, tabId: conversationTabFor(r.tabId) }
       const sess = browserOpenTargetSession(st.sessions, named, st.activeTabId)
       const fromShell = named.tabId !== r.tabId
@@ -1277,19 +1287,26 @@ export default function App(): JSX.Element {
       return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
     })
   )
-  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
+  const welcomeKey = useStore(welcomeWorkbenchKey)
+  const panelTab = hasWorkbench(landedTab) ? landedTab?.id : landedTab ? undefined : welcomeKey
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
     useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
-  const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
+  const liveTabs = useMemo(
+    () =>
+      new Set(
+        panelTab && isWorkspaceWorkbenchKey(panelTab) ? [...liveTabIds, panelTab] : liveTabIds
+      ),
+    [liveTabIds, panelTab]
+  )
   const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
   }, [panelTab, panelSid])
 
-  const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
+  const panelBound = useStore((s) => !!panelTab && !!workbenchStoreKey(s, panelTab))
   const panelReady = panelBound && !landedTab?.resuming
 
   const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
