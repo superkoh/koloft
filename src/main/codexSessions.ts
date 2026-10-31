@@ -134,6 +134,17 @@ const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath +
 const rolloutOnThisMac = (listedPath: string): boolean =>
   rolloutFiles(listedPath).some((f) => fs.existsSync(f))
 
+// CODEX§12 CODEX§13
+export function codexImagesDir(
+  threadId: string,
+  where: { homeOnThisMac: string } | { machine: string; rollout?: string | null }
+): string | undefined {
+  if ('homeOnThisMac' in where) return path.join(where.homeOnThisMac, 'generated_images', threadId)
+  const at = where.rollout?.lastIndexOf('/sessions/') ?? -1
+  if (at <= 0) return undefined
+  return keyedOn(where.machine, `${where.rollout!.slice(0, at)}/generated_images/${threadId}`)
+}
+
 async function* everyPage(
   rpc: CodexRpc,
   method: string,
@@ -281,6 +292,7 @@ interface CodexRun extends StoredRun {
   transport: CodexTransport
   account: string
   machine?: string
+  homeOnThisMac?: string
 }
 
 interface CodexLaunch {
@@ -985,6 +997,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         permission,
         bypassing: permission === 'bypass',
         machine,
+        homeOnThisMac: machine ? undefined : home,
         releaseTools: openShim?.release ?? ((): void => {})
       }
       bound = run
@@ -1141,6 +1154,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   protected runDetails(run: CodexRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
     return { details: { codex: { observation: 'live' } }, pickedAccount: run.account }
+  }
+
+  protected scratchpadOf(run: CodexRun, thread: CodexThread): string | undefined {
+    return run.homeOnThisMac
+      ? codexImagesDir(thread.id, { homeOnThisMac: run.homeOnThisMac })
+      : codexImagesDir(thread.id, { machine: run.machine!, rollout: thread.path })
   }
 
   protected degradedDetails(): BackendSessionInfo['details'] {

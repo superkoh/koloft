@@ -148,6 +148,26 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
     expect(scratchpadEntries(entries, SCRATCH).map((e) => e.name)).toEqual(['plan.md'])
     expect(scratchpadEntries(undefined, SCRATCH)).toEqual([])
   })
+
+  // AGY§8 AGY§19
+  it('an Antigravity conversation folder shows its artifacts and scratch/, never agy’s own logs, uploads folder or an artifact’s metadata file', () => {
+    const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
+    const entries: DirEntry[] = [
+      { name: '.system_generated', path: brain + '/.system_generated', isDir: true },
+      { name: '.user_uploaded', path: brain + '/.user_uploaded', isDir: true },
+      { name: 'scratch', path: brain + '/scratch', isDir: true },
+      { name: 'implementation_plan.md', path: brain + '/implementation_plan.md', isDir: false },
+      {
+        name: 'implementation_plan.md.metadata.json',
+        path: brain + '/implementation_plan.md.metadata.json',
+        isDir: false
+      }
+    ]
+    expect(scratchpadEntries(entries, brain).map((e) => e.name)).toEqual([
+      'scratch',
+      'implementation_plan.md'
+    ])
+  })
 })
 
 describe('FR-46 — ↗ Outside', () => {

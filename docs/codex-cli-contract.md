@@ -865,6 +865,24 @@ the sandbox refuses to exec the setuid binary at all, before any password questi
 Codex's own default (`read-only`) refuses it too, and that a command Codex runs outside
 the sandbox after an approval reaches sudo: **inferred, not checked**.
 
+**A thread's own folder outside the workspace is `$CODEX_HOME/generated_images/<thread
+id>/`, and only images go there.** 2026-10-31, codex-cli 0.166.0, a Node client on `codex
+app-server --stdio` in a throwaway `CODEX_HOME` holding a copy of this Mac's login
+(deleted afterwards), an empty work folder, `approval_policy = "never"`, one real turn
+asking for one image: `thread/start` answered `path`
+`$CODEX_HOME/sessions/2026/10/31/rollout-<time>-<thread id>.jsonl`; the turn's
+`item/completed` held an `imageGeneration` item `{status: "completed", result: <base64
+PNG>, savedPath: "$CODEX_HOME/generated_images/<thread id>/<item id>.png", …}`, the file
+was there, and the work folder stayed empty. The rest of `CODEX_HOME` held no other
+per-thread folder: `shell_snapshots/<thread id>.<n>.sh`, `thread-writer-locks/<thread
+id>.lock` and SQLite files are Codex's own. A `codex exec` run of 0.162.0 (2026-10-28) had
+the same folder and told the model "Generated images are saved to <that folder>"; the
+0.166.0 binary's image skill says to copy an image into the workspace when the project
+needs it and leaves it at `$CODEX_HOME/generated_images/...` otherwise. The binary names
+no scratch or plan folder; a Plan-mode plan is a `plan` item, not a file (section 19).
+`generated_images/` is not one of the folders Koloft links between account homes, so a
+thread resumed under another account writes its next images into that account's home.
+
 ## 13. Token counts and the price table
 
 **Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the

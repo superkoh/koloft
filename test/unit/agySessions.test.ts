@@ -618,6 +618,16 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
   })
 
+  // AGY§8 AGY§19
+  it("the tab's Scratchpad is agy's own folder for the conversation it holds, and follows it to the next one after /clear", async () => {
+    const id = await boundTab()
+    const brain = path.join(gemini, 'antigravity-cli', 'brain')
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, A))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, B))
+  })
+
   it('moves the tab to a stored conversation picked with /resume inside agy, and keeps the one it left', async () => {
     writeSummaries(gemini, [
       {
@@ -1381,6 +1391,28 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       { type: 'prompt' },
       { type: 'stop' }
     ])
+  })
+
+  // AGY§12
+  it("a tab on that machine takes its Scratchpad, agy's folder for the conversation there, from the path agy's hooks name, and drops it on /clear until the next conversation's hook names its own", async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const brain = '/home/me/.koloft/agy/work/antigravity-cli/brain'
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: A, artifactDirectoryPath: `${brain}/${A}` }
+      }
+    ])
+    expect(sessions.list()[0].scratchpadDir).toBe(`ssh://devbox${brain}/${A}`)
+    mirrored(id, [{ conversation_id: B, agent_state: 'idle' }])
+    expect(sessions.list()[0]).toMatchObject({ nativeSessionId: B, scratchpadDir: undefined })
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: B, artifactDirectoryPath: `${brain}/${B}` }
+      }
+    ])
+    expect(sessions.list()[0].scratchpadDir).toBe(`ssh://devbox${brain}/${B}`)
   })
 
   it("closing the tab ends the machine's tmux session by the name agy's title script gave it, by the conversation's name before that, and by the tab's launch name before it binds; quitting Koloft leaves it running to attach to again", async () => {

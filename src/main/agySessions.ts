@@ -539,6 +539,20 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return { pickedAccount: run.account }
   }
 
+  // AGY§8 AGY§19
+  protected scratchpadOf(run: AgyRun, entry: HistoryEntry): string | undefined {
+    return run.remote ? undefined : path.join(this.gemini, AGY_APP_DIR, 'brain', entry.id)
+  }
+
+  // AGY§12
+  private learnMachineScratchpad(run: AgyRun, artifactDir: unknown): void {
+    if (!run.remote || !run.info || typeof artifactDir !== 'string' || !artifactDir) return
+    const dir = formatRemoteKey(run.remote.host, artifactDir)
+    if (run.info.scratchpadDir === dir) return
+    run.info.scratchpadDir = dir
+    this.changed()
+  }
+
   // AGY§9 AGY§24
   private async heldElsewhere(conversationId: string): Promise<boolean> {
     const lock = path.join(this.gemini, AGY_APP_DIR, 'presence', `${conversationId}.lock`)
@@ -1006,6 +1020,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (run.explicitStop || run.stopping) return
     if (hook.conversationId !== run.info?.nativeSessionId) return
     const { input } = hook
+    this.learnMachineScratchpad(run, input.artifactDirectoryPath)
     switch (hook.event) {
       case 'PreToolUse': {
         const call = record(input.toolCall)

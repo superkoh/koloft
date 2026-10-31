@@ -535,6 +535,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return { pickedAccount: run.account }
   }
 
+  // MUSE§2
+  protected scratchpadOf(): undefined {
+    return undefined
+  }
+
   protected async startRun(ctx: StartContext, launch: MuseLaunch): Promise<MuseRun> {
     return isRemoteKey(ctx.cwd) ? this.startRemoteRun(ctx, launch) : this.startLocalRun(ctx, launch)
   }

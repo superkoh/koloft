@@ -108,12 +108,24 @@ export function isOutsideEligible(p: string): boolean {
   return k === 'markdown' || k === 'image' || isWebPagePath(p)
 }
 
+export function scratchpadDirOf(session: SessionInfo | null): string | undefined {
+  return session?.details?.claude?.scratchpadDir ?? session?.scratchpadDir
+}
+
+// AGY§8 AGY§19
+const AGY_OWN_FOLDERS = new Set(['.system_generated', '.user_uploaded'])
+const AGY_ARTIFACT_SIDECAR = '.metadata.json'
+
+function isAgentBookkeeping(name: string): boolean {
+  return AGY_OWN_FOLDERS.has(name) || name.endsWith(AGY_ARTIFACT_SIDECAR)
+}
+
 export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
   scratchpadDir: string | undefined
 ): DirEntry[] {
   if (!entries) return []
-  return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
+  return entries.filter((e) => !isTasksPath(e.path, scratchpadDir) && !isAgentBookkeeping(e.name))
 }
 
 export interface OutsideInput {

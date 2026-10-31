@@ -92,6 +92,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- **No folder of the session's own drafts or plans.** 2026-10-31, `Muse Code 1.4.11
+  (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`, no network), `muse exec
+  --approval-mode never` against a fake model server: the session folder held
+  `session.jsonl`, `subagent/<child>/`, `cron.db`, `approval-review/`, a `cli-*.log` and
+  `.session.lock`, all Muse's own records, and the work folder stayed empty. The
+  binary's own prompt text lists a session folder as `session.jsonl`, `subagent/` and
+  `tool-outputs/` (large tool outputs). Its `image_generation` tool says "Results are
+  saved under generated_images/", but that tool was not offered to the fake model even
+  with `supports_image_generation: true` in its catalog row, so where `generated_images/`
+  sits is **not probed yet** (it needs a Meta account).
 - **Tokens per model call** (2026-10-19, Muse Code 1.4.9 Linux arm64, `muse exec` in
   Docker against a fake model server, numbers checked against what it sent): one
   `runtime.session` record with `payload.kind == "run"` and `payload.event.kind ==
