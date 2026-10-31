@@ -974,7 +974,7 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['grand-session', 'grand-session'])
   })
 
-  it('closes an ended session it did not start, in any workspace, and refuses, closing nothing, an open one it did not start', async () => {
+  it('closes a session it did not start, ended or still open, in any workspace', async () => {
     const someoneElses: ClosableSession = {
       sessionId: 'cold-session',
       backendId: 'claude',
@@ -993,14 +993,9 @@ describe('koloft session close', () => {
       },
       [someoneElses]
     )
-    for (const ref of ['other', 'other title', '']) {
-      const reply = await verb(['close', ref], from('me'))
-      expect(reply.exit).not.toBe(0)
-    }
-    expect((await verb(['close', 'other title'], from('me'))).text).toContain('is open')
-    expect(closed).toEqual([])
     expect((await verb(['close', 'Old run'], from('me'))).exit).toBe(0)
-    expect(closed).toEqual(['cold-session'])
+    expect((await verb(['close', 'other title'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['cold-session', 'other-session'])
   })
 
   it('closes, after it, the ended sessions it started and theirs (one in its own worktree goes with it), and names the ones it leaves: still open, or holding work closing would lose', async () => {
@@ -1601,7 +1596,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ended('site-id', 'claude', 'site-build')
   ]
 
-  it('close takes an ended session on this computer, Claude or Codex, in any workspace, off the list, and refuses, closing nothing, an open one and one on another machine', async () => {
+  it('close takes a session on this computer, Claude or Codex, ended or open, in any workspace, off the list, and refuses, closing nothing, one on another machine', async () => {
     const withEnded = sidebar([
       [
         WS,
@@ -1618,12 +1613,12 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect((await verb(['close', 'old-work'], from('butler'))).exit).toBe(0)
     expect((await verb(['close', OTHER_THREAD], from('butler'))).exit).toBe(0)
     expect(closed).toEqual(['old-id', ENDED_CODEX])
-    expect((await verb(['close', 'fix-login'], from('butler'))).text).toContain('is open')
     expect((await verb(['close', 'api-old'], from('butler'))).text).toContain('another machine')
     expect(closed).toEqual(['old-id', ENDED_CODEX])
+    expect((await verb(['close', 'fix-login'], from('butler'))).exit).toBe(0)
     expect((await verb(['close', 'site-build'], from('butler'))).exit).toBe(0)
     expect((await verb(['close'], from('butler'))).exit).toBe(0)
-    expect(closed).toEqual(['old-id', ENDED_CODEX, 'site-id', 'cond-id'])
+    expect(closed).toEqual(['old-id', ENDED_CODEX, 'fix-id', 'site-id', 'cond-id'])
   })
 
   it('close from the butler closes nothing and lists what is left when an ended session’s worktree holds work', async () => {

@@ -23,7 +23,7 @@ place and edited in one place.
    `pr-<n>` worktree for a session started from a pull request, on that pull request's
    own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
    branch (#218); and any session, the butler included, may `koloft session close` an
-   ended local session (#337), relaying what the owner said — Koloft never decides on its
+   open or ended local session (#337), relaying what the owner said — Koloft never decides on its
    own that a session goes.
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
@@ -39,7 +39,7 @@ when it works. That is what "judged against" means.
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
   Every session also reads what any session said, and sends to, resumes, stops and
-  starts any session in any workspace, of any kind, closes an ended one on this computer,
+  starts any session in any workspace, of any kind, closes any one on this computer,
   and runs any `gh` command but `gh auth` through `koloft gh`. The butler (Alfred, Koloft's
   own session for all workspaces) does all of that too from a folder of its own, with no
   gate: its prompt asks it to pass project work to that project's workspace (ADR-0029).
