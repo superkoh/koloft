@@ -5,6 +5,7 @@ import { takenEffort } from '@shared/cronModels'
 import {
   cronBackend,
   CRON_PERMISSIONS,
+  NEW_JOB_PERMISSION,
   slugOf,
   hasWordChar,
   isRunFolderOf,
@@ -207,7 +208,9 @@ function clean(input: CronSaveInput): Clean {
   const task = String(input.task ?? '')
     .replace(/\0/g, '')
     .trim()
-  const permission = CRON_PERMISSIONS.includes(input.permission) ? input.permission : 'same'
+  const permission = CRON_PERMISSIONS.includes(input.permission)
+    ? input.permission
+    : NEW_JOB_PERMISSION
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
   const backend = backendIdOf(input.backend) ?? 'claude'
   const effort = isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined

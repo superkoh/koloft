@@ -629,7 +629,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     const TASK = '/daily-report now'
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
+    seedSettings(env, { hintsOff: true, skipPermissions: true })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()

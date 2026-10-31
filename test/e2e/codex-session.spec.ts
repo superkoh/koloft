@@ -1982,7 +1982,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     const TASK = '/daily-report now'
     installCodex(env)
     gitInit(env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
+    seedSettings(env, { hintsOff: true, skipPermissions: true })
     fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
     fs.writeFileSync(
       path.join(env.home, '.codex', 'config.toml'),
