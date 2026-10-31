@@ -685,6 +685,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-35: the plain open the agent runs in a session on the machine shows a file there in that session’s Workbench, as koloft open does', async ({
+    env
+  }) => {
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await waitPanelAttached(page)
+      expect(await layoutState(page)).toBe('T1')
+
+      await runIn(page, centerTerm(page), '/open README.md')
+      await expect
+        .poll(() => layoutState(page), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toBe('T2')
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('README.md')
+      await expect(artifactBody(page)).toContainText('koloft-ssh-lab marker for kuser')
+    })
+  })
+
   test('E-SSH-27: koloft open, typed in the Workbench shell of a session on the machine, shows a file there in that session’s Workbench, on machines whose login shell is bash (whose /etc/profile resets PATH), tcsh and fish', async ({
     env
   }) => {

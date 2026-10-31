@@ -579,6 +579,7 @@ const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
 const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
@@ -950,8 +951,9 @@ export class SshHost implements Host {
     return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
   }
 
-  async answerAgent(requestId: string, reply: string): Promise<void> {
-    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  async answerAgent(requestId: string, reply: string | null): Promise<void> {
+    if (reply === null) await this.sh(TAKE_AWAY_AGENT_REQUEST, [requestId])
+    else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
   async savePick(name: string, png: Buffer): Promise<string> {
