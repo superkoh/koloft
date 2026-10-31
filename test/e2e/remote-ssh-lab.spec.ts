@@ -443,7 +443,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   for (const agent of ['Codex', 'Muse'] as const)
-    test(`E-SSH-35 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
+    test(`E-SSH-37 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
       env
     }) => {
       seedSettings(env, { hintsOff: true })
@@ -473,7 +473,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       )
     })
 
-  test('E-SSH-36: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
+  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
