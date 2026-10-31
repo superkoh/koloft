@@ -270,7 +270,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-53: koloft session list run in a Claude Code session on the machine gives its transcript as the file in that machine’s home, which the session there can read, never the copy mirrored to this Mac', async ({
+  test('E-RW-56: koloft session list run in a Claude Code session on the machine gives its transcript as the file in that machine’s home, which the session there can read, never the copy mirrored to this Mac', async ({
     env
   }) => {
     test.setTimeout(180_000)
