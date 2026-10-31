@@ -885,7 +885,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§33
-  test('E-SSH-40: a localhost page the agent opens in a session on a machine behind the jump host, while a session on this Mac is the one selected, is the machine’s, through a forward on that ssh connection that keeps the port while the Mac has it free, takes another while a Mac server holds it, and goes when its web tab closes', async ({
+  test('E-SSH-40: a localhost page the agent opens in a session on a machine behind the jump host, while a session on this Mac is the one selected, or drives with playwright-cli there, is the machine’s, through a forward on that ssh connection that keeps the port while the Mac has it free, takes another while a Mac server holds it, and goes when its web tab closes', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -919,6 +919,20 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(first.locator('body')).toHaveText('first page on the machine')
         await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
         expect(await fetchOnTheMacOnAFreshConnection(free)).toContain('first page on the machine')
+
+        await expect
+          .poll(
+            () => runOnTarget(lab, 'kuser', `cat .koloft/tabs/${remoteTab}.cdp 2>/dev/null; true`),
+            {
+              timeout: BACKGROUND_CONNECT_MS
+            }
+          )
+          .toMatch(/^ws:\/\//)
+        const run = agentShell(page, remoteTab, KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS)
+        expect(
+          (await run(`playwright-cli open http://localhost:${free}/`)).replace(/\n/g, '')
+        ).toContain('Page Title: first')
+        await run('playwright-cli close')
 
         await runIn(page, centerTerm(page), `/open http://localhost:${heldOnMac}/`)
         const second = await guestByUrl(

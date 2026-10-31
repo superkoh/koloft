@@ -319,8 +319,8 @@ describe("a session on another machine never reaches this Mac's files or local s
       'fi\tle:///etc/hosts',
       '\u0001file:///etc/hosts',
       'FILE:/etc/hosts',
-      'http://127.0.0.1:8888/tree',
-      'http://localhost:3000/',
+      'http://127.0.0.2:8888/tree',
+      'http://dev.localhost:3000/',
       NAME_FOR_THE_MAC
     ])
       expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toContain(REFUSED)
@@ -332,7 +332,7 @@ describe("a session on another machine never reaches this Mac's files or local s
       ['Page.navigate', { url: MAC_FILE }],
       ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
       ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
-      ['Page.navigate', { url: 'http://[::1]:5173/' }],
+      ['Page.navigate', { url: 'http://[::ffff:127.0.0.1]:5173/' }],
       ['Page.navigate', { url: NAME_FOR_THE_MAC }],
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
       ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
@@ -366,6 +366,16 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
     guest.destroy()
     expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it("opens localhost, 127.0.0.1 and [::1], which in its own tab reach the machine's own servers through a forward on its ssh connection", async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    for (const url of ['http://localhost:5173/', 'http://127.0.0.1:3000/', 'http://[::1]:8080/']) {
+      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toBe('')
+      expect(made.loadURL).toHaveBeenCalledWith(url)
+    }
   })
 
   it('opens a page it asks for blank first and fences it before loading the address, so even its first load is fenced', async () => {
@@ -406,7 +416,7 @@ describe("a session on another machine never reaches this Mac's files or local s
       ...deps.strip,
       { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
       { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
-      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 },
+      { targetId: 'bt6', url: 'http://dev.localhost:3000/', title: 'dev server', guestId: 16 },
       {
         targetId: 'bt7',
         url: machinePageUrl('devbox', '/home/u/report.html'),

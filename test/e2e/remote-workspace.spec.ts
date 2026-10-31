@@ -100,6 +100,7 @@ const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
 const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
+const NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST = 'mac-only.localhost'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
 
@@ -597,6 +598,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
@@ -611,7 +613,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         dir,
         (await boundSessionId(page, tabId)) ?? ''
       )
-      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+      const guest = await openPickPage(
+        app,
+        page,
+        server.page('/pick', PICK_PAGE).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      )
 
       await pickIntoSession(page, guest, '#buy', ' BP-07 remote')
       const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-07'))
@@ -951,16 +957,19 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
       fs.writeFileSync(path.join(dir, 'secret.js'), 'window.leaked = "the secret"\n')
       const secretUrl = machinePageUrl(REMOTE_HOST, path.join(dir, 'secret.js'))
-      const webPage = server.page(
-        '/pulls-a-machine-script',
-        `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
-          `onerror="document.body.dataset.script = 'refused'"></script>`
-      )
+      const webPage = server
+        .page(
+          '/pulls-a-machine-script',
+          `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
+            `onerror="document.body.dataset.script = 'refused'"></script>`
+        )
+        .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
       fs.writeFileSync(
         path.join(dir, 'reader.html'),
         '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe>' +
@@ -1270,7 +1279,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const url = server
         .page('/remote', `<title>${title}</title><body>from the machine</body>`)
         .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
-      const onTheMac = server.page('/mac-only', '<title>mac-only-server</title>')
+      const onTheMac = server
+        .page('/mac-only', '<title>mac-only-server</title>')
+        .replace('127.0.0.1', NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST)
       const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
       const unwrapped = async (command: string): Promise<string> =>
         (await run(command)).replace(/\n/g, '')
@@ -1288,7 +1299,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
       await run(
-        `playwright-cli eval "() => { location.href = '${onTheMac.replace('127.0.0.1', 'localhost')}' }"`
+        `playwright-cli eval "() => { location.href = '${onTheMac.replace(NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST, '127.0.0.2')}' }"`
       )
       expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
       expect(

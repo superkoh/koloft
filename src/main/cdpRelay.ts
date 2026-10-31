@@ -7,7 +7,7 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
 import { hiddenFromClients, holdDebugger } from './guestDebugger'
-import { machinePageOf, urlOrNull } from '@shared/browserRoute'
+import { loopbackPortOf, machinePageOf, urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
 export interface RelayDeps {
@@ -26,15 +26,28 @@ const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:'
 const NO_MAC_FILES_FOR_A_MACHINE =
   'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
 
+// ADR-0046
+function isTheMachinesOwnLocalhost(url: string): boolean {
+  return loopbackPortOf(url) !== null
+}
+
 function showsThisMac(url: string): boolean {
   const u = urlOrNull(url)
   if (u?.protocol === 'view-source:') return showsThisMac(u.pathname)
-  return u?.protocol === 'file:' || machinePageOf(url) !== null || namesThisMacsServer(url)
+  return (
+    u?.protocol === 'file:' ||
+    machinePageOf(url) !== null ||
+    (namesThisMacsServer(url) && !isTheMachinesOwnLocalhost(url))
+  )
+}
+
+async function reachesTheMac(url: string): Promise<boolean> {
+  return !isTheMachinesOwnLocalhost(url) && (await reachesThisMacsServer(url))
 }
 
 async function opensThisMac(url: string): Promise<boolean> {
   const u = urlOrNull(url)
-  return !u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol) || (await reachesThisMacsServer(url))
+  return !u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol) || (await reachesTheMac(url))
 }
 
 async function reachesThisMac(method: string, params: unknown): Promise<boolean> {
@@ -260,7 +273,7 @@ function backendFor(client: Client): RelayBackend {
       const wc = guestOf(guestId)
       if (client.onMachine) fenceForGood(guestId)
       const showsTheMac = async (): Promise<boolean> =>
-        showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL()))
+        showsThisMac(wc.getURL()) || (await reachesTheMac(wc.getURL()))
       await fence(showsTheMac)
       let release: () => void
       try {
