@@ -20,6 +20,7 @@ import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
+import { AGENT_SHIM_WAITS_MS } from '../../src/main/agentShim'
 import type {
   BackendId,
   CreateTabOptions,
@@ -82,6 +83,7 @@ interface Conducting {
   worktrees?: string[]
   busy?: boolean
   leftOf?: Record<string, string[]>
+  removalsNeverEnd?: boolean
 }
 
 function harness(
@@ -169,7 +171,11 @@ function harness(
     },
     startedSessions,
     closable: () => [...sessions, ...cold],
-    whatIsLeft: async (target) => conducting.leftOf?.[target.sessionId] ?? left,
+    whatIsLeft: async (target, waitUntil) => {
+      if (conducting.removalsNeverEnd)
+        await new Promise((done) => setTimeout(done, waitUntil - Date.now()))
+      return conducting.leftOf?.[target.sessionId] ?? left
+    },
     closeSoon: (inOrder, tellStarter) => {
       closed.push(...inOrder.map((target) => target.sessionId))
       closeFails.push((text) => tellStarter(inOrder[0], text))
@@ -1046,6 +1052,34 @@ describe('koloft session close', () => {
     expect(reply.text).toContain('"Dirty helper":\nChanges not committed:\n?? draft.md')
     expect(reply.text).toContain('Left these sessions it started open: "Still working".')
     expect(reply.text).not.toContain('Under dirty')
+  })
+
+  it('answers within the shim’s reply limit when every worktree along its chain of started sessions is being deleted: one wait for the whole close, not one per level', async () => {
+    vi.useFakeTimers()
+    try {
+      const ended = (id: string) => ({
+        sessionId: id,
+        backendId: 'codex' as const,
+        title: id,
+        treeRoot: `${WS}/.claude/worktrees/${id}`
+      })
+      const h = harness([session('me', 'claude')], {}, [], { removalsNeverEnd: true }, [
+        ended('kid-session'),
+        ended('grand-session')
+      ])
+      h.startedSessions.started('kid-tab', 'me-session')
+      h.startedSessions.bound('kid-tab', 'kid-session')
+      h.startedSessions.started('grand-tab', 'kid-session')
+      h.startedSessions.bound('grand-tab', 'grand-session')
+      let answered = false
+      const reply = h.verb(['close'], from('me')).finally(() => (answered = true))
+      await vi.advanceTimersByTimeAsync(AGENT_SHIM_WAITS_MS - 1)
+      expect(answered).toBe(true)
+      expect((await reply).exit).toBe(0)
+      expect(h.closed).toEqual(['me-session', 'kid-session', 'grand-session'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('closes nothing and lists what is left when something is not committed or not pushed', async () => {
