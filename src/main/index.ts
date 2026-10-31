@@ -2248,9 +2248,8 @@ async function addAccount(
   secret: string,
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
-  if (kind === 'codex-home') return addCodexKey(name, typeof secret === 'string' ? secret : '')
-  if (kind === 'muse-home') return addMuseKey(name, typeof secret === 'string' ? secret : '')
-  if (kind === 'agy-home') return addAgyKey(name, typeof secret === 'string' ? secret : '')
+  if (kind === 'codex-home' || kind === 'muse-home' || kind === 'agy-home')
+    return addHomeKey(kind, name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
@@ -2352,25 +2351,6 @@ async function codexUseReset(name: string): Promise<CodexResetOutcome> {
     .catch((): CodexResetOutcome => 'failed')
   await probeCodexAccount(name)
   return outcome
-}
-
-// CODEX§15
-async function addCodexKey(name: string, key: string): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, 'codex-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const trimmed = key.trim()
-  if (!trimmed || !codexSessions) return { ok: false, error: 'unknown' }
-  const home = codexHomeOf(app.getPath('userData'), name)
-  prepareCodexHome(home, codexSharedConfig())
-  try {
-    await codexSessions.storeApiKey(home, trimmed)
-  } catch {
-    return { ok: false, error: 'unknown' }
-  }
-  noteHomeAccount(name, 'codex-home')
-  await probeCodexAccount(name)
-  const account = accountViews().find((a) => a.kind === 'codex-home' && a.name === name)
-  return { ok: account?.status === 'ok', account }
 }
 
 let codexProbeRound: Promise<void> | null = null
@@ -2558,7 +2538,8 @@ async function probeMuseAccount(name: string): Promise<void> {
   try {
     const signIn = await museSignIn(serve)
     foldHomeSignIn(name, 'muse-home', signIn !== 'none')
-    if (signIn !== 'subscription') usageViews.delete(key)
+    if (signIn === 'apiKey') usageViews.set(key, { apiKey: true })
+    else if (signIn === 'none') usageViews.delete(key)
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
       fs.mkdirSync(dir, { recursive: true })
@@ -2582,20 +2563,6 @@ function probeMuseAccounts(): Promise<void> {
     museProbeRound = null
   })
   return museProbeRound
-}
-
-// MUSE§13
-async function addMuseKey(name: string, key: string): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, 'muse-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const trimmed = key.trim()
-  const serve = trimmed ? await museServeFor(name) : undefined
-  if (!serve) return { ok: false, error: 'unknown' }
-  noteHomeAccount(name, 'muse-home')
-  await storeMuseKey(serve, trimmed).catch(() => undefined)
-  await probeMuseAccount(name)
-  const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
-  return { ok: account?.status === 'ok', account }
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
@@ -2653,7 +2620,8 @@ async function probeAgyAccount(name: string): Promise<void> {
   const signedIn = agySignedIn(home, !!apiKey)
   foldHomeSignIn(name, 'agy-home', signedIn)
   const key = viewKey(name, 'agy-home')
-  if (signedIn && !apiKey) {
+  if (apiKey) usageViews.set(key, { apiKey: true })
+  else if (signedIn) {
     const quota = await agyUsage(home)
     usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
   }
@@ -2683,17 +2651,44 @@ function probeAgyAccounts(): Promise<void> {
   return agyProbeRound
 }
 
-// AGY§6
-async function addAgyKey(name: string, key: string): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, 'agy-home')
+const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
+  // CODEX§15
+  'codex-home': async (name, key) => {
+    if (!codexSessions) throw new Error('Codex is not set up.')
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    await codexSessions.storeApiKey(home, key)
+  },
+  // MUSE§13
+  'muse-home': async (name, key) => {
+    const serve = await museServeFor(name)
+    if (!serve) throw new Error('Muse is not installed.')
+    await storeMuseKey(serve, key)
+  },
+  // AGY§6
+  'agy-home': async (name, key) => {
+    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+    setAgyApiKeyRoute(agyHomeFor(name), true)
+  }
+}
+
+async function addHomeKey(
+  kind: SignInFolderKind,
+  name: string,
+  key: string
+): Promise<AccountAddResult> {
+  const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = key.trim()
-  if (!trimmed || !(await keychainWrite('agy-home', name, trimmed)))
+  if (!trimmed) return { ok: false, error: 'unknown' }
+  try {
+    await storeHomeKey[kind](name, trimmed)
+  } catch {
     return { ok: false, error: 'unknown' }
-  setAgyApiKeyRoute(agyHomeFor(name), true)
-  noteHomeAccount(name, 'agy-home')
-  await probeAgyAccount(name)
-  const account = accountViews().find((a) => a.kind === 'agy-home' && a.name === name)
+  }
+  noteHomeAccount(name, kind)
+  await probeHomeAccount[kind](name)
+  const account = accountViews().find((a) => a.kind === kind && a.name === name)
   return { ok: account?.status === 'ok', account }
 }
 

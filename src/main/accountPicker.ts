@@ -13,6 +13,7 @@ import {
   fiveHourStopped,
   homeRoom,
   keepsResumedSession,
+  meteredTag,
   resetElapsed,
   usableAccounts
 } from '@shared/accountUsage'
@@ -96,7 +97,7 @@ export function allLimitedNotice(a: AccountView, backend: BackendId): string | u
 function fallbackTag(a: AccountMeta): string {
   return a.kind === 'custom'
     ? `${a.name} (custom endpoint${a.model ? ` · ${a.model}` : ''})`
-    : `${a.name} (API key, metered)`
+    : meteredTag(a.name)
 }
 
 function fallbackBanner(a: AccountMeta): string {

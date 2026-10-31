@@ -321,6 +321,12 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
     expect(launchLine(view({ name: 'key', kind: 'agy-home' }), NOW_MS)).toBe('koloft: → key')
   })
 
+  it('says an API-key account is metered, in the words the Claude shim prints for one', () => {
+    expect(launchLine(view({ name: 'key', kind: 'codex-home', apiKey: true }), NOW_MS)).toBe(
+      'koloft: → key (API key, metered)'
+    )
+  })
+
   it('reads an Antigravity bucket as one item, so its group and window do not look like two', () => {
     const quota = [
       { label: 'Gemini Models · 5h', used: 0.03 },
