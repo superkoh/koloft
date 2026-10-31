@@ -24,7 +24,8 @@ export const AGY_BRAIN_FLAGS = [
   '--include=/*/.system_generated/logs/transcript.jsonl',
   '--exclude=*'
 ]
-export const AGY_REMOTE_BRAIN = `.gemini/${AGY_APP_DIR}/brain`
+export const AGY_REMOTE_GEMINI = '.gemini'
+export const AGY_REMOTE_BRAIN = `${AGY_REMOTE_GEMINI}/${AGY_APP_DIR}/brain`
 
 export const AGY_HOOK_FILE = 'agy-hook.sh'
 export const AGY_TITLE_FILE = 'agy-title.sh'

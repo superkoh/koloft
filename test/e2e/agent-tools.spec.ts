@@ -3,7 +3,15 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
@@ -256,6 +264,62 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await caller.locator('.ws-tab-fold').click()
     await expect(nested).toHaveCount(1)
     await expect(caller.locator('.ws-tab-parked')).toHaveCount(0)
+  })
+
+  test('koloft session list gives every open session’s transcript, Claude, Codex, Muse and Antigravity alike, as a file on this Mac that holds what the session was asked', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    installMuse(env)
+    installAgy(env)
+    trustInMuse(env, env.workspaces.a)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const children = [
+        { label: 'Codex', backend: 'codex', marker: 'codex-marker' },
+        { label: 'Muse', backend: 'muse', marker: 'muse-marker' },
+        { label: 'Antigravity', backend: 'agy', marker: 'agy-marker' }
+      ]
+      for (const { backend, marker } of children)
+        expect(await koloftInSession(page, `session new --backend ${backend} -- ${marker}`)).toBe(
+          '0'
+        )
+      await expect(wsRows(page, 'ws-a')).toHaveCount(4, { timeout: 60_000 })
+
+      const listed = async (): Promise<Record<string, string>> => {
+        await koloftInSession(page, 'session list')
+        const text = await shownTermText(page, CENTER)
+        const lastList = text.slice(text.lastIndexOf('(you) · Claude'))
+        const found: Record<string, string> = {}
+        for (const m of lastList.matchAll(
+          /· (Claude|Codex|Muse|Antigravity) · .*· transcript: (\S+)$/gm
+        ))
+          found[m[1]] = m[2]
+        return found
+      }
+      const holds = (file: string | undefined, words: string): boolean =>
+        !!file && fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes(words)
+      await expect
+        .poll(
+          async () => {
+            const files = await listed()
+            return [
+              fs.existsSync(files.Claude ?? ''),
+              ...children.map(({ label, marker }) => holds(files[label], marker))
+            ]
+          },
+          { timeout: 90_000, intervals: [3_000] }
+        )
+        .toEqual([true, true, true, true])
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   // ADR-0031

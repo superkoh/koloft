@@ -510,6 +510,13 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
   }
 
+  // MUSE§2 MUSE§5
+  transcriptFile(key: string): string | undefined {
+    const listed = this.history.get(key)?.logPath
+    if (listed || hostOfKey(key)) return listed
+    return museSessionLog(this.env, this.nativeId(key))
+  }
+
   get cliBinary(): string | undefined {
     return this.binary
   }

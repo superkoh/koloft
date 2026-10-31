@@ -737,6 +737,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
+  // CODEX§19
+  transcriptFile(key: string): string | undefined {
+    return this.history.get(key)?.path ?? undefined
+  }
+
   // CODEX§11
   protected permissionOf(opts: CreateTabOptions): LaunchPermission {
     return opts.resumeSessionId ? (opts.permission ?? 'default') : super.permissionOf(opts)

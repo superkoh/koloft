@@ -24,6 +24,7 @@ import { UsageMeter } from './usageMeter'
 import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
+import { REMOTE_CLAUDE_PROJECTS } from './remote/paths'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
 import { messageText } from './messageText'
@@ -971,6 +972,17 @@ export class SessionTracker extends SessionRuntime {
       return !!t.info.jsonlPath && fs.existsSync(t.info.jsonlPath)
     }
     return !!findTranscript(PROJECTS_ROOT, sessionId)
+  }
+
+  transcriptOnMachine(sessionId: string): string | undefined {
+    for (const t of this.tracked.values()) {
+      const file = t.info.alive && t.info.sessionId === sessionId && t.info.jsonlPath
+      if (!file) continue
+      if (!t.remote) return file
+      const inProjects = path.relative(t.remote.projectsRoot, file)
+      return path.posix.join('~', REMOTE_CLAUDE_PROJECTS, inProjects)
+    }
+    return undefined
   }
 
   turnsOf(sessionId: string, n: number): TalkTurn[] | undefined {

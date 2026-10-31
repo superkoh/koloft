@@ -271,6 +271,10 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
 
+  transcriptFile(key: string): string | undefined {
+    return this.d.tracker.transcriptOnMachine(key)
+  }
+
   async turns(key: string, n: number): Promise<Turn[]> {
     const live = this.d.tracker.turnsOf(key, n)
     if (live) return live

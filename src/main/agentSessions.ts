@@ -152,10 +152,18 @@ function sendMessageReaches(
   )
 }
 
+function transcriptPart(info: SessionInfo, me: SessionInfo, file: string | undefined): string[] {
+  const machine = info.remote?.host
+  if (!file || (!machine && me.remote)) return []
+  const readable = machine && machine !== me.remote?.host ? remoteCopyText(machine, file) : file
+  return [`transcript: ${readable}`]
+}
+
 function openSessionLines(
   sessions: ListedSession[],
   me: SessionInfo,
-  asking: (tabId: string) => boolean
+  asking: (tabId: string) => boolean,
+  transcriptFile: (key: string) => string | undefined
 ): string[] {
   return sessions.map(({ info, peerName, starter }) => {
     const parts = [
@@ -167,8 +175,7 @@ function openSessionLines(
       parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
-    const transcript = info.details?.claude?.jsonlPath
-    if (transcript) parts.push(`transcript: ${transcript}`)
+    parts.push(...transcriptPart(info, me, transcriptFile(info.sessionId)))
     return parts.join(' · ')
   })
 }
@@ -412,6 +419,7 @@ export interface SessionVerbDeps {
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
+  transcriptFile(key: string): string | undefined
   quotedPrompt(tabId: string): string | undefined
   butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
@@ -505,7 +513,7 @@ async function listSessions(
   const open = new Set(sessions.map((s) => s.sessionId))
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
-    ...openSessionLines(listed, me, d.asking),
+    ...openSessionLines(listed, me, d.asking, d.transcriptFile),
     ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]

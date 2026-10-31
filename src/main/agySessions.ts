@@ -73,6 +73,7 @@ import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_REMOTE_GEMINI,
   AGY_SKILLS,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
@@ -104,6 +105,7 @@ import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
+  hostOfKey,
   type HistoryEntry,
   type HistoryListing,
   type StartContext,
@@ -517,6 +519,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       }
       return []
     }
+  }
+
+  // AGY§4 AGY§8
+  transcriptFile(key: string): string | undefined {
+    const gemini = hostOfKey(key) ? path.posix.join('~', AGY_REMOTE_GEMINI) : this.gemini
+    return agyTranscript(gemini, this.nativeId(key))
   }
 
   get cliBinary(): string | undefined {

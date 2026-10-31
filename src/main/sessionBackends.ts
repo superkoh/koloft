@@ -42,6 +42,7 @@ export interface SessionBackend {
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
+  transcriptFile(key: string): string | undefined
   permissionClass(tabId: string): ModeClass
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
@@ -165,6 +166,10 @@ export class SessionBackends {
 
   turns(key: string, n: number): Promise<Turn[]> {
     return this.forSession(key).turns(key, n)
+  }
+
+  transcriptFile(key: string): string | undefined {
+    return this.forSession(key).transcriptFile(key)
   }
 
   permissionClass(tabId: string): ModeClass {

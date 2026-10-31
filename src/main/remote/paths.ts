@@ -33,6 +33,8 @@ export function tabPackageDir(userData: string, tabId: string): string {
   return path.join(userData, 'remote', 'tabs', tabId)
 }
 
+export const REMOTE_CLAUDE_PROJECTS = '.claude/projects'
+
 export const REMOTE_HOME = '$HOME/.koloft'
 export function remoteMachineDir(machineName: string): string {
   return `${REMOTE_HOME}/${machineName}`
