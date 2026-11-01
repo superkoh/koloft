@@ -1,12 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
+  agentRow,
   centerTerm,
   chooseBackend,
   gitInit,
@@ -17,8 +18,10 @@ import {
   openMenu,
   openWorktreeSession,
   processAlive,
+  readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   startSessionIn,
   switchToRow,
   terminalText,
@@ -595,6 +598,70 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       expect(statusLine(tuiCalls(env)[0].argv)).toEqual([])
       expect(server.argv).toContain(CODEX_ASKS_AND_WAITS)
       expect(statusLine(server.argv)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-12: with Claude switched off in Settings ▸ Sessions, Codex becomes the default and what Koloft Assist runs on, the last method left on cannot be switched off, and the New session menus of this Mac and of the remote workspace offer no Claude and start Codex', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
+      const defaultMethod = page.getByRole('button', { name: 'Default session method' })
+      const methodSwitch = (name: string): Locator =>
+        page.getByRole('switch', { name: `Enable ${name}`, exact: true })
+      await expect(defaultMethod).toHaveText('Claude')
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
+      await methodSwitch('Claude').uncheck()
+      await expect(defaultMethod).toHaveText('Codex')
+      await expect.poll(() => settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
+      await methodSwitch('Muse').uncheck()
+      await expect(methodSwitch('Codex')).toBeEnabled()
+      await methodSwitch('Antigravity').uncheck()
+      await expect(methodSwitch('Codex')).toBeChecked()
+      await expect(methodSwitch('Codex')).toBeDisabled()
+      await expect(methodSwitch('Claude')).toBeEnabled()
+      await page.getByRole('tab', { name: 'Assist', exact: true }).click()
+      const runsOn = page.getByRole('button', { name: 'Koloft Assist runs on' })
+      await expect(runsOn).toHaveText('Codex')
+      await runsOn.click()
+      await expect(agentRow(page, 'Claude')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Claude')).toContainText('Off')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.set-main')).toHaveCount(0)
+
+      const offeredIn = async (wsName: string): Promise<string[]> => {
+        await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+        const items = await menuItemTexts(page)
+        await page.keyboard.press('Escape')
+        await expect(page.locator('.menu')).toHaveCount(0)
+        return items
+      }
+      const local = (await offeredIn('ws-a')).join(' | ')
+      expect(local).toContain('New session')
+      expect(local).not.toMatch(/Claude/)
+      await expect
+        .poll(async () => (await offeredIn(REMOTE_WS_NAME)).join(' | '), { timeout: 60_000 })
+        .toContain('New session')
+      expect((await offeredIn(REMOTE_WS_NAME)).join(' | ')).not.toMatch(/Claude/)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'New session' }).click()
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
+      expect(tuiCalls(env)[0].cwd).toBe(env.workspaces.a)
+      await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      await page.locator('.menu .mi', { hasText: 'New session' }).click()
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(readCalls(env)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

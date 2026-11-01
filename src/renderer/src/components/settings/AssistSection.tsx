@@ -15,6 +15,7 @@ export function AssistSection(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const name = butler.name
   const runsOn = useStore((s) => preferredAssistBackend(s.settings))
+  const methods = useStore((s) => s.settings.sessionMethods)
   const update = useSettingsUpdate()
   const setup = useAssistSetup()
   const on = assist?.on ?? false
@@ -60,8 +61,13 @@ export function AssistSection(): JSX.Element {
           ariaLabel="Koloft Assist runs on"
           choice={{
             listed: SESSION_BACKENDS,
-            issue: (b) => (setup.usable[b] ? '' : NO_ACCOUNT_LINE),
-            note: () => 'No account'
+            issue: (b) =>
+              !methods.enabled[b]
+                ? `${BACKEND_LABEL[b]} is switched off in Settings ▸ Sessions.`
+                : setup.usable[b]
+                  ? ''
+                  : NO_ACCOUNT_LINE,
+            note: (b) => (methods.enabled[b] ? 'No account' : 'Off')
           }}
           onPick={(b) => update({ assist: { on: assist?.on ?? true, backend: b } })}
         />

@@ -24,7 +24,7 @@ export const BACKEND_PRODUCT: Record<BackendId, string> = {
 
 export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
-export const ALWAYS_ON_BACKEND: BackendId = 'claude'
+export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'
 
 export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {
   return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
@@ -51,12 +51,26 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
-  const enabled = byBackend((b) => b === ALWAYS_ON_BACKEND || value.enabled?.[b] !== false)
+  const enabled = byBackend((b) => value.enabled?.[b] !== false)
+  if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[BACKEND_WHEN_NONE_IS_KNOWN] = true
   const picked = backendIdOf(value.defaultBackend)
   return {
     enabled,
-    defaultBackend: picked && enabled[picked] ? picked : ALWAYS_ON_BACKEND
+    defaultBackend: picked && enabled[picked] ? picked : SESSION_BACKENDS.find((b) => enabled[b])!
   }
+}
+
+export function assistOnAMethodThatIsOn<A extends { backend: BackendId }>(
+  assist: A | null,
+  methods: SessionMethods
+): A | null {
+  return assist && !methods.enabled[assist.backend]
+    ? { ...assist, backend: methods.defaultBackend }
+    : assist
+}
+
+export function lastOneOn(methods: SessionMethods, backend: BackendId): boolean {
+  return SESSION_BACKENDS.every((b) => b === backend || !methods.enabled[b])
 }
 
 export function preferredAssistBackend(settings: {
@@ -71,7 +85,7 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
 }
 
 export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
-  return list ? backendAvailable(list, id) : id === ALWAYS_ON_BACKEND
+  return list ? backendAvailable(list, id) : id === BACKEND_WHEN_NONE_IS_KNOWN
 }
 
 export type Messaging = 'queue' | 'peerLine' | 'typed'
