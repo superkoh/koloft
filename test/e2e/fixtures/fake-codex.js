@@ -703,7 +703,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                   primary: {
                     usedPercent: auth.usedPercent,
                     windowDurationMins: 10080,
-                    resetsAt: now + 3600
+                    resetsAt: now + 3 * 86400
                   },
                   secondary: null,
                   credits:
