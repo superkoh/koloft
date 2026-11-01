@@ -1140,9 +1140,11 @@ only downloaded the public release.
   completion menu draws *below* the lower rule, its first row again `> /usage  View model
   quota usage`, then `↑/↓ Navigate · enter Select · tab Complete` and `esc to cancel`.
   Earlier turns above the box are split by a shorter rule (60 `─`). One Esc closes only
-  the menu and leaves `> /usage` in the box; Enter, with or without the menu, runs it
-  and leaves a bare `>` with the output under the box. So the last two rules hold the
-  draft, and a command whose Enter did not land is still there. macOS: not probed.
+  the menu and leaves `> /usage` in the box; Ctrl+E then Ctrl+U (`\x05\x15`, one write)
+  empties it to a bare `>`, and on an empty box changes nothing. Enter, with or without
+  the menu, runs it and leaves a bare `>` with the output under the box. So the last two
+  rules hold the draft, and a command whose Enter did not land is still there. macOS:
+  not probed.
 - Desktop-app conversations in `<geminiDir>/antigravity/conversations` show only in
   the `/resume` picker's "Other" tab (also through a symlinked folder), titled by
   their first message; Enter asks "Import this conversation? (y/n)". A real desktop

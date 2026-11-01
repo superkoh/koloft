@@ -94,56 +94,72 @@ describe('a slash command typed into a session', () => {
     }
   )
 
-  it('in Antigravity, a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
-    const WIDE_RULE = '─'.repeat(120)
-    const draftScreen = [
+  describe('in Antigravity, which keeps a command’s output only on screen', () => {
+    const DRAFT_SCREEN = [
       '      ▄▀▀▄        Antigravity CLI 1.4.12',
       '─'.repeat(60),
       '> hello there',
       '',
       '  REPLY(hi)',
       '',
-      WIDE_RULE,
+      RULE,
       '> /usage',
-      WIDE_RULE,
+      RULE,
       '> /usage  View model quota usage',
       '',
-      '  ↑/↓ Navigate · enter Select · tab Complete',
-      'esc to cancel                                  Gemini 3.1 Pro · low'
+      '  ↑/↓ Navigate · enter Select · tab Complete'
     ]
-    const outputScreen = [
+    const OUTPUT_SCREEN = [
       '      ▄▀▀▄        Antigravity CLI 1.4.12',
-      WIDE_RULE,
+      RULE,
       '>',
-      WIDE_RULE,
+      RULE,
       '└ Models & Quota',
       '',
-      '  ⢿  Loading quota summary...',
-      '',
-      '  ↑/↓ Scroll · pgup/pgdown Page · ctrl+end Bottom · ctrl+home Top · esc Close'
+      '  ⢿  Loading quota summary...'
     ]
-    let shown = draftScreen
-    let enters = 0
-    const typed: string[] = []
-    const { slash, posts } = setup({
-      backendOf: () => 'agy',
-      screen: async () => [...shown],
-      outputOnlyOnScreen: async () => shown.join('\n').trim() || undefined,
-      typeNow: async (_t, keys) => {
-        typed.push(...keys)
-        enters += keys.filter((k) => k === '\r').length
-        if (enters === 2) shown = outputScreen
-      }
+
+    function agyWhoseEnterLandsOnThe(enterThatLands: number) {
+      let shown = DRAFT_SCREEN
+      let screenReads = 0
+      const typed: string[] = []
+      const { slash, posts } = setup({
+        backendOf: () => 'agy',
+        screen: async () => shown,
+        outputOnlyOnScreen: async () => {
+          screenReads++
+          return shown.join('\n')
+        },
+        typeNow: async (_t, keys) => {
+          typed.push(...keys)
+          if (typed.filter((k) => k === '\r').length === enterThatLands) shown = OUTPUT_SCREEN
+        }
+      })
+      return { slash, posts, typed, screenReads: () => screenReads }
+    }
+
+    it('a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
+      const { slash, posts, typed } = agyWhoseEnterLandsOnThe(2)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r'])
+      expect(posts).toEqual([])
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS - SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r'])
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
     })
-    await slash.typeWhenIdle(child, '/usage', CHANNEL)
-    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
-    expect(typed).toEqual(['/usage', '\r'])
-    expect(posts).toEqual([])
-    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS - SCREEN_SHOWS_THE_OUTPUT_MS)
-    expect(typed).toEqual(['/usage', '\r', '\r'])
-    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
-    expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
-    expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${outputScreen.join('\n').trim()}`])
+
+    it('when the second Enter is lost too, Koloft stops looking at the screen, then closes the menu and empties the box, since Esc alone leaves the command typed', async () => {
+      const { slash, posts, typed, screenReads } = agyWhoseEnterLandsOnThe(3)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(screenReads()).toBe(2)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b', '\x05\x15'])
+      expect(posts).toHaveLength(1)
+      expect(posts[0]).toContain('here is its screen')
+    })
   })
 
   it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {

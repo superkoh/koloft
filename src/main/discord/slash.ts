@@ -20,12 +20,12 @@ const CLOSE_PAGER = 'q'
 const TO_LINE_END = '\x05'
 const CLEAR_TO_LINE_START = '\x15'
 const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
-// CODEX§21
+// CODEX§21 AGY§23
 const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
   claude: [ESC],
   codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
   muse: [ESC],
-  agy: [ESC]
+  agy: [ESC, EMPTY_THE_BOX]
 }
 const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
   claude: [],
@@ -212,7 +212,7 @@ export class SlashCommands {
     }
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
-    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
+    this.readScreenSoon(tab, p)
     this.pending.set(tab, p)
     return p
   }
@@ -221,9 +221,9 @@ export class SlashCommands {
     return this.pending.get(tab) === p && !p.outputs.length && !p.worked && !p.newKey
   }
 
-  private stillInTheBox(tab: string, p: Pending, lines: string[]): boolean {
+  private stillInTheBox(tab: string, text: string, lines: string[]): boolean {
     const backend = this.d.backendOf(tab)
-    return !!backend && DRAFT_ON_SCREEN[backend](lines) === p.text.trim()
+    return !!backend && DRAFT_ON_SCREEN[backend](lines) === text.trim()
   }
 
   // CC§12 CODEX§21 MUSE§11 AGY§23
@@ -231,10 +231,14 @@ export class SlashCommands {
     const enterAgainIfStillTyped = async (): Promise<void> => {
       if (!this.unanswered(tab, p)) return
       const lines = await this.d.screen(tab).catch(() => undefined)
-      if (lines && this.unanswered(tab, p) && this.stillInTheBox(tab, p, lines))
+      if (lines && this.unanswered(tab, p) && this.stillInTheBox(tab, p.text, lines))
         await this.press(tab, ['\r'])
     }
     p.timers.push(setTimeout(() => void enterAgainIfStillTyped(), AN_ENTER_LANDS_WITHIN_MS))
+  }
+
+  private readScreenSoon(tab: string, p: Pending): void {
+    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
   }
 
   // AGY§23
@@ -243,8 +247,8 @@ export class SlashCommands {
     if (!reading) return
     const text = await reading
     if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
-    if (this.stillInTheBox(tab, p, text.split('\n'))) {
-      p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
+    if (this.stillInTheBox(tab, p.text, text.split('\n'))) {
+      if (Date.now() - p.typedAt < AN_ENTER_LANDS_WITHIN_MS) this.readScreenSoon(tab, p)
       return
     }
     p.outputs.push({ kind: 'printed', text })
