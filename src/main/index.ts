@@ -1906,6 +1906,7 @@ const agentRequests = new AgentRequests({
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
         return tree ? whatIsLeft(hostGitOut, tree, merged) : null
       },
+      deleting: (row) => treeRemovals.has(row.cwd),
       worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
