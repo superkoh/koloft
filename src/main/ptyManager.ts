@@ -26,6 +26,7 @@ export interface PtyHandle {
   remoteHost?: string
   utilMachine?: string
   title?: string
+  keysHeldUntilLaunchLineTyped?: string[]
 }
 
 interface CreateArgs {
@@ -95,6 +96,9 @@ const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+// PLATFORM§21
+const ONLY_THE_TERMINALS_OWN_ANSWERS =
+  /^(?:\x1b\[[?>]?[\d;]*\$?[Rcnyt]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
 
 function typeOnceTheShellReads(
   write: (text: string) => void,
@@ -267,17 +271,18 @@ export class PtyManager extends EventEmitter {
       sourcedFiles.push(file)
       return `. ${shq(file)}`
     }
-    const watchForReadyShell = typeOnceTheShellReads(
-      (text) => {
-        try {
-          proc.write(text)
-        } catch {}
-      },
-      [args.setupCommand, launchCommand]
-        .filter((command): command is string => !!command)
-        .map((command) => shortEnoughToType(command) + '\r')
-        .join('')
-    )
+    const lines = [args.setupCommand, launchCommand]
+      .filter((command): command is string => !!command)
+      .map((command) => shortEnoughToType(command) + '\r')
+      .join('')
+    if (args.kind !== 'shell' && lines !== '') handle.keysHeldUntilLaunchLineTyped = []
+    const watchForReadyShell = typeOnceTheShellReads((text) => {
+      const held = handle.keysHeldUntilLaunchLineTyped?.join('') ?? ''
+      handle.keysHeldUntilLaunchLineTyped = undefined
+      try {
+        proc.write(text + held)
+      } catch {}
+    }, lines)
 
     const followsThisMac = args.util && !args.utilMachine
     const cwdParser = followsThisMac ? new OscCwdParser() : undefined
@@ -335,7 +340,9 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     const handle = this.ptys.get(id)
-    handle?.proc.write(data)
+    const held = handle?.keysHeldUntilLaunchLineTyped
+    if (held && !ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)) held.push(data)
+    else handle?.proc.write(data)
     if (handle && withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
