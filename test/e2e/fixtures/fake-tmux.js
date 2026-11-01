@@ -33,21 +33,10 @@ const DCS_OPEN = '\x1bPtmux;'
 const WHOLE_DCS = /^\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\/
 const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
 
-const asTheLineDisciplineHandsOn = (d) =>
-  Buffer.from(d.toString('latin1').replace(/\r/g, '\n'), 'latin1')
-const echoOf = (d) =>
-  Buffer.from(
-    d
-      .toString('latin1')
-      .replace(/[\x00-\x1f\x7f]/g, (c) =>
-        c === '\r' || c === '\n' ? '\r\n' : '^' + String.fromCharCode(c.charCodeAt(0) ^ 0x40)
-      ),
-    'latin1'
-  )
-
 const aliveFile = (name) => path.join(aliveDir, name)
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
+const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
 
 function recordOf(name) {
   try {
@@ -81,19 +70,22 @@ function attach(name) {
     process.exit(1)
   }
   const wfd = openFifoNeverSeeingEof(fifoPath(io))
-  const keysAtOnce = process.stdin.isTTY
-  if (keysAtOnce) process.stdin.setRawMode(true)
   process.stdin.on('data', (d) => {
     try {
-      fs.writeSync(wfd, keysAtOnce ? asTheLineDisciplineHandsOn(d) : d)
+      fs.writeSync(wfd, d)
     } catch {}
-    if (keysAtOnce) process.stdout.write(echoOf(d))
   })
   process.stdin.resume()
+  // PLATFORM§35
+  const keysAtOnceOnceThePaneIsRaw = () => {
+    if (process.stdin.isTTY && !process.stdin.isRaw && fs.existsSync(rawPaneMark(io)))
+      process.stdin.setRawMode(true)
+  }
 
   let off = 0
   let held = ''
   const pump = () => {
+    keysAtOnceOnceThePaneIsRaw()
     try {
       const size = fs.statSync(outPath(io)).size
       if (size <= off) return
@@ -152,7 +144,8 @@ if (verb === 'new-session') {
         ...process.env,
         TMUX: `${ioDir}/${io}.sock,0,0`,
         TMUX_PANE: '%0',
-        KOLOFT_FAKE_TMUX_IO: io
+        KOLOFT_FAKE_TMUX_IO: io,
+        KOLOFT_FAKE_TMUX_RAW_MARK: rawPaneMark(io)
       }
     })
     child.unref()

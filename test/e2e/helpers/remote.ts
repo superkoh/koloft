@@ -309,10 +309,6 @@ export async function boundRemoteSession(
   return found!
 }
 
-export function boundRemoteAgy(page: Page): Promise<{ tabId: string; id: string }> {
-  return boundRemoteSession(page, 'agy')
-}
-
 export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'
 
 export function installCodexOnFakeRemote(env: E2EEnv): void {
@@ -399,7 +395,7 @@ export const OTHER_AGENTS_ON_THE_MACHINE: {
     bound: async (page) => {
       await agyReady(page)
       await runIn(page, centerTerm(page), 'first words')
-      return boundRemoteAgy(page)
+      return boundRemoteSession(page, 'agy')
     }
   }
 ]

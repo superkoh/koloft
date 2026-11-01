@@ -619,7 +619,9 @@ function tui() {
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
+  // MUSE§17
+  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
@@ -633,7 +635,7 @@ function tui() {
         continue
       }
       // MUSE§7
-      if (ch === '\r' || (ch === '\n' && enterArrivesAsLineFeed)) {
+      if (ch === '\r') {
         const done = typed
         typed = ''
         line(done.trim())

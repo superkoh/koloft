@@ -51,7 +51,6 @@ import {
   killFakeRemote,
   machineCodexLog,
   machineHome,
-  machineMuseCalls,
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
@@ -213,6 +212,26 @@ async function connected(
   await expect.poll(() => fake.identifies).toBe(launches)
   if (conductorBindsAtLaunch) await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
   return { app, page }
+}
+
+async function withTheButlerAndARemoteWorkspace(
+  env: E2EEnv,
+  installTheAgent: () => void,
+  body: (page: Page, fake: FakeDiscord) => Promise<void>
+): Promise<void> {
+  installFakeRemote(env)
+  installTheAgent()
+  seedConductor(env, 'claude')
+  const fake = await startFakeDiscord(env)
+  const { app, page } = await connected(env, fake)
+  try {
+    await addRemoteWorkspace(page, env)
+    await body(page, fake)
+  } finally {
+    await quitAndClose(app)
+    await fake.close()
+    killFakeRemote(env)
+  }
 }
 
 // AGY§8
@@ -1162,13 +1181,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
-    installFakeRemote(env)
-    installCodexOnFakeRemote(env)
-    seedConductor(env, 'claude')
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await addRemoteWorkspace(page, env)
+    const install = (): void => installCodexOnFakeRemote(env)
+    await withTheButlerAndARemoteWorkspace(env, install, async (page, fake) => {
       await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
       const row = wsRows(page, REMOTE_WS_NAME)
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
@@ -1204,36 +1218,28 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => codexAnswers(wire()), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Codex fixture answered: please approve')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-      killFakeRemote(env)
-    }
+    })
   })
 
-  // MUSE§5
+  // MUSE§11 MUSE§17
   test('the butler answers a remote Muse session’s approval with koloft session answer yes, and the key reaches muse on the machine through ssh and tmux, which runs the command', async ({
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
-    installFakeRemote(env)
-    installMuse(env)
-    installMuseOnMachine(env)
-    seedConductor(env, 'claude')
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await addRemoteWorkspace(page, env)
+    const install = (): void => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+    await withTheButlerAndARemoteWorkspace(env, install, async (page, fake) => {
       await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
       const row = wsRows(page, REMOTE_WS_NAME)
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       const muse = await boundRemoteSession(page, 'muse')
-      const museId = muse.id
       await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), muse.tabId)
       await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
 
-      fake.say(OWNER, `/koloft session answer ${museId} yes`)
+      fake.say(OWNER, `/koloft session answer ${muse.id} yes`)
       const saved = path.join(
         machineHome(env),
         '.local',
@@ -1241,17 +1247,13 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         'muse',
         'sessions',
         'fake',
-        `${museId}.json`
+        `${muse.id}.json`
       )
       await expect
         .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Ran: ls -la')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-      killFakeRemote(env)
-    }
+    })
   })
 
   // AGY§14
@@ -1259,15 +1261,12 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
-    installFakeRemote(env)
-    installAgy(env)
-    installRemoteAgy(env)
-    seedConductor(env, 'claude')
-    seedSettings(env, { skipPermissions: false })
-    const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
-    try {
-      await addRemoteWorkspace(page, env)
+    const install = (): void => {
+      installAgy(env)
+      installRemoteAgy(env)
+      seedSettings(env, { skipPermissions: false })
+    }
+    await withTheButlerAndARemoteWorkspace(env, install, async (page, fake) => {
       await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
       await agyReady(page)
       await runIn(page, centerTerm(page), 'warm up')
@@ -1285,11 +1284,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => fileText(target), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe('written by fake agy\n')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-      killFakeRemote(env)
-    }
+    })
   })
 
   test('a send to a closed session answers the conductor at once and is delivered once the session is ready, even past the 8 s the koloft command waits', async ({
