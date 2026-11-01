@@ -25,6 +25,7 @@ import {
   defaultAgent,
   folderUseOf,
   lastUsedAgent,
+  nextAgent,
   resumeTarget,
   tallyAgents
 } from '../welcomeModel'
@@ -60,8 +61,6 @@ const SIGN_IN_SETTLE_MS = 4000
 const LEAVE_MS = 650
 
 const backendOf = (l: Launch): BackendId => (l.kind === 'resume' ? l.row.backendId : l.backend)
-const nextAgent = (b: BackendId): BackendId =>
-  SESSION_BACKENDS[(SESSION_BACKENDS.indexOf(b) + 1) % SESSION_BACKENDS.length]
 
 function Title({ plain, script }: { plain: string; script: string }): JSX.Element {
   return (
@@ -170,6 +169,7 @@ export function Welcome({
   const activeTabId = useStore((s) => s.activeTabId)
   const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
   const skipPermissions = useStore((s) => s.settings.skipPermissions)
+  const methods = useStore((s) => s.settings.sessionMethods)
 
   const [step, setStep] = useState<Step>(1)
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
@@ -206,11 +206,15 @@ export function Welcome({
   }, [found, folders])
   const tally = useMemo(() => tallyAgents(known), [known])
   const emptyMac = found !== null && known.length === 0
-  const lastUsed = installed ? lastUsedAgent(tally, installed) : undefined
-  const pick: BackendId = agent ?? (installed ? defaultAgent(tally, installed) : 'claude')
+  const lastUsed = installed ? lastUsedAgent(tally, installed, methods) : undefined
+  const pick: BackendId =
+    agent && methods.enabled[agent] ? agent : defaultAgent(tally, installed ?? [], methods)
   const isInstalled = (b: BackendId): boolean => !!installed && backendAvailable(installed, b)
   const signedIn = (b: BackendId): boolean => !!accounts && hasUsableAccount(accounts, b)
-  const target = resumeTarget(allRows, Date.now())
+  const target = resumeTarget(
+    allRows.filter((r) => methods.enabled[r.backendId]),
+    Date.now()
+  )
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
   const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined
   const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
@@ -526,7 +530,7 @@ export function Welcome({
               Koloft adds its own account and names it. Your Mac’s logins stay untouched.
             </p>
             <div className="wl-seg" role="tablist">
-              {SESSION_BACKENDS.map((b) => (
+              {SESSION_BACKENDS.filter((b) => methods.enabled[b]).map((b) => (
                 <button
                   key={b}
                   role="tab"
@@ -674,10 +678,14 @@ export function Welcome({
                 onKeyDown={(e) => {
                   if (e.key !== 'Tab') return
                   e.preventDefault()
-                  setAgent(nextAgent(pick))
+                  setAgent(nextAgent(pick, methods))
                 }}
               />
-              <button className="wl-agtag" tabIndex={-1} onClick={() => setAgent(nextAgent(pick))}>
+              <button
+                className="wl-agtag"
+                tabIndex={-1}
+                onClick={() => setAgent(nextAgent(pick, methods))}
+              >
                 <SessionBackendIcon backend={pick} size={12} decorative />
                 {BACKEND_LABEL[pick]}
                 <kbd>tab</kbd>
