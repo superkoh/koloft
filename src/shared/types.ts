@@ -337,7 +337,6 @@ export interface Settings {
   notifyExited: boolean
   notifyApprovalSound: boolean
   dockBadge: boolean
-  showUsage: boolean
   // CC§6
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
@@ -463,7 +462,6 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyExited: true,
   notifyApprovalSound: false,
   dockBadge: true,
-  showUsage: true,
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
