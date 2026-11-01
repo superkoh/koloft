@@ -6297,6 +6297,11 @@ function registerIpc(): void {
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
     const picked = await pickElement(guest)
     if (!picked) return null
+    if (picked.pictureFailed)
+      sendToRenderer(
+        CH.cron.toast,
+        `The picture of the element could not be taken: ${picked.pictureFailed}`
+      )
     const machine = machineOfTab(tabId)
     const picture = picked.png
       ? await (
