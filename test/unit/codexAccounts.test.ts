@@ -161,6 +161,34 @@ describe('picking a Codex account', () => {
     expect(allLimitedNotice(pastReset, 'codex')).toBeUndefined()
   })
 
+  it('an API-key account is used only when there is no usable subscription account or every subscription account is measured and full, as Claude Code keeps its API key', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const key = account('key', { apiKey: true })
+    const full = account('full', { limits: used(1) })
+    expect(picker.pick([key, account('unmeasured')])?.name).toBe('unmeasured')
+    expect(picker.pick([key, account('light', { limits: used(0.9) })])?.name).toBe('light')
+    expect(picker.pick([key, account('light', { limits: used(0.9) })], 'key')?.name).toBe('light')
+    expect(picker.pick([key, full, account('unmeasured')])?.name).toBe('unmeasured')
+    expect(picker.pick([key, full])?.name).toBe('key')
+    expect(picker.pick([key, account('out', { status: 'expired' })])?.name).toBe('key')
+    expect(picker.pick([key])?.name).toBe('key')
+    const second = account('second', { apiKey: true })
+    expect([
+      picker.pick([key, second, full])?.name,
+      picker.pick([key, second, full])?.name
+    ]).toEqual(['key', 'second'])
+    const agy = (name: string, over: Partial<AccountView>): AccountView =>
+      account(name, { kind: 'agy-home', ...over })
+    const agyPicker = new HomeAccountPicker('agy-home')
+    const gemini = agy('gemini', { apiKey: true })
+    expect(
+      agyPicker.pick([gemini, agy('google', { quota: [{ label: '5h', used: 0.5 }] })])?.name
+    ).toBe('google')
+    expect(
+      agyPicker.pick([gemini, agy('google', { quota: [{ label: '5h', used: 1 }] })])?.name
+    ).toBe('gemini')
+  })
+
   it('when every account is used up, one whose reset time is unknown is not taken for the first to reset', () => {
     const picker = new HomeAccountPicker('codex-home')
     const unknown = account('unknown', { limits: used(1) })
