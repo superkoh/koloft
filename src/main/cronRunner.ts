@@ -137,6 +137,7 @@ export interface RunnerDeps {
   tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult>
   foldersInUse(leavingTabId?: string): Set<string>
   quitting(): boolean
+  turnedOff(backend: BackendId): string | null
   noUsableAccount(backend: BackendId): string | null
   trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
@@ -449,6 +450,11 @@ export class CronRunner {
       }
 
       const backend = cronBackend(job)
+      const turnedOff = this.d.turnedOff(backend)
+      if (turnedOff) {
+        this.fail(job, dueAt, mark, turnedOff)
+        return { ok: false, reason: 'turned-off', why: turnedOff }
+      }
       const noAccount = this.d.noUsableAccount(backend)
       if (noAccount) {
         this.fail(job, dueAt, mark, noAccount)

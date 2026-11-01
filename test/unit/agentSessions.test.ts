@@ -20,6 +20,7 @@ const OLDER_A_HELPER_HAS_IT =
 import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
+import { turnedOffLine } from '../../src/shared/sessionBackend'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import { AGENT_SHIM_WAITS_MS } from '../../src/main/agentShim'
 import type {
@@ -86,6 +87,7 @@ interface Conducting {
   busy?: boolean
   leftOf?: Record<string, string[]>
   removalsNeverEnd?: boolean
+  turnedOff?: BackendId[]
 }
 
 function harness(
@@ -140,6 +142,8 @@ function harness(
       () =>
       async ({ sessionId }) =>
         peerNames[sessionId] ?? null,
+    turnedOff: (backend) =>
+      conducting.turnedOff?.includes(backend) ? turnedOffLine(backend) : null,
     launch: async (spec) => {
       launched.push(spec)
       if (conducting.busy)
@@ -462,6 +466,23 @@ describe('koloft session new from a Muse session', () => {
 })
 
 describe('koloft session new', () => {
+  it('refuses an agent turned off in Settings ▸ Sessions, whether it is the caller’s own or named with --backend, and says which one and what to do instead', async () => {
+    const { verb, launched } = harness([session('me', 'codex')], {}, [], {
+      turnedOff: ['codex', 'claude']
+    })
+    const own = await verb(['new', '--', 'Check the tests.'], from('me'))
+    expect(own.exit).not.toBe(0)
+    expect(own.text).toBe(
+      'koloft session new: Codex is turned off in Settings ▸ Sessions, so Koloft starts no Codex session. Do the task yourself, or start it with --backend and an agent that is on.'
+    )
+    const named = await verb(['new', '--backend', 'claude', '--', 'Check the tests.'], from('me'))
+    expect(named.exit).not.toBe(0)
+    expect(named.text).toContain('Claude is turned off in Settings ▸ Sessions')
+    expect(launched).toEqual([])
+    expect((await verb(['new', '--backend', 'muse', '--', 'go'], from('me'))).exit).toBe(0)
+    expect(launched.map((l) => l.kind)).toEqual(['muse'])
+  })
+
   it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
     const { verb, launched } = harness([session('me', 'claude')], { 'me-session': 'planner' })
     const reply = await verb(['new', '-w', 'links', '--', 'Fix the links.'], from('me'))

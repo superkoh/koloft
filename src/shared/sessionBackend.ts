@@ -26,6 +26,10 @@ export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
 export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'
 
+export function turnedOffLine(backend: BackendId): string {
+  return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+}
+
 export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {
   return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
 }

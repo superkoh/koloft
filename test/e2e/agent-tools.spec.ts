@@ -322,6 +322,42 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('with Codex switched off in Settings ▸ Sessions, koloft session new --backend codex and a new Codex tab both start nothing and say Codex is turned off', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    seedSettings(env, {
+      hintsOff: true,
+      sessionMethods: {
+        defaultBackend: 'claude',
+        enabled: { claude: true, codex: false, muse: true, agy: true }
+      }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      expect(await koloftInSession(page, 'session new --backend codex -- hello')).not.toBe('0')
+      expect((await shownTermText(page, CENTER)).replace(/\s+/g, '')).toContain(
+        'CodexisturnedoffinSettings▸Sessions'
+      )
+      const refusal = await page.evaluate(async (cwd) => {
+        try {
+          await window.api.terminal.create({ kind: 'codex', cwd })
+          return ''
+        } catch (e) {
+          return String(e)
+        }
+      }, env.workspaces.a)
+      expect(refusal).toContain('Codex is turned off in Settings ▸ Sessions')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // ADR-0031
   test('a Claude child started by koloft session new has its reply-language hook start from the owner’s last words to its starter, not from its own task', async ({
     page,

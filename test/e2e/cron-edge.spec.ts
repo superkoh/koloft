@@ -506,6 +506,37 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
+  test('BB-E37: a job saved with no agent runs in Claude, so with Claude switched off in Settings ▸ Sessions it does not start and History says Claude is turned off', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      sessionMethods: {
+        defaultBackend: 'codex',
+        enabled: { claude: false, codex: true, muse: true, agy: true }
+      }
+    })
+    edWriteStore(env, [{ name: JOB, schedule: { kind: 'daily', at: '03:00' } }])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      await edOpenDialog(page, 'ws-a')
+      await edRunNow(page)
+
+      await edExpectToast(
+        page,
+        `⏰ ${JOB} could not start: Claude is turned off in Settings ▸ Sessions`
+      )
+      await expect
+        .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
+        .toBe('Could not start — Claude is turned off in Settings ▸ Sessions')
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('BB-E10: removing a workspace with jobs and no running session asks first, and deletes them', async ({
     env
   }) => {
