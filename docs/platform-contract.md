@@ -1878,17 +1878,21 @@ command by hand:
   one a Mac's ssh hands over, on a box with only `C`, `C.utf8`, `POSIX`). `locale charmap`
   tells them apart: `UTF-8` when it works, `ANSI_X3.4-1968` for the C locale on glibc
   (after a `locale: Cannot set …` line when the named locale is missing), `US-ASCII` for
-  it on macOS; it costs about 0.5 ms. A `LANG` picked from `locale -a` (Debian lists
-  `C.utf8`, macOS 27 `C.UTF-8`; one with only `en_US.utf8` gives that) makes `ls` print
-  the name as it is. **A `LANG` naming a locale the machine lacks breaks things when no
-  UTF-8 locale is left to fall back on:** with `C.utf8` removed from `/usr/lib/locale`,
-  `LANG=C.UTF-8` left `ls` escaping, made perl print "Setting locale failed" at every
-  start, and made tmux refuse to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`). A set
-  `LC_ALL` (or `LC_CTYPE`) wins over any `LANG`. (2026-11-01: the `koloft-e2e-sshd`
-  image, Debian bookworm, tmux 3.3a, probe scripts run with `docker exec -t`, locales
-  removed or copied under `/usr/lib/locale`; and this Mac, macOS 27.) So Koloft's remote
-  scripts set `LANG` only when `LC_ALL` and `LC_CTYPE` are unset, `locale charmap` says
-  ASCII, and `locale -a` lists a UTF-8 locale (`C.UTF-8` first).
+  it on macOS; it costs about 0.5 ms. A UTF-8 locale picked from `locale -a` (Debian
+  lists `C.utf8`, macOS 27 `C.UTF-8`; one with only `en_US.utf8` gives that) makes `ls`
+  print the name as it is: as `LC_CTYPE` beside no `LANG` or `LANG=C`, but **not beside a
+  `LANG` the machine lacks** — with `LANG=en_US.UTF-8` missing, `LC_CTYPE=C.utf8` left
+  `ls` escaping and perl warning (the whole locale fails), so that `LANG` itself has to go.
+  **A locale name the machine lacks breaks things when no UTF-8 locale is left to fall
+  back on:** with `C.utf8` removed from `/usr/lib/locale`, `LANG=C.UTF-8` left `ls`
+  escaping, made perl print "Setting locale failed" at every start, and made tmux refuse
+  to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`). A set `LC_ALL` (or `LC_CTYPE`)
+  wins over any `LANG`. (2026-11-01: the `koloft-e2e-sshd` image, Debian bookworm, tmux
+  3.3a, probe scripts run with `docker exec -t`, locales removed or copied under
+  `/usr/lib/locale`; and this Mac, macOS 27.) So Koloft's remote scripts act only when
+  `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
+  locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
+  `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
 
 ## §38 ssh through a JumpServer bastion
 

@@ -27,12 +27,20 @@ const GIT_ACCOUNTS_INCLUDE_LINE =
   'export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git'
 
 // PLATFORM§37
-const A_UTF8_LANG_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII = `if [ -z "$LC_ALL$LC_CTYPE" ]; then
-  case "$(locale charmap 2>&1)" in
-  *ANSI_X3.4-1968*|*US-ASCII*)
-    koloft_u=$(locale -a 2>/dev/null | grep -Eix 'c\\.utf-?8')
-    [ -n "$koloft_u" ] || koloft_u=$(locale -a 2>/dev/null | grep -Eim1 '\\.utf-?8$')
-    [ -n "$koloft_u" ] && LANG=$koloft_u && export LANG
+const A_UTF8_LOCALE_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII = `if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "\${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
     unset koloft_u ;;
   esac
 fi`
@@ -40,7 +48,7 @@ fi`
 // PLATFORM§33
 export const REMOTE_ENV_LINES =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n' +
-  `${A_UTF8_LANG_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII}\n` +
+  `${A_UTF8_LOCALE_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII}\n` +
   GIT_ACCOUNTS_INCLUDE_LINE
 
 // PLATFORM§38
