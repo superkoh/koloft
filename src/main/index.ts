@@ -12,6 +12,7 @@ import {
   screen,
   Notification,
   webContents,
+  type BaseWindow,
   type WebContents
 } from 'electron'
 import path from 'path'
@@ -3890,14 +3891,18 @@ app.whenReady().then(() => {
 
   registerIpc()
   setupAppMenu(
-    (action) => {
+    (action, from) => {
       if (action === 'toggle-keep-awake') {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
+      if (keptByAnotherWindow(from, action === 'close-tab')) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
+    (cmd, from) => {
+      if (keptByAnotherWindow(from, cmd === 'browser-close-tab')) return
+      sendToRenderer(CH.shortcut.browser, cmd)
+    },
     loadSettings().keepAwake
   )
   applyKeepAwake(loadSettings().keepAwake)
@@ -4163,10 +4168,45 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
+function keptByAnotherWindow(from: BaseWindow | undefined, closesIt: boolean): boolean {
+  if (!from || from === mainWindow) return false
+  if (closesIt) from.close()
+  return true
+}
+
+const webPageWatchers: ((contents: WebContents) => void)[] = []
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return
+  for (const w of webPageWatchers) w(contents)
+})
+
+function onEveryWebPage(watch: (contents: WebContents) => void): void {
+  webPageWatchers.push(watch)
+}
+
+function adoptSignInWindow(win: BrowserWindow, opener: WebContents): void {
+  const popup = win.webContents
+  const host = mainWindow
+  const close = (): void => {
+    if (!win.isDestroyed()) win.close()
+  }
+  opener.once('destroyed', close)
+  host?.once('closed', close)
+  win.once('closed', () => {
+    opener.removeListener('destroyed', close)
+    host?.removeListener('closed', close)
+  })
+  const popupId = popup.id
+  void reportedOwner(opener.id).then((owner) => {
+    if (owner) recordGuestOwner(popupId, owner)
+  })
+  for (const w of webPageWatchers) w(popup)
+}
+
 // PLATFORM§12
 function setupGuestUnload(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('will-prevent-unload', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       event.preventDefault()
@@ -4204,6 +4244,13 @@ function reportedOwner(guestId: number): Promise<string | null> {
   })
 }
 
+function recordGuestOwner(guestId: number, owner: string): void {
+  const guest = webContents.fromId(guestId)
+  if (guest) guestOwners.set(guest, owner)
+  for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(owner)
+  ownerWaiters.delete(guestId)
+}
+
 function machineOfOwner(owner: string): string | undefined {
   return isWorkspaceWorkbenchKey(owner)
     ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
@@ -4211,8 +4258,7 @@ function machineOfOwner(owner: string): string | undefined {
 }
 
 function setupGuestForwardsEnd(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     const id = contents.id
     contents.once('destroyed', () => {
       ownerWaiters.delete(id)
@@ -4223,8 +4269,7 @@ function setupGuestForwardsEnd(): void {
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('input-event', (_ev, input) => {
       if (CHROMIUM_USER_ACTIVATION_INPUTS.has(input.type)) {
         guestGestures.set(contents, Date.now())
@@ -4239,21 +4284,40 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
+const SIZED_WINDOW_FEATURES = /(^|[\s,])(width|height)\s*=/i
+
+function opensAsSignInWindow(
+  from: WebContents,
+  { url, disposition, features }: Electron.HandlerDetails
+): boolean {
+  return (
+    disposition === 'new-window' &&
+    SIZED_WINDOW_FEATURES.test(features) &&
+    routeFor(url, 'user').dest === 'browser' &&
+    !isOverlayGuest(from) &&
+    sessionDrivingGuest(from.id) === null &&
+    !guestDrivenFromAnotherMachine(from.id) &&
+    takeGuestGesture(from)
+  )
+}
+
 function setupGuestPopups(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.setWindowOpenHandler(({ url }) => {
-      if (contents.session === session.fromPartition(BROWSER_PARTITION)) {
-        routeGuestPopup(url, contents)
+  onEveryWebPage((contents) => {
+    contents.setWindowOpenHandler((details) => {
+      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
+      // PLATFORM§8
+      if (opensAsSignInWindow(contents, details)) {
+        return { action: 'allow', overrideBrowserWindowOptions: { show: !BACKGROUND_TEST } }
       }
+      routeGuestPopup(details.url, contents)
       return { action: 'deny' }
     })
+    contents.on('did-create-window', (win) => adoptSignInWindow(win, contents))
   })
 }
 
 function setupGuestContextMenu(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('context-menu', (_event, params) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       const items = guestMenuItems(params)
@@ -4275,8 +4339,7 @@ function setupGuestContextMenu(): void {
 // PLATFORM§8
 function muteGuestsUnderTest(): void {
   if (!BACKGROUND_TEST) return
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.setAudioMuted(true)
   })
 }
@@ -4306,8 +4369,7 @@ function setupGuestPermissionQuery(): void {
 }
 
 function setupPermissionCleanup(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     // PLATFORM§5
     const guestId = contents.id
     contents.once('destroyed', () => {
@@ -6334,10 +6396,7 @@ function registerIpc(): void {
   })
   ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    const guest = webContents.fromId(guestId)
-    if (guest) guestOwners.set(guest, ownerTabId)
-    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(ownerTabId)
-    ownerWaiters.delete(guestId)
+    recordGuestOwner(guestId, ownerTabId)
   })
   ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true

@@ -341,6 +341,21 @@ method. A recheck adds its date, version and command to the bullet.
   page shown.
 - **A `<webview>` with no `partition` quietly uses the default session**, and nothing
   errors.
+- **Sign-in popups need a real window with an opener.** React 19.3 drops `allowpopups: true`
+  on a `<webview>` (the rendered tag has no such attribute), but Koloft's own
+  `will-attach-webview` sets `disablePopups` false for the browser partition, so every
+  `window.open` still reaches the window-open handler. Answered with `deny` (and opened as a
+  web tab), the page's `window.open` returns `null` and the tab's `window.opener` is `null`,
+  so a page waiting for a sign-in result by `postMessage` never gets it: seen for a sized
+  `window.open`, an unsized one, a `target="_blank"` link and one with `rel="opener"`. A
+  sized `window.open` (`"width=500,height=600"`) arrives with `disposition: 'new-window'`; an
+  unsized one does not. Answered with `allow`, it opens a `BrowserWindow` in the opener's
+  partition whose `window.opener` survives cross-origin redirects, so the last page's
+  `postMessage` reaches the opener. That window's `web-contents-created` fires with
+  `getType()` `'window'`, which electron-chrome-extensions' action popup also has in the same
+  session (its source builds a `BrowserWindow`), so a sign-in window is told apart by
+  `did-create-window`, not by type. 2026-10-31, Electron 43.8.1, React 19.3.0, local test
+  pages in an e2e run (BB-M34, BB-M24) and a page on a Docker ssh machine (E-SSH-42).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,

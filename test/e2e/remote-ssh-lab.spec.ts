@@ -1651,6 +1651,38 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§8 PLATFORM§33
+  test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, and hands its result back to the page that opened it', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [port, popupPort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    await withLab(env, async ({ app, page, lab }) => {
+      servePageOnTarget(
+        lab,
+        port,
+        '<title>machine</title><p id="result">waiting</p>' +
+          `<button id="signin" onclick="window.open('http://localhost:${popupPort}/popup', 'signin', 'width=400,height=400')">sign in</button>` +
+          '<script>addEventListener("message", (e) => { document.getElementById("result").textContent = e.data })</script>'
+      )
+      servePageOnTarget(
+        lab,
+        popupPort,
+        '<title>popup</title><script>window.opener.postMessage("popup on the machine", "*")</script>'
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await newWebTab(page)
+      await typeInAddressBar(page, `localhost:${port}`)
+      const guest = await guestByUrl(app, `localhost:${port}/`)
+      await guest.click('#signin')
+      await expect(guest.locator('#result')).toHaveText('popup on the machine', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(page.locator(BROWSER.tabOpen)).toHaveCount(1)
+    })
+  })
+
   // CC§3
   test('E-SSH-31: a worktree Koloft makes on a Linux machine for a Codex session there gets the ignored files .worktreeinclude lists, copied there by the machine’s own sh and git', async ({
     env
