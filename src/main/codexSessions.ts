@@ -1075,6 +1075,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
       stopServer: async () => {
+        if (this.shuttingDown && this.runs.get(tabId)?.observer.turnRunning()) return
         await m.run(machine, stopCodexServerCmd(m.instance, tabId))
       },
       maxFrameBytes: DEFAULT_MAX_FRAME,
