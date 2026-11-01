@@ -1650,11 +1650,7 @@ export default function App(): JSX.Element {
           </button>
           <button
             className={'tb-ico' + (asleep ? ' on' : '')}
-            onClick={() => {
-              const since = asleep ? null : Date.now()
-              setSettings({ ...useStore.getState().settings, ownerAsleepSince: since })
-              void window.api.settings.set({ ownerAsleepSince: since })
-            }}
+            onClick={() => updateSettings({ ownerAsleepSince: asleep ? null : Date.now() })}
             title={
               asleep
                 ? "Asleep — sessions keep going on their own. Click when you're back"

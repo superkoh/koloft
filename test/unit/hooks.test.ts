@@ -246,9 +246,9 @@ describe('injected hook script', () => {
             KOLOFT_NOTICE: noticeFile(regDir, tab)
           }
         }).stdout,
-      agy: (tab, active) =>
+      agy: (tab) =>
         spawnSync('sh', [agyScript, 'Stop'], {
-          input: JSON.stringify({ stop_hook_active: active, fullyIdle: true }),
+          input: JSON.stringify({ terminationReason: 'NO_TOOL_CALL', fullyIdle: true }),
           encoding: 'utf8',
           env: { ...process.env, KOLOFT_NOTICE: noticeFile(regDir, tab) }
         }).stdout
@@ -256,10 +256,12 @@ describe('injected hook script', () => {
 
     // CC§21 CODEX§27 AGY§12
     it.each(Object.keys(stops))(
-      'a %s turn about to end is pushed once to go on by itself, then ends as usual; the butler is never pushed, and once the owner is back no turn is',
+      'a %s turn about to end is pushed once to go on by itself, then ends as usual, and the next turn is pushed once again; the butler is never pushed, and once the owner is back no turn is',
       (kind) => {
         const stop = stops[kind]
         markOwnerAsleep(regDir, ['butler-tab'])
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
         expect(JSON.parse(stop('worker', false))).toEqual(pushed)
         expect(stop('worker', true)).toBe('')
         expect(stop('butler-tab', false)).toBe('')

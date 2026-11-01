@@ -2,21 +2,25 @@ import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { newSessionInWith, startSessionIn, waitForCalls, wsRows } from './helpers/p1'
+import {
+  newSessionInWith,
+  startSessionIn,
+  transcriptFile,
+  waitForCalls,
+  wsRows,
+  type ClaudeCall
+} from './helpers/p1'
 import { installCodex, type E2EEnv } from './helpers/env'
+import { fakeCodexLog } from './helpers/codex'
 import { OWNER_ASLEEP_ANSWER } from '../../src/main/ownerAsleep'
 import { OWNER_ASLEEP_FILE, OWNER_ASLEEP_PUSH } from '../../src/main/hooks'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
 const THE_BUTLER_STARTS_AND_READS_IT_MS = 60_000
 
-function transcriptText(env: E2EEnv, sessionId: string): string {
-  const root = path.join(env.home, '.claude', 'projects')
-  for (const dir of fs.readdirSync(root)) {
-    const file = path.join(root, dir, `${sessionId}.jsonl`)
-    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8')
-  }
-  return ''
+function transcriptText(env: E2EEnv, call: ClaudeCall): string {
+  const file = transcriptFile(env.home, call.cwd, call.sessionId)
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
 
 function peerMessages(env: E2EEnv): string {
@@ -36,15 +40,8 @@ interface WireFrame {
   frame: { method?: string; result?: { answers?: unknown } }
 }
 
-function codexWire(env: E2EEnv): WireFrame[] {
-  const file = path.join(env.home, 'fake-codex-wire.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .trim()
-    .split('\n')
-    .map((l) => JSON.parse(l) as WireFrame)
-}
+const codexWire = (env: E2EEnv): WireFrame[] =>
+  fakeCodexLog<WireFrame>(env, 'fake-codex-wire.jsonl')
 
 function codexAsked(env: E2EEnv): number {
   return codexWire(env).filter(
@@ -64,12 +61,12 @@ test.describe('owner asleep', () => {
     page
   }) => {
     await startSessionIn(page, 'ws-a')
-    const sessionId = (await waitForCalls(env, 1))[0].sessionId
-    const tab = await tabOf(page, sessionId)
+    const call = (await waitForCalls(env, 1))[0]
+    const tab = await tabOf(page, call.sessionId)
     const type = (line: string): Promise<void> =>
       page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
     const marker = path.join(env.userData, 'hook-sessions', OWNER_ASLEEP_FILE)
-    const transcript = (): string => transcriptText(env, sessionId)
+    const transcript = (): string => transcriptText(env, call)
 
     await type('/later /ask Which colour?|Red|Green')
     const asleep = page.locator('.tb-ico[aria-label="Owner asleep"]')
@@ -130,8 +127,8 @@ test.describe('owner asleep', () => {
     page
   }) => {
     await startSessionIn(page, 'ws-a')
-    const sessionId = (await waitForCalls(env, 1))[0].sessionId
-    const tab = await tabOf(page, sessionId)
+    const call = (await waitForCalls(env, 1))[0]
+    const tab = await tabOf(page, call.sessionId)
     await page.evaluate((id) => window.api.terminal.write(id, '/later /bash npm publish\r'), tab)
     const asleep = page.locator('.tb-ico[aria-label="Owner asleep"]')
     await asleep.click()
@@ -139,7 +136,7 @@ test.describe('owner asleep', () => {
 
     fs.writeFileSync(path.join(env.home, 'go-later'), '')
     await expect
-      .poll(() => transcriptText(env, sessionId), { timeout: KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS })
+      .poll(() => transcriptText(env, call), { timeout: KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS })
       .toContain('Ran: npm publish')
   })
 })

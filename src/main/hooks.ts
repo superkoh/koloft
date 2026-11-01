@@ -99,15 +99,20 @@ export const TAKE_NOTICE_FN = `take_notice() {
 }`
 
 export const OWNER_ASLEEP_FILE = 'owner-asleep'
+const ASLEEP_PUSHED_SUFFIX = '.asleep'
 export const OWNER_ASLEEP_PUSH = `${FROM_KOLOFT}The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.`
 
 // CC§21 CODEX§27 MUSE§9 AGY§12
 export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
-  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 1 ;; esac
+  pushed="$notice${ASLEEP_PUSHED_SUFFIX}"
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) [ -z "$notice" ] || rm -f "$pushed"; return 1 ;; esac
   told="$(take_notice)"
   asleep="\${notice%/*}/${OWNER_ASLEEP_FILE}"
   if [ -n "$notice" ] && [ -f "$asleep" ] && ! grep -qxF "\${notice##*/}" "$asleep" 2>/dev/null; then
-    told="$told"${shq(noticeLine(OWNER_ASLEEP_PUSH))}
+    if [ -f "$pushed" ]; then rm -f "$pushed"
+    else told="$told"${shq(noticeLine(OWNER_ASLEEP_PUSH))}; : > "$pushed"
+    fi
+  elif [ -n "$notice" ]; then rm -f "$pushed"
   fi
   [ -n "$told" ] || return 1
   printf '{"decision":"block","reason":"%s"}\\n' "$told"

@@ -1,5 +1,5 @@
 import { FROM_KOLOFT } from './crossSessionMessage'
-import { digestLine, type DigestItem } from './awayDigest'
+import { digestLine, quoteOf, type DigestItem } from './awayDigest'
 
 export const OWNER_ASLEEP_ANSWER =
   'The owner is asleep and cannot answer. Choose the option you recommend, note the choice in your report, and go on. If that choice cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords), do not make it: leave it for the owner and go on with the rest.'
@@ -10,35 +10,30 @@ const MINUTE_MS = 60_000
 
 export const THIS_MAC = ''
 
-export interface Asked {
+export interface AskedOwner {
   question: boolean
+  questions: number
   text: string
 }
 
 interface AnsweredForOwner {
   title: string
-  asked: Asked
+  asked: AskedOwner
   gave?: string
   failed?: string
 }
 
 export interface OwnerAsleepDeps {
-  since(): number | null
   machines(): string[]
   mark(machine: string, awakeTabs: string[] | null): Promise<boolean>
   awakeTabs(): string[]
-  asking(): string[]
-  asked(tabId: string): Promise<Asked | undefined>
+  tabs(): string[]
+  asked(tabId: string): Promise<AskedOwner | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
   titleOf(tabId: string): string
   changedSince(since: number): DigestItem[]
   report(text: string): void
   now(): number
-}
-
-function quoted(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim()
-  return line.length > ASKED_CHARS_QUOTED ? `${line.slice(0, ASKED_CHARS_QUOTED)}…` : line
 }
 
 function howLong(ms: number): string {
@@ -49,14 +44,13 @@ function howLong(ms: number): string {
 }
 
 function answeredLine(a: AnsweredForOwner, n: number): string {
-  const what = a.asked.question
-    ? `asked the owner "${quoted(a.asked.text)}"`
-    : `asked to be allowed: "${quoted(a.asked.text)}"`
+  const text = quoteOf(a.asked.text, ASKED_CHARS_QUOTED)
+  const what = a.asked.question ? `asked the owner "${text}"` : `asked to be allowed: "${text}"`
   const did = a.failed
     ? `Koloft could not answer it (${a.failed}), so it still waits for the owner`
     : !a.asked.question
       ? 'Koloft allowed it'
-      : a.gave === FIRST_OPTION
+      : a.gave?.startsWith(FIRST_OPTION)
         ? 'Koloft picked its first option'
         : 'Koloft told it to choose its own recommendation and go on'
   return `${n}. "${a.title}" ${what}; ${did}.`
@@ -82,29 +76,35 @@ export function morningReport(
   return parts.join(' ')
 }
 
+function repliesTo(asked: AskedOwner): string[] {
+  if (!asked.question) return [APPROVE]
+  const each = (reply: string): string => Array(asked.questions).fill(reply).join('\n')
+  return [each(OWNER_ASLEEP_ANSWER), each(FIRST_OPTION)]
+}
+
 export class OwnerAsleep {
   private answered: AnsweredForOwner[] = []
-  private marked: Set<string>
+  private settled = new Set<string>()
+  private everMarked = new Set<string>()
+  private generation = 0
   private answering = new Set<string>()
-  private sleptAt: number | null
 
-  constructor(private readonly d: OwnerAsleepDeps) {
-    this.sleptAt = d.since()
-    this.marked = new Set(this.sleptAt === null ? [THIS_MAC] : [])
-  }
+  constructor(
+    private readonly d: OwnerAsleepDeps,
+    private since: number | null
+  ) {}
 
   asleep(): boolean {
-    return this.d.since() !== null
+    return this.since !== null
   }
 
-  changed(): void {
-    const since = this.d.since()
-    const sleptAt = this.sleptAt
-    this.sleptAt = since
+  set(since: number | null): boolean {
+    const sleptAt = this.since
+    if (since === sleptAt) return false
+    this.since = since
     if (since !== null && sleptAt === null) {
       this.answered = []
-      this.marked.clear()
-      for (const tabId of this.d.asking()) void this.asks(tabId)
+      for (const tabId of this.d.tabs()) void this.asks(tabId)
     }
     if (since === null && sleptAt !== null) {
       const text = morningReport(
@@ -115,24 +115,33 @@ export class OwnerAsleep {
       this.answered = []
       if (text) this.d.report(text)
     }
-    void this.reconcile()
+    this.awakeTabsChanged()
+    return true
   }
 
   awakeTabsChanged(): void {
-    if (this.asleep()) this.marked.delete(THIS_MAC)
+    this.generation++
+    this.settled.clear()
     void this.reconcile()
   }
 
   async reconcile(): Promise<void> {
     const asleep = this.asleep()
-    const machines = asleep ? this.d.machines() : [...this.marked]
+    const generation = this.generation
     const awake = asleep ? this.d.awakeTabs() : null
-    for (const machine of machines) {
-      if (asleep === this.marked.has(machine)) continue
-      if (!(await this.d.mark(machine, awake))) continue
-      if (asleep) this.marked.add(machine)
-      else this.marked.delete(machine)
-    }
+    const machines = new Set([...this.d.machines(), ...(asleep ? [] : this.everMarked)])
+    await Promise.all(
+      [...machines]
+        .filter((machine) => !this.settled.has(machine))
+        .map(async (machine) => {
+          const done = await this.d.mark(machine, awake).catch(() => false)
+          if (!done) return
+          if (asleep) this.everMarked.add(machine)
+          if (generation !== this.generation) return void this.settled.delete(machine)
+          this.settled.add(machine)
+          if (!asleep) this.everMarked.delete(machine)
+        })
+    )
   }
 
   answersFor(tabId: string): boolean {
@@ -146,7 +155,7 @@ export class OwnerAsleep {
       const asked = await this.d.asked(tabId)
       if (!asked) return
       const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
-      for (const reply of asked.question ? [OWNER_ASLEEP_ANSWER, FIRST_OPTION] : [APPROVE]) {
+      for (const reply of repliesTo(asked)) {
         entry.failed = await this.d.answer(tabId, reply)
         if (entry.failed === undefined) {
           entry.gave = reply
