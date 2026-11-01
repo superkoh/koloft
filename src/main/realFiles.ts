@@ -43,6 +43,7 @@ export function realFilesThere(host: string, onMachine: RealFilesOnMachine): Rea
 export class RealFiles {
   private known = new Map<string, string>()
   private asking = new Set<string>()
+  private answered = new Set<string>()
   private wanted: string[] = []
   private lastAskMs = 0
 
@@ -60,6 +61,10 @@ export class RealFiles {
       if (this.wanted.push(file) === 1) this.askSoon()
     }
     return null
+  }
+
+  stillFinding(file: string | null | undefined): boolean {
+    return !!file && this.of(file) === null && !this.answered.has(file)
   }
 
   merge(items: PreviewItem[]): PreviewItem[] {
@@ -98,8 +103,12 @@ export class RealFiles {
     } catch {
       found = new Map(files.filter(isAbsoluteOnHost).map((f) => [f, f]))
     }
-    for (const file of files) this.asking.delete(file)
+    const firstAnswer = files.some((file) => !this.answered.has(file))
+    for (const file of files) {
+      this.asking.delete(file)
+      this.answered.add(file)
+    }
     for (const [file, real] of found) this.known.set(file, real)
-    if (found.size) this.found()
+    if (found.size || firstAnswer) this.found()
   }
 }

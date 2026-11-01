@@ -122,14 +122,14 @@ export class SessionSync {
         this.seen.set(s.tabId, { sessionId: s.sessionId, liveWrites, stamps, live: new Set() })
         continue
       }
-      const wrote =
-        liveWrites > was.liveWrites
-          ? files.filter((f) => (f.wroteAt ?? 0) > (was.stamps.get(f.src) ?? -1)).map((f) => f.src)
-          : []
-      for (const src of wrote) was.live.add(src)
-      if (wrote.length) fresh.push([s, wrote])
-      const writeNotListedYet = liveWrites > was.liveWrites && !wrote.length
-      if (!writeNotListedYet) was.liveWrites = liveWrites
+      if (liveWrites > was.liveWrites) {
+        const wrote = files
+          .filter((f) => (f.wroteAt ?? 0) > (was.stamps.get(f.src) ?? -1))
+          .map((f) => f.src)
+        for (const src of wrote) was.live.add(src)
+        if (wrote.length) fresh.push([s, wrote])
+      }
+      was.liveWrites = liveWrites
       was.stamps = stamps
     }
     const open = new Set(sessions.map((s) => s.tabId))
