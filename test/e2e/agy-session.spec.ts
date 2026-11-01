@@ -32,6 +32,8 @@ import {
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
+  terminalText,
+  termIds,
   waitBooted,
   waitConductorStarted,
   wsGroup,
@@ -49,6 +51,7 @@ const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
+const AGY_SETUP_SCREEN = { timeout: 20_000 }
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -683,7 +686,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§6
-  test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, and a pasted Gemini API key adds an account kept in the Keychain, UNVERIFIED until agy onboarding is done', async ({
+  test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, and a pasted Gemini API key adds an account kept in the Keychain and opens agy on it at once; once its colour and Terms screens are answered the row is ready, marked API KEY and metered', async ({
     env
   }) => {
     installAgy(env)
@@ -702,15 +705,52 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
 
       await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
       const seeded = page.locator('.acct-row', { hasText: E2E_AGY_ACCOUNT })
-      await expect(seeded).toContainText('Signed in')
+      await expect(seeded.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(seeded.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited'
+      )
       await page.getByRole('button', { name: 'Paste Gemini API key' }).click()
       await expect(page.locator('.acct-add-title')).toHaveText('Add Gemini API key')
       await page.locator('.acct-add input[type="text"]').fill('second')
       await page.locator('.acct-add input[type="password"]').fill('AIza-second-key')
-      await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
+      const termsBefore = await termIds(page)
+      await page.locator('.acct-add-actions button', { hasText: 'Save' }).click()
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Antigravity sign in: second', {
+        timeout: 20_000
+      })
+      let setupTab = ''
+      await expect
+        .poll(async () => {
+          setupTab = (await termIds(page)).find((id) => !termsBefore.includes(id)) ?? ''
+          return setupTab && (await terminalText(page, setupTab))
+        }, AGY_SETUP_SCREEN)
+        .toContain('Choose your color scheme')
+      await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
+      await expect
+        .poll(() => terminalText(page, setupTab), AGY_SETUP_SCREEN)
+        .toContain('Terms of Service')
+      await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
+      const onboarding = path.join(
+        env.userData,
+        'agy-homes',
+        'second',
+        'antigravity-cli',
+        'cache',
+        'onboarding.json'
+      )
+      await expect.poll(() => fs.existsSync(onboarding), AGY_SETUP_SCREEN).toBe(true)
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
       const added = page.locator('.acct-row', { hasText: 'second' })
-      await expect(added).toBeVisible({ timeout: 15_000 })
-      await expect(added.locator('.acct-status.unverified')).toHaveText('UNVERIFIED')
+      await expect(added).toBeVisible({ timeout: 20_000 })
+      await expect(added.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(added.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited',
+        { timeout: 20_000 }
+      )
+      await expect(added.locator('.acct-status')).toHaveCount(0)
       const kc = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
         string,
         Record<string, string>
