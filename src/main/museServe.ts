@@ -5,6 +5,7 @@ import { TurnLog, type Turn } from '@shared/turns'
 import { record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
 import { labelsOf, type Question } from './discord/dialog'
+import { pipeSecretTo } from './secretOnStdin'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
 const LIST_PAGE = 200
@@ -227,21 +228,12 @@ export async function museSignIn(options: ServeOptions): Promise<MuseSignIn> {
 
 // MUSE§13
 export function storeMuseKey(options: ServeOptions, key: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(options.binary, ['auth', 'set', '--provider', 'meta', '--api-key-stdin'], {
-      cwd: os.homedir(),
-      env: options.env,
-      stdio: ['pipe', 'ignore', 'pipe']
-    })
-    let said = ''
-    child.stderr.on('data', (chunk) => (said += String(chunk)))
-    child.on('error', reject)
-    child.stdin.on('error', reject)
-    child.on('exit', (code) =>
-      code === 0 ? resolve() : reject(new Error(said.trim() || 'muse auth set failed'))
-    )
-    child.stdin.end(key)
-  })
+  return pipeSecretTo(
+    options.binary,
+    ['auth', 'set', '--provider', 'meta', '--api-key-stdin'],
+    options.env,
+    key
+  )
 }
 
 // MUSE§5

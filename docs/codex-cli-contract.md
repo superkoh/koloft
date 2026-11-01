@@ -1086,7 +1086,14 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
 stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
 `account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
 `thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
-"chatgpt authentication required to read rate limits".
+"chatgpt authentication required to read rate limits". Again on 2026-10-31 with codex-cli
+0.166.0, a throwaway `HOME` and `CODEX_HOME`, a made-up key: `codex login --with-api-key`
+exited 0 ("API key saved. Authentication is checked when you send a request." on stderr)
+and left `auth.json` with only `auth_mode: "apikey"` and `OPENAI_API_KEY`; `account/read`
+answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true, workspaceRouting: null}`
+and `account/rateLimits/read` the same `-32600`. So a key pasted into Koloft is not checked
+until a session sends its first turn, and Koloft reads such a home as signed in without
+asking for its rate limits.
 
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that

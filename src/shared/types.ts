@@ -290,6 +290,7 @@ export interface AccountView extends AccountMeta {
   limits?: CodexLimits
   quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
+  apiKey?: true
 }
 
 export type SignInResult =
