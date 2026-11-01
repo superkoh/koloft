@@ -214,16 +214,9 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
         const win = BrowserWindow.getAllWindows().find((w) =>
           w.webContents.getURL().endsWith('/stays')
         )!
-        const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
-          for (const item of items) {
-            if (item.accelerator === 'CmdOrCtrl+W') return item
-            const inner = item.submenu ? find(item.submenu.items) : undefined
-            if (inner) return inner
-          }
-          return undefined
-        }
-        const closeTab = find(Menu.getApplicationMenu()!.items)!
-        closeTab.click(undefined, win, win.webContents)
+        Menu.getApplicationMenu()!
+          .getMenuItemById('close-tab')!
+          .click(undefined, win, win.webContents)
       })
       await expect.poll(popupInWebSession).toBeNull()
       await expect(openTabs(page)).toHaveCount(2)

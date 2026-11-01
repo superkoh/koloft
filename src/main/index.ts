@@ -3896,17 +3896,11 @@ app.whenReady().then(() => {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
-      if (from && signInWindows.has(from)) {
-        if (action === 'close-tab') from.close()
-        return
-      }
+      if (keptByAnotherWindow(from, action === 'close-tab')) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
     (cmd, from) => {
-      if (from && signInWindows.has(from)) {
-        if (cmd === 'browser-close-tab') from.close()
-        return
-      }
+      if (keptByAnotherWindow(from, cmd === 'browser-close-tab')) return
       sendToRenderer(CH.shortcut.browser, cmd)
     },
     loadSettings().keepAwake
@@ -4174,22 +4168,24 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
+function keptByAnotherWindow(from: BaseWindow | undefined, closesIt: boolean): boolean {
+  if (!from || from === mainWindow) return false
+  if (closesIt) from.close()
+  return true
+}
+
 const webPageWatchers: ((contents: WebContents) => void)[] = []
 
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return
+  for (const w of webPageWatchers) w(contents)
+})
+
 function onEveryWebPage(watch: (contents: WebContents) => void): void {
-  if (!webPageWatchers.length) {
-    app.on('web-contents-created', (_e, contents) => {
-      if (contents.getType() !== 'webview') return
-      for (const w of webPageWatchers) w(contents)
-    })
-  }
   webPageWatchers.push(watch)
 }
 
-const signInWindows = new WeakSet<BaseWindow>()
-
 function adoptSignInWindow(win: BrowserWindow, opener: WebContents): void {
-  signInWindows.add(win)
   const popup = win.webContents
   const host = mainWindow
   const close = (): void => {
@@ -4309,12 +4305,11 @@ function setupGuestPopups(): void {
   onEveryWebPage((contents) => {
     contents.setWindowOpenHandler((details) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
-      const { url } = details
       // PLATFORM§8
       if (opensAsSignInWindow(contents, details)) {
         return { action: 'allow', overrideBrowserWindowOptions: { show: !BACKGROUND_TEST } }
       }
-      routeGuestPopup(url, contents)
+      routeGuestPopup(details.url, contents)
       return { action: 'deny' }
     })
     contents.on('did-create-window', (win) => adoptSignInWindow(win, contents))
