@@ -101,7 +101,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
     digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
-    `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
+    `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
+    exists, then deletes that file — for a line the owner must not type, since a typed
+    Enter is the owner back from asleep), `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
     output and `koloft exit=<code>`, with no hook and no transcript line), `/sh <command>`

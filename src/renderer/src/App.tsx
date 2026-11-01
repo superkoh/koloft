@@ -21,6 +21,7 @@ import {
   IconAddProject,
   IconChevronRight,
   IconKeepAwake,
+  IconOwnerAsleep,
   IconNotifications,
   IconOpenedPage,
   IconSettings,
@@ -291,6 +292,7 @@ export default function App(): JSX.Element {
   const setSettings = useStore((s) => s.setSettings)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const keepAwake = useStore((s) => s.settings.keepAwake)
+  const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -1645,6 +1647,23 @@ export default function App(): JSX.Element {
             aria-pressed={keepAwake}
           >
             <IconKeepAwake size={20} />
+          </button>
+          <button
+            className={'tb-ico' + (asleep ? ' on' : '')}
+            onClick={() => {
+              const since = asleep ? null : Date.now()
+              setSettings({ ...useStore.getState().settings, ownerAsleepSince: since })
+              void window.api.settings.set({ ownerAsleepSince: since })
+            }}
+            title={
+              asleep
+                ? "Asleep — sessions keep going on their own. Click when you're back"
+                : 'Going to sleep — sessions keep going without you'
+            }
+            aria-label="Owner asleep"
+            aria-pressed={asleep}
+          >
+            <IconOwnerAsleep size={20} />
           </button>
           <button
             className="tb-ico"

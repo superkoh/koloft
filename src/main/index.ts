@@ -122,6 +122,7 @@ import {
   forgetAssistMarkers,
   localNotice,
   markAnswerable,
+  markOwnerAsleep,
   noticeFile,
   pruneStale,
   quotedPrompt,
@@ -493,6 +494,7 @@ import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
+  claudeDialog,
   codexDialog,
   isAskedCall,
   type CodexApproval,
@@ -549,6 +551,7 @@ import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
+import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -635,6 +638,7 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
+    if (butler?.isButlerTab(tabId)) ownerAsleep.awakeTabsChanged()
     discordTyping?.refresh(tabId)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
@@ -1026,7 +1030,55 @@ const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
+let ownerAsleepSince = loadSettings().ownerAsleepSince
+const ownerAsleep = new OwnerAsleep({
+  since: () => ownerAsleepSince,
+  machines: () => [
+    THIS_MAC,
+    ...new Set([
+      ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+      ...(codexSessions?.machinesWithTabs() ?? [])
+    ])
+  ],
+  mark: async (machine, awakeTabs) => {
+    if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
+    if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
+    return !!hookRegDir
+  },
+  awakeTabs: () => {
+    const tab = butler?.liveTab()
+    return tab ? [tab] : []
+  },
+  asking: () =>
+    ptyTabIds().filter(
+      (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.heldAsk(tabId)
+    ),
+  asked: async (tabId) => {
+    const stored = await pendingAskOf(tabId)
+    if (stored) return { question: 'questions' in stored, text: codexDialog(stored).text }
+    const claude =
+      discordRelay?.heldAsk(tabId) ??
+      (tracker.statusOf(tabId) === 'approval' ? claudeAsks.get(tabId) : undefined)
+    return (
+      claude && {
+        question: claude.tool_name === 'AskUserQuestion',
+        text: claudeDialog(claude).text
+      }
+    )
+  },
+  answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
+  titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
+  changedSince: (since) => awayDigest?.changedSince(since) ?? [],
+  report: (text) => discordRelay?.tell(butlerDestination(), text),
+  now: Date.now
+})
+
+function ownerCameBack(): void {
+  if (ownerAsleep.asleep()) commitSettings({ ownerAsleepSince: null })
+}
+
 function ownerAway(): boolean {
+  if (ownerAsleep.asleep()) return false
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
   if (pretend)
     return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
@@ -1341,7 +1393,7 @@ function syncAnswerable(): void {
   if (!hookRegDir || !all) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = discordConnected && !!all.channelOfTab(s.tabId)
+    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -1876,6 +1928,7 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
       open: openSignInEndOn,
@@ -3235,6 +3288,7 @@ app.whenReady().then(() => {
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
+    if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
     if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -3647,6 +3701,7 @@ app.whenReady().then(() => {
     },
     owner: () => butlerNow.owner(),
     ownerAway,
+    ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3681,6 +3736,7 @@ app.whenReady().then(() => {
       ptyMgr.wakeReady(tabId)
       void buttons.check(tabId)
       showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
     },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
@@ -3725,7 +3781,11 @@ app.whenReady().then(() => {
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
   const digest = awayDigest
-  setInterval(() => digest.marked(), AWAY_CHECKED_EVERY_MS).unref()
+  setInterval(() => {
+    digest.marked()
+    void ownerAsleep.reconcile()
+  }, AWAY_CHECKED_EVERY_MS).unref()
+  void ownerAsleep.reconcile()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3900,7 +3960,7 @@ app.whenReady().then(() => {
     (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake)
+  applyKeepAwake(loadSettings().keepAwake || ownerAsleep.asleep())
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
@@ -5606,8 +5666,13 @@ function commitSettings(patch: Partial<Settings>): Settings {
   sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
-  applyKeepAwake(s.keepAwake)
+  applyKeepAwake(s.keepAwake || s.ownerAsleepSince !== null)
   setKeepAwakeChecked(s.keepAwake)
+  if (s.ownerAsleepSince !== ownerAsleepSince) {
+    ownerAsleepSince = s.ownerAsleepSince
+    ownerAsleep.changed()
+    syncAnswerable()
+  }
   return s
 }
 
@@ -5764,6 +5829,7 @@ function registerIpc(): void {
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
