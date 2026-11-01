@@ -189,6 +189,78 @@ describe('picking a Codex account', () => {
     ).toBe('gemini')
   })
 
+  describe('by weekly use, as Claude Code accounts are picked: the 5-hour window only stops an account at 90%', () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    const windows = (
+      fiveHour: number,
+      week: number,
+      fiveHourBack = nowSec + 3_600
+    ): AccountView['limits'] => ({
+      windows: [
+        { minutes: 300, used: fiveHour, resetsAt: fiveHourBack },
+        { minutes: 10080, used: week, resetsAt: nowSec + 5 * 86_400 }
+      ],
+      at: Date.now()
+    })
+
+    it('a heavier 5 hours does not count against an account whose week is lighter', () => {
+      const picker = new HomeAccountPicker('codex-home')
+      const pool = [
+        account('fresh-5h', { limits: windows(0, 0.5) }),
+        account('light-week', { limits: windows(0.8, 0.1) })
+      ]
+      expect(picker.pick(pool)?.name).toBe('light-week')
+    })
+
+    it('an account at 90% of its 5 hours is skipped for a new session even when its week is the lightest', () => {
+      const picker = new HomeAccountPicker('codex-home')
+      const pool = [
+        account('stopped', { limits: windows(0.9, 0) }),
+        account('heavier', { limits: windows(0.1, 0.7) })
+      ]
+      expect(picker.pick(pool)?.name).toBe('heavier')
+    })
+
+    it('an account walled on its week never wins over one that is only at its 5-hour stop, and with every account stopped the one whose 5 hours come back first wins, an unknown reset last', () => {
+      const picker = new HomeAccountPicker('codex-home')
+      const weekWalled = account('week-walled', { limits: windows(0, 1) })
+      const late = account('late', { limits: windows(0.95, 0.1, nowSec + 7_200) })
+      const soon = account('soon', { limits: windows(0.92, 0.6, nowSec + 600) })
+      const unknown = account('unknown', { limits: windows(0.95, 0, 0) })
+      expect(picker.pick([weekWalled, late])?.name).toBe('late')
+      expect(picker.pick([weekWalled, late, soon, unknown])?.name).toBe('soon')
+      expect(picker.pick([unknown, late])?.name).toBe('late')
+      expect(allLimitedNotice(soon, 'codex')).toBeUndefined()
+    })
+
+    it('Muse and Antigravity accounts follow the same rule over their own 5-hour and weekly windows', () => {
+      const muse = new HomeAccountPicker('muse-home')
+      expect(
+        muse.pick([
+          account('fresh-5h', { kind: 'muse-home', limits: windows(0, 0.5) }),
+          account('light-week', { kind: 'muse-home', limits: windows(0.8, 0.1) })
+        ])?.name
+      ).toBe('light-week')
+      const agy = new HomeAccountPicker('agy-home')
+      const quota = (fiveHour: number, week: number): AccountView['quota'] => [
+        { label: 'Gemini Models · 5h', used: fiveHour, minutes: 300, resetsAt: nowSec + 3_600 },
+        { label: 'Gemini Models · 7d', used: week, minutes: 10080 }
+      ]
+      expect(
+        agy.pick([
+          account('fresh-5h', { kind: 'agy-home', quota: quota(0, 0.5) }),
+          account('light-week', { kind: 'agy-home', quota: quota(0.8, 0.1) })
+        ])?.name
+      ).toBe('light-week')
+      expect(
+        agy.pick([
+          account('stopped', { kind: 'agy-home', quota: quota(0.9, 0) }),
+          account('heavier', { kind: 'agy-home', quota: quota(0.1, 0.7) })
+        ])?.name
+      ).toBe('heavier')
+    })
+  })
+
   it('when every account is used up, one whose reset time is unknown is not taken for the first to reset', () => {
     const picker = new HomeAccountPicker('codex-home')
     const unknown = account('unknown', { limits: used(1) })

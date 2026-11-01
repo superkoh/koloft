@@ -283,6 +283,7 @@ export interface QuotaBucket {
   label: string
   used: number
   resetsAt?: number
+  minutes?: number
 }
 
 export interface AccountView extends AccountMeta {

@@ -171,10 +171,13 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
-interface UsedWindow {
+export interface UsedWindow {
   used: number
   resetsAt?: number
+  minutes?: number
 }
+
+export const FIVE_HOUR_MINUTES = 5 * 60
 
 function heaviestOf(windows: UsedWindow[]): number {
   return Math.max(0, ...windows.map((w) => w.used))
@@ -218,6 +221,9 @@ export interface HomeRoom {
   used: number
   walled: boolean
   backAt: number
+  longWindows: UsedWindow[]
+  fiveHourStopped: boolean
+  fiveHourBackAt: number
 }
 
 // AGY§23
@@ -230,7 +236,20 @@ export function homeRoom(
   const used = heaviestOf(windows)
   const backAt = backAtOf(windows)
   const full = a.limits ? codexWalled(a.limits) : used >= 1
-  return { used, walled: full && !resetElapsed(backAt, nowSec), backAt }
+  const stopped = windows.filter(
+    (w) =>
+      w.minutes === FIVE_HOUR_MINUTES &&
+      w.used >= FIVE_HOUR_STOP &&
+      !resetElapsed(w.resetsAt ?? 0, nowSec)
+  )
+  return {
+    used,
+    walled: full && !resetElapsed(backAt, nowSec),
+    backAt,
+    longWindows: windows.filter((w) => w.minutes !== FIVE_HOUR_MINUTES),
+    fiveHourStopped: stopped.length > 0,
+    fiveHourBackAt: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
+  }
 }
 
 // AGY§23

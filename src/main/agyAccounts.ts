@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import type { QuotaBucket } from '@shared/types'
+import { FIVE_HOUR_MINUTES, windowLabel } from '@shared/accountUsage'
 import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
@@ -183,7 +184,7 @@ export function readAgyQuota(
 }
 
 // AGY§23
-const WINDOW_LABEL: Record<string, string> = { weekly: '7d', '5h': '5h' }
+const WINDOW_MINUTES: Record<string, number> = { weekly: 7 * 24 * 60, '5h': FIVE_HOUR_MINUTES }
 
 // AGY§20 AGY§23
 export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
@@ -205,15 +206,16 @@ export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
         typeof bucket.reset_time === 'string'
           ? Math.floor(Date.parse(bucket.reset_time) / 1000)
           : NaN
-      const window = typeof bucket.window === 'string' ? WINDOW_LABEL[bucket.window] : undefined
-      const label = [group.name, window ?? bucket.name]
+      const minutes = typeof bucket.window === 'string' ? WINDOW_MINUTES[bucket.window] : undefined
+      const label = [group.name, minutes ? windowLabel(minutes) : bucket.name]
         .filter((n) => typeof n === 'string' && n)
         .join(' · ')
       return [
         {
           label: label || 'Quota',
           used: Math.max(0, Math.min(1, 1 - left)),
-          ...(Number.isFinite(reset) ? { resetsAt: reset } : {})
+          ...(Number.isFinite(reset) ? { resetsAt: reset } : {}),
+          ...(minutes ? { minutes } : {})
         }
       ]
     })
