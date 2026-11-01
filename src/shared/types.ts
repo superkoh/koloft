@@ -290,6 +290,7 @@ export interface AccountView extends AccountMeta {
   limits?: CodexLimits
   quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
+  apiKey?: true
 }
 
 export type SignInResult =
@@ -788,6 +789,7 @@ export interface BackendSessionInfo {
   lastAction?: string
   account?: string
   pickedAccount?: string
+  scratchpadDir?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }

@@ -594,6 +594,14 @@ only downloaded the public release.
   | `PostToolUse` | after the tool really ran (not when denied); for a background command, when it ends | `toolCall`, `stepIdx`, `error:""`; no output, no diff |
   | `Stop` | end of the agent loop | `executionNum`, `terminationReason` (`NO_TOOL_CALL`, `TERMINAL_CUSTOM_HOOK` after `/compact`, `ERROR`), `fullyIdle` (false while a subagent runs), `error` |
 
+- `artifactDirectoryPath` is a plain absolute path on the machine agy runs on,
+  `<geminiDir>/antigravity-cli/brain/<conversationId>` (no `file://`), in every event
+  from the first `SessionStart` on (2026-10-29, agy 1.4.7 Linux in Docker,
+  `--gemini_dir=/work/g`, a fake Gemini server, three turns in tmux; no subagent ran, so
+  a subagent's hooks are **not probed yet**). That folder holds
+  the conversation's artifacts and its `scratch/` (§8, §19); 1.3.6's system prompt tells
+  the model to put scratch scripts and files in `{{ArtifactDirectoryPath}}/scratch/`,
+  "They will be persisted" (not rechecked on 1.4).
 - **What a `PostToolUse` hook sees of a `run_command`.** 1.4.7 Linux arm64 in Docker,
   fake Gemini server, `-p` then `-c -p`, `--dangerously-skip-permissions`, hook entry
   `/bin/sh <file>` (dash), 2026-10-25: stdin is one compact line holding

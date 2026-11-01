@@ -31,7 +31,13 @@ export function codexHomes(userData: string): string[] {
   }
 }
 
-const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions', 'skills', 'rules']
+const FOLDERS_EVERY_HOME_SHARES = [
+  'sessions',
+  'archived_sessions',
+  'skills',
+  'rules',
+  'generated_images'
+]
 const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
 const SPLIT_CONFIG_KEPT_AS = 'config.toml.before-shared'
 
