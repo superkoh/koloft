@@ -129,11 +129,8 @@ function wallBackAt(u: UsageSnapshot): number {
   return backs.length > 0 ? Math.max(...backs) : Infinity
 }
 
-function soonest<T extends { snap: UsageSnapshot }>(
-  list: T[],
-  backAt: (u: UsageSnapshot) => number
-): T {
-  return list.reduce((a, b) => (backAt(b.snap) < backAt(a.snap) ? b : a))
+export function soonest<T>(list: T[], backAt: (item: T) => number): T {
+  return list.reduce((best, item) => (backAt(item) < backAt(best) ? item : best))
 }
 
 function withLoad(score: Score, liveSessions: number): Score {
@@ -297,8 +294,8 @@ export class AccountPicker {
       open.length > 0
         ? open
         : runnable.length > 0
-          ? [soonest(runnable, fiveHourBackAt)]
-          : [soonest(routed, wallBackAt)]
+          ? [soonest(runnable, (s) => fiveHourBackAt(s.snap))]
+          : [soonest(routed, (s) => wallBackAt(s.snap))]
     const cands: Candidate[] = pool.map((s) => ({ name: s.meta.name, score: s.score }))
     const finalists = leximaxFinalists(cands)
     const winner =

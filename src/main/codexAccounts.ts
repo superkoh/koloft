@@ -11,9 +11,10 @@ import { joinProjectTables } from './codexTrust'
 import {
   SCORE_PER_LIVE_SESSION,
   liveSessionsPerAccount,
+  soonest,
   type LaunchedSession
 } from './accountPicker'
-import { DW, EPS, disc } from './usageProbe'
+import { EPS, weekUse } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -152,11 +153,7 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
 }
 
 function weeklyScore(room: HomeRoom, nowSec: number): number {
-  return Math.max(0, ...room.longWindows.map((w) => w.used * disc(w.resetsAt ?? 0, DW, nowSec)))
-}
-
-function soonest<T>(list: T[], backAt: (item: T) => number): T {
-  return list.reduce((best, item) => (backAt(item) < backAt(best) ? item : best))
+  return Math.max(0, ...room.longWindows.map((w) => weekUse(w.used, w.resetsAt ?? 0, nowSec)))
 }
 
 export class HomeAccountPicker {
@@ -182,9 +179,7 @@ export class HomeAccountPicker {
       return same.a
     const live = liveSessionsPerAccount(launched, undefined)
     const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
-    const fresh = open.filter(({ room }) => !room.fiveHourStopped)
-    if (fresh.length === 0 && open.length > 0)
-      return soonest(open, ({ room }) => room.fiveHourBackAt).a
+    const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
     const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
       ({ a, room }) => ({
         a,
@@ -198,6 +193,7 @@ export class HomeAccountPicker {
       const finalists = ranked.filter((r) => r.score <= least + EPS)
       return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
     }
+    if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
     return soonest(rooms, ({ room }) => room?.backAt || Infinity).a
   }
 

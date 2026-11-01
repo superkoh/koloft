@@ -29,8 +29,12 @@ export interface Score {
 
 export type ScoreRoute = 'fable' | 'opus'
 
+export function weekUse(used: number, resetsAt: number, now: number): number {
+  return used * disc(resetsAt, DW, now)
+}
+
 export function scoreSnapshot(u: UsageSnapshot, now: number, route: ScoreRoute): Score {
-  const week = u.u7 * disc(u.r7, DW, now)
+  const week = weekUse(u.u7, u.r7, now)
   const oi = route === 'fable' ? u.uoi * disc(u.roi, DW, now) * OI_WEIGHT : 0
 
   const penFor = (status: string, r: number): number => {

@@ -97,9 +97,15 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
 }
 
 export const FIVE_HOUR_STOP = 0.9
+export const FIVE_HOUR_MINUTES = 5 * 60
+export const WEEK_MINUTES = 7 * 24 * 60
+
+export function windowStopped(used: number, resetsAt: number, nowSec: number): boolean {
+  return !resetElapsed(resetsAt, nowSec) && used >= FIVE_HOUR_STOP
+}
 
 export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
-  return !resetElapsed(u.r5, nowSec) && u.u5 >= FIVE_HOUR_STOP
+  return windowStopped(u.u5, u.r5, nowSec)
 }
 
 export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
@@ -171,13 +177,11 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
-export interface UsedWindow {
+interface UsedWindow {
   used: number
   resetsAt?: number
   minutes?: number
 }
-
-export const FIVE_HOUR_MINUTES = 5 * 60
 
 function heaviestOf(windows: UsedWindow[]): number {
   return Math.max(0, ...windows.map((w) => w.used))
@@ -222,8 +226,7 @@ export interface HomeRoom {
   walled: boolean
   backAt: number
   longWindows: UsedWindow[]
-  fiveHourStopped: boolean
-  fiveHourBackAt: number
+  fiveHourStoppedUntil?: number
 }
 
 // AGY§23
@@ -237,18 +240,16 @@ export function homeRoom(
   const backAt = backAtOf(windows)
   const full = a.limits ? codexWalled(a.limits) : used >= 1
   const stopped = windows.filter(
-    (w) =>
-      w.minutes === FIVE_HOUR_MINUTES &&
-      w.used >= FIVE_HOUR_STOP &&
-      !resetElapsed(w.resetsAt ?? 0, nowSec)
+    (w) => w.minutes === FIVE_HOUR_MINUTES && windowStopped(w.used, w.resetsAt ?? 0, nowSec)
   )
   return {
     used,
     walled: full && !resetElapsed(backAt, nowSec),
     backAt,
     longWindows: windows.filter((w) => w.minutes !== FIVE_HOUR_MINUTES),
-    fiveHourStopped: stopped.length > 0,
-    fiveHourBackAt: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
+    ...(stopped.length > 0 && {
+      fiveHourStoppedUntil: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
+    })
   }
 }
 

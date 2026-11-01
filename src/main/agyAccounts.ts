@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import type { QuotaBucket } from '@shared/types'
-import { FIVE_HOUR_MINUTES, windowLabel } from '@shared/accountUsage'
+import { FIVE_HOUR_MINUTES, WEEK_MINUTES, windowLabel } from '@shared/accountUsage'
 import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
@@ -184,7 +184,7 @@ export function readAgyQuota(
 }
 
 // AGY§23
-const WINDOW_MINUTES: Record<string, number> = { weekly: 7 * 24 * 60, '5h': FIVE_HOUR_MINUTES }
+const WINDOW_MINUTES: Record<string, number> = { weekly: WEEK_MINUTES, '5h': FIVE_HOUR_MINUTES }
 
 // AGY§20 AGY§23
 export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
