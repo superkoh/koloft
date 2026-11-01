@@ -231,8 +231,9 @@ export class SlashCommands {
     const enterAgainIfStillTyped = async (): Promise<void> => {
       if (!this.unanswered(tab, p)) return
       const lines = await this.d.screen(tab).catch(() => undefined)
-      if (lines && this.unanswered(tab, p) && this.stillInTheBox(tab, p.text, lines))
-        await this.press(tab, ['\r'])
+      if (!lines || !this.unanswered(tab, p)) return
+      if (this.stillInTheBox(tab, p.text, lines)) await this.press(tab, ['\r'])
+      this.readScreenSoon(tab, p)
     }
     p.timers.push(setTimeout(() => void enterAgainIfStillTyped(), AN_ENTER_LANDS_WITHIN_MS))
   }
@@ -247,10 +248,7 @@ export class SlashCommands {
     if (!reading) return
     const text = await reading
     if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
-    if (this.stillInTheBox(tab, p.text, text.split('\n'))) {
-      if (Date.now() - p.typedAt < AN_ENTER_LANDS_WITHIN_MS) this.readScreenSoon(tab, p)
-      return
-    }
+    if (this.stillInTheBox(tab, p.text, text.split('\n'))) return
     p.outputs.push({ kind: 'printed', text })
     await this.press(tab, [ESC])
     this.settleSoon(tab, p)

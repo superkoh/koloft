@@ -135,7 +135,15 @@ describe('a slash command typed into a session', () => {
           if (typed.filter((k) => k === '\r').length === enterThatLands) shown = OUTPUT_SCREEN
         }
       })
-      return { slash, posts, typed, screenReads: () => screenReads }
+      return {
+        slash,
+        posts,
+        typed,
+        screenReads: () => screenReads,
+        land: () => {
+          shown = OUTPUT_SCREEN
+        }
+      }
     }
 
     it('a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
@@ -148,6 +156,18 @@ describe('a slash command typed into a session', () => {
       expect(typed).toEqual(['/usage', '\r', '\r'])
       await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
       expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
+    })
+
+    it('an Enter that lands only after the first look at the screen gets no second Enter, and its output is posted from the next look', async () => {
+      const { slash, posts, typed, land } = agyWhoseEnterLandsOnThe(Infinity)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      land()
+      await vi.advanceTimersByTimeAsync(
+        AN_ENTER_LANDS_WITHIN_MS + SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS
+      )
+      expect(typed).toEqual(['/usage', '\r', '\x1b'])
       expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
     })
 
