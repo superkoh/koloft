@@ -57,7 +57,7 @@ const SAMPLE_EVERY_MS = 100
 async function textsAcrossAWindow(locator: Locator, ms: number): Promise<string[]> {
   const seen: string[] = []
   for (const end = Date.now() + ms; Date.now() < end;) {
-    seen.push(await locator.innerText())
+    seen.push((await locator.allInnerTexts()).join('\n'))
     await new Promise((resolve) => setTimeout(resolve, SAMPLE_EVERY_MS))
   }
   return seen
@@ -313,6 +313,40 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         first.sessionId
       ])
       expect(museCalls(env)[2].sessionId).toBe(first.sessionId)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§20
+  test('/fork with a message moves the tab onto a new copy that gets the message; the session it left keeps its row, cold, through a listing Muse leaves the held copy out of, and a click resumes it', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'first topic')
+      await expect(museRows(page).filter({ hasText: 'first topic' })).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/fork second topic')
+      const copy = museRows(page).filter({ hasText: 'second topic' })
+      await expect(copy.and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      const left = museRows(page).filter({ hasText: 'first topic' })
+      await expect(left).toHaveClass(/cold/)
+      const listedBefore = museListings(env)
+      await expect.poll(() => museListings(env)).toBeGreaterThan(listedBefore)
+      const rows = await textsAcrossAWindow(museRows(page), ROWS_FOLLOW_A_LISTING_MS)
+      expect(rows.filter((t) => !t.includes('first topic') || !t.includes('second topic'))).toEqual(
+        []
+      )
+      expect(museCalls(env)).toHaveLength(1)
+      await left.click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
     } finally {
       await quitAndClose(app)
     }

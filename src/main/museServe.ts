@@ -101,7 +101,7 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-// MUSE§5
+// MUSE§5 MUSE§20
 function museSession(
   raw: unknown,
   rootOf: (sessionId: string) => string | undefined

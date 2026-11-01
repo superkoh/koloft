@@ -160,6 +160,40 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  // MUSE§20
+  test('E-RM-08: /fork with a message on the machine moves the tab and its tmux session onto the new copy; the session it left keeps its row, cold, and a click brings it back with muse resume', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(remoteRows(page)).toContainText('keep me')
+      await runIn(page, centerTerm(page), '/fork second')
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(`k-${first.sessionId}`)
+      await expect.poll(() => liveTmuxSessions(env)).toHaveLength(1)
+      await expect(remoteRows(page).filter({ hasText: 'second' })).toHaveClass(/\bst-waiting\b/, {
+        timeout: 30_000
+      })
+      const left = remoteRows(page).filter({ hasText: 'keep me' })
+      await expect(left).toHaveClass(/cold/, { timeout: 30_000 })
+      expect(machineMuseCalls(env)).toHaveLength(1)
+      await left.click()
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(2)
+      expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', first.sessionId])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Muse that dies on the machine keeps its tab: the screen says its exit code, Koloft says it ended unexpectedly with no key pressed, and its row stays saying “exited” with the “exited” mark', async ({
     env
   }) => {

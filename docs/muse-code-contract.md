@@ -682,3 +682,49 @@ butler's to-do method, which names the files each agent reads.
   the prompt and its echoed reply were in every one of them.
 - **`/diff` is not a Muse command.** Typed the same way, it went to the model as a prompt:
   a `userMessage` "/diff" and the reply "echo: /diff".
+
+## §20 `/fork`
+
+How established: 2026-11-01, `Muse Code 1.4.14 (1.4.14-R7309.1)` (the
+`koloft-muse-probe-1411` image after `muse --version` with `MUSE_SYNC_UPDATE=1`), Linux
+Docker with `--network none` and `MUSE_NO_AUTO_UPDATE=1`, `muse --provider echo
+--trust-workspace` in a tmux 3.3a pane (160×50), every hook event of §9 logged through
+`TBH_MANAGED_HOOKS_PATH`, the registry folder (§4) and `muse serve` (§5) read after each
+step: `/fork` alone in four runs, `/fork <text>` in three, the same each time; the
+30-second listing below in one. OSC 7501 frames were not seen (tmux, §6). macOS: not
+probed.
+
+The command menu shows `/fork [prompt]` — "Branch this session from the latest message".
+It has two forms that behave differently.
+
+- **`/fork` alone makes a copy and stays where it was.** Below the last reply it prints
+  `Fork created: <new id>`, `Source session stays active.`, `Continue the fork:` and
+  `muse resume <new id>`. No hook fires, the registry file keeps the old id, and the next
+  prompt goes to the old session (its `UserPromptSubmit` and `Stop` carry the old id).
+  The copy's folder holds only `.session.lock` and `session.jsonl`.
+- **`/fork <text>` moves the terminal onto a new copy and sends `<text>` there.** The
+  screen redraws with `resumed session <new id>` and the copied turns, then the prompt
+  and its reply. Hooks, in order: `SessionEnd` (whose `session_id` is the new id),
+  `SessionStart` with `source: "fork"`, then `UserPromptSubmit` and `Stop`, all with the
+  new id. The old id's registry file goes and the new id's file appears with the same
+  pid, as on `/clear` (§4). Every later prompt goes to the new session.
+- **The copy's `session.jsonl` starts with a `session.fork.created` record** (about
+  700 bytes, compact JSON with `"payload_type":"session.fork.created"` in its first
+  300 bytes), payload `{fork_session_id, source_session_id, source_cut_cursor,
+  created_by_command_id, …}`, then `session.fork.model_prefix` and one
+  `session.fork.turn` per copied turn. The copied turns' own records follow only as
+  `{"retained_marker":"omitted_live_only", …, "omitted_record":{…}}` lines, with no
+  top-level `payload_type`; the moved-onto copy then has
+  `runtime.session_start.intake_v3` with `activation_source: "fork"`. A session started
+  fresh or by `/clear` starts with another record. On `/fork <text>` this file was
+  written about 0.25 s before the registry swap (its `createdAt` against the registry
+  file's mtime, one run). The source's own log gets
+  `command.invoked {command: "/fork"}` and `runtime.command_intake.branch.received
+  {command: {kind: "session_fork", requested_fork_session_id}}`.
+- **`session/list`**: the copy is `kind: "root"` with `workspaceRoot: null` and
+  `forkedFrom: {sessionId: <source id>, commandId, cutCursor, cutExplicit: false}`;
+  `title` and `firstUserPrompt` are the source's first prompt; `path` is its own
+  `session.jsonl`. A `/fork` copy has no `name` and is listed within seconds. A
+  `/fork <text>` copy is **not listed at all while the TUI holds it** (15 listings over
+  30 s), and is listed after `/exit` with a made-up `name` and `turnCount` counting the
+  copied turns too. The source stays listed either way.

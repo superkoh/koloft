@@ -55,6 +55,7 @@ import {
   turnEndedIn,
   renamedTo,
   startsATurnByItself,
+  startsAsAFork,
   saidInLog,
   textOfLogLine,
   type LogRecord
@@ -829,7 +830,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
     if (run.children.has(hook.sessionId)) return
     if (hook.event === 'SessionStart' || hook.event === 'UserPromptSubmit')
-      this.bindTo(run, hook.sessionId)
+      this.bindTo(run, hook.sessionId, input.source === 'fork')
     if (run.info?.nativeSessionId !== hook.sessionId) return
     switch (hook.event) {
       case 'UserPromptSubmit': {
@@ -1081,7 +1082,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private onMirrorLine(run: MuseRun, line: Record<string, unknown> | undefined): void {
     if (!line || run.explicitStop) return
     if (line.t === 'bound' && typeof line.sessionId === 'string' && UUID.test(line.sessionId)) {
-      this.bindTo(run, line.sessionId)
+      this.bindTo(run, line.sessionId, line.forked === true)
       run.tmuxName = tmuxSessionName(line.sessionId)
       if (run.host) this.deps.remote?.poke(run.host)
     } else if (line.t === 'state' && typeof line.state === 'string') {
@@ -1167,12 +1168,15 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (since !== undefined) await sleep(since + KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS - Date.now())
   }
 
-  // MUSE§4 MUSE§9
-  private bindTo(run: MuseRun, sessionId: string): boolean {
+  // MUSE§4 MUSE§9 MUSE§20
+  private bindTo(run: MuseRun, sessionId: string, forked = false): boolean {
     if (run.info?.nativeSessionId === sessionId) return false
     const key = museSessionKey(sessionId, run.host)
     const known = this.history.get(key)
-    const switched = !!known && (known.createdAt ?? 0) * 1000 < run.boundAt
+    const switched =
+      (!!known && (known.createdAt ?? 0) * 1000 < run.boundAt) ||
+      forked ||
+      (!!run.info && !run.host && startsAsAFork(museSessionLog(this.env, sessionId)))
     if (run.info) run.boundAt = Date.now()
     run.prompt = undefined
     run.children.clear()
