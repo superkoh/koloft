@@ -355,7 +355,6 @@ export interface Settings {
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  lastSeenVersion: string
   discord: DiscordSettings
   butlerSession: ButlerSession
   gitAccounts: GitAccount[]
@@ -480,7 +479,6 @@ export const DEFAULT_SETTINGS: Settings = {
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: '',
   discord: {},
   butlerSession: { sessionIds: [] },
   gitAccounts: [],
@@ -834,12 +832,6 @@ export interface FolderUse {
 export interface DiscoveredFolder extends FolderUse {
   path: string
   agents: Partial<Record<BackendId, FolderUse>>
-}
-
-export interface WhatsNew {
-  current: string
-  releases: ReleaseNotes[]
-  omittedReleases: number
 }
 
 export interface UpdateCheckResult {
@@ -1361,7 +1353,6 @@ export interface KoloftApi {
     restart(): void
     openRelease(): void
     onProgress(cb: (p: UpdateProgress) => void): () => void
-    whatsNew(): Promise<WhatsNew | null>
     offer(): Promise<UpdateCheckResult | null>
     onOffer(cb: (offer: UpdateCheckResult | null) => void): () => void
   }

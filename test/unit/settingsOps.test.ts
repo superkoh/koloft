@@ -40,7 +40,6 @@ describe('buildResetPatch (FR-12)', () => {
         'hintsOff',
         'hintsSeen',
         'keepAwake',
-        'lastSeenVersion',
         'onboardingSeen',
         'notesFolded',
         'notesHeight',
@@ -240,6 +239,14 @@ describe('sanitizeLoadedSettings and where new projects go', () => {
 
   it('About ▸ Reset leaves the remembered folders alone', () => {
     expect(buildResetPatch()).not.toHaveProperty('newProjectFolders')
+  })
+})
+
+describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
+  it('drops the last-seen version an older build kept for its What’s new window, so the next save clears it from disk', () => {
+    expect(
+      sanitizeLoadedSettings({ fontSize: 13, lastSeenVersion: '0.59.1' } as never)
+    ).not.toHaveProperty('lastSeenVersion')
   })
 })
 

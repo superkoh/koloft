@@ -257,7 +257,6 @@ export const CH = {
     checkSshKey: 'gitAccounts:check-ssh-key'
   },
   update: {
-    whatsNew: 'update:whatsNew',
     check: 'update:check',
     download: 'update:download',
     restart: 'update:restart',

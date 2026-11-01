@@ -6,7 +6,6 @@ import {
   isNewer,
   notesSince,
   sortReleases,
-  whatsNewDecision,
   type GhRelease
 } from '../../src/main/releaseNotes'
 
@@ -118,51 +117,5 @@ describe('notesSince', () => {
     expect(releases).toHaveLength(MAX_NOTES_RELEASES)
     expect(releases[0].version).toBe(`1.0.${MAX_NOTES_RELEASES + 5}`)
     expect(omittedReleases).toBe(5)
-  })
-})
-
-describe('U-OB-02: whatsNewDecision picks the span to show and, separately, the version to remember', () => {
-  const published = sortReleases([rel('v0.22.0'), rel('v0.21.3'), rel('v0.21.2'), rel('v0.21.0')])
-  const feed = () => Promise.resolve(published)
-  const noFeed = (): Promise<GhRelease[]> => Promise.reject(new Error('offline'))
-
-  it('shows the span above lastSeen and at or below the running version, recording nothing until the dismiss', async () => {
-    const { show, record } = await whatsNewDecision('0.21.0', '0.21.3', feed)
-    expect(show?.current).toBe('0.21.3')
-    expect(show?.releases.map((r) => r.version)).toEqual(['0.21.3', '0.21.2'])
-    expect(show?.omittedReleases).toBe(0)
-    expect(record).toBeNull()
-  })
-
-  it('says nothing and records the version on a first install', async () => {
-    expect(await whatsNewDecision('', '0.21.3', noFeed)).toEqual({ show: null, record: '0.21.3' })
-  })
-
-  it('says nothing and records nothing when the user already ran this version', async () => {
-    expect(await whatsNewDecision('0.21.3', '0.21.3', noFeed)).toEqual({
-      show: null,
-      record: null
-    })
-  })
-
-  it('records nothing when the feed cannot be read, so the next launch retries', async () => {
-    expect(await whatsNewDecision('0.21.0', '0.21.3', noFeed)).toEqual({
-      show: null,
-      record: null
-    })
-  })
-
-  it('records the version when the span has no changelog in it at all', async () => {
-    const mixed = sortReleases([rel('v0.21.3', LEGACY_BODY), rel('v0.21.2', LEGACY_BODY)])
-    expect(await whatsNewDecision('0.21.0', '0.21.3', () => Promise.resolve(mixed))).toEqual({
-      show: null,
-      record: '0.21.3'
-    })
-  })
-
-  it('still drops a release with no changelog of its own', async () => {
-    const mixed = sortReleases([rel('v0.21.3'), rel('v0.21.2', LEGACY_BODY)])
-    const { show } = await whatsNewDecision('0.21.0', '0.21.3', () => Promise.resolve(mixed))
-    expect(show?.releases.map((r) => r.version)).toEqual(['0.21.3'])
   })
 })

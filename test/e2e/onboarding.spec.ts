@@ -3,7 +3,7 @@ import http from 'http'
 import { execFileSync } from 'child_process'
 import type { AddressInfo } from 'net'
 import path from 'path'
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   codexMissingWhoseCheckAnswersOnlyWhenLetGo,
@@ -23,13 +23,6 @@ import {
   termIds,
   waitForCalls
 } from './helpers/p1'
-import {
-  changelog,
-  notesBody,
-  release,
-  withFixtureEnv,
-  writeFixture
-} from './helpers/updateFixture'
 
 const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
 const SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS = 1500
@@ -145,7 +138,7 @@ function sidebarFolders(page: Page): Locator {
   return page.locator('.isl-sessions .ws-name')
 }
 
-test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new once per upgrade", () => {
+test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
   test('T-OB-01: a first run opens the welcome over the whole window, the four agents side by side, the one on this Mac ready and the rest offered to install', async ({
     env
   }) => {
@@ -663,10 +656,8 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     env
   }) => {
     test.setTimeout(180_000)
-    withWhatsNew(env, [['0.1.2', 'the newer thing']])
     seedSettings(env, {
       onboardingSeen: true,
-      lastSeenVersion: '0.1.0',
       assist: null,
       skipPermissionsAgreed: undefined
     })
@@ -675,10 +666,8 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const whatsNew = page.locator('.update-modal')
       const assist = page.locator('.assist-modal')
-      await expect(whatsNew).toBeVisible({ timeout: 30_000 })
-      await whatsNew.locator('.update-actions .btn-primary').click()
+      await expect(page.locator('.isl-sessions')).toBeVisible({ timeout: 30_000 })
       await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
       await expect(assist).toHaveCount(0)
 
@@ -759,119 +748,6 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await expect(sidebarFolders(page)).toHaveText(['ws-a', 'ws-b'])
     } finally {
       await quitAndClose(app)
-    }
-  })
-
-  // PLATFORM§4
-  function withWhatsNew(env: E2EEnv, versions: [string, string][]): string {
-    const file = withFixtureEnv(env)
-    writeFixture(
-      file,
-      versions.map(([v, item]) => release(v, notesBody(changelog(item))))
-    )
-    return file
-  }
-
-  async function runningVersion(app: ElectronApplication): Promise<string> {
-    return app.evaluate(({ app: a }) => a.getVersion())
-  }
-
-  async function expectNoModal(page: Page, env: E2EEnv, recorded?: string): Promise<void> {
-    await expect(page.locator('.isl-sessions')).toBeVisible({ timeout: 20_000 })
-    if (recorded) {
-      await expect
-        .poll(() => settingsOnDisk(env).lastSeenVersion, { timeout: 20_000 })
-        .toBe(recorded)
-    } else {
-      await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
-    }
-    await expect(page.locator('.update-modal')).toHaveCount(0)
-  }
-
-  test('T-OB-09: an upgrade shows what changed once, then remembers', async ({ env }) => {
-    test.setTimeout(180_000)
-    const fixture = withWhatsNew(env, [
-      ['0.1.2', 'the newer thing'],
-      ['0.1.1', 'the older thing']
-    ])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '0.1.0' })
-
-    const app1 = await launchApp(env)
-    try {
-      const page = await app1.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      const version = await runningVersion(app1)
-
-      const modal = page.locator('.update-modal')
-      await expect(modal).toBeVisible({ timeout: 30_000 })
-      await expect(modal.locator('.modal-header span').first()).toHaveText(
-        `What’s new in Koloft ${version}`
-      )
-      const notes = modal.locator('.update-notes')
-      await expect(notes).toContainText('the newer thing')
-      await expect(notes).toContainText('the older thing')
-      await expect(notes.locator('.update-notes-ver')).toHaveText(['v0.1.2', 'v0.1.1'])
-      await expect(page.getByRole('button', { name: 'Download & Restart' })).toHaveCount(0)
-      await snap(page, 'T-OB-09')
-
-      await modal.locator('.update-actions .btn-primary').click()
-      await expect(modal).toHaveCount(0)
-      await expect
-        .poll(() => settingsOnDisk(env).lastSeenVersion, { timeout: 20_000 })
-        .toBe(version)
-    } finally {
-      await quitAndClose(app1)
-    }
-
-    expect(JSON.parse(fs.readFileSync(fixture, 'utf8')).length).toBe(2)
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-    } finally {
-      await quitAndClose(app2)
-    }
-  })
-
-  test('T-OB-10: a fresh install and an unreadable feed say nothing; an unreadable feed also records nothing, so the next launch tries again', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const fixture = withWhatsNew(env, [['0.1.2', 'the newer thing']])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '' })
-
-    const app1 = await launchApp(env)
-    let version = ''
-    try {
-      const page = await app1.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      version = await runningVersion(app1)
-      await expectNoModal(page, env, version)
-    } finally {
-      await quitAndClose(app1)
-    }
-
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-      expect(settingsOnDisk(env).lastSeenVersion).toBe(version)
-    } finally {
-      await quitAndClose(app2)
-    }
-
-    fs.writeFileSync(fixture, 'not json at all')
-    seedSettings(env, { lastSeenVersion: '0.1.0' })
-    const app3 = await launchApp(env)
-    try {
-      const page = await app3.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-      expect(settingsOnDisk(env).lastSeenVersion).toBe('0.1.0')
-    } finally {
-      await quitAndClose(app3)
     }
   })
 })

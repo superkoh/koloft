@@ -1083,16 +1083,6 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    let live = true
-    void window.api.update.whatsNew().then((w) => {
-      if (live && w) useStore.getState().openWhatsNew(w)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
-
-  useEffect(() => {
     return window.api.preview.onOpenRequest((r) =>
       openInterceptedFile(r.tabId, r.path, r.source, r.view)
     )

@@ -74,7 +74,14 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
   const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const { assistSessions, ...kept } = doc as Partial<Settings> & { assistSessions?: unknown }
+  const {
+    assistSessions,
+    lastSeenVersion: _retired,
+    ...kept
+  } = doc as Partial<Settings> & {
+    assistSessions?: unknown
+    lastSeenVersion?: unknown
+  }
   const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
