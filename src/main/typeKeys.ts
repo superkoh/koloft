@@ -34,6 +34,18 @@ export function withoutMouseAndFocusReports(data: string): string {
   return data.replace(MOUSE_AND_FOCUS_REPORTS, '')
 }
 
+// PLATFORM§21
+const ONLY_THE_TERMINALS_OWN_ANSWERS =
+  /^(?:\x1b\[[?>]?[\d;]*\$?[Rcnytu]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
+// PLATFORM§2
+const A_KEY_THAT_FLUSHES_THE_TTY = /[\x03\x1a\x1c]/
+
+export function keysToHoldBehindALaunchLine(data: string): string | null {
+  if (ONLY_THE_TERMINALS_OWN_ANSWERS.test(data) || A_KEY_THAT_FLUSHES_THE_TTY.test(data))
+    return null
+  return withoutMouseAndFocusReports(data)
+}
+
 // CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],

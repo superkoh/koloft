@@ -10,7 +10,13 @@ import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
-import { bracketedPaste, typeKeys, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
+import {
+  bracketedPaste,
+  keysToHoldBehindALaunchLine,
+  typeKeys,
+  typedPieces,
+  withoutMouseAndFocusReports
+} from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -26,7 +32,6 @@ export interface PtyHandle {
   remoteHost?: string
   utilMachine?: string
   title?: string
-  keysHeldUntilLaunchLineTyped?: string[]
 }
 
 interface CreateArgs {
@@ -96,28 +101,43 @@ const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
-// PLATFORM§21
-const ONLY_THE_TERMINALS_OWN_ANSWERS =
-  /^(?:\x1b\[[?>]?[\d;]*\$?[Rcnyt]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
 
+interface LinesToType {
+  shellSaid(output: string): void
+  held(data: string): boolean
+}
+
+// PLATFORM§2
 function typeOnceTheShellReads(
   write: (text: string) => void,
-  text: string
-): (output: string) => void {
-  if (text === '') return () => {}
+  text: string,
+  holdsEarlyKeys: boolean
+): LinesToType {
+  if (text === '') return { shellSaid: () => {}, held: () => false }
   let typed = false
   let tail = ''
+  let early: string | undefined = holdsEarlyKeys ? '' : undefined
   const type = (): void => {
     if (typed) return
     typed = true
-    write(text)
+    write(text + (early ?? ''))
+    early = undefined
   }
   setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
-  return (output) => {
-    if (typed) return
-    const seen = tail + output
-    tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
-    if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+  return {
+    shellSaid: (output) => {
+      if (typed) return
+      const seen = tail + output
+      tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+      if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+    },
+    held: (data) => {
+      if (early === undefined) return false
+      const keys = keysToHoldBehindALaunchLine(data)
+      if (keys === null) return false
+      early += keys
+      return true
+    }
   }
 }
 
@@ -139,6 +159,7 @@ export class PtyManager extends EventEmitter {
   private running = new Set<pty.IPty>()
   private readyWaiters = new Map<string, Set<() => void>>()
   private typing = new Map<string, Promise<void>>()
+  private linesToType = new WeakMap<PtyHandle, LinesToType>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -271,18 +292,19 @@ export class PtyManager extends EventEmitter {
       sourcedFiles.push(file)
       return `. ${shq(file)}`
     }
-    const lines = [args.setupCommand, launchCommand]
-      .filter((command): command is string => !!command)
-      .map((command) => shortEnoughToType(command) + '\r')
-      .join('')
-    if (args.kind !== 'shell' && lines !== '') handle.keysHeldUntilLaunchLineTyped = []
-    const watchForReadyShell = typeOnceTheShellReads((text) => {
-      const held = handle.keysHeldUntilLaunchLineTyped?.join('') ?? ''
-      handle.keysHeldUntilLaunchLineTyped = undefined
-      try {
-        proc.write(text + held)
-      } catch {}
-    }, lines)
+    const lines = typeOnceTheShellReads(
+      (text) => {
+        try {
+          proc.write(text)
+        } catch {}
+      },
+      [args.setupCommand, launchCommand]
+        .filter((command): command is string => !!command)
+        .map((command) => shortEnoughToType(command) + '\r')
+        .join(''),
+      args.kind !== 'shell'
+    )
+    this.linesToType.set(handle, lines)
 
     const followsThisMac = args.util && !args.utilMachine
     const cwdParser = followsThisMac ? new OscCwdParser() : undefined
@@ -290,7 +312,7 @@ export class PtyManager extends EventEmitter {
     proc.onData((output) => {
       const data = banner + output
       banner = ''
-      watchForReadyShell(data)
+      lines.shellSaid(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
       if (cwd) this.noticeCwd(handle, cwd)
@@ -340,10 +362,9 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     const handle = this.ptys.get(id)
-    const held = handle?.keysHeldUntilLaunchLineTyped
-    if (held && !ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)) held.push(data)
-    else handle?.proc.write(data)
-    if (handle && withoutMouseAndFocusReports(data)) this.emit('typed', id)
+    if (!handle) return
+    if (!this.linesToType.get(handle)?.held(data)) handle.proc.write(data)
+    if (withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
   exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {

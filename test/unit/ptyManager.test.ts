@@ -461,6 +461,7 @@ describe('PtyManager types the PATH line and the launch line once the login shel
   it('holds what a person types before the two lines and sends it right after them, in order, so it reaches the agent and not the PATH line', () => {
     const type = launch()
     type('h')
+    type('\x1b[I')
     type('ello\r')
     expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT)
@@ -485,6 +486,14 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed()).toEqual(['\x1b[12;1R', '\x1b[?1;2c', '\x1b]11;rgb:0000/0000/0000\x1b\\'])
     mocks.state.data?.(ZSH_PROMPT)
     expect(typed().at(-1)).toBe(BOTH[0] + 'x')
+  })
+
+  it('lets Ctrl+C, Ctrl+Z and Ctrl+\\ through at once, since one queued behind the launch line would flush it', () => {
+    const type = launch()
+    type('\x03')
+    type('\x1a')
+    type('\x1c')
+    expect(typed()).toEqual(['\x03', '\x1a', '\x1c'])
   })
 
   it('never holds keys in a plain terminal, even one Koloft types a line into', () => {
