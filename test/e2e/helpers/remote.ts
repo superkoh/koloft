@@ -19,6 +19,7 @@ import {
   PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
 } from '../../../src/main/remote/playwrightCli'
 import type { BackendId } from '../../../src/shared/types'
+import { identityOf } from '../../../src/shared/sessionBackend'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -300,7 +301,11 @@ export async function boundRemoteSession(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
         const s = all.find(
-          (x) => x.backendId === backend && x.remote && x.alive && x.nativeSessionId
+          (x) =>
+            x.backendId === backend &&
+            identityOf(x.sessionId).sourceId === REMOTE_HOST &&
+            x.alive &&
+            x.nativeSessionId
         )
         found = s && { tabId: s.tabId, id: s.nativeSessionId! }
         return !!found
