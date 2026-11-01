@@ -142,6 +142,18 @@ describe('telling open sessions what changed around them', () => {
     )
   })
 
+  it('a write still counts when its file shows up in the list an update after the write was counted, as a file on another machine does once that machine names its real path', async () => {
+    const { sync, got } = rig({ '/r': 'repo' })
+    await sync.observe([session('a', '/r'), session('b', '/r')])
+    await sync.observe([session('a', '/r', [], 1), session('b', '/r')])
+    await sync.observe([session('a', '/r', [['/r/x.ts', 5]], 1), session('b', '/r')])
+    const a = session('a', '/r', [['/r/x.ts', 5]], 1)
+    await sync.observe([a, session('b', '/r', [], 1)])
+    await sync.observe([a, session('b', '/r', [['/r/x.ts', 9]], 1)])
+    await settled()
+    expect(got.map((g) => g.tabId).sort()).toEqual(['a', 'b'])
+  })
+
   it('when another session takes over the tab (/clear, a resume), what was left unread for the one before goes', async () => {
     const { sync, left } = rig({ '/r': 'repo' })
     const b = session('b', '/r', [['/r/x.ts', 5]], 1)
