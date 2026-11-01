@@ -70,10 +70,6 @@ export function unexpectedExitNotice(
   return `${agent} session ended unexpectedly (${how})`
 }
 
-export function endedRowNote(exit: { exitCode: number; signal?: number }): string {
-  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
-}
-
 export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
 >(tab: T | undefined, exit: { unexpected?: true }): tab is T & { kind: SessionBackend } {

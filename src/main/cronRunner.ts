@@ -24,6 +24,7 @@ import {
 } from '@shared/schedule'
 import { oncePassed } from '@shared/cronHistory'
 import {
+  endedRowNote,
   isCronEffort,
   type BackendId,
   type CronEffort,
@@ -37,7 +38,8 @@ import {
   type LaunchPermission,
   type LiveRun,
   type Schedule,
-  type SessionStatus
+  type SessionStatus,
+  type TerminalExit
 } from '@shared/types'
 import {
   MISS_WINDOW_MS,
@@ -93,6 +95,8 @@ export interface LeftTab {
   treeRoot?: string
   sessionId?: string
 }
+
+type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
 
 export interface RunLeftovers {
   folders: string[]
@@ -761,15 +765,15 @@ export class CronRunner {
     this.push()
   }
 
-  onPtyExit(tabId: string, left?: LeftTab): void {
+  onPtyExit(tabId: string, left?: LeftTab, exit?: AgentExit): void {
     const run = this.live.get(tabId)
-    if (run && !this.d.quitting()) this.closeOut(run)
+    if (run && !this.d.quitting()) this.closeOut(run, exit)
     const killedJobId = this.killedRuns.get(tabId)
     this.killedRuns.delete(tabId)
     if (left) this.onTabGone(left, [run?.jobId, killedJobId], tabId)
   }
 
-  private closeOut(run: LiveRun): void {
+  private closeOut(run: LiveRun, exit: AgentExit | undefined): void {
     this.clearTimer(run.tabId)
     this.dropRun(run)
     this.refreshFolders()
@@ -783,6 +787,10 @@ export class CronRunner {
       const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
       this.writeHistory(job, { ...line, state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
+    } else if (exit?.unexpected) {
+      // PLATFORM§35
+      const note = [endedRowNote(exit), line.note].filter(Boolean).join('; ')
+      this.writeHistory(job, { ...line, state: 'quit', note })
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
     }

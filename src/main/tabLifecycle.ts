@@ -13,7 +13,7 @@ import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
-export interface TabExit extends Pick<TerminalExit, 'exitCode' | 'signal'> {
+export interface TabExit extends Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'> {
   tabId: string
   asleep: boolean
   crashed: boolean
@@ -63,7 +63,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
       .catch((error) => s.toast(String(error)))
   })
   lifecycle.on('teardown', ({ tabId }) => s.workspaces()?.launchEnded(tabId))
-  lifecycle.on('teardown', ({ tabId, left }) => s.cron()?.onPtyExit(tabId, left))
+  lifecycle.on('teardown', ({ tabId, left, ...exit }) => s.cron()?.onPtyExit(tabId, left, exit))
   lifecycle.on('teardown', ({ tabId }) => s.butler()?.onPtyExit(tabId))
 
   lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
