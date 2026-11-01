@@ -299,7 +299,9 @@ export async function boundRemoteSession(
     .poll(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        const s = all.find((x) => x.backendId === backend && x.alive && x.nativeSessionId)
+        const s = all.find(
+          (x) => x.backendId === backend && x.remote && x.alive && x.nativeSessionId
+        )
         found = s && { tabId: s.tabId, id: s.nativeSessionId! }
         return !!found
       },

@@ -1181,10 +1181,13 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
-    const install = (): void => installCodexOnFakeRemote(env)
+    const install = (): void => {
+      installCodexOnFakeRemote(env)
+      seedSettings(env, { skipPermissions: false })
+    }
     await withTheButlerAndARemoteWorkspace(env, install, async (page, fake) => {
       await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
-      const row = wsRows(page, REMOTE_WS_NAME)
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       const codex = await boundRemoteSession(page, 'codex')
       const wire = (): CodexWireLine[] =>
@@ -1235,7 +1238,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const row = wsRows(page, REMOTE_WS_NAME)
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       const muse = await boundRemoteSession(page, 'muse')
-      await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), muse.tabId)
+      await runIn(page, centerTerm(page), '/approve')
       await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
       await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
 

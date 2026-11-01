@@ -81,6 +81,7 @@ function attach(name) {
     if (process.stdin.isTTY && !process.stdin.isRaw && fs.existsSync(rawPaneMark(io)))
       process.stdin.setRawMode(true)
   }
+  keysAtOnceOnceThePaneIsRaw()
 
   let off = 0
   let held = ''
@@ -132,6 +133,7 @@ if (verb === 'new-session') {
     } catch {}
     cp.execFileSync('mkfifo', [fifo])
     fs.writeFileSync(outPath(io), '')
+    fs.rmSync(rawPaneMark(io), { force: true })
     const inFd = openFifoNeverSeeingEof(fifo)
     const outFd = fs.openSync(outPath(io), 'a')
     const cmdSurvivingHangup = `trap "" HUP; ${cmd}`
