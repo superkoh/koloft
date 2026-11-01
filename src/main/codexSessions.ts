@@ -226,6 +226,8 @@ function keyedFiles(machine: string, event: UnboundEvent): UnboundEvent {
   }
 }
 
+class MachineOutOfReach extends Error {}
+
 export interface CodexMachineDeps {
   instance: string
   ready(): Promise<void>
@@ -644,7 +646,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   private async readMachineHistory(machine: string): Promise<void> {
     const startedAt = Date.now()
     const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
-    if (sshLinkBroke(home)) throw new Error(problemOf(home))
+    if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
     const threads =
       home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
     if (this.shuttingDown) return
@@ -678,7 +680,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       void stopped.then(
         async () => {
           if (this.shuttingDown) return
-          await this.refreshMachineHistory(machine, true).catch(() => {})
+          await this.refreshMachineHistory(machine, true).catch((error) => {
+            if (!(error instanceof MachineOutOfReach)) this.deps.error(String(error))
+          })
         },
         () => {}
       )
@@ -1072,10 +1076,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       login: this.machineLogin(home),
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
-      stopServer: async (everConnected) => {
+      stopServer: async () => {
         if (this.shuttingDown && this.runs.get(tabId)?.observer.turnRunning()) return
         const r = await m.run(machine, stopCodexServerCmd(m.instance, tabId))
-        if (everConnected && sshLinkBroke(r))
+        const sessionStartedThere = !!this.runs.get(tabId)?.info
+        if (sshLinkBroke(r) && sessionStartedThere && !this.shuttingDown)
           this.deps.error(
             `Could not stop Codex on ${machine}: ${problemOf(r)}. It is still running there.`
           )
