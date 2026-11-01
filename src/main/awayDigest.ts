@@ -36,20 +36,18 @@ const HAPPENED: Record<AttentionKind, string> = {
   exited: 'stopped unexpectedly'
 }
 
-function oneLine(text: string): string {
-  return text.replaceAll(PEER_MESSAGE_END, '').replace(/\s+/g, ' ').trim()
+export function quoteOf(text: string, chars: number): string {
+  const line = text.replaceAll(PEER_MESSAGE_END, '').replace(/\s+/g, ' ').trim()
+  return line.length > chars ? `${line.slice(0, chars)}…` : line
 }
 
-function lineOf(item: DigestItem, n: number): string {
+export function digestLine(item: DigestItem, n: number): string {
   const where = [
     item.sessionId && `session ${item.sessionId}`,
     item.workspace && `workspace ${item.workspace}`
   ].filter(Boolean)
-  const reply = item.reply && oneLine(item.reply)
-  const quoted =
-    reply && item.kind === 'turn-done'
-      ? `; it said: "${reply.length > REPLY_CHARS_QUOTED ? `${reply.slice(0, REPLY_CHARS_QUOTED)}…` : reply}"`
-      : ''
+  const reply = item.reply && quoteOf(item.reply, REPLY_CHARS_QUOTED)
+  const quoted = reply && item.kind === 'turn-done' ? `; it said: "${reply}"` : ''
   return `${n}. "${item.title ?? 'A session'}"${where.length ? ` (${where.join(', ')})` : ''} ${HAPPENED[item.kind]}${quoted}.`
 }
 
@@ -57,7 +55,7 @@ export function digestText(items: DigestItem[]): string {
   const shown = items.slice(0, ITEMS_PER_DIGEST)
   const more = items.length - shown.length
   const rest = more > 0 ? ` And ${more} more; koloft todo lists them all.` : ''
-  return `${FROM_KOLOFT}The owner is away from Koloft, and these sessions changed since they last used it: ${shown.map((item, i) => lineOf(item, i + 1)).join(' ')}${rest} What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.`
+  return `${FROM_KOLOFT}The owner is away from Koloft, and these sessions changed since they last used it: ${shown.map((item, i) => digestLine(item, i + 1)).join(' ')}${rest} What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.`
 }
 
 export class AwayDigest {
@@ -90,6 +88,18 @@ export class AwayDigest {
   marked(): void {
     if (this.timer || !this.d.away() || !this.d.reachable()) return
     this.later(this.d.gatherMs)
+  }
+
+  changedSince(since: number): DigestItem[] {
+    this.handedUpTo = Math.max(this.handedUpTo, this.d.now())
+    return this.d
+      .marks()
+      .filter((m) => m.at > since && !m.fyi && !this.d.butlerSide(m.tabId))
+      .map((m) => this.itemOf(m))
+  }
+
+  private itemOf(m: AttentionEvent): DigestItem {
+    return { ...this.d.sessionOf(m), kind: m.kind, reply: this.lastReply.get(m.tabId) }
   }
 
   private later(ms: number): void {
@@ -125,12 +135,7 @@ export class AwayDigest {
     const before = this.handedUpTo
     this.handedUpTo = Math.max(...fresh.map((m) => m.at))
     this.telling = true
-    const items = fresh.map((m) => ({
-      ...this.d.sessionOf(m),
-      kind: m.kind,
-      reply: this.lastReply.get(m.tabId)
-    }))
-    void this.d.tell(digestText(items)).then((told) => {
+    void this.d.tell(digestText(fresh.map((m) => this.itemOf(m)))).then((told) => {
       this.telling = false
       if (!told) this.handedUpTo = before
     })

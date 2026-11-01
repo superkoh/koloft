@@ -1410,6 +1410,18 @@ function handleLine(line) {
     process.stdout.write(`[fake-claude] scratched ${name}\r\n> `)
     return
   }
+  if (text.startsWith('/later ')) {
+    const later = text.slice('/later '.length)
+    const marker = path.join(home, 'go-later')
+    const tick = setInterval(() => {
+      if (!fs.existsSync(marker)) return
+      clearInterval(tick)
+      fs.rmSync(marker, { force: true })
+      handleLine(later)
+    }, 200)
+    process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
+    return
+  }
   if (text.startsWith('/open-later ')) {
     const target = text.slice('/open-later '.length).trim()
     if (!target) return void process.stdout.write('> ')

@@ -19,8 +19,10 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
+  markOwnerAsleep,
   noticeFile,
   noticeLine,
+  OWNER_ASLEEP_PUSH,
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
@@ -35,6 +37,7 @@ import {
 import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
+import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
 
 let hookScript: string
 let codexReplyLanguage: string
@@ -223,6 +226,58 @@ describe('injected hook script', () => {
     expect(fire('tabStop', 'stop', { hook_event_name: 'Stop', stop_hook_active: true })).toBe('')
     expect(readStatusLog('tabStop')).toMatchObject([{ event: 'stop' }])
     expect(fs.existsSync(noticeFile(regDir, 'tabStop'))).toBe(true)
+  })
+
+  describe('while the owner is asleep', () => {
+    const pushed = { decision: 'block', reason: `${OWNER_ASLEEP_PUSH}\n\n` }
+    const agyScript = path.join(os.tmpdir(), `koloft-agy-hook-${process.pid}.sh`)
+    beforeAll(() => fs.writeFileSync(agyScript, AGY_HOOK_SCRIPT))
+    afterAll(() => fs.rmSync(agyScript, { force: true }))
+    const stops: Record<string, (tab: string, active: boolean) => string> = {
+      claude: (tab, active) =>
+        fire(tab, 'stop', { hook_event_name: 'Stop', stop_hook_active: active }),
+      codex: (tab, active) =>
+        spawnSync('bash', [codexReplyLanguage, 'stop'], {
+          input: JSON.stringify({ stop_hook_active: active }),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            KOLOFT_CODEX_SAID: saidFile(regDir, tab),
+            KOLOFT_NOTICE: noticeFile(regDir, tab)
+          }
+        }).stdout,
+      agy: (tab) =>
+        spawnSync('sh', [agyScript, 'Stop'], {
+          input: JSON.stringify({ terminationReason: 'NO_TOOL_CALL', fullyIdle: true }),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_NOTICE: noticeFile(regDir, tab) }
+        }).stdout
+    }
+
+    // CC§21 CODEX§27 AGY§12
+    it.each(Object.keys(stops))(
+      'a %s turn about to end is pushed once to go on by itself, then ends as usual, and the next turn is pushed once again; the butler is never pushed, and once the owner is back no turn is',
+      (kind) => {
+        const stop = stops[kind]
+        markOwnerAsleep(regDir, ['butler-tab'])
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(stop('butler-tab', false)).toBe('')
+        markOwnerAsleep(regDir, null)
+        expect(stop('worker', false)).toBe('')
+      }
+    )
+
+    it('a notice Koloft left still unread goes along with the push', () => {
+      const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`
+      fs.writeFileSync(noticeFile(regDir, 'tabBoth'), noticeLine(moved))
+      markOwnerAsleep(regDir, [])
+      expect(JSON.parse(stops.claude('tabBoth', false)).reason).toBe(
+        `${moved}\n\n${OWNER_ASLEEP_PUSH}\n\n`
+      )
+    })
   })
 
   // CC§5

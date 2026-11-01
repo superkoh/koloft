@@ -7,6 +7,8 @@ export const SECRET_USAGE =
 export const NO_DISCORD =
   "koloft: Koloft asks the owner for a secret only in the butler's Discord channel, and no Discord channel is bound. Ask the owner to do this step at the Mac."
 export const NOT_IN_TIME = 'koloft: the owner did not answer in time; nothing was passed on.'
+export const OWNER_ASLEEP =
+  'koloft: the owner is asleep and cannot give a password or a code now. Skip this step, go on with the rest, and say in your report that it waits for the owner.'
 export const NO_SUCH_FIELD =
   "koloft: no single field matches that selector in this session's Workbench pages (the Koloft window has to be open). Give a selector that matches exactly one input box."
 export const PAGE_CHANGED =
@@ -26,6 +28,7 @@ export interface FieldPage {
 
 export interface SecretVerbDeps {
   ask(a: SecretAsk): Promise<string | undefined | null>
+  ownerAsleep(): boolean
   machine(tabId: string): string | undefined
   pages(tabId: string): FieldPage[]
   open(machine: string | undefined, url: string): Promise<string>
@@ -86,6 +89,7 @@ async function factsOn(page: FieldPage, selector: string): Promise<FieldFacts> {
 }
 
 async function askOwner(d: SecretVerbDeps, ask: SecretAsk): Promise<string | AgentReply> {
+  if (d.ownerAsleep()) return refused(OWNER_ASLEEP)
   const value = await d.ask(ask)
   if (value === null) return refused(NO_DISCORD)
   return value ?? refused(NOT_IN_TIME)

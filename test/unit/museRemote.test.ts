@@ -8,6 +8,9 @@ import {
   NOT_FROM_THE_RELAY,
   NOTICE_SUFFIX,
   noticeLine,
+  OWNER_ASLEEP_FILE,
+  OWNER_ASLEEP_PUSH,
+  ownerAsleepMarker,
   seedHandedOverOwnerWords
 } from '../../src/main/hooks'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
@@ -338,6 +341,27 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     expect(fs.existsSync(mirror)).toBe(false)
     expect(run('{"session_id":"a","stop_hook_active":true}')).toBe('')
     expect(lines(mirror)).toMatchObject([{ t: 'hook', event: 'Stop' }])
+  })
+
+  // MUSE§9
+  it('while the owner is asleep, a turn about to end on the machine is pushed once to go on by itself, and the butler is not', () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    fs.writeFileSync(
+      path.join(m.home, '.koloft', 'hook-sessions', OWNER_ASLEEP_FILE),
+      ownerAsleepMarker(['butler-tab'])
+    )
+    const run = (tab: string, input: string): string =>
+      spawnSync('bash', [script, tab, 'Stop'], { env: m.env, input, encoding: 'utf8' }).stdout
+    expect(JSON.parse(run('pty-1', '{"session_id":"a","stop_hook_active":false}'))).toEqual({
+      decision: 'block',
+      reason: `${OWNER_ASLEEP_PUSH}\n\n`
+    })
+    expect(run('pty-1', '{"session_id":"a","stop_hook_active":true}')).toBe('')
+    expect(run('butler-tab', '{"session_id":"b","stop_hook_active":false}')).toBe('')
   })
 
   it("a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request keep the quote of the owner's own last prompt", () => {
