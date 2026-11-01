@@ -54,6 +54,7 @@ export function WorkspacePicker({
   const visible = useMemo(() => pickerRows(rows, mode), [rows, mode])
   const [hot, setHot] = useState(() => preselectIndex(rows, mode, lastWsPath))
   const [phase, setPhase] = useState<PullPhase>('idle')
+  const [pullingAs, setPullingAs] = useState<BackendId | null>(null)
   const [failReason, setFailReason] = useState('')
   const [failedFor, setFailedFor] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
@@ -97,6 +98,7 @@ export function WorkspacePicker({
     if (!f) return
     setConfirm(null)
     setConfirmWs(null)
+    setPullingAs(backend)
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(ws.workspace.path, { branch: f.branch, head: f.head })
@@ -301,7 +303,7 @@ export function WorkspacePicker({
               </button>
             ) : (
               <SessionLaunchButtons
-                choice={choice}
+                choice={phase === 'pulling' && pullingAs ? { ...choice, lead: pullingAs } : choice}
                 open={listOpen}
                 onOpen={setListOpen}
                 busy={locked}
