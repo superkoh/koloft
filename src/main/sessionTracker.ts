@@ -1605,16 +1605,15 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private recompute(t: Tracked): void {
-    const files = capTouched(
-      t.real.merge([...t.touched.files].map(([abs, acc]) => touchedItem(abs, acc)))
-    )
+    const touched = [...t.touched.files].map(([abs, acc]) => touchedItem(abs, acc))
+    const files = capTouched(t.real.merge(touched))
 
     t.info.title = t.titles.title(t.sidecarTitle)
     t.info.files = files
     const { lastTouched, lastWritten } = t.touched
     t.info.lastTouched = lastTouched ? (t.real.of(lastTouched) ?? undefined) : undefined
     t.info.lastWritten = lastWritten ? (t.real.of(lastWritten) ?? undefined) : undefined
-    if (t.liveWrites && !t.real.stillFinding(lastWritten)) t.info.liveWrites = t.liveWrites
+    if (t.liveWrites && !t.real.findingAWrite(touched)) t.info.liveWrites = t.liveWrites
     t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
     this.emitUpdate()

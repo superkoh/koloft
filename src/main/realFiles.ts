@@ -63,8 +63,10 @@ export class RealFiles {
     return null
   }
 
-  stillFinding(file: string | null | undefined): boolean {
-    return !!file && this.of(file) === null && !this.answered.has(file)
+  findingAWrite(items: PreviewItem[]): boolean {
+    return items.some(
+      (item) => item.access === 'wrote' && !this.known.has(item.src) && !this.answered.has(item.src)
+    )
   }
 
   merge(items: PreviewItem[]): PreviewItem[] {
