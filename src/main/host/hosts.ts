@@ -4,7 +4,7 @@ import type { Host } from './host'
 
 // ADR-0025
 export function publicClaudeSession({
-  jsonlPath,
+  jsonlPath: _jsonlPath,
   scratchpadDir,
   ...s
 }: ClaudeSessionInfo): BackendSessionInfo {
@@ -12,7 +12,7 @@ export function publicClaudeSession({
   const keyed = (p: string | undefined): string | undefined => keyedOn(machine, p)
   const info: BackendSessionInfo = {
     ...s,
-    details: { claude: { jsonlPath, scratchpadDir: keyed(scratchpadDir) } }
+    details: { claude: { scratchpadDir: keyed(scratchpadDir) } }
   }
   if (!machine) return info
   return {

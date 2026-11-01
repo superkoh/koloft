@@ -20,6 +20,11 @@ import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
 
+export interface TranscriptPlaces {
+  onThisMac?: string
+  onMachine?: string
+}
+
 export interface SessionBackend {
   id: BackendId
   recoversWorktrees?: true
@@ -42,6 +47,7 @@ export interface SessionBackend {
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
+  transcriptPlaces(key: string): TranscriptPlaces | undefined
   permissionClass(tabId: string): ModeClass
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
@@ -165,6 +171,10 @@ export class SessionBackends {
 
   turns(key: string, n: number): Promise<Turn[]> {
     return this.forSession(key).turns(key, n)
+  }
+
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    return this.forSession(key).transcriptPlaces(key)
   }
 
   permissionClass(tabId: string): ModeClass {

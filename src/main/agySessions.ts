@@ -10,6 +10,7 @@ import type {
   LaunchPermission
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
@@ -74,6 +75,7 @@ import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_REMOTE_GEMINI,
   AGY_SKILLS,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
@@ -106,6 +108,7 @@ import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
+  hostOfKey,
   type HistoryEntry,
   type HistoryListing,
   type StartContext,
@@ -519,6 +522,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         )
       }
       return []
+    }
+  }
+
+  // AGY§4 AGY§8
+  transcriptPlaces(key: string): TranscriptPlaces {
+    const id = this.nativeId(key)
+    const host = hostOfKey(key)
+    if (!host) return { onThisMac: agyTranscript(this.gemini, id) }
+    return {
+      onThisMac: agyTranscript(this.deps.remote.mirrorGemini(host), id),
+      onMachine: agyTranscript(path.posix.join('~', AGY_REMOTE_GEMINI), id)
     }
   }
 
