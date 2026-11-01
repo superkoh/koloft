@@ -6,7 +6,7 @@
     <title>Several accounts, one pool — Koloft</title>
     <meta
       name="description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/accounts/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Several accounts, one pool — Koloft" />
     <meta
       property="og:description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta property="og:url" content="__SITE_URL__/accounts/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
     <meta
       name="twitter:description"
-      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
+      content="Add several Claude, Codex, Muse and Antigravity accounts to Koloft, and each new session starts on the account that has used the least. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="stylesheet" href="../style.css" />
@@ -84,14 +84,16 @@
         <p>
           When several agents work at once, one subscription runs out fast. Then you stop, log out,
           log in to another one, and start again. Koloft keeps your accounts in one pool, and each
-          new session starts on <mark class="hl">the one with the most room</mark> left.
+          new session starts on <mark class="hl">the one that has used the least</mark>.
         </p>
         <p>
           Every session in Koloft runs on a Claude, Codex, Muse or Antigravity account you add here,
           never on the login this Mac already has. So the first time Koloft opens, it asks you to
           sign in to one of them (the welcome screen "One sign-in. Koloft does the rest."). It picks
-          the agent you used last (or the first one on this Mac, if you never used any), and a row
-          of four buttons lets you pick another. The account is named after the agent, like
+          the agent you used last. If you never used one, it picks your default agent, or, when that
+          one is not on this Mac, the first switched-on agent that is. A row of buttons, one for
+          each agent switched on in Settings ▸ Sessions, lets you pick another. The account is named
+          after the agent, like
           <code>Codex</code>. An account that needs signing in again is signed in again, not added
           twice. Claude's Sign in installs Claude Code first when this Mac has none, then opens your
           browser. Sign in to Codex, Sign in to Muse and Antigravity's Sign in with Google install
@@ -103,19 +105,19 @@
           <code>Try again</code> button, and takes a new account off the list.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 729; --ar-phone: 765 / 1046">
+        <figure class="shot" style="--ar: 1322 / 728; --ar-phone: 764 / 1092">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone5.webp"
-                width="765"
-                height="1046"
+                srcset="../img/h-settings-accounts-phone6.webp"
+                width="764"
+                height="1092"
               />
               <img
-                src="../img/h-settings-accounts-pane5.webp"
+                src="../img/h-settings-accounts-pane6.webp"
                 width="1322"
-                height="729"
+                height="728"
                 alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions, the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
@@ -143,28 +145,27 @@
           browser, and the token goes straight into the pool. Or paste a token you already have.
         </p>
         <p>
-          You can also add an API (application programming interface) key, or a custom endpoint:
-          another server that speaks the same API. Koloft cannot read how much is left on those, so
-          it uses them only when every subscription is out and none comes back within 30 minutes, or
-          when you have none.
+          A Claude API key (API means application programming interface; a key is paid for each use)
+          or custom endpoint (another server that works like Claude's) added by an older Koloft
+          still works, but a new one can no longer be added. Its row wears
+          <code>API KEY</code> or <code>ENDPOINT</code>. A new session uses it only when you have no
+          subscription Koloft can use, or when Koloft has just read every subscription and each is
+          told to wait for 30 minutes or more.
         </p>
         <pre
           class="ascii"
           role="img"
-          aria-label="How a new Claude session picks its account: with subscription accounts, it starts on the one with the most room; when none has room now and none comes back within 30 minutes, or there are no subscriptions, it uses your API key or custom endpoint."
+          aria-label="How a new Claude session picks its account: among the accounts that have room and have used less than 90% of their 5 hours, the one that has used the least of its week; when there is none, the one that comes back first."
         >
  a new Claude session starts
          |
          v
- any subscriptions? -- no ----+
-         | yes                |
-         v                    |
- any with room now, or        |
- back in 30 minutes? -- no ---+
-         | yes                |
-         v                    v
- the one with                API key or
- the most room               custom endpoint
+ any account with room, under
+ 90% of its 5 hours? ---- no ----+
+         | yes                   |
+         v                       v
+ the one that has used     the one that
+ the least of its week     comes back first
 </pre>
         <h3>How it picks</h3>
         <ul class="dash">
@@ -174,9 +175,22 @@
             its last reading is over 5 minutes old, and when you click Refresh usage
           </li>
           <li>
+            a new session goes by weekly use: the account that has used the least of its 7 days
+            usually wins (one whose week starts over soon counts as having used less). How much of
+            its 5 hours it has used does not count until it reaches 90%. Then a new session skips it
+            while another account has room. If every account has reached 90%, the one whose 5 hours
+            come back first gets it; if every account is told to wait, the one that comes back first
+            gets it
+          </li>
+          <li>
             with "Prefer accounts with fable allowance" on, an account that still has fable
             allowance wins first (fable is Claude's biggest model; some plans give it its own weekly
-            budget)
+            budget), and its weekly fable use counts too
+          </li>
+          <li>
+            an account with no 5-hour limit (a verified Claude Ultra account) is read and picked
+            like the others; its 5-hour cell in the <code>Account usage</code> panel says
+            <code>no 5-hour limit</code>, and Settings shows only its 7-day and fable use
           </li>
           <li>
             sessions you open one after another spread over your accounts, instead of piling onto
@@ -184,7 +198,10 @@
             passed over unless it has clearly more room left. Claude, Codex, Muse and Antigravity
             sessions all pick this way
           </li>
-          <li>if no Claude account can be read, Koloft picks the next one in order</li>
+          <li>
+            an account Koloft has no reading for yet waits while another one has a reading; if no
+            Claude account can be read, Koloft picks the next one in order
+          </li>
           <li>
             a session that starts again (you click its row, restart it, or quit and reopen Koloft)
             stays on the account it ran on, whatever the agent. It moves to another account only
@@ -236,13 +253,15 @@
           own Codex home, a folder that holds that one login. The sign-in tab says
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. If this
           Mac has no <code>codex</code> yet, the dialog says so and the same tab runs its official
-          installer first, then signs in. New Codex sessions start on the least-used Codex account,
-          and skip one that has hit its limit while another is free. An account with no reading yet
-          (one just added, say) is used only when no account with a reading has room. When every
-          account has a reading and all are at their limit, the session runs on the one that resets
-          first, and a message says so. Settings and the <code>Account usage</code> panel show each
-          account's use for each limit Codex reports (such as 5 hours and a week), its credits, and
-          the resets it has saved, like
+          installer first, then signs in. Or <code>Paste API key</code>: Koloft hands an OpenAI API
+          key to <code>codex login --with-api-key</code>, which keeps it in the new account's own
+          folder. New Codex sessions start on the least-used Codex sign-in, and skip one that has
+          hit its limit while another is free. A sign-in with no reading yet (one just added, say)
+          is used only when no sign-in with a reading has room. When every sign-in has a reading and
+          all are at their limit, the session runs on the one that resets first, and a message says
+          so. If you have an <a href="#api-keys">API key account</a>, it runs on that instead.
+          Settings and the <code>Account usage</code> panel show each account's use for each limit
+          Codex reports (such as 5 hours and a week), its credits, and the resets it has saved, like
           <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
@@ -250,7 +269,6 @@
           reset, a <code>Use a reset</code> button is there too: say yes, and Koloft spends one
           reset and reads the account's limits again.
         </p>
-
         <h2>Muse</h2>
         <p>
           Muse Code is Meta's agent. <code>Sign in to Muse</code> runs <code>muse login</code> in a
@@ -259,9 +277,8 @@
           Koloft hands the key to <code>muse</code>, which keeps it in that account's folder. An
           account signed in with Meta shows how much of its <code>5h</code> and
           <code>7d</code> allowance is used, in Settings and in the
-          <code>Account usage</code> panel; an API key account just says <code>Signed in</code>. New
-          Muse sessions pick their account the way Codex sessions do; an API key account counts as
-          one with no reading.
+          <code>Account usage</code> panel. New Muse sessions pick their account the way Codex
+          sessions do, and an API key account is the same <a href="#api-keys">backup</a>.
         </p>
 
         <h2>Antigravity</h2>
@@ -273,13 +290,26 @@
           account keeps its sign-in in its own folder, never in the login Keychain; your Antigravity
           conversations, rules, plugins and MCP servers (boxes of tools an agent can call) are
           shared by every account. Or <code>Paste Gemini API key</code>: the key goes into your
-          Keychain and is handed to <code>agy</code> when a session starts. An account signed in
-          with Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used,
-          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions pick
-          their account the way Codex sessions do; an API key account counts as one with no reading.
-          The session runs in agy's full-screen mode, which does not flicker, unless your own agy
-          settings file names another mode. Switching to the other mode, inline, in agy's
-          <code>/config</code> only removes that setting, so it lasts until the next launch.
+          Keychain and is handed to <code>agy</code> when a session starts. Saving it opens
+          <code>agy</code> in a terminal tab once: pick a colour scheme, answer Google's Terms
+          screen, type <code>/exit</code>, and the account is ready. An account signed in with
+          Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used, in
+          Settings and in the <code>Account usage</code> panel. New Antigravity sessions pick their
+          account the way Codex sessions do, and an API key account is the same
+          <a href="#api-keys">backup</a>. The session runs in agy's full-screen mode, which does not
+          flicker, unless your own agy settings file names another mode. Switching to the other
+          mode, inline, in agy's <code>/config</code> only removes that setting, so it lasts until
+          the next launch.
+        </p>
+
+        <h2 id="api-keys">API keys</h2>
+        <p>
+          An API key is paid for each use, so Koloft keeps it as a backup. A Codex, Muse or
+          Antigravity account made from a pasted key wears an <code>API KEY</code> badge and the
+          note <code>Metered — used only when every subscription is rate-limited</code>. A new
+          session uses it only when that agent has no sign-in Koloft can use, or when Koloft has
+          read every sign-in and all are at their limit. A sign-in Koloft has not read yet still
+          goes first. A key gets no bar at the bottom of the sidebar.
         </p>
 
         <h2 id="usage">What your sessions cost</h2>
