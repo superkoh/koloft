@@ -775,9 +775,7 @@ export interface BackendSessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  // CC§2
   details?: {
-    claude?: { scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]

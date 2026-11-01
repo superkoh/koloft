@@ -116,10 +116,6 @@ export function isOutsideEligible(p: string): boolean {
   return k === 'markdown' || k === 'image' || isWebPagePath(p)
 }
 
-export function scratchpadDirOf(session: SessionInfo | null): string | undefined {
-  return session?.details?.claude?.scratchpadDir ?? session?.scratchpadDir
-}
-
 // AGY§8 AGY§19
 const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
 

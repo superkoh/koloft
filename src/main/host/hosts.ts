@@ -10,10 +10,7 @@ export function publicClaudeSession({
 }: ClaudeSessionInfo): BackendSessionInfo {
   const machine = s.remote?.host
   const keyed = (p: string | undefined): string | undefined => keyedOn(machine, p)
-  const info: BackendSessionInfo = {
-    ...s,
-    details: { claude: { scratchpadDir: keyed(scratchpadDir) } }
-  }
+  const info: BackendSessionInfo = { ...s, scratchpadDir: keyed(scratchpadDir) }
   if (!machine) return info
   return {
     ...info,
