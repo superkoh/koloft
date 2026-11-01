@@ -198,8 +198,8 @@ your Mac                     the other machine
             picked on your Mac: no login is stored on the machine. If ssh drops or the Mac sleeps,
             the running turn keeps going there, and the tab reconnects by itself. Quit Koloft in the
             middle of a turn, and the turn keeps going there too, so it can finish; open Koloft
-            again while it is still going, and it is stopped then. Closing the tab ends the server;
-            a click on the row resumes the same conversation on a new one. With
+            again while it is still going, and Koloft stops it then. Closing the tab ends the
+            server; a click on the row resumes the same conversation on a new one. With
             <a href="../accounts/">Skip permission prompts</a> on, a new Codex session there runs
             with no sandbox and never asks, as on your Mac, whatever the account's own Codex
             settings say. With it off, in a folder the machine trusts, a shell command runs in
@@ -311,15 +311,15 @@ your Mac                     the other machine
           <code>[::1]</code>) means the machine, not your Mac. Say the agent runs a web server there
           and opens <code>http://localhost:5173</code>: Koloft carries that port over the machine's
           ssh connection (port forwarding), and the tab shows the machine's page. The address bar
-          keeps <code>localhost:5173</code> and shows the machine's name with a green dot. If your
-          Mac already uses that port, the page opens on another port, which the address bar shows.
-          If nothing answers, the tab says
+          shows the machine's name with a green dot. When port 5173 is free on your Mac, the address
+          bar keeps <code>localhost:5173</code>; when your Mac already uses it, the page opens on
+          another port, and the address bar shows that one. If nothing answers, the tab says
           <code
             >Nothing answers on port 5173 on &lt;machine&gt;, or its ssh server does not allow port
             forwarding.</code
           >
-          Until every web tab showing that port closes, or Koloft quits, the port it uses on your
-          Mac leads to the machine for every program on your Mac.
+          While a web tab shows that port, the port on your Mac leads to the machine, for every
+          program on your Mac. This lasts until every such tab closes or Koloft quits.
         </p>
         <p>The count of changed files there catches up at most every 10 seconds.</p>
         <p>
