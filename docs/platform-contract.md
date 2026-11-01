@@ -1786,6 +1786,16 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
   reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
   printing those characters and attached to it, its bytes read back on the Mac.)
+- **The programs on such a machine run in the C locale too: `ls` on a terminal there
+  prints `中文.txt` as `''$'\344\270\255\346\226\207''.txt'`.** `LANG=C.UTF-8` makes it
+  print the name as it is, but only where that locale exists. With `C.utf8` removed from
+  `/usr/lib/locale` (`locale -a` then lists only `C` and `POSIX`), `LANG=C.UTF-8` left
+  `ls` escaping, made perl print "Setting locale failed" at every start, and made tmux
+  refuse to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`); with no `LANG` tmux started.
+  A user's own `LC_CTYPE=C` still wins over that `LANG`. Debian's `locale -a` names it
+  `C.utf8`. (2026-11-01, the `koloft-e2e-sshd` image, Debian bookworm, tmux 3.3a, a probe
+  script run with `docker exec -t`.) So Koloft sets `LANG=C.UTF-8` on a machine only when
+  no `LC_ALL`, `LC_CTYPE` or `LANG` names UTF-8 and `locale -a` lists it.
 
 ## §36 ccstatusline
 

@@ -26,9 +26,15 @@ const GIT_ACCOUNTS_INCLUDE_LINE =
   '*) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; ' +
   'export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git'
 
+// PLATFORM§35
+const UTF8_LANG_WHEN_THE_LOGIN_NAMED_NONE =
+  'case "${LC_ALL:-${LC_CTYPE:-$LANG}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; ' +
+  "*) locale -a 2>/dev/null | grep -Eqix 'c\\.utf-?8' && LANG=C.UTF-8 && export LANG ;; esac"
+
 // PLATFORM§33
 export const REMOTE_ENV_LINES =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n' +
+  `${UTF8_LANG_WHEN_THE_LOGIN_NAMED_NONE}\n` +
   GIT_ACCOUNTS_INCLUDE_LINE
 
 // PLATFORM§38
