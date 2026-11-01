@@ -258,13 +258,13 @@ describe('prepareCodexHome', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  // CODEX§15
-  it("links a home's sessions, archived_sessions, skills and rules to the default home's, so any account lists and resumes every session and sees the owner's own skills and command rules", () => {
+  // CODEX§12 CODEX§15
+  it("links a home's sessions, archived_sessions, skills, rules and generated_images to the default home's, so any account lists and resumes every session, sees the owner's own skills and command rules, and finds every image a thread made under any account", () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'dot-codex', 'config.toml')
     const home = path.join(dir, 'homes', 'work')
     prepareCodexHome(home, shared)
-    for (const folder of ['sessions', 'archived_sessions', 'skills', 'rules']) {
+    for (const folder of ['sessions', 'archived_sessions', 'skills', 'rules', 'generated_images']) {
       expect(fs.readlinkSync(path.join(home, folder))).toBe(path.join(dir, 'dot-codex', folder))
       expect(fs.statSync(path.join(dir, 'dot-codex', folder)).isDirectory()).toBe(true)
     }

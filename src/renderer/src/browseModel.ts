@@ -1,5 +1,13 @@
-import type { DirEntry, GitNumstatMap, GitStatusMap, PreviewItem, SessionInfo } from '@shared/types'
+import type {
+  BackendId,
+  DirEntry,
+  GitNumstatMap,
+  GitStatusMap,
+  PreviewItem,
+  SessionInfo
+} from '@shared/types'
 import { isWebPagePath, previewKindForPath } from '@shared/preview'
+import { AGY_ARTIFACT_SIDECAR, AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER } from '@shared/agyBrain'
 
 export function inRoot(p: string, root: string): boolean {
   return p === root || p.startsWith(root + '/')
@@ -108,12 +116,29 @@ export function isOutsideEligible(p: string): boolean {
   return k === 'markdown' || k === 'image' || isWebPagePath(p)
 }
 
+export function scratchpadDirOf(session: SessionInfo | null): string | undefined {
+  return session?.details?.claude?.scratchpadDir ?? session?.scratchpadDir
+}
+
+// AGY§8 AGY§19
+const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
+
+function isAgyBookkeeping(e: DirEntry, conversationDir: string | undefined): boolean {
+  return (
+    e.path === `${conversationDir}/${e.name}` &&
+    (AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR))
+  )
+}
+
 export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
-  scratchpadDir: string | undefined
+  scratchpadDir: string | undefined,
+  backend: BackendId | undefined
 ): DirEntry[] {
   if (!entries) return []
-  return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
+  if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir))
+  if (backend === 'claude') return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
+  return [...entries]
 }
 
 export interface OutsideInput {

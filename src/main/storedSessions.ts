@@ -240,6 +240,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return {}
   }
 
+  protected abstract scratchpadOf(run: R, entry: H): string | undefined
+
   protected launchAccount(_prepared: P): string | undefined {
     return undefined
   }
@@ -874,6 +876,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       worktree: run.resource?.worktreeName,
       alive: true,
       ...this.runDetails(run),
+      scratchpadDir: this.scratchpadOf(run, entry),
       updatedAt: now
     }
     this.history.set(key, { ...entry, cwd: run.cwd })

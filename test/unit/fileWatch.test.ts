@@ -170,6 +170,23 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(await until(() => roots.length > 0)).toBe(true)
   })
 
+  // AGY§8
+  it('never reports Antigravity writing its own logs under .system_generated, which it does at every step, or each step would re-list every open folder', async () => {
+    const logs = path.join(dir, '.system_generated', 'logs')
+    fs.mkdirSync(logs, { recursive: true })
+    const roots: string[] = []
+    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    await sleep(700)
+    roots.length = 0
+
+    fs.appendFileSync(path.join(logs, 'transcript.jsonl'), '{}\n')
+    await sleep(1000)
+    expect(roots).toEqual([])
+
+    fs.appendFileSync(file, 'two\n')
+    expect(await until(() => roots.length > 0)).toBe(true)
+  })
+
   it('after an FSWatcher error rebuilds the watcher in place with its ref count kept, and keeps reporting changes', async () => {
     const realWatch = fs.watch
     const watchers: fs.FSWatcher[] = []

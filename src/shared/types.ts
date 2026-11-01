@@ -791,6 +791,7 @@ export interface BackendSessionInfo {
   lastAction?: string
   account?: string
   pickedAccount?: string
+  scratchpadDir?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }
