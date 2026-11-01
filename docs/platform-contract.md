@@ -1125,6 +1125,13 @@ inferred, not checked.
   (`content: ''; position: absolute; inset: 0`) on the element 16 of 16; the same cover
   with `pointer-events: none` 6 of 16; a `no-drag` button inside a `drag` bar 16 of 16, so
   the drag region is not the cause.
+- **When an overlay goes away from under a still mouse, the element now under it gets
+  `mouseenter` but no `mousemove`.** Measured 2026-10-31 (Electron 43.8.1, the hidden
+  e2e window, the mouse placed with Playwright): a modal's backdrop closed by Enter
+  over a sidebar row fired the row's `mouseenter`, and no `mousemove` reached `window`
+  until the mouse was moved again (`sidebar-hover-menu.spec.ts` T-HM-04, red before
+  hover-intent waited for a move, green after). Not yet measured with a real mouse on a
+  shown window.
 
 ## §25 React and zustand
 
