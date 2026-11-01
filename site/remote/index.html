@@ -197,9 +197,9 @@ your Mac                     the other machine
             your Mac talks to that server over ssh. The server is signed in with the Codex account
             picked on your Mac: no login is stored on the machine. If ssh drops or the Mac sleeps,
             the running turn keeps going there, and the tab reconnects by itself. Quit Koloft in the
-            middle of a turn, and the turn keeps going there too: open Koloft again after it ends,
-            and the tab shows its answer (open it sooner, and the turn is stopped then). Closing the
-            tab ends the server; a click on the row resumes the same conversation on a new one. With
+            middle of a turn, and the turn keeps going there too, so it can finish; open Koloft
+            again while it is still going, and it is stopped then. Closing the tab ends the server;
+            a click on the row resumes the same conversation on a new one. With
             <a href="../accounts/">Skip permission prompts</a> on, a new Codex session there runs
             with no sandbox and never asks, as on your Mac, whatever the account's own Codex
             settings say. With it off, in a folder the machine trusts, a shell command runs in
@@ -318,8 +318,8 @@ your Mac                     the other machine
             >Nothing answers on port 5173 on &lt;machine&gt;, or its ssh server does not allow port
             forwarding.</code
           >
-          Until that tab closes or Koloft quits, the port it uses on your Mac leads to the machine
-          for every program on your Mac.
+          Until every web tab showing that port closes, or Koloft quits, the port it uses on your
+          Mac leads to the machine for every program on your Mac.
         </p>
         <p>The count of changed files there catches up at most every 10 seconds.</p>
         <p>

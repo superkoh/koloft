@@ -90,9 +90,10 @@
           Every session in Koloft runs on a Claude, Codex, Muse or Antigravity account you add here,
           never on the login this Mac already has. So the first time Koloft opens, it asks you to
           sign in to one of them (the welcome screen "One sign-in. Koloft does the rest."). It picks
-          the agent you used last (or your default agent, if you never used any), and a row of
-          buttons, one for each agent switched on in Settings ▸ Sessions, lets you pick another. The
-          account is named after the agent, like
+          the agent you used last (or your default agent, if you never used any; if that one is not
+          on this Mac, the first switched-on agent that is), and a row of buttons, one for each
+          agent switched on in Settings ▸ Sessions, lets you pick another. The account is named
+          after the agent, like
           <code>Codex</code>. An account that needs signing in again is signed in again, not added
           twice. Claude's Sign in installs Claude Code first when this Mac has none, then opens your
           browser. Sign in to Codex, Sign in to Muse and Antigravity's Sign in with Google install
@@ -167,9 +168,10 @@
           </li>
           <li>
             a new session goes by weekly use: the account that has used the least of its 7 days
-            wins. How much of its 5 hours it has used does not count, until it reaches 90%: then a
-            new session skips it while another account has room. If every account is there, the one
-            whose 5 hours come back first gets it
+            wins. An account whose week starts over within 6 hours counts as having used less, and
+            accounts within 5% of each other take turns. How much of its 5 hours it has used does
+            not count, until it reaches 90%: then a new session skips it while another account has
+            room. If every account is there, the one whose 5 hours come back first gets it
           </li>
           <li>
             with "Prefer accounts with fable allowance" on, an account that still has fable
