@@ -1,8 +1,7 @@
 import { EventEmitter } from 'events'
-import type { TerminalExit } from '@shared/types'
 import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from './backends/claude'
-import type { CronRunner, LeftTab } from './cronRunner'
+import type { AgentExit, CronRunner, LeftTab } from './cronRunner'
 import type { AskButtons } from './discord/buttons'
 import type { Butler } from './discord/butler'
 import type { ButlerTyping } from './discord/butlerTyping'
@@ -13,7 +12,7 @@ import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
-export interface TabExit extends Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'> {
+export interface TabExit extends AgentExit {
   tabId: string
   asleep: boolean
   crashed: boolean

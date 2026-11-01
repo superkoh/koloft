@@ -96,7 +96,7 @@ export interface LeftTab {
   sessionId?: string
 }
 
-type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
+export type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
 
 export interface RunLeftovers {
   folders: string[]
@@ -788,9 +788,12 @@ export class CronRunner {
       this.writeHistory(job, { ...line, state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
     } else if (exit?.unexpected) {
-      // PLATFORM§35
-      const note = [endedRowNote(exit), line.note].filter(Boolean).join('; ')
-      this.writeHistory(job, { ...line, state: 'quit', note })
+      const how = endedRowNote(exit)
+      this.writeHistory(job, {
+        ...line,
+        state: 'quit',
+        note: line.note ? `${how}; ${line.note}` : how
+      })
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
     }

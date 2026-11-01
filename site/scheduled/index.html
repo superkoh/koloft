@@ -356,16 +356,16 @@
                 <td>Agent quit — exited (code <i>N</i>)</td>
                 <td>
                   The agent quit with an error after the run started, and nobody closed it. A run on
-                  a remote machine says the agent's own exit code there; one killed there reads 128
-                  plus the signal's number, such as <code>exited (code 137)</code>. The folder line
-                  follows, as for Closed by you.
+                  a remote machine says the agent's own exit code there (255 shows as 254); one
+                  killed there reads 128 plus the signal's number, such as
+                  <code>exited (code 137)</code>. The folder line follows, as for Closed by you.
                 </td>
               </tr>
               <tr>
                 <td>Agent quit — killed (signal <i>N</i>)</td>
                 <td>
-                  Something on this Mac killed the agent after the run started, for example it
-                  crashed or ran out of memory.
+                  The run's process on this Mac was killed after the run started: the agent itself,
+                  or for a remote run its ssh link.
                 </td>
               </tr>
               <tr>
