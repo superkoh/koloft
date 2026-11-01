@@ -180,7 +180,7 @@ import {
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
-import { AGENT_SHIM_WAITS_MS, OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -534,6 +534,7 @@ import {
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
+  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   resolveWorkspace,
   sessionVerb,
   workspaceVerb,
@@ -1763,7 +1764,7 @@ const sessionDeps: SessionVerbDeps = {
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
-  whatIsLeft: whatClosingWouldLose,
+  whatIsLeft: (target, waitUntil) => whatClosingWouldLose(target, undefined, waitUntil),
   closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
       for (const target of inOrder) {
@@ -4887,9 +4888,6 @@ function archiveSession(id: string): boolean {
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
-const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
-const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
-  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 
 function closableSessions(): ClosableSession[] {
   const live: ClosableSession[] = allSessions()
@@ -4929,7 +4927,8 @@ const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody ans
 
 async function whatClosingWouldLose(
   target: ClosableSession,
-  info?: ProjectInfo
+  info: ProjectInfo | undefined,
+  waitUntil: number
 ): Promise<string[]> {
   if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
   // CODEX§20
@@ -4937,7 +4936,6 @@ async function whatClosingWouldLose(
     target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
       ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
       : []
-  const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
   let left = await leftOnceRemovalsEnd(target, info, waitUntil)
   if (left.length && treeRemovals.has(target.treeRoot))
     left = await leftOnceRemovalsEnd(target, info, waitUntil)
@@ -5054,7 +5052,11 @@ async function whatClosingTheRunWouldLose(
 ): Promise<string[]> {
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  return whatClosingWouldLose(
+    session,
+    cronRunTree(root, worktree),
+    Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  )
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
