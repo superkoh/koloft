@@ -1176,7 +1176,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const switched =
       (!!known && (known.createdAt ?? 0) * 1000 < run.boundAt) ||
       forked ||
-      (!run.host && startsAsAFork(museSessionLog(this.env, sessionId)))
+      (!!run.info && !run.host && startsAsAFork(museSessionLog(this.env, sessionId)))
     if (run.info) run.boundAt = Date.now()
     run.prompt = undefined
     run.children.clear()

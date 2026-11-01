@@ -177,7 +177,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect
         .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
         .not.toContain(`k-${first.sessionId}`)
-      expect(liveTmuxSessions(env)).toHaveLength(1)
+      await expect.poll(() => liveTmuxSessions(env)).toHaveLength(1)
       await expect(remoteRows(page).filter({ hasText: 'second' })).toHaveClass(/\bst-waiting\b/, {
         timeout: 30_000
       })

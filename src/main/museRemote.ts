@@ -1,12 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
-import {
-  FIRST_RECORD_READ_BYTES,
-  FORK_CREATED,
-  REMOTE_LOG_MARKS,
-  SAID_MARKS
-} from './museSessionLog'
+import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
 import { remoteNoticeFile } from './hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
@@ -32,7 +27,7 @@ LONGEST_PARTIAL_FRAME = 4096
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
 LOG_MARKS = (${REMOTE_LOG_MARKS.map(pyBytes).join(', ')},)
-FORK_CREATED = '${FORK_CREATED}'
+FORK_MARK = ${pyBytes(FORK_MARK)}
 FIRST_RECORD_READ_BYTES = ${FIRST_RECORD_READ_BYTES}
 
 hook_dir, run_id = sys.argv[1], sys.argv[2]
@@ -220,9 +215,8 @@ def follow_log():
 def starts_as_a_fork(path):
     try:
         with open(path, 'rb') as f:
-            first = json.loads(f.readline(FIRST_RECORD_READ_BYTES))
-        return isinstance(first, dict) and first.get('payload_type') == FORK_CREATED
-    except (OSError, TypeError, ValueError):
+            return FORK_MARK in f.readline(FIRST_RECORD_READ_BYTES)
+    except (OSError, TypeError):
         return False
 
 

@@ -709,11 +709,16 @@ It has two forms that behave differently.
   new id. The old id's registry file goes and the new id's file appears with the same
   pid, as on `/clear` (§4). Every later prompt goes to the new session.
 - **The copy's `session.jsonl` starts with a `session.fork.created` record** (about
-  700 bytes), payload `{fork_session_id, source_session_id, source_cut_cursor,
+  700 bytes, compact JSON with `"payload_type":"session.fork.created"` in its first
+  300 bytes), payload `{fork_session_id, source_session_id, source_cut_cursor,
   created_by_command_id, …}`, then `session.fork.model_prefix` and one
-  `session.fork.turn` per copied turn; the moved-onto copy then has
+  `session.fork.turn` per copied turn. The copied turns' own records follow only as
+  `{"retained_marker":"omitted_live_only", …, "omitted_record":{…}}` lines, with no
+  top-level `payload_type`; the moved-onto copy then has
   `runtime.session_start.intake_v3` with `activation_source: "fork"`. A session started
-  fresh or by `/clear` starts with another record. The source's own log gets
+  fresh or by `/clear` starts with another record. On `/fork <text>` this file was
+  written about 0.25 s before the registry swap (its `createdAt` against the registry
+  file's mtime, one run). The source's own log gets
   `command.invoked {command: "/fork"}` and `runtime.command_intake.branch.received
   {command: {kind: "session_fork", requested_fork_session_id}}`.
 - **`session/list`**: the copy is `kind: "root"` with `workspaceRoot: null` and

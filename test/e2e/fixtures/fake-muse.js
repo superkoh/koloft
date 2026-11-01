@@ -161,7 +161,7 @@ function serve() {
     if (msg.method === 'session/list') {
       append('fake-muse-listings.jsonl', { at: now() })
       const sessions = all()
-        .filter((s) => !(s.movedOnto && heldByALiveMuse(s.id)))
+        .filter((s) => !(s.forkedFrom && heldByALiveMuse(s.id)))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
           sessionId: s.id,
@@ -172,7 +172,7 @@ function serve() {
           workspaceRoot: s.forkedFrom ? null : s.cwd,
           ...(s.forkedFrom && { forkedFrom: { sessionId: s.forkedFrom } }),
           kind: 'root',
-          ...(!(s.forkedFrom && !s.movedOnto) && { name: 'fake-name' }),
+          name: 'fake-name',
           title: s.title,
           firstUserPrompt: s.title
         }))
@@ -529,7 +529,6 @@ function tui() {
         ...session,
         id: uuidv7(),
         forkedFrom: session.id,
-        movedOnto: !!prompt,
         createdAt: now(),
         updatedAt: now()
       }

@@ -178,7 +178,7 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       const m = machine()
       installFakeMuse(m)
       m.env.FAKE_FIRST_RECORD = JSON.stringify({
-        payload_type: museLog.FORK_CREATED,
+        payload_type: 'session.fork.created',
         payload: { fork_session_id: SID, source_session_id: 'source' }
       })
       await runWrapper(m, [])
