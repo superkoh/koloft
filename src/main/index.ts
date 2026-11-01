@@ -3892,17 +3892,23 @@ app.whenReady().then(() => {
   registerIpc()
   setupAppMenu(
     (action, from) => {
-      if (from && signInWindows.has(from)) {
-        from.close()
-        return
-      }
       if (action === 'toggle-keep-awake') {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
+      if (from && signInWindows.has(from)) {
+        if (action === 'close-tab') from.close()
+        return
+      }
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
+    (cmd, from) => {
+      if (from && signInWindows.has(from)) {
+        if (cmd === 'browser-close-tab') from.close()
+        return
+      }
+      sendToRenderer(CH.shortcut.browser, cmd)
+    },
     loadSettings().keepAwake
   )
   applyKeepAwake(loadSettings().keepAwake)
@@ -4185,12 +4191,20 @@ const signInWindows = new WeakSet<BaseWindow>()
 function adoptSignInWindow(win: BrowserWindow, opener: WebContents): void {
   signInWindows.add(win)
   const popup = win.webContents
-  const owner = guestOwners.get(opener)
-  if (owner) {
-    guestOwners.set(popup, owner)
-    for (const resolve of ownerWaiters.get(popup.id) ?? []) resolve(owner)
-    ownerWaiters.delete(popup.id)
+  const host = mainWindow
+  const close = (): void => {
+    if (!win.isDestroyed()) win.close()
   }
+  opener.once('destroyed', close)
+  host?.once('closed', close)
+  win.once('closed', () => {
+    opener.removeListener('destroyed', close)
+    host?.removeListener('closed', close)
+  })
+  const popupId = popup.id
+  void reportedOwner(opener.id).then((owner) => {
+    if (owner) recordGuestOwner(popupId, owner)
+  })
   for (const w of webPageWatchers) w(popup)
 }
 
@@ -4234,6 +4248,13 @@ function reportedOwner(guestId: number): Promise<string | null> {
   })
 }
 
+function recordGuestOwner(guestId: number, owner: string): void {
+  const guest = webContents.fromId(guestId)
+  if (guest) guestOwners.set(guest, owner)
+  for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(owner)
+  ownerWaiters.delete(guestId)
+}
+
 function machineOfOwner(owner: string): string | undefined {
   return isWorkspaceWorkbenchKey(owner)
     ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
@@ -4267,16 +4288,30 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
-function drivenByAnAgent(guest: WebContents): boolean {
-  return sessionDrivingGuest(guest.id) !== null || guestDrivenFromAnotherMachine(guest.id)
+const SIZED_WINDOW_FEATURES = /(^|[\s,])(width|height)\s*=/i
+
+function opensAsSignInWindow(
+  from: WebContents,
+  { url, disposition, features }: Electron.HandlerDetails
+): boolean {
+  return (
+    disposition === 'new-window' &&
+    SIZED_WINDOW_FEATURES.test(features) &&
+    routeFor(url, 'user').dest === 'browser' &&
+    !isOverlayGuest(from) &&
+    sessionDrivingGuest(from.id) === null &&
+    !guestDrivenFromAnotherMachine(from.id) &&
+    takeGuestGesture(from)
+  )
 }
 
 function setupGuestPopups(): void {
   onEveryWebPage((contents) => {
-    contents.setWindowOpenHandler(({ url, disposition }) => {
+    contents.setWindowOpenHandler((details) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
+      const { url } = details
       // PLATFORM§8
-      if (disposition === 'new-window' && !drivenByAnAgent(contents)) {
+      if (opensAsSignInWindow(contents, details)) {
         return { action: 'allow', overrideBrowserWindowOptions: { show: !BACKGROUND_TEST } }
       }
       routeGuestPopup(url, contents)
@@ -6366,10 +6401,7 @@ function registerIpc(): void {
   })
   ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    const guest = webContents.fromId(guestId)
-    if (guest) guestOwners.set(guest, ownerTabId)
-    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(ownerTabId)
-    ownerWaiters.delete(guestId)
+    recordGuestOwner(guestId, ownerTabId)
   })
   ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
