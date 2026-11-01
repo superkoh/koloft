@@ -1,7 +1,12 @@
 import { shq } from '@shared/shellQuote'
 import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
-import { REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
+import {
+  FIRST_RECORD_READ_BYTES,
+  FORK_CREATED,
+  REMOTE_LOG_MARKS,
+  SAID_MARKS
+} from './museSessionLog'
 import { museHookScript } from './museHooks'
 import { remoteNoticeFile } from './hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
@@ -16,7 +21,7 @@ export const RUN_POINTER_SUFFIX = '.muse.run'
 const pyBytes = (s: string): string =>
   "b'" + [...s].map((c) => (c === '\x1b' ? '\\x1b' : c === '\\' ? '\\\\' : c)).join('') + "'"
 
-// MUSE§2 MUSE§3 MUSE§4 MUSE§9 MUSE§17 PLATFORM§35
+// MUSE§2 MUSE§3 MUSE§4 MUSE§9 MUSE§17 MUSE§20 PLATFORM§35
 export const MUSE_WRAP_PY = `#!/usr/bin/env python3
 import fcntl, json, os, pty, re, select, signal, subprocess, sys, termios, time, tty
 
@@ -27,6 +32,8 @@ LONGEST_PARTIAL_FRAME = 4096
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
 LOG_MARKS = (${REMOTE_LOG_MARKS.map(pyBytes).join(', ')},)
+FORK_CREATED = '${FORK_CREATED}'
+FIRST_RECORD_READ_BYTES = ${FIRST_RECORD_READ_BYTES}
 
 hook_dir, run_id = sys.argv[1], sys.argv[2]
 args = sys.argv[3:]
@@ -210,12 +217,21 @@ def follow_log():
         forward(line)
 
 
+def starts_as_a_fork(path):
+    try:
+        with open(path, 'rb') as f:
+            first = json.loads(f.readline(FIRST_RECORD_READ_BYTES))
+        return isinstance(first, dict) and first.get('payload_type') == FORK_CREATED
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def bind(sid):
     global bound
     bound = sid
     path = log_path(sid)
     log.update(path=path, offset=os.path.getsize(path) if path else 0, rest=b'')
-    put({'t': 'bound', 'sessionId': sid})
+    put({'t': 'bound', 'sessionId': sid, 'forked': starts_as_a_fork(path)})
     name = 'k-' + sid
     write_whole(os.path.join(hook_dir, name + '${RUN_POINTER_SUFFIX}'), run_id)
     write_whole(os.path.join(tabs, run_id + '.tmux'), name)

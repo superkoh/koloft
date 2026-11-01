@@ -55,6 +55,27 @@ export const logRecord = (line: string): LogRecord | undefined => {
   }
 }
 
+export const FORK_CREATED = 'session.fork.created'
+export const FIRST_RECORD_READ_BYTES = 4096
+
+// MUSE§20
+export function startsAsAFork(file: string | undefined): boolean {
+  if (!file) return false
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return false
+  }
+  try {
+    const head = Buffer.alloc(FIRST_RECORD_READ_BYTES)
+    const read = fs.readSync(fd, head, 0, head.length, 0)
+    return logRecord(head.toString('utf8', 0, read).split('\n')[0])?.payloadType === FORK_CREATED
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 // MUSE§1
 export function lastCompletedText(stdout: string): string | null {
   let text: string | null = null

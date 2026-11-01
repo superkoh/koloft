@@ -80,6 +80,16 @@ const logRecord = (id, payloadType, payload) => {
   )
 }
 
+const heldByALiveMuse = (id) => {
+  try {
+    const hint = JSON.parse(fs.readFileSync(path.join(registryDir, id + '.json'), 'utf8'))
+    const pid = Number(/^pid=(\d+)$/.exec(hint.process_generation_hint)?.[1])
+    return pid > 0 && process.kill(pid, 0)
+  } catch {
+    return false
+  }
+}
+
 const pendingFile = (id) => path.join(pendingDir, id + '.json')
 const pendingOf = (id) => {
   try {
@@ -151,6 +161,7 @@ function serve() {
     if (msg.method === 'session/list') {
       append('fake-muse-listings.jsonl', { at: now() })
       const sessions = all()
+        .filter((s) => !(s.movedOnto && heldByALiveMuse(s.id)))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
           sessionId: s.id,
@@ -161,7 +172,7 @@ function serve() {
           workspaceRoot: s.forkedFrom ? null : s.cwd,
           ...(s.forkedFrom && { forkedFrom: { sessionId: s.forkedFrom } }),
           kind: 'root',
-          name: 'fake-name',
+          ...(!(s.forkedFrom && !s.movedOnto) && { name: 'fake-name' }),
           title: s.title,
           firstUserPrompt: s.title
         }))
@@ -511,17 +522,36 @@ function tui() {
         Number(read('fake-muse-bg-ms', '2000'))
       )
     }
-    if (text === '/fork') {
+    // MUSE§20
+    if (text === '/fork' || text.startsWith('/fork ')) {
+      const prompt = text.slice('/fork'.length).trim()
       const child = {
         ...session,
         id: uuidv7(),
         forkedFrom: session.id,
+        movedOnto: !!prompt,
         createdAt: now(),
         updatedAt: now()
       }
+      logRecord(child.id, 'session.fork.created', {
+        fork_session_id: child.id,
+        source_session_id: session.id
+      })
       save(child)
-      process.stdout.write(`Fork created: ${child.id}\r\nSource session stays active.\r\n`)
-      return
+      if (!prompt) {
+        process.stdout.write(
+          `Fork created: ${child.id}\r\nSource session stays active.\r\nContinue the fork:\r\nmuse resume ${child.id}\r\n`
+        )
+        return
+      }
+      unregister()
+      session = child
+      register()
+      started = false
+      startSource = 'fork'
+      process.stdout.write(`resumed session ${child.id}\r\n`)
+      const turnId = turn(prompt)
+      return later(() => say(turnId, `echo: ${prompt}`, prompt))
     }
     if (text === '/usage') {
       const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))
