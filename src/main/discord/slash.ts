@@ -5,7 +5,7 @@ import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
 import { withoutBlankEdges } from '../messageText'
-import { codexComposerDraft, inputBoxDraft } from '../inputBox'
+import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../inputBox'
 import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -20,12 +20,12 @@ const CLOSE_PAGER = 'q'
 const TO_LINE_END = '\x05'
 const CLEAR_TO_LINE_START = '\x15'
 const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
-// CODEX§21
+// CODEX§21 AGY§23
 const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
   claude: [ESC],
   codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
   muse: [ESC],
-  agy: [ESC]
+  agy: [ESC, EMPTY_THE_BOX]
 }
 const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
   claude: [],
@@ -45,11 +45,12 @@ const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
-// CC§12 CODEX§21 MUSE§11
-const DRAFT_ON_SCREEN: Partial<Record<BackendId, (lines: string[]) => string | undefined>> = {
+// CC§12 CODEX§21 MUSE§11 AGY§23
+const DRAFT_ON_SCREEN: Record<BackendId, (lines: string[]) => string | undefined> = {
   claude: inputBoxDraft,
   codex: codexComposerDraft,
-  muse: inputBoxDraft
+  muse: inputBoxDraft,
+  agy: agyInputBoxDraft
 }
 export const AN_ENTER_LANDS_WITHIN_MS = 2000
 
@@ -211,7 +212,7 @@ export class SlashCommands {
     }
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
-    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
+    this.readScreenSoon(tab, p)
     this.pending.set(tab, p)
     return p
   }
@@ -220,18 +221,25 @@ export class SlashCommands {
     return this.pending.get(tab) === p && !p.outputs.length && !p.worked && !p.newKey
   }
 
-  // CC§12 CODEX§21 MUSE§11
-  private checkTheEnterLanded(tab: string, p: Pending): void {
+  private stillInTheBox(tab: string, text: string, lines: string[]): boolean {
     const backend = this.d.backendOf(tab)
-    const draft = backend && DRAFT_ON_SCREEN[backend]
-    if (!draft) return
+    return !!backend && DRAFT_ON_SCREEN[backend](lines) === text.trim()
+  }
+
+  // CC§12 CODEX§21 MUSE§11 AGY§23
+  private checkTheEnterLanded(tab: string, p: Pending): void {
     const enterAgainIfStillTyped = async (): Promise<void> => {
       if (!this.unanswered(tab, p)) return
       const lines = await this.d.screen(tab).catch(() => undefined)
-      if (lines && this.unanswered(tab, p) && draft(lines) === p.text.trim())
-        await this.press(tab, ['\r'])
+      if (!lines || !this.unanswered(tab, p)) return
+      if (this.stillInTheBox(tab, p.text, lines)) await this.press(tab, ['\r'])
+      this.readScreenSoon(tab, p)
     }
     p.timers.push(setTimeout(() => void enterAgainIfStillTyped(), AN_ENTER_LANDS_WITHIN_MS))
+  }
+
+  private readScreenSoon(tab: string, p: Pending): void {
+    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
   }
 
   // AGY§23
@@ -240,6 +248,7 @@ export class SlashCommands {
     if (!reading) return
     const text = await reading
     if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
+    if (this.stillInTheBox(tab, p.text, text.split('\n'))) return
     p.outputs.push({ kind: 'printed', text })
     await this.press(tab, [ESC])
     this.settleSoon(tab, p)
