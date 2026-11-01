@@ -1132,6 +1132,17 @@ only downloaded the public release.
   `3p-5h` named "Five Hour Limit Remaining", `window:"5h"`; `remaining_fraction` 1
   (what is left, not what is used), `reset_time` an ISO UTC time (7 days and 5 hours
   after the sign-in). No `description`, `remainingAmount` or `disabled` on a bucket.
+- **The input box on screen.** 1.4.12 Linux arm64 from the manifest (sha512 checked),
+  Docker `--network none`, tmux 3.3a 120×40, the API-key route against a fake Gemini
+  server, keys by `tmux send-keys`, screen by `capture-pane`, 2026-11-01. The box is a
+  full-width `─` rule, one row starting `>`, and a second full-width rule; empty, that
+  row is a bare `>` (no hint text). Typed but not sent, the row reads `> /usage`, and the
+  completion menu draws *below* the lower rule, its first row again `> /usage  View model
+  quota usage`, then `↑/↓ Navigate · enter Select · tab Complete` and `esc to cancel`.
+  Earlier turns above the box are split by a shorter rule (60 `─`). One Esc closes only
+  the menu and leaves `> /usage` in the box; Enter, with or without the menu, runs it
+  and leaves a bare `>` with the output under the box. So the last two rules hold the
+  draft, and a command whose Enter did not land is still there. macOS: not probed.
 - Desktop-app conversations in `<geminiDir>/antigravity/conversations` show only in
   the `/resume` picker's "Other" tab (also through a symlinked folder), titled by
   their first message; Enter asks "Import this conversation? (y/n)". A real desktop

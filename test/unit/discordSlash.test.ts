@@ -94,6 +94,58 @@ describe('a slash command typed into a session', () => {
     }
   )
 
+  it('in Antigravity, a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
+    const WIDE_RULE = '─'.repeat(120)
+    const draftScreen = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      '─'.repeat(60),
+      '> hello there',
+      '',
+      '  REPLY(hi)',
+      '',
+      WIDE_RULE,
+      '> /usage',
+      WIDE_RULE,
+      '> /usage  View model quota usage',
+      '',
+      '  ↑/↓ Navigate · enter Select · tab Complete',
+      'esc to cancel                                  Gemini 3.1 Pro · low'
+    ]
+    const outputScreen = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      WIDE_RULE,
+      '>',
+      WIDE_RULE,
+      '└ Models & Quota',
+      '',
+      '  ⢿  Loading quota summary...',
+      '',
+      '  ↑/↓ Scroll · pgup/pgdown Page · ctrl+end Bottom · ctrl+home Top · esc Close'
+    ]
+    let shown = draftScreen
+    let enters = 0
+    const typed: string[] = []
+    const { slash, posts } = setup({
+      backendOf: () => 'agy',
+      screen: async () => [...shown],
+      outputOnlyOnScreen: async () => shown.join('\n').trim() || undefined,
+      typeNow: async (_t, keys) => {
+        typed.push(...keys)
+        enters += keys.filter((k) => k === '\r').length
+        if (enters === 2) shown = outputScreen
+      }
+    })
+    await slash.typeWhenIdle(child, '/usage', CHANNEL)
+    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+    expect(typed).toEqual(['/usage', '\r'])
+    expect(posts).toEqual([])
+    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS - SCREEN_SHOWS_THE_OUTPUT_MS)
+    expect(typed).toEqual(['/usage', '\r', '\r'])
+    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
+    expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${outputScreen.join('\n').trim()}`])
+  })
+
   it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {
     const { slash, typed } = setup({
       screen: async () => ['❯ /config', RULE, '  Settings', '  Theme  dark']

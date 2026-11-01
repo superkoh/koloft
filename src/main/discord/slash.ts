@@ -5,7 +5,7 @@ import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
 import { withoutBlankEdges } from '../messageText'
-import { codexComposerDraft, inputBoxDraft } from '../inputBox'
+import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../inputBox'
 import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -45,11 +45,12 @@ const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
-// CC§12 CODEX§21 MUSE§11
-const DRAFT_ON_SCREEN: Partial<Record<BackendId, (lines: string[]) => string | undefined>> = {
+// CC§12 CODEX§21 MUSE§11 AGY§23
+const DRAFT_ON_SCREEN: Record<BackendId, (lines: string[]) => string | undefined> = {
   claude: inputBoxDraft,
   codex: codexComposerDraft,
-  muse: inputBoxDraft
+  muse: inputBoxDraft,
+  agy: agyInputBoxDraft
 }
 export const AN_ENTER_LANDS_WITHIN_MS = 2000
 
@@ -220,15 +221,17 @@ export class SlashCommands {
     return this.pending.get(tab) === p && !p.outputs.length && !p.worked && !p.newKey
   }
 
-  // CC§12 CODEX§21 MUSE§11
-  private checkTheEnterLanded(tab: string, p: Pending): void {
+  private stillInTheBox(tab: string, p: Pending, lines: string[]): boolean {
     const backend = this.d.backendOf(tab)
-    const draft = backend && DRAFT_ON_SCREEN[backend]
-    if (!draft) return
+    return !!backend && DRAFT_ON_SCREEN[backend](lines) === p.text.trim()
+  }
+
+  // CC§12 CODEX§21 MUSE§11 AGY§23
+  private checkTheEnterLanded(tab: string, p: Pending): void {
     const enterAgainIfStillTyped = async (): Promise<void> => {
       if (!this.unanswered(tab, p)) return
       const lines = await this.d.screen(tab).catch(() => undefined)
-      if (lines && this.unanswered(tab, p) && draft(lines) === p.text.trim())
+      if (lines && this.unanswered(tab, p) && this.stillInTheBox(tab, p, lines))
         await this.press(tab, ['\r'])
     }
     p.timers.push(setTimeout(() => void enterAgainIfStillTyped(), AN_ENTER_LANDS_WITHIN_MS))
@@ -240,6 +243,10 @@ export class SlashCommands {
     if (!reading) return
     const text = await reading
     if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
+    if (this.stillInTheBox(tab, p, text.split('\n'))) {
+      p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
+      return
+    }
     p.outputs.push({ kind: 'printed', text })
     await this.press(tab, [ESC])
     this.settleSoon(tab, p)
