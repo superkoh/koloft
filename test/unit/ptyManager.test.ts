@@ -398,14 +398,16 @@ describe('PtyManager types the PATH line and the launch line once the login shel
 
   const BOTH = [SETUP + '\r' + LAUNCH + '\r']
   const typed = (): string[] => write.mock.calls.map(([d]) => d)
-  const launch = (launchCommand = LAUNCH): void => {
-    new PtyManager().create({
-      kind: 'claude',
+  const launch = (launchCommand = LAUNCH, kind: 'claude' | 'shell' = 'claude') => {
+    const mgr = new PtyManager()
+    const tab = mgr.create({
+      kind,
       koloftShim: SHIM,
       cwd: os.tmpdir(),
       setupCommand: SETUP,
       launchCommand: () => launchCommand
     })
+    return (data: string): void => mgr.write(tab.id, data)
   }
 
   it('types nothing while the rc files still run, then both lines in order the moment the line editor turns on bracketed paste, and nothing again', () => {
@@ -456,16 +458,66 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false))
   })
 
-  it('types nothing into a pty Koloft did not start a shell in', () => {
-    new PtyManager().create({
+  it('holds what a person types before the two lines and sends it right after them, in order, so it reaches the agent and not the PATH line', () => {
+    const type = launch()
+    type('h')
+    type('\x1b[I')
+    type('ello\r')
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual([BOTH[0] + 'hello\r'])
+    type('!')
+    expect(typed()).toEqual([BOTH[0] + 'hello\r', '!'])
+  })
+
+  it('sends the held keys after the two lines on the late fallback too', () => {
+    const type = launch()
+    type('hi')
+    vi.advanceTimersByTime(1600)
+    expect(typed()).toEqual([BOTH[0] + 'hi'])
+  })
+
+  it("lets the terminal's own answers to the shell's questions through at once, so an rc file waiting on one never stalls", () => {
+    const type = launch()
+    type('\x1b[12;1R')
+    type('\x1b[?1;2c')
+    type('\x1b]11;rgb:0000/0000/0000\x1b\\')
+    type('x')
+    expect(typed()).toEqual(['\x1b[12;1R', '\x1b[?1;2c', '\x1b]11;rgb:0000/0000/0000\x1b\\'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed().at(-1)).toBe(BOTH[0] + 'x')
+  })
+
+  it('lets Ctrl+C through at once and drops what it cancels, since one queued behind the launch line would throw that line away', () => {
+    const type = launch()
+    type('rm stuff')
+    type('\x03')
+    type('hi')
+    expect(typed()).toEqual(['\x03'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(['\x03', BOTH[0] + 'hi'])
+  })
+
+  it('never holds keys in a plain terminal, even one Koloft types a line into', () => {
+    const type = launch(LAUNCH, 'shell')
+    type('h')
+    expect(typed()).toEqual(['h'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(['h', BOTH[0]])
+  })
+
+  it('types nothing into a pty Koloft did not start a shell in, and holds none of its keys', () => {
+    const mgr = new PtyManager()
+    const tab = mgr.create({
       kind: 'codex',
       koloftShim: false,
       cwd: os.tmpdir(),
       executable: '/bin/codex'
     })
+    mgr.write(tab.id, 'h')
     mocks.state.data?.('\x1b[?2004h')
     vi.runAllTimers()
-    expect(typed()).toEqual([])
+    expect(typed()).toEqual(['h'])
   })
 })
 

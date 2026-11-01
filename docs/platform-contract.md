@@ -114,6 +114,16 @@ method. A recheck adds its date, version and command to the bullet.
   `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
   24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
   of that day.)
+- **Keys written right behind the launch line reach the program it starts, except a
+  signal key.** At zsh's signal, one write of `export …; clear` CR, `exec <program>` CR
+  and then `hello` CR: the program, which turned raw mode on 1 s after it started
+  (`TCSADRAIN`; which mode libuv uses is not checked), read `hello\r` whole. With the CR written 0.3 s later
+  instead, while the program was still in canonical mode, it read `hello\n` (`ICRNL`).
+  A Ctrl+C written behind the two lines threw the queued `exec` line away and left
+  zsh at its prompt, so the program never started; a Ctrl+Z or Ctrl+\ there reached
+  the program as a byte. (2026-11-01, Python `pty` probe,
+  macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
+  instead threw the queued keys away.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -998,6 +1008,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   for an alt-screen TUI the rows that grow back stay blank.
 - **xterm answers some queries by itself** (focus reports, mouse reports, DA/CPR) on the
   same `onData` path as real keys, so pty input alone cannot show that a person typed.
+  Each answer is one `onData` call of its own. The CSI answers end in `R` (cursor
+  position), `c` (device attributes), `n` (status, colour scheme), `$y` (mode report),
+  `t` (window size) or `u` (keyboard flags); the rest are OSC (`ESC ]` … BEL or ST) and
+  DCS (`ESC P` … ST). A person's key can share the `R` shape: xterm sends Shift+F3 as
+  `ESC [ 1 ; 2 R`. (Read from `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`,
+  2026-11-01.)
 - **xterm's hidden textarea keeps the Tab key**: focus that reaches a terminal does not
   move on, so a forward Tab walk has to start past it.
 - **XTVERSION**: the query is `CSI > 0 q` (or `CSI > q`) and a reply is
