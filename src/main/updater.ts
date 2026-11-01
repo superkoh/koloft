@@ -171,7 +171,7 @@ export function fixturePath(): string | null {
 const FEED_TTL_MS = 60_000
 let feed: { at: number; list: GhRelease[] } | null = null
 
-export async function fetchPublishedReleases(): Promise<GhRelease[]> {
+async function fetchPublishedReleases(): Promise<GhRelease[]> {
   const fixture = fixturePath()
   let list: unknown
   if (fixture) {

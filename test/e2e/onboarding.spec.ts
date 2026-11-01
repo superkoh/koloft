@@ -23,13 +23,6 @@ import {
   termIds,
   waitForCalls
 } from './helpers/p1'
-import {
-  changelog,
-  notesBody,
-  release,
-  withFixtureEnv,
-  writeFixture
-} from './helpers/updateFixture'
 
 const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
 const SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS = 1500
@@ -145,7 +138,7 @@ function sidebarFolders(page: Page): Locator {
   return page.locator('.isl-sessions .ws-name')
 }
 
-test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new once per upgrade", () => {
+test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
   test('T-OB-01: a first run opens the welcome over the whole window, the four agents side by side, the one on this Mac ready and the rest offered to install', async ({
     env
   }) => {
@@ -717,38 +710,6 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await expect(page.locator('.settings-modal')).toHaveCount(0, { timeout: 20_000 })
       await expectStep(page, 1)
       await expect(sidebarFolders(page)).toHaveText(['ws-a', 'ws-b'])
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  // PLATFORM§4
-  function withReleaseNotesFeed(env: E2EEnv, versions: [string, string][]): string {
-    const file = withFixtureEnv(env)
-    writeFixture(
-      file,
-      versions.map(([v, item]) => release(v, notesBody(changelog(item))))
-    )
-    return file
-  }
-
-  test('T-OB-09: the first launch after an upgrade opens no window about what changed', async ({
-    env
-  }) => {
-    test.setTimeout(120_000)
-    withReleaseNotesFeed(env, [
-      ['0.1.2', 'the newer thing'],
-      ['0.1.1', 'the older thing']
-    ])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '0.1.0' })
-
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expect(page.locator('.isl-sessions')).toBeVisible({ timeout: 20_000 })
-      await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
-      await expect(page.locator('.update-modal')).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

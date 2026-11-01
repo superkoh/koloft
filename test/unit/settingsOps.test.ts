@@ -242,6 +242,14 @@ describe('sanitizeLoadedSettings and where new projects go', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
+  it('drops the last-seen version an older build kept for its What’s new window, so the next save clears it from disk', () => {
+    expect(
+      sanitizeLoadedSettings({ fontSize: 13, lastSeenVersion: '0.59.1' } as never)
+    ).not.toHaveProperty('lastSeenVersion')
+  })
+})
+
 describe('sanitizeLoadedSettings and the account list', () => {
   it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
     const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
