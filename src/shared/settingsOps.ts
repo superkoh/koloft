@@ -77,10 +77,12 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const {
     assistSessions,
     lastSeenVersion: _retired,
+    showUsage: _retiredShowUsage,
     ...kept
   } = doc as Partial<Settings> & {
     assistSessions?: unknown
     lastSeenVersion?: unknown
+    showUsage?: unknown
   }
   const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
