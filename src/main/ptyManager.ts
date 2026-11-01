@@ -12,7 +12,7 @@ import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
   bracketedPaste,
-  keysToHoldBehindALaunchLine,
+  onlyTheTerminalsOwnAnswers,
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
@@ -101,6 +101,7 @@ const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+const CTRL_C = '\x03'
 
 interface LinesToType {
   shellSaid(output: string): void
@@ -132,10 +133,12 @@ function typeOnceTheShellReads(
       if (LINE_EDITOR_STARTS_READING.test(seen)) type()
     },
     held: (data) => {
-      if (early === undefined) return false
-      const keys = keysToHoldBehindALaunchLine(data)
-      if (keys === null) return false
-      early += keys
+      if (early === undefined || onlyTheTerminalsOwnAnswers(data)) return false
+      if (data.includes(CTRL_C)) {
+        early = ''
+        return false
+      }
+      early += withoutMouseAndFocusReports(data)
       return true
     }
   }

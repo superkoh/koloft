@@ -488,12 +488,14 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed().at(-1)).toBe(BOTH[0] + 'x')
   })
 
-  it('lets Ctrl+C, Ctrl+Z and Ctrl+\\ through at once, since one queued behind the launch line would flush it', () => {
+  it('lets Ctrl+C through at once and drops what it cancels, since one queued behind the launch line would throw that line away', () => {
     const type = launch()
+    type('rm stuff')
     type('\x03')
-    type('\x1a')
-    type('\x1c')
-    expect(typed()).toEqual(['\x03', '\x1a', '\x1c'])
+    type('hi')
+    expect(typed()).toEqual(['\x03'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(['\x03', BOTH[0] + 'hi'])
   })
 
   it('never holds keys in a plain terminal, even one Koloft types a line into', () => {

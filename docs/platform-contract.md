@@ -120,7 +120,8 @@ method. A recheck adds its date, version and command to the bullet.
   (`TCSADRAIN`, as libuv does), read `hello\r` whole. With the CR written 0.3 s later
   instead, while the program was still in canonical mode, it read `hello\n` (`ICRNL`).
   A Ctrl+C written behind the two lines threw the queued `exec` line away and left
-  zsh at its prompt, so the program never started. (2026-11-01, Python `pty` probe,
+  zsh at its prompt, so the program never started; a Ctrl+Z or Ctrl+\ there reached
+  the program as a byte. (2026-11-01, Python `pty` probe,
   macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
   instead threw the queued keys away.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
