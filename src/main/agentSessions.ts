@@ -53,7 +53,7 @@ import {
   withHandover,
   type SessionCaller
 } from './handover'
-import { nameForTask } from './sessionTitle'
+import { distinctName, titleForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
@@ -528,6 +528,7 @@ async function listSessions(
 
 async function startSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -541,6 +542,7 @@ async function startSibling(
     return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
     d,
+    names,
     args,
     me,
     workspace,
@@ -576,8 +578,36 @@ async function startSibling(
   )
 }
 
+interface LaunchNames {
+  claim(title: string): string
+  launched(name: string | undefined, tabId: string | null): void
+}
+
+function launchNames(d: SessionVerbDeps): LaunchNames {
+  const notListedYet = new Map<string, string | null>()
+  return {
+    claim: (title) => {
+      const listed = d.allSessions()
+      for (const [name, tabId] of notListedYet)
+        if (listed.some((s) => s.tabId === tabId && s.title === name)) notListedYet.delete(name)
+      const name = distinctName(
+        title,
+        new Set([...listed.map((s) => s.title), ...notListedYet.keys()])
+      )
+      notListedYet.set(name, null)
+      return name
+    },
+    launched: (name, tabId) => {
+      if (name === undefined) return
+      if (tabId) notListedYet.set(name, tabId)
+      else notListedYet.delete(name)
+    }
+  }
+}
+
 async function launchSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -598,13 +628,7 @@ async function launchSibling(
   const [name, handover] = await Promise.all([
     !namedAtLaunch(backend, isRemoteKey(workspace))
       ? undefined
-      : (args.name ??
-        nameForTask(
-          args.prompt,
-          d.assist,
-          new Set(d.allSessions().map((s) => s.title)),
-          ownerWords
-        )),
+      : (args.name ?? titleForTask(args.prompt, d.assist, ownerWords).then(names.claim)),
     handoverInOwnersLanguage(caller, d.assist)
   ])
   const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
@@ -630,6 +654,7 @@ async function launchSibling(
       ? { role: preamble, firstPrompt: args.prompt }
       : { firstPrompt: withHandover(preamble, args.prompt) })
   })
+  if (args.name === undefined) names.launched(name, tabId)
   if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
@@ -922,6 +947,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   tabMoved(oldTabId: string, newTabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
+  const names = launchNames(d)
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
@@ -1242,6 +1268,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         const ownerWords = await ownerWordsOf(caller.session)
         return startSibling(
           d,
+          names,
           parsed.value,
           caller.session,
           workspace,
@@ -1350,6 +1377,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     (
       await launchSibling(
         d,
+        names,
         { prompt, name, backend },
         butler,
         d.butlerFolder(),

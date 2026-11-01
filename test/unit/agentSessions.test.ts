@@ -506,6 +506,18 @@ describe('koloft session new', () => {
     expect(launched[0].name).toBe('发布新版本 2')
   })
 
+  it('two sessions started at once, or one after another before the first has started, whose tasks get the same title get different names, so a message to one never reaches the other', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], {
+      titleReply: '跑全量测试'
+    })
+    await Promise.all([
+      verb(['new', '-w', 'a', '--', '读 a.md，照它做完。'], from('me')),
+      verb(['new', '-w', 'b', '--', '读 b.md，照它做完。'], from('me'))
+    ])
+    await verb(['new', '--', '读 c.md，照它做完。'], from('me'))
+    expect(launched.map((l) => l.name)).toEqual(['跑全量测试', '跑全量测试 2', '跑全量测试 3'])
+  })
+
   it('a Claude caller with no registry name hands over under its Koloft title, and its own --name is kept', async () => {
     const { verb, launched } = harness([session('me', 'claude')], {}, [], { titleReply: 'other' })
     await verb(['new', '--name', 'docs-fixer', '--', 'go'], from('me'))

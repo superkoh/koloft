@@ -31,22 +31,21 @@ function nameFromReply(reply: string): string {
     .trim()
 }
 
-function distinctName(name: string, taken: Set<string>): string {
+export function distinctName(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name
   let n = 2
   while (taken.has(`${name} ${n}`)) n++
   return `${name} ${n}`
 }
 
-export async function nameForTask(
+export async function titleForTask(
   task: string,
   assist: Assist,
-  taken: Set<string>,
   ownerWords?: string
 ): Promise<string> {
   const reply = await assist({
     system: TITLE_SYSTEM,
     prompt: titleInstructions(ownerWords) + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE)
   })
-  return distinctName((reply && nameFromReply(reply)) || firstLineName(task), taken)
+  return (reply && nameFromReply(reply)) || firstLineName(task)
 }
