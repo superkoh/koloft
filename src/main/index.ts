@@ -670,6 +670,7 @@ function showAskOnItsRow(tabId: string): void {
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 sessionBackends.noAccountMessage = noAccountNow
+sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -1614,7 +1615,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 }
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
-  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+  enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
@@ -5739,8 +5740,6 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      const turnedOff = opts.kind !== 'shell' && !opts.resumeSessionId && turnedOffNow(opts.kind)
-      if (turnedOff) throw new Error(`${turnedOff}.`)
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
