@@ -8,7 +8,6 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BUTLER_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
@@ -580,33 +579,52 @@ async function startSibling(
   )
 }
 
+interface HeldName {
+  name: string
+  tabId?: string
+}
+
 interface LaunchNames {
-  hold(name: string): string
-  pick(title: string): string
-  launched(name: string, tabId: string | null): void
+  own(name: string): HeldName
+  pick(title: string): HeldName
+  launched(held: HeldName, tabId: string | null): void
+  moved(oldTabId: string, newTabId: string): void
 }
 
 function launchNames(d: SessionVerbDeps): LaunchNames {
-  const held = new Map<string, string | undefined>()
-  const hold = (name: string): string => {
-    held.set(name, undefined)
-    return name
+  const held = new Set<HeldName>()
+  const letGo = (): SessionInfo[] => {
+    const listed = d.allSessions()
+    const queued = new Set(d.waiting.list().map((q) => q.tabId))
+    for (const h of held) {
+      const tabId = h.tabId
+      if (tabId === undefined || queued.has(tabId)) continue
+      if (!d.tabOpen(tabId) || listed.some((s) => s.tabId === tabId && s.title === h.name))
+        held.delete(h)
+    }
+    return listed
   }
-  const stillStarting = (tabId: string | undefined, listed: SessionInfo[]): boolean =>
-    tabId === undefined ||
-    d.waiting.list().some((q) => q.tabId === tabId) ||
-    (d.tabOpen(tabId) &&
-      !listed.some((s) => s.tabId === tabId && s.title !== PLACEHOLDER_TITLES[s.backendId]))
+  const hold = (name: string): HeldName => {
+    const h = { name }
+    held.add(h)
+    return h
+  }
   return {
-    hold,
-    pick: (title) => {
-      const listed = d.allSessions()
-      for (const [name, tabId] of held) if (!stillStarting(tabId, listed)) held.delete(name)
-      return hold(distinctTitle(title, new Set([...listed.map((s) => s.title), ...held.keys()])))
+    own: (name) => {
+      letGo()
+      return hold(name)
     },
-    launched: (name, tabId) => {
-      if (tabId) held.set(name, tabId)
-      else held.delete(name)
+    pick: (title) => {
+      const taken = new Set(letGo().map((s) => s.title))
+      for (const h of held) taken.add(h.name)
+      return hold(distinctTitle(title, taken))
+    },
+    launched: (h, tabId) => {
+      if (tabId) h.tabId = tabId
+      else held.delete(h)
+    },
+    moved: (oldTabId, newTabId) => {
+      for (const h of held) if (h.tabId === oldTabId) h.tabId = newTabId
     }
   }
 }
@@ -631,18 +649,22 @@ async function launchSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const [name, handover] = await Promise.all([
-    !namedAtLaunch(backend, isRemoteKey(workspace))
-      ? undefined
-      : args.name !== undefined
-        ? names.hold(args.name)
-        : titleForTask(args.prompt, d.assist, ownerWords).then(names.pick),
-    handoverInOwnersLanguage(caller, d.assist)
-  ])
-  const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
-  const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
+  let held: HeldName | undefined
   let tabId: string | null = null
   try {
+    const [, handover] = await Promise.all([
+      !namedAtLaunch(backend, isRemoteKey(workspace))
+        ? undefined
+        : args.name !== undefined
+          ? (held = names.own(args.name))
+          : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
+      handoverInOwnersLanguage(caller, d.assist)
+    ])
+    const name = held?.name
+    const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
+    const gitWorkspace = d
+      .sidebar()
+      .some((w) => w.workspace.path === workspace && w.workspace.isGit)
     const worktree =
       gitWorkspace && (args.worktree || caller.assist)
         ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
@@ -665,12 +687,12 @@ async function launchSibling(
         : { firstPrompt: withHandover(preamble, args.prompt) })
     })
   } finally {
-    if (name !== undefined) names.launched(name, tabId)
+    if (held) names.launched(held, tabId)
   }
   if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
-  return { tabId, name }
+  return { tabId, name: held?.name }
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
@@ -1401,6 +1423,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     )?.tabId ?? null
 
   const tabMoved = (oldTabId: string, newTabId: string): void => {
+    names.moved(oldTabId, newTabId)
     const owed = replyOwed.get(oldTabId)
     if (owed === undefined) return
     replyOwed.delete(oldTabId)

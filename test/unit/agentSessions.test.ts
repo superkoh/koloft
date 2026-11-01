@@ -115,6 +115,7 @@ function harness(
   waiting: QueuedLaunch[]
   held: { tabId: string; send: () => Promise<unknown> }[]
   closeTab: (tabId: string) => void
+  moveTab: (oldTabId: string, newTabId: string) => void
 } {
   const openTabs = new Set<string>()
   const answers: { tabId: string; reply: string }[] = []
@@ -263,6 +264,11 @@ function harness(
     held,
     closeTab: (tabId) => {
       openTabs.delete(tabId)
+    },
+    moveTab: (oldTabId, newTabId) => {
+      openTabs.delete(oldTabId)
+      openTabs.add(newTabId)
+      inner.tabMoved(oldTabId, newTabId)
     }
   }
 }
@@ -539,6 +545,16 @@ describe('koloft session new', () => {
     closeTab('new-tab')
     await verb(['new', '--', '读 b.md，照它做完。'], from('me'))
     expect(launched.map((l) => l.name)).toEqual(['跑全量测试', '跑全量测试'])
+  })
+
+  it('a session still starting keeps its made-up name when its tab moves, so the next session with the same title still gets a number', async () => {
+    const { verb, launched, moveTab } = harness([session('me', 'claude')], {}, [], {
+      titleReply: '跑全量测试'
+    })
+    await verb(['new', '--', '读 a.md，照它做完。'], from('me'))
+    moveTab('new-tab', 'moved-tab')
+    await verb(['new', '--', '读 b.md，照它做完。'], from('me'))
+    expect(launched.map((l) => l.name)).toEqual(['跑全量测试', '跑全量测试 2'])
   })
 
   it('a Claude caller with no registry name hands over under its Koloft title, and its own --name is kept', async () => {
