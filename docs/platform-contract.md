@@ -1786,16 +1786,6 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
   reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
   printing those characters and attached to it, its bytes read back on the Mac.)
-- **The programs on such a machine run in the C locale too: `ls` on a terminal there
-  prints `中文.txt` as `''$'\344\270\255\346\226\207''.txt'`.** `LANG=C.UTF-8` makes it
-  print the name as it is, but only where that locale exists. With `C.utf8` removed from
-  `/usr/lib/locale` (`locale -a` then lists only `C` and `POSIX`), `LANG=C.UTF-8` left
-  `ls` escaping, made perl print "Setting locale failed" at every start, and made tmux
-  refuse to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`); with no `LANG` tmux started.
-  A user's own `LC_CTYPE=C` still wins over that `LANG`. Debian's `locale -a` names it
-  `C.utf8`. (2026-11-01, the `koloft-e2e-sshd` image, Debian bookworm, tmux 3.3a, a probe
-  script run with `docker exec -t`.) So Koloft sets `LANG=C.UTF-8` on a machine only when
-  no `LC_ALL`, `LC_CTYPE` or `LANG` names UTF-8 and `locale -a` lists it.
 
 ## §36 ccstatusline
 
@@ -1881,6 +1871,24 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+- **A program on a machine whose login left it no working UTF-8 locale runs in the C
+  locale, and `ls` on a terminal there prints `中文.txt` as
+  `''$'\344\270\255\346\226\207''.txt'`.** That happens with no `LANG`, with `LANG=C`,
+  and with a `LANG` that names a UTF-8 locale the machine lacks (`LANG=en_US.UTF-8`, the
+  one a Mac's ssh hands over, on a box with only `C`, `C.utf8`, `POSIX`). `locale charmap`
+  tells them apart: `UTF-8` when it works, `ANSI_X3.4-1968` for the C locale on glibc
+  (after a `locale: Cannot set …` line when the named locale is missing), `US-ASCII` for
+  it on macOS; it costs about 0.5 ms. A `LANG` picked from `locale -a` (Debian lists
+  `C.utf8`, macOS 27 `C.UTF-8`; one with only `en_US.utf8` gives that) makes `ls` print
+  the name as it is. **A `LANG` naming a locale the machine lacks breaks things when no
+  UTF-8 locale is left to fall back on:** with `C.utf8` removed from `/usr/lib/locale`,
+  `LANG=C.UTF-8` left `ls` escaping, made perl print "Setting locale failed" at every
+  start, and made tmux refuse to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`). A set
+  `LC_ALL` (or `LC_CTYPE`) wins over any `LANG`. (2026-11-01: the `koloft-e2e-sshd`
+  image, Debian bookworm, tmux 3.3a, probe scripts run with `docker exec -t`, locales
+  removed or copied under `/usr/lib/locale`; and this Mac, macOS 27.) So Koloft's remote
+  scripts set `LANG` only when `LC_ALL` and `LC_CTYPE` are unset, `locale charmap` says
+  ASCII, and `locale -a` lists a UTF-8 locale (`C.UTF-8` first).
 
 ## §38 ssh through a JumpServer bastion
 

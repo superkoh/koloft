@@ -26,15 +26,21 @@ const GIT_ACCOUNTS_INCLUDE_LINE =
   '*) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; ' +
   'export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git'
 
-// PLATFORM§35
-const UTF8_LANG_WHEN_THE_LOGIN_NAMED_NONE =
-  'case "${LC_ALL:-${LC_CTYPE:-$LANG}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; ' +
-  "*) locale -a 2>/dev/null | grep -Eqix 'c\\.utf-?8' && LANG=C.UTF-8 && export LANG ;; esac"
+// PLATFORM§37
+const A_UTF8_LANG_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII = `if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>&1)" in
+  *ANSI_X3.4-1968*|*US-ASCII*)
+    koloft_u=$(locale -a 2>/dev/null | grep -Eix 'c\\.utf-?8')
+    [ -n "$koloft_u" ] || koloft_u=$(locale -a 2>/dev/null | grep -Eim1 '\\.utf-?8$')
+    [ -n "$koloft_u" ] && LANG=$koloft_u && export LANG
+    unset koloft_u ;;
+  esac
+fi`
 
 // PLATFORM§33
 export const REMOTE_ENV_LINES =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n' +
-  `${UTF8_LANG_WHEN_THE_LOGIN_NAMED_NONE}\n` +
+  `${A_UTF8_LANG_WHEN_THE_LOGIN_LEFT_PROGRAMS_IN_ASCII}\n` +
   GIT_ACCOUNTS_INCLUDE_LINE
 
 // PLATFORM§38

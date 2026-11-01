@@ -83,6 +83,37 @@ describe('the environment every remote shell gets', () => {
     })
     expect(r.stdout).toBe('yes\n1\n')
   })
+
+  // PLATFORM§37
+  it('sets a UTF-8 LANG the machine has, C.UTF-8 first, only when programs would run in ASCII and no LC_ALL or LC_CTYPE was chosen', () => {
+    const bin = path.join(home, '.local/bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(
+      path.join(bin, 'locale'),
+      '#!/bin/sh\n[ "$1" = -a ] && exec cat "$HOME/locales"\ncat "$HOME/charmap"\n',
+      { mode: 0o755 }
+    )
+    const ASCII = 'ANSI_X3.4-1968\n'
+    const NAMED_BUT_MISSING = 'locale: Cannot set LC_CTYPE to default locale\nANSI_X3.4-1968\n'
+    const langAfter = (charmap: string, locales: string[], env: NodeJS.ProcessEnv = {}): string => {
+      fs.writeFileSync(path.join(home, 'charmap'), charmap)
+      fs.writeFileSync(path.join(home, 'locales'), locales.map((l) => `${l}\n`).join(''))
+      return sh(`${REMOTE_ENV_LINES}\nprintf '[%s]' "$LANG"`, { env }).stdout
+    }
+    const debian = ['C', 'C.utf8', 'POSIX', 'en_US.utf8']
+    expect(langAfter(ASCII, debian)).toBe('[C.utf8]')
+    expect(langAfter('US-ASCII\n', ['C', 'C.UTF-8', 'POSIX'])).toBe('[C.UTF-8]')
+    expect(langAfter(NAMED_BUT_MISSING, debian, { LANG: 'en_US.UTF-8' })).toBe('[C.utf8]')
+    expect(langAfter(ASCII, ['C', 'POSIX', 'de_DE.iso88591', 'en_US.utf8'])).toBe('[en_US.utf8]')
+    expect(langAfter(ASCII, ['C', 'POSIX'])).toBe('[]')
+    expect(langAfter(ASCII, ['C', 'POSIX'], { LANG: 'C' })).toBe('[C]')
+    expect(langAfter('UTF-8\n', debian, { LANG: 'en_US.UTF-8' })).toBe('[en_US.UTF-8]')
+    expect(langAfter('ISO-8859-1\n', debian, { LANG: 'de_DE.ISO-8859-1' })).toBe(
+      '[de_DE.ISO-8859-1]'
+    )
+    expect(langAfter(ASCII, debian, { LC_ALL: 'C' })).toBe('[]')
+    expect(langAfter(ASCII, debian, { LC_CTYPE: 'C' })).toBe('[]')
+  })
 })
 
 describe('what Koloft reads about a machine before it keeps an account there', () => {

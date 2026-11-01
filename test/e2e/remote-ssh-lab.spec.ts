@@ -757,8 +757,8 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  // PLATFORM§35
-  test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets LANG=C.UTF-8, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
+  // PLATFORM§37
+  test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets the machine’s C.UTF-8 as LANG, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
     env
   }) => {
     await withLab(env, async ({ app, page, lab }) => {
@@ -769,14 +769,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await session.write('/sh echo "lang=[$LANG]"\r')
       await expect
         .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
-        .toContain('lang=[C.UTF-8]')
+        .toContain('lang=[C.utf8]')
       await openSessionTerminal(app, page)
-      await runIn(page, panelTerm(page), 'ls ~/proj; echo "LS_DONE"')
-      await expect(panelTerm(page)).toContainText('LS_DONE', {
-        timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
-      })
-      await expect(panelTerm(page)).toContainText(NOT_ASCII_FILE)
-      await expect(panelTerm(page)).not.toContainText('\\344')
+      const shell = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
+      await runIn(page, panelTerm(page), 'ls ~/proj; echo "LS_$((6*7))"')
+      await expect
+        .poll(() => terminalText(page, shell!), { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        .toContain('LS_42')
+      expect(await terminalText(page, shell!)).toContain(NOT_ASCII_FILE)
     })
   })
 
