@@ -39,7 +39,7 @@ import type {
   SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
-import { SIDEBAR_MIN } from '@shared/types'
+import { SIDEBAR_MIN, endedRowNote } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
@@ -81,7 +81,7 @@ import {
   welcomeTarget
 } from './sessionRows'
 import { beginLayoutDrag, endLayoutDrag } from './resizeGate'
-import { endedRowNote, unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
+import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
 import { lastLinesOnceWritten, writeOnScreen } from './terminalScreens'
 import { requestCloseTab } from './closeFlow'
 import {

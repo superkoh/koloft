@@ -130,7 +130,7 @@ const MANY_RUN_FOLDERS = 10
 
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
-  if (h.state === 'failed') return 'dot bad'
+  if (h.state === 'failed' || h.state === 'quit') return 'dot bad'
   if (h.state === 'finished') return 'dot ok'
   return 'dot'
 }

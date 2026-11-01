@@ -305,6 +305,9 @@ describe('history rows', () => {
 
   it('names the outcome, and how many times when a row folded', () => {
     expect(histText({ dueAt: at(9, 0), state: 'closed' })).toBe('Closed by you')
+    expect(histText({ dueAt: at(9, 0), state: 'quit', note: 'exited (code 1)' })).toBe(
+      'Agent quit — exited (code 1)'
+    )
     expect(histText({ dueAt: at(9, 0), state: 'finished' })).toBe('Done — closed itself')
     expect(histText({ dueAt: at(9, 0), state: 'ended' })).toBe('Ended — Koloft quit')
     expect(histText({ dueAt: at(9, 0), state: 'failed', note: 'no usable account' })).toBe(

@@ -212,7 +212,7 @@
           <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
           reconnect, and the run stays open. If the agent quits with an error after the run has
           started, the run is over at once: the wait starts, and History says
-          <code>Closed by you</code>. If the agent quits before the run starts, History says
+          <code>Agent quit</code>. If the agent quits before the run starts, History says
           <code>Could not start</code>.
         </p>
 
@@ -347,10 +347,25 @@
               <tr>
                 <td>Closed by you</td>
                 <td>
-                  You closed the run yourself, or its agent quit with an error after the run
-                  started. The line then ends with
+                  You closed the run yourself. The line then ends with
                   <code>· folder removed</code>, or <code>· folder kept: …</code> and what is left
                   in it.
+                </td>
+              </tr>
+              <tr>
+                <td>Agent quit — exited (code <i>N</i>)</td>
+                <td>
+                  The agent quit with an error after the run started, and nobody closed it. A run on
+                  a remote machine says the agent's own exit code there (255 shows as 254); one
+                  killed there reads 128 plus the signal's number, such as
+                  <code>exited (code 137)</code>. The folder line follows, as for Closed by you.
+                </td>
+              </tr>
+              <tr>
+                <td>Agent quit — killed (signal <i>N</i>)</td>
+                <td>
+                  The run's process on this Mac was killed after the run started: the agent itself,
+                  or for a remote run its ssh link.
                 </td>
               </tr>
               <tr>
