@@ -307,15 +307,7 @@ import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
 import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
-import { whatsNewDecision } from './releaseNotes'
-import {
-  checkForUpdates,
-  downloadAndInstall,
-  fetchPublishedReleases,
-  fixturePath,
-  releasePageUrl,
-  restartApp
-} from './updater'
+import { checkForUpdates, downloadAndInstall, releasePageUrl, restartApp } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
@@ -466,7 +458,6 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  WhatsNew,
   GitStepResult,
   PrChecks,
   PrWorktreeResult,
@@ -5757,16 +5748,6 @@ function registerIpc(): void {
   ipcMain.on(CH.update.restart, () => restartApp())
   ipcMain.handle(CH.update.offer, () => currentOffer())
   ipcMain.on(CH.update.openRelease, () => sendOverlayOpen(releasePageUrl(), 'now'))
-  ipcMain.handle(CH.update.whatsNew, async (): Promise<WhatsNew | null> => {
-    if (!app.isPackaged && !fixturePath()) return null
-    const { show, record } = await whatsNewDecision(
-      loadSettings().lastSeenVersion,
-      app.getVersion(),
-      fetchPublishedReleases
-    )
-    if (record) commitSettings({ lastSeenVersion: record })
-    return show
-  })
 
   ipcMain.handle(CH.accounts.list, () => accountViews())
   ipcMain.handle(

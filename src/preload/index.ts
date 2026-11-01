@@ -508,7 +508,6 @@ const api: KoloftApi = {
   },
   update: {
     version: () => ipcRenderer.invoke(CH.app.version),
-    whatsNew: () => ipcRenderer.invoke(CH.update.whatsNew),
     check: () => ipcRenderer.invoke(CH.update.check),
     download: () => ipcRenderer.invoke(CH.update.download),
     restart: () => ipcRenderer.send(CH.update.restart),

@@ -40,7 +40,6 @@ describe('buildResetPatch (FR-12)', () => {
         'hintsOff',
         'hintsSeen',
         'keepAwake',
-        'lastSeenVersion',
         'onboardingSeen',
         'notesFolded',
         'notesHeight',

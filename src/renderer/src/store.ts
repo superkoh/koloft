@@ -21,7 +21,6 @@ import {
   type TabKind,
   type Settings,
   type ReleaseNotes,
-  type WhatsNew,
   type UpdateCheckResult,
   type WorkspaceRows
 } from '@shared/types'
@@ -92,7 +91,7 @@ export interface OpenFile {
 }
 
 export type UpdatePhase =
-  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error' | 'whats-new'
+  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error'
 
 export interface UpdateState {
   open: boolean
@@ -278,7 +277,6 @@ interface AppState {
   setTermTabCwd: (ptyId: string, cwd: string) => void
 
   openUpdateCheck: () => void
-  openWhatsNew: (w: WhatsNew) => void
   startUpdateDownload: () => void
   setUpdate: (patch: Partial<UpdateState>) => void
 }
@@ -1374,16 +1372,6 @@ export const useStore = create<AppState>((set, get) => ({
         )
       )
   },
-  openWhatsNew: (w) =>
-    set({
-      update: {
-        open: true,
-        phase: 'whats-new',
-        current: w.current,
-        releases: w.releases,
-        omittedReleases: w.omittedReleases
-      }
-    }),
   startUpdateDownload: () => {
     set((s) => ({ update: { ...s.update, phase: 'downloading', percent: 0 } }))
     void window.api.update
@@ -1405,14 +1393,7 @@ export const useStore = create<AppState>((set, get) => ({
         set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrorText(e) } }))
       )
   },
-  setUpdate: (patch) => {
-    const prev = get().update
-    const update = { ...prev, ...patch }
-    if (prev.open && !update.open && update.phase === 'whats-new' && update.current) {
-      void window.api.settings.set({ lastSeenVersion: update.current })
-    }
-    set({ update })
-  }
+  setUpdate: (patch) => set((s) => ({ update: { ...s.update, ...patch } }))
 }))
 
 export const useActiveOpenFile = (): OpenFile | null =>
