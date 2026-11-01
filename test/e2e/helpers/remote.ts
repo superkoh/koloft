@@ -18,6 +18,7 @@ import {
   PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
   PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
 } from '../../../src/main/remote/playwrightCli'
+import type { BackendId } from '../../../src/shared/types'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -289,13 +290,16 @@ export async function agyReady(page: Page): Promise<void> {
     .toBe(true)
 }
 
-export async function boundRemoteAgy(page: Page): Promise<{ tabId: string; id: string }> {
+export async function boundRemoteSession(
+  page: Page,
+  backend: BackendId
+): Promise<{ tabId: string; id: string }> {
   let found: { tabId: string; id: string } | undefined
   await expect
     .poll(
       async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        const s = all.find((x) => x.backendId === 'agy' && x.alive && x.nativeSessionId)
+        const s = all.find((x) => x.backendId === backend && x.alive && x.nativeSessionId)
         found = s && { tabId: s.tabId, id: s.nativeSessionId! }
         return !!found
       },
@@ -303,6 +307,10 @@ export async function boundRemoteAgy(page: Page): Promise<{ tabId: string; id: s
     )
     .toBe(true)
   return found!
+}
+
+export function boundRemoteAgy(page: Page): Promise<{ tabId: string; id: string }> {
+  return boundRemoteSession(page, 'agy')
 }
 
 export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'

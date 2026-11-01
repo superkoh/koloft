@@ -43,13 +43,19 @@ import { startEchoServer } from './helpers/fixtureServer'
 import {
   addRemoteWorkspace,
   agyReady,
+  boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
   installMuseOnMachine,
   installRemoteAgy,
   killFakeRemote,
+  machineCodexLog,
+  machineHome,
+  machineMuseCalls,
+  remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
+import { codexAnswers, type CodexWireLine } from './helpers/codex'
 import { openSettings } from './helpers/extensions'
 import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
@@ -63,6 +69,7 @@ const STRANGER = { id: '556', username: 'someone' }
 const CHANNEL = '222'
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
+const REMOTE_ANSWER_CASE_MS = 240_000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 const WAITING_TO_IDLE_MS = 1000
@@ -1148,6 +1155,140 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     } finally {
       await quitAndClose(app)
       await fake.close()
+    }
+  })
+
+  test('the butler answers a remote Codex session’s approval with koloft session answer yes, and the key reaches the app-server on the machine, which finishes the turn', async ({
+    env
+  }) => {
+    test.setTimeout(REMOTE_ANSWER_CASE_MS)
+    installFakeRemote(env)
+    installCodexOnFakeRemote(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      const codex = await boundRemoteSession(page, 'codex')
+      const wire = (): CodexWireLine[] =>
+        machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
+      await page.evaluate((id) => window.api.terminal.write(id, 'please approve\r'), codex.tabId)
+      await expect
+        .poll(
+          () =>
+            wire().filter(
+              (w) =>
+                w.direction === 'server' &&
+                w.frame.method === 'item/commandExecution/requestApproval'
+            ).length,
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(1)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+
+      fake.say(OWNER, `/koloft session answer ${codex.id} yes`)
+      await expect
+        .poll(
+          () =>
+            wire()
+              .filter((w) => w.direction === 'client')
+              .map((w) => (w.frame as { result?: { decision?: string } }).result?.decision)
+              .filter(Boolean),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual(['accept'])
+      await expect
+        .poll(() => codexAnswers(wire()), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Codex fixture answered: please approve')
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+      killFakeRemote(env)
+    }
+  })
+
+  // MUSE§5
+  test('the butler answers a remote Muse session’s approval with koloft session answer yes, and the key reaches muse on the machine through ssh and tmux, which runs the command', async ({
+    env
+  }) => {
+    test.setTimeout(REMOTE_ANSWER_CASE_MS)
+    installFakeRemote(env)
+    installMuse(env)
+    installMuseOnMachine(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      const muse = await boundRemoteSession(page, 'muse')
+      const museId = muse.id
+      await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), muse.tabId)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
+
+      fake.say(OWNER, `/koloft session answer ${museId} yes`)
+      const saved = path.join(
+        machineHome(env),
+        '.local',
+        'share',
+        'muse',
+        'sessions',
+        'fake',
+        `${museId}.json`
+      )
+      await expect
+        .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Ran: ls -la')
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+      killFakeRemote(env)
+    }
+  })
+
+  // AGY§14
+  test('the butler answers a remote Antigravity session’s approval with koloft session answer yes, the key reaches agy on the machine through ssh and tmux, and agy there writes the file', async ({
+    env
+  }) => {
+    test.setTimeout(REMOTE_ANSWER_CASE_MS)
+    installFakeRemote(env)
+    installAgy(env)
+    installRemoteAgy(env)
+    seedConductor(env, 'claude')
+    seedSettings(env, { skipPermissions: false })
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'warm up')
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'warm up' })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      const agy = await boundRemoteSession(page, 'agy')
+      await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), agy.tabId)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      await expect(row.locator('.ws-tab-act')).toHaveText('Wants to edit: agy-notes.txt')
+      const target = path.join(remoteDir(env), 'agy-notes.txt')
+      expect(fs.existsSync(target)).toBe(false)
+
+      fake.say(OWNER, `/koloft session answer ${agy.id} yes`)
+      await expect
+        .poll(() => fileText(target), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe('written by fake agy\n')
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+      killFakeRemote(env)
     }
   })
 

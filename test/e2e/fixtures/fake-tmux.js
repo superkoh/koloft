@@ -33,6 +33,18 @@ const DCS_OPEN = '\x1bPtmux;'
 const WHOLE_DCS = /^\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\/
 const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
 
+const asTheLineDisciplineHandsOn = (d) =>
+  Buffer.from(d.toString('latin1').replace(/\r/g, '\n'), 'latin1')
+const echoOf = (d) =>
+  Buffer.from(
+    d
+      .toString('latin1')
+      .replace(/[\x00-\x1f\x7f]/g, (c) =>
+        c === '\r' || c === '\n' ? '\r\n' : '^' + String.fromCharCode(c.charCodeAt(0) ^ 0x40)
+      ),
+    'latin1'
+  )
+
 const aliveFile = (name) => path.join(aliveDir, name)
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
@@ -69,10 +81,13 @@ function attach(name) {
     process.exit(1)
   }
   const wfd = openFifoNeverSeeingEof(fifoPath(io))
+  const keysAtOnce = process.stdin.isTTY
+  if (keysAtOnce) process.stdin.setRawMode(true)
   process.stdin.on('data', (d) => {
     try {
-      fs.writeSync(wfd, d)
+      fs.writeSync(wfd, keysAtOnce ? asTheLineDisciplineHandsOn(d) : d)
     } catch {}
+    if (keysAtOnce) process.stdout.write(echoOf(d))
   })
   process.stdin.resume()
 
