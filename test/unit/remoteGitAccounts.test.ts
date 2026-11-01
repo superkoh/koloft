@@ -83,6 +83,43 @@ describe('the environment every remote shell gets', () => {
     })
     expect(r.stdout).toBe('yes\n1\n')
   })
+
+  // PLATFORM§37
+  it('gives programs a UTF-8 locale the machine has (C.UTF-8, then en_US.UTF-8, then any) only when they would run in ASCII and no LC_ALL or LC_CTYPE was chosen: as LC_CTYPE beside no LANG or LANG=C, in place of a LANG the machine lacks', () => {
+    const bin = path.join(home, '.local/bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(
+      path.join(bin, 'locale'),
+      '#!/bin/sh\n[ "$1" = -a ] && exec cat "$HOME/locales"\ncat "$HOME/charmap"\n',
+      { mode: 0o755 }
+    )
+    const ASCII = 'ANSI_X3.4-1968\n'
+    const after = (charmap: string, locales: string[], env: NodeJS.ProcessEnv = {}): string => {
+      fs.writeFileSync(path.join(home, 'charmap'), charmap)
+      fs.writeFileSync(path.join(home, 'locales'), locales.map((l) => `${l}\n`).join(''))
+      return sh(`${REMOTE_ENV_LINES}\nprintf 'LANG=[%s] LC_CTYPE=[%s]' "$LANG" "$LC_CTYPE"`, {
+        env
+      }).stdout
+    }
+    const debian = ['C', 'C.utf8', 'POSIX', 'aa_DJ.utf8', 'en_US.utf8']
+    expect(after(ASCII, debian)).toBe('LANG=[] LC_CTYPE=[C.utf8]')
+    expect(after('US-ASCII\n', ['C', 'C.UTF-8', 'C.utf8', 'POSIX'])).toBe(
+      'LANG=[] LC_CTYPE=[C.UTF-8]'
+    )
+    expect(after(ASCII, debian, { LANG: 'C' })).toBe('LANG=[C] LC_CTYPE=[C.utf8]')
+    expect(after(ASCII, debian, { LANG: 'en_US.UTF-8' })).toBe('LANG=[C.utf8] LC_CTYPE=[]')
+    expect(after(ASCII, ['C', 'POSIX', 'aa_DJ.utf8', 'en_US.utf8'])).toBe(
+      'LANG=[] LC_CTYPE=[en_US.utf8]'
+    )
+    expect(after(ASCII, ['C', 'POSIX', 'de_DE.utf8'])).toBe('LANG=[] LC_CTYPE=[de_DE.utf8]')
+    expect(after(ASCII, ['C', 'POSIX'], { LANG: 'C' })).toBe('LANG=[C] LC_CTYPE=[]')
+    expect(after('UTF-8\n', debian, { LANG: 'en_US.UTF-8' })).toBe('LANG=[en_US.UTF-8] LC_CTYPE=[]')
+    expect(after('ISO-8859-1\n', debian, { LANG: 'de_DE.ISO-8859-1' })).toBe(
+      'LANG=[de_DE.ISO-8859-1] LC_CTYPE=[]'
+    )
+    expect(after(ASCII, debian, { LC_ALL: 'C' })).toBe('LANG=[] LC_CTYPE=[]')
+    expect(after(ASCII, debian, { LC_CTYPE: 'C' })).toBe('LANG=[] LC_CTYPE=[C]')
+  })
 })
 
 describe('what Koloft reads about a machine before it keeps an account there', () => {
