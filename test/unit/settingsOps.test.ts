@@ -47,7 +47,6 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
-        'showUsage',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
@@ -247,6 +246,12 @@ describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
     expect(
       sanitizeLoadedSettings({ fontSize: 13, lastSeenVersion: '0.59.1' } as never)
     ).not.toHaveProperty('lastSeenVersion')
+  })
+
+  it('drops the cost and context usage switch an older build saved, so the next save clears it from disk', () => {
+    expect(sanitizeLoadedSettings({ fontSize: 13, showUsage: true } as never)).not.toHaveProperty(
+      'showUsage'
+    )
   })
 })
 
