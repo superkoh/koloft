@@ -678,9 +678,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       void stopped.then(
         async () => {
           if (this.shuttingDown) return
-          await this.refreshMachineHistory(machine, true).catch((error) =>
-            this.deps.error(String(error))
-          )
+          await this.refreshMachineHistory(machine, true).catch(() => {})
         },
         () => {}
       )
@@ -1074,9 +1072,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       login: this.machineLogin(home),
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
-      stopServer: async () => {
+      stopServer: async (everConnected) => {
         if (this.shuttingDown && this.runs.get(tabId)?.observer.turnRunning()) return
-        await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+        const r = await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+        if (everConnected && sshLinkBroke(r))
+          this.deps.error(
+            `Could not stop Codex on ${machine}: ${problemOf(r)}. It is still running there.`
+          )
       },
       maxFrameBytes: DEFAULT_MAX_FRAME,
       report: (error) => this.deps.error(String(error))

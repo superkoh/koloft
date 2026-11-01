@@ -238,4 +238,46 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
     expect(lines).toBe(1)
     expect(errors).toEqual([])
   }, 30_000)
+
+  it('tells the stop of its server whether it ever reached that server, so a tab whose ssh never got through is not said to be still running there', async () => {
+    const machine = await machineServer()
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-home-'))
+    stops.push(machine.close)
+    const stopAfter = async (reaches: boolean): Promise<boolean[]> => {
+      const told: boolean[] = []
+      let lines = 0
+      const upstream = new MachineCodexUpstream(
+        {
+          connect: () => {
+            lines++
+            return reaches
+              ? spawn(
+                  process.execPath,
+                  [FAKE_CODEX, 'app-server', 'proxy', '--sock', machine.sock],
+                  {
+                    stdio: 'pipe',
+                    env: { ...process.env, HOME: home, CODEX_HOME: home }
+                  }
+                )
+              : spawn(process.execPath, ['-e', 'process.exit(255)'], { stdio: 'pipe' })
+          },
+          login: { params: async () => undefined, refreshed: async () => ({}) },
+          macCwd: '/Users/someone',
+          machineCwd: () => '/home/someone/proj',
+          stopServer: async (everConnected) => void told.push(everConnected),
+          maxFrameBytes: DEFAULT_MAX_FRAME,
+          report: () => {}
+        },
+        () => {},
+        () => {}
+      )
+      upstream.write(JSON.stringify({ id: 1, method: 'initialize', params: {} }))
+      if (reaches) await vi.waitFor(() => expect(machine.got).toHaveLength(1))
+      else await vi.waitFor(() => expect(lines).toBe(1))
+      await upstream.stop()
+      return told
+    }
+    expect(await stopAfter(false)).toEqual([false])
+    expect(await stopAfter(true)).toEqual([true])
+  })
 })

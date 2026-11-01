@@ -261,7 +261,7 @@ export interface MachineUpstreamOptions {
   login: MachineLogin
   macCwd: string
   machineCwd(): string
-  stopServer(): Promise<void>
+  stopServer(everConnected: boolean): Promise<void>
   maxFrameBytes: number
   report(error: Error): void
 }
@@ -294,6 +294,7 @@ export class MachineCodexUpstream implements CodexUpstream {
   private own = new Map<string, (frame: CodexFrame | undefined) => void>()
   private loginCompleted?: () => void
   private retryMs = RECONNECT_FIRST_MS
+  private everConnected = false
 
   constructor(
     private o: MachineUpstreamOptions,
@@ -342,7 +343,7 @@ export class MachineCodexUpstream implements CodexUpstream {
       this.own.clear()
       this.ws?.terminate()
       this.child?.kill('SIGTERM')
-      await this.o.stopServer().catch((error) => this.o.report(asError(error)))
+      await this.o.stopServer(this.everConnected).catch((error) => this.o.report(asError(error)))
     })()
     return this.stopping
   }
@@ -491,6 +492,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     let lost = false
     ws.on('open', () => {
       opened = true
+      this.everConnected = true
       this.ws = ws
       this.connecting = false
       this.retryMs = RECONNECT_FIRST_MS
