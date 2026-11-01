@@ -114,7 +114,9 @@ function harness(
   startedSessions: StartedSessions
   waiting: QueuedLaunch[]
   held: { tabId: string; send: () => Promise<unknown> }[]
+  closeTab: (tabId: string) => void
 } {
+  const openTabs = new Set<string>()
   const answers: { tabId: string; reply: string }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
   const tells: ((said: string) => void)[] = []
@@ -135,6 +137,7 @@ function harness(
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
+    tabOpen: (tabId) => openTabs.has(tabId) || sessions.some((s) => s.tabId === tabId),
     pinnedWorkspaces: () => PINNED,
     peerNames:
       () =>
@@ -142,6 +145,7 @@ function harness(
         peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
+      openTabs.add('new-tab')
       if (conducting.busy)
         waiting.push({
           tabId: 'new-tab',
@@ -256,7 +260,10 @@ function harness(
     undelivered,
     startedSessions,
     waiting,
-    held
+    held,
+    closeTab: (tabId) => {
+      openTabs.delete(tabId)
+    }
   }
 }
 
@@ -511,11 +518,27 @@ describe('koloft session new', () => {
       titleReply: '跑全量测试'
     })
     await Promise.all([
+      verb(['new', '--name', '跑全量测试', '--', '读 x.md，照它做完。'], from('me')),
       verb(['new', '-w', 'a', '--', '读 a.md，照它做完。'], from('me')),
       verb(['new', '-w', 'b', '--', '读 b.md，照它做完。'], from('me'))
     ])
     await verb(['new', '--', '读 c.md，照它做完。'], from('me'))
-    expect(launched.map((l) => l.name)).toEqual(['跑全量测试', '跑全量测试 2', '跑全量测试 3'])
+    expect(launched.map((l) => l.name).sort()).toEqual([
+      '跑全量测试',
+      '跑全量测试 2',
+      '跑全量测试 3',
+      '跑全量测试 4'
+    ])
+  })
+
+  it('a made-up name is free again once its session is gone, even when it closed before it ever showed that name', async () => {
+    const { verb, launched, closeTab } = harness([session('me', 'claude')], {}, [], {
+      titleReply: '跑全量测试'
+    })
+    await verb(['new', '--', '读 a.md，照它做完。'], from('me'))
+    closeTab('new-tab')
+    await verb(['new', '--', '读 b.md，照它做完。'], from('me'))
+    expect(launched.map((l) => l.name)).toEqual(['跑全量测试', '跑全量测试'])
   })
 
   it('a Claude caller with no registry name hands over under its Koloft title, and its own --name is kept', async () => {

@@ -8,6 +8,7 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
+import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BUTLER_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
@@ -53,7 +54,7 @@ import {
   withHandover,
   type SessionCaller
 } from './handover'
-import { distinctName, titleForTask } from './sessionTitle'
+import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
@@ -405,6 +406,7 @@ function queuedStartedBy(
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
+  tabOpen(tabId: string): boolean
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
@@ -579,28 +581,32 @@ async function startSibling(
 }
 
 interface LaunchNames {
-  claim(title: string): string
-  launched(name: string | undefined, tabId: string | null): void
+  hold(name: string): string
+  pick(title: string): string
+  launched(name: string, tabId: string | null): void
 }
 
 function launchNames(d: SessionVerbDeps): LaunchNames {
-  const notListedYet = new Map<string, string | null>()
+  const held = new Map<string, string | undefined>()
+  const hold = (name: string): string => {
+    held.set(name, undefined)
+    return name
+  }
+  const stillStarting = (tabId: string | undefined, listed: SessionInfo[]): boolean =>
+    tabId === undefined ||
+    d.waiting.list().some((q) => q.tabId === tabId) ||
+    (d.tabOpen(tabId) &&
+      !listed.some((s) => s.tabId === tabId && s.title !== PLACEHOLDER_TITLES[s.backendId]))
   return {
-    claim: (title) => {
+    hold,
+    pick: (title) => {
       const listed = d.allSessions()
-      for (const [name, tabId] of notListedYet)
-        if (listed.some((s) => s.tabId === tabId && s.title === name)) notListedYet.delete(name)
-      const name = distinctName(
-        title,
-        new Set([...listed.map((s) => s.title), ...notListedYet.keys()])
-      )
-      notListedYet.set(name, null)
-      return name
+      for (const [name, tabId] of held) if (!stillStarting(tabId, listed)) held.delete(name)
+      return hold(distinctTitle(title, new Set([...listed.map((s) => s.title), ...held.keys()])))
     },
     launched: (name, tabId) => {
-      if (name === undefined) return
-      if (tabId) notListedYet.set(name, tabId)
-      else notListedYet.delete(name)
+      if (tabId) held.set(name, tabId)
+      else held.delete(name)
     }
   }
 }
@@ -628,33 +634,39 @@ async function launchSibling(
   const [name, handover] = await Promise.all([
     !namedAtLaunch(backend, isRemoteKey(workspace))
       ? undefined
-      : (args.name ?? titleForTask(args.prompt, d.assist, ownerWords).then(names.claim)),
+      : args.name !== undefined
+        ? names.hold(args.name)
+        : titleForTask(args.prompt, d.assist, ownerWords).then(names.pick),
     handoverInOwnersLanguage(caller, d.assist)
   ])
   const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
-  const worktree =
-    gitWorkspace && (args.worktree || caller.assist)
-      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
-      : args.worktree
-  const tabId = await d.launch({
-    kind: backend,
-    cwd: workspace,
-    name,
-    worktree,
-    model: args.model,
-    // ADR-0028
-    permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
-    ownerWords,
-    // ADR-0026
-    trustFolder:
-      !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-    // CODEX§17
-    ...(traits.handoverAsRole
-      ? { role: preamble, firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(preamble, args.prompt) })
-  })
-  if (args.name === undefined) names.launched(name, tabId)
+  let tabId: string | null = null
+  try {
+    const worktree =
+      gitWorkspace && (args.worktree || caller.assist)
+        ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
+        : args.worktree
+    tabId = await d.launch({
+      kind: backend,
+      cwd: workspace,
+      name,
+      worktree,
+      model: args.model,
+      // ADR-0028
+      permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+      ownerWords,
+      // ADR-0026
+      trustFolder:
+        !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
+      // CODEX§17
+      ...(traits.handoverAsRole
+        ? { role: preamble, firstPrompt: args.prompt }
+        : { firstPrompt: withHandover(preamble, args.prompt) })
+    })
+  } finally {
+    if (name !== undefined) names.launched(name, tabId)
+  }
   if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)

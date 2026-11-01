@@ -31,7 +31,7 @@ function nameFromReply(reply: string): string {
     .trim()
 }
 
-export function distinctName(name: string, taken: Set<string>): string {
+export function distinctTitle(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name
   let n = 2
   while (taken.has(`${name} ${n}`)) n++
