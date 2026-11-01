@@ -76,7 +76,7 @@ export function useLaunchChoice(host: HostId) {
 
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const options = useLaunchChoice(host)
-  const [starting, setStarting] = useState(false)
+  const [startingAs, setStartingAs] = useState<BackendId | null>(null)
   const [error, setError] = useState('')
   const submitting = useRef(false)
   const live = useRef(true)
@@ -92,7 +92,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   ): Promise<void> => {
     if (submitting.current) return
     submitting.current = true
-    setStarting(true)
+    setStartingAs(backend)
     setError('')
     try {
       await onStart(typeof opts === 'function' ? await opts() : opts, backend)
@@ -101,10 +101,14 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       if (live.current) setError(launchErrorMessage(e))
     } finally {
       submitting.current = false
-      if (live.current) setStarting(false)
+      if (live.current) setStartingAs(null)
     }
   }
-  return { ...options, launch, close: onClose, starting, error }
+  const choice = (opts?: Parameters<typeof options.choice>[0]): AgentChoice => {
+    const offered = options.choice(opts)
+    return startingAs ? { ...offered, lead: startingAs } : offered
+  }
+  return { ...options, choice, launch, close: onClose, starting: startingAs !== null, error }
 }
 
 const keepFocus = (e: MouseEvent): void => e.preventDefault()
