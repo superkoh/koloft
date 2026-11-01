@@ -147,7 +147,7 @@ When it runs: --every 30m, --every 2h, --daily 09:00, --weekly mon,wed,fri@09:00
     --once runs one time on that day at that time, then the task turns itself off.
     --after waits that long after each run's tab is gone, then starts the next run. The wait also starts again when the task is saved or turned on.
 Options: --backend ${BACKEND_CHOICE}, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
-    same: the same permission as a session started from the sidebar's + button.
+    same (the default): the same permission as a session started from the sidebar's + button. With Skip permission prompts off in Settings ▸ Accounts, a run then waits on each ask until someone answers.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
     --when-done close: once the run has finished all its work, its tab, its sidebar row and its worktree go, so the next run is not skipped. A run that asks something, still has work running, or would lose a change or a commit stays open. The default, open, leaves it open for you.
