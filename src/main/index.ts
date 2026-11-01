@@ -12,6 +12,7 @@ import {
   screen,
   Notification,
   webContents,
+  type BaseWindow,
   type WebContents
 } from 'electron'
 import path from 'path'
@@ -3893,7 +3894,11 @@ app.whenReady().then(() => {
 
   registerIpc()
   setupAppMenu(
-    (action) => {
+    (action, from) => {
+      if (from && signInWindows.has(from)) {
+        from.close()
+        return
+      }
       if (action === 'toggle-keep-awake') {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
@@ -4165,10 +4170,35 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
+const webPageWatchers: ((contents: WebContents) => void)[] = []
+
+function onEveryWebPage(watch: (contents: WebContents) => void): void {
+  if (!webPageWatchers.length) {
+    app.on('web-contents-created', (_e, contents) => {
+      if (contents.getType() !== 'webview') return
+      for (const w of webPageWatchers) w(contents)
+    })
+  }
+  webPageWatchers.push(watch)
+}
+
+const signInWindows = new WeakSet<BaseWindow>()
+
+function adoptSignInWindow(win: BrowserWindow, opener: WebContents): void {
+  signInWindows.add(win)
+  const popup = win.webContents
+  const owner = guestOwners.get(opener)
+  if (owner) {
+    guestOwners.set(popup, owner)
+    for (const resolve of ownerWaiters.get(popup.id) ?? []) resolve(owner)
+    ownerWaiters.delete(popup.id)
+  }
+  for (const w of webPageWatchers) w(popup)
+}
+
 // PLATFORM§12
 function setupGuestUnload(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('will-prevent-unload', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       event.preventDefault()
@@ -4213,8 +4243,7 @@ function machineOfOwner(owner: string): string | undefined {
 }
 
 function setupGuestForwardsEnd(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     const id = contents.id
     contents.once('destroyed', () => {
       ownerWaiters.delete(id)
@@ -4225,8 +4254,7 @@ function setupGuestForwardsEnd(): void {
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('input-event', (_ev, input) => {
       if (CHROMIUM_USER_ACTIVATION_INPUTS.has(input.type)) {
         guestGestures.set(contents, Date.now())
@@ -4241,21 +4269,27 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
+function drivenByAnAgent(guest: WebContents): boolean {
+  return sessionDrivingGuest(guest.id) !== null || guestDrivenFromAnotherMachine(guest.id)
+}
+
 function setupGuestPopups(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.setWindowOpenHandler(({ url }) => {
-      if (contents.session === session.fromPartition(BROWSER_PARTITION)) {
-        routeGuestPopup(url, contents)
+  onEveryWebPage((contents) => {
+    contents.setWindowOpenHandler(({ url, disposition }) => {
+      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
+      // PLATFORM§8
+      if (disposition === 'new-window' && !drivenByAnAgent(contents)) {
+        return { action: 'allow', overrideBrowserWindowOptions: { show: !BACKGROUND_TEST } }
       }
+      routeGuestPopup(url, contents)
       return { action: 'deny' }
     })
+    contents.on('did-create-window', (win) => adoptSignInWindow(win, contents))
   })
 }
 
 function setupGuestContextMenu(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('context-menu', (_event, params) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       const items = guestMenuItems(params)
@@ -4277,8 +4311,7 @@ function setupGuestContextMenu(): void {
 // PLATFORM§8
 function muteGuestsUnderTest(): void {
   if (!BACKGROUND_TEST) return
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.setAudioMuted(true)
   })
 }
@@ -4308,8 +4341,7 @@ function setupGuestPermissionQuery(): void {
 }
 
 function setupPermissionCleanup(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     // PLATFORM§5
     const guestId = contents.id
     contents.once('destroyed', () => {

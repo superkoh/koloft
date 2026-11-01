@@ -3,6 +3,7 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { gitInit, startSessionIn, clickAppMenuItem } from './helpers/p1'
+import { BROWSER_PARTITION } from '../../src/shared/types'
 import {
   BROWSER,
   BROWSER_MENU_IDS,
@@ -115,7 +116,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
     }
   })
 
-  test('BB-M24: `window.open` / OAuth popup is routed into a new Browser tab, never a system window', async ({
+  test('BB-M24: a `window.open` with no size is routed into a new Browser tab, never a window', async ({
     app,
     page,
     env
@@ -145,6 +146,78 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
 
       expect((await windowStates(app)).length).toBe(windowsBefore)
       expect(readOpenCalls(env)).toEqual(openCallsBefore)
+    } finally {
+      await idp.close()
+      await server.close()
+    }
+  })
+
+  // PLATFORM§8
+  test('BB-M34: a sign-in popup (`window.open` with a size) opens as a Koloft window in the web tabs’ own session that keeps its opener, so the sign-in hands its result back to the page; Close Tab from that window closes only it', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const server = await startEchoServer()
+    const idp = await startFakeIdp()
+    try {
+      idp.finalUrl = server.page(
+        '/signin-done',
+        '<!doctype html><title>done</title><script>' +
+          'window.opener.postMessage("signed in", "*"); window.close()</script>'
+      )
+      server.page('/stays', '<!doctype html><title>stays</title><p>a popup that stays</p>')
+      const opener = server.page(
+        '/signs-in',
+        '<!doctype html><title>signs in</title><p id="result">signed out</p>' +
+          '<button id="google">google</button><button id="stays">stays</button><script>' +
+          'addEventListener("message", (e) => { document.getElementById("result").textContent = e.data });' +
+          `document.getElementById("google").onclick = () => window.open(${JSON.stringify(idp.loginUrl)}, "signin", "width=500,height=600");` +
+          'document.getElementById("stays").onclick = () => window.open("/stays", "other", "width=400,height=400")' +
+          '</script>'
+      )
+      gitInit(env.workspaces.a)
+      await startSessionIn(page, 'ws-a')
+      await browserSession(page)
+      const openCallsBefore = readOpenCalls(env)
+      await typeInAddressBar(page, opener)
+      const guest = await guestByUrl(app, '/signs-in')
+      const windowsBefore = (await windowStates(app)).length
+
+      await guest.click('#google')
+      await expect(guest.locator('#result')).toHaveText('signed in', { timeout: 30_000 })
+      expect(idp.count('/callback')).toBe(1)
+      await expect.poll(async () => (await windowStates(app)).length).toBe(windowsBefore)
+      await expect(openTabs(page)).toHaveCount(1)
+      expect(readOpenCalls(env)).toEqual(openCallsBefore)
+
+      await guest.click('#stays')
+      const popupInWebSession = (): Promise<boolean | null> =>
+        app.evaluate(({ BrowserWindow, session }, partition) => {
+          const win = BrowserWindow.getAllWindows().find((w) =>
+            w.webContents.getURL().endsWith('/stays')
+          )
+          return win ? win.webContents.session === session.fromPartition(partition) : null
+        }, BROWSER_PARTITION)
+      await expect.poll(popupInWebSession, { timeout: 30_000 }).toBe(true)
+      await app.evaluate(({ BrowserWindow, Menu }) => {
+        const win = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().endsWith('/stays')
+        )!
+        const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+          for (const item of items) {
+            if (item.accelerator === 'CmdOrCtrl+W') return item
+            const inner = item.submenu ? find(item.submenu.items) : undefined
+            if (inner) return inner
+          }
+          return undefined
+        }
+        const closeTab = find(Menu.getApplicationMenu()!.items)!
+        closeTab.click(undefined, win, win.webContents)
+      })
+      await expect.poll(popupInWebSession).toBeNull()
+      await expect(openTabs(page)).toHaveCount(1)
     } finally {
       await idp.close()
       await server.close()

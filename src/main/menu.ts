@@ -1,4 +1,4 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, Menu, type BaseWindow, type MenuItemConstructorOptions } from 'electron'
 import type { BrowserCommand } from '@shared/types'
 
 export type MenuShortcut =
@@ -21,7 +21,7 @@ export type MenuShortcut =
 
 // PLATFORM§7
 export function setupAppMenu(
-  onShortcut: (action: MenuShortcut) => void,
+  onShortcut: (action: MenuShortcut, from?: BaseWindow) => void,
   onBrowserCommand: (cmd: BrowserCommand) => void,
   keepAwake = false
 ): void {
@@ -91,7 +91,11 @@ export function setupAppMenu(
         click: () => onShortcut('save')
       },
       { type: 'separator' },
-      { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => onShortcut('close-tab') },
+      {
+        label: 'Close Tab',
+        accelerator: 'CmdOrCtrl+W',
+        click: (_item, win) => onShortcut('close-tab', win)
+      },
       { type: 'separator' },
       {
         id: 'restart-session',
