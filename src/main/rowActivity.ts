@@ -1,6 +1,6 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { toolFilePath } from './claudeTouchedFiles'
+import { toolFilePath, WRITE_TOOLS } from './claudeTouchedFiles'
 import { planOf, questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
 
 const LINE_KEEPS_CHARS = 200
@@ -19,6 +19,9 @@ const wrote = (file: string): string => `Wrote ${basename(file)}`
 const read = (file: string): string => `Read ${basename(file)}`
 const used = (tool: string): string => `Used ${oneLine(tool)}`
 const searched = (what: string): string => `Searched for ${oneLine(what)}`
+const withoutMcpServer = (tool: string): string => tool.replace(/^mcp__.+?__/, '')
+
+const CLAUDE_READ_TOOLS: ReadonlySet<string> = new Set(['Read', 'Grep', 'Glob'])
 
 // CC§2
 export function claudeToolDid(name: string, input: Record<string, unknown>): string | undefined {
@@ -52,7 +55,7 @@ export function claudeToolDid(name: string, input: Record<string, unknown>): str
     case 'Task':
       return `Started a helper: ${oneLine(str(input.description) ?? 'helper')}`
   }
-  return used(name.replace(/^mcp__.+?__/, ''))
+  return used(withoutMcpServer(name))
 }
 
 const SHELL_WRAPPED = /^\S*sh -lc '([\s\S]*)'$/
@@ -134,8 +137,10 @@ export function claudeAskLine(p: AskPayload): string {
   const command = str(p.tool_input?.command)
   if (command) return `Wants to run: ${oneLine(command)}`
   const file = toolFilePath(p.tool_input)
-  if (file) return `Wants to edit: ${basename(file)}`
-  return `Wants to use: ${oneLine(p.tool_name ?? 'a tool')}`
+  const tool = p.tool_name ?? ''
+  if (file && WRITE_TOOLS.has(tool)) return `Wants to edit: ${basename(file)}`
+  if (file && CLAUDE_READ_TOOLS.has(tool)) return `Wants to read: ${basename(file)}`
+  return `Wants to use: ${oneLine(withoutMcpServer(tool) || 'a tool')}`
 }
 
 export function storedAskLine(a: CodexApproval | CodexQuestion): string {
