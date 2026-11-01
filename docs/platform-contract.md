@@ -117,7 +117,7 @@ method. A recheck adds its date, version and command to the bullet.
 - **Keys written right behind the launch line reach the program it starts, except a
   signal key.** At zsh's signal, one write of `export …; clear` CR, `exec <program>` CR
   and then `hello` CR: the program, which turned raw mode on 1 s after it started
-  (`TCSADRAIN`, as libuv does), read `hello\r` whole. With the CR written 0.3 s later
+  (`TCSADRAIN`; which mode libuv uses is not checked), read `hello\r` whole. With the CR written 0.3 s later
   instead, while the program was still in canonical mode, it read `hello\n` (`ICRNL`).
   A Ctrl+C written behind the two lines threw the queued `exec` line away and left
   zsh at its prompt, so the program never started; a Ctrl+Z or Ctrl+\ there reached
