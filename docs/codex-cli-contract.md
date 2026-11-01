@@ -2233,6 +2233,12 @@ the one before, the screen read back through `pyte`.
 - **In a list:** `ESC[B` moved the `›` mark down one entry, `ESC[A` back up; in the
   three-entry "Background server" prompt `ESC[B` from the last entry wrapped to the
   first. ESC closed the model list and left the composer empty.
+- **Esc during a turn stops it** (2026-10-31, Codex CLI 0.166.0 Linux arm64,
+  `codex --no-daemon` in tmux 3.3a in Docker `--network none`, a scratch `CODEX_HOME`
+  whose `config.toml` points a custom provider at a local server that held `POST
+  /v1/responses` open): the screen read "• Working (5s • esc to interrupt)"; one Esc
+  closed the model stream and drew "■ Conversation interrupted - use /feedback if
+  something went wrong", with an empty composer under it. macOS: not probed.
 - **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
   changed to … for Plan mode").
 - **Mouse and focus reports:** on its welcome screen (2026-10-13, 0.162.0, a scratch

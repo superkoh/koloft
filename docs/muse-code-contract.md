@@ -231,6 +231,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
   python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
   macOS.
+- Esc during a turn stops it and puts the prompt back in the input box: with the fake
+  model server holding `POST /responses` open, the screen read "◇ Thinking (4s · esc to
+  interrupt)"; one Esc removed that line and left `please list the files` in the box,
+  unsent; text typed next was added after it, and Enter sent both as a new turn
+  (2026-10-31, muse 1.4.11, `koloft-muse-probe-1411` Docker image `--network none`,
+  tmux 3.3a, the fake model server of the preamble). macOS: not probed.
 
 ## §8 Shell commands inside Muse (macOS)
 
