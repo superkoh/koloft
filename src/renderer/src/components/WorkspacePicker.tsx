@@ -126,8 +126,8 @@ export function WorkspacePicker({
       return
     }
     const count = busyInCheckout(useStore.getState().sessions, ws.workspace.path)
+    confirmBackend.current = backend
     if (count > 0) {
-      confirmBackend.current = backend
       setConfirmWs(ws)
       setConfirm(count)
     } else void doPull(ws, backend)
@@ -301,7 +301,7 @@ export function WorkspacePicker({
               </button>
             ) : (
               <SessionLaunchButtons
-                choice={choice}
+                choice={phase === 'pulling' ? { ...choice, lead: confirmBackend.current } : choice}
                 open={listOpen}
                 onOpen={setListOpen}
                 busy={locked}

@@ -530,7 +530,7 @@ export function WorktreeSessionDialog({
               Cancel
             </button>
             <SessionLaunchButtons
-              choice={choice}
+              choice={phase === 'pulling' ? { ...choice, lead: confirmBackend.current } : choice}
               open={listOpen}
               onOpen={setListOpen}
               busy={locked}
