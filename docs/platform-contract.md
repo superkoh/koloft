@@ -1761,6 +1761,12 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   default action after `exec` (2026-10-28, dash in the same image, `setsid -w` per case:
   untrapped, the shell died with 130; trapped, it saw the child's 5; a child that did not
   handle INT died with 130 as before).
+- **The tmux client passes each key on at once; the pane's own terminal decides the rest.**
+  A program in the pane that put its terminal in raw mode got a single `y` with no Enter,
+  and Enter as `\r`. One that left it as it was read whole lines: `abc`, Ctrl-U, `xy`,
+  Backspace, `z`, Enter reached it as one line `xz\n`, edited by the pane's terminal
+  (2026-11-01, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run in a python
+  pty with `TERM=xterm-256color`, each pane a python script logging the bytes it read).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
 - **A tmux client whose login names no UTF-8 locale draws `_` for every character

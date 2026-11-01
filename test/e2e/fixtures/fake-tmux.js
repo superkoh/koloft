@@ -36,6 +36,7 @@ const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
 const aliveFile = (name) => path.join(aliveDir, name)
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
+const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
 
 function recordOf(name) {
   try {
@@ -75,10 +76,17 @@ function attach(name) {
     } catch {}
   })
   process.stdin.resume()
+  // PLATFORM§35
+  const keysAtOnceOnceThePaneIsRaw = () => {
+    if (process.stdin.isTTY && !process.stdin.isRaw && fs.existsSync(rawPaneMark(io)))
+      process.stdin.setRawMode(true)
+  }
+  keysAtOnceOnceThePaneIsRaw()
 
   let off = 0
   let held = ''
   const pump = () => {
+    keysAtOnceOnceThePaneIsRaw()
     try {
       const size = fs.statSync(outPath(io)).size
       if (size <= off) return
@@ -125,6 +133,7 @@ if (verb === 'new-session') {
     } catch {}
     cp.execFileSync('mkfifo', [fifo])
     fs.writeFileSync(outPath(io), '')
+    fs.rmSync(rawPaneMark(io), { force: true })
     const inFd = openFifoNeverSeeingEof(fifo)
     const outFd = fs.openSync(outPath(io), 'a')
     const cmdSurvivingHangup = `trap "" HUP; ${cmd}`
@@ -137,7 +146,8 @@ if (verb === 'new-session') {
         ...process.env,
         TMUX: `${ioDir}/${io}.sock,0,0`,
         TMUX_PANE: '%0',
-        KOLOFT_FAKE_TMUX_IO: io
+        KOLOFT_FAKE_TMUX_IO: io,
+        KOLOFT_FAKE_TMUX_RAW_MARK: rawPaneMark(io)
       }
     })
     child.unref()
