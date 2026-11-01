@@ -27,10 +27,12 @@ export function BrowserAddressBar({
   pickBlocked,
   onPick,
   actions,
-  overflow
+  overflow,
+  machine
 }: {
   url: string
   workspace: string | null
+  machine: { host: string; connected: boolean } | null
   loading: boolean
   canBack: boolean
   canForward: boolean
@@ -134,6 +136,15 @@ export function BrowserAddressBar({
             </div>
           ))}
         </div>
+      )}
+      {machine && (
+        <span
+          className="ws-remote"
+          title={`localhost in this tab is ${machine.host}, reached through its ssh connection`}
+        >
+          {machine.host}
+          <span className={'ws-conn' + (machine.connected ? ' on' : '')} />
+        </span>
       )}
       <button
         className={'bnav' + (picking ? ' on' : '') + (pickBlocked ? ' dis' : '')}

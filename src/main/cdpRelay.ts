@@ -7,7 +7,7 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
 import { hiddenFromClients, holdDebugger } from './guestDebugger'
-import { machinePageOf, urlOrNull } from '@shared/browserRoute'
+import { loopbackPortOf, machinePageOf, urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
 export interface RelayDeps {
@@ -17,6 +17,7 @@ export interface RelayDeps {
   close(sessionId: string, targetId: string): Promise<void>
   stage(sessionId: string, targetId: string): Promise<void>
   setAttached(sessionId: string, targetIds: string[]): void
+  cameThroughAForward(guestId: number, url: string): boolean
 }
 
 // PLATFORM§9
@@ -26,25 +27,38 @@ const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:'
 const NO_MAC_FILES_FOR_A_MACHINE =
   'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
 
-function showsThisMac(url: string): boolean {
-  const u = urlOrNull(url)
-  if (u?.protocol === 'view-source:') return showsThisMac(u.pathname)
-  return u?.protocol === 'file:' || machinePageOf(url) !== null || namesThisMacsServer(url)
+// ADR-0046
+function showsTheMachinesOwnLocalhost(url: string, guestId: number | null): boolean {
+  return guestId !== null && !!deps?.cameThroughAForward(guestId, url)
 }
 
-async function opensThisMac(url: string): Promise<boolean> {
+function showsThisMac(url: string, guestId: number | null): boolean {
   const u = urlOrNull(url)
-  return !u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol) || (await reachesThisMacsServer(url))
+  if (u?.protocol === 'view-source:') return showsThisMac(u.pathname, guestId)
+  return (
+    u?.protocol === 'file:' ||
+    machinePageOf(url) !== null ||
+    (namesThisMacsServer(url) && !showsTheMachinesOwnLocalhost(url, guestId))
+  )
+}
+
+// ADR-0046
+async function opensThisMac(url: string, pageLoadForwardsLocalhost: boolean): Promise<boolean> {
+  const u = urlOrNull(url)
+  if (!u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol)) return true
+  if (pageLoadForwardsLocalhost && loopbackPortOf(url) !== null) return false
+  return await reachesThisMacsServer(url)
 }
 
 async function reachesThisMac(method: string, params: unknown): Promise<boolean> {
   const p = (params ?? {}) as { url?: unknown; data?: { files?: unknown[] } }
   switch (method) {
     case 'Page.navigate':
+      return await opensThisMac(String(p.url ?? ''), true)
     case 'Network.loadNetworkResource':
-      return await opensThisMac(String(p.url ?? ''))
+      return await opensThisMac(String(p.url ?? ''), false)
     case 'Fetch.continueRequest':
-      return p.url !== undefined && (await opensThisMac(String(p.url)))
+      return p.url !== undefined && (await opensThisMac(String(p.url), false))
     case 'DOM.setFileInputFiles':
     case 'DOM.getFileInfo':
     case 'Page.setDownloadBehavior':
@@ -116,7 +130,7 @@ const machineTabs = new Set<string>()
 const machineDrivenGuests = new Set<number>()
 
 function visibleTo(client: Client, list: RelayTarget[]): RelayTarget[] {
-  return asTargets(client.onMachine ? list.filter((t) => !showsThisMac(t.url)) : list)
+  return asTargets(client.onMachine ? list.filter((t) => !showsThisMac(t.url, t.guestId)) : list)
 }
 
 export function guestDrivenFromAnotherMachine(guestId: number): boolean {
@@ -148,7 +162,7 @@ export async function openForMachine(
   url: string,
   create: (sessionId: string, url: string) => Promise<RelayTarget>
 ): Promise<RelayTarget | null> {
-  if (await opensThisMac(url)) return null
+  if (await opensThisMac(url, true)) return null
   const t = await create(sessionId, BLANK)
   if (t.guestId === null) throw new Error('could not create a tab')
   fenceForGood(t.guestId)
@@ -260,7 +274,9 @@ function backendFor(client: Client): RelayBackend {
       const wc = guestOf(guestId)
       if (client.onMachine) fenceForGood(guestId)
       const showsTheMac = async (): Promise<boolean> =>
-        showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL()))
+        showsThisMac(wc.getURL(), guestId) ||
+        (!showsTheMachinesOwnLocalhost(wc.getURL(), guestId) &&
+          (await reachesThisMacsServer(wc.getURL())))
       await fence(showsTheMac)
       let release: () => void
       try {

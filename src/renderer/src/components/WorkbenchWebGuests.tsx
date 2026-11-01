@@ -1,4 +1,5 @@
 import { memo, useMemo, type JSX } from 'react'
+import { loopbackPortOf } from '@shared/browserRoute'
 import { BrowserGuest, type GuestElement, type GuestFailure } from './BrowserGuest'
 import type { WorkbenchTab } from './workbenchTabs'
 
@@ -71,6 +72,10 @@ export function guestUrl(el: GuestElement | undefined): string {
   }
 }
 
+function refusedByKoloft(fail: GuestFailure): boolean {
+  return fail.description === 'ERR_BLOCKED_BY_CLIENT'
+}
+
 function isCertFailure(fail: GuestFailure): boolean {
   return /^ERR_(CERT|SSL)/.test(fail.description)
 }
@@ -123,6 +128,7 @@ export function WebPageState({
   sessionCold,
   live,
   agentLabel,
+  machine,
   onLoad,
   onReloadCrashed,
   onCertProceed,
@@ -133,6 +139,7 @@ export function WebPageState({
   sessionCold: boolean
   live: boolean
   agentLabel: string
+  machine: string | null
   onLoad: (tab: WorkbenchTab) => void
   onReloadCrashed: (tab: WorkbenchTab) => void
   onCertProceed: (tab: WorkbenchTab, url: string) => void
@@ -163,6 +170,13 @@ export function WebPageState({
     <div className="berror">
       <div className="bstate-t">Can't reach {hostOf(fail.url)}</div>
       <div className="bstate-sub">{fail.description}</div>
+      {machine && loopbackPortOf(fail.url) !== null && (
+        <div className="bempty-hint">
+          {refusedByKoloft(fail)
+            ? `Koloft could not forward port ${loopbackPortOf(fail.url)} from ${machine} over its ssh connection.`
+            : `Nothing answers on port ${loopbackPortOf(fail.url)} on ${machine}, or its ssh server does not allow port forwarding.`}
+        </div>
+      )}
       <button onClick={() => onRetry(tab, fail.url)}>Retry</button>
     </div>
   ) : tab && !tab.url ? (

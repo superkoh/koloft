@@ -163,6 +163,31 @@ export function urlOrNull(raw: string): URL | null {
   }
 }
 
+const SECURE_SCHEMES = new Set(['https:', 'wss:'])
+const FORWARDABLE_SCHEMES = new Set(['http:', 'ws:', ...SECURE_SCHEMES])
+
+export function loopbackPortOf(url: string): number | null {
+  const u = urlOrNull(url)
+  if (!u || !FORWARDABLE_SCHEMES.has(u.protocol) || !LOOPBACK_HOSTS.has(u.hostname)) return null
+  return Number(u.port) || (SECURE_SCHEMES.has(u.protocol) ? 443 : 80)
+}
+
+const PAGE_LOADS = new Set(['mainFrame', 'subFrame'])
+
+export function aPageOnTheMachineAsks(
+  resourceType: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (PAGE_LOADS.has(resourceType) || initiatorOrigin === undefined) return true
+  return loopbackPortOf(initiatorOrigin) !== null
+}
+
+export function onMacPort(url: string, macPort: number): string {
+  const u = new URL(url)
+  u.port = String(macPort)
+  return u.toString()
+}
+
 // PLATFORM§39
 export function webPageReachesDiscordDesktopApp(
   target: string,

@@ -93,6 +93,7 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } =
 
 const TAB = 'tab-1'
 const SESSION = 'sess-1'
+const GUEST_ON_A_FORWARD = 18
 
 interface Harness extends RelayDeps {
   session: string | null
@@ -113,7 +114,8 @@ function makeDeps(): Harness {
     })),
     close: vi.fn(async () => {}),
     stage: vi.fn(async () => {}),
-    setAttached: vi.fn()
+    setAttached: vi.fn(),
+    cameThroughAForward: vi.fn((guestId: number) => guestId === GUEST_ON_A_FORWARD)
   } as unknown as Harness
   return h
 }
@@ -319,8 +321,8 @@ describe("a session on another machine never reaches this Mac's files or local s
       'fi\tle:///etc/hosts',
       '\u0001file:///etc/hosts',
       'FILE:/etc/hosts',
-      'http://127.0.0.1:8888/tree',
-      'http://localhost:3000/',
+      'http://127.0.0.2:8888/tree',
+      'http://dev.localhost:3000/',
       NAME_FOR_THE_MAC
     ])
       expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toContain(REFUSED)
@@ -332,10 +334,12 @@ describe("a session on another machine never reaches this Mac's files or local s
       ['Page.navigate', { url: MAC_FILE }],
       ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
       ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
-      ['Page.navigate', { url: 'http://[::1]:5173/' }],
+      ['Page.navigate', { url: 'http://[::ffff:127.0.0.1]:5173/' }],
       ['Page.navigate', { url: NAME_FOR_THE_MAC }],
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
       ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
+      ['Network.loadNetworkResource', { url: 'http://localhost:3000/', frameId: 'f', options: {} }],
+      ['Fetch.continueRequest', { requestId: 'r', url: 'http://127.0.0.1:3000/' }],
       ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
       ['DOM.getFileInfo', { objectId: 'file-1' }],
       ['Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/Users/me/Library' }],
@@ -368,6 +372,16 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
   })
 
+  it("opens localhost, 127.0.0.1 and [::1], which in its own tab reach the machine's own servers through a forward on its ssh connection", async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    for (const url of ['http://localhost:5173/', 'http://127.0.0.1:3000/', 'http://[::1]:8080/']) {
+      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toBe('')
+      expect(made.loadURL).toHaveBeenCalledWith(url)
+    }
+  })
+
   it('opens a page it asks for blank first and fences it before loading the address, so even its first load is fenced', async () => {
     relay.relayEndpointOnMachine(TAB)
     const made = fakeGuest(12)
@@ -397,7 +411,7 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
   })
 
-  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server, even before the strip has caught up', async () => {
+  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server — a localhost page counts as the machine’s only when it came through a forward — even before the strip has caught up', async () => {
     relay.relayEndpointOnMachine(TAB)
     fakeGuest(11)
     fakeGuest(13, { url: NOTES })
@@ -407,6 +421,12 @@ describe("a session on another machine never reaches this Mac's files or local s
       { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
       { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
       { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 },
+      {
+        targetId: 'bt8',
+        url: 'http://localhost:5173/',
+        title: 'machine dev server',
+        guestId: GUEST_ON_A_FORWARD
+      },
       {
         targetId: 'bt7',
         url: machinePageUrl('devbox', '/home/u/report.html'),
@@ -420,7 +440,11 @@ describe("a session on another machine never reaches this Mac's files or local s
     const listed = (await c.cmd('Target.getTargets')).result as {
       targetInfos: { targetId: string; url: string }[]
     }
-    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a', 'http://x/before'])
+    expect(listed.targetInfos.map((t) => t.url)).toEqual([
+      'http://x/a',
+      'http://x/before',
+      'http://localhost:5173/'
+    ])
     const lagging = listed.targetInfos[1]?.targetId ?? ''
     expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(REFUSED)
 

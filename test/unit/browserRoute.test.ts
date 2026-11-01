@@ -3,7 +3,10 @@ import {
   routeFor,
   dedupKey,
   canOpenExternally,
+  aPageOnTheMachineAsks,
   folderFileOf,
+  loopbackPortOf,
+  onMacPort,
   machinePageUrl,
   MACHINE_PAGE_SCHEME,
   pagePathOf
@@ -252,6 +255,33 @@ describe("folderFileOf — an address-bar entry read as a file in the session's 
       expect(folderFileOf(entry, '/w/wt')).toBeNull()
     }
     expect(folderFileOf('index.html', null)).toBeNull()
+  })
+})
+
+describe("loopbackPortOf and onMacPort — a remote tab's localhost goes through a forward", () => {
+  it('reads the machine port of every loopback name and scheme a page can reach, and nothing else', () => {
+    expect(loopbackPortOf('http://localhost:5173/a')).toBe(5173)
+    expect(loopbackPortOf('ws://127.0.0.1:24678/')).toBe(24678)
+    expect(loopbackPortOf('http://[::1]:3000/')).toBe(3000)
+    expect(loopbackPortOf('https://localhost/')).toBe(443)
+    expect(loopbackPortOf('http://localhost/')).toBe(80)
+    expect(loopbackPortOf('http://example.com:5173/')).toBeNull()
+    expect(loopbackPortOf('file:///tmp/a.html')).toBeNull()
+  })
+
+  it('forwards a page load, and a request a localhost page makes, but not a request another site makes to localhost', () => {
+    expect(aPageOnTheMachineAsks('mainFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('subFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'http://localhost:5173')).toBe(true)
+    expect(aPageOnTheMachineAsks('webSocket', 'http://127.0.0.1:61000')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', undefined)).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'https://example.com')).toBe(false)
+    expect(aPageOnTheMachineAsks('image', 'null')).toBe(false)
+  })
+
+  it('moves a page to its Mac port, and leaves it as it is when the Mac port is the same', () => {
+    expect(onMacPort('http://localhost:5173/a?b=1', 61000)).toBe('http://localhost:61000/a?b=1')
+    expect(onMacPort('ws://[::1]:5173/', 5173)).toBe('ws://[::1]:5173/')
   })
 })
 
