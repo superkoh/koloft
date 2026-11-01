@@ -1950,8 +1950,10 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   files listed and `command -v claude` run through both shells.)
 - **The binary download prints nothing.** The script fetches the native binary with
   `curl -fsSL -o` (or `wget -q -O`) and prints its first line, "Setting up Claude
-  Code...", only after the download and checksum, so on a slow link it can be silent for
-  minutes. (2026-11-01: the served script fetched and read.)
+  Code...", only after the download and checksum. For 2.1.316 the macOS download is
+  107 MB (arm64) or 114 MB (x64) when `zstd` is on the machine, 310 MB or 324 MB without
+  it, so at 2 Mbit/s it is silent for 7 to 22 minutes. (2026-11-01: the served script
+  read; `latest` answered 2.1.316, sizes from its `manifest.json` and `manifest.zst.json`.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -1988,7 +1990,7 @@ never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
-Claude sign-in gives the install 10 silent minutes before it fails (`src/main/index.ts`), and
+Claude sign-in stops an install that prints nothing for 20 minutes (`src/main/index.ts`), and
 `launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
 

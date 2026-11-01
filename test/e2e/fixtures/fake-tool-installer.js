@@ -9,7 +9,9 @@ if (fs.existsSync(path.join(home, 'fake-tool-installer-fails'))) {
   console.log('curl: (6) Could not resolve host')
   process.exit(0)
 }
-if (fs.existsSync(path.join(home, 'fake-tool-installer-stalls'))) {
+const stalls = path.join(home, 'fake-tool-installer-stalls')
+if (fs.existsSync(stalls)) {
+  fs.writeFileSync(stalls, String(process.pid))
   setInterval(() => {}, 60_000)
 } else {
   const bin = path.join(home, '.local', 'bin')

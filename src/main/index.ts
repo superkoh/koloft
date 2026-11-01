@@ -2045,17 +2045,18 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
 interface LoginWatch {
   name: string
   buf: string
-  startedAt: number
   sawUrl: boolean
   done: boolean
-  installing?: { carry: string; stalled: NodeJS.Timeout }
+  giveUp: NodeJS.Timeout
+  installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
+const LOGIN_TIMED_OUT = 'Sign-in timed out'
 // CC§10
-const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 10 * 60_000
-const INSTALL_STALLED = 'The Claude Code install did not finish: it printed nothing for 10 minutes'
+const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2075,19 +2076,15 @@ function feedLoginWatcher(tabId: string, data: string): void {
     const rest = afterOutputStart(seen)
     if (rest === null) {
       w.installing.carry = outputStartCarry(seen)
-      w.installing.stalled.refresh()
+      w.giveUp.refresh()
       w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
       return
     }
-    clearTimeout(w.installing.stalled)
+    clearTimeout(w.giveUp)
+    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
     w.installing = undefined
-    w.startedAt = Date.now()
     w.buf = ''
     data = rest
-  }
-  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
-    failLogin(tabId, 'Sign-in timed out')
-    return
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
@@ -2101,33 +2098,42 @@ function feedLoginWatcher(tabId: string, data: string): void {
     }
     return
   }
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   void completeLogin(tabId, w.name, m[0])
 }
 
-function failLogin(tabId: string, why: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
+function endLoginWatch(tabId: string, w: LoginWatch): void {
   w.done = true
   loginWatchers.delete(tabId)
-  clearTimeout(w.installing?.stalled)
+  clearTimeout(w.giveUp)
+}
+
+function failLogin(tabId: string, why: string, terminalKept = true): void {
+  const w = loginWatchers.get(tabId)
+  if (!w || w.done) return
+  endLoginWatch(tabId, w)
   const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
     tail: `${why}${tail ? `\n${tail}` : ''}`,
-    tabId,
-    cwd: ptyMgr.get(tabId)?.cwd
+    ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
   })
+}
+
+function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    failLogin(tabId, why, false)
+    try {
+      ptyMgr.kill(tabId)
+    } catch {}
+  }, ms)
 }
 
 function cancelGuidedLogin(tabId: string): void {
   const w = loginWatchers.get(tabId)
   if (!w) return
-  w.done = true
-  loginWatchers.delete(tabId)
-  clearTimeout(w.installing?.stalled)
+  endLoginWatch(tabId, w)
   try {
     ptyMgr.kill(tabId)
   } catch {}
@@ -2153,18 +2159,16 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
   loginWatchers.set(handle.id, {
     name,
     buf: '',
-    startedAt: Date.now(),
     sawUrl: false,
     done: false,
-    ...(installFirst && {
-      installing: {
-        carry: '',
-        stalled: setTimeout(
-          () => failLogin(handle.id, INSTALL_STALLED),
-          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS)
+    giveUp: installFirst
+      ? giveUpLoginAfter(
+          handle.id,
+          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          INSTALL_STALLED
         )
-      }
-    })
+      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
+    ...(installFirst && { installing: { carry: '' } })
   })
   loginPtys.add(handle.id)
   if (installFirst) toolInstallPtys.add(handle.id)

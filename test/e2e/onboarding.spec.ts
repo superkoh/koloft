@@ -28,17 +28,23 @@ const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
 const SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS = 1500
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const FAKE_INSTALLER = path.join(__dirname, 'fixtures', 'fake-tool-installer.js')
 
 function codexInstalledOnlyLater(env: E2EEnv): string {
   const codex = path.join(env.home, '.local', 'bin', 'codex')
   env.launchEnv.KOLOFT_CODEX_CMD = codex
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
-  env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
-    __dirname,
-    'fixtures',
-    'fake-tool-installer.js'
-  )
+  env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = FAKE_INSTALLER
   return codex
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function firstRun(env: E2EEnv, settings: Record<string, unknown> = {}): void {
@@ -433,19 +439,16 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in; an install that goes quiet gives up, says so, and offers the button again', async ({
+  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in; an install that goes quiet is stopped, says so, and offers the button again', async ({
     env
   }) => {
     test.setTimeout(120_000)
     firstRun(env, { accounts: [] })
     env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
-    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
-      __dirname,
-      'fixtures',
-      'fake-tool-installer.js'
-    )
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = FAKE_INSTALLER
     env.launchEnv.KOLOFT_INSTALL_SILENCE_MS = '3000'
-    fs.writeFileSync(path.join(env.home, 'fake-tool-installer-stalls'), '')
+    const stalls = path.join(env.home, 'fake-tool-installer-stalls')
+    fs.writeFileSync(stalls, '')
     terminalSession(env, env.workspaces.a, 'A one', HOUR)
 
     const app = await launchApp(env)
@@ -472,6 +475,8 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       )
       await expect(primary(page)).toHaveText(/Install Claude and sign in/)
       await expect(primary(page)).toBeEnabled()
+      const installer = Number(fs.readFileSync(stalls, 'utf8'))
+      await expect.poll(() => isRunning(installer), { timeout: 10_000 }).toBe(false)
       expect(fs.existsSync(env.claudeCalls)).toBe(false)
     } finally {
       await quitAndClose(app)
