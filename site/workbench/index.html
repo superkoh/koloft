@@ -185,9 +185,12 @@
 
         <h2>Files ▸ Browse</h2>
         <p>
-          The whole folder as a tree. A switch shows the files git ignores too. Once a Claude
-          session writes to its scratchpad (its own folder for working files), that folder shows
-          here too, on a remote machine as well.
+          The whole folder as a tree. A switch shows the files git ignores too. Some agents keep a
+          folder of their own outside your project, and it shows here too, as
+          <code>Scratchpad</code>, on a remote machine as well: Claude's scratchpad (its folder for
+          working files), the pictures a Codex session made, and an Antigravity session's plans and
+          its <code>scratch</code> folder. It shows once the session has put something there. Muse
+          keeps no such folder.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 756 / 870">
@@ -326,7 +329,9 @@
             login this Mac already has. With no account it can use, it stops and says why. The first
             line says which account, like <code>koloft: → work · 5h 12% · 7d 40%</code>. For Codex,
             Muse and Antigravity: if every account of that agent is at its limit (every Codex
-            account, say), a second line says so, and it still runs on the one that resets first.
+            account, say), a second line says so, and it still runs on the one that resets first. If
+            you added an <a href="../accounts/#api-keys">API key account</a> for that agent, it runs
+            on the key instead, and the first line ends in <code>(API key, metered)</code>.
           </li>
           <li>
             In a <a href="../remote/">remote folder</a> the shell runs on the other machine, and
@@ -456,10 +461,6 @@
           <li>
             <s class="struck">cover the agent's terminal</s>
             <span class="why">(it sits beside it)</span>
-          </li>
-          <li>
-            <s class="struck">show a Codex scratchpad</s>
-            <span class="why">(only Claude sessions have one)</span>
           </li>
         </ul>
 
