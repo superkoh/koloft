@@ -47,7 +47,7 @@ const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
 const ONE_SESSION_PER_PULL_REQUEST =
-  'When one task will end in several pull requests, start one such session for each pull request; this session then only plans the order, hands out the work and collects the results.'
+  'One session makes one pull request. When work will end in several pull requests, stacked ones too, split it by pull request first and start one such session for each, with a task that covers only that pull request; this session then only plans the order, hands out the work and collects the results. If you are doing such work, even when your task names all of it, make only the first pull request yourself and start a new session for the next one. For stacked pull requests, start the next session only once the branch it builds on is pushed, and tell it to start from that branch.'
 
 const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
