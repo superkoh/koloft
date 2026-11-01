@@ -79,6 +79,7 @@ export function WorktreeSessionDialog({
   const [checking, setChecking] = useState(false)
   const [fetched, setFetched] = useState<WorkspaceFreshness | null>(null)
   const [phase, setPhase] = useState<PullPhase>('idle')
+  const [pullingAs, setPullingAs] = useState<BackendId | null>(null)
   const [failReason, setFailReason] = useState('')
   const [confirm, setConfirm] = useState<number | null>(null)
   const [items, setItems] = useState<GithubOpenItems | null>(null)
@@ -253,6 +254,7 @@ export function WorktreeSessionDialog({
     if (!freshness) return
     const { branch, head } = freshness
     setConfirm(null)
+    setPullingAs(backend)
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(wsPath, { branch, head })
@@ -530,7 +532,7 @@ export function WorktreeSessionDialog({
               Cancel
             </button>
             <SessionLaunchButtons
-              choice={choice}
+              choice={phase === 'pulling' && pullingAs ? { ...choice, lead: pullingAs } : choice}
               open={listOpen}
               onOpen={setListOpen}
               busy={locked}
