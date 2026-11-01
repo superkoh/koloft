@@ -90,7 +90,8 @@ import {
   messagingOf,
   reachedBySendMessage,
   preferredAssistBackend,
-  effectiveBackend
+  effectiveBackend,
+  turnedOffLine
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
@@ -1622,8 +1623,12 @@ async function whyAssistCannotRunOn(
   backend: BackendId,
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
-  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  if (!enabled[backend]) return turnedOffLine(backend)
   return whyAssistCannotRun[backend]()
+}
+
+function turnedOffNow(backend: BackendId): string | null {
+  return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
 }
 
 const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
@@ -1757,6 +1762,7 @@ const sessionDeps: SessionVerbDeps = {
   allSessions: () => allSessions().filter((s) => !s.butler),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
+  turnedOff: turnedOffNow,
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
@@ -3863,6 +3869,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
+    turnedOff: turnedOffNow,
     noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -5732,13 +5739,8 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (
-        opts.kind !== 'shell' &&
-        !opts.resumeSessionId &&
-        !loadSettings().sessionMethods.enabled[opts.kind]
-      ) {
-        throw new Error('This session method is disabled in Settings ▸ Sessions.')
-      }
+      const turnedOff = opts.kind !== 'shell' && !opts.resumeSessionId && turnedOffNow(opts.kind)
+      if (turnedOff) throw new Error(`${turnedOff}.`)
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)

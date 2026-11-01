@@ -1524,7 +1524,7 @@ export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: s
 export type CronRunNowResult =
   | { ok: true }
   | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
-  | { ok: false; reason: 'no-account'; why: string }
+  | { ok: false; reason: 'no-account' | 'turned-off'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 

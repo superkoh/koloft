@@ -298,7 +298,7 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
 }
 
 const RUN_REFUSED: Record<
-  Exclude<CronRunNowResult, { ok: true } | { reason: 'no-account' }>['reason'],
+  Exclude<CronRunNowResult, { ok: true } | { why: string }>['reason'],
   string
 > = {
   skipped: 'the last run is still open.',
@@ -388,7 +388,7 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     }
     const result = await runner.runNow(job.id)
     if (result.ok) return answered(`Started ${job.name} in a new session tab.`)
-    const why = result.reason === 'no-account' ? result.why : RUN_REFUSED[result.reason]
+    const why = 'why' in result ? result.why : RUN_REFUSED[result.reason]
     return refused(`koloft cron: ${job.name} did not start: ${why}`)
   }
 }
