@@ -338,7 +338,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      await startSessionIn(page, 'ws-a')
       expect(await koloftInSession(page, 'session new --backend codex -- hello')).not.toBe('0')
       expect((await shownTermText(page, CENTER)).replace(/\s+/g, '')).toContain(
         'CodexisturnedoffinSettings▸Sessions'
