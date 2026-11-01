@@ -189,7 +189,7 @@ export class SlashCommands {
       if (typed) return
       if (panel)
         throw new Error(
-          `${target.name} shows a menu or a panel at the Mac right now, so ${text} was not typed: it would land in that menu.`
+          `${target.name} shows a menu or a panel right now, so ${text} was not typed: it would land in that menu.`
         )
     }
   }

@@ -26,6 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
   museShowsItsInputBox,
@@ -518,6 +519,7 @@ import {
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,
+  claudeShowsAPanelOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
@@ -682,16 +684,29 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
-const panelOpenOn: Record<
-  BackendId,
-  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
-> = {
-  claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
-  codex: async () => undefined,
-  muse: async (tabId, _sessionId, screen) => {
+type PanelOpen = (
+  tabId: string,
+  sessionId: string,
+  screen?: string[]
+) => Promise<boolean | undefined>
+
+function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
+  return async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
-    return lines && !museShowsItsInputBox(lines)
+    return lines && shows(lines)
+  }
+}
+
+const panelOpenOn: Record<BackendId, PanelOpen> = {
+  claude: async (tabId, sessionId) => {
+    if (!sessionId) return undefined
+    const host = tracker.remoteOf(tabId)?.host
+    if (!host) return claudeShowsAPanel(sessionId)
+    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
+    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
+  codex: panelOnScreen(codexShowsAPanel),
+  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
   agy: async () => undefined
 }
 
@@ -1650,6 +1665,16 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
   'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
+// CC§11
+async function liveClaudeRegistryOn(host: string): Promise<string> {
+  await loginEnvReady()
+  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+    controlDir: remoteControlDir
+  })
+  if (r.code !== 0) throw new Error(problemOf(r))
+  return r.stdout
+}
+
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
@@ -1660,15 +1685,7 @@ async function sendPeerLine(tabId: string, line: string, ms: number): Promise<vo
     if (!socket) throw new Error(NO_MESSAGE_SOCKET)
     return writeLineInTurn(socket, line)
   }
-  await loginEnvReady()
-  const readLiveRegistry = async (): Promise<string> => {
-    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
-      controlDir: remoteControlDir
-    })
-    if (r.code !== 0) throw new Error(problemOf(r))
-    return r.stdout
-  }
-  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, () => liveClaudeRegistryOn(host))
   if (!socket) throw new Error(NO_MESSAGE_SOCKET)
   await writeLineInTurn(`${host}:${socket}`, line, (l) =>
     writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })

@@ -170,7 +170,6 @@ const EVERYTHING: Capabilities = {
 const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
   ...EVERYTHING,
   askHookWaitsForDiscord: PENDING,
-  panelSeen: PENDING,
   worktreeRemovalFollowed: PENDING
 }
 
@@ -192,12 +191,12 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     ssh: ON_A_MACHINE
   },
   muse: {
-    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
-    ssh: { ...ON_A_MACHINE, panelSeen: true }
-  },
-  agy: {
     local: OUTSIDE_LOCAL_CLAUDE,
     ssh: ON_A_MACHINE
+  },
+  agy: {
+    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: PENDING },
+    ssh: { ...ON_A_MACHINE, panelSeen: PENDING }
   }
 }
 

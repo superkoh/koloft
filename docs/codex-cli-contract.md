@@ -2059,6 +2059,27 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   `git … diff --no-textconv --no-ext-diff --submodule=short --ignore-submodules=dirty
   --color`, `git ls-files --others --exclude-standard`), and the `diff` reply's `stdout`
   held the diff the pager showed, colour codes included.
+- **Every menu, list and pager a slash command opens names its closing key in its bottom
+  rows; nothing else there does** (2026-10-31, Codex CLI 0.166.0 and 0.161.0,
+  `codex --no-daemon` in a python pty at 120×40, the screen read through `pyte`, a
+  temporary `CODEX_HOME` holding a fake API key, a trusted scratch git repo; each
+  command typed, Esc, CR, the screen read 2.5 s later, then Esc or `q`). The same on
+  both versions: `/model`, `/permissions` and `/review` hide the composer and draw a
+  numbered list whose highlighted row starts with `›` — the composer's own mark — over a
+  last row `enter select · esc back`; `/keymap` ends `… · esc close`; `/mention` draws
+  its list *above* a still-visible composer (`› @`) with `enter/tab insert · esc close ·
+  …` two rows over it; `/resume` fills the screen and ends `enter resume   esc exit …`;
+  the `/diff` pager ends ` q close`. One Esc closed each but the pager, which `q`
+  closed, and the composer came back. `/status` and `/mcp` open nothing: they print
+  their answer into the transcript above the composer, whose bottom rows stay the
+  footer (`<model> · <folder>`, `? for shortcuts`), and Esc after them changes nothing
+  there. Esc at the empty composer of a thread with no message printed "No previous
+  message to edit." (the "esc again …" hint below needs a sent message, not raised
+  here). An empty composer draws its placeholder as text (`› Ask Codex to do anything`),
+  so the screen does not tell an empty composer from one holding a leftover command.
+  So "a panel is open" is read as one of those key hints below the last row that starts
+  with `›` (the whole screen when none does), never from a missing `›` row, and no hint
+  is not read as "no panel".
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
