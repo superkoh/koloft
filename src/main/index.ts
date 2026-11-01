@@ -1202,6 +1202,9 @@ let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
+  hosts.machine(host).realFiles(files)
+tracker.realFilesOn = realFilesOn
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 const browserTunnels = new BrowserTunnels({
@@ -3243,6 +3246,7 @@ app.whenReady().then(() => {
     projectInfo: projectInfoOnHost,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
+    realFilesOn,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer(CH.sessions.update, all)

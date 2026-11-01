@@ -271,6 +271,13 @@ function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
   return { header, body: buf.subarray(body) }
 }
 
+const REAL_FILES = `while IFS= read -r f; do
+  case $f in '~/'*) p=$HOME/\${f#\\~/} ;; *) p=$f ;; esac
+  [ -f "$p" ] || continue
+  r=$(realpath "$p" 2>/dev/null || readlink -f "$p" 2>/dev/null) || r=
+  printf '%s\\0%s\\0' "$f" "\${r:-$p}"
+done`
+
 const LIST_DIR = `cd "$1" 2>/dev/null || exit 0
 for f in .* *; do
   case $f in .|..) continue ;; esac
@@ -765,6 +772,15 @@ export class SshHost implements Host {
 
   async fileExists(file: string): Promise<boolean> {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
+  }
+
+  async realFiles(files: string[]): Promise<Map<string, string>> {
+    const r = await this.sh(REAL_FILES, [], { input: Buffer.from(files.join('\n') + '\n') })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    const out = new Map<string, string>()
+    const parts = r.stdout.toString('utf8').split('\0')
+    for (let i = 0; i + 1 < parts.length; i += 2) out.set(parts[i], parts[i + 1])
+    return out
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {

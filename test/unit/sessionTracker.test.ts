@@ -1685,8 +1685,17 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(tracker.transcriptExists(RSID)).toBe(true)
   })
 
-  it('lists the files it wrote by their path on the machine, though this Mac has no such file, with the time of the last write (#182)', async () => {
+  it('lists the files it wrote under their real path on the machine, asked of the machine in one batch, ~/ paths included, though this Mac has no such file (#182)', async () => {
     const tracker = remoteTracker()
+    const asked: [string, string[]][] = []
+    const onMachine = new Map([
+      ['/home/koh/api/docs/plan.md', '/srv/api/docs/plan.md'],
+      ['~/notes.md', '/home/koh/notes.md']
+    ])
+    tracker.realFilesOn = async (host, files) => {
+      asked.push([host, files])
+      return new Map(files.flatMap((f) => (onMachine.has(f) ? [[f, onMachine.get(f)!]] : [])))
+    }
     const file = path.join(mirrorRoot(), encodeCwd(RCWD), RSID + '.jsonl')
     const write = (filePath: string, at: string): unknown => ({
       type: 'assistant',
@@ -1712,15 +1721,22 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(fs.existsSync('/home/koh/api/docs/plan.md')).toBe(false)
     tracker.bindSession('tabR', file, RSID, RCWD)
 
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabR' && x.files.length > 0)
-    expect(s.files).toEqual([
-      expect.objectContaining({
-        src: '/home/koh/api/docs/plan.md',
-        access: 'wrote',
-        wroteAt: Date.parse('2026-09-01T10:02:00.000Z')
-      })
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabR' && x.files.length === 2)
+    expect(asked[0]).toEqual([
+      'devbox',
+      expect.arrayContaining(['/home/koh/api/docs/plan.md', '~/notes.md'])
     ])
-    expect(s.lastWritten).toBe('/home/koh/api/docs/plan.md')
+    expect(s.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          src: '/srv/api/docs/plan.md',
+          access: 'wrote',
+          wroteAt: Date.parse('2026-09-01T10:02:00.000Z')
+        }),
+        expect.objectContaining({ src: '/home/koh/notes.md', access: 'wrote' })
+      ])
+    )
+    expect(s.lastWritten).toBe('/srv/api/docs/plan.md')
   })
 })
 
