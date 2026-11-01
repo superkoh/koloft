@@ -254,10 +254,12 @@ export function WorktreeSessionDialog({
     const { branch, head } = freshness
     setConfirm(null)
     setPhase('pulling')
+    sessionLaunch.holdFor(backend)
     const r = await window.api.workspace
       .pull(wsPath, { branch, head })
       .catch((e: Error) => ({ ok: false as const, reason: ipcErrorText(e) }))
     if (!r.ok) {
+      sessionLaunch.holdFor(null)
       setFailReason(r.reason)
       setPhase('failed')
       return

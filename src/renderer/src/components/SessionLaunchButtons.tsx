@@ -76,7 +76,8 @@ export function useLaunchChoice(host: HostId) {
 
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const options = useLaunchChoice(host)
-  const [startingAs, setStartingAs] = useState<BackendId | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [busyFor, setBusyFor] = useState<BackendId | null>(null)
   const [error, setError] = useState('')
   const submitting = useRef(false)
   const live = useRef(true)
@@ -92,7 +93,8 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   ): Promise<void> => {
     if (submitting.current) return
     submitting.current = true
-    setStartingAs(backend)
+    setStarting(true)
+    setBusyFor(backend)
     setError('')
     try {
       await onStart(typeof opts === 'function' ? await opts() : opts, backend)
@@ -101,14 +103,15 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       if (live.current) setError(launchErrorMessage(e))
     } finally {
       submitting.current = false
-      if (live.current) setStartingAs(null)
+      if (live.current) {
+        setStarting(false)
+        setBusyFor(null)
+      }
     }
   }
-  const choice = (opts?: Parameters<typeof options.choice>[0]): AgentChoice => {
-    const offered = options.choice(opts)
-    return startingAs ? { ...offered, lead: startingAs } : offered
-  }
-  return { ...options, choice, launch, close: onClose, starting: startingAs !== null, error }
+  const choice = (opts: Parameters<typeof options.choice>[0] = {}): AgentChoice =>
+    options.choice({ ...opts, chosen: busyFor ?? opts.chosen })
+  return { ...options, choice, launch, holdFor: setBusyFor, close: onClose, starting, error }
 }
 
 const keepFocus = (e: MouseEvent): void => e.preventDefault()

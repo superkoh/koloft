@@ -98,10 +98,12 @@ export function WorkspacePicker({
     setConfirm(null)
     setConfirmWs(null)
     setPhase('pulling')
+    sessionLaunch.holdFor(backend)
     const r = await window.api.workspace
       .pull(ws.workspace.path, { branch: f.branch, head: f.head })
       .catch((e: Error) => ({ ok: false as const, reason: ipcErrorText(e) }))
     if (!r.ok) {
+      sessionLaunch.holdFor(null)
       setFailReason(r.reason)
       setFailedFor(ws.workspace.path)
       setPhase('failed')
