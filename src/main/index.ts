@@ -1755,6 +1755,7 @@ const sessionSync = new SessionSync({
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
+  tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {

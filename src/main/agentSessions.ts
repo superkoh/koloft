@@ -53,7 +53,7 @@ import {
   withHandover,
   type SessionCaller
 } from './handover'
-import { nameForTask } from './sessionTitle'
+import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
@@ -405,6 +405,7 @@ function queuedStartedBy(
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
+  tabOpen(tabId: string): boolean
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
@@ -528,6 +529,7 @@ async function listSessions(
 
 async function startSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -541,6 +543,7 @@ async function startSibling(
     return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
     d,
+    names,
     args,
     me,
     workspace,
@@ -576,8 +579,59 @@ async function startSibling(
   )
 }
 
+interface HeldName {
+  name: string
+  tabId?: string
+}
+
+interface LaunchNames {
+  own(name: string): HeldName
+  pick(title: string): HeldName
+  launched(held: HeldName, tabId: string | null): void
+  moved(oldTabId: string, newTabId: string): void
+}
+
+function launchNames(d: SessionVerbDeps): LaunchNames {
+  const held = new Set<HeldName>()
+  const letGo = (): SessionInfo[] => {
+    const listed = d.allSessions()
+    const queued = new Set(d.waiting.list().map((q) => q.tabId))
+    for (const h of held) {
+      const tabId = h.tabId
+      if (tabId === undefined || queued.has(tabId)) continue
+      if (!d.tabOpen(tabId) || listed.some((s) => s.tabId === tabId && s.title === h.name))
+        held.delete(h)
+    }
+    return listed
+  }
+  const hold = (name: string): HeldName => {
+    const h = { name }
+    held.add(h)
+    return h
+  }
+  return {
+    own: (name) => {
+      letGo()
+      return hold(name)
+    },
+    pick: (title) => {
+      const taken = new Set(letGo().map((s) => s.title))
+      for (const h of held) taken.add(h.name)
+      return hold(distinctTitle(title, taken))
+    },
+    launched: (h, tabId) => {
+      if (tabId) h.tabId = tabId
+      else held.delete(h)
+    },
+    moved: (oldTabId, newTabId) => {
+      for (const h of held) if (h.tabId === oldTabId) h.tabId = newTabId
+    }
+  }
+}
+
 async function launchSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -595,45 +649,50 @@ async function launchSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const [name, handover] = await Promise.all([
-    !namedAtLaunch(backend, isRemoteKey(workspace))
-      ? undefined
-      : (args.name ??
-        nameForTask(
-          args.prompt,
-          d.assist,
-          new Set(d.allSessions().map((s) => s.title)),
-          ownerWords
-        )),
-    handoverInOwnersLanguage(caller, d.assist)
-  ])
-  const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
-  const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
-  const worktree =
-    gitWorkspace && (args.worktree || caller.assist)
-      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
-      : args.worktree
-  const tabId = await d.launch({
-    kind: backend,
-    cwd: workspace,
-    name,
-    worktree,
-    model: args.model,
-    // ADR-0028
-    permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
-    ownerWords,
-    // ADR-0026
-    trustFolder:
-      !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-    // CODEX§17
-    ...(traits.handoverAsRole
-      ? { role: preamble, firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(preamble, args.prompt) })
-  })
+  let held: HeldName | undefined
+  let tabId: string | null = null
+  try {
+    const [, handover] = await Promise.all([
+      !namedAtLaunch(backend, isRemoteKey(workspace))
+        ? undefined
+        : args.name !== undefined
+          ? (held = names.own(args.name))
+          : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
+      handoverInOwnersLanguage(caller, d.assist)
+    ])
+    const name = held?.name
+    const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
+    const gitWorkspace = d
+      .sidebar()
+      .some((w) => w.workspace.path === workspace && w.workspace.isGit)
+    const worktree =
+      gitWorkspace && (args.worktree || caller.assist)
+        ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
+        : args.worktree
+    tabId = await d.launch({
+      kind: backend,
+      cwd: workspace,
+      name,
+      worktree,
+      model: args.model,
+      // ADR-0028
+      permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+      ownerWords,
+      // ADR-0026
+      trustFolder:
+        !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
+      // CODEX§17
+      ...(traits.handoverAsRole
+        ? { role: preamble, firstPrompt: args.prompt }
+        : { firstPrompt: withHandover(preamble, args.prompt) })
+    })
+  } finally {
+    if (held) names.launched(held, tabId)
+  }
   if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
-  return { tabId, name }
+  return { tabId, name: held?.name }
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
@@ -922,6 +981,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   tabMoved(oldTabId: string, newTabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
+  const names = launchNames(d)
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
@@ -1242,6 +1302,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         const ownerWords = await ownerWordsOf(caller.session)
         return startSibling(
           d,
+          names,
           parsed.value,
           caller.session,
           workspace,
@@ -1350,6 +1411,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     (
       await launchSibling(
         d,
+        names,
         { prompt, name, backend },
         butler,
         d.butlerFolder(),
@@ -1361,6 +1423,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     )?.tabId ?? null
 
   const tabMoved = (oldTabId: string, newTabId: string): void => {
+    names.moved(oldTabId, newTabId)
     const owed = replyOwed.get(oldTabId)
     if (owed === undefined) return
     replyOwed.delete(oldTabId)
