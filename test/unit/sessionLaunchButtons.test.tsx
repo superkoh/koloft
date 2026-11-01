@@ -2,7 +2,12 @@
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
 import type { JSX } from 'react'
 import { render, cleanup, fireEvent, screen, waitFor, act } from '@testing-library/react'
-import { DEFAULT_SETTINGS, type BackendId, type WorkspaceRows } from '../../src/shared/types'
+import {
+  DEFAULT_SETTINGS,
+  type BackendId,
+  type WorkspacePullResult,
+  type WorkspaceRows
+} from '../../src/shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 
 vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
@@ -16,8 +21,7 @@ const { WorkspacePicker } = await import('../../src/renderer/src/components/Work
 const { WorktreeSessionDialog } =
   await import('../../src/renderer/src/components/WorktreeSessionDialog')
 
-type PullResult = { ok: true; summary: string } | { ok: false; reason: string }
-let answerPull: (r: PullResult) => void = () => {}
+let answerPull: (r: WorkspacePullResult) => void = () => {}
 
 beforeAll(() => {
   Object.assign(window, {
@@ -28,9 +32,8 @@ beforeAll(() => {
         onToolsChanged: () => () => {}
       },
       workspace: {
-        pull: () => new Promise<PullResult>((resolve) => (answerPull = resolve)),
-        worktrees: async () => [],
-        fetchFreshness: async () => null
+        pull: () => new Promise<WorkspacePullResult>((resolve) => (answerPull = resolve)),
+        worktrees: async () => []
       },
       github: { openItems: async () => ({ state: 'failed' }) }
     }
@@ -136,19 +139,22 @@ const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => HTMLEle
         onStart={async (_opts, backend) => void started.push(backend)}
       />
     ),
-    () => screen.getByRole('textbox')
+    () => {
+      const name = screen.getByRole('textbox')
+      fireEvent.change(name, { target: { value: 'feat' } })
+      return name
+    }
   ]
 ]
 
 describe('SessionLaunchButtons while a behind workspace pulls before a start', () => {
   it.each(pullDialogs)(
     '%s: Pulling… shows the icon of the agent picked from the arrow, and a failed pull leaves Enter on the default agent',
-    async (_name, dialog, enterTarget) => {
+    async (_name, dialog, prepare) => {
       useStore.setState((s) => ({ settings: { ...s.settings, gitAutoFetch: false } }))
       const started: BackendId[] = []
       render(dialog(started))
-      const input = screen.queryByRole('textbox')
-      if (input) fireEvent.change(input, { target: { value: 'feat' } })
+      const enterTarget = prepare()
       fireEvent.click(await screen.findByRole('button', { name: 'Pick an agent' }))
       fireEvent.click(await screen.findByRole('option', { name: new RegExp(BACKEND_LABEL.codex) }))
       const lead = (): string | null | undefined =>
@@ -159,7 +165,7 @@ describe('SessionLaunchButtons while a behind workspace pulls before a start', (
       act(() => answerPull({ ok: false, reason: 'not a fast-forward' }))
       await screen.findAllByText(/Pull failed/)
       expect(lead()).toBe('claude')
-      fireEvent.keyDown(enterTarget(), { key: 'Enter' })
+      fireEvent.keyDown(enterTarget, { key: 'Enter' })
       await waitFor(() => expect(started).toEqual(['claude']))
     }
   )
