@@ -34,6 +34,19 @@ describe('RealFiles', () => {
     expect(real.merge(given)).toEqual([expect.objectContaining({ src: '/home/koh/a.md' })])
   })
 
+  it('is finding a write until every written file has had its first answer, and that answer is passed on even when the file is not there, but a later one saying the same is not', async () => {
+    const found = vi.fn()
+    const real = new RealFiles(async () => new Map(), found)
+    const given = [item('/gone.md')]
+    real.merge(given)
+    expect(real.findingAWrite(given)).toBe(true)
+    await vi.waitFor(() => expect(found).toHaveBeenCalledTimes(1))
+    expect(real.findingAWrite(given)).toBe(false)
+    real.merge(given)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(found).toHaveBeenCalledTimes(1)
+  })
+
   it('asks again about a file that was not there at most once per gap, however often the list changes', async () => {
     vi.useFakeTimers()
     const asked: string[][] = []

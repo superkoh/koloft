@@ -430,6 +430,7 @@ interface Tracked {
   titles: TitleSources
   touched: ClaudeTouchedFiles
   real: RealFiles
+  liveWrites: number
   parsePromise?: Promise<void>
   parseAgain: boolean
   statusSeq: number
@@ -571,6 +572,7 @@ export class SessionTracker extends SessionRuntime {
       titles: new TitleSources(),
       touched: new ClaudeTouchedFiles(),
       real: this.realFilesOf(tabId, remote),
+      liveWrites: 0,
       sidecarTitle: null,
       parseAgain: false,
       statusSeq: 0,
@@ -967,7 +969,7 @@ export class SessionTracker extends SessionRuntime {
     const files = shellWrittenFiles(wrote)
     if (!t || !files.length) return
     for (const abs of files) t.touched.noteShellWrite(abs, Date.now())
-    t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
+    t.liveWrites++
     this.recompute(t)
   }
 
@@ -1585,17 +1587,14 @@ export class SessionTracker extends SessionRuntime {
         const label = labelField ? b.input?.[labelField] : undefined
         if (typeof label === 'string') {
           t.ledger.noteToolLabel(b.id, label)
-          if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
-            t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-          }
+          if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) t.liveWrites++
         }
         // CC§2
         const raw = toolFilePath(b.input)
         const fp = raw ? this.resolvePath(t, raw) : null
         if (!fp) continue
         const at = isFinite(recTs) ? recTs : Date.now()
-        if (t.touched.noteToolCall(b.name, b.input, fp, at) && liveNow)
-          t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
+        if (t.touched.noteToolCall(b.name, b.input, fp, at) && liveNow) t.liveWrites++
       }
     }
     return activity
@@ -1606,15 +1605,15 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private recompute(t: Tracked): void {
-    const files = capTouched(
-      t.real.merge([...t.touched.files].map(([abs, acc]) => touchedItem(abs, acc)))
-    )
+    const touched = [...t.touched.files].map(([abs, acc]) => touchedItem(abs, acc))
+    const files = capTouched(t.real.merge(touched))
 
     t.info.title = t.titles.title(t.sidecarTitle)
     t.info.files = files
     const { lastTouched, lastWritten } = t.touched
     t.info.lastTouched = lastTouched ? (t.real.of(lastTouched) ?? undefined) : undefined
     t.info.lastWritten = lastWritten ? (t.real.of(lastWritten) ?? undefined) : undefined
+    if (t.liveWrites && !t.real.findingAWrite(touched)) t.info.liveWrites = t.liveWrites
     t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
     this.emitUpdate()

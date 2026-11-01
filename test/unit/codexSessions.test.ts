@@ -931,7 +931,7 @@ describe('CodexSessions', () => {
     expect(closes).toEqual([launched.id])
   })
 
-  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write', async () => {
+  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write only once its file is in the list', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
     const file = path.join(repo, 'notes.txt')
@@ -948,6 +948,7 @@ describe('CodexSessions', () => {
         }
       }
     })
+    expect(sessions.list()[0]).toMatchObject({ files: [], liveWrites: 0 })
     await vi.waitFor(() =>
       expect(sessions.list()[0]).toMatchObject({
         files: [{ src: file, access: 'wrote', added: 1 }],

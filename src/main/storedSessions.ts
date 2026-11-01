@@ -832,7 +832,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     run.info.files = real.merge(event.files)
     run.info.lastTouched = event.lastTouched ? (real.of(event.lastTouched) ?? undefined) : undefined
     run.info.lastWritten = event.lastWritten ? (real.of(event.lastWritten) ?? undefined) : undefined
-    run.info.liveWrites = event.liveWrites
+    if (!real.findingAWrite(event.files)) run.info.liveWrites = event.liveWrites
     this.changedSoon()
   }
 
