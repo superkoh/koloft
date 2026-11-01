@@ -433,12 +433,19 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in', async ({
+  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in; an install that goes quiet gives up, says so, and offers the button again', async ({
     env
   }) => {
     test.setTimeout(120_000)
     firstRun(env, { accounts: [] })
     env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
+      __dirname,
+      'fixtures',
+      'fake-tool-installer.js'
+    )
+    env.launchEnv.KOLOFT_INSTALL_SILENCE_MS = '3000'
+    fs.writeFileSync(path.join(env.home, 'fake-tool-installer-stalls'), '')
     terminalSession(env, env.workspaces.a, 'A one', HOUR)
 
     const app = await launchApp(env)
@@ -457,6 +464,14 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expect(welcome(page).locator('.wl-sign')).toContainText(
         'Koloft installs Claude Code first.'
       )
+
+      await primary(page).click()
+      await expect(welcome(page).locator('.wl-sign-text.bad')).toContainText(
+        'The Claude Code install did not finish',
+        { timeout: 20_000 }
+      )
+      await expect(primary(page)).toHaveText(/Install Claude and sign in/)
+      await expect(primary(page)).toBeEnabled()
       expect(fs.existsSync(env.claudeCalls)).toBe(false)
     } finally {
       await quitAndClose(app)

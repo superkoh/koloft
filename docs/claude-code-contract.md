@@ -1948,6 +1948,10 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   2.1.296, macOS 27: `curl -fsSL https://claude.ai/install.sh | bash` under `zsh -l -i`
   with a fresh temporary `HOME` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, then the home's
   files listed and `command -v claude` run through both shells.)
+- **The binary download prints nothing.** The script fetches the native binary with
+  `curl -fsSL -o` (or `wget -q -O`) and prints its first line, "Setting up Claude
+  Code...", only after the download and checksum, so on a slow link it can be silent for
+  minutes. (2026-11-01: the served script fetched and read.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -1983,7 +1987,8 @@ never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab
 `src/main/remote/launch.ts`, only when Koloft itself supplied the login, writes the
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
-in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, and
+in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
+Claude sign-in gives the install 10 silent minutes before it fails (`src/main/index.ts`), and
 `launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
 
