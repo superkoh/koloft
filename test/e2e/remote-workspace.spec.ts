@@ -1175,6 +1175,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         onElsewhere
       )
       expect(loadEnds).toBe('refused')
+      expect(sshCalls(env).some((c) => c.argv.includes(REMOTE_HOST))).toBe(true)
       expect(sshCalls(env).some((c) => c.argv.includes(elsewhere))).toBe(false)
     } finally {
       await quitAndClose(app)
