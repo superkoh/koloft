@@ -1151,12 +1151,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const viewer = await guestByUrl(app, /^koloft-file:\/\/m[0-9a-f]+\/.*\/tiny\.pdf$/, {
         timeout: 30_000
       })
-      const answer = (url: string): Promise<[number, string | null]> =>
-        page.evaluate(
-          (u) => fetch(u).then((r) => [r.status, r.headers.get('content-type')]),
-          url
-        ) as Promise<[number, string | null]>
-      expect(await answer(viewer.url())).toEqual([200, 'application/pdf'])
+      expect(
+        await viewer.evaluate(() =>
+          fetch(location.href).then((r) => [r.status, r.headers.get('content-type')])
+        )
+      ).toEqual([200, 'application/pdf'])
 
       const elsewhere = 'not-a-workspace-machine'
       const onElsewhere = viewer
@@ -1165,7 +1164,17 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           /^koloft-file:\/\/m[0-9a-f]+/,
           `koloft-file://m${Buffer.from(elsewhere).toString('hex')}`
         )
-      expect((await answer(onElsewhere))[0]).toBe(404)
+      const loadEnds = await page.evaluate(
+        (u) =>
+          new Promise<string>((done) => {
+            const img = new Image()
+            img.onload = () => done('loaded')
+            img.onerror = () => done('refused')
+            img.src = u
+          }),
+        onElsewhere
+      )
+      expect(loadEnds).toBe('refused')
       expect(sshCalls(env).some((c) => c.argv.includes(elsewhere))).toBe(false)
     } finally {
       await quitAndClose(app)
