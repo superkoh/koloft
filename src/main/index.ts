@@ -90,7 +90,8 @@ import {
   messagingOf,
   reachedBySendMessage,
   preferredAssistBackend,
-  effectiveBackend
+  effectiveBackend,
+  SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
@@ -5434,7 +5435,9 @@ async function saveDiscordToken(token: string): Promise<boolean> {
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
-const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
+const HAS_WORKBENCH_BROWSER: readonly BackendId[] = SESSION_BACKENDS.filter(
+  (b) => capabilitiesFor(b, 'local').browserControl === true
+)
 
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
