@@ -26,14 +26,21 @@
 <div class="page">
   <h1>#553 正在跑的 Codex 标签页，仓库后来选了账号，还是连不上网</h1>
   <p>
-    现在是这样：Codex 标签页在<b>启动那一刻</b>决定它的沙盒能不能上网。仓库启动时已经选了 git 账号，就能上网；后来才选的，这个标签页的 <code>git push</code> 一直失败，直到重启它，面板上也不说。
+    现在是这样：Codex 标签页在<b>启动那一刻</b>决定它的沙盒能不能上网，之后整个标签页都不变。仓库启动时已经选了 git 账号，就能上网；后来才选的，这个标签页在沙盒里 <code>git push</code> 会失败：普通标签页里 Codex 会多问一次"在沙盒外跑？"，答应了才推得上去；不问人的标签页（管家、定时任务）直接失败。面板上什么也不说。
   </p>
   <p>
-    只有两种人会碰到：<b>本机 Codex 且 Settings 里关了 Workbench 浏览器</b>（默认是开的，开着时本机 Codex 标签页本来就能上网）；以及<b>所有远程 Codex 标签页</b>（远程不走浏览器那条路）。其他六种标签页选完账号立刻就能用，见最下面的表。
+    碰到的是：<b>本机 Codex 启动时没拿到浏览器端点</b>的标签页（Settings 里关了 "Let agents drive this Browser"；或者少见的：Codex 配置读两次都失败、浏览器中继没起来）；以及<b>所有远程 Codex 标签页</b>（远程不走浏览器那条路）。浏览器开关默认开着，开着时本机 Codex 标签页本来就能上网。其他六种标签页选完账号立刻就能用，见最下面的表。
   </p>
 
   <h2>选项一（推荐）：所有 Codex 标签页的沙盒都开网，像 Muse 一样 —— 界面不变</h2>
-  <p>不用画图：面板和今天一模一样，只是正在跑的 Codex 标签页选完账号后下一次 <code>git push</code> 就能成功。代价写在问题里。</p>
+  <p>不用画图：面板和今天一模一样，正在跑的 Codex 标签页选完账号后下一次 <code>git push</code> 就能成功。今天默认设置下本机 Codex 标签页本来就都开着网，所以对大多数人没有变化。代价：</p>
+  <ul>
+    <li>关了浏览器开关的人、和所有远程 Codex 标签页：沙盒里任何命令都能悄悄上外网，Codex 不再先问一句；不问人的标签页（管家）也一样。</li>
+    <li>网开着时，沙盒里能读到登录钥匙串文件（Codex 台账记的，是推断，没实测）—— 默认设置下今天已经如此。</li>
+    <li>沙盒里也能连 127.0.0.1（好处：能跑 dev server，这正是 Muse 当初一律开网的理由）。</li>
+    <li>会盖过用户自己在 Codex 配置里写的 <code>network_access = false</code>（今天浏览器开着时也已经盖过）。</li>
+    <li>老用户升级后：正在跑的 Codex 标签页不变，下次启动或重启才开网。</li>
+  </ul>
 
   <h2>选项二：在选账号的面板里列出要重启的标签页，带 "Restart"</h2>
   <p>鼠标停在工作区的 git 标记上会弹出这个面板（"Account" 那一段是 #552 加的）。虚线框是新加的：一句提示，加上每个受影响标签页一行 "Restart"。按钮、提示、图标都用面板里已有的 <code>.tbu-act</code>、<code>.fx-note warn</code>、<code>IconReload</code>。</p>
@@ -81,7 +88,7 @@
         </button>
         <div class="tbu-row"><div class="fx-note">Commits as Bob &lt;bob@example.com&gt;</div></div>
         <div class="new">
-          <div class="tbu-row"><div class="fx-note warn">2 Codex tabs here started before this account and cannot reach the network until they restart.</div></div>
+          <div class="tbu-row"><div class="fx-note warn">2 Codex tabs here started before this account. Restart them so their git can reach the server.</div></div>
           <button class="tbu-act">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M16.2 1.4C15.7 2,15.7 2.1,16.4 3.2C16.7 3.7,16.9 4.1,16.9 4.1C16.9 4.2,16.4 4,15.8 3.8C14.1 3.3,10.6 3.3,9 3.8C5.9 4.9,3.2 7.6,2.3 10.6C1.8 12.4,1.9 15.1,2.7 16.8C5 22.3,11 24.5,16.4 21.9C18.8 20.7,21 18,21.7 15.3C22.1 13.9,22.1 12.2,21.7 11.9C21 11.2,20.1 11.8,20.1 12.9C20.1 15.5,18.6 18.2,16.3 19.8C11 23.3,4 19.6,4 13.3C4 11,4.7 9.5,6.4 7.8C8.4 5.8,10.4 5.1,13 5.3C14.3 5.3,16.6 6,16.6 6.2C16.6 6.3,16.1 6.6,15.4 6.8C13.9 7.5,13.5 7.9,14 8.6C14.4 9.3,14.9 9.2,17.6 8.1C20.3 6.9,20.3 6.9,20.3 6.3C20.3 6,18.1 1.9,17.6 1.4C17.1 1,16.6 1,16.2 1.4"/></svg>
             Restart · Fix the login redirect<span class="k">idle</span>
@@ -95,24 +102,28 @@
     </div>
   </div>
   <ul>
-    <li>哪些标签页算"受影响"：这个仓库里（含它的 worktree）正在跑、启动时<b>没开网</b>的 Codex 标签页。启动时已经开了网的（浏览器开着、"skip permission prompts" 开着）不列。</li>
-    <li>点 "Restart"：和现在 ⌘R 重启一样，接着同一个对话，正在跑的那一回合会被打断。右边小字 "idle"/"working" 让人知道会不会打断。</li>
+    <li>哪些标签页算"受影响"：这个仓库里（含它的 worktree）正在跑、启动时 Koloft <b>没给它开网</b>的 Codex 标签页。启动时已经开了网的（拿到了浏览器端点、"skip permission prompts" 开着）不列。用户自己在 Codex 配置里开了网的，Koloft 看不出来，也会被列上（多列一行，重启一下无害）。</li>
+    <li>点 "Restart"：和现在 ⌘R 重启一样，会<b>先切到那个标签页</b>再重启，接着同一个对话；正在跑的那一回合会被打断，输入框里打了一半的字会丢。右边小字 "idle"/"working"/"approval" 让人知道会不会打断。</li>
     <li>重启完、或标签页关掉，那一行就消失；面板关了再打开，没重启的还在。</li>
-    <li>远程工作区的面板一样：列这台机器上的 Codex 标签页。</li>
+    <li>远程工作区的面板一样：列那台机器上<b>同一个仓库</b>（含 worktree）的 Codex 标签页。</li>
+    <li>要做的事：主进程记住每个 Codex 标签页启动时有没有开网，按仓库找出受影响的，放进面板已有的账号数据里；重启要从"只能重启当前标签页"改成"能按标签页重启"。</li>
   </ul>
 
   <h2>选项三：不加界面，那个标签页下一次空下来时 Koloft 自动重启它</h2>
-  <p>不用画图：面板不变，选完账号后，受影响的 Codex 标签页在它这一回合做完、等人说话时自己重启一次（接着同一个对话）。</p>
+  <p>不用画图：面板不变，选完账号后，受影响的 Codex 标签页在它这一回合做完、等人说话时自己重启一次（接着同一个对话）。代价：主人可能正在那个标签页里打字，输入框里打了一半的字会丢、屏幕突然重画；等审批的标签页要等审批完；也要做"按标签页重启"，和选项二一样的活。</p>
+
+  <h2>选项四（没探测过）：不重启，让正在跑的 Codex 当场开网</h2>
+  <p>Codex 有改配置的接口（<code>config/value/write</code>、恢复线程时传权限、TUI 的 <code>/permissions</code>），但正在跑的线程改完会不会马上用上新的网络设置，<b>还没探测过</b>。如果主人想要"不打断任何人"，下一步先拿真 Codex 探一次，行就做它，不行再回到一/二/三。</p>
 
   <h2>八种标签页选完账号后，正在跑的标签页怎样（今天的 main）</h2>
   <table class="kinds">
     <tr><th>标签页</th><th>凭据（谁的账号）</th><th>能不能上网</th><th>证据</th></tr>
     <tr><td>Claude Code · 本机</td><td>立刻用上</td><td>能（Koloft 不给 Claude 加沙盒）</td><td>每个进程都带一条 <code>GIT_CONFIG_COUNT</code> 指向 Koloft 的总配置文件，选账号时只改这个文件的内容（ADR-0033）</td></tr>
-    <tr><td>Codex · 本机</td><td>立刻用上</td><td><b>浏览器开着：能</b>；浏览器关着：<b>不能，要重启</b></td><td><code>codexSessions.ts</code> 启动时才加 <code>network_access</code>；单元测试两条 + e2e GA-06</td></tr>
+    <tr><td>Codex · 本机</td><td>立刻用上</td><td><b>启动时拿到浏览器端点：能</b>；没拿到：<b>不能，要重启</b></td><td><code>codexSessions.ts</code> 启动时才加 <code>network_access</code>；单元测试两条 + e2e GA-06、GA-09</td></tr>
     <tr><td>Muse Code · 本机</td><td>立刻用上</td><td>能（一直 <code>--sandbox-network enabled</code>，ADR-0038）</td><td><code>museSessions.ts</code> approvalFlags</td></tr>
-    <tr><td>Antigravity · 本机</td><td>立刻用上</td><td>能（Koloft 不加 <code>--sandbox</code>）</td><td><code>agySessions.ts</code> 无 sandbox 参数；AGY§25</td></tr>
+    <tr><td>Antigravity · 本机</td><td>立刻用上</td><td>能（Koloft 不加 <code>--sandbox</code>）</td><td><code>agySessions.ts</code> 无 sandbox 参数；Antigravity 台账沙盒那一段</td></tr>
     <tr><td>Claude Code · 远程</td><td>立刻用上</td><td>能</td><td>远程 shell 一直带 <code>GIT_CONFIG_PARAMETERS</code> 指向机器上的总配置，选账号时 Koloft 改写它（ADR-0036）</td></tr>
-    <tr><td>Codex · 远程</td><td>立刻用上</td><td><b>不能，要重启</b>（远程没有浏览器那条路）</td><td>同上 + <code>codexSessions.ts</code> 远程时浏览器端点为空</td></tr>
+    <tr><td>Codex · 远程</td><td>立刻用上（沙盒里的命令看不看得到：推断，没实测）</td><td><b>不能，要重启</b>（远程没有浏览器那条路）</td><td>同上 + <code>codexSessions.ts</code> 远程时浏览器端点为空</td></tr>
     <tr><td>Muse Code · 远程</td><td>立刻用上</td><td>能（同一套参数）</td><td>同上</td></tr>
     <tr><td>Antigravity · 远程</td><td>立刻用上</td><td>能</td><td>同上</td></tr>
   </table>
