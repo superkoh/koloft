@@ -25,7 +25,7 @@ const FORWARD_TIMEOUT_OUTLASTS_CLIENT_TIMEOUTS_MS = 180_000
 
 const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:', 'blob:'])
 const NO_MAC_FILES_FOR_A_MACHINE =
-  'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
+  'a session on another machine cannot reach files or servers of the Mac Koloft runs on; only localhost, 127.0.0.1 and [::1] mean the machine'
 
 // ADR-0046
 function showsTheMachinesOwnLocalhost(url: string, guestId: number | null): boolean {

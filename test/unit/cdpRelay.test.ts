@@ -288,7 +288,8 @@ describe('a tab whose session went away (§4.4)', () => {
 describe("a session on another machine never reaches this Mac's files or local servers through the Workbench browser", () => {
   const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
   const NAME_FOR_THE_MAC = 'http://mac-server.test/'
-  const REFUSED = 'cannot reach files or local servers of the Mac'
+  const REFUSED =
+    'cannot reach files or servers of the Mac Koloft runs on; only localhost, 127.0.0.1 and [::1] mean the machine'
   const errorOf = (reply: Record<string, unknown>): string =>
     String((reply.error as { message?: string } | undefined)?.message ?? '')
 
