@@ -139,10 +139,10 @@ export function AccountsPane(): JSX.Element {
   return (
     <>
       <div className="set-ph">
-        <h3>Claude accounts</h3>
+        <h3>Accounts</h3>
         <p>
           Every session in Koloft runs on an account below, never on the login already on this Mac.
-          Each new claude picks the least-used one.
+          Each new session picks the least-used account of its agent.
         </p>
       </div>
 
@@ -169,6 +169,21 @@ export function AccountsPane(): JSX.Element {
       </div>
       <div className="set-row">
         <div className="set-lab">
+          <b>Usage</b>
+          <small>
+            Reads how much each account below has used, right now — Claude, Codex, Muse and
+            Antigravity alike.
+          </small>
+        </div>
+        <button className="mini" disabled={refresh === 'busy'} onClick={() => void runRefresh()}>
+          <IconReload size={14} />{' '}
+          {refresh === 'busy' ? 'Refreshing…' : refresh === 'done' ? '✓ Updated' : 'Refresh usage'}
+        </button>
+      </div>
+
+      <div className="set-grp">Claude</div>
+      <div className="set-row">
+        <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
             Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
@@ -191,19 +206,6 @@ export function AccountsPane(): JSX.Element {
           </button>
           <button className="mini" onClick={() => setAdding('oauth')}>
             <IconPlus size={14} /> Paste token
-          </button>
-          <button
-            className="mini acct-refresh"
-            disabled={refresh === 'busy'}
-            onClick={() => void runRefresh()}
-            title="Probe every enabled account now"
-          >
-            <IconReload size={14} />{' '}
-            {refresh === 'busy'
-              ? 'Refreshing…'
-              : refresh === 'done'
-                ? '✓ Updated'
-                : 'Refresh usage'}
           </button>
         </>
       )}
