@@ -269,7 +269,7 @@ describe('the files Koloft keeps in step on a machine', () => {
 })
 
 describe('the repository key of each folder on a machine', () => {
-  it('stays with its own folder when the login shell prints a banner first, and a short answer gives no key at all', async () => {
+  it('stays with its own folder when the login shell prints a banner first, even one with no line end, and a short answer gives no key at all', async () => {
     const repo = (name: string): string => {
       const dir = path.join(home, name)
       sh(`git init -q '${dir}'`)
@@ -278,16 +278,15 @@ describe('the repository key of each folder on a machine', () => {
     const folders = [repo('one'), path.join(home, 'gone'), repo('two')]
     const machine = new GitMachineAccounts(async (m, script, args = [], opts = {}) => {
       const r = onMachine(script, args, opts.input)
-      const banner = m === 'chatty' ? 'Welcome to box\n' : ''
-      const stdout = m === 'short' ? r.stdout.split('\n').slice(1).join('\n') : r.stdout
+      const banner = m === 'chatty' ? 'Welcome to box\n\x1b]0;box\x07' : ''
+      const stdout = m === 'short' ? r.stdout.replace(/repo-key [^\n]*\n/, '') : r.stdout
       return { code: r.status, stdout: banner + stdout, stderr: r.stderr }
     })
-    const keys = [
+    expect(await machine.repoKeys('chatty', folders)).toEqual([
       formatRemoteKey('chatty', path.join(home, 'one/.git')),
       null,
       formatRemoteKey('chatty', path.join(home, 'two/.git'))
-    ]
-    expect(await machine.repoKeys('chatty', folders)).toEqual(keys)
+    ])
     expect(await machine.repoKeys('short', folders)).toEqual([null, null, null])
   })
 })

@@ -191,11 +191,9 @@ export class GitMachineAccounts {
     const lines = r.stdout
       .split('\n')
       .filter((l) => l.startsWith(REPO_KEYS_LINE_TAG))
-      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).trim())
-    const answered = r.code === 0 && lines.length === paths.length
-    return paths.map((_, i) =>
-      answered && lines[i].startsWith('/') ? formatRemoteKey(machine, lines[i]) : null
-    )
+      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).replace(/\r$/, ''))
+    if (r.code !== 0 || lines.length !== paths.length) return paths.map(() => null)
+    return lines.map((real) => (real.startsWith('/') ? formatRemoteKey(machine, real) : null))
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
