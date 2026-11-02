@@ -7,7 +7,12 @@ import type {
   SessionInfo
 } from '@shared/types'
 import { isWebPagePath, previewKindForPath } from '@shared/preview'
-import { AGY_ARTIFACT_SIDECAR, AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER } from '@shared/agyBrain'
+import {
+  AGY_ARTIFACT_SIDECAR,
+  AGY_LOGS_FOLDER,
+  AGY_SCRATCH_FOLDER,
+  AGY_UPLOADS_FOLDER
+} from '@shared/agyBrain'
 
 export function inRoot(p: string, root: string): boolean {
   return p === root || p.startsWith(root + '/')
@@ -123,20 +128,22 @@ export function scratchpadDirOf(session: SessionInfo | null): string | undefined
 // AGY§8 AGY§19
 const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
 
-function isAgyBookkeeping(e: DirEntry, conversationDir: string | undefined): boolean {
-  return (
-    e.path === `${conversationDir}/${e.name}` &&
-    (AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR))
-  )
+type ListedDir = (dir: string) => readonly DirEntry[] | undefined
+
+function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: ListedDir): boolean {
+  if (e.path !== `${dir}/${e.name}`) return false
+  if (e.name === AGY_SCRATCH_FOLDER) return !listed(e.path)?.length
+  return AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR)
 }
 
 export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
   scratchpadDir: string | undefined,
-  backend: BackendId | undefined
+  backend: BackendId | undefined,
+  listed: ListedDir = () => undefined
 ): DirEntry[] {
   if (!entries) return []
-  if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir))
+  if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir, listed))
   if (backend === 'claude') return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
   return [...entries]
 }
