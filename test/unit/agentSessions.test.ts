@@ -825,7 +825,7 @@ describe('koloft session send', () => {
     async ({ caller, cwd, remote }) => {
       const there = { cwd, treeRoot: cwd, remote }
       const { verb, lines } = harness([
-        session('me', caller, { ...there, nativeSessionId: MUSE_ID }),
+        session('me', caller, there),
         session('a', 'claude', { ...there, title: 'Nightly check' }),
         session('b', 'claude', { ...there, title: 'Nightly check' })
       ])
