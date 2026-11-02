@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -33,12 +33,19 @@ function generateNotices(): string {
 }
 
 describe('third-party notices', () => {
-  const notices = generateNotices()
+  let notices = ''
+  beforeAll(() => {
+    notices = generateNotices()
+  })
 
   it("carries a bundled package's license and those of the Bootstrap and LobeHub marks the app draws", () => {
     expect(notices).toContain(read(path.join(root, 'node_modules/react-icons/LICENSE')))
     expect(notices).toContain(read(path.join(root, 'build/licenses/bootstrap-icons.txt')))
     expect(notices).toContain(read(path.join(root, 'build/licenses/lobehub-icons.txt')))
+  })
+
+  it("carries Electron's license, which the mac packager drops from the app", () => {
+    expect(notices).toContain(read(path.join(root, 'node_modules/electron/dist/LICENSE')))
   })
 
   it('lists every production dependency the app ships, at its installed version', () => {

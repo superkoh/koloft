@@ -5,8 +5,10 @@ const ROOT = path.resolve(import.meta.dirname, '..')
 const OUT = path.resolve(process.argv[2] ?? path.join(ROOT, 'out'))
 const BUILDS = ['main', 'preload', 'renderer']
 const VITE_LICENSES = '.vite/license.json'
-const LICENSE_FILE = /^(licen[cs]e|copying|notice)/i
-const NOT_FROM_A_PACKAGE = [
+const LICENSE_FILE = /^(licen[cs]e|copying|notice|thirdpartynotices)/i
+const SAME_LICENSE_AS = { '@xterm/headless': 'node_modules/@xterm/xterm/LICENSE' }
+const EXTRA_LICENSES = [
+  ['Electron', 'node_modules/electron/dist/LICENSE'],
   [
     'Bootstrap Icons, the brand marks drawn through react-icons/bs',
     'build/licenses/bootstrap-icons.txt'
@@ -42,21 +44,32 @@ function shippedPackages() {
     })
 }
 
+function withoutLicenseFile({ name, identifier }) {
+  if (SAME_LICENSE_AS[name]) return read(path.join(ROOT, SAME_LICENSE_AS[name]))
+  const { author } = JSON.parse(read(path.join(ROOT, 'node_modules', name, 'package.json')))
+  const holder = typeof author === 'string' ? author : author?.name
+  return [
+    `License: ${identifier ?? 'not stated'} (the package ships no license file)`,
+    holder && `Copyright: ${holder}`
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 const section = (title, text) => `==== ${title} ====\n\n${text.trim()}\n`
 
 const byKey = new Map()
 for (const pkg of [...shippedPackages(), ...bundledPackages()]) {
   const key = `${pkg.name}@${pkg.version}`
   if (byKey.has(key)) continue
-  const text =
-    pkg.text || `License: ${pkg.identifier ?? 'not stated'} (the package ships no license file)`
-  byKey.set(key, section(`${pkg.name} ${pkg.version}`, text))
+  byKey.set(key, section(`${pkg.name} ${pkg.version}`, pkg.text || withoutLicenseFile(pkg)))
 }
 
 const notices = [
-  'Koloft includes the third-party software, artwork and fonts below, each with its license.\n',
+  'Koloft includes the third-party software, artwork and fonts below, each with its license.',
+  'The git, gh and Git Credential Manager it ships carry their own license files in the git, gh and gcm folders next to this file.\n',
   ...[...byKey].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
-  ...NOT_FROM_A_PACKAGE.map(([title, file]) => section(title, read(path.join(ROOT, file))))
+  ...EXTRA_LICENSES.map(([title, file]) => section(title, read(path.join(ROOT, file))))
 ].join('\n')
 
 fs.writeFileSync(path.join(OUT, 'THIRD-PARTY-NOTICES.txt'), notices)
