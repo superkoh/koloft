@@ -50,12 +50,17 @@ function machineUrl(scheme: string, host: string, p: string): string {
   return `${scheme}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
 }
 
-function machineFileOf(u: URL, hex: string): RemoteKey | null {
+function decodedPathOf(u: URL): string | null {
   try {
-    return parseRemoteKey(formatRemoteKey(textOfHex(hex), decodeURIComponent(u.pathname)))
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
+}
+
+function machineFileOf(u: URL, hex: string): RemoteKey | null {
+  const p = decodedPathOf(u)
+  return p === null ? null : parseRemoteKey(formatRemoteKey(textOfHex(hex), p))
 }
 
 export function machinePageUrl(host: string, p: string): string {
@@ -83,16 +88,9 @@ export function previewFileOf(url: string): string | null {
   const u = urlOrNull(url)
   if (u?.protocol !== `${PREVIEW_FILE_SCHEME}:`) return null
   const hex = MACHINE_HOST.exec(u.hostname)?.[1]
-  if (hex) {
-    const remote = machineFileOf(u, hex)
-    return remote && formatRemoteKey(remote.host, remote.path)
-  }
-  if (u.hostname !== THIS_MAC) return null
-  try {
-    return decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
+  const machine = hex ? machineFileOf(u, hex) : null
+  if (machine) return formatRemoteKey(machine.host, machine.path)
+  return u.hostname === THIS_MAC ? decodedPathOf(u) : null
 }
 
 export function pagePathOf(url: string): string | null {

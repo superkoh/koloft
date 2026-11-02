@@ -2929,18 +2929,9 @@ app.whenReady().then(() => {
   presence.macLastUsed()
   protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
     const file = previewFileOf(request.url)
-    const remote = file === null ? null : parseRemoteKey(file)
-    const reachable = file !== null && (!remote || aMachineWithAWorkspaceHere(remote.host))
-    const data = reachable
-      ? await hosts
-          .of(file)
-          .readBytes(file)
-          .catch(() => null)
-      : null
+    const data = file === null ? null : await bytesOfAFileHere(file)
     if (!file || !data) return new Response('Not found', { status: 404 })
-    return new Response(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), {
-      headers: { 'content-type': mimeOf(file) }
-    })
+    return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
   setupBrowserPartition()
@@ -4633,20 +4624,28 @@ const MACHINE_PAGE_HEADERS = {
     'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
 }
 
-function aMachineWithAWorkspaceHere(host: string | undefined): boolean {
-  return !!workspaceMgr?.remoteTargets().some((t) => t.host === host)
+async function bytesOfAFileHere(file: string): Promise<Buffer | null> {
+  const machine = parseRemoteKey(file)?.host
+  if (machine && !workspaceMgr?.remoteTargets().some((t) => t.host === machine)) return null
+  return hosts
+    .of(file)
+    .readBytes(file)
+    .catch(() => null)
+}
+
+function bodyOf(data: Buffer): Uint8Array {
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
 }
 
 async function machinePageResponse(request: Request): Promise<Response> {
   const page = machinePageOf(request.url)
-  const machine = page && aMachineWithAWorkspaceHere(page.host) ? hosts.machine(page.host) : null
-  const body = page && (await machine?.readBytes(machine.keyed(page.path)).catch(() => null))
+  const body = page && (await bytesOfAFileHere(formatRemoteKey(page.host, page.path)))
   if (!page || !body)
     return new Response(fileNotFoundHtml(page?.path ?? request.url), {
       status: 404,
       headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
     })
-  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+  return new Response(bodyOf(body), {
     headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
   })
 }
