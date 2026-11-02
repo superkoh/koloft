@@ -19,6 +19,7 @@ import {
   MACHINE_GH,
   MACHINE_PREFLIGHT,
   RECEIVE_FILES,
+  REMOTE_URLS_LINE_TAG,
   REMOTE_URLS_OF_EACH,
   REPO_KEYS,
   SYNC_FILES,
@@ -195,13 +196,14 @@ export class GitMachineAccounts {
     })
   }
 
-  async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[]> {
+  async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[] | null> {
     if (!repos.length) return []
-    const r = await this.run(machine, REMOTE_URLS_OF_EACH, repos, {
-      timeoutMs: MACHINE_STEP_TIMEOUT_MS
-    })
-    const lines = r.code === 0 ? r.stdout.split('\n') : []
-    return repos.map((_, i) => Buffer.from(lines[i]?.trim() ?? '', 'base64').toString('utf8'))
+    const r = await this.run(machine, REMOTE_URLS_OF_EACH, repos)
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REMOTE_URLS_LINE_TAG))
+      .map((l) => Buffer.from(l.slice(REMOTE_URLS_LINE_TAG.length).trim(), 'base64').toString())
+    return r.code === 0 && lines.length === repos.length ? lines : null
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {

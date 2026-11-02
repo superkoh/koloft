@@ -61,6 +61,7 @@ import {
 import { loginFromSshGreeting, SSH_SAFE_OPTIONS, sshSetting } from './gitClues'
 import {
   httpsTurnedAway,
+  REMOTE_URLS,
   remoteUrlsOf,
   rewriteRulesFor,
   type HttpsTurnedAway,
@@ -70,7 +71,6 @@ import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
 import { GitMachineAccounts, throughTempStore, type MachineRun } from './gitMachineAccounts'
-import { REMOTE_URLS } from './remote/gitAccounts'
 import type { GhResult } from './prChecks'
 import type { GitRunResult } from './gitSteps'
 import { pushAccess } from './githubApi'
@@ -854,6 +854,7 @@ export class GitAccountService {
       machine,
       picks.map((p) => p.repo)
     )
+    if (!listed) return false
     const texts = new Map(
       await Promise.all(
         picks.map(async (p, i): Promise<[string, string]> => {

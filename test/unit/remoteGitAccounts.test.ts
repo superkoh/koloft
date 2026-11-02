@@ -7,7 +7,6 @@ import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install
 import {
   CLUE_ALL,
   RECEIVE_FILES,
-  REMOTE_URLS,
   SYNC_FILES,
   fileLines,
   machineHelperScript,
@@ -24,6 +23,7 @@ import { machineGhWrapperScript } from '../../src/main/gitCredentialScripts'
 import { GITHUB_URL, credentialUrlOf, fileNameOf } from '../../src/main/gitConfigFile'
 import { suggestFor } from '../../src/main/gitAccountSuggest'
 import { pushAccessOn } from '../../src/main/gitPlatformApi'
+import { REMOTE_URLS } from '../../src/main/gitSshRemotes'
 import type { GitAccount, GitAccountSuggestion } from '../../src/shared/types'
 
 let home: string
@@ -254,7 +254,7 @@ describe('a suggestion for a repository on a machine', () => {
 })
 
 describe("the picked repositories' remote URLs a sync reads on a machine", () => {
-  it('come back in one trip for every repository, the same as a trip per repository, a missing folder as nothing', async () => {
+  it('come back in one trip for every repository, the same as a trip per repository, a missing folder as nothing, a login banner ignored, and a failed trip as no answer at all', async () => {
     const make = (name: string, cmds: string): string => {
       const dir = path.join(home, name)
       sh(`git init -q '${dir}' && cd '${dir}' && ${cmds}`)
@@ -270,10 +270,12 @@ describe("the picked repositories' remote URLs a sync reads on a machine", () =>
       make('bare', 'true')
     ]
     let trips = 0
-    const machine = new GitMachineAccounts(async (_m, script, args = [], opts = {}) => {
+    const machine = new GitMachineAccounts(async (m, script, args = [], opts = {}) => {
       trips++
       const r = onMachine(script, args, opts.input)
-      return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+      if (m === 'down') return { code: 255, stdout: '', stderr: 'Connection closed' }
+      const banner = m === 'chatty' ? 'Welcome to box\n' : ''
+      return { code: r.status, stdout: banner + r.stdout, stderr: r.stderr }
     })
     const each = await machine.remoteUrlsOfEach('box', repos)
     expect(trips).toBe(1)
@@ -284,9 +286,11 @@ describe("the picked repositories' remote URLs a sync reads on a machine", () =>
       )
     )
     expect(each).toEqual(oneByOne)
-    expect(each[0]).toContain('remote.origin.url https://github.com/acme/app.git')
-    expect(each[2]).toContain('remote.origin.pushurl ssh://git@github.com:22/acme/app.git')
-    expect([each[1], each[3]]).toEqual(['', ''])
+    expect(each![0]).toContain('remote.origin.url https://github.com/acme/app.git')
+    expect(each![2]).toContain('remote.origin.pushurl ssh://git@github.com:22/acme/app.git')
+    expect([each![1], each![3]]).toEqual(['', ''])
+    expect(await machine.remoteUrlsOfEach('chatty', repos)).toEqual(each)
+    expect(await machine.remoteUrlsOfEach('down', repos)).toBeNull()
     trips = 0
     expect(await machine.remoteUrlsOfEach('box', [])).toEqual([])
     expect(trips).toBe(0)
