@@ -12,6 +12,8 @@ import {
 import { EXIT_USAGE } from '../../src/main/agentRequests'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../src/main/discord/link'
+import { WAITING_QUESTION_TOOL } from '../../src/shared/agentGuide'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 
 let cwd: string
 beforeEach(() => {
@@ -67,12 +69,14 @@ describe('koloft discord setup commands', () => {
     expect(bound()).toBe(1)
   })
 
-  it('the setup steps tell a helper of every agent which tool asks the owner and waits', () => {
-    expect(DISCORD_SETUP_STEPS).toContain('AskUserQuestion in Claude Code')
-    expect(DISCORD_SETUP_STEPS).toContain('request_user_input in Codex')
-    expect(DISCORD_SETUP_STEPS).toContain('request_user_input in Muse Code')
-    expect(DISCORD_SETUP_STEPS).toContain('ask_question in Antigravity CLI')
-  })
+  it.each(SESSION_BACKENDS)(
+    'the setup steps tell a %s helper which of its tools asks the owner and waits',
+    (backend) => {
+      expect(DISCORD_SETUP_STEPS).toMatch(
+        new RegExp(`${WAITING_QUESTION_TOOL[backend]} in ${BACKEND_LABEL[backend]}\\b`)
+      )
+    }
+  )
 
   it('bind takes no workspace: there is only the butler’s channel', async () => {
     const { call, bound } = verb(false)

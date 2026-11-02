@@ -79,6 +79,14 @@ const HELPER_RULES: Record<BackendId, string[]> = {
 
 export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
 
+// MUSE§11 AGY§13 AGY§14
+export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
+  claude: 'AskUserQuestion',
+  codex: CODEX_WAITING_QUESTION_TOOL,
+  muse: 'request_user_input',
+  agy: 'ask_question'
+}
+
 const QUESTION_RULE: Record<BackendId, string> = {
   claude: '',
   codex: `

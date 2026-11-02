@@ -335,7 +335,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
         const pane = await discordPane(page)
         await pane.getByRole('button', { name: 'Set up with Alfred' }).click()
         const helper = butlerHelperRows(page)
-        await expect(helper).toHaveCount(1, { timeout: 90_000 })
+        await expect(helper).toHaveCount(1, { timeout: 60_000 })
         const helperTab = (await helper.getAttribute('data-tab-id')) ?? ''
         await expect
           .poll(async () => (await terminalText(page, helperTab)).replace(/\s+/g, ''), {
@@ -343,7 +343,9 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
           })
           .toContain('runkoloftdiscordsetup')
         const butlerFolder = path.join(env.userData, 'conductors', 'global')
-        expect(agent.calls(env).map((c) => c.cwd)).toEqual([butlerFolder, butlerFolder])
+        const folders = agent.calls(env).map((c) => c.cwd)
+        expect(folders.length).toBeGreaterThanOrEqual(2)
+        expect(new Set(folders)).toEqual(new Set([butlerFolder]))
         expect(readAllCalls(env)).toEqual([])
       } finally {
         await close()

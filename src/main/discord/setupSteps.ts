@@ -1,11 +1,6 @@
-import { CODEX_WAITING_QUESTION_TOOL } from '@shared/agentGuide'
+import { WAITING_QUESTION_TOOL as ASK } from '@shared/agentGuide'
 import { channelLabel, ownedGuilds } from '@shared/conductors'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
-
-// MUSE§11
-const MUSE_QUESTION_TOOL = 'request_user_input'
-// AGY§13
-const AGY_QUESTION_TOOL = 'ask_question'
 
 export const DISCORD_SETUP_STEPS = `How to set up Discord for the owner, so they can talk to their butler from a Discord channel. Work in the Workbench browser with playwright-cli. The owner sees that browser in Koloft and does the steps you cannot.
 
@@ -13,7 +8,7 @@ Rules:
 - Never read, copy, print or type the bot token. Use "koloft discord token --from-page" to save it; Koloft reads it from the page itself, then reloads the page so the token is gone, and tells you only "saved" or why not. It refuses while you are attached.
 - "Detach" means run "playwright-cli close", so no tool is attached to the browser; "re-attach" means open the page again with playwright-cli. Detach before every step the owner does by hand (signing in, typing a name or a password, clicking Create, any "I am human" check). Then ask the owner inside Koloft whether they are done, and re-attach only after they say yes, except where a step below says to stay detached.
 - You cannot reload while detached: run "koloft discord reload" and Koloft reloads the Discord page for you. Never ask the owner to reload.
-- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Ask every question with your question tool, which shows the owner a box with choices and waits for the answer: AskUserQuestion in Claude Code, ${CODEX_WAITING_QUESTION_TOOL} in Codex (call it as a tool of its own, not inside exec; never ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait), ${MUSE_QUESTION_TOOL} in Muse Code, ${AGY_QUESTION_TOOL} in Antigravity CLI. Never sleep or poll while you wait: the owner's reply starts your next turn.
+- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Ask every question with your question tool, which shows the owner a box with choices and waits for the answer: ${ASK.claude} in Claude Code, ${ASK.codex} in Codex (call it as a tool of its own, not inside exec; never ${ASK.codex}_async, which does not wait), ${ASK.muse} in Muse Code, ${ASK.agy} in Antigravity CLI. Never sleep or poll while you wait: the owner's reply starts your next turn.
 - Run "koloft discord status" first and again after each step; skip every step it says is done. A bot token Discord refuses is not done: do steps 2 to 5 to get a new one. Do steps 2 to 5 too when the owner says they want to change the bot, even though status says the token is saved.
 
 Steps:
