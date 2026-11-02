@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
+import { windowLabel } from '../../src/shared/accountUsage'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   E2E_MUSE_ACCOUNT,
@@ -51,6 +52,7 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
   return museCalls(env)[before]
 }
 
+const OUTLASTS_A_MUSE_USAGE_READ_MS = 30_000
 const ROWS_FOLLOW_A_LISTING_MS = 2_000
 const SAMPLE_EVERY_MS = 100
 
@@ -228,9 +230,15 @@ test.describe('Muse Code sessions through the real method chooser, status signal
 
       await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
       await page.locator('.tbu').click()
-      const popRow = page.locator('.tbu-pop .tbu-row', { hasText: 'metered' })
+      const pop = page.locator('.tbu-pop')
+      const popRow = pop.locator('.tbu-row', { hasText: 'metered' })
       await expect(popRow.locator('.acct-badge')).toHaveText('API KEY')
       await expect(popRow.locator('.acct-note')).toHaveText(metered)
+      await expect(
+        pop
+          .locator('.tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+          .locator('.acct-meter[data-win="5h"] .m-pct')
+      ).toHaveText('40%', { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
       await page.keyboard.press('Escape')
 
       await startMuse(page, env)
@@ -238,7 +246,17 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
       )
       fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 7 }))
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect
+        .poll(
+          async () => {
+            const views = await page.evaluate(() => window.api.accounts.probe())
+            return views
+              .find((a) => a.name === E2E_MUSE_ACCOUNT)
+              ?.limits?.windows.find((w) => windowLabel(w.minutes) === '5h')?.used
+          },
+          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
+        )
+        .toBe(1)
       await startMuse(page, env)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         'koloft: → metered (API key, metered)'
