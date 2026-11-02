@@ -2517,7 +2517,7 @@ so its folders were not writable by default.
 - **Which calls ask, read from the `rust-v0.166.0` source, not run**
   (`codex-mcp/src/mcp/mod.rs` `mcp_permission_prompt_is_auto_approved`,
   `core/src/mcp_tool_call.rs` `requires_mcp_tool_approval_for_mode`,
-  `custom_mcp_tool_approval_mode`, `session_mcp_tool_approval_key`):
+  `session_mcp_tool_approval_key`, `codex-mcp/src/server.rs` `tool_approval_mode`):
   - `approve` on the tool or its server skips the question under every approval policy.
   - Approvals `never` with a profile that has full disk write (`danger-full-access`) also
     skips it; `never` with `workspace-write` refuses the call ("MCP tool call requires
@@ -2532,11 +2532,12 @@ so its folders were not writable by default.
     `approve` is **inferred, not checked** in a turn).
   - "Allow for this session" and "Always allow" are offered and remembered only in `auto`
     mode, keyed by server **and tool name**: each of the 18 tools asks on its own first
-    call. "Allow for this session" lasts one thread (a second thread on the same
+    call. Under `prompt` neither choice is offered, so such a tool asks on every call. "Allow for this session" lasts one thread (a second thread on the same
     app-server asked again, the 2026-10-16 bullet above; a `/new` thread asked again, the
     2026-10-10 bullet). "Always allow" writes that tool's `approval_mode = "approve"` into
-    the user `config.toml` — that it lands in the tab's `CODEX_HOME` and lasts there is
-    **inferred, not checked**.
+    the config layer that defines the MCP entry (the `CODEX_HOME`'s `config.toml` for an
+    entry there, a project's `.codex/config.toml` for one there) — that it lands in the
+    tab's `CODEX_HOME` and lasts there is **inferred, not checked**.
 - **A failed `config/read` drops every browser setting at once**: Koloft builds
   `network_access`, the Playwright cache root and the `env_vars` passthrough from one
   `config/read`, so a read lost to section 28's race leaves a tab with no network (unless
