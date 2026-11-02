@@ -231,6 +231,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const popRow = page.locator('.tbu-pop .tbu-row', { hasText: 'metered' })
       await expect(popRow.locator('.acct-badge')).toHaveText('API KEY')
       await expect(popRow.locator('.acct-note')).toHaveText(metered)
+      await expect(
+        page
+          .locator('.tbu-pop .tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+          .locator('.acct-meter[data-win="5h"] .m-pct')
+      ).toHaveText('40%')
       await page.keyboard.press('Escape')
 
       await startMuse(page, env)
@@ -238,7 +243,12 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
       )
       fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 7 }))
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect
+        .poll(async () => {
+          const views = await page.evaluate(() => window.api.accounts.probe())
+          return views.find((a) => a.name === E2E_MUSE_ACCOUNT)?.limits?.windows[0]?.used
+        })
+        .toBe(1)
       await startMuse(page, env)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         'koloft: → metered (API key, metered)'
