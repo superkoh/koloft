@@ -376,20 +376,22 @@ export function BrowseView({
   // CC§2 PLATFORM§28 AGY§8
   const scratchLive = !!scratchpadDir && (children[scratchpadDir]?.length ?? 0) > 0
   useEffect(() => {
-    if (!active || !scratchpadDir) return
-    const dirs = agyScratch && scratchLive ? [scratchpadDir, agyScratch] : [scratchpadDir]
-    for (const d of dirs) {
-      relist(d)
-      window.api.fs.watchDir(d)
+    const dir = scratchpadDir
+    if (!active || !dir) return
+    const relistWithScratch = (): void => {
+      relist(dir)
+      if (agyScratch) relist(agyScratch)
     }
+    relistWithScratch()
+    window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed) => {
-      if (!dirs.includes(changed)) return
-      relist(changed)
+      if (changed !== dir) return
+      relistWithScratch()
       setFsTick((x) => x + 1)
     })
     return () => {
       off()
-      for (const d of dirs) window.api.fs.unwatchDir(d)
+      window.api.fs.unwatchDir(dir)
     }
   }, [active, scratchpadDir, agyScratch, scratchLive, root, relist])
 
@@ -404,7 +406,7 @@ export function BrowseView({
         scratchpadDir ? children[scratchpadDir] : undefined,
         scratchpadDir,
         backendId,
-        (dir) => children[dir]
+        children
       ),
     [children, scratchpadDir, backendId]
   )
@@ -750,7 +752,9 @@ export function BrowseView({
     if (!entries)
       return loading.has(dir) ? <div className="ft-hint bv-loading">Loading…</div> : <></>
     const visible =
-      section === 'scratchpad' ? scratchpadEntries(entries, scratchpadDir, backendId) : entries
+      section === 'scratchpad'
+        ? scratchpadEntries(entries, scratchpadDir, backendId, children)
+        : entries
     const hidden = hiddenTouchedUnder(dir, visible, idx.touchedInProject)
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)

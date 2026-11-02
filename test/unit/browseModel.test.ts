@@ -145,8 +145,10 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       { name: 'tasks', path: SCRATCH + '/tasks', isDir: true },
       { name: 'plan.md', path: SCRATCH + '/plan.md', isDir: false }
     ]
-    expect(scratchpadEntries(entries, SCRATCH, 'claude').map((e) => e.name)).toEqual(['plan.md'])
-    expect(scratchpadEntries(undefined, SCRATCH, 'claude')).toEqual([])
+    expect(scratchpadEntries(entries, SCRATCH, 'claude', {}).map((e) => e.name)).toEqual([
+      'plan.md'
+    ])
+    expect(scratchpadEntries(undefined, SCRATCH, 'claude', {})).toEqual([])
   })
 
   // AGY§8 AGY§19
@@ -165,33 +167,28 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       entry(brain, 'implementation_plan.md.metadata.json'),
       entry(brain, 'tasks', true)
     ]
-    const scratchHasAFile = (): DirEntry[] => [entry(brain + '/scratch', 'notes.md')]
+    const scratchHasAFile = { [brain + '/scratch']: [entry(brain + '/scratch', 'notes.md')] }
     expect(scratchpadEntries(top, brain, 'agy', scratchHasAFile).map((e) => e.name)).toEqual([
       'scratch',
       'implementation_plan.md',
       'tasks'
     ])
     const deeper = [entry(brain + '/scratch', 'run.md.metadata.json')]
-    expect(scratchpadEntries(deeper, brain, 'agy')).toEqual(deeper)
+    expect(scratchpadEntries(deeper, brain, 'agy', {})).toEqual(deeper)
     const claudes = [entry(SCRATCH, 'build.md.metadata.json')]
-    expect(scratchpadEntries(claudes, SCRATCH, 'claude')).toEqual(claudes)
+    expect(scratchpadEntries(claudes, SCRATCH, 'claude', {})).toEqual(claudes)
   })
 
   // AGY§8
-  it('an Antigravity conversation folder hides the scratch/ agy makes empty at the first prompt, until something is inside it', () => {
+  it('an Antigravity conversation folder hides the scratch/ agy makes empty at the first prompt while it is empty or not yet listed; a file named scratch still shows', () => {
     const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
     const scratch: DirEntry = { name: 'scratch', path: `${brain}/scratch`, isDir: true }
     const plan: DirEntry = { name: 'plan.md', path: `${brain}/plan.md`, isDir: false }
-    const names = (inScratch: DirEntry[] | undefined): string[] =>
-      scratchpadEntries([scratch, plan], brain, 'agy', (dir) =>
-        dir === scratch.path ? inScratch : undefined
-      ).map((e) => e.name)
-    expect(names(undefined)).toEqual(['plan.md'])
-    expect(names([])).toEqual(['plan.md'])
-    expect(names([{ name: 'notes.md', path: `${scratch.path}/notes.md`, isDir: false }])).toEqual([
-      'scratch',
-      'plan.md'
-    ])
+    const names = (top: DirEntry[], listed: Record<string, DirEntry[]>): string[] =>
+      scratchpadEntries(top, brain, 'agy', listed).map((e) => e.name)
+    expect(names([scratch, plan], {})).toEqual(['plan.md'])
+    expect(names([scratch, plan], { [scratch.path]: [] })).toEqual(['plan.md'])
+    expect(names([{ ...scratch, isDir: false }, plan], {})).toEqual(['scratch', 'plan.md'])
   })
 })
 

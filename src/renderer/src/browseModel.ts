@@ -128,11 +128,11 @@ export function scratchpadDirOf(session: SessionInfo | null): string | undefined
 // AGY§8 AGY§19
 const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
 
-type ListedDir = (dir: string) => readonly DirEntry[] | undefined
+type Listed = Readonly<Record<string, readonly DirEntry[] | undefined>>
 
-function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: ListedDir): boolean {
+function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: Listed): boolean {
   if (e.path !== `${dir}/${e.name}`) return false
-  if (e.name === AGY_SCRATCH_FOLDER) return !listed(e.path)?.length
+  if (e.name === AGY_SCRATCH_FOLDER && e.isDir) return !listed[e.path]?.length
   return AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR)
 }
 
@@ -140,7 +140,7 @@ export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
   scratchpadDir: string | undefined,
   backend: BackendId | undefined,
-  listed: ListedDir = () => undefined
+  listed: Listed
 ): DirEntry[] {
   if (!entries) return []
   if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir, listed))
