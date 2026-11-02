@@ -46,16 +46,50 @@ function textOfHex(hex: string): string {
   return new TextDecoder().decode(Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16)))
 }
 
+function machineUrl(scheme: string, host: string, p: string): string {
+  return `${scheme}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
+}
+
+function machineFileOf(u: URL, hex: string): RemoteKey | null {
+  try {
+    return parseRemoteKey(formatRemoteKey(textOfHex(hex), decodeURIComponent(u.pathname)))
+  } catch {
+    return null
+  }
+}
+
 export function machinePageUrl(host: string, p: string): string {
-  return `${MACHINE_PAGE_SCHEME}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
+  return machineUrl(MACHINE_PAGE_SCHEME, host, p)
 }
 
 export function machinePageOf(url: string): RemoteKey | null {
   const u = urlOrNull(url)
   const hex = MACHINE_HOST.exec(u?.hostname ?? '')?.[1]
   if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !hex) return null
+  return machineFileOf(u, hex)
+}
+
+export const PREVIEW_FILE_SCHEME = 'koloft-file'
+const THIS_MAC = 'localhost'
+
+export function previewFileUrl(p: string): string {
+  const remote = parseRemoteKey(p)
+  return remote
+    ? machineUrl(PREVIEW_FILE_SCHEME, remote.host, remote.path)
+    : `${PREVIEW_FILE_SCHEME}://${THIS_MAC}${encodedPath(p)}`
+}
+
+export function previewFileOf(url: string): string | null {
+  const u = urlOrNull(url)
+  if (u?.protocol !== `${PREVIEW_FILE_SCHEME}:`) return null
+  const hex = MACHINE_HOST.exec(u.hostname)?.[1]
+  if (hex) {
+    const remote = machineFileOf(u, hex)
+    return remote && formatRemoteKey(remote.host, remote.path)
+  }
+  if (u.hostname !== THIS_MAC) return null
   try {
-    return parseRemoteKey(formatRemoteKey(textOfHex(hex), decodeURIComponent(u.pathname)))
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }

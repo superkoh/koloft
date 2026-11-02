@@ -465,8 +465,8 @@ function publishTwo(publisher: string): void {
 }
 
 // PLATFORM§30
-describe('a web page on the machine', () => {
-  it('reads every file a page pulls in byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
+describe('a whole file read from the machine: what a web page there pulls in, a picture or a PDF the Workbench shows', () => {
+  it('reads every file byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
     let now = 0
     let most = 0
     const host = machine(async (cmd, opts) => {
@@ -479,7 +479,7 @@ describe('a web page on the machine', () => {
     })
     const files = Array.from({ length: 12 }, (_, i) => path.join(repo, `pic-${i}.bin`))
     files.forEach((f, i) => fs.writeFileSync(f, Buffer.from([0, 255, i, 10])))
-    const read = await Promise.all(files.map((f) => host.readPageFile(keyed(f))))
+    const read = await Promise.all(files.map((f) => host.readBytes(keyed(f))))
     expect(read).toEqual(files.map((_, i) => Buffer.from([0, 255, i, 10])))
     expect(most).toBe(4)
   })
