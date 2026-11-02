@@ -2486,43 +2486,57 @@ so its folders were not writable by default.
   - `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (values `auto`, `prompt`,
     `writes`, `approve`): the call ran with no request under `on-request` and under
     `never`.
-- **The same with the real Playwright MCP, rechecked 2026-11-02** on codex-cli 0.166.0 and
+- **The same with the real Playwright MCP, checked 2026-11-02** on codex-cli 0.166.0 and
   `@playwright/mcp` 0.0.84 (`--headless --isolated`, installed into a scratch folder), a
   Node script driving `codex app-server` in a temporary `CODEX_HOME` holding a copied
   ChatGPT login, `thread/start` with `on-request` / `workspace-write`, one real model turn
   asked to call `browser_navigate` on a `data:` page and then the tiny `ping` server's
   tool. The `-c` flags gave the `playwright` entry `default_tools_approval_mode="approve"`
   and the `probe` entry nothing:
-  - `config/read` echoed `default_tools_approval_mode` on the entry that had it, so a
-    launcher can see whether the owner set one.
   - `browser_navigate` ran (title `K480` came back) with no `mcpServer/elicitation/request`;
     `ping` sent one ("Allow the probe MCP server to run tool \"ping\"?") and ran on
     `accept`.
   - `mcpServerStatus/list` (`threadId`, `detail: "full"`) listed 25 Playwright tools with
-    annotations. 7 carry `readOnlyHint: true` (`browser_snapshot`, `browser_take_screenshot`,
-    `browser_console_messages`, `browser_network_requests`, `browser_network_request`,
-    `browser_wait_for`, `browser_find`); the other 18, `browser_navigate` and
-    `browser_click` among them, do not. `browser_run_code_unsafe` is one of the 18; its
-    own description says it "executes arbitrary JavaScript in the Playwright server
-    process and is RCE-equivalent", and that process runs outside Codex's sandbox (this
-    section's first table).
+    annotations. 7 carry `readOnlyHint: true` and `destructiveHint: false`
+    (`browser_snapshot`, `browser_take_screenshot`, `browser_console_messages`,
+    `browser_network_requests`, `browser_network_request`, `browser_wait_for`,
+    `browser_find`); the other 18, `browser_navigate` and `browser_click` among them,
+    carry `readOnlyHint: false` and `destructiveHint: true`. All 25 carry
+    `openWorldHint: true`. `browser_run_code_unsafe` is one of the 18; its own description
+    says it "executes arbitrary JavaScript in the Playwright server process and is
+    RCE-equivalent", and an MCP server process runs outside Codex's sandbox (the
+    2026-10-04 paragraph after this section's first table).
+  - With no model turn, on a fresh app-server in a temporary `CODEX_HOME` whose
+    `config.toml` held an `[mcp_servers.owner]` entry with `default_tools_approval_mode =
+    "prompt"` and `[mcp_servers.owner.tools.browser_click]` `approval_mode = "approve"`:
+    `config/read` showed both, the server's under `default_tools_approval_mode` and the
+    tool's under `tools.browser_click.approval_mode`. A `-c
+    'mcp_servers.playwright.tools.browser_run_code_unsafe.approval_mode="prompt"'` on the
+    app-server was taken and showed the same way. A value from `config.toml` and one from
+    `-c` look alike in `config/read`.
 - **Which calls ask, read from the `rust-v0.166.0` source, not run**
   (`codex-mcp/src/mcp/mod.rs` `mcp_permission_prompt_is_auto_approved`,
-  `core/src/mcp_tool_call.rs`):
+  `core/src/mcp_tool_call.rs` `requires_mcp_tool_approval_for_mode`,
+  `custom_mcp_tool_approval_mode`, `session_mcp_tool_approval_key`):
   - `approve` on the tool or its server skips the question under every approval policy.
   - Approvals `never` with a profile that has full disk write (`danger-full-access`) also
-    skips it, so a tab launched with approvals and the sandbox bypassed never asks;
-    `never` with `workspace-write` refuses the call ("MCP tool call requires approval, but
-    approval policy is never").
-  - Otherwise the mode decides: `auto` (no mode set) asks unless the tool says
-    `readOnlyHint: true`, and also when it says `destructiveHint: true`; `prompt` always
-    asks; `writes` asks unless read-only.
+    skips it; `never` with `workspace-write` refuses the call ("MCP tool call requires
+    approval, but approval policy is never"). That a Koloft tab launched with approvals
+    and the sandbox bypassed therefore never asks is **inferred, not checked**.
+  - Otherwise the mode decides. `auto` (no mode set): a tool with `destructiveHint: true`
+    asks; else one with `readOnlyHint: true` does not; else it asks unless it says both
+    `destructiveHint: false` and `openWorldHint: false`. `prompt` always asks; `writes`
+    asks unless the tool says `readOnlyHint: true`.
   - A tool's own `mcp_servers.<name>.tools.<tool>.approval_mode` wins over the server's
-    `default_tools_approval_mode`.
-  - "Allow for this session" and "Always allow" are remembered only in `auto` mode and are
-    keyed by server **and tool name**: each of the 18 tools asks on its own first call,
-    and "Always allow" writes that one tool's `approval_mode = "approve"` into the
-    `config.toml` of the `CODEX_HOME` the tab runs on.
+    `default_tools_approval_mode` (that a per-tool `prompt` still asks under a server
+    `approve` is **inferred, not checked** in a turn).
+  - "Allow for this session" and "Always allow" are offered and remembered only in `auto`
+    mode, keyed by server **and tool name**: each of the 18 tools asks on its own first
+    call. "Allow for this session" lasts one thread (a second thread on the same
+    app-server asked again, the 2026-10-16 bullet above; a `/new` thread asked again, the
+    2026-10-10 bullet). "Always allow" writes that tool's `approval_mode = "approve"` into
+    the user `config.toml` — that it lands in the tab's `CODEX_HOME` and lasts there is
+    **inferred, not checked**.
 - **A failed `config/read` drops every browser setting at once**: Koloft builds
   `network_access`, the Playwright cache root and the `env_vars` passthrough from one
   `config/read`, so a read lost to section 28's race leaves a tab with no network (unless
