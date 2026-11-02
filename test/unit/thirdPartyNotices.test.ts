@@ -45,7 +45,7 @@ describe('third-party notices', () => {
   })
 
   it("carries Electron's license, which the mac packager drops from the app", () => {
-    expect(notices).toContain(read(path.join(root, 'node_modules/electron/dist/LICENSE')))
+    expect(notices).toContain(read(path.join(root, 'node_modules/electron/LICENSE')))
   })
 
   it('lists every production dependency the app ships, at its installed version', () => {

@@ -8,7 +8,7 @@ const VITE_LICENSES = '.vite/license.json'
 const LICENSE_FILE = /^(licen[cs]e|copying|notice|thirdpartynotices)/i
 const SAME_LICENSE_AS = { '@xterm/headless': 'node_modules/@xterm/xterm/LICENSE' }
 const EXTRA_LICENSES = [
-  ['Electron', 'node_modules/electron/dist/LICENSE'],
+  ['Electron', 'node_modules/electron/LICENSE'],
   [
     'Bootstrap Icons, the brand marks drawn through react-icons/bs',
     'build/licenses/bootstrap-icons.txt'
