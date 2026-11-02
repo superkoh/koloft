@@ -338,6 +338,16 @@ for f in "\${XDG_CONFIG_HOME:-$HOME/.config}/muse/trust.json" "$HOME"/.koloft/mu
 done
 exit 1`
 
+export const MUSE_HELD_ELSEWHERE = 'held'
+
+// MUSE§4
+export const MUSE_HELD_SH = `for f in "\${XDG_DATA_HOME:-$HOME/.local/share}/muse/runtime/muse/sessions/$1.json" "/tmp/tbh-$(id -u)-rt/muse/sessions/$1.json"; do
+  [ -f "$f" ] || continue
+  p="$(python3 -c 'import json, re, sys; e = json.load(open(sys.argv[1])); m = re.fullmatch(r"pid=(\\d+)", str(e.get("process_generation_hint"))); print(m.group(1) if e.get("schema_version") == 1 and e.get("session_id") == sys.argv[2] and m else "")' "$f" "$1" 2>/dev/null)"
+  [ -n "$p" ] && kill -0 "$p" 2>/dev/null && { echo ${MUSE_HELD_ELSEWHERE}; exit 0; }
+done
+exit 0`
+
 export interface MuseRunSpec {
   tabId: string
   account: string

@@ -122,6 +122,7 @@ export interface MuseMachine {
   launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
+  museHeldElsewhere(sessionId: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -428,13 +429,20 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§4
-  runningElsewhere(key: string): boolean {
-    if (hostOfKey(key)) return false
+  runningElsewhere(key: string): boolean | Promise<boolean> {
+    const host = hostOfKey(key)
+    if (host) return this.heldOnMachine(host, this.nativeId(key))
     return registryDirs(this.env).some((dir) => {
       const pid = registryPid(readJson(path.join(dir, `${this.nativeId(key)}.json`)))
       const ours = [...this.runs.values()].some((r) => r.pid === pid)
       return pid > 0 && !ours && pidAlive(pid)
     })
+  }
+
+  private async heldOnMachine(host: string, sessionId: string): Promise<boolean> {
+    const remote = this.deps.remote
+    if (!remote?.gone(host, sessionId)) return false
+    return remote.machine(host).museHeldElsewhere(sessionId)
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {

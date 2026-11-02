@@ -67,7 +67,13 @@ import {
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
-import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import {
+  MUSE_HELD_ELSEWHERE,
+  MUSE_HELD_SH,
+  MUSE_HOOK_FILE,
+  MUSE_TRUSTED_SH,
+  museRunLines
+} from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   HOLD_FILE,
@@ -1106,6 +1112,11 @@ export class SshHost implements Host {
   // MUSE§10
   async museTrusts(dir: string): Promise<boolean> {
     return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
+  }
+
+  async museHeldElsewhere(sessionId: string): Promise<boolean> {
+    const r = await this.sh(MUSE_HELD_SH, [sessionId])
+    return r.stdout.toString('utf8').trim() === MUSE_HELD_ELSEWHERE
   }
 
   async runScript(script: string, args: string[]): Promise<string | null> {
