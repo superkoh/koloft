@@ -137,6 +137,59 @@ export function gitInit(dir: string): void {
   )
 }
 
+export interface InterruptedWorktree {
+  resourceId: string
+  cwd: string
+  baseline: string
+  saved(): { resources: Record<string, { state: string }>; members: object }
+}
+
+export function seedWorktreeInterruptedBeforeAnySessionBound(
+  env: E2EEnv,
+  storeFile: string,
+  name: string
+): InterruptedWorktree {
+  const ws = env.workspaces.a
+  const resourceId = crypto.randomUUID()
+  const cwd = path.join(ws, '.claude', 'worktrees', name)
+  const baseline = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ws, encoding: 'utf8' }).trim()
+  const file = path.join(env.userData, storeFile)
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      members: {},
+      resources: {
+        [resourceId]: {
+          id: resourceId,
+          originalCwd: ws,
+          worktreePath: cwd,
+          worktreeName: name,
+          worktreeBranch: 'worktree-' + name,
+          originalHeadCommit: baseline,
+          state: 'creating',
+          managed: true
+        }
+      }
+    })
+  )
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.email=e2e@koloft.test',
+      '-c',
+      'user.name=koloft-e2e',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'Advance main'
+    ],
+    { cwd: ws }
+  )
+  return { resourceId, cwd, baseline, saved: () => JSON.parse(fs.readFileSync(file, 'utf8')) }
+}
+
 export function gitCommitAll(dir: string): void {
   assertFixtureDir('gitCommitAll', dir)
   execFileSync('git', ['add', '-A'], { cwd: dir })

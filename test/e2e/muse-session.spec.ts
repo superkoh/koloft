@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import { randomUUID } from 'crypto'
 import { execFileSync, spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { windowLabel } from '../../src/shared/accountUsage'
@@ -30,6 +29,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
   waitBooted,
@@ -497,52 +497,36 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     installMuse(env)
     trustInMuse(env, env.workspaces.a)
     gitInit(env.workspaces.a)
-    const resourceId = randomUUID()
     const name = 'interrupted-muse'
-    const cwd = path.join(env.workspaces.a, '.claude', 'worktrees', name)
-    const baseline = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: env.workspaces.a,
-      encoding: 'utf8'
-    }).trim()
-    fs.writeFileSync(
-      path.join(env.userData, 'muse-sessions.json'),
-      JSON.stringify({
-        version: 1,
-        members: {},
-        resources: {
-          [resourceId]: {
-            id: resourceId,
-            originalCwd: env.workspaces.a,
-            worktreePath: cwd,
-            worktreeName: name,
-            worktreeBranch: 'worktree-' + name,
-            originalHeadCommit: baseline,
-            state: 'creating',
-            managed: true
-          }
-        }
-      })
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'muse-sessions.json',
+      name
     )
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
       const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
       await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
       await expect(
         dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
       ).toContainText('and start Muse.')
       await expect(dialogPrimary(dialog)).toContainText('Recover · Muse')
-      const screenshots = path.join(__dirname, '../../test-results/muse-ui')
-      fs.mkdirSync(screenshots, { recursive: true })
-      await dialog.screenshot({
-        path: path.join(screenshots, 'recover-worktree-hint.png'),
-        animations: 'disabled'
-      })
       await dialogPrimary(dialog).click()
       await expect.poll(() => museCalls(env).length).toBe(1)
       expect(museCalls(env)[0].cwd).toBe(cwd)
       await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
     } finally {
       await quitAndClose(app)
     }
