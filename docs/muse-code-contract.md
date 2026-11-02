@@ -180,7 +180,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   was still stuck 10 s after the first TUI was killed with SIGKILL. With the first TUI
   killed before the resume, the same command went on through "Restoring conversation"
   to its prompt and rewrote the file with its own pid. So the registry file plus a live
-  pid is the check on Linux too, read over ssh for a session on another machine.
+  pid whose `/proc/<pid>/comm` names muse is the check on Linux too, read over ssh for a
+  session on another machine: the file outlives its muse (above), and a container that
+  restarts hands low pids such as 15 out again.
 - **Muse must create `runtime/muse/sessions` itself**: when that folder already existed
   before muse started, muse wrote no registry file at all (Linux).
 - Subagent logs sit under `<session>/subagent/<child>/session.jsonl`.

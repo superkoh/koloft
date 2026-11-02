@@ -928,7 +928,6 @@ describe('a Muse session on a remote machine', () => {
       },
       museServe: () => ({ binary: 'ssh', args: [] }),
       museTrusts: async () => false,
-      museHeldElsewhere: async () => false,
       endTmuxSession: async (name) => {
         killed.push(name)
         return undefined

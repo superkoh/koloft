@@ -76,7 +76,7 @@ import {
   tmuxSessionName
 } from './remote/launch'
 import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
-import { MIRROR_SUFFIX, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
+import { MIRROR_SUFFIX, MUSE_HELD_SH, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
 import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { museToolDid } from './rowActivity'
@@ -122,7 +122,6 @@ export interface MuseMachine {
   launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
-  museHeldElsewhere(sessionId: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
   runScript(script: string, args: string[]): Promise<string | null>
 }
@@ -442,7 +441,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private async heldOnMachine(host: string, sessionId: string): Promise<boolean> {
     const remote = this.deps.remote
     if (!remote?.gone(host, sessionId)) return false
-    return remote.machine(host).museHeldElsewhere(sessionId)
+    return (await remote.machine(host).runScript(MUSE_HELD_SH, [sessionId])) !== null
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
