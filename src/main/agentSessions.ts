@@ -177,7 +177,7 @@ function openSessionLines(
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (!reachedBySendMessage(info.backendId) || info.remote?.host !== me.remote?.host)
+    if (!sendMessageReaches(me, info.backendId, info.remote?.host))
       parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
