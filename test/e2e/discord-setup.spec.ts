@@ -1,8 +1,22 @@
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
-import { settingsOnDisk, waitBooted } from './helpers/p1'
+import {
+  agySessionCalls,
+  installAgy,
+  installMuse,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import {
+  butlerHelperRows,
+  readAllCalls,
+  settingsOnDisk,
+  terminalText,
+  waitBooted
+} from './helpers/p1'
 import { openSettings } from './helpers/extensions'
 import {
   FAKE_BOT,
@@ -299,6 +313,43 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await fake.close()
     }
   })
+
+  const helperOf = {
+    muse: { install: installMuse, calls: museCalls },
+    agy: { install: installAgy, calls: agySessionCalls }
+  }
+  for (const [backend, agent] of Object.entries(helperOf)) {
+    test(`with a ${backend} butler, Set up with Alfred starts a ${backend} helper in the butler’s folder told to run koloft discord setup, even while Claude is on too`, async ({
+      env
+    }) => {
+      agent.install(env)
+      seedSettings(env, {
+        assist: { on: true, backend },
+        sessionMethods: {
+          defaultBackend: 'claude',
+          enabled: { claude: true, codex: true, muse: true, agy: true }
+        }
+      })
+      const { page, close } = await launched(env, { token: '' })
+      try {
+        const pane = await discordPane(page)
+        await pane.getByRole('button', { name: 'Set up with Alfred' }).click()
+        const helper = butlerHelperRows(page)
+        await expect(helper).toHaveCount(1, { timeout: 90_000 })
+        const helperTab = (await helper.getAttribute('data-tab-id')) ?? ''
+        await expect
+          .poll(async () => (await terminalText(page, helperTab)).replace(/\s+/g, ''), {
+            timeout: 60_000
+          })
+          .toContain('runkoloftdiscordsetup')
+        const butlerFolder = path.join(env.userData, 'conductors', 'global')
+        expect(agent.calls(env).map((c) => c.cwd)).toEqual([butlerFolder, butlerFolder])
+        expect(readAllCalls(env)).toEqual([])
+      } finally {
+        await close()
+      }
+    })
+  }
 
   test('once a token and an owner are set, an error shows only on the status line and the channel stays in view', async ({
     env

@@ -67,6 +67,13 @@ describe('koloft discord setup commands', () => {
     expect(bound()).toBe(1)
   })
 
+  it('the setup steps tell a helper of every agent which tool asks the owner and waits', () => {
+    expect(DISCORD_SETUP_STEPS).toContain('AskUserQuestion in Claude Code')
+    expect(DISCORD_SETUP_STEPS).toContain('request_user_input in Codex')
+    expect(DISCORD_SETUP_STEPS).toContain('request_user_input in Muse Code')
+    expect(DISCORD_SETUP_STEPS).toContain('ask_question in Antigravity CLI')
+  })
+
   it('bind takes no workspace: there is only the butler’s channel', async () => {
     const { call, bound } = verb(false)
     expect((await call(['bind', '--new-channel', '--workspace', '/ws/a'])).exit).toBe(EXIT_USAGE)
