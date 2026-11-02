@@ -20,6 +20,7 @@ import {
   MACHINE_PREFLIGHT,
   RECEIVE_FILES,
   REPO_KEYS,
+  REPO_KEYS_LINE_TAG,
   SYNC_FILES,
   clueKey,
   fileLines,
@@ -187,11 +188,14 @@ export class GitMachineAccounts {
   async repoKeys(machine: string, paths: string[]): Promise<(string | null)[]> {
     if (!paths.length) return []
     const r = await this.run(machine, REPO_KEYS, paths)
-    const lines = r.code === 0 ? r.stdout.split('\n') : []
-    return paths.map((_, i) => {
-      const real = lines[i]?.trim()
-      return real?.startsWith('/') ? formatRemoteKey(machine, real) : null
-    })
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REPO_KEYS_LINE_TAG))
+      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).trim())
+    const answered = r.code === 0 && lines.length === paths.length
+    return paths.map((_, i) =>
+      answered && lines[i].startsWith('/') ? formatRemoteKey(machine, lines[i]) : null
+    )
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
