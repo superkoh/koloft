@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { windowLabel } from '../../src/shared/accountUsage'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -18,6 +18,7 @@ import {
   agentRow,
   centerTerm,
   chooseBackend,
+  dialogPrimary,
   gitCommitAll,
   gitInit,
   newSessionInWith,
@@ -28,6 +29,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
   waitBooted,
@@ -484,6 +486,47 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
         'committed on the branch'
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('C8: typing the name of a Muse worktree whose preparation was interrupted says it will start Muse, and recovers it into a Muse session', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    const name = 'interrupted-muse'
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'muse-sessions.json',
+      name
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
+      await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
+      await expect(
+        dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
+      ).toContainText('and start Muse.')
+      await expect(dialogPrimary(dialog)).toContainText('Recover · Muse')
+      await dialogPrimary(dialog).click()
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      expect(museCalls(env)[0].cwd).toBe(cwd)
+      await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
     } finally {
       await quitAndClose(app)
     }
