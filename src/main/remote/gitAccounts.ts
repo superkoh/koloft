@@ -153,6 +153,14 @@ ${INTO_REPO_OR_128}
 shift
 ${NO_PROMPTS} git "$@"`
 
+export const REMOTE_URLS = '^remote\\..*\\.(push)?url$'
+
+export const REMOTE_URLS_OF_EACH = `${OWN_SETUP_ONLY}
+for p in "$@"; do
+  printf '%s\\n' "$(cd "$p" 2>/dev/null && git config --get-regexp ${shq(REMOTE_URLS)} | base64 | tr -d '\\n')"
+done
+exit 0`
+
 export const CLUE_SSH = `${OWN_SETUP_ONLY}
 if [ "$1" = -G ]; then exec ssh "$@"; fi
 exec timeout 10 ssh "$@" </dev/null`

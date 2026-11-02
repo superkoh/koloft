@@ -19,6 +19,7 @@ import {
   MACHINE_GH,
   MACHINE_PREFLIGHT,
   RECEIVE_FILES,
+  REMOTE_URLS_OF_EACH,
   REPO_KEYS,
   SYNC_FILES,
   clueKey,
@@ -192,6 +193,15 @@ export class GitMachineAccounts {
       const real = lines[i]?.trim()
       return real?.startsWith('/') ? formatRemoteKey(machine, real) : null
     })
+  }
+
+  async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[]> {
+    if (!repos.length) return []
+    const r = await this.run(machine, REMOTE_URLS_OF_EACH, repos, {
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    })
+    const lines = r.code === 0 ? r.stdout.split('\n') : []
+    return repos.map((_, i) => Buffer.from(lines[i]?.trim() ?? '', 'base64').toString('utf8'))
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {

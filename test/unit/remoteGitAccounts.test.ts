@@ -7,6 +7,7 @@ import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install
 import {
   CLUE_ALL,
   RECEIVE_FILES,
+  REMOTE_URLS,
   SYNC_FILES,
   fileLines,
   machineHelperScript,
@@ -249,6 +250,46 @@ describe('a suggestion for a repository on a machine', () => {
       'url-user',
       'none'
     ])
+  })
+})
+
+describe("the picked repositories' remote URLs a sync reads on a machine", () => {
+  it('come back in one trip for every repository, the same as a trip per repository, a missing folder as nothing', async () => {
+    const make = (name: string, cmds: string): string => {
+      const dir = path.join(home, name)
+      sh(`git init -q '${dir}' && cd '${dir}' && ${cmds}`)
+      return dir
+    }
+    const repos = [
+      make('https', 'git remote add origin https://github.com/acme/app.git'),
+      path.join(home, 'gone'),
+      make(
+        'two',
+        'git remote add origin git@github.com:acme/app.git && git remote add up https://x.example/u.git && git config remote.origin.pushurl ssh://git@github.com:22/acme/app.git'
+      ),
+      make('bare', 'true')
+    ]
+    let trips = 0
+    const machine = new GitMachineAccounts(async (_m, script, args = [], opts = {}) => {
+      trips++
+      const r = onMachine(script, args, opts.input)
+      return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+    })
+    const each = await machine.remoteUrlsOfEach('box', repos)
+    expect(trips).toBe(1)
+    const oneByOne = await Promise.all(
+      repos.map(
+        async (dir) =>
+          (await machine.clueGit('box', dir, ['config', '--get-regexp', REMOTE_URLS])).stdout
+      )
+    )
+    expect(each).toEqual(oneByOne)
+    expect(each[0]).toContain('remote.origin.url https://github.com/acme/app.git')
+    expect(each[2]).toContain('remote.origin.pushurl ssh://git@github.com:22/acme/app.git')
+    expect([each[1], each[3]]).toEqual(['', ''])
+    trips = 0
+    expect(await machine.remoteUrlsOfEach('box', [])).toEqual([])
+    expect(trips).toBe(0)
   })
 })
 

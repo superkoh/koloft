@@ -70,6 +70,7 @@ import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
 import { GitMachineAccounts, throughTempStore, type MachineRun } from './gitMachineAccounts'
+import { REMOTE_URLS } from './remote/gitAccounts'
 import type { GhResult } from './prChecks'
 import type { GitRunResult } from './gitSteps'
 import { pushAccess } from './githubApi'
@@ -85,7 +86,6 @@ import { GithubLogin } from './githubLogin'
 const CLUE_COMMAND_KILL_MS = 10_000
 const REQUEST_DIR = /^koloft-git-(\d+)-/
 const SSH_KEY_REFUSED = /Permission denied \(publickey/
-const REMOTE_URLS = '^remote\\..*\\.(push)?url$'
 const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
   'use',
   'only-one-can-push',
@@ -850,16 +850,15 @@ export class GitAccountService {
     const picks = this.picksIn(machine).map((p) => ({ ...p, repo: parseRemoteKey(p.repo)!.path }))
     const hostname = (dest: string, port?: string): Promise<string | null> =>
       this.sshHostname(dest, port, (args) => this.onMachine.clueSsh(machine, args), machine)
+    const listed = await this.onMachine.remoteUrlsOfEach(
+      machine,
+      picks.map((p) => p.repo)
+    )
     const texts = new Map(
       await Promise.all(
-        picks.map(async (p): Promise<[string, string]> => {
+        picks.map(async (p, i): Promise<[string, string]> => {
           const a = this.account(p.account, machine)
-          const listed = await this.onMachine.clueGit(machine, p.repo, [
-            'config',
-            '--get-regexp',
-            REMOTE_URLS
-          ])
-          const found = a && (await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), hostname))
+          const found = a && (await rewriteRulesFor(a, remoteUrlsOf(listed[i]), hostname))
           return [p.repo, found ? rewriteConfigText(found.rules) : '']
         })
       )
