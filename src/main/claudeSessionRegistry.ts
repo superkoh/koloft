@@ -5,7 +5,7 @@ import { execFile } from 'child_process'
 import { setTimeout as sleep } from 'timers/promises'
 
 const REGISTRY_DIR = path.join(os.homedir(), '.claude', 'sessions')
-const POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS = 500
+const REGISTRY_IS_READ_AGAIN_AFTER_MS = 500
 // CC§11
 function processStartUtc(pid: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -120,44 +120,19 @@ export async function claudeShowsAPanel(
   return panelFromStatus((await liveEntryOf(sessionId, dir, startOf))?.status)
 }
 
-export function whenMessagingSocket(
+// PLATFORM§28
+export async function whenMessagingSocket(
   sessionId: string,
   ms: number,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<string | null> {
-  return new Promise((resolve) => {
-    let watcher: fs.FSWatcher | undefined
-    let poll: ReturnType<typeof setInterval> | undefined
-    let settled = false
-    const settle = (socket: string | null): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(deadline)
-      clearInterval(poll)
-      watcher?.close()
-      resolve(socket)
-    }
-    const check = (): void =>
-      void messagingSocketOf(sessionId, dir, startOf).then((socket) => socket && settle(socket))
-    const deadline = setTimeout(
-      () => void messagingSocketOf(sessionId, dir, startOf).then(settle),
-      Math.max(0, ms)
-    )
-    const watch = (): void => {
-      try {
-        watcher = fs.watch(dir, check)
-        clearInterval(poll)
-      } catch {}
-    }
-    watch()
-    if (!watcher)
-      poll = setInterval(() => {
-        watch()
-        check()
-      }, POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS)
-    check()
-  })
+  const deadline = Date.now() + ms
+  for (;;) {
+    const socket = await messagingSocketOf(sessionId, dir, startOf)
+    if (socket || Date.now() >= deadline) return socket
+    await sleep(REGISTRY_IS_READ_AGAIN_AFTER_MS)
+  }
 }
 
 // CC§11
