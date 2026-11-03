@@ -95,7 +95,7 @@ test.describe('keep awake (caffeinate)', () => {
     await expect(cup).toHaveClass(/\bon\b/)
     await expect(cup).toHaveAttribute('aria-disabled', 'true')
     await expect.poll(menuTick).toEqual({ checked: true, enabled: false })
-    await cup.click()
+    await cup.click({ force: true })
     expect(await page.evaluate(() => window.api.settings.get().then((s) => s.keepAwake))).toBe(
       false
     )
