@@ -237,7 +237,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await expect(
       claudeAccounts(page).locator('.acct-foot button', { hasText: 'Custom endpoint' })
     ).toHaveCount(0)
-    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(3)
+    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(2)
 
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
@@ -262,15 +262,9 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await openSettings(page)
     await expect(page.locator('.acct-row.off')).toHaveCount(1)
 
-    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' }).click()
-    await expect(
-      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Updated' })
-    ).toBeVisible({
-      timeout: 15_000
-    })
-    await expect(
-      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' })
-    ).toBeVisible({
+    await page.getByRole('button', { name: 'Refresh usage' }).click()
+    await expect(page.getByRole('button', { name: 'Updated' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('button', { name: 'Refresh usage' })).toBeVisible({
       timeout: 15_000
     })
 

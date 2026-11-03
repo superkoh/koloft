@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
 import type { AccountKind, AccountView, SignInBackend, SignInFailure } from '@shared/types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
@@ -49,6 +49,8 @@ export function AccountsPane(): JSX.Element {
   const [adding, setAdding] = useState<AccountKind | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
+  const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(refreshBeat.current), [])
   const [signIn, setSignIn] = useState<{ backend: SignInBackend; again?: string } | null>(null)
   const claudeAccounts = accounts.filter((a) => ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
@@ -127,22 +129,24 @@ export function AccountsPane(): JSX.Element {
   )
 
   const runRefresh = async (): Promise<void> => {
+    clearTimeout(refreshBeat.current)
     setRefresh('busy')
     try {
       setAccounts(await window.api.accounts.probe())
     } finally {
       setRefresh('done')
-      setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
+      refreshBeat.current = setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
     }
   }
 
   return (
     <>
       <div className="set-ph">
-        <h3>Claude accounts</h3>
+        <h3>Accounts</h3>
         <p>
-          Every session in Koloft runs on an account below, never on the login already on this Mac.
-          Each new claude picks the least-used one.
+          Every session in Koloft runs on an account from its agent’s section below, never on the
+          login already on this Mac. Each new session picks its agent’s least-used sign-in, and an
+          API key only when every sign-in is at its limit.
         </p>
       </div>
 
@@ -169,6 +173,20 @@ export function AccountsPane(): JSX.Element {
       </div>
       <div className="set-row">
         <div className="set-lab">
+          <b>Account usage</b>
+          <small>
+            Reads again, right now, how much every enabled account of every agent has used.
+          </small>
+        </div>
+        <button className="mini" disabled={refresh === 'busy'} onClick={() => void runRefresh()}>
+          <IconReload size={14} />{' '}
+          {refresh === 'busy' ? 'Refreshing…' : refresh === 'done' ? '✓ Updated' : 'Refresh usage'}
+        </button>
+      </div>
+
+      <div className="set-grp">Claude</div>
+      <div className="set-row">
+        <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
             Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
@@ -191,19 +209,6 @@ export function AccountsPane(): JSX.Element {
           </button>
           <button className="mini" onClick={() => setAdding('oauth')}>
             <IconPlus size={14} /> Paste token
-          </button>
-          <button
-            className="mini acct-refresh"
-            disabled={refresh === 'busy'}
-            onClick={() => void runRefresh()}
-            title="Probe every enabled account now"
-          >
-            <IconReload size={14} />{' '}
-            {refresh === 'busy'
-              ? 'Refreshing…'
-              : refresh === 'done'
-                ? '✓ Updated'
-                : 'Refresh usage'}
           </button>
         </>
       )}
