@@ -258,6 +258,7 @@ body {
   opacity: 0.35;
   pointer-events: none;
 }
+.tb-ico[aria-disabled='true'],
 .aux-ico[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;

@@ -5790,9 +5790,9 @@ function commitSettings(patch: Partial<Settings>): Settings {
 }
 
 function holdMacAwake(keepAwake: boolean): void {
-  const held = keepAwake || ownerAsleep.asleep()
-  applyKeepAwake(held)
-  setKeepAwakeChecked(held, !ownerAsleep.asleep())
+  const asleep = ownerAsleep.asleep()
+  applyKeepAwake(keepAwake || asleep)
+  setKeepAwakeChecked(keepAwake || asleep, !asleep)
 }
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }

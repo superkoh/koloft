@@ -93,13 +93,17 @@ test.describe('keep awake (caffeinate)', () => {
     await moon.click()
     await expect.poll(() => caffeinateChildrenOf(mainPid), { timeout: 10_000 }).toHaveLength(1)
     await expect(cup).toHaveClass(/\bon\b/)
-    await expect(cup).toBeDisabled()
+    await expect(cup).toHaveAttribute('aria-disabled', 'true')
     await expect.poll(menuTick).toEqual({ checked: true, enabled: false })
+    await cup.click()
+    expect(await page.evaluate(() => window.api.settings.get().then((s) => s.keepAwake))).toBe(
+      false
+    )
 
     await moon.click()
     await expect.poll(() => caffeinateChildrenOf(mainPid), { timeout: 10_000 }).toEqual([])
     await expect(cup).not.toHaveClass(/\bon\b/)
-    await expect(cup).toBeEnabled()
+    await expect(cup).toHaveAttribute('aria-disabled', 'false')
     await expect.poll(menuTick).toEqual({ checked: false, enabled: true })
     expect(await page.evaluate(() => window.api.settings.get().then((s) => s.keepAwake))).toBe(
       false

@@ -293,6 +293,7 @@ export default function App(): JSX.Element {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
+  const heldAwake = keepAwake || asleep
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -1636,9 +1637,10 @@ export default function App(): JSX.Element {
         <div className="side-me">
           <TopbarUsage />
           <button
-            className={'tb-ico' + (keepAwake || asleep ? ' on' : '')}
-            disabled={asleep}
+            className={'tb-ico' + (heldAwake ? ' on' : '')}
+            aria-disabled={asleep}
             onClick={() => {
+              if (asleep) return
               const on = !keepAwake
               setSettings({ ...useStore.getState().settings, keepAwake: on })
               void window.api.settings.set({ keepAwake: on })
@@ -1651,7 +1653,7 @@ export default function App(): JSX.Element {
                   : 'Keep Mac awake'
             }
             aria-label="Keep Mac awake"
-            aria-pressed={keepAwake || asleep}
+            aria-pressed={heldAwake}
           >
             <IconKeepAwake size={20} />
           </button>
