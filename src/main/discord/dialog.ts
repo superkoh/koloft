@@ -98,9 +98,14 @@ export function optionChoices(q: Question): Choice[] {
   }))
 }
 
+// CC§14
+function drawsTabs(qs: Question[]): boolean {
+  return qs.length !== 1 || !!qs[0]!.multiSelect
+}
+
 function singlePick(p: AskPayload): Question | undefined {
   const qs = questionsOf(p)
-  return qs.length === 1 && !qs[0]!.multiSelect ? qs[0] : undefined
+  return drawsTabs(qs) ? undefined : qs[0]
 }
 
 export function choicesOf(p: AskPayload): Choice[] {
@@ -154,9 +159,8 @@ export function askHow(p: AskPayload): string {
 }
 
 function answerOf(q: Question, line: string): string {
-  const picks = line.split(/\s*,\s*/)
-  const labels = picks.map((x) => (/^\d+$/.test(x) ? q.options[Number(x) - 1]?.label : undefined))
-  return labels.every((l) => l !== undefined) ? labels.join(', ') : line
+  const picks = picksFor(q, line)
+  return picks ? picks.map((n) => q.options[n - 1]!.label).join(', ') : line
 }
 
 // CC§14
@@ -178,7 +182,7 @@ export function hookAnswer(p: AskPayload, reply: string): Record<string, unknown
   const input = p.tool_input ?? {}
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
-    const lines = replyLines(text)
+    const lines = linesPerQuestion(qs, text) ?? replyLines(text)
     const isLabel = qs.some((q) =>
       q.options.some((o) => o.label.toLowerCase() === lines[0]?.toLowerCase())
     )
@@ -202,9 +206,29 @@ function pickOf(q: Question, word: string): number {
   return pick >= 1 && pick <= q.options.length ? pick : 0
 }
 
-function picksOf(q: Question, line: string): number[] | undefined {
-  const picks = line.split(/\s*,\s*/).map((word) => pickOf(q, word))
-  return picks.every((n) => n > 0) ? [...new Set(picks)] : undefined
+function picksFor(q: Question, line: string): number[] | undefined {
+  if (!q.multiSelect) {
+    const pick = pickOf(q, line)
+    return pick ? [pick] : undefined
+  }
+  const picks = line
+    .split(/\s*,\s*/)
+    .filter(Boolean)
+    .map((word) => pickOf(q, word))
+  return picks.length && picks.every((n) => n > 0)
+    ? [...new Set(picks)].sort((a, b) => a - b)
+    : undefined
+}
+
+function linesPerQuestion(qs: Question[], reply: string): string[] | undefined {
+  const all = replyLines(reply)
+  if (qs.length === 1) return [all.join(qs[0]!.multiSelect ? ', ' : ' ')]
+  return all.length === qs.length ? all : undefined
+}
+
+// CC§14 AGY§14
+function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
+  return [String(q.options.length + 1), ...typedPieces(text), '\r']
 }
 
 // CC§14
@@ -213,12 +237,8 @@ const SUBMIT_ON_THE_REVIEW_PAGE = '1'
 
 // CC§14
 function questionKeys(q: Question, line: string): string[] {
-  const options = q.options.length
-  if (!q.multiSelect) {
-    const pick = pickOf(q, line)
-    return pick ? [String(pick)] : [String(options + 1), ...typedPieces(line), '\r']
-  }
-  const picks = picksOf(q, line)
+  const picks = picksFor(q, line)
+  if (!q.multiSelect) return picks ? picks.map(String) : ownWordsAfterTheLastOption(q, line)
   if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
   return [
     ...keysFor(q.options.map(() => 'Down')),
@@ -232,16 +252,11 @@ function questionKeys(q: Question, line: string): string[] {
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
-    const only = singlePick(p)
-    if (only) return { ok: true, value: questionKeys(only, text) }
     const qs = questionsOf(p)
-    const all = replyLines(text)
-    const lines = qs.length === 1 ? [all.join(' ')] : all
-    if (!qs.length || lines.length !== qs.length) return fail(askHow(p))
-    return {
-      ok: true,
-      value: [...qs.flatMap((q, i) => questionKeys(q, lines[i]!)), SUBMIT_ON_THE_REVIEW_PAGE]
-    }
+    const lines = linesPerQuestion(qs, text)
+    if (!lines) return fail(askHow(p))
+    const keys = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }
   }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
@@ -339,9 +354,8 @@ function replyLines(text: string): string[] {
 
 // CODEX§20 MUSE§11 AGY§14
 export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | undefined {
-  const all = replyLines(reply)
-  const lines = q.questions.length === 1 ? [all.join(' ')] : all
-  if (lines.length !== q.questions.length) return undefined
+  const lines = linesPerQuestion(q.questions, reply)
+  if (!lines) return undefined
   const answers = q.questions.map((x, i) => answerTo(x, lines[i]))
   return answers.every((a): a is QuestionAnswer => a !== undefined) ? answers : undefined
 }
@@ -368,11 +382,7 @@ function museReviewKeys(answers: QuestionAnswer[]): string[] {
 export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
   codex: { pick: (n) => [String(n)], words: noteUnderNoneOfTheAbove, submit: () => [] },
   muse: { pick: (n) => [String(n), '\r'], words: noteUnderNoneOfTheAbove, submit: museReviewKeys },
-  agy: {
-    pick: (n) => [String(n)],
-    words: (q, text) => [String(q.options.length + 1), ...typedPieces(text), '\r'],
-    submit: () => []
-  }
+  agy: { pick: (n) => [String(n)], words: ownWordsAfterTheLastOption, submit: () => [] }
 }
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {

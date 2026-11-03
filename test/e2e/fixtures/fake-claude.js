@@ -793,7 +793,12 @@ const keyOnTheDialog = () => keysOnTheDialog((key) => key)
 const DOWN_KEYS = ['\x1b[B', '\x1bOB']
 // CC§14
 function tabbedQuestionKeys(questions) {
-  const state = questions.map(() => ({ ticked: new Set(), words: '', pick: 0 }))
+  const state = questions.map(() => ({
+    ticked: new Set(),
+    words: '',
+    wordsUnticked: false,
+    pick: 0
+  }))
   let at = 0
   let row = 0
   let typing = false
@@ -806,7 +811,7 @@ function tabbedQuestionKeys(questions) {
     q.multiSelect
       ? [
           ...[...s.ticked].sort((a, b) => a - b).map((n) => q.labels[n - 1]),
-          ...(s.words ? [s.words] : [])
+          ...(s.words && !s.wordsUnticked ? [s.words] : [])
         ].join(', ')
       : s.words || q.labels[s.pick - 1]
   return (key) => {
@@ -820,7 +825,8 @@ function tabbedQuestionKeys(questions) {
       if (q.multiSelect && key === '\t') {
         typing = false
         row = options + 1
-      } else if (key === '\r') next()
+      } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
+      else if (key === '\r') next()
       else s.words += key
       return undefined
     }
@@ -1679,14 +1685,15 @@ function handleLine(line) {
       }))
     }
     const [first] = questions
-    const tabbed = questions.length > 1 || first.multiSelect
     const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
       (updated) => pickedText(Object.values(updated.answers).join(', ')),
-      (key) => pickedText(tabbed ? key : (first.labels[Number(key) - 1] ?? key)),
-      tabbed ? tabbedQuestionKeys(questions) : undefined
+      pickedText,
+      questions.length > 1 || first.multiSelect
+        ? tabbedQuestionKeys(questions)
+        : (key) => first.labels[Number(key) - 1] ?? key
     )
   }
   if (text.startsWith('/bash ')) {

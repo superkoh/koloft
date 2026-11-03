@@ -237,7 +237,7 @@ koloft session keys <id or name> <key>...
     Example: koloft session keys fix-login 3 "use the blue one" Enter
 
 koloft session answer <id or name> <option number | yes | no | your own words>
-    Answer the question or approval a session is showing right now. A number picks that option; yes or no approves or refuses; other words are the answer itself (for an approval or a plan: what to do instead). A question of several parts takes one line per part, and a part that takes several options takes their numbers split by commas. Only answer the way the owner told you. If it is refused while the session is still waiting, run screen and answer with keys.
+    Answer the question or approval a session is showing right now. A number picks that option; yes or no approves or refuses; other words are the answer itself (for an approval or a plan: what to do instead). A question of several parts takes one line per part, all in one quoted argument (in a shell: "$(printf '2\\n1, 3')"), and a part that takes several options takes their numbers split by commas. Only answer the way the owner told you. If it is refused while the session is still waiting, run screen and answer with keys.
     Example: koloft session answer "Fix docs links" 2
 
 koloft session resume <id or name> [-- "<message>"]

@@ -2671,7 +2671,7 @@ below was one run.
   pty rendered with `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`,
   `--dangerously-skip-permissions`, no hook, a local fake Messages API
   (`ANTHROPIC_BASE_URL`, an `apiKeyHelper` key) that answered every turn with one canned
-  `AskUserQuestion` `tool_use` and echoed the `tool_result` it got back; 13 runs.
+  `AskUserQuestion` `tool_use` and echoed the `tool_result` it got back; 15 runs.
   - One question with `multiSelect: false` is unchanged: `2` sent "Green" at once, and
     `3`, the text, CR sent the text — no review page.
   - Any other shape draws tabs across the top (`☐ Colour  ☐ Fruit  ✔ Submit`) and ends
@@ -2686,13 +2686,15 @@ below was one run.
     row and never moves on; Tab moves to the next tab (the review page after the last).
     `N+1` only ticks the "Type something" box, so typed text is lost; Down `N` times
     reaches its text field, the text goes there and ticks it, and Tab then CR (Tab
-    moves to `Next`) moves on.
-  - The answer of a many-pick question is its ticked labels in option order joined by
-    ", " (`"Apple, Cherry"`); own words alone are sent as typed.
+    moves to `Next`) moves on. CR in that text field only unticks it. A many-pick
+    question reached from an earlier tab opens with the highlight on row 1 too, and
+    when it is the last one, Tab then CR on its `Submit` row opens the review page.
+  - The answer of a many-pick question is its ticked labels joined by ", " (`"Apple,
+    Cherry"`; every run ticked in option order); own words alone are sent as typed.
   - With Koloft's 300 ms between keys, `3` `Purple stripes` CR `1` `3` Tab `1` sent
     `Purple stripes` / `Apple, Cherry`; Down Down Down `Mango juice` Tab CR `2` `1` sent
-    `Mango juice` / `Green`; `2` `3` Tab `1` on one many-pick question sent `Banana,
-    Cherry`.
+    `Mango juice` / `Green`; `2` Down Down Down `Mango juice` Tab CR `1` sent `Green` /
+    `Mango juice`; `2` `3` Tab `1` on one many-pick question sent `Banana, Cherry`.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
