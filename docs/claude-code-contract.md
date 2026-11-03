@@ -128,6 +128,27 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   folder and a `-w` keep exit; the lines come dim right after the screen reset, since the
   default (not fullscreen) mode uses no alternate screen. Koloft reads this hint only to
   see past it to a worktree removal's first line (§4).
+  **Since 2.1.317 the command line can repeat launch flags ahead of `--resume`**:
+  `claude --model haiku --effort high --dangerously-skip-permissions --resume <id>`,
+  `claude --settings ../koloft/tab.json --model opus --resume <id>`. `--session-id`,
+  `--name`, `-w`/`--worktree` and `--resume` are never repeated; every other flag is,
+  with its value as written and unquoted. When one value does not match
+  `^[\w./:+][\w./:@=+-]*$` (a space, a quote) no flag is repeated (the pattern read
+  from `strings`; the space case run), so the `--settings` path under
+  `~/Library/Application Support/` that Koloft's shim passes on the Mac keeps the bare
+  `claude --resume <id>`; a tab on another machine passes
+  `--settings "$HOME/.koloft/tabs/<tab>.json"`, which has no space. When the repeated
+  flags hold a `/` or a `.`, they are printed only when the whole line fits the
+  terminal's width; without one they are printed at any width (at 60 columns the
+  terminal wraps the line, the bytes stay one line). A Koloft launch always passes a
+  `--settings` path with a `/`, so its hint line is never wider than its terminal. An empty
+  `CLAUDE_CODE_RELAUNCH_RESUME_HINT_FLAGS` in the env stands in for the flags and
+  gives the bare form. Measured 2026-11-03 on 2.1.316 and 2.1.317 darwin-arm64: python
+  pty at 60, 120 and 400 columns, scratch `HOME`, a fake API key, one `hello` and then
+  `/exit` out of a `-w` session, 15 runs on 2.1.317, the raw bytes saved; 2.1.316
+  printed the bare form with the same flags. That the linux-arm64 build repeats the
+  same flags is read from its `strings` (the same skip list, value pattern and env
+  name), not run: inferred, not checked.
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -198,7 +219,10 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   same order), and on 2.1.314, darwin-arm64 and linux-arm64 (`strings`, 2026-10-30: the
   same 33 names in the same order), and on 2.1.316, darwin-arm64 and linux-arm64
   (`strings`, 2026-10-31: the same 33 names in the same order, the same SessionEnd
-  reasons and SessionStart sources).
+  reasons and SessionStart sources), and on 2.1.317, darwin-arm64 and linux-arm64
+  (`strings`, 2026-11-03: the same 33 names in the same order, the same SessionEnd
+  reasons `clear`, `resume`, `logout`, `prompt_input_exit`, `other` and SessionStart
+  sources `startup`, `resume`, `clear`, `compact`, `fork`).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -857,7 +881,12 @@ as a taken name so a scheduled run never hands `-w` such a name.
   only then exits. The line follows the title at once only while the session has no
   message; once it has one, the two dim lines `Resume this session with:` and `claude
   --resume <id>` (§1) come between them, and nothing else does: 119 bytes with a session
-  id and their colour codes, on both builds. The TUI's own
+  id and their colour codes, on both builds. Since 2.1.317 the second line may carry
+  the launch flags ahead of `--resume` (§1), and the hint grows with them: 162 and 178
+  bytes for the two examples in §1, 302–320 bytes for a `--settings`, `--plugin-dir` or
+  `--append-system-prompt-file` path plus `--model` at 400 columns; the title, the
+  `Removing worktree…` line and the result line are unchanged (2026-11-03, the §1
+  runs). The TUI's own
   `⏳ Removing worktree…` is drawn before the empty title. (Measured 2026-10-20 on CC
   2.1.303 and 2.1.304: a `-w` session with one turn, in fullscreen and with
   `CLAUDE_CODE_NO_FLICKER=0`, a python pty, the raw bytes saved.) Success lines start with `Worktree removed`
@@ -1234,6 +1263,26 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   build names the same, apart from a few names `strings` glued to the next byte; the 14
   `CLAUDE_CODE_*`, `ANTHROPIC_*`, `DISABLE_*` and `CLAUDE_CONFIG_DIR` names `src/`
   spells out are in both builds.
+  Between 2.1.316 and 2.1.317 (`strings -n 6`, 2026-11-03, darwin-arm64, and
+  linux-arm64 2.1.317 against darwin-arm64 2.1.317): `ANTHROPIC_*` and `*_MODEL`
+  identical at 71 and 14; the lowercase `anthropic-*` header names identical at 88
+  (counted by `\banthropic-[a-z0-9-]+\b`, so not comparable with the 87 above); dated
+  beta names 54 → 56 (`claude-code-side-query-2026-09-29`,
+  `program-use-case-ids-2026-09-17`); `CLAUDE_CODE_*` gains 16 (among them
+  `DISABLE_NESTED_SESSION_ID`, `RELAUNCH_RESUME_HINT_FLAGS`,
+  `DISABLE_SUBAGENT_HANDBACK`, `PERSONAL_HOOKS_OFF`) and loses 1 (`LAZY_ENV_GETTERS`),
+  none of which `src/` sets; `tengu_*` gains 77 and loses 5, none of the names this
+  ledger mentions among them; the linux-arm64 build names the same, apart from a few
+  names `strings` glued to the next byte; the 14 names `src/` spells out (8
+  `ANTHROPIC_*`, 6 `CLAUDE_CODE_*`; it spells no `DISABLE_*` and no
+  `CLAUDE_CONFIG_DIR`) are in both builds.
+  `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
+  a cloud or self-hosted runner session uses that session's id again) is read only when
+  `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
+  only, inferred, not checked). Koloft sets neither; a terminal tab drops every
+  inherited `CLAUDE_CODE_*` (§9), but Assist's one-shot passes on Koloft's own env with
+  only the auth names removed (`pickedAccountEnv` in `src/main/index.ts`), so it would
+  carry them only if Koloft itself were started inside such a runner session.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1634,7 +1683,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
-2.1.312 (2026-10-28), 2.1.314 (2026-10-30) and 2.1.316 (2026-10-31).
+2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31) and 2.1.317
+(2026-11-03).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1723,6 +1773,20 @@ other bullets of §9 were not re-measured on this build.
   `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
   an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
   the exit code tells a title from an error.
+- **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
+  the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
+  Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
+  file on 2.1.316 and 2.1.317; so did a plain `claude -p`, with 365 and with no
+  `cleanupPeriodDays` at all, and the `--debug-file` of both kinds of `-p` showed no
+  cleanup step in a one-shot that short (2026-11-03, scratch `HOME`s, each setup run
+  twice, files listed at exit and 5 s later). Both builds' cleanup entry skips the
+  sweep, before any delete, when user settings are not read and no other source (a
+  managed policy, a `--settings` file) sets `cleanupPeriodDays` (`Skipping retention
+  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked);
+  Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
+  cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
+  the 30-day default; that the skip holds in a run long enough to sweep, and what a
+  managed `cleanupPeriodDays` does there, is not probed.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -2009,9 +2073,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
   key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
-  reader parses the JSON and counts no keys. That 2.1.316 writes the same keys is read
-  from `strings` of the code that writes `<pid>.json` (2026-10-31), not from a run:
-  inferred, not checked. A daemon-hosted
+  reader parses the JSON and counts no keys. That 2.1.316 and 2.1.317 write the same
+  keys is read from `strings` of the code that writes `<pid>.json` (2026-10-31 and
+  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed),
+  not from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2722,7 +2787,17 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   has no changelog section and was not downloaded) and 2.1.316 (`2.1.316 (Claude
   Code)`, 2026-10-31; its `--help` and the same seven subcommand helps, plus `auth`,
   `update` and `project`, byte-identical to 2.1.314's; 2.1.315 has no changelog
-  section and was not downloaded).
+  section and was not downloaded) and 2.1.317 (`2.1.317 (Claude Code)`, 2026-11-03;
+  its `--help` and the nine subcommand helps above other than `self-hosted-runner`
+  byte-identical to 2.1.316's; `self-hosted-runner --help` adds one sentence, wrapped
+  over three lines, under
+  `--trust-workspace`: "A session that the server starts without the repository's own
+  settings gets no workspace trust, as with false, whatever this flag says.").
+  The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
+  refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
+  `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
+  (2026-11-03); what changed is not read, and that the `--version` the shim runs
+  before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2786,7 +2861,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.312, `stable` still 2.1.308; on 2026-10-30 npm `latest` and `next` and the
   download host's `latest` offered 2.1.314, npm's and the download host's `stable` still
   2.1.308; on 2026-10-31 npm `latest` and `next` and the download host's `latest`
-  offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309.
+  offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309;
+  on 2026-11-03 npm `latest` and `next` and the download host's `latest` offered
+  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2810,7 +2887,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   file's MD5, strings stamp `2.1.312` only), and on 2026-10-30
   `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5), and on
   2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
-  strings stamp `2.1.316`) — each ran as
+  strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
+  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt

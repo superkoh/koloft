@@ -11,10 +11,10 @@ const CLAUDE_STARTS_REMOVING_THE_WORKTREE = 'Removing worktree'
 const ITS_ELLIPSIS_AS_A_UTF8_OR_ANOTHER_TMUX_CLIENT_DRAWS_IT = ['…', '_']
 // CC§4
 const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
-// CC§4
-const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
-// CC§4
-const ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE = 512
+// CC§1 CC§4
+const CLAUDE_RESUME_HINT_COMMAND = /^claude (?:\S+ )*--resume \S/
+// CC§1 CC§4
+const ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL = 2048
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 // CC§4 PLATFORM§35
@@ -33,7 +33,7 @@ function nothingOrTheResumeHint(between: string): boolean {
   return (
     lines.length === 2 &&
     lines[0] === CLAUDE_RESUME_HINT_HEAD &&
-    lines[1].startsWith(CLAUDE_RESUME_HINT_COMMAND)
+    CLAUDE_RESUME_HINT_COMMAND.test(lines[1])
   )
 }
 
@@ -55,7 +55,8 @@ export class WorktreeRemovalWatch {
       const after = title + mark.length
       for (
         let removing = seen.indexOf(line, after);
-        removing >= 0 && removing - after <= ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE;
+        removing >= 0 &&
+        removing - after <= ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL;
         removing = seen.indexOf(line, removing + 1)
       ) {
         const ellipsis = seen[removing + line.length]
@@ -68,7 +69,10 @@ export class WorktreeRemovalWatch {
           return true
         }
       }
-      if (seen.length - after <= ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE + line.length)
+      if (
+        seen.length - after <=
+        ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL + line.length
+      )
         keepFrom = Math.min(keepFrom, title)
     }
     this.pending = seen.slice(Math.max(0, keepFrom))
