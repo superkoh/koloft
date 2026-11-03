@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Frame, Page } from '@playwright/test'
+import type { Frame, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
@@ -744,6 +744,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       fs.mkdirSync(path.join(machineHome(env), '.koloft'), { recursive: true })
@@ -759,7 +760,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         remoteDir(env),
         (await boundSessionId(page, tabId)) ?? ''
       )
-      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+      const guest = await openPickPage(
+        app,
+        page,
+        server.page('/pick', PICK_PAGE).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      )
 
       await startPick(page)
       await clickPicked(page, guest, '#buy')
@@ -1091,6 +1096,87 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .click({ timeout: 30_000 })
       await expect(wbActiveTab(page)).toContainText('from a link', { timeout: 30_000 })
       await shownWhole('linked.html')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-57: a picture on the machine shows in the Workbench — inside a markdown file there, opened on its own, and zoomed — read from the machine over ssh', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      const pic = path.join(dir, 'img', 'pic.png')
+      fs.mkdirSync(path.dirname(pic))
+      fs.writeFileSync(pic, Buffer.from(PNG_1X1, 'base64'))
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n![pic](img/pic.png)\n')
+
+      await openRemoteSessionWorkbench(page, env)
+
+      const shown = (img: Locator): Promise<void> =>
+        expect
+          .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth), {
+            timeout: 30_000
+          })
+          .toBe(1)
+
+      await openInBrowse(page, `${remoteKey(env)}/doc.md`)
+      await shown(artifactBody(page).locator('.md-body img'))
+
+      await openInBrowse(page, `${remoteKey(env)}/img/pic.png`)
+      const own = artifactBody(page).locator('.img-wrap img')
+      await shown(own)
+      await own.click()
+      await shown(page.locator('.wb-zoom img'))
+
+      expect(sshCommands(env, 'end').some((c) => c.includes(pic))).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-58: a PDF on the machine opens in the Workbench, read from the machine, and a machine with no workspace here is never reached for one', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'tiny.pdf'), '%PDF-1.4\n%%EOF\n')
+
+      await openRemoteSessionWorkbench(page, env)
+      await openInBrowse(page, `${remoteKey(env)}/tiny.pdf`)
+
+      const viewer = await guestByUrl(app, /^koloft-file:\/\/m[0-9a-f]+\/.*\/tiny\.pdf$/, {
+        timeout: 30_000
+      })
+      expect(
+        await viewer.evaluate(() =>
+          fetch(location.href).then((r) => [r.status, r.headers.get('content-type')])
+        )
+      ).toEqual([200, 'application/pdf'])
+
+      const elsewhere = 'not-a-workspace-machine'
+      const onElsewhere = viewer
+        .url()
+        .replace(
+          /^koloft-file:\/\/m[0-9a-f]+/,
+          `koloft-file://m${Buffer.from(elsewhere).toString('hex')}`
+        )
+      const loadEnds = await page.evaluate(
+        (u) =>
+          new Promise<string>((done) => {
+            const img = new Image()
+            img.onload = () => done('loaded')
+            img.onerror = () => done('refused')
+            img.src = u
+          }),
+        onElsewhere
+      )
+      expect(loadEnds).toBe('refused')
+      expect(sshCalls(env).some((c) => c.argv.includes(REMOTE_HOST))).toBe(true)
+      expect(sshCalls(env).some((c) => c.argv.includes(elsewhere))).toBe(false)
     } finally {
       await quitAndClose(app)
     }
@@ -1438,9 +1524,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const macFile = path.join(env.home, 'only-on-the-mac.html')
       fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
       const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
-      const refused = 'cannot reach files or local servers of the Mac'
+      const refused = 'cannot reach files or servers of the Mac'
       expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
-      expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
+      const toAMacServer = lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))
+      expect(toAMacServer).toContain(refused)
+      expect(toAMacServer).toContain('only localhost, 127.0.0.1 and [::1] mean the machine')
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
       await run(
         `playwright-cli eval "() => { location.href = '${onTheMac.replace(NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST, '127.0.0.2')}' }"`

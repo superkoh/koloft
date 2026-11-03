@@ -73,7 +73,10 @@ shell.
   `Settings ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
-    and **Browse**, a tree of the workspace including Claude's scratchpad.
+    and **Browse**, a tree of the workspace. A folder the agent keeps outside the project
+    shows there too, as `Scratchpad`: Claude's scratchpad, the pictures a Codex session
+    made, or an Antigravity session's own files (its plans, task lists and `scratch`
+    folder). Muse keeps none.
   - File tabs: rendered Markdown / images / PDF, a diff view, the source, and an
     editor with ⌘S save. An HTML file opens as a web tab.
   - Web tabs: a real in-app browser (logins, downloads, popups, Chrome extensions) so an
@@ -100,11 +103,12 @@ shell.
   file, page or diff in its Workbench, add to the workspace note, set up scheduled jobs,
   and start, message and read other sessions. A bundled `playwright-cli` drives the
   session's own web tabs.
-- **Multi-account balancing** — register several Claude subscription accounts and
-  several Codex sign-ins. Every launch looks at their live rate limits and starts on the
-  account with the most room left. A Claude API (application programming interface) key
-  or a custom endpoint can join the pool too; Koloft reads no allowance for those, so it
-  uses them only once every subscription has hit its limit, or when you have none. The
+- **Multi-account balancing** — register several Claude, Codex, Muse and Antigravity
+  accounts. Every launch looks at their live rate limits and starts on the account that
+  has used the least. A pasted Codex, Muse or Antigravity API (application programming
+  interface) key is paid for each use, so it is only a backup. A Claude API key or
+  custom endpoint added by an older Koloft still works as a backup too, but Settings no
+  longer adds a new one. The
   topbar shows the pool's remaining allowance. These
   are meant to be *your own* accounts — please check that how you use them fits
   Anthropic's and OpenAI's terms, which is between you and them.
@@ -271,9 +275,10 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
   CLI once it is installed (on by default; a switch here turns it off).
 - **Accounts** — turn on multi-account mode and add accounts.
   - Claude: run the official `claude setup-token` login from inside the app, or paste an
-    OAuth token. You can also add an API key, or a custom endpoint (another server that
-    speaks the same API: its address, its key and, if you want, its model); these two are
-    used only once every subscription has hit its limit, or when you have none. Each
+    OAuth token. An API key or custom endpoint (another server that speaks the same API)
+    added by an older Koloft still works as a backup, used only when you have no
+    subscription Koloft can use, or when Koloft has just read every subscription and
+    each is told to wait 30 minutes or more; Settings no longer adds a new one. Each
     launch then gets the least-loaded account's credentials injected by the shim. These
     secrets live in the macOS Keychain, never in `settings.json`. Two more
     switches, for Claude launches: skip permission prompts, and prefer accounts that
@@ -281,7 +286,11 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
   - Codex: `Sign in to Codex` runs `codex login` in a terminal tab. Each Codex account is
     its own Codex home folder inside Koloft's app data, holding that login; all of them
     share your Codex settings and trusted folders. New Codex sessions start on the
-    least-used one.
+    least-used one. `Paste API key` adds an OpenAI API key (paid for each use) as a
+    backup, used only when no Codex sign-in can be used or every one is at its limit.
+  - Muse and Antigravity: `Sign in to Muse` or `Sign in with Google` runs the agent's own
+    sign-in in a terminal tab, and each account keeps it in its own folder. A pasted
+    Muse API key or Gemini API key is the same backup as Codex's.
   - Git accounts: add one for GitHub or GitHub Enterprise (a one-time code and the
     server's sign-in page in your own browser, or a pasted token), GitLab.com, Bitbucket
     or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
@@ -329,7 +338,7 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, so the balancer can pick the least-loaded one: when Koloft opens, as a session starts (a reading from the last 30 seconds is reused), when Settings opens, when the topbar usage panel opens and its last reading is over 5 minutes old, and on `Refresh usage`; an API key or custom endpoint is only checked that it still works |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, so the balancer can pick the least-loaded one: when Koloft opens, as a session starts (a reading from the last 30 seconds is reused), when Settings opens, when the topbar usage panel opens and its last reading is over 5 minutes old, and on `Refresh usage`; a Claude API key added by an older Koloft is only checked that it still works (an old custom endpoint is checked the same way, at its own server) |
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |

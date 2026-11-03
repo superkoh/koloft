@@ -1,6 +1,6 @@
 {
   "name": "koloft",
-  "version": "0.59.1",
+  "version": "0.60.0",
   "description": "A macOS app that runs and manages your Claude Code sessions — every session in a folder, with a Workbench beside it.",
   "main": "./out/main/index.js",
   "author": {
@@ -21,7 +21,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build --logLevel warn",
+    "build": "npm run typecheck && electron-vite build --logLevel warn && node scripts/third-party-notices.mjs",
     "postbuild": "bash scripts/assert-webgl-atlas.sh out/renderer",
     "preview": "electron-vite preview",
     "rebuild": "electron-rebuild -f -w node-pty",

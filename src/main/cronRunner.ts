@@ -24,6 +24,7 @@ import {
 } from '@shared/schedule'
 import { oncePassed } from '@shared/cronHistory'
 import {
+  endedRowNote,
   isCronEffort,
   type BackendId,
   type CronEffort,
@@ -37,7 +38,8 @@ import {
   type LaunchPermission,
   type LiveRun,
   type Schedule,
-  type SessionStatus
+  type SessionStatus,
+  type TerminalExit
 } from '@shared/types'
 import {
   MISS_WINDOW_MS,
@@ -94,6 +96,8 @@ export interface LeftTab {
   sessionId?: string
 }
 
+export type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
+
 export interface RunLeftovers {
   folders: string[]
   branched: string[] | null
@@ -137,6 +141,7 @@ export interface RunnerDeps {
   tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult>
   foldersInUse(leavingTabId?: string): Set<string>
   quitting(): boolean
+  turnedOff(backend: BackendId): string | null
   noUsableAccount(backend: BackendId): string | null
   trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
@@ -449,6 +454,11 @@ export class CronRunner {
       }
 
       const backend = cronBackend(job)
+      const turnedOff = this.d.turnedOff(backend)
+      if (turnedOff) {
+        this.fail(job, dueAt, mark, turnedOff)
+        return { ok: false, reason: 'turned-off', why: turnedOff }
+      }
       const noAccount = this.d.noUsableAccount(backend)
       if (noAccount) {
         this.fail(job, dueAt, mark, noAccount)
@@ -761,15 +771,15 @@ export class CronRunner {
     this.push()
   }
 
-  onPtyExit(tabId: string, left?: LeftTab): void {
+  onPtyExit(tabId: string, left?: LeftTab, exit?: AgentExit): void {
     const run = this.live.get(tabId)
-    if (run && !this.d.quitting()) this.closeOut(run)
+    if (run && !this.d.quitting()) this.closeOut(run, exit)
     const killedJobId = this.killedRuns.get(tabId)
     this.killedRuns.delete(tabId)
     if (left) this.onTabGone(left, [run?.jobId, killedJobId], tabId)
   }
 
-  private closeOut(run: LiveRun): void {
+  private closeOut(run: LiveRun, exit: AgentExit | undefined): void {
     this.clearTimer(run.tabId)
     this.dropRun(run)
     this.refreshFolders()
@@ -783,6 +793,13 @@ export class CronRunner {
       const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
       this.writeHistory(job, { ...line, state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
+    } else if (exit?.unexpected) {
+      const how = endedRowNote(exit)
+      this.writeHistory(job, {
+        ...line,
+        state: 'quit',
+        note: line.note ? `${how}; ${line.note}` : how
+      })
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
     }

@@ -91,7 +91,9 @@ import {
   messagingOf,
   reachedBySendMessage,
   preferredAssistBackend,
-  effectiveBackend
+  effectiveBackend,
+  turnedOffLine,
+  SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
@@ -123,6 +125,7 @@ import {
   forgetAssistMarkers,
   localNotice,
   markAnswerable,
+  markOwnerAsleep,
   noticeFile,
   pruneStale,
   quotedPrompt,
@@ -326,6 +329,8 @@ import {
   MACHINE_PAGE_SCHEME,
   machinePageOf,
   onMacPort,
+  PREVIEW_FILE_SCHEME,
+  previewFileOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -495,8 +500,10 @@ import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
+  claudeDialog,
   codexDialog,
   isAskedCall,
+  questionsOf,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -551,6 +558,7 @@ import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
+import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -637,6 +645,10 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
+    if (butler?.isButlerTab(tabId)) {
+      ownerAsleep.awakeTabsChanged()
+      syncAnswerable()
+    }
     discordTyping?.refresh(tabId)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
@@ -671,6 +683,7 @@ function showAskOnItsRow(tabId: string): void {
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 sessionBackends.noAccountMessage = noAccountNow
+sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -1028,7 +1041,53 @@ const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
+const ownerAsleep = new OwnerAsleep(
+  {
+    machines: () => [
+      THIS_MAC,
+      ...new Set([
+        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
+    ],
+    mark: async (machine, awakeTabs) => {
+      if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
+      if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
+      return !!hookRegDir
+    },
+    awakeTabs: () => {
+      const tab = butler?.liveTab()
+      return tab ? [tab] : []
+    },
+    tabs: ptyTabIds,
+    asked: async (tabId) => {
+      const stored = await pendingAskOf(tabId)
+      if (stored) {
+        const questions = 'questions' in stored ? stored.questions.length : 0
+        return { question: questions > 0, questions, text: codexDialog(stored).text }
+      }
+      const claude =
+        discordRelay?.heldAsk(tabId) ??
+        (tracker.statusOf(tabId) === 'approval' ? discordRelay?.askOf(tabId) : undefined)
+      if (!claude) return undefined
+      const questions = questionsOf(claude).length
+      return { question: questions > 0, questions, text: claudeDialog(claude).text }
+    },
+    answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
+    titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
+    changedSince: (since) => awayDigest?.changedSince(since) ?? [],
+    report: (text) => discordRelay?.tell(butlerDestination(), text),
+    now: Date.now
+  },
+  loadSettings().ownerAsleepSince
+)
+
+function ownerCameBack(): void {
+  if (ownerAsleep.asleep()) commitSettings({ ownerAsleepSince: null })
+}
+
 function ownerAway(): boolean {
+  if (ownerAsleep.asleep()) return false
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
   if (pretend)
     return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
@@ -1343,7 +1402,7 @@ function syncAnswerable(): void {
   if (!hookRegDir || !all) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = discordConnected && !!all.channelOfTab(s.tabId)
+    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -1615,7 +1674,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 }
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
-  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+  enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1624,8 +1683,12 @@ async function whyAssistCannotRunOn(
   backend: BackendId,
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
-  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  if (!enabled[backend]) return turnedOffLine(backend)
   return whyAssistCannotRun[backend]()
+}
+
+function turnedOffNow(backend: BackendId): string | null {
+  return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
 }
 
 const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
@@ -1757,8 +1820,10 @@ const sessionSync = new SessionSync({
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
+  tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
+  turnedOff: turnedOffNow,
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
@@ -1878,6 +1943,7 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
       open: openSignInEndOn,
@@ -2047,14 +2113,18 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
 interface LoginWatch {
   name: string
   buf: string
-  startedAt: number
   sawUrl: boolean
   done: boolean
+  giveUp: NodeJS.Timeout
   installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
+const LOGIN_TIMED_OUT = 'Sign-in timed out'
+// CC§10
+const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2074,17 +2144,15 @@ function feedLoginWatcher(tabId: string, data: string): void {
     const rest = afterOutputStart(seen)
     if (rest === null) {
       w.installing.carry = outputStartCarry(seen)
+      w.giveUp.refresh()
       w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
       return
     }
+    clearTimeout(w.giveUp)
+    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
     w.installing = undefined
-    w.startedAt = Date.now()
     w.buf = ''
     data = rest
-  }
-  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
-    failLogin(tabId, 'Sign-in timed out')
-    return
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
@@ -2098,31 +2166,42 @@ function feedLoginWatcher(tabId: string, data: string): void {
     }
     return
   }
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   void completeLogin(tabId, w.name, m[0])
 }
 
-function failLogin(tabId: string, why: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
+function endLoginWatch(tabId: string, w: LoginWatch): void {
   w.done = true
   loginWatchers.delete(tabId)
+  clearTimeout(w.giveUp)
+}
+
+function failLogin(tabId: string, why: string, terminalKept = true): void {
+  const w = loginWatchers.get(tabId)
+  if (!w || w.done) return
+  endLoginWatch(tabId, w)
   const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
     tail: `${why}${tail ? `\n${tail}` : ''}`,
-    tabId,
-    cwd: ptyMgr.get(tabId)?.cwd
+    ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
   })
+}
+
+function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    failLogin(tabId, why, false)
+    try {
+      ptyMgr.kill(tabId)
+    } catch {}
+  }, ms)
 }
 
 function cancelGuidedLogin(tabId: string): void {
   const w = loginWatchers.get(tabId)
   if (!w) return
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   try {
     ptyMgr.kill(tabId)
   } catch {}
@@ -2148,9 +2227,15 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
   loginWatchers.set(handle.id, {
     name,
     buf: '',
-    startedAt: Date.now(),
     sawUrl: false,
     done: false,
+    giveUp: installFirst
+      ? giveUpLoginAfter(
+          handle.id,
+          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          INSTALL_STALLED
+        )
+      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
     ...(installFirst && { installing: { carry: '' } })
   })
   loginPtys.add(handle.id)
@@ -2740,7 +2825,7 @@ function installTool(backend: BackendId): { tabId: string; cwd: string } {
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'koloft-file',
+    scheme: PREVIEW_FILE_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -2927,17 +3012,11 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   presence.macLastUsed()
-  protocol.handle('koloft-file', async (request) => {
-    const url = new URL(request.url)
-    const filePath = decodeURIComponent(url.pathname)
-    try {
-      const data = await fs.promises.readFile(filePath)
-      return new Response(new Uint8Array(data), {
-        headers: { 'content-type': mimeOf(filePath) }
-      })
-    } catch {
-      return new Response('Not found', { status: 404 })
-    }
+  protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
+    const file = previewFileOf(request.url)
+    const data = file === null ? null : await bytesOfAFileHere(file)
+    if (!file || !data) return new Response('Not found', { status: 404 })
+    return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
   setupBrowserPartition()
@@ -3138,7 +3217,8 @@ app.whenReady().then(() => {
       signal: e.signal,
       asleep: sleepers.has(e.id),
       crashed: !quitCommitted && exitedAbnormally(e),
-      left: left ?? undefined
+      left: left ?? undefined,
+      ...(unexpected ? { unexpected } : {})
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
@@ -3237,6 +3317,7 @@ app.whenReady().then(() => {
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
+    if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
     if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -3649,6 +3730,7 @@ app.whenReady().then(() => {
     },
     owner: () => butlerNow.owner(),
     ownerAway,
+    ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3683,6 +3765,7 @@ app.whenReady().then(() => {
       ptyMgr.wakeReady(tabId)
       void buttons.check(tabId)
       showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
     },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
@@ -3727,7 +3810,11 @@ app.whenReady().then(() => {
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
   const digest = awayDigest
-  setInterval(() => digest.marked(), AWAY_CHECKED_EVERY_MS).unref()
+  setInterval(() => {
+    digest.marked()
+    void ownerAsleep.reconcile()
+  }, AWAY_CHECKED_EVERY_MS).unref()
+  void ownerAsleep.reconcile()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3865,6 +3952,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
+    turnedOff: turnedOffNow,
     noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -3906,7 +3994,7 @@ app.whenReady().then(() => {
     },
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake)
+  applyKeepAwake(loadSettings().keepAwake || ownerAsleep.asleep())
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
@@ -4696,17 +4784,28 @@ const MACHINE_PAGE_HEADERS = {
     'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
 }
 
+async function bytesOfAFileHere(file: string): Promise<Buffer | null> {
+  const machine = parseRemoteKey(file)?.host
+  if (machine && !workspaceMgr?.remoteTargets().some((t) => t.host === machine)) return null
+  return hosts
+    .of(file)
+    .readBytes(file)
+    .catch(() => null)
+}
+
+function bodyOf(data: Buffer): Uint8Array {
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+}
+
 async function machinePageResponse(request: Request): Promise<Response> {
   const page = machinePageOf(request.url)
-  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
-  const machine = page && known ? hosts.machine(page.host) : null
-  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  const body = page && (await bytesOfAFileHere(formatRemoteKey(page.host, page.path)))
   if (!page || !body)
     return new Response(fileNotFoundHtml(page?.path ?? request.url), {
       status: 404,
       headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
     })
-  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+  return new Response(bodyOf(body), {
     headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
   })
 }
@@ -4805,7 +4904,7 @@ function setupBrowserPartition(): void {
     if (decision.kind !== 'ask') return false
     return rememberedPermission(decision.origin, decision.permission) ?? false
   })
-  ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
+  ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
     const target = localFilePath(request.url)
@@ -5502,8 +5601,6 @@ async function saveDiscordToken(token: string): Promise<boolean> {
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
-const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
-
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
   return startHelper((butler) => ({
@@ -5515,9 +5612,9 @@ function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResul
 
 function discordHelperBackend(butlerBackend: BackendId): BackendId {
   const methods = loadSettings().sessionMethods
-  return HAS_WORKBENCH_BROWSER.includes(butlerBackend) && methods.enabled[butlerBackend]
+  return methods.enabled[butlerBackend]
     ? butlerBackend
-    : effectiveBackend(methods, new Set(HAS_WORKBENCH_BROWSER))
+    : effectiveBackend(methods, new Set(SESSION_BACKENDS))
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
@@ -5674,7 +5771,8 @@ function commitSettings(patch: Partial<Settings>): Settings {
   sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
-  applyKeepAwake(s.keepAwake)
+  if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
+  applyKeepAwake(s.keepAwake || ownerAsleep.asleep())
   setKeepAwakeChecked(s.keepAwake)
   return s
 }
@@ -5800,13 +5898,6 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (
-        opts.kind !== 'shell' &&
-        !opts.resumeSessionId &&
-        !loadSettings().sessionMethods.enabled[opts.kind]
-      ) {
-        throw new Error('This session method is disabled in Settings ▸ Sessions.')
-      }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
@@ -5832,6 +5923,7 @@ function registerIpc(): void {
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -5839,6 +5931,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     if (guard?.isBackground(id)) void guard.free(id)
+    if (typedAfter?.includes('\r')) ownerCameBack()
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })

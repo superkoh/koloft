@@ -283,6 +283,7 @@ export interface QuotaBucket {
   label: string
   used: number
   resetsAt?: number
+  minutes?: number
 }
 
 export interface AccountView extends AccountMeta {
@@ -337,7 +338,6 @@ export interface Settings {
   notifyExited: boolean
   notifyApprovalSound: boolean
   dockBadge: boolean
-  showUsage: boolean
   // CC§6
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
@@ -348,6 +348,7 @@ export interface Settings {
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
+  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
@@ -463,7 +464,6 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyExited: true,
   notifyApprovalSound: false,
   dockBadge: true,
-  showUsage: true,
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
@@ -472,6 +472,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
+  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
@@ -777,9 +778,7 @@ export interface BackendSessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  // CC§2
   details?: {
-    claude?: { scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]
@@ -789,6 +788,7 @@ export interface BackendSessionInfo {
   lastAction?: string
   account?: string
   pickedAccount?: string
+  // CC§2
   scratchpadDir?: string
   alive: boolean
   // ADR-0025
@@ -814,8 +814,6 @@ export const PLAN_READY = 'Plan ready: implement it?'
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
-  // CC§2
-  scratchpadDir?: string
   files: PreviewItem[]
 }
 
@@ -1059,6 +1057,10 @@ export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>
   return exit.exitCode !== 0 || !!exit.signal
 }
 
+export function endedRowNote(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): string {
+  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
+}
+
 export interface TerminalProcessTitle {
   id: string
   name: string
@@ -1156,7 +1158,6 @@ export interface KoloftApi {
     readText(path: string): Promise<string>
     openFileDialog(): Promise<string | null>
     osOpen(path: string): void
-    fileUrl(path: string): string
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
@@ -1457,7 +1458,8 @@ export interface CronJob {
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState =
+  'closed' | 'quit' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number
@@ -1524,7 +1526,7 @@ export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: s
 export type CronRunNowResult =
   | { ok: true }
   | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
-  | { ok: false; reason: 'no-account'; why: string }
+  | { ok: false; reason: 'no-account' | 'turned-off'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 

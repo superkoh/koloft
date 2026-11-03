@@ -73,6 +73,7 @@ export class SessionBackends {
   askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
+  turnedOff: (backend: BackendId) => string | null = () => null
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -230,7 +231,9 @@ export class SessionBackends {
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const refused = this.noUsableAccount(options.kind)
+    const refused =
+      (!options.resumeSessionId && this.turnedOff(options.kind)) ||
+      this.noUsableAccount(options.kind)
     if (refused) return Promise.reject(new Error(refused))
     return this.get(options.kind).create(options)
   }

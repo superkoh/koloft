@@ -25,7 +25,8 @@ const FORWARD_TIMEOUT_OUTLASTS_CLIENT_TIMEOUTS_MS = 180_000
 
 const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:', 'blob:'])
 const NO_MAC_FILES_FOR_A_MACHINE =
-  'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
+  'a session on another machine cannot reach files or servers of the Mac Koloft runs on'
+const NO_MAC_ADDRESS_FOR_A_MACHINE = `${NO_MAC_FILES_FOR_A_MACHINE}; only localhost, 127.0.0.1 and [::1] mean the machine`
 
 // ADR-0046
 function showsTheMachinesOwnLocalhost(url: string, guestId: number | null): boolean {
@@ -230,8 +231,11 @@ function backendFor(client: Client): RelayBackend {
   const live = (): void => {
     if (!client.sessionId) throw new Error('the tab has no running session')
   }
-  const fence = async (reaches: () => boolean | Promise<boolean>): Promise<void> => {
-    if (client.onMachine && (await reaches())) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
+  const fence = async (
+    reaches: () => boolean | Promise<boolean>,
+    refusal = NO_MAC_FILES_FOR_A_MACHINE
+  ): Promise<void> => {
+    if (client.onMachine && (await reaches())) throw new Error(refusal)
   }
   // PLATFORM§10
   const afterUsersWord = async (): Promise<void> => {
@@ -252,7 +256,7 @@ function backendFor(client: Client): RelayBackend {
       const t = client.onMachine
         ? await openForMachine(client.sessionId, url, d.create)
         : await d.create(client.sessionId, url)
-      if (!t) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
+      if (!t) throw new Error(NO_MAC_ADDRESS_FOR_A_MACHINE)
       return { ...t, targetId: targetIdFor(t.targetId) }
     },
     close: async (targetId) => {
@@ -346,7 +350,10 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
-      await fence(() => reachesThisMac(method, params))
+      await fence(
+        () => reachesThisMac(method, params),
+        method === 'Page.navigate' ? NO_MAC_ADDRESS_FOR_A_MACHINE : NO_MAC_FILES_FOR_A_MACHINE
+      )
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {
