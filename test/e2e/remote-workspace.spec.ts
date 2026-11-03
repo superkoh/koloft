@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Frame, Page } from '@playwright/test'
+import type { Frame, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
@@ -103,6 +103,7 @@ const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
 const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
+const NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST = 'mac-only.localhost'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const YES_THROUGH_A_LINE_MODE_TMUX = '1\r'
 
@@ -129,6 +130,29 @@ const KOLOFT_OPEN_CASE_OF: Record<OtherAgentName, string> = {
   Muse: 'E-RW-39',
   Antigravity: 'E-RW-40'
 }
+
+const FAKE_CODEX_NEVER_ENDS_A_TURN_WHOSE_PROMPT_SAYS_HOLD = 'hold.txt'
+const HELD_FILE = FAKE_CODEX_NEVER_ENDS_A_TURN_WHOSE_PROMPT_SAYS_HOLD
+
+const CHANGES_MID_TURN: Record<
+  OtherAgentName,
+  { caseId: string; writeLandsLate: string; turnHoldsAfterTheWrite?: string }
+> = {
+  Codex: { caseId: 'E-RW-53', writeLandsLate: 'fake-codex-write-at-ms' },
+  Muse: {
+    caseId: 'E-RW-54',
+    writeLandsLate: 'fake-muse-write-at-ms',
+    turnHoldsAfterTheWrite: 'fake-muse-delay'
+  },
+  Antigravity: {
+    caseId: 'E-RW-55',
+    writeLandsLate: 'fake-agy-write-at-ms',
+    turnHoldsAfterTheWrite: 'fake-agy-after-write-ms'
+  }
+}
+const WELL_PAST_THE_TURN_START_REFRESH_MS = 10_000
+const A_TURN_LONGER_THAN_THE_WAIT_MS = 120_000
+const A_WRITE_REACHES_CHANGES_MS = 60_000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -247,6 +271,28 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-56: koloft session list run in a Claude Code session on the machine gives its transcript as the file in that machine’s home, which the session there can read, never the copy mirrored to this Mac', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const tabId = await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id')
+      const listed = path.join(remoteDir(env), 'listed.txt')
+      await agentShell(page, tabId!, 60_000)(`koloft session list > ${listed}`)
+      const transcript = /· transcript: (\S+)$/m.exec(fs.readFileSync(listed, 'utf8'))?.[1]
+      expect(transcript).toBe(
+        `~/.claude/projects/${encodeCwd(remoteDir(env))}/${first.sessionId}.jsonl`
+      )
+      expect(fs.existsSync(path.join(machineHome(env), transcript!.slice('~/'.length)))).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-02: a remote session has a Workbench on the machine — Files lists its folder, Changes shows its edits, and a terminal opens there that refuses an interactive claude', async ({
     env
   }) => {
@@ -341,6 +387,62 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await quitAndClose(app)
     }
   })
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${CHANGES_MID_TURN[agent.label].caseId}: a file a ${agent.label} session on the machine edits shows under Changes while its turn still runs, not only once the turn ends`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const dir = remoteDir(env)
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+        fs.writeFileSync(path.join(dir, HELD_FILE), 'one\n')
+        gitInit(dir)
+        gitCommitAll(dir)
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await page
+          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+          .filter({ hasText: 'Changes' })
+          .click()
+        const shown = (): Promise<string[]> =>
+          page
+            .locator('.wb-panel .cv-row')
+            .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+        await expect.poll(shown, { timeout: 30_000 }).toEqual(['tracked.txt'])
+
+        const { writeLandsLate, turnHoldsAfterTheWrite } = CHANGES_MID_TURN[agent.label]
+        fs.writeFileSync(
+          path.join(machineHome(env), writeLandsLate),
+          String(WELL_PAST_THE_TURN_START_REFRESH_MS)
+        )
+        if (turnHoldsAfterTheWrite)
+          fs.writeFileSync(
+            path.join(machineHome(env), turnHoldsAfterTheWrite),
+            String(A_TURN_LONGER_THAN_THE_WAIT_MS)
+          )
+        await runIn(page, centerTerm(page), `/write ${HELD_FILE}`)
+        await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+        await expect
+          .poll(() => fs.readFileSync(path.join(dir, HELD_FILE), 'utf8'), { timeout: 30_000 })
+          .not.toBe('one\n')
+        await expect
+          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .toEqual([HELD_FILE, 'tracked.txt'])
+        await expect(row).toHaveClass(/st-working/)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
     test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
@@ -600,6 +702,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
@@ -614,7 +717,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         dir,
         (await boundSessionId(page, tabId)) ?? ''
       )
-      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+      const guest = await openPickPage(
+        app,
+        page,
+        server.page('/pick', PICK_PAGE).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      )
 
       await pickIntoSession(page, guest, '#buy', ' BP-07 remote')
       const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-07'))
@@ -637,6 +744,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       fs.mkdirSync(path.join(machineHome(env), '.koloft'), { recursive: true })
@@ -652,7 +760,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         remoteDir(env),
         (await boundSessionId(page, tabId)) ?? ''
       )
-      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+      const guest = await openPickPage(
+        app,
+        page,
+        server.page('/pick', PICK_PAGE).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      )
 
       await startPick(page)
       await clickPicked(page, guest, '#buy')
@@ -989,21 +1101,105 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-57: a picture on the machine shows in the Workbench — inside a markdown file there, opened on its own, and zoomed — read from the machine over ssh', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      const pic = path.join(dir, 'img', 'pic.png')
+      fs.mkdirSync(path.dirname(pic))
+      fs.writeFileSync(pic, Buffer.from(PNG_1X1, 'base64'))
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n![pic](img/pic.png)\n')
+
+      await openRemoteSessionWorkbench(page, env)
+
+      const shown = (img: Locator): Promise<void> =>
+        expect
+          .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth), {
+            timeout: 30_000
+          })
+          .toBe(1)
+
+      await openInBrowse(page, `${remoteKey(env)}/doc.md`)
+      await shown(artifactBody(page).locator('.md-body img'))
+
+      await openInBrowse(page, `${remoteKey(env)}/img/pic.png`)
+      const own = artifactBody(page).locator('.img-wrap img')
+      await shown(own)
+      await own.click()
+      await shown(page.locator('.wb-zoom img'))
+
+      expect(sshCommands(env, 'end').some((c) => c.includes(pic))).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-58: a PDF on the machine opens in the Workbench, read from the machine, and a machine with no workspace here is never reached for one', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(remoteDir(env), 'tiny.pdf'), '%PDF-1.4\n%%EOF\n')
+
+      await openRemoteSessionWorkbench(page, env)
+      await openInBrowse(page, `${remoteKey(env)}/tiny.pdf`)
+
+      const viewer = await guestByUrl(app, /^koloft-file:\/\/m[0-9a-f]+\/.*\/tiny\.pdf$/, {
+        timeout: 30_000
+      })
+      expect(
+        await viewer.evaluate(() =>
+          fetch(location.href).then((r) => [r.status, r.headers.get('content-type')])
+        )
+      ).toEqual([200, 'application/pdf'])
+
+      const elsewhere = 'not-a-workspace-machine'
+      const onElsewhere = viewer
+        .url()
+        .replace(
+          /^koloft-file:\/\/m[0-9a-f]+/,
+          `koloft-file://m${Buffer.from(elsewhere).toString('hex')}`
+        )
+      const loadEnds = await page.evaluate(
+        (u) =>
+          new Promise<string>((done) => {
+            const img = new Image()
+            img.onload = () => done('loaded')
+            img.onerror = () => done('refused')
+            img.src = u
+          }),
+        onElsewhere
+      )
+      expect(loadEnds).toBe('refused')
+      expect(sshCalls(env).some((c) => c.argv.includes(REMOTE_HOST))).toBe(true)
+      expect(sshCalls(env).some((c) => c.argv.includes(elsewhere))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test("E-RW-50: a page on the machine cannot read the machine's other files, and a web page cannot load them, not even from inside a page on the machine", async ({
     env
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       const dir = remoteDir(env)
       fs.writeFileSync(path.join(dir, 'secret.js'), 'window.leaked = "the secret"\n')
       const secretUrl = machinePageUrl(REMOTE_HOST, path.join(dir, 'secret.js'))
-      const webPage = server.page(
-        '/pulls-a-machine-script',
-        `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
-          `onerror="document.body.dataset.script = 'refused'"></script>`
-      )
+      const webPage = server
+        .page(
+          '/pulls-a-machine-script',
+          `<title>web page</title><body><script src="${secretUrl}" onload="document.body.dataset.script = 'loaded'" ` +
+            `onerror="document.body.dataset.script = 'refused'"></script>`
+        )
+        .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
       fs.writeFileSync(
         path.join(dir, 'reader.html'),
         '<!doctype html><title>reader</title><iframe id="f" src="secret.js"></iframe>' +
@@ -1313,7 +1509,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const url = server
         .page('/remote', `<title>${title}</title><body>from the machine</body>`)
         .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
-      const onTheMac = server.page('/mac-only', '<title>mac-only-server</title>')
+      const onTheMac = server
+        .page('/mac-only', '<title>mac-only-server</title>')
+        .replace('127.0.0.1', NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST)
       const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
       const unwrapped = async (command: string): Promise<string> =>
         (await run(command)).replace(/\n/g, '')
@@ -1326,12 +1524,14 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const macFile = path.join(env.home, 'only-on-the-mac.html')
       fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
       const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
-      const refused = 'cannot reach files or local servers of the Mac'
+      const refused = 'cannot reach files or servers of the Mac'
       expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
-      expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
+      const toAMacServer = lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))
+      expect(toAMacServer).toContain(refused)
+      expect(toAMacServer).toContain('only localhost, 127.0.0.1 and [::1] mean the machine')
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
       await run(
-        `playwright-cli eval "() => { location.href = '${onTheMac.replace('127.0.0.1', 'localhost')}' }"`
+        `playwright-cli eval "() => { location.href = '${onTheMac.replace(NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST, '127.0.0.2')}' }"`
       )
       expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
       expect(

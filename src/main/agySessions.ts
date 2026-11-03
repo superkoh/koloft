@@ -10,6 +10,7 @@ import type {
   LaunchPermission
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
@@ -41,6 +42,7 @@ import {
 } from './agyHooks'
 import {
   AGY_APP_DIR,
+  agyBrain,
   agyTranscript,
   diffCounts,
   historyEntries,
@@ -73,6 +75,7 @@ import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_REMOTE_GEMINI,
   AGY_SKILLS,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
@@ -87,7 +90,8 @@ import {
 import { remoteMachineDir } from './remote/paths'
 import { keepKoloftSkillIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
-import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
 import {
@@ -104,6 +108,7 @@ import { agyToolDid } from './rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
+  hostOfKey,
   type HistoryEntry,
   type HistoryListing,
   type StartContext,
@@ -184,6 +189,7 @@ interface AgyCommand {
 
 interface AgyRun extends StoredRun {
   account: string
+  brain?: string
   pid?: number
   api?: AgyApi
   dir?: string
@@ -519,6 +525,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
   }
 
+  // AGY§4 AGY§8
+  transcriptPlaces(key: string): TranscriptPlaces {
+    const id = this.nativeId(key)
+    const host = hostOfKey(key)
+    if (!host) return { onThisMac: agyTranscript(this.gemini, id) }
+    return {
+      onThisMac: agyTranscript(this.deps.remote.mirrorGemini(host), id),
+      onMachine: agyTranscript(path.posix.join('~', AGY_REMOTE_GEMINI), id)
+    }
+  }
+
   get cliBinary(): string | undefined {
     return this.binary
   }
@@ -537,6 +554,22 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   protected runDetails(run: AgyRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
     return { pickedAccount: run.account }
+  }
+
+  // AGY§8 AGY§19
+  protected scratchpadOf(run: AgyRun, entry: HistoryEntry): string | undefined {
+    return run.brain && keyedOn(run.remote?.host, path.posix.join(run.brain, entry.id))
+  }
+
+  // AGY§12
+  private learnBrain(run: AgyRun, artifactDir: unknown): void {
+    if (typeof artifactDir !== 'string' || !artifactDir.startsWith('/')) return
+    const brain = path.posix.dirname(artifactDir)
+    if (run.brain === brain || path.posix.basename(brain) !== 'brain') return
+    run.brain = brain
+    if (!run.info) return
+    run.info.scratchpadDir = this.scratchpadOf(run, { id: run.info.nativeSessionId!, cwd: run.cwd })
+    this.changed()
   }
 
   // AGY§9 AGY§24
@@ -660,6 +693,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
         account: pick.account,
+        brain: agyBrain(pick.home),
         pid,
         api: pid ? new AgyApi(pid, token) : undefined,
         dir,
@@ -946,6 +980,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private onLogLine(run: AgyRun, line: string): void {
     const read = agyLogLine(line)
     if (!read) return
+    if ('hook' in read) this.learnBrain(run, read.hook.input.artifactDirectoryPath)
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
     if ('hook' in read) {
       this.trackTasks(run, read.hook)
@@ -1316,10 +1351,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
-    const brain = path.join(this.geminiOf(run.cwd), AGY_APP_DIR, 'brain', id)
+    const brain = path.join(agyBrain(this.geminiOf(run.cwd)), id)
     let names: string[] = []
     try {
-      names = fs.readdirSync(brain).filter((n) => n.endsWith('.md.metadata.json'))
+      names = fs.readdirSync(brain).filter((n) => n.endsWith(AGY_ARTIFACT_SIDECAR))
     } catch {}
     const waiting = names
       .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))

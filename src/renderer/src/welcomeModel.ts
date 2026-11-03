@@ -4,9 +4,15 @@ import type {
   BackendId,
   DiscoveredFolder,
   FolderUse,
+  SessionMethods,
   SessionRow
 } from '@shared/types'
-import { BACKEND_LABEL, SESSION_BACKENDS, backendAvailable } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  backendAvailable,
+  effectiveBackend
+} from '@shared/sessionBackend'
 import { ACCOUNT_KINDS_OF } from '@shared/accountUsage'
 import { mergeUse } from '@shared/firstRun'
 import { mayBeRunningElsewhere } from './resumeFlow'
@@ -30,19 +36,26 @@ export type Tally = Partial<Record<BackendId, AgentTally>>
 
 export function lastUsedAgent(
   tally: Tally,
-  installed: BackendAvailability[]
+  installed: BackendAvailability[],
+  methods: SessionMethods
 ): BackendId | undefined {
-  return SESSION_BACKENDS.filter((b) => tally[b] && backendAvailable(installed, b)).sort(
-    (a, b) => tally[b]!.mtime - tally[a]!.mtime
-  )[0]
+  return SESSION_BACKENDS.filter(
+    (b) => methods.enabled[b] && tally[b] && backendAvailable(installed, b)
+  ).sort((a, b) => tally[b]!.mtime - tally[a]!.mtime)[0]
 }
 
-export function defaultAgent(tally: Tally, installed: BackendAvailability[]): BackendId {
-  return (
-    lastUsedAgent(tally, installed) ??
-    SESSION_BACKENDS.find((b) => backendAvailable(installed, b)) ??
-    SESSION_BACKENDS[0]
-  )
+export function defaultAgent(
+  tally: Tally,
+  installed: BackendAvailability[],
+  methods: SessionMethods
+): BackendId {
+  const available = new Set(installed.flatMap((b) => (b.available ? [b.id] : [])))
+  return lastUsedAgent(tally, installed, methods) ?? effectiveBackend(methods, available)
+}
+
+export function nextAgent(b: BackendId, methods: SessionMethods): BackendId {
+  const walked = SESSION_BACKENDS.filter((x) => methods.enabled[x])
+  return walked[(walked.indexOf(b) + 1) % walked.length]
 }
 
 export function folderUseOf(path: string, rows: readonly SessionRow[]): DiscoveredFolder {

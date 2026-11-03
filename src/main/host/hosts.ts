@@ -4,19 +4,15 @@ import type { Host } from './host'
 
 // ADR-0025
 export function publicClaudeSession({
-  jsonlPath,
-  scratchpadDir,
+  jsonlPath: _jsonlPath,
   ...s
 }: ClaudeSessionInfo): BackendSessionInfo {
   const machine = s.remote?.host
   const keyed = (p: string | undefined): string | undefined => keyedOn(machine, p)
-  const info: BackendSessionInfo = {
-    ...s,
-    details: { claude: { jsonlPath, scratchpadDir: keyed(scratchpadDir) } }
-  }
-  if (!machine) return info
+  if (!machine) return s
   return {
-    ...info,
+    ...s,
+    scratchpadDir: keyed(s.scratchpadDir),
     treeRoot: keyed(s.treeRoot) ?? s.treeRoot,
     lastTouched: keyed(s.lastTouched),
     lastWritten: keyed(s.lastWritten),

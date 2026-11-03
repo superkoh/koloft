@@ -19,7 +19,10 @@ import {
   MACHINE_GH,
   MACHINE_PREFLIGHT,
   RECEIVE_FILES,
+  REMOTE_URLS_LINE_TAG,
+  REMOTE_URLS_OF_EACH,
   REPO_KEYS,
+  REPO_KEYS_LINE_TAG,
   SYNC_FILES,
   clueKey,
   fileLines,
@@ -187,11 +190,22 @@ export class GitMachineAccounts {
   async repoKeys(machine: string, paths: string[]): Promise<(string | null)[]> {
     if (!paths.length) return []
     const r = await this.run(machine, REPO_KEYS, paths)
-    const lines = r.code === 0 ? r.stdout.split('\n') : []
-    return paths.map((_, i) => {
-      const real = lines[i]?.trim()
-      return real?.startsWith('/') ? formatRemoteKey(machine, real) : null
-    })
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REPO_KEYS_LINE_TAG))
+      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).replace(/\r$/, ''))
+    if (r.code !== 0 || lines.length !== paths.length) return paths.map(() => null)
+    return lines.map((real) => (real.startsWith('/') ? formatRemoteKey(machine, real) : null))
+  }
+
+  async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[] | null> {
+    if (!repos.length) return []
+    const r = await this.run(machine, REMOTE_URLS_OF_EACH, repos)
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REMOTE_URLS_LINE_TAG))
+      .map((l) => Buffer.from(l.slice(REMOTE_URLS_LINE_TAG.length).trim(), 'base64').toString())
+    return r.code === 0 && lines.length === repos.length ? lines : null
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {

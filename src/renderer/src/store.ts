@@ -21,7 +21,6 @@ import {
   type TabKind,
   type Settings,
   type ReleaseNotes,
-  type WhatsNew,
   type UpdateCheckResult,
   type WorkspaceRows
 } from '@shared/types'
@@ -92,7 +91,7 @@ export interface OpenFile {
 }
 
 export type UpdatePhase =
-  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error' | 'whats-new'
+  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error'
 
 export interface UpdateState {
   open: boolean
@@ -278,7 +277,6 @@ interface AppState {
   setTermTabCwd: (ptyId: string, cwd: string) => void
 
   openUpdateCheck: () => void
-  openWhatsNew: (w: WhatsNew) => void
   startUpdateDownload: () => void
   setUpdate: (patch: Partial<UpdateState>) => void
 }
@@ -289,6 +287,7 @@ export function tabEvictedNotice(title: string): string {
 
 const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
+const watchedSessionEndedIn = new Set<string>()
 const restarting = new Set<string>()
 const restartedPtys = new Set<string>()
 const RESTART_COOLDOWN_MS = 1000
@@ -357,7 +356,7 @@ function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
     s.activeTabId === tabId &&
-    isSessionKind(leaving?.kind) &&
+    (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
@@ -449,6 +448,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
+  watchedSessionEndedIn.delete(oldId)
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
@@ -757,6 +757,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       everBoundSession.delete(id)
       lastSessionId.delete(id)
+      watchedSessionEndedIn.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
       let activeTabId = s.activeTabId
@@ -986,7 +987,10 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       const sessions = keepUnchangedSessions(s.sessions, pushed)
       const liveTabs = new Set(sessions.map((x) => x.tabId))
-      for (const id of liveTabs) everBoundSession.add(id)
+      for (const id of liveTabs) {
+        everBoundSession.add(id)
+        watchedSessionEndedIn.delete(id)
+      }
       for (const x of sessions) {
         if (!x.sessionId) continue
         lastSessionId.set(x.tabId, x.sessionId)
@@ -1014,7 +1018,10 @@ export const useStore = create<AppState>((set, get) => ({
           !restarting.has(t.id)
         ) {
           changed = true
-          if (t.id === s.activeTabId) activeReverted = true
+          if (t.id === s.activeTabId) {
+            activeReverted = true
+            if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+          }
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
         }
         return t
@@ -1374,16 +1381,6 @@ export const useStore = create<AppState>((set, get) => ({
         )
       )
   },
-  openWhatsNew: (w) =>
-    set({
-      update: {
-        open: true,
-        phase: 'whats-new',
-        current: w.current,
-        releases: w.releases,
-        omittedReleases: w.omittedReleases
-      }
-    }),
   startUpdateDownload: () => {
     set((s) => ({ update: { ...s.update, phase: 'downloading', percent: 0 } }))
     void window.api.update
@@ -1405,14 +1402,7 @@ export const useStore = create<AppState>((set, get) => ({
         set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrorText(e) } }))
       )
   },
-  setUpdate: (patch) => {
-    const prev = get().update
-    const update = { ...prev, ...patch }
-    if (prev.open && !update.open && update.phase === 'whats-new' && update.current) {
-      void window.api.settings.set({ lastSeenVersion: update.current })
-    }
-    set({ update })
-  }
+  setUpdate: (patch) => set((s) => ({ update: { ...s.update, ...patch } }))
 }))
 
 export const useActiveOpenFile = (): OpenFile | null =>

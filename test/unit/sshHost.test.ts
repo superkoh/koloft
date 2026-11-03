@@ -108,6 +108,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(all.filter((e) => e.ignored).map((e) => e.name)).toEqual(['.git', 'build'])
     })
 
+    it('gives the real path of each file asked about in one call, ~/ paths included, and leaves out what is not a file there', async () => {
+      fs.symlinkSync(repo, path.join(home, 'link'))
+      const asked = [
+        path.join(home, 'link', 'sub', 'b.txt'),
+        '~/proj/a.txt',
+        path.join(repo, 'gone.txt'),
+        path.join(repo, 'broken'),
+        path.join(repo, 'sub')
+      ]
+      const calls: string[] = []
+      const host = machine((cmd, opts) => (calls.push(cmd), runOnMachine(cmd, opts)))
+      expect(await host.realFiles(asked)).toEqual(
+        new Map([
+          [asked[0], path.join(repo, 'sub', 'b.txt')],
+          [asked[1], path.join(repo, 'a.txt')]
+        ])
+      )
+      expect(calls).toHaveLength(1)
+    })
+
     it('finds files by name and text on the machine, keyed by the machine', async () => {
       const byName = await machine().search(keyed(repo), 'b.txt')
       expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
@@ -445,8 +465,8 @@ function publishTwo(publisher: string): void {
 }
 
 // PLATFORM§30
-describe('a web page on the machine', () => {
-  it('reads every file a page pulls in byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
+describe('a whole file read from the machine: what a web page there pulls in, a picture or a PDF the Workbench shows', () => {
+  it('reads every file byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
     let now = 0
     let most = 0
     const host = machine(async (cmd, opts) => {
@@ -459,7 +479,7 @@ describe('a web page on the machine', () => {
     })
     const files = Array.from({ length: 12 }, (_, i) => path.join(repo, `pic-${i}.bin`))
     files.forEach((f, i) => fs.writeFileSync(f, Buffer.from([0, 255, i, 10])))
-    const read = await Promise.all(files.map((f) => host.readPageFile(keyed(f))))
+    const read = await Promise.all(files.map((f) => host.readBytes(keyed(f))))
     expect(read).toEqual(files.map((_, i) => Buffer.from([0, 255, i, 10])))
     expect(most).toBe(4)
   })

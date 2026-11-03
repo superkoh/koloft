@@ -104,6 +104,7 @@ function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
     r7: 0,
     roi: 0,
     overage: '?',
+    has5h: true,
     hasOi: true,
     at: NOW_MS,
     ...p
@@ -318,6 +319,12 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
       /^koloft: → ann · 5h 10% · 7d 52% · \d+ min ago$/
     )
     expect(launchLine(view({ name: 'key', kind: 'agy-home' }), NOW_MS)).toBe('koloft: → key')
+  })
+
+  it('says an API-key account is metered, in the words the Claude shim prints for one', () => {
+    expect(launchLine(view({ name: 'key', kind: 'codex-home', apiKey: true }), NOW_MS)).toBe(
+      'koloft: → key (API key, metered)'
+    )
   })
 
   it('reads an Antigravity bucket as one item, so its group and window do not look like two', () => {
@@ -712,6 +719,21 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
     expect(p.t5).toBeCloseTo(0.75, 10)
     expect(p.t7).toBeCloseTo(0.75, 10)
   })
+  it('T5 averages only the accounts that have a 5-hour limit, and is null when none has', () => {
+    const mixed = [
+      view({ usage: snap({ u5: 0.6, u7: 0.2 }) }),
+      view({ name: 'b', usage: snap({ u5: 0.2, u7: 0.4 }) }),
+      view({ name: 'ultra', usage: snap({ has5h: false, u7: 0.9 }) })
+    ]
+    const p = poolSnapshot(mixed, NOW_MS)
+    expect(p.t5).toBeCloseTo(0.4, 10)
+    expect(p.t7).toBeCloseTo(0.5, 10)
+    const allUltra = [
+      view({ usage: snap({ has5h: false, u7: 0.3 }) }),
+      view({ name: 'b', usage: snap({ has5h: false, u7: 0.5 }) })
+    ]
+    expect(poolSnapshot(allUltra, NOW_MS).t5).toBeNull()
+  })
   it('a soon/due member is measured and usable, never walled', () => {
     const rows = [
       view({ usage: snap({ s5: 'rejected', r5: NOW_SEC + 60, u5: 1 }) }),
@@ -761,7 +783,7 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
       usable: 1,
       walled: 0,
       tension: 0,
-      t5: 0,
+      t5: null,
       t7: 0,
       tfable: null,
       fableSpentAll: false,

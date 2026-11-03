@@ -284,7 +284,7 @@ describe('koloft cron: changing tasks', () => {
     expect(CRON_NEEDS_A_WORKSPACE).toMatch(new RegExp(`^${NOT_PINNED} .*--workspace`))
   })
 
-  it('add saves an enabled task in the caller workspace with the dialog default permission for its backend, and toasts who did it', async () => {
+  it('add saves an enabled task in the caller workspace on "Same as my other sessions" whatever its backend, and toasts who did it', async () => {
     const c = cron([], { backend: 'codex' })
     const reply = await c.run('add', '--name', 'lint', '--every', '2h', '--', 'Run lint')
     expect(reply.exit).toBe(0)
@@ -293,7 +293,7 @@ describe('koloft cron: changing tasks', () => {
       name: 'lint',
       task: 'Run lint',
       backend: 'codex',
-      permission: 'skipAll',
+      permission: 'same',
       enabled: true
     })
     expect(c.toasts).toEqual([expect.stringMatching(/Fix login.*lint/)])

@@ -625,11 +625,21 @@ function removalMs() {
 // CC§4
 const CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS = 50
 
+// CC§1
+const A_FLAG_VALUE_CLAUDE_REPEATS_IN_ITS_RESUME_HINT = /^[\w./:+][\w./:@=+-]*$/
+
+// CC§1
+function flagsRepeatedInTheResumeHint() {
+  return settingsPath && A_FLAG_VALUE_CLAUDE_REPEATS_IN_ITS_RESUME_HINT.test(settingsPath)
+    ? `--settings ${settingsPath} `
+    : ''
+}
+
 // CC§4
 function removeWorktree(then) {
   const hasMessage = fs.existsSync(transcript) && fs.statSync(transcript).size > 0
   const resumeHint = hasMessage
-    ? `\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude --resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22m`
+    ? `\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude ${flagsRepeatedInTheResumeHint()}--resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22m`
     : ''
   const remove = () => {
     if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
@@ -1408,6 +1418,18 @@ function handleLine(line) {
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, name), `koloft_e2e_scratch_body for ${name}\n`)
     process.stdout.write(`[fake-claude] scratched ${name}\r\n> `)
+    return
+  }
+  if (text.startsWith('/later ')) {
+    const later = text.slice('/later '.length)
+    const marker = path.join(home, 'go-later')
+    const tick = setInterval(() => {
+      if (!fs.existsSync(marker)) return
+      clearInterval(tick)
+      fs.rmSync(marker, { force: true })
+      handleLine(later)
+    }, 200)
+    process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
     return
   }
   if (text.startsWith('/open-later ')) {

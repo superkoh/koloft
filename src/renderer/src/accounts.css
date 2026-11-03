@@ -156,14 +156,14 @@
   min-width: 4ch;
   font-variant-numeric: tabular-nums;
 }
+.acct-meter.none .m-track {
+  visibility: hidden;
+}
 .acct-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-.acct-foot .acct-refresh {
-  margin-left: auto;
 }
 .acct-add {
   display: flex;

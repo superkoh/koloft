@@ -391,6 +391,11 @@ export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: st
   ])
 }
 
+export function servePageOnTarget(lab: SshLab, port: number, html: string): void {
+  const server = `require('http').createServer((q, s) => s.end(${JSON.stringify(html)})).listen(${port}, '127.0.0.1')`
+  dk(['exec', '-d', '-u', 'kuser', lab.target, 'node', '-e', server])
+}
+
 export function loginsAccepted(lab: SshLab, user: string): number {
   const r = spawnSync(docker(), ['logs', lab.target], { encoding: 'utf8' })
   return `${r.stdout}${r.stderr}`

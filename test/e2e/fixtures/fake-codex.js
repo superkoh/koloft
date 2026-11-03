@@ -43,7 +43,6 @@ const savedThreads = () =>
     .map((n) => load(n.slice(0, -5)))
     .filter(Boolean)
 const persistTurn = (thread, text) => {
-  thread.path = path.join(sessions, thread.id + '.jsonl')
   thread.preview ||= text
   fs.appendFileSync(
     thread.path,
@@ -53,10 +52,11 @@ const persistTurn = (thread, text) => {
 }
 const newThread = (cwd, predecessor) => {
   const now = Math.floor(Date.now() / 1000)
+  const id = crypto.randomUUID()
   return {
-    id: crypto.randomUUID(),
+    id,
     cwd,
-    path: null,
+    path: path.join(sessions, id + '.jsonl'),
     name: null,
     preview: predecessor?.preview || '',
     createdAt: now,
@@ -84,6 +84,20 @@ if (argv.includes('--version')) {
 if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
   fs.writeSync(1, 'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1\n')
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+}
+
+if (argv[0] === 'login' && argv[1] === '--with-api-key') {
+  const key = fs.readFileSync(0, 'utf8').trim()
+  if (flag('fake-codex-key-login-fails')) {
+    console.error('Error: A default keychain could not be found')
+    process.exit(1)
+  }
+  fs.writeFileSync(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })
+  )
+  console.log('Successfully logged in')
+  process.exit(0)
 }
 
 if (argv[0] === 'login') {
@@ -338,18 +352,23 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       if (text.startsWith('/write ')) {
         const target = path.join(thread.cwd, text.slice('/write '.length).trim())
         const diff = 'written by Codex\n'
-        fs.writeFileSync(target, diff)
-        // CODEX§12
-        event('item/completed', {
-          threadId: thread.id,
-          turnId: turn.id,
-          item: {
-            type: 'fileChange',
-            id: 'write-' + turn.id,
-            status: 'completed',
-            changes: [{ path: target, kind: { type: 'add' }, diff }]
-          }
-        })
+        const write = () => {
+          fs.writeFileSync(target, diff)
+          // CODEX§12
+          event('item/completed', {
+            threadId: thread.id,
+            turnId: turn.id,
+            item: {
+              type: 'fileChange',
+              id: 'write-' + turn.id,
+              status: 'completed',
+              changes: [{ path: target, kind: { type: 'add' }, diff }]
+            }
+          })
+        }
+        const writeAtMs = Number(read('fake-codex-write-at-ms', '0'))
+        if (writeAtMs) setTimeout(write, writeAtMs)
+        else write()
       }
       const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
       if (ran) {
@@ -653,16 +672,28 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         return
       }
       if (method === 'account/read') {
+        const auth = signIn()
+        append('fake-codex-account-reads.jsonl', { codexHome })
         result(id, {
-          account: signIn()
-            ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
-            : null,
+          account: !auth
+            ? null
+            : auth.OPENAI_API_KEY
+              ? { type: 'apiKey' }
+              : { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' },
           requiresOpenaiAuth: false
         })
         return
       }
       if (method === 'account/rateLimits/read') {
         const auth = signIn()
+        // CODEX§15
+        if (auth?.OPENAI_API_KEY) {
+          emit({
+            id,
+            error: { code: -32600, message: 'chatgpt authentication required to read rate limits' }
+          })
+          return
+        }
         const now = Math.floor(Date.now() / 1000)
         result(id, {
           rateLimits:
@@ -672,7 +703,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                   primary: {
                     usedPercent: auth.usedPercent,
                     windowDurationMins: 10080,
-                    resetsAt: now + 3600
+                    resetsAt: now + 3 * 86400
                   },
                   secondary: null,
                   credits:
@@ -735,7 +766,8 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         append('fake-codex-logins.jsonl', {
           type: p.type,
           accessToken: p.accessToken ?? null,
-          accountId: p.chatgptAccountId ?? null
+          accountId: p.chatgptAccountId ?? null,
+          ...(p.apiKey && { apiKey: p.apiKey })
         })
         loginFromTheClient = { type: 'chatgpt', usedPercent: 10 }
         result(id, {})
@@ -981,6 +1013,21 @@ async function startTui() {
             continue
           }
           // CODEX§20
+          if (question?.note !== undefined) {
+            if (ch !== '\r') question.note += ch
+            else {
+              const answers = {
+                [question.key]: { answers: ['None of the above', `user_note: ${question.note}`] }
+              }
+              ws.send(JSON.stringify({ id: question.id, result: { answers } }))
+              question = undefined
+            }
+            continue
+          }
+          if (question && ch === '\t') {
+            question.note = ''
+            continue
+          }
           const picked = question?.labels[Number(ch) - 1]
           if (picked) {
             const answers = { [question.key]: { answers: [picked] } }

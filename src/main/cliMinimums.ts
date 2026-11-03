@@ -3,13 +3,13 @@ import { AGY_INSTALLER_URL } from './toolInstall'
 // CC§16 CODEX§7
 export const MIN_CLAUDE_VERSION = '2.1.293'
 export const MIN_CODEX_VERSION = '0.161.0'
-export const TESTED_CODEX_LINE = MIN_CODEX_VERSION.split('.').slice(0, 2).join('.')
+export const TESTED_CODEX_LINE = '0.166'
 // MUSE§1
 export const MIN_MUSE_VERSION = '1.4.7'
-export const TESTED_MUSE_LINE = MIN_MUSE_VERSION.split('.').slice(0, 2).join('.')
+export const TESTED_MUSE_LINE = '1.4'
 // AGY§3
 export const MIN_AGY_VERSION = '1.4.0'
-export const TESTED_AGY_LINE = MIN_AGY_VERSION.split('.').slice(0, 2).join('.')
+export const TESTED_AGY_LINE = '1.4'
 
 function ensureMinimumFn(s: {
   tool: string

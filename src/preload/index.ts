@@ -236,7 +236,6 @@ const api: KoloftApi = {
     readText: (p) => ipcRenderer.invoke(CH.preview.readText, p),
     openFileDialog: () => ipcRenderer.invoke(CH.preview.openFileDialog),
     osOpen: (p) => ipcRenderer.send(CH.preview.osOpen, p),
-    fileUrl: (p) => `koloft-file://localhost${encodeURI(p)}`,
     onOpenRequest: (cb) => {
       const handler = (_e: unknown, r: OpenRequest): void => cb(r)
       ipcRenderer.on(CH.preview.openFile, handler)
@@ -508,7 +507,6 @@ const api: KoloftApi = {
   },
   update: {
     version: () => ipcRenderer.invoke(CH.app.version),
-    whatsNew: () => ipcRenderer.invoke(CH.update.whatsNew),
     check: () => ipcRenderer.invoke(CH.update.check),
     download: () => ipcRenderer.invoke(CH.update.download),
     restart: () => ipcRenderer.send(CH.update.restart),

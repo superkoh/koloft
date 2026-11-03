@@ -31,7 +31,7 @@ export function AppearancePane(): JSX.Element {
     <>
       <div className="set-ph">
         <h3>Appearance</h3>
-        <p>Terminal fonts, and how Claude sessions present themselves.</p>
+        <p>Terminal fonts, and how sessions present themselves.</p>
       </div>
 
       <div className="set-grp">Terminal font</div>
@@ -104,16 +104,6 @@ export function AppearancePane(): JSX.Element {
       </div>
 
       <div className="set-grp">Session display</div>
-      <div className="set-row">
-        <div className="set-lab">
-          <b>Show cost &amp; context usage</b>
-          <small>
-            Adds a second line to each Claude session — a context-window ring, percent, and running
-            cost (an estimate). Off returns rows to a single line.
-          </small>
-        </div>
-        <Switch checked={settings.showUsage} onChange={(on) => update({ showUsage: on })} />
-      </div>
       <div className="set-row">
         <div className="set-lab">
           <b>Built-in status line</b>

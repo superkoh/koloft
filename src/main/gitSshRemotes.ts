@@ -6,6 +6,7 @@ export const AZURE_SSH_HOST = 'ssh.dev.azure.com'
 export const AZURE_HOST = 'dev.azure.com'
 const AZURE_SSH_PATH = /^v3\/([^/]+)\/([^/]+)\/([^/]+)$/
 const REMOTE_URL_LINE = /^remote\..+\.(?:push)?url\s+(.+)$/
+export const REMOTE_URLS = '^remote\\..*\\.(push)?url$'
 
 // PLATFORM§53
 const SSH_ONLY_ANSWER =

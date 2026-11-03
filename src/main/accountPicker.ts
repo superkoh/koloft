@@ -10,8 +10,10 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
   accountLine,
   fableExhausted,
+  fiveHourStopped,
   homeRoom,
   keepsResumedSession,
+  meteredTag,
   resetElapsed,
   usableAccounts
 } from '@shared/accountUsage'
@@ -47,7 +49,6 @@ export const PICK_BUDGET_MS = 2_000
 // CC§7
 export const PROBE_TIMEOUT_MS = 10_000
 export const METERED_MAX_AGE_MS = 120_000
-export const HOST_5H_STOP = 0.85
 export const FABLE_EXHAUSTED_LINE =
   'koloft: this account has no fable allowance left -- running fable now will be billed to usage credits'
 
@@ -79,7 +80,7 @@ function bannerFor(
 ): string {
   if (!u) return accountLine(name, [])
   const parts = [
-    { label: '5h', used: u.u5 },
+    ...(u.has5h ? [{ label: '5h', used: u.u5 }] : []),
     { label: '7d', used: u.u7 },
     ...(hasOi ? [{ label: 'fable', used: u.uoi }] : [])
   ]
@@ -96,7 +97,7 @@ export function allLimitedNotice(a: AccountView, backend: BackendId): string | u
 function fallbackTag(a: AccountMeta): string {
   return a.kind === 'custom'
     ? `${a.name} (custom endpoint${a.model ? ` · ${a.model}` : ''})`
-    : `${a.name} (API key, metered)`
+    : meteredTag(a.name)
 }
 
 function fallbackBanner(a: AccountMeta): string {
@@ -115,6 +116,21 @@ function fableFree(u: UsageSnapshot, nowSec: number): boolean {
   if (!u.hasOi) return false
   if (resetElapsed(u.roi, nowSec)) return true
   return !fableExhausted(u)
+}
+
+function fiveHourBackAt(u: UsageSnapshot): number {
+  return u.r5 > 0 ? u.r5 : Infinity
+}
+
+function wallBackAt(u: UsageSnapshot): number {
+  const backs: number[] = []
+  if (u.s5 === 'rejected' && u.r5 > 0) backs.push(u.r5)
+  if (u.s7 === 'rejected' && u.r7 > 0) backs.push(u.r7)
+  return backs.length > 0 ? Math.max(...backs) : Infinity
+}
+
+export function soonest<T>(list: T[], backAt: (item: T) => number): T {
+  return list.reduce((best, item) => (backAt(item) < backAt(best) ? item : best))
 }
 
 function withLoad(score: Score, liveSessions: number): Score {
@@ -249,8 +265,7 @@ export class AccountPicker {
           const s = this.snapshotFor(a)
           if (!s || !fableFree(s, nowSec)) return false
           const sc = scoreSnapshot(s, nowSec, 'fable')
-          if (sc.hardLimited || sc.pen !== 0) return false
-          return resetElapsed(s.r5, nowSec) || s.u5 < HOST_5H_STOP
+          return !sc.hardLimited && sc.pen === 0 && !fiveHourStopped(s, nowSec)
         })
     const route: ScoreRoute = fableHosts.length > 0 ? 'fable' : 'opus'
 
@@ -272,7 +287,15 @@ export class AccountPicker {
       }
     }
 
-    const pool = route === 'fable' ? scored.filter((s) => fableHosts.includes(s.meta)) : scored
+    const routed = route === 'fable' ? scored.filter((s) => fableHosts.includes(s.meta)) : scored
+    const runnable = routed.filter((s) => !s.score.hardLimited)
+    const open = runnable.filter((s) => !fiveHourStopped(s.snap, nowSec))
+    const pool =
+      open.length > 0
+        ? open
+        : runnable.length > 0
+          ? [soonest(runnable, (s) => fiveHourBackAt(s.snap))]
+          : [soonest(routed, (s) => wallBackAt(s.snap))]
     const cands: Candidate[] = pool.map((s) => ({ name: s.meta.name, score: s.score }))
     const finalists = leximaxFinalists(cands)
     const winner =

@@ -116,6 +116,17 @@ A fresh, empty session returned a non-null rollout `path` whose file **did not y
 exist**. A path in a start response does not prove that a session can already be
 restored from disk. This was checked before submitting any prompt in the worktree probe.
 
+**That `path` is the thread's whole record, readable as plain JSONL once a turn has run.**
+2026-10-31, codex-cli 0.166.0, a Node client on `codex app-server` in a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), one real turn
+("Reply with the single word PELICAN"): `thread/start` answered a non-null
+`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl` that did not exist
+yet; after `turn/completed`, `thread/list` gave the same `path`, and the file held 18
+lines, every one JSON (`session_meta`, `turn_context`, `response_item` messages,
+`event_msg` items, `token_usage_record`, …), with the prompt's words and the reply
+`PELICAN` in an assistant record. So an agent handed that path can read what the
+session was asked and said.
+
 **Archived history is not directly resumable.** A separate probe archived one of its
 own persisted threads with `thread/archive`, then launched the real TUI with
 `resume <that UUID>`. The TUI sent `thread/resume` and received error `-32600`, stating
@@ -333,9 +344,12 @@ archived afterwards.
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
 0.164.0, 0.165.0 or 0.166.0. Koloft
-treats the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`)
-as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
-`test/unit/codexRuntime.test.ts`) and warns on anything newer. The owner raised the
+keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
+`src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
+treats every version up to that line as verified (`verified` in
+`src/main/cliRuntime.ts`, pinned by `test/unit/codexRuntime.test.ts`) and warns on
+anything newer. A recheck on a newer Codex moves the tested line, not the minimum. The
+owner raised the
 minimum from 0.153.4 to 0.161.0 on 2026-10-08 without redoing the live checks on 0.161;
 since then, on 0.162.0–0.162.1 (2026-10-09 to 2026-10-11, each entry dated where it
 sits): section 1 (handshake, `thread/list` shape), 5 (the app-server lock), 11 (approval
@@ -862,6 +876,27 @@ the sandbox refuses to exec the setuid binary at all, before any password questi
 Codex's own default (`read-only`) refuses it too, and that a command Codex runs outside
 the sandbox after an approval reaches sudo: **inferred, not checked**.
 
+**A thread's own folder outside the workspace is `$CODEX_HOME/generated_images/<thread
+id>/`, and only images go there.** 2026-10-31, codex-cli 0.166.0, a Node client on `codex
+app-server --stdio` in a throwaway `CODEX_HOME` holding a copy of this Mac's login
+(deleted afterwards), an empty work folder, `approval_policy = "never"`, one real turn
+asking for one image: `thread/start` answered `path`
+`$CODEX_HOME/sessions/2026/10/31/rollout-<time>-<thread id>.jsonl`; the turn's
+`item/completed` held an `imageGeneration` item `{status: "completed", result: <base64
+PNG>, savedPath: "$CODEX_HOME/generated_images/<thread id>/<item id>.png", …}`, the file
+was there, and the work folder stayed empty. The rest of `CODEX_HOME` held no other
+per-thread folder: `shell_snapshots/<thread id>.<n>.sh`, `thread-writer-locks/<thread
+id>.lock` and SQLite files are Codex's own. A `codex exec` run of 0.162.0 (2026-10-28) had
+the same folder and told the model "Generated images are saved to <that folder>"; the
+0.166.0 binary's image skill says to copy an image into the workspace when the project
+needs it and leaves it at `$CODEX_HOME/generated_images/...` otherwise. The binary names
+no scratch or plan folder; a Plan-mode plan is a `plan` item, not a file (section 19).
+The same probe run again with `$CODEX_HOME/generated_images` a symlink to a folder
+elsewhere: the image landed in `<that folder>/<thread id>/` and the link stayed a link,
+so the folder can be shared between account homes like `sessions/` (section 15). A
+second, fresh app-server's `thread/resume` of that thread answered the same non-null
+`path` under `$CODEX_HOME/sessions/`.
+
 ## 13. Token counts and the price table
 
 **Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the
@@ -1083,7 +1118,14 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
 stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
 `account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
 `thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
-"chatgpt authentication required to read rate limits".
+"chatgpt authentication required to read rate limits". Again on 2026-10-31 with codex-cli
+0.166.0, a throwaway `HOME` and `CODEX_HOME`, a made-up key: `codex login --with-api-key`
+exited 0 ("API key saved. Authentication is checked when you send a request." on stderr)
+and left `auth.json` with only `auth_mode: "apikey"` and `OPENAI_API_KEY`; `account/read`
+answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true, workspaceRouting: null}`
+and `account/rateLimits/read` the same `-32600`. So a key pasted into Koloft is not checked
+until a session sends its first turn, and Koloft reads such a home as signed in without
+asking for its rate limits.
 
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
@@ -1429,6 +1471,26 @@ result. A second connection got only `thread/started` and `thread/status/changed
 another connection's thread until it resumed it, then every turn notification.
 `app-server daemon bootstrap` ("durable local app-server management for SSH-driven use")
 was only read in help.
+
+**A working turn outlives its only client; the thread unloads 60 s after it goes idle.**
+Measured 2026-10-31, `@openai/codex@0.166.0` by npm in `node:22-bookworm-slim` (Docker,
+arm64) as a non-root user, no account: a stand-in Responses server on a local port as
+the model provider with a made-up API key in `auth.json`, `danger-full-access`,
+`approval_policy = "never"`, `RUST_LOG=info`. The server ran as `setsid nohup codex
+app-server --listen unix://…`; a Node client over WebSocket sent `initialize`,
+`thread/start`, `turn/start`, and `ws.terminate()`d (no `thread/unsubscribe`) at the
+command's `item/started`, 0.3 s in. When the stand-in kept the turn working — after each
+"Process running" tool result it answered with a `write_stdin` (empty `chars`,
+`yield_time_ms` 20000) — seven model requests came with no client connected, the `sleep
+100` command wrote its file, and the turn completed about 100 s after the drop; a new
+client then saw the thread loaded, `idle`, the turn `completed`, the command `completed`
+with exit 0. When the stand-in ended the turn at the command's 10 s yield instead, leaving
+`sleep 100` running, the log said `thread <id> has no subscribers and is idle; shutting
+down` exactly 60.0 s after the turn ended, and the command died with it (`failed`, exit
+-1, its file never written). Both runs logged that line 60.0 s after the turn ended, not
+after the drop. A later client's `thread/loaded/list` and `thread/read` did not hold the
+thread; the app-server process itself stayed up after the unload, and `thread/read` and
+`thread/resume` still returned the whole turn.
 
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
@@ -2028,6 +2090,27 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   `git … diff --no-textconv --no-ext-diff --submodule=short --ignore-submodules=dirty
   --color`, `git ls-files --others --exclude-standard`), and the `diff` reply's `stdout`
   held the diff the pager showed, colour codes included.
+- **Every menu, list and pager a slash command opens names its closing key in its bottom
+  rows; nothing else there does** (2026-10-31, Codex CLI 0.166.0 and 0.161.0,
+  `codex --no-daemon` in a python pty at 120×40, the screen read through `pyte`, a
+  temporary `CODEX_HOME` holding a fake API key, a trusted scratch git repo; each
+  command typed, Esc, CR, the screen read 2.5 s later, then Esc or `q`). The same on
+  both versions: `/model`, `/permissions` and `/review` hide the composer and draw a
+  numbered list whose highlighted row starts with `›` — the composer's own mark — over a
+  last row `enter select · esc back`; `/keymap` ends `… · esc close`; `/mention` draws
+  its list *above* a still-visible composer (`› @`) with `enter/tab insert · esc close ·
+  …` two rows over it; `/resume` fills the screen and ends `enter resume   esc exit …`;
+  the `/diff` pager ends ` q close`. One Esc closed each but the pager, which `q`
+  closed, and the composer came back. `/status` and `/mcp` open nothing: they print
+  their answer into the transcript above the composer, whose bottom rows stay the
+  footer (`<model> · <folder>`, `? for shortcuts`), and Esc after them changes nothing
+  there. Esc at the empty composer of a thread with no message printed "No previous
+  message to edit." (the "esc again …" hint below needs a sent message, not raised
+  here). An empty composer draws its placeholder as text (`› Ask Codex to do anything`),
+  so the screen does not tell an empty composer from one holding a leftover command.
+  So "a panel is open" is read as one of those key hints below the last row that starts
+  with `›` (the whole screen when none does), never from a missing `›` row, and no hint
+  is not read as "no panel".
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
@@ -2202,6 +2285,12 @@ the one before, the screen read back through `pyte`.
 - **In a list:** `ESC[B` moved the `›` mark down one entry, `ESC[A` back up; in the
   three-entry "Background server" prompt `ESC[B` from the last entry wrapped to the
   first. ESC closed the model list and left the composer empty.
+- **Esc during a turn stops it** (2026-10-31, Codex CLI 0.166.0 Linux arm64,
+  `codex --no-daemon` in tmux 3.3a in Docker `--network none`, a scratch `CODEX_HOME`
+  whose `config.toml` points a custom provider at a local server that held `POST
+  /v1/responses` open): the screen read "• Working (5s • esc to interrupt)"; one Esc
+  closed the model stream and drew "■ Conversation interrupted - use /feedback if
+  something went wrong", with an empty composer under it. macOS: not probed.
 - **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
   changed to … for Plan mode").
 - **Mouse and focus reports:** on its welcome screen (2026-10-13, 0.162.0, a scratch
@@ -2397,6 +2486,58 @@ so its folders were not writable by default.
   - `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (values `auto`, `prompt`,
     `writes`, `approve`): the call ran with no request under `on-request` and under
     `never`.
+- **The same with the real Playwright MCP, checked 2026-11-02** on codex-cli 0.166.0 and
+  `@playwright/mcp` 0.0.84 (`--headless --isolated`, installed into a scratch folder), a
+  Node script driving `codex app-server` in a temporary `CODEX_HOME` holding a copied
+  ChatGPT login, `thread/start` with `on-request` / `workspace-write`, one real model turn
+  asked to call `browser_navigate` on a `data:` page and then the tiny `ping` server's
+  tool. The `-c` flags gave the `playwright` entry `default_tools_approval_mode="approve"`
+  and the `probe` entry nothing:
+  - `browser_navigate` ran (title `K480` came back) with no `mcpServer/elicitation/request`;
+    `ping` sent one ("Allow the probe MCP server to run tool \"ping\"?") and ran on
+    `accept`.
+  - `mcpServerStatus/list` (`threadId`, `detail: "full"`) listed 25 Playwright tools with
+    annotations. 7 carry `readOnlyHint: true` and `destructiveHint: false`
+    (`browser_snapshot`, `browser_take_screenshot`, `browser_console_messages`,
+    `browser_network_requests`, `browser_network_request`, `browser_wait_for`,
+    `browser_find`); the other 18, `browser_navigate` and `browser_click` among them,
+    carry `readOnlyHint: false` and `destructiveHint: true`. All 25 carry
+    `openWorldHint: true`. `browser_run_code_unsafe` is one of the 18; its own description
+    says it "executes arbitrary JavaScript in the Playwright server process and is
+    RCE-equivalent", and an MCP server process runs outside Codex's sandbox (the
+    2026-10-04 paragraph after this section's first table).
+  - With no model turn, on a fresh app-server in a temporary `CODEX_HOME` whose
+    `config.toml` held an `[mcp_servers.owner]` entry with `default_tools_approval_mode =
+    "prompt"` and `[mcp_servers.owner.tools.browser_click]` `approval_mode = "approve"`:
+    `config/read` showed both, the server's under `default_tools_approval_mode` and the
+    tool's under `tools.browser_click.approval_mode`. A `-c
+    'mcp_servers.playwright.tools.browser_run_code_unsafe.approval_mode="prompt"'` on the
+    app-server was taken and showed the same way. A value from `config.toml` and one from
+    `-c` look alike in `config/read`.
+- **Which calls ask, read from the `rust-v0.166.0` source, not run**
+  (`codex-mcp/src/mcp/mod.rs` `mcp_permission_prompt_is_auto_approved`,
+  `core/src/mcp_tool_call.rs` `requires_mcp_tool_approval_for_mode`,
+  `session_mcp_tool_approval_key`, `codex-mcp/src/server.rs` `tool_approval_mode`):
+  - `approve` on the tool or its server skips the question under every approval policy.
+  - Approvals `never` with a profile that has full disk write (`danger-full-access`) also
+    skips it; `never` with `workspace-write` refuses the call ("MCP tool call requires
+    approval, but approval policy is never"). That a Koloft tab launched with approvals
+    and the sandbox bypassed therefore never asks is **inferred, not checked**.
+  - Otherwise the mode decides. `auto` (no mode set): a tool with `destructiveHint: true`
+    asks; else one with `readOnlyHint: true` does not; else it asks unless it says both
+    `destructiveHint: false` and `openWorldHint: false`. `prompt` always asks; `writes`
+    asks unless the tool says `readOnlyHint: true`.
+  - A tool's own `mcp_servers.<name>.tools.<tool>.approval_mode` wins over the server's
+    `default_tools_approval_mode` (that a per-tool `prompt` still asks under a server
+    `approve` is **inferred, not checked** in a turn).
+  - "Allow for this session" and "Always allow" are offered and remembered only in `auto`
+    mode, keyed by server **and tool name**: each of the 18 tools asks on its own first
+    call. Under `prompt` neither choice is offered, so such a tool asks on every call. "Allow for this session" lasts one thread (a second thread on the same
+    app-server asked again, the 2026-10-16 bullet above; a `/new` thread asked again, the
+    2026-10-10 bullet). "Always allow" writes that tool's `approval_mode = "approve"` into
+    the config layer that defines the MCP entry (the `CODEX_HOME`'s `config.toml` for an
+    entry there, a project's `.codex/config.toml` for one there) — that it lands in the
+    tab's `CODEX_HOME` and lasts there is **inferred, not checked**.
 - **A failed `config/read` drops every browser setting at once**: Koloft builds
   `network_access`, the Playwright cache root and the `env_vars` passthrough from one
   `config/read`, so a read lost to section 28's race leaves a tab with no network (unless

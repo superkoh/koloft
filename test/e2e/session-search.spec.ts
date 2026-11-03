@@ -29,7 +29,7 @@ import {
 } from './helpers/p1'
 import {
   agyReady,
-  boundRemoteAgy,
+  boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
   installMuseOnMachine,
@@ -443,7 +443,7 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
           hasText: 'Antigravity plans on the build machine'
         })
         await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        const { id } = await boundRemoteAgy(page)
+        const { id } = await boundRemoteSession(page, 'agy')
         await runIn(page, centerTerm(page), 'where is the moth-needle-4')
         const mirrored = path.join(
           env.userData,

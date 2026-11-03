@@ -58,6 +58,7 @@ import {
   type CodexWireLine
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
+import { turnedOffLine } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
   centerTerm,
@@ -77,6 +78,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   settingsOnDisk,
   snap,
@@ -1587,45 +1589,11 @@ test.describe('Codex sessions through the real method chooser, process transport
   }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
-    const resourceId = randomUUID()
     const name = 'interrupted-codex'
-    const cwd = path.join(env.workspaces.a, '.claude', 'worktrees', name)
-    const baseline = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: env.workspaces.a,
-      encoding: 'utf8'
-    }).trim()
-    fs.writeFileSync(
-      path.join(env.userData, 'sessions.json'),
-      JSON.stringify({
-        version: 1,
-        members: {},
-        resources: {
-          [resourceId]: {
-            id: resourceId,
-            originalCwd: env.workspaces.a,
-            worktreePath: cwd,
-            worktreeName: name,
-            worktreeBranch: 'worktree-' + name,
-            originalHeadCommit: baseline,
-            state: 'creating',
-            managed: true
-          }
-        }
-      })
-    )
-    execFileSync(
-      'git',
-      [
-        '-c',
-        'user.email=e2e@koloft.test',
-        '-c',
-        'user.name=koloft-e2e',
-        'commit',
-        '--allow-empty',
-        '-qm',
-        'Advance main'
-      ],
-      { cwd: env.workspaces.a }
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'sessions.json',
+      name
     )
     const app = await launchApp(env)
     try {
@@ -1639,7 +1607,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
       await expect(
         dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
-      ).toContainText('Codex')
+      ).toContainText('and start Codex.')
       await expect(dialog.locator('.modal-foot button')).toHaveCount(2)
       await expect(dialogPrimary(dialog)).toContainText('Recover · Codex')
       await expect(dialog.locator('.fresh-line')).toHaveCount(0)
@@ -1650,8 +1618,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
         baseline
       )
-      const saved = (): { resources: Record<string, { state: string }>; members: object } =>
-        JSON.parse(fs.readFileSync(path.join(env.userData, 'sessions.json'), 'utf8'))
       await expect
         .poll(() => Object.values(saved().members))
         .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
@@ -1679,7 +1645,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       const defaultMethod = (): Locator =>
         page.getByRole('button', { name: 'Default session method' })
       await expect(defaultMethod()).toHaveText('Claude')
-      await expect(page.getByRole('switch', { name: 'Enable Claude', exact: true })).toBeDisabled()
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
       await page.screenshot({
@@ -1740,7 +1705,7 @@ test.describe('Codex sessions through the real method chooser, process transport
           return String(e)
         }
       }, env.workspaces.a)
-      expect(refusal).toContain('disabled')
+      expect(refusal).toContain(turnedOffLine('codex'))
       const row = codexRows(page).filter({ hasText: 'default-worktree' })
       await row.click()
       await clickAppMenuItem(app, page, 'restart-session')
@@ -1788,6 +1753,75 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await startCodex(page, env)
       expect(codexCalls(env).at(-1)!.codexHome).toBe(home)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: accounts.filter((a) => a.kind !== 'codex-home')
+    })
+    const key = 'sk-proj-e2e-made-up-key'
+    const home = path.join(env.userData, 'codex-homes', 'metered')
+    const accountReads = (): number =>
+      fakeCodexLog<{ codexHome: string }>(env, 'fake-codex-account-reads.jsonl').filter(
+        (r) => r.codexHome === home
+      ).length
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page
+        .locator('.set-grp', { hasText: /^Codex$/ })
+        .locator('xpath=following-sibling::div[1]')
+        .getByRole('button', { name: 'Paste API key' })
+        .click()
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Add OpenAI API key')
+      await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
+      const loginFails = path.join(env.home, 'fake-codex-key-login-fails')
+      fs.writeFileSync(loginFails, '')
+      await dialog.locator('input[type="password"]').fill(key)
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog.locator('.acct-add-err')).toHaveText('Could not save', {
+        timeout: 30_000
+      })
+      await expect(page.locator('.acct-name', { hasText: /^metered$/ })).toHaveCount(0)
+      fs.rmSync(loginFails)
+      await dialog.locator('input[type="password"]').fill(key)
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^metered$/ })
+      })
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(row.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited'
+      )
+      await expect(row.locator('.acct-status')).toHaveCount(0)
+      await expect(row.locator('.acct-meter')).toHaveCount(0)
+      expect(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8'))).toMatchObject({
+        OPENAI_API_KEY: key
+      })
+      expect(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')).not.toContain(key)
+      await snap(page, 'codex-api-key-row')
+      await page.keyboard.press('Escape')
+
+      const readsAfterAdding = accountReads()
+      expect((await startCodex(page, env)).codexHome).toBe(home)
+      expect((await startCodex(page, env)).codexHome).toBe(home)
+      await page.evaluate(() => window.api.accounts.probe())
+      expect(accountReads()).toBe(readsAfterAdding + 1)
     } finally {
       await quitAndClose(app)
     }
@@ -1976,13 +2010,13 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§14
-  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, never asking, and counts as running once Codex binds', async ({
+  test('a scheduled job set to run in Codex offers Codex’s models by name and starts Codex with its task, the picked model and thinking level, starting on "Same as my other sessions", which with Skip permission prompts on never asks, and counts as running once Codex binds', async ({
     env
   }) => {
     const TASK = '/daily-report now'
     installCodex(env)
     gitInit(env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
+    seedSettings(env, { hintsOff: true, skipPermissions: true })
     fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
     fs.writeFileSync(
       path.join(env.home, '.codex', 'config.toml'),
@@ -2002,7 +2036,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click()
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
       await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
-      await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
       await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-6-luna · high`)

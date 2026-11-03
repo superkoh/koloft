@@ -68,6 +68,8 @@ interface World {
   asleep?: string[]
   left?: Record<string, string[] | null>
   checkFails?: string[]
+  deleting?: string[]
+  startsDeletingDuringCheck?: string[]
   asksMerged?: string[]
   merged?: Map<string, string[]> | null
   mergedOne?: Record<string, string[]>
@@ -85,6 +87,7 @@ function harness(world: World) {
   const mergedAsked: string[] = []
   const mergedAskedOne: string[] = []
   const mergedAnswers: Record<string, string[] | null> = {}
+  const deleting = new Set(world.deleting)
   const deps: TodoVerbDeps = {
     allowed: (tabId) => tabId === BUTLER_TAB,
     sidebar: () => world.sidebar,
@@ -97,10 +100,12 @@ function harness(world: World) {
     asleep: (sessionId) => world.asleep?.includes(sessionId) ?? false,
     workLeft: async (r, merged) => {
       checked.push(r.id)
+      if (world.startsDeletingDuringCheck?.includes(r.id)) deleting.add(r.id)
       if (world.checkFails?.includes(r.id)) throw new Error('git timed out')
       if (world.asksMerged?.includes(r.id)) mergedAnswers[r.id] = await merged(r.cwd, r.id)
       return world.left && r.id in world.left ? world.left[r.id] : []
     },
+    deleting: (r) => deleting.has(r.id),
     worktrees: async (ws) => world.worktrees?.[ws] ?? [],
     repoOf: async (ws) => world.repos?.[ws] ?? null,
     pulls: async () => world.pulls ?? null,
@@ -277,6 +282,38 @@ describe('koloft todo', () => {
       /Closed, with work left in its worktree, or Koloft could not check it:\n- "gone title" .* · branch: gone · Koloft could not check/
     )
     expect(sessions).not.toContain('nothing left')
+  })
+
+  it('says Koloft is deleting the worktree, among the closed sessions, when a removal is under way before, during or by the end of the check, or after git let go of the worktree, never naming the half-deleted files as work left or the check as failed', async () => {
+    const tree = (name: string): string => `${SHOP}/.claude/worktrees/${name}`
+    const before = row('before', { cwd: tree('before') })
+    const during = row('during', { cwd: tree('during') })
+    const broke = row('broke', { cwd: tree('broke') })
+    const unlisted = row('unlisted', { cwd: tree('unlisted') })
+    const { run } = harness({
+      sidebar: sidebarOf([[SHOP, [before, during, broke, unlisted]]]),
+      sessions: [],
+      worktrees: {
+        [SHOP]: [
+          { dir: before.cwd, branch: 'before' },
+          { dir: during.cwd, branch: 'during' },
+          { dir: broke.cwd, branch: 'broke' }
+        ]
+      },
+      left: {
+        before: ['Changes not committed:\n D src/a.ts'],
+        during: ['Changes not committed:\n D src/b.ts']
+      },
+      checkFails: ['broke'],
+      deleting: ['before', 'unlisted'],
+      startsDeletingDuringCheck: ['during', 'broke']
+    })
+    const sessions = section((await run([])).text, 'SESSIONS')
+    expect(sessions).toMatch(
+      /Closed, nothing left in a worktree[^\n]*:\n- "before title" .* · branch: before · Koloft is deleting its worktree\n- "during title" .* · branch: during · Koloft is deleting its worktree\n- "broke title" .* · branch: broke · Koloft is deleting its worktree\n- "unlisted title" .* · Koloft is deleting its worktree/
+    )
+    expect(sessions).not.toContain('Changes not committed')
+    expect(sessions).not.toContain('could not check')
   })
 
   it('tells the work-left check which commits merged pull requests hold from one list per repository, asking about one branch alone only when it is not in that list', async () => {

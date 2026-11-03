@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { spawn } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { E2E_MUSE_ACCOUNT, installMuse, seedSettings, type E2EEnv } from './helpers/env'
@@ -39,7 +40,7 @@ test.afterEach(({ env }) => killFakeRemote(env))
 
 const ON_THE_MACHINE_WITHIN_MS = 60_000
 const A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS = '5000'
-const KEY_THROUGH_A_LINE_MODE_TMUX = 'y\r'
+const APPROVE_KEY = 'y'
 const SKIPS_PERMISSION_PROMPTS_AS_SEEDED = ['--permission-profile', ':unrestricted']
 
 function machineFile(env: E2EEnv, name: string, text: string): void {
@@ -91,7 +92,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       })
       expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
-        `koloft: → ${E2E_MUSE_ACCOUNT}`
+        `koloft: → ${E2E_MUSE_ACCOUNT} (API key, metered)`
       )
       const row = remoteRows(page)
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
@@ -155,6 +156,40 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
         .toBe(3)
       expect(machineMuseCalls(env)[2].argv.slice(-2)).toEqual(['resume', cleared.sessionId])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§20
+  test('E-RM-08: /fork with a message on the machine moves the tab and its tmux session onto the new copy; the session it left keeps its row, cold, and a click brings it back with muse resume', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(remoteRows(page)).toContainText('keep me')
+      await runIn(page, centerTerm(page), '/fork second')
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(`k-${first.sessionId}`)
+      await expect.poll(() => liveTmuxSessions(env)).toHaveLength(1)
+      await expect(remoteRows(page).filter({ hasText: 'second' })).toHaveClass(/\bst-waiting\b/, {
+        timeout: 30_000
+      })
+      const left = remoteRows(page).filter({ hasText: 'keep me' })
+      await expect(left).toHaveClass(/cold/, { timeout: 30_000 })
+      expect(machineMuseCalls(env)).toHaveLength(1)
+      await left.click()
+      await expect
+        .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        .toBe(2)
+      expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', first.sessionId])
     } finally {
       await quitAndClose(app)
     }
@@ -226,6 +261,52 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  // MUSE§4
+  test('a cold remote row whose session another live muse on the machine still holds is not resumed: the notice names the muse process and no muse starts there', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    const other = spawn('sleep', ['600'], { stdio: 'ignore' })
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(remoteRows(page)).toContainText('keep me')
+      await closeActiveTab(app, page)
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+      const cold = remoteRows(page).filter({ hasText: 'keep me' })
+      await expect(cold).toHaveClass(/cold/, { timeout: 30_000 })
+
+      const registry = path.join(
+        machineHome(env),
+        '.local',
+        'share',
+        'muse',
+        'runtime',
+        'muse',
+        'sessions'
+      )
+      fs.mkdirSync(registry, { recursive: true })
+      fs.writeFileSync(
+        path.join(registry, `${first.sessionId}.json`),
+        JSON.stringify({
+          schema_version: 1,
+          session_id: first.sessionId,
+          process_generation_hint: `pid=${other.pid}`
+        })
+      )
+      await cold.click()
+      await expect(
+        page.locator('.toast', { hasText: /still running in another muse process/ })
+      ).toBeVisible({ timeout: ON_THE_MACHINE_WITHIN_MS })
+      await expect(cold).toHaveClass(/cold/)
+      expect(machineMuseCalls(env)).toHaveLength(1)
+    } finally {
+      other.kill()
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RM-07: an approval Muse asks for on the machine turns the row amber, and a key pressed in the tab reaches Muse through ssh, tmux and the wrapper', async ({
     env
   }) => {
@@ -239,10 +320,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect(row).toHaveClass(/\bst-approval\b/)
       await expect(row.locator('.ws-tab-act')).toHaveText('Wants to run: ls -la')
       const tabId = await row.getAttribute('data-tab-id')
-      await page.evaluate(
-        ([id, key]) => window.api.terminal.write(id!, key!),
-        [tabId, KEY_THROUGH_A_LINE_MODE_TMUX]
-      )
+      await page.evaluate(([id, key]) => window.api.terminal.write(id!, key!), [tabId, APPROVE_KEY])
       await expect(row).toHaveClass(/\bst-waiting\b/)
       const saved = path.join(
         machineHome(env),

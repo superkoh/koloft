@@ -53,10 +53,11 @@ import {
   withHandover,
   type SessionCaller
 } from './handover'
-import { nameForTask } from './sessionTitle'
+import { distinctTitle, titleForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
+import type { TranscriptPlaces } from './sessionBackends'
 
 export interface ButlerHelperTask {
   prompt: string
@@ -152,10 +153,23 @@ function sendMessageReaches(
   )
 }
 
+function transcriptPart(
+  info: SessionInfo,
+  me: SessionInfo,
+  places: TranscriptPlaces | undefined
+): string[] {
+  const machine = info.remote?.host
+  const shown = (file: string | undefined): string[] => (file ? [`transcript: ${file}`] : [])
+  if (me.remote) return machine === me.remote.host ? shown(places?.onMachine) : []
+  if (places?.onThisMac) return shown(places.onThisMac)
+  return machine && places?.onMachine ? shown(remoteCopyText(machine, places.onMachine)) : []
+}
+
 function openSessionLines(
   sessions: ListedSession[],
   me: SessionInfo,
-  asking: (tabId: string) => boolean
+  asking: (tabId: string) => boolean,
+  transcriptPlaces: (key: string) => TranscriptPlaces | undefined
 ): string[] {
   return sessions.map(({ info, peerName, starter }) => {
     const parts = [
@@ -163,12 +177,11 @@ function openSessionLines(
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (!reachedBySendMessage(info.backendId) || info.remote?.host !== me.remote?.host)
+    if (!sendMessageReaches(me, info.backendId, info.remote?.host))
       parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
-    const transcript = info.details?.claude?.jsonlPath
-    if (transcript) parts.push(`transcript: ${transcript}`)
+    parts.push(...transcriptPart(info, me, transcriptPlaces(info.sessionId)))
     return parts.join(' · ')
   })
 }
@@ -392,15 +405,17 @@ function queuedStartedBy(
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
+  tabOpen(tabId: string): boolean
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
+  turnedOff(backend: BackendId): string | null
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   waiting: WaitingLaunches
   assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
-  whatIsLeft(target: ClosableSession): Promise<string[]>
+  whatIsLeft(target: ClosableSession, waitUntil: number): Promise<string[]>
   closeSoon(
     inOrder: ClosableSession[],
     tellStarter: (closed: ClosableSession, text: string) => void
@@ -412,6 +427,7 @@ export interface SessionVerbDeps {
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
+  transcriptPlaces(key: string): TranscriptPlaces | undefined
   quotedPrompt(tabId: string): string | undefined
   butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
@@ -505,7 +521,7 @@ async function listSessions(
   const open = new Set(sessions.map((s) => s.sessionId))
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
-    ...openSessionLines(listed, me, d.asking),
+    ...openSessionLines(listed, me, d.asking, d.transcriptPlaces),
     ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]
@@ -514,6 +530,7 @@ async function listSessions(
 
 async function startSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -523,10 +540,16 @@ async function startSibling(
   helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
+  const turnedOff = d.turnedOff(backend)
+  if (turnedOff)
+    return refused(
+      `koloft session new: ${turnedOff}, so Koloft starts no ${BACKEND_LABEL[backend]} session. Do the task yourself, or start it with --backend and an agent that is on.`
+    )
   if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
     d,
+    names,
     args,
     me,
     workspace,
@@ -562,8 +585,59 @@ async function startSibling(
   )
 }
 
+interface HeldName {
+  name: string
+  tabId?: string
+}
+
+interface LaunchNames {
+  own(name: string): HeldName
+  pick(title: string): HeldName
+  launched(held: HeldName, tabId: string | null): void
+  moved(oldTabId: string, newTabId: string): void
+}
+
+function launchNames(d: SessionVerbDeps): LaunchNames {
+  const held = new Set<HeldName>()
+  const letGo = (): SessionInfo[] => {
+    const listed = d.allSessions()
+    const queued = new Set(d.waiting.list().map((q) => q.tabId))
+    for (const h of held) {
+      const tabId = h.tabId
+      if (tabId === undefined || queued.has(tabId)) continue
+      if (!d.tabOpen(tabId) || listed.some((s) => s.tabId === tabId && s.title === h.name))
+        held.delete(h)
+    }
+    return listed
+  }
+  const hold = (name: string): HeldName => {
+    const h = { name }
+    held.add(h)
+    return h
+  }
+  return {
+    own: (name) => {
+      letGo()
+      return hold(name)
+    },
+    pick: (title) => {
+      const taken = new Set(letGo().map((s) => s.title))
+      for (const h of held) taken.add(h.name)
+      return hold(distinctTitle(title, taken))
+    },
+    launched: (h, tabId) => {
+      if (tabId) h.tabId = tabId
+      else held.delete(h)
+    },
+    moved: (oldTabId, newTabId) => {
+      for (const h of held) if (h.tabId === oldTabId) h.tabId = newTabId
+    }
+  }
+}
+
 async function launchSibling(
   d: SessionVerbDeps,
+  names: LaunchNames,
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
@@ -581,45 +655,50 @@ async function launchSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const [name, handover] = await Promise.all([
-    !namedAtLaunch(backend, isRemoteKey(workspace))
-      ? undefined
-      : (args.name ??
-        nameForTask(
-          args.prompt,
-          d.assist,
-          new Set(d.allSessions().map((s) => s.title)),
-          ownerWords
-        )),
-    handoverInOwnersLanguage(caller, d.assist)
-  ])
-  const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
-  const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
-  const worktree =
-    gitWorkspace && (args.worktree || caller.assist)
-      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
-      : args.worktree
-  const tabId = await d.launch({
-    kind: backend,
-    cwd: workspace,
-    name,
-    worktree,
-    model: args.model,
-    // ADR-0028
-    permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
-    ownerWords,
-    // ADR-0026
-    trustFolder:
-      !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-    // CODEX§17
-    ...(traits.handoverAsRole
-      ? { role: preamble, firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(preamble, args.prompt) })
-  })
+  let held: HeldName | undefined
+  let tabId: string | null = null
+  try {
+    const [, handover] = await Promise.all([
+      !namedAtLaunch(backend, isRemoteKey(workspace))
+        ? undefined
+        : args.name !== undefined
+          ? (held = names.own(args.name))
+          : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
+      handoverInOwnersLanguage(caller, d.assist)
+    ])
+    const name = held?.name
+    const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
+    const gitWorkspace = d
+      .sidebar()
+      .some((w) => w.workspace.path === workspace && w.workspace.isGit)
+    const worktree =
+      gitWorkspace && (args.worktree || caller.assist)
+        ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
+        : args.worktree
+    tabId = await d.launch({
+      kind: backend,
+      cwd: workspace,
+      name,
+      worktree,
+      model: args.model,
+      // ADR-0028
+      permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+      ownerWords,
+      // ADR-0026
+      trustFolder:
+        !worktree && (!!helperRole || d.pinnedWorkspaces().some((w) => w.path === workspace)),
+      // CODEX§17
+      ...(traits.handoverAsRole
+        ? { role: preamble, firstPrompt: args.prompt }
+        : { firstPrompt: withHandover(preamble, args.prompt) })
+    })
+  } finally {
+    if (held) names.launched(held, tabId)
+  }
   if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
-  return { tabId, name }
+  return { tabId, name: held?.name }
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
@@ -763,7 +842,8 @@ interface StartedSessionsToClose {
 async function startedSessionsToClose(
   d: SessionVerbDeps,
   target: ClosableSession,
-  callerTab: string
+  callerTab: string,
+  waitUntil: number
 ): Promise<StartedSessionsToClose> {
   const found: StartedSessionsToClose = { close: [], kept: [], open: [] }
   const all = d.closable()
@@ -780,7 +860,7 @@ async function startedSessionsToClose(
       return false
     })
     const lefts = await Promise.all(
-      ended.map((kid) => (kid.treeRoot === target.treeRoot ? [] : d.whatIsLeft(kid)))
+      ended.map((kid) => (kid.treeRoot === target.treeRoot ? [] : d.whatIsLeft(kid, waitUntil)))
     )
     const closing = ended.filter((kid, i) => {
       if (!lefts[i].length) return true
@@ -809,6 +889,9 @@ export const THAT_IS_YOU = 'That is you.'
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
 const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
   AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS
+const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
+export const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
+  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 const RESUME_USAGE =
   'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."'
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
@@ -904,6 +987,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   tabMoved(oldTabId: string, newTabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
+  const names = launchNames(d)
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
@@ -1224,6 +1308,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         const ownerWords = await ownerWordsOf(caller.session)
         return startSibling(
           d,
+          names,
           parsed.value,
           caller.session,
           workspace,
@@ -1288,6 +1373,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, forTheOwner)
     if (sub === 'close') {
+      const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
       const queued = ref !== undefined ? queuedStartedBy(d, caller.session, ref) : undefined
@@ -1300,12 +1386,12 @@ export function sessionVerb(d: SessionVerbDeps): {
         if (!hit.ok) return refused(hit.error)
         target = hit.value
       }
-      const left = await d.whatIsLeft(target)
+      const left = await d.whatIsLeft(target, waitUntil)
       if (left.length > 0)
         return refused(
           `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
-      const started = await startedSessionsToClose(d, target, caller.tabId)
+      const started = await startedSessionsToClose(d, target, caller.tabId, waitUntil)
       d.closeSoon([target, ...started.close], (closed, text) => {
         const [id] = d.startedSessions.startersOf(closed)
         const starter = id === undefined ? undefined : sessionTarget(d, id)
@@ -1331,6 +1417,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     (
       await launchSibling(
         d,
+        names,
         { prompt, name, backend },
         butler,
         d.butlerFolder(),
@@ -1342,6 +1429,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     )?.tabId ?? null
 
   const tabMoved = (oldTabId: string, newTabId: string): void => {
+    names.moved(oldTabId, newTabId)
     const owed = replyOwed.get(oldTabId)
     if (owed === undefined) return
     replyOwed.delete(oldTabId)

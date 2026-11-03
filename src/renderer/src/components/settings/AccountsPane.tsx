@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
 import type { AccountKind, AccountView, SignInBackend, SignInFailure } from '@shared/types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
 import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
-import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
+import {
+  ACCOUNT_KINDS_OF,
+  METERED_NOTE,
+  measuredAt,
+  needsSignInAgain,
+  windowLabel
+} from '@shared/accountUsage'
 
 // AGY§5
 const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
@@ -14,6 +20,7 @@ const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
   agy: 'agy'
 }
 import {
+  ApiKeyBadge,
   Meter,
   QuotaMeters,
   ageLabel,
@@ -42,6 +49,8 @@ export function AccountsPane(): JSX.Element {
   const [adding, setAdding] = useState<AccountKind | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
+  const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(refreshBeat.current), [])
   const [signIn, setSignIn] = useState<{ backend: SignInBackend; again?: string } | null>(null)
   const claudeAccounts = accounts.filter((a) => ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
@@ -120,22 +129,24 @@ export function AccountsPane(): JSX.Element {
   )
 
   const runRefresh = async (): Promise<void> => {
+    clearTimeout(refreshBeat.current)
     setRefresh('busy')
     try {
       setAccounts(await window.api.accounts.probe())
     } finally {
       setRefresh('done')
-      setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
+      refreshBeat.current = setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
     }
   }
 
   return (
     <>
       <div className="set-ph">
-        <h3>Claude accounts</h3>
+        <h3>Accounts</h3>
         <p>
-          Every session in Koloft runs on an account below, never on the login already on this Mac.
-          Each new claude picks the least-used one.
+          Every session in Koloft runs on an account from its agent’s section below, never on the
+          login already on this Mac. Each new session picks its agent’s least-used sign-in, and an
+          API key only when every sign-in is at its limit.
         </p>
       </div>
 
@@ -162,10 +173,24 @@ export function AccountsPane(): JSX.Element {
       </div>
       <div className="set-row">
         <div className="set-lab">
+          <b>Account usage</b>
+          <small>
+            Reads again, right now, how much every enabled account of every agent has used.
+          </small>
+        </div>
+        <button className="mini" disabled={refresh === 'busy'} onClick={() => void runRefresh()}>
+          <IconReload size={14} />{' '}
+          {refresh === 'busy' ? 'Refreshing…' : refresh === 'done' ? '✓ Updated' : 'Refresh usage'}
+        </button>
+      </div>
+
+      <div className="set-grp">Claude</div>
+      <div className="set-row">
+        <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
-            Off, accounts are picked purely by 5h / 7d load — use that when fable is nearly spent
-            and one account is taking every session.
+            Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
+            that when fable is nearly spent and one account is taking every session.
           </small>
         </div>
         <Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />
@@ -185,38 +210,30 @@ export function AccountsPane(): JSX.Element {
           <button className="mini" onClick={() => setAdding('oauth')}>
             <IconPlus size={14} /> Paste token
           </button>
-          <button
-            className="mini acct-refresh"
-            disabled={refresh === 'busy'}
-            onClick={() => void runRefresh()}
-            title="Probe every enabled account now"
-          >
-            <IconReload size={14} />{' '}
-            {refresh === 'busy'
-              ? 'Refreshing…'
-              : refresh === 'done'
-                ? '✓ Updated'
-                : 'Refresh usage'}
-          </button>
         </>
       )}
 
       <div className="set-grp">Codex</div>
       {section(
         codexAccounts,
-        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in, and every Codex session picks the least-used one.',
-        <button
-          className="mini"
-          onClick={() => setSignIn({ backend: 'codex' })}
-          title="Runs codex login in a terminal tab for a new Codex account"
-        >
-          <IconWebPage size={14} /> Sign in to Codex
-        </button>
+        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
+        <>
+          <button
+            className="mini"
+            onClick={() => setSignIn({ backend: 'codex' })}
+            title="Runs codex login in a terminal tab for a new Codex account"
+          >
+            <IconWebPage size={14} /> Sign in to Codex
+          </button>
+          <button className="mini" onClick={() => setAdding('codex-home')}>
+            <IconPlus size={14} /> Paste API key
+          </button>
+        </>
       )}
       <div className="set-grp">Muse</div>
       {section(
         museAccounts,
-        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key, and Muse sessions take turns between them.',
+        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
@@ -233,7 +250,7 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Antigravity</div>
       {section(
         agyAccounts,
-        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key, and Antigravity sessions take turns between them.',
+        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
@@ -542,7 +559,7 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
+        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
         {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
         {a.kind === 'oauth' && a.fable === 'yes' && (
           <span
@@ -601,6 +618,8 @@ function AccountRow({
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
+          ) : a.apiKey && !a.probeError ? (
+            <span className="acct-note">{METERED_NOTE}</span>
           ) : a.limits && a.limits.windows.length > 0 ? (
             a.limits.windows.map((w) => (
               <Meter
@@ -631,13 +650,11 @@ function AccountRow({
         </div>
       ) : a.kind === 'apikey' ? (
         <div className="acct-meters">
-          <span className="acct-note">
-            Metered — used only when every subscription is rate-limited
-          </span>
+          <span className="acct-note">{METERED_NOTE}</span>
         </div>
       ) : u ? (
         <div className="acct-meters">
-          <Meter label="5h" v={u.u5} win="5h" />
+          {u.has5h && <Meter label="5h" v={u.u5} win="5h" />}
           <Meter label="7d" v={u.u7} win="7d" />
           {u.hasOi && <Meter label="fable" v={u.uoi} win="oi" soi={u.soi} />}
           {/* CC§7 */}
@@ -667,6 +684,7 @@ export function AddAccountDialog({
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const openSignInTab = useStore((s) => s.openSignInTab)
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -677,9 +695,20 @@ export function AddAccountDialog({
       secret,
       kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
     )
-    setBusy(false)
     // ADR-0002
     setSecret('')
+    if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
+      const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
+      setBusy(false)
+      if (!setup.ok) {
+        setError('Saved, but agy could not be opened — use Sign in again on its row')
+        return
+      }
+      openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+      onClose()
+      return
+    }
+    setBusy(false)
     if (r.ok || r.account) {
       onClose()
     } else {
@@ -700,11 +729,13 @@ export function AddAccountDialog({
       ? 'Paste token'
       : kind === 'apikey'
         ? 'Add API key'
-        : kind === 'muse-home'
-          ? 'Add Muse API key'
-          : kind === 'agy-home'
-            ? 'Add Gemini API key'
-            : 'Add custom endpoint'
+        : kind === 'codex-home'
+          ? 'Add OpenAI API key'
+          : kind === 'muse-home'
+            ? 'Add Muse API key'
+            : kind === 'agy-home'
+              ? 'Add Gemini API key'
+              : 'Add custom endpoint'
 
   return (
     <div className="acct-add">
@@ -741,11 +772,13 @@ export function AddAccountDialog({
             ? 'sk-ant-oat01-… (from claude setup-token)'
             : kind === 'apikey'
               ? 'sk-ant-api03-…'
-              : kind === 'muse-home'
-                ? 'Meta API key'
-                : kind === 'agy-home'
-                  ? 'Gemini API key'
-                  : 'Key issued by that endpoint'
+              : kind === 'codex-home'
+                ? 'sk-proj-… (OpenAI API key)'
+                : kind === 'muse-home'
+                  ? 'Meta API key'
+                  : kind === 'agy-home'
+                    ? 'Gemini API key'
+                    : 'Key issued by that endpoint'
         }
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
@@ -762,15 +795,23 @@ export function AddAccountDialog({
             busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
           }
         >
-          {busy ? 'Verifying…' : 'Verify and save'}
+          {SIGN_IN_FOLDER_KINDS.includes(kind)
+            ? busy
+              ? 'Saving…'
+              : 'Save'
+            : busy
+              ? 'Verifying…'
+              : 'Verify and save'}
         </button>
       </div>
       <span className="field-hint">
-        {kind === 'muse-home'
-          ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. A key muse cannot use still saves the account, marked UNVERIFIED.'
-          : kind === 'agy-home'
-            ? 'The key goes into your Keychain and is handed to agy when a session starts. The account stays UNVERIFIED until you use Sign in again once to pick a colour scheme and answer Google’s Terms screen in agy.'
-            : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
+        {kind === 'codex-home'
+          ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
+          : kind === 'muse-home'
+            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Muse does not check the key here: a wrong one shows as signed in and fails once a session starts.'
+            : kind === 'agy-home'
+              ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
+              : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}

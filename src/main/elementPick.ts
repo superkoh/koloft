@@ -48,6 +48,7 @@ export interface PickedElement {
   html: string
   css: Record<string, string>
   png: Buffer | null
+  pictureFailed: string | null
 }
 
 const SHORTHAND_PARTS: Record<string, string[]> = {
@@ -99,7 +100,10 @@ export function elementLabel(node: { localName: string; attributes?: string[] })
 }
 
 // CC§18 CODEX§23
-export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null): string {
+export function pickText(
+  p: Omit<PickedElement, 'png' | 'pictureFailed'>,
+  picture: string | null
+): string {
   const html =
     p.html.length > HTML_KEPT_CHARS
       ? `${p.html.slice(0, HTML_KEPT_CHARS)}… ${p.html.length - HTML_KEPT_CHARS} more characters`
@@ -218,7 +222,7 @@ async function frameOffset(wc: WebContents, frame: Frame): Promise<{ x: number; 
 }
 
 // PLATFORM§16
-async function picture(
+async function pictureInView(
   wc: WebContents,
   root: Frame,
   box: PickedElement['box']
@@ -230,19 +234,35 @@ async function picture(
   const top = Math.max(0, box.y)
   const right = Math.min(view.clientWidth, box.x + box.width)
   const bottom = Math.min(view.clientHeight, box.y + box.height)
-  if (right <= left || bottom <= top) return null
   const zoom = wc.getZoomFactor()
+  const rect = {
+    x: Math.round(left * zoom),
+    y: Math.round(top * zoom),
+    width: Math.round((right - left) * zoom),
+    height: Math.round((bottom - top) * zoom)
+  }
+  if (rect.width <= 0 || rect.height <= 0) return null
   const image = await within(
-    wc.capturePage({
-      x: Math.round(left * zoom),
-      y: Math.round(top * zoom),
-      width: Math.round((right - left) * zoom),
-      height: Math.round((bottom - top) * zoom)
-    }),
+    wc.capturePage(rect),
     A_CAPTURE_ANSWERS_WITHIN_MS,
-    'capture'
-  ).catch(() => null)
-  return image && !image.isEmpty() ? image.toPNG() : null
+    `the page did not answer within ${A_CAPTURE_ANSWERS_WITHIN_MS / 1000} s`
+  )
+  if (image.isEmpty()) throw new Error('the page gave back an empty picture')
+  return image.toPNG()
+}
+
+export function pictureOf(
+  wc: WebContents,
+  root: Frame,
+  box: PickedElement['box']
+): Promise<Pick<PickedElement, 'png' | 'pictureFailed'>> {
+  return pictureInView(wc, root, box).then(
+    (png) => ({ png, pictureFailed: null }),
+    (error: unknown) => ({
+      png: null,
+      pictureFailed: error instanceof Error ? error.message : String(error)
+    })
+  )
 }
 
 async function readPick(
@@ -279,7 +299,7 @@ async function readPick(
     box,
     html: outerHTML,
     css: Object.fromEntries(computedStyle.map((c) => [c.name, c.value])),
-    png: await picture(wc, root, box)
+    ...(await pictureOf(wc, root, box))
   }
 }
 

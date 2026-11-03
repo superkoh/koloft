@@ -594,6 +594,14 @@ only downloaded the public release.
   | `PostToolUse` | after the tool really ran (not when denied); for a background command, when it ends | `toolCall`, `stepIdx`, `error:""`; no output, no diff |
   | `Stop` | end of the agent loop | `executionNum`, `terminationReason` (`NO_TOOL_CALL`, `TERMINAL_CUSTOM_HOOK` after `/compact`, `ERROR`), `fullyIdle` (false while a subagent runs), `error` |
 
+- `artifactDirectoryPath` is a plain absolute path on the machine agy runs on,
+  `<geminiDir>/antigravity-cli/brain/<conversationId>` (no `file://`), in every event
+  from the first `SessionStart` on (2026-10-29, agy 1.4.7 Linux in Docker,
+  `--gemini_dir=/work/g`, a fake Gemini server, three turns in tmux; no subagent ran, so
+  a subagent's hooks are **not probed yet**). That folder holds
+  the conversation's artifacts and its `scratch/` (§8, §19); 1.3.6's system prompt tells
+  the model to put scratch scripts and files in `{{ArtifactDirectoryPath}}/scratch/`,
+  "They will be persisted" (not rechecked on 1.4).
 - **What a `PostToolUse` hook sees of a `run_command`.** 1.4.7 Linux arm64 in Docker,
   fake Gemini server, `-p` then `-c -p`, `--dangerously-skip-permissions`, hook entry
   `/bin/sh <file>` (dash), 2026-10-25: stdin is one compact line holding
@@ -852,6 +860,15 @@ only downloaded the public release.
   sends too.
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
+- A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
+  `first line`, LF, `second line` (one write each, 0.3 s apart) showed as two lines
+  in the box and the fake Gemini server got no call in the next 2 s; a CR then sent
+  them as one prompt, `<USER_REQUEST>\nfirst line\nsecond line\n</USER_REQUEST>`.
+- Esc during a turn stops it: with the model's answer held back, the footer read "esc to
+  cancel"; one Esc turned the turn into "⎿ Interrupted · What should Antigravity CLI do
+  instead?" and an empty prompt, and the answer that came 25 s later drew nothing.
+  Both measured 2026-10-31, agy 1.4.12, Linux arm64, Docker `--network none`, tmux 3.3a,
+  the API-key route against a fake Gemini server. macOS: not probed.
 
 ## §16 The local Connect API
 
@@ -1115,6 +1132,19 @@ only downloaded the public release.
   `3p-5h` named "Five Hour Limit Remaining", `window:"5h"`; `remaining_fraction` 1
   (what is left, not what is used), `reset_time` an ISO UTC time (7 days and 5 hours
   after the sign-in). No `description`, `remainingAmount` or `disabled` on a bucket.
+- **The input box on screen.** 1.4.12 Linux arm64 from the manifest (sha512 checked),
+  Docker `--network none`, tmux 3.3a 120×40, the API-key route against a fake Gemini
+  server, keys by `tmux send-keys`, screen by `capture-pane`, 2026-11-01. The box is a
+  full-width `─` rule, one row starting `>`, and a second full-width rule; empty, that
+  row is a bare `>` (no hint text). Typed but not sent, the row reads `> /usage`, and the
+  completion menu draws *below* the lower rule, its first row again `> /usage  View model
+  quota usage`, then `↑/↓ Navigate · enter Select · tab Complete` and `esc to cancel`.
+  Earlier turns above the box are split by a shorter rule (60 `─`). One Esc closes only
+  the menu and leaves `> /usage` in the box; Ctrl+E then Ctrl+U (`\x05\x15`, one write)
+  empties it to a bare `>`, and on an empty box changes nothing. Enter, with or without
+  the menu, runs it and leaves a bare `>` with the output under the box. So the last two
+  rules hold the draft, and a command whose Enter did not land is still there. macOS:
+  not probed.
 - Desktop-app conversations in `<geminiDir>/antigravity/conversations` show only in
   the `/resume` picker's "Other" tab (also through a symlinked folder), titled by
   their first message; Enter asks "Import this conversation? (y/n)". A real desktop

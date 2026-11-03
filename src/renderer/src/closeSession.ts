@@ -1,7 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import type { SessionInfo, TabKind } from '@shared/types'
+import type { SessionInfo, TabKind, TerminalExit } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -70,17 +70,12 @@ export function unexpectedExitNotice(
   return `${agent} session ended unexpectedly (${how})`
 }
 
-export function endedRowNote(exit: { exitCode: number; signal?: number }): string {
-  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
-}
-
 export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
 >(
   tab: T | undefined,
-  exit: { unexpected?: true },
-  everBound: boolean
+  exit: Pick<TerminalExit, 'unexpected' | 'runStarted'>
 ): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind) || !exit.unexpected) return false
-  return !(tab.jobId !== undefined && tab.sessionId === undefined && !everBound)
+  return !(tab.jobId !== undefined && tab.sessionId === undefined && !exit.runStarted)
 }

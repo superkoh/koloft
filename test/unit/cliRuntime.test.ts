@@ -3,6 +3,15 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { resolveCliRuntime, type CliSpec } from '../../src/main/cliRuntime'
+import {
+  MIN_AGY_VERSION,
+  MIN_CODEX_VERSION,
+  MIN_MUSE_VERSION,
+  TESTED_AGY_LINE,
+  TESTED_CODEX_LINE,
+  TESTED_MUSE_LINE
+} from '../../src/main/cliMinimums'
+import { isNewer } from '../../src/main/releaseNotes'
 
 let directory: string
 let environment: NodeJS.ProcessEnv
@@ -59,10 +68,30 @@ describe('resolveCliRuntime for a CLI whose installer leaves it off the login PA
     })
   })
 
+  it('counts an older line than the tested one as tested', async () => {
+    writeCli(ownFolderCopy(), '1.3.9')
+    expect(await resolveCliRuntime(spec, { env: environment })).toMatchObject({
+      verified: true
+    })
+  })
+
   it('reads a file there that cannot run as not installed', async () => {
     writeCli(ownFolderCopy(), '1.4.0', 0o600)
     await expect(resolveCliRuntime(spec, { env: environment })).rejects.toThrow(
       'Install the Fixture CLI.'
     )
   })
+})
+
+describe('the tested line of each agent', () => {
+  it.each([
+    { agent: 'Codex', min: MIN_CODEX_VERSION, tested: TESTED_CODEX_LINE },
+    { agent: 'Muse Code', min: MIN_MUSE_VERSION, tested: TESTED_MUSE_LINE },
+    { agent: 'Antigravity', min: MIN_AGY_VERSION, tested: TESTED_AGY_LINE }
+  ])(
+    'never sits below the minimum, or the oldest $agent Koloft accepts would warn as untested',
+    ({ min, tested }) => {
+      expect(isNewer(min.split('.').slice(0, 2).join('.'), tested)).toBe(false)
+    }
+  )
 })

@@ -9,6 +9,7 @@ import {
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
+  turnedOffLine,
   type Capabilities
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
@@ -40,6 +41,7 @@ function stubBackend(
     accountUsable: () => true,
     trustsFolder: () => true,
     turns: async () => [],
+    transcriptPlaces: () => undefined,
     permissionClass: () => 'prompting' as const,
     peerNames: () => async () => null,
     runningElsewhere: () => false
@@ -183,6 +185,20 @@ describe('session backend boundary', () => {
     )
     expect(create).not.toHaveBeenCalled()
   })
+
+  it('refuses a new session of an agent turned off in Settings ▸ Sessions, whatever started it, but still resumes one', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
+    registry.register({ ...stubBackend('codex'), create })
+    registry.turnedOff = (b) => (b === 'codex' ? turnedOffLine(b) : null)
+    await expect(registry.create({ kind: 'codex', cwd: '/repo' })).rejects.toThrow(
+      'Codex is turned off in Settings ▸ Sessions'
+    )
+    expect(create).not.toHaveBeenCalled()
+    await expect(
+      registry.create({ kind: 'codex', cwd: '/repo', resumeSessionId: 'thread' })
+    ).resolves.toMatchObject({ ok: true })
+  })
 })
 
 describe('session lifecycle tap (one place turns a bind or an exit into attention)', () => {
@@ -247,9 +263,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local']
     ],
     [
-      'Koloft sees whether a menu or panel is open in Claude Code on this Mac (its session registry) and in Muse anywhere (its screen); in every other tab a slash command from Discord presses Esc to be safe',
+      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex and Muse (their screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
       'panelSeen',
-      ['claude/local', 'muse/local', 'muse/ssh']
+      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh', 'muse/local', 'muse/ssh']
     ],
     [
       'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',

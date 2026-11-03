@@ -14,6 +14,7 @@ import type {
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
+import type { TranscriptPlaces } from './sessionBackends'
 import {
   CodexObservation,
   codexTurns,
@@ -93,6 +94,7 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
+import { pipeSecretTo } from './secretOnStdin'
 import {
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
@@ -133,6 +135,21 @@ const sourceKinds = ['cli', 'vscode', 'appServer']
 const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
 const rolloutOnThisMac = (listedPath: string): boolean =>
   rolloutFiles(listedPath).some((f) => fs.existsSync(f))
+
+// CODEX§12
+const IMAGES_FOLDER = 'generated_images'
+
+// CODEX§12
+export function machineImagesDir(
+  machine: string,
+  threadId: string,
+  rollout: string | null | undefined
+): string | undefined {
+  const at = rollout?.lastIndexOf('/sessions/') ?? -1
+  return at > 0
+    ? keyedOn(machine, `${rollout!.slice(0, at)}/${IMAGES_FOLDER}/${threadId}`)
+    : undefined
+}
 
 async function* everyPage(
   rpc: CodexRpc,
@@ -209,6 +226,8 @@ function keyedFiles(machine: string, event: UnboundEvent): UnboundEvent {
   }
 }
 
+class MachineOutOfReach extends Error {}
+
 export interface CodexMachineDeps {
   instance: string
   ready(): Promise<void>
@@ -281,6 +300,7 @@ interface CodexRun extends StoredRun {
   transport: CodexTransport
   account: string
   machine?: string
+  home: string
 }
 
 interface CodexLaunch {
@@ -490,12 +510,17 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
+  private async binaryOrThrow(): Promise<string> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    return this.binary!
+  }
+
   private async withRpc<T>(
     home: string | undefined,
     use: (rpc: CodexRpc) => Promise<T>
   ): Promise<T> {
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
+    await this.binaryOrThrow()
     try {
       return await this.sideServers.ask(home, use)
     } catch (error) {
@@ -546,12 +571,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  async readAccount(home: string): Promise<{ signedIn: boolean; apiKey?: true; limits?: unknown }> {
     return this.withRpc(home, async (rpc) => {
       const account = record(await rpc.request('account/read', {}))
       if (!account.account) return { signedIn: false }
+      if (record(account.account).type === 'apiKey') return { signedIn: true, apiKey: true }
       return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
     })
+  }
+
+  // CODEX§15
+  async storeApiKey(home: string, key: string): Promise<void> {
+    const binary = await this.binaryOrThrow()
+    await pipeSecretTo(binary, ['login', '--with-api-key'], this.envFor(home), key)
+    await this.rereadSignIn(home)
   }
 
   // CODEX§15
@@ -613,7 +646,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   private async readMachineHistory(machine: string): Promise<void> {
     const startedAt = Date.now()
     const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
-    if (sshLinkBroke(home)) throw new Error(problemOf(home))
+    if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
     const threads =
       home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
     if (this.shuttingDown) return
@@ -647,9 +680,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       void stopped.then(
         async () => {
           if (this.shuttingDown) return
-          await this.refreshMachineHistory(machine, true).catch((error) =>
-            this.deps.error(String(error))
-          )
+          await this.refreshMachineHistory(machine, true).catch((error) => {
+            if (!(error instanceof MachineOutOfReach)) this.deps.error(String(error))
+          })
         },
         () => {}
       )
@@ -735,6 +768,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     })
+  }
+
+  // CODEX§2
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    const file = this.history.get(key)?.path
+    if (!file) return undefined
+    return hostOfKey(key) ? { onMachine: file } : { onThisMac: file }
   }
 
   // CODEX§11
@@ -985,6 +1025,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         permission,
         bypassing: permission === 'bypass',
         machine,
+        home,
         releaseTools: openShim?.release ?? ((): void => {})
       }
       bound = run
@@ -1036,7 +1077,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
       stopServer: async () => {
-        await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+        if (this.shuttingDown && this.runs.get(tabId)?.observer.turnRunning()) return
+        const r = await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+        const sessionStartedThere = !!this.runs.get(tabId)?.info
+        if (sshLinkBroke(r) && sessionStartedThere && !this.shuttingDown)
+          this.deps.error(
+            `Could not stop Codex on ${machine}: ${problemOf(r)}. It is still running there.`
+          )
       },
       maxFrameBytes: DEFAULT_MAX_FRAME,
       report: (error) => this.deps.error(String(error))
@@ -1141,6 +1188,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   protected runDetails(run: CodexRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
     return { details: { codex: { observation: 'live' } }, pickedAccount: run.account }
+  }
+
+  // CODEX§12 CODEX§15
+  protected scratchpadOf(run: CodexRun, thread: CodexThread): string | undefined {
+    return run.machine
+      ? machineImagesDir(run.machine, thread.id, thread.path)
+      : path.join(run.home, IMAGES_FOLDER, thread.id)
   }
 
   protected degradedDetails(): BackendSessionInfo['details'] {

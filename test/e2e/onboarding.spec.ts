@@ -3,7 +3,7 @@ import http from 'http'
 import { execFileSync } from 'child_process'
 import type { AddressInfo } from 'net'
 import path from 'path'
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   codexMissingWhoseCheckAnswersOnlyWhenLetGo,
@@ -23,29 +23,28 @@ import {
   termIds,
   waitForCalls
 } from './helpers/p1'
-import {
-  changelog,
-  notesBody,
-  release,
-  withFixtureEnv,
-  writeFixture
-} from './helpers/updateFixture'
 
 const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
 const SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS = 1500
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const FAKE_INSTALLER = path.join(__dirname, 'fixtures', 'fake-tool-installer.js')
 
 function codexInstalledOnlyLater(env: E2EEnv): string {
   const codex = path.join(env.home, '.local', 'bin', 'codex')
   env.launchEnv.KOLOFT_CODEX_CMD = codex
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
-  env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
-    __dirname,
-    'fixtures',
-    'fake-tool-installer.js'
-  )
+  env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = FAKE_INSTALLER
   return codex
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function firstRun(env: E2EEnv, settings: Record<string, unknown> = {}): void {
@@ -145,7 +144,7 @@ function sidebarFolders(page: Page): Locator {
   return page.locator('.isl-sessions .ws-name')
 }
 
-test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new once per upgrade", () => {
+test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
   test('T-OB-01: a first run opens the welcome over the whole window, the four agents side by side, the one on this Mac ready and the rest offered to install', async ({
     env
   }) => {
@@ -440,12 +439,16 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     }
   })
 
-  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in', async ({
+  test('T-OB-06: with no agent installed, screen 1 offers to install each one, never through npm, and screen 3 installs before it signs in; an install that goes quiet is stopped, says so, and offers the button again', async ({
     env
   }) => {
     test.setTimeout(120_000)
     firstRun(env, { accounts: [] })
     env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = FAKE_INSTALLER
+    env.launchEnv.KOLOFT_INSTALL_SILENCE_MS = '3000'
+    const stalls = path.join(env.home, 'fake-tool-installer-stalls')
+    fs.writeFileSync(stalls, '')
     terminalSession(env, env.workspaces.a, 'A one', HOUR)
 
     const app = await launchApp(env)
@@ -464,6 +467,16 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await expect(welcome(page).locator('.wl-sign')).toContainText(
         'Koloft installs Claude Code first.'
       )
+
+      await primary(page).click()
+      await expect(welcome(page).locator('.wl-sign-text.bad')).toContainText(
+        'The Claude Code install did not finish',
+        { timeout: 20_000 }
+      )
+      await expect(primary(page)).toHaveText(/Install Claude and sign in/)
+      await expect(primary(page)).toBeEnabled()
+      const installer = Number(fs.readFileSync(stalls, 'utf8'))
+      await expect.poll(() => isRunning(installer), { timeout: 10_000 }).toBe(false)
       expect(fs.existsSync(env.claudeCalls)).toBe(false)
     } finally {
       await quitAndClose(app)
@@ -579,6 +592,42 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     }
   })
 
+  test('T-OB-21: with Codex used last but switched off in Settings ▸ Sessions, the welcome never offers it: screen 3 has no Codex tab, the last screen resumes the newest other session, and Tab walks past Codex', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    firstRun(env, {
+      sessionMethods: {
+        defaultBackend: 'claude',
+        enabled: { claude: true, codex: false, muse: true, agy: true }
+      }
+    })
+    installCodex(env)
+    terminalSession(env, env.workspaces.a, 'Claude one', 3 * DAY)
+    codexThreadIn(env, env.workspaces.a, 'Codex one', 600)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 3)
+      const tabs = welcome(page).locator('.wl-seg button')
+      await expect(tabs).toHaveText([/Claude Code/, /Muse/, /Antigravity/])
+      await expect(welcome(page).locator('.wl-seg button.on')).toContainText('Claude Code')
+      await expect(primary(page)).toBeEnabled()
+      await primary(page).click()
+      await expectStep(page, 4)
+      await expect(primary(page)).toHaveText(/Resume “Claude one”/)
+      const ask = welcome(page).locator('.wl-ask input')
+      const tag = welcome(page).locator('.wl-agtag')
+      await expect(tag).toContainText('Claude')
+      await ask.press('Tab')
+      await expect(tag).toContainText('Muse')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // ADR-0030 CODEX§15
   test('T-OB-19: an account that has to sign in again is signed in again on screen 3, never shadowed by a second one', async ({
     env
@@ -627,10 +676,8 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     env
   }) => {
     test.setTimeout(180_000)
-    withWhatsNew(env, [['0.1.2', 'the newer thing']])
     seedSettings(env, {
       onboardingSeen: true,
-      lastSeenVersion: '0.1.0',
       assist: null,
       skipPermissionsAgreed: undefined
     })
@@ -639,10 +686,8 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const whatsNew = page.locator('.update-modal')
       const assist = page.locator('.assist-modal')
-      await expect(whatsNew).toBeVisible({ timeout: 30_000 })
-      await whatsNew.locator('.update-actions .btn-primary').click()
+      await expect(page.locator('.isl-sessions')).toBeVisible({ timeout: 30_000 })
       await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
       await expect(assist).toHaveCount(0)
 
@@ -723,119 +768,6 @@ test.describe("first-run help: the welcome, Settings ▸ Welcome, and What's new
       await expect(sidebarFolders(page)).toHaveText(['ws-a', 'ws-b'])
     } finally {
       await quitAndClose(app)
-    }
-  })
-
-  // PLATFORM§4
-  function withWhatsNew(env: E2EEnv, versions: [string, string][]): string {
-    const file = withFixtureEnv(env)
-    writeFixture(
-      file,
-      versions.map(([v, item]) => release(v, notesBody(changelog(item))))
-    )
-    return file
-  }
-
-  async function runningVersion(app: ElectronApplication): Promise<string> {
-    return app.evaluate(({ app: a }) => a.getVersion())
-  }
-
-  async function expectNoModal(page: Page, env: E2EEnv, recorded?: string): Promise<void> {
-    await expect(page.locator('.isl-sessions')).toBeVisible({ timeout: 20_000 })
-    if (recorded) {
-      await expect
-        .poll(() => settingsOnDisk(env).lastSeenVersion, { timeout: 20_000 })
-        .toBe(recorded)
-    } else {
-      await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
-    }
-    await expect(page.locator('.update-modal')).toHaveCount(0)
-  }
-
-  test('T-OB-09: an upgrade shows what changed once, then remembers', async ({ env }) => {
-    test.setTimeout(180_000)
-    const fixture = withWhatsNew(env, [
-      ['0.1.2', 'the newer thing'],
-      ['0.1.1', 'the older thing']
-    ])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '0.1.0' })
-
-    const app1 = await launchApp(env)
-    try {
-      const page = await app1.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      const version = await runningVersion(app1)
-
-      const modal = page.locator('.update-modal')
-      await expect(modal).toBeVisible({ timeout: 30_000 })
-      await expect(modal.locator('.modal-header span').first()).toHaveText(
-        `What’s new in Koloft ${version}`
-      )
-      const notes = modal.locator('.update-notes')
-      await expect(notes).toContainText('the newer thing')
-      await expect(notes).toContainText('the older thing')
-      await expect(notes.locator('.update-notes-ver')).toHaveText(['v0.1.2', 'v0.1.1'])
-      await expect(page.getByRole('button', { name: 'Download & Restart' })).toHaveCount(0)
-      await snap(page, 'T-OB-09')
-
-      await modal.locator('.update-actions .btn-primary').click()
-      await expect(modal).toHaveCount(0)
-      await expect
-        .poll(() => settingsOnDisk(env).lastSeenVersion, { timeout: 20_000 })
-        .toBe(version)
-    } finally {
-      await quitAndClose(app1)
-    }
-
-    expect(JSON.parse(fs.readFileSync(fixture, 'utf8')).length).toBe(2)
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-    } finally {
-      await quitAndClose(app2)
-    }
-  })
-
-  test('T-OB-10: a fresh install and an unreadable feed say nothing; an unreadable feed also records nothing, so the next launch tries again', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const fixture = withWhatsNew(env, [['0.1.2', 'the newer thing']])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '' })
-
-    const app1 = await launchApp(env)
-    let version = ''
-    try {
-      const page = await app1.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      version = await runningVersion(app1)
-      await expectNoModal(page, env, version)
-    } finally {
-      await quitAndClose(app1)
-    }
-
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-      expect(settingsOnDisk(env).lastSeenVersion).toBe(version)
-    } finally {
-      await quitAndClose(app2)
-    }
-
-    fs.writeFileSync(fixture, 'not json at all')
-    seedSettings(env, { lastSeenVersion: '0.1.0' })
-    const app3 = await launchApp(env)
-    try {
-      const page = await app3.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await expectNoModal(page, env)
-      expect(settingsOnDisk(env).lastSeenVersion).toBe('0.1.0')
-    } finally {
-      await quitAndClose(app3)
     }
   })
 })

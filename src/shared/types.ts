@@ -248,6 +248,8 @@ export interface UsageSnapshot {
   roi: number
   overage: string
   // CC§7
+  has5h: boolean
+  // CC§7
   hasOi: boolean
   at: number
 }
@@ -281,6 +283,7 @@ export interface QuotaBucket {
   label: string
   used: number
   resetsAt?: number
+  minutes?: number
 }
 
 export interface AccountView extends AccountMeta {
@@ -288,6 +291,7 @@ export interface AccountView extends AccountMeta {
   limits?: CodexLimits
   quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
+  apiKey?: true
 }
 
 export type SignInResult =
@@ -334,7 +338,6 @@ export interface Settings {
   notifyExited: boolean
   notifyApprovalSound: boolean
   dockBadge: boolean
-  showUsage: boolean
   // CC§6
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
@@ -345,6 +348,7 @@ export interface Settings {
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
+  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
@@ -352,7 +356,6 @@ export interface Settings {
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  lastSeenVersion: string
   discord: DiscordSettings
   butlerSession: ButlerSession
   gitAccounts: GitAccount[]
@@ -461,7 +464,6 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyExited: true,
   notifyApprovalSound: false,
   dockBadge: true,
-  showUsage: true,
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
@@ -470,6 +472,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
+  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
@@ -477,7 +480,6 @@ export const DEFAULT_SETTINGS: Settings = {
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: '',
   discord: {},
   butlerSession: { sessionIds: [] },
   gitAccounts: [],
@@ -776,9 +778,7 @@ export interface BackendSessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  // CC§2
   details?: {
-    claude?: { jsonlPath: string | null; scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]
@@ -788,6 +788,8 @@ export interface BackendSessionInfo {
   lastAction?: string
   account?: string
   pickedAccount?: string
+  // CC§2
+  scratchpadDir?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }
@@ -812,8 +814,6 @@ export const PLAN_READY = 'Plan ready: implement it?'
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
-  // CC§2
-  scratchpadDir?: string
   files: PreviewItem[]
 }
 
@@ -830,12 +830,6 @@ export interface FolderUse {
 export interface DiscoveredFolder extends FolderUse {
   path: string
   agents: Partial<Record<BackendId, FolderUse>>
-}
-
-export interface WhatsNew {
-  current: string
-  releases: ReleaseNotes[]
-  omittedReleases: number
 }
 
 export interface UpdateCheckResult {
@@ -1050,6 +1044,7 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
+  runStarted?: true
   accountIssue?: string
 }
 
@@ -1061,6 +1056,10 @@ export interface UnexpectedExitScreen {
 export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
   // PLATFORM§29
   return exit.exitCode !== 0 || !!exit.signal
+}
+
+export function endedRowNote(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): string {
+  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
 }
 
 export interface TerminalProcessTitle {
@@ -1160,7 +1159,6 @@ export interface KoloftApi {
     readText(path: string): Promise<string>
     openFileDialog(): Promise<string | null>
     osOpen(path: string): void
-    fileUrl(path: string): string
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
@@ -1357,7 +1355,6 @@ export interface KoloftApi {
     restart(): void
     openRelease(): void
     onProgress(cb: (p: UpdateProgress) => void): () => void
-    whatsNew(): Promise<WhatsNew | null>
     offer(): Promise<UpdateCheckResult | null>
     onOffer(cb: (offer: UpdateCheckResult | null) => void): () => void
   }
@@ -1462,7 +1459,8 @@ export interface CronJob {
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState =
+  'closed' | 'quit' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number
@@ -1529,7 +1527,7 @@ export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: s
 export type CronRunNowResult =
   | { ok: true }
   | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
-  | { ok: false; reason: 'no-account'; why: string }
+  | { ok: false; reason: 'no-account' | 'turned-off'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 

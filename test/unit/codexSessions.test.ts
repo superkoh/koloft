@@ -4,7 +4,11 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
+import {
+  CodexSessions,
+  machineImagesDir,
+  type CodexSessionDeps
+} from '../../src/main/codexSessions'
 import { storedBackend } from '../../src/main/backends/stored'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
@@ -528,6 +532,22 @@ describe('CodexSessions', () => {
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
+  // CODEX§12
+  it("a Codex tab's Scratchpad is the folder Codex saves the thread's images in, under the account home the tab runs in", async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    expect(sessions.list()[0].scratchpadDir).toBe(`/homes/work/generated_images/${A}`)
+  })
+
+  // CODEX§12
+  it("a remote Codex thread's images folder is found under the machine's CODEX_HOME that holds its rollout, and is unknown while the thread names no rollout", () => {
+    const rollout = `/home/u/.koloft/codex-home/sessions/2026/10/31/rollout-x-${A}.jsonl`
+    expect(machineImagesDir('box', A, rollout)).toBe(
+      keyedOn('box', `/home/u/.koloft/codex-home/generated_images/${A}`)
+    )
+    expect(machineImagesDir('box', A, null)).toBeUndefined()
+  })
+
   it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
     const seen: string[][] = []
     vi.mocked(deps.pickHome).mockImplementation(() => {
@@ -911,10 +931,11 @@ describe('CodexSessions', () => {
     expect(closes).toEqual([launched.id])
   })
 
-  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write', async () => {
+  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write only once its file is in the list', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
     const file = path.join(repo, 'notes.txt')
+    fs.writeFileSync(file, 'new\n')
     transports[0].options.onFrame('server', {
       method: 'item/completed',
       params: {
@@ -927,11 +948,48 @@ describe('CodexSessions', () => {
         }
       }
     })
-    expect(sessions.list()[0]).toMatchObject({
-      files: [{ src: file, access: 'wrote', added: 1 }],
-      lastWritten: file,
-      liveWrites: 1
+    expect(sessions.list()[0]).toMatchObject({ files: [], liveWrites: 0 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0]).toMatchObject({
+        files: [{ src: file, access: 'wrote', added: 1 }],
+        lastWritten: file,
+        liveWrites: 1
+      })
+    )
+  })
+
+  it('lists a file a Codex patch reached through a symlinked folder once, under its real path, and leaves out a file that is gone', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    fs.mkdirSync(path.join(repo, 'real'))
+    fs.symlinkSync(path.join(repo, 'real'), path.join(repo, 'link'))
+    const real = path.join(repo, 'real', 'a.txt')
+    fs.writeFileSync(real, 'one\ntwo\n')
+    const update = (file: string): unknown => ({
+      path: file,
+      kind: { type: 'update', move_path: null },
+      diff: '+x\n'
     })
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'fileChange',
+          id: 'patch',
+          status: 'completed',
+          changes: [
+            update(path.join(repo, 'link', 'a.txt')),
+            update(real),
+            update(path.join(repo, 'gone.txt'))
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files).toEqual([
+      expect.objectContaining({ src: real, label: 'a.txt', access: 'wrote', added: 2 })
+    ])
   })
 
   it('hands an open command Codex ran to the Workbench for that tab', async () => {

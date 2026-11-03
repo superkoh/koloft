@@ -4,6 +4,7 @@ import path from 'path'
 import readline from 'readline'
 import { fileURLToPath } from 'url'
 import type { SaidLine, Turn } from '@shared/turns'
+import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
 import { record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
 
@@ -20,16 +21,13 @@ export function summariesDb(geminiDir: string): string {
 }
 
 // AGY§8
+export function agyBrain(geminiDir: string): string {
+  return path.join(geminiDir, AGY_APP_DIR, 'brain')
+}
+
+// AGY§8
 export function agyTranscript(geminiDir: string, conversationId: string): string {
-  return path.join(
-    geminiDir,
-    AGY_APP_DIR,
-    'brain',
-    conversationId,
-    '.system_generated',
-    'logs',
-    'transcript.jsonl'
-  )
+  return path.join(agyBrain(geminiDir), conversationId, AGY_LOGS_FOLDER, 'logs', 'transcript.jsonl')
 }
 
 export const conversationDb = (geminiDir: string, id: string): string =>

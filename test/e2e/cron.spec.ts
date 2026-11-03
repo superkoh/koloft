@@ -552,7 +552,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M34: a run whose agent dies after the run started keeps its tab with its last screen, as any session tab does, and History counts the run over', async ({
+  test('BB-M35: a run whose agent is killed after the run started reads Agent quit in History, with how it ended, not Closed by you', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -567,6 +567,35 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await clickRunNow(page, 'Nightly report')
 
       const call = await waitNewCall(env, 0)
+      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      killSession(call.pid, env)
+
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toMatch(/^Agent quit — killed \(signal \d+\)$/)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText('agent quit')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('BB-M34: a run whose agent dies after the run started keeps its tab with its last screen and its folder, as any session tab does, and closing the tab lets the folder go', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const wt = worktreeOf(call)
+      const tree = runTree(env.workspaces.a, wt)
       const row = cronRows(page, 'ws-a')
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       killSession(call.pid, env)
@@ -578,15 +607,83 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect.poll(() => tabDisplays(page)).toHaveLength(1)
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
-        .toBe('Closed by you')
+        .toMatch(/^Agent quit — killed \(signal \d+\)$/)
       await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
-      expect(fs.existsSync(runTree(env.workspaces.a, worktreeOf(call)))).toBe(true)
+      expect(fs.existsSync(tree)).toBe(true)
+      expect((await histLines(page))[0].folder).toBe('')
+      await closeCron(page)
+
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(branchOf(env.workspaces.a, wt)).toBe('')
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0], { timeout: 20_000 })
+        .toMatchObject({ state: expect.stringMatching(/^Agent quit/), folder: ' · folder removed' })
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('BB-M06: closing a finished run yourself takes its folder and branch away and leaves its row, and resuming it from the sidebar makes the folder again for the same session', async ({
+  test('BB-M36: ⇧⌘R on the kept tab of a run whose agent died resumes the same session in the same folder as an ordinary session, History keeps the one Agent quit line, and the folder goes once that session is closed', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const tree = runTree(env.workspaces.a, worktreeOf(call))
+      const row = cronRows(page, 'ws-a')
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Nightly report', row)
+      killSession(call.pid, env)
+      await expect(row.locator('.ws-tab-sub')).toContainText(/killed \(signal \d+\)/, {
+        timeout: 20_000
+      })
+      await closeCron(page)
+
+      const before = readCalls(env).length
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:restart-session')
+      const resume = await waitNewCall(env, before)
+      expect(resumedId(resume)).toBe(call.sessionId)
+      expect(fs.realpathSync(resume.effectiveCwd ?? resume.cwd)).toBe(fs.realpathSync(tree))
+      await waitRunStateBound(row)
+      await expect(row.locator('.ws-tab-sub')).not.toContainText('killed')
+      await expect.poll(() => tabDisplays(page)).toHaveLength(1)
+
+      await openCron(page, 'ws-a')
+      const lines = await histLines(page)
+      expect(lines).toHaveLength(1)
+      expect(lines[0].state).toMatch(/^Agent quit — killed \(signal \d+\)$/)
+      await closeCron(page)
+
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect(fs.existsSync(tree)).toBe(true)
+      fs.rmSync(path.join(tree, 'NOTES.md'), { force: true })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.folder, { timeout: 20_000 })
+        .toBe(' · folder removed')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('BB-M06:closing a finished run yourself takes its folder and branch away and leaves its row, and resuming it from the sidebar makes the folder again for the same session', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -1376,6 +1473,51 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect
         .poll(async () => (await histLines(page))[0], { timeout: 30_000 })
         .toMatchObject({ state: 'Closed by you', folder: ' · folder removed' })
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('BB-M34 on a remote workspace: a run whose agent dies on the machine keeps its tab reading the agent’s own exit code and its folder on the machine, until you close the tab', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await createJob(page, dlg, { name: 'Remote report', task: '/daily-report' })
+      await clickRunNow(page, 'Remote report')
+
+      const call = await waitNewCall(env, 0, 120_000)
+      const tree = runTree(remoteDir(env), worktreeOf(call))
+      const row = cronRows(page, REMOTE_WS_NAME)
+      await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Remote report', row)
+      killSession(call.pid, env)
+
+      // PLATFORM§35
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)', {
+        timeout: 60_000
+      })
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Agent quit — exited (code 137)')
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect(fs.existsSync(tree)).toBe(true)
+      await closeCron(page)
+
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => fs.existsSync(tree), { timeout: 90_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)

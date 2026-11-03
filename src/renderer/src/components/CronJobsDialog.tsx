@@ -35,7 +35,6 @@ import {
   effortOf,
   emptyFields,
   modelValue,
-  permissionAfterSwitch,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
@@ -131,7 +130,7 @@ const MANY_RUN_FOLDERS = 10
 
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
-  if (h.state === 'failed') return 'dot bad'
+  if (h.state === 'failed' || h.state === 'quit') return 'dot bad'
   if (h.state === 'finished') return 'dot ok'
   return 'dot'
 }
@@ -454,7 +453,6 @@ export function CronJobsDialog({
                   onClick={() =>
                     patch({
                       backend: b,
-                      permission: permissionAfterSwitch(fields, b),
                       ...(fields.model === 'other' || namedModel(b, fields.model)
                         ? {}
                         : { model: '' })

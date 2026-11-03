@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { BackendAvailability, DiscoveredFolder, SessionRow } from '../../src/shared/types'
+import type {
+  BackendAvailability,
+  DiscoveredFolder,
+  SessionMethods,
+  SessionRow
+} from '../../src/shared/types'
 import {
   ADOPTED_PER_FOLDER,
   FIRST_RUN_RECENT_MS,
@@ -9,6 +14,8 @@ import {
 import {
   defaultAccountName,
   defaultAgent,
+  lastUsedAgent,
+  nextAgent,
   resumeTarget,
   tallyAgents
 } from '../../src/renderer/src/welcomeModel'
@@ -76,18 +83,37 @@ describe('welcome: which agent it starts with', () => {
       claude: { sessions: 2, mtime: NOW - 9 * DAY }
     })
   ]
+  const allOn: SessionMethods = {
+    defaultBackend: 'claude',
+    enabled: { claude: true, codex: true, muse: true, agy: true }
+  }
 
   it('is the installed agent used most recently, not the one used most', () => {
-    expect(defaultAgent(tallyAgents(found), installed('claude', 'codex'))).toBe('codex')
+    expect(defaultAgent(tallyAgents(found), installed('claude', 'codex'), allOn)).toBe('codex')
   })
 
   it('skips an agent that is no longer on this Mac', () => {
-    expect(defaultAgent(tallyAgents(found), installed('claude'))).toBe('claude')
+    expect(defaultAgent(tallyAgents(found), installed('claude'), allOn)).toBe('claude')
   })
 
   it('with no history it is the first installed agent, and Claude Code on an empty Mac', () => {
-    expect(defaultAgent({}, installed('muse', 'agy'))).toBe('muse')
-    expect(defaultAgent({}, installed())).toBe('claude')
+    expect(defaultAgent({}, installed('muse', 'agy'), allOn)).toBe('muse')
+    expect(defaultAgent({}, installed(), allOn)).toBe('claude')
+  })
+
+  it('with no history it is the default agent set in Settings ▸ Sessions when that one is installed', () => {
+    const museFirst = { ...allOn, defaultBackend: 'muse' as const }
+    expect(defaultAgent({}, installed('claude', 'muse'), museFirst)).toBe('muse')
+  })
+
+  it('leaves out an agent switched off in Settings ▸ Sessions: never the default, never marked last used, and Tab walks past it', () => {
+    const codexOff = { ...allOn, enabled: { ...allOn.enabled, codex: false } }
+    const tally = tallyAgents(found)
+    expect(defaultAgent(tally, installed('claude', 'codex'), codexOff)).toBe('claude')
+    expect(lastUsedAgent(tally, installed('claude', 'codex'), codexOff)).toBe('claude')
+    expect(defaultAgent({}, installed('codex', 'muse'), codexOff)).toBe('muse')
+    expect(nextAgent('claude', codexOff)).toBe('muse')
+    expect(nextAgent('agy', codexOff)).toBe('claude')
   })
 
   it('counts each agent’s sessions and folders across all folders', () => {

@@ -285,7 +285,7 @@ export function TerminalView({
 
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === 'keydown') onUserInputRef.current?.()
-      // CC§12
+      // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
         return false

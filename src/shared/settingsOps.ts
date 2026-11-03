@@ -8,7 +8,7 @@ import {
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
-import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
+import { assistOnAMethodThatIsOn, backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
 
@@ -74,7 +74,16 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
   const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const { assistSessions, ...kept } = doc as Partial<Settings> & { assistSessions?: unknown }
+  const {
+    assistSessions,
+    lastSeenVersion: _retired,
+    showUsage: _retiredShowUsage,
+    ...kept
+  } = doc as Partial<Settings> & {
+    assistSessions?: unknown
+    lastSeenVersion?: unknown
+    showUsage?: unknown
+  }
   const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
@@ -86,7 +95,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
   merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
-  merged.assist = sanitizeAssist(merged.assist)
+  merged.assist = assistOnAMethodThatIsOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
   merged.todoNotes = sanitizeTextMap(merged.todoNotes)

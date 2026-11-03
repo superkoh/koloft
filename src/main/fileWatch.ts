@@ -1,4 +1,6 @@
 import fs from 'fs'
+import path from 'path'
+import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
 import { passesHeavy } from './fileTree'
 
 // PLATFORM§28
@@ -51,7 +53,9 @@ const DIR_CHANGE_DEBOUNCE_MS = 300
 
 function watchIgnored(filename: string | Buffer | null): boolean {
   if (!filename) return false
-  return !passesHeavy(typeof filename === 'string' ? filename : filename.toString())
+  const rel = typeof filename === 'string' ? filename : filename.toString()
+  // AGY§8
+  return !passesHeavy(rel) || rel.split(path.sep).includes(AGY_LOGS_FOLDER)
 }
 
 function closeWatcher(entry: DirWatch): void {

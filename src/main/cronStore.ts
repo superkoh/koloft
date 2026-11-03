@@ -1,7 +1,7 @@
 import path from 'path'
 import { isValidSchedule } from '@shared/schedule'
 import { HIST_WORDS } from '@shared/cronHistory'
-import { hasWordChar, isValidModelName } from '@shared/cronNames'
+import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { backendIdOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost } from '@shared/remoteKey'
@@ -105,7 +105,9 @@ export function sanitizeCron(
     if (typeof enabled !== 'boolean') continue
 
     const permission =
-      item.permission === 'acceptEdits' || item.permission === 'skipAll' ? item.permission : 'same'
+      item.permission === 'acceptEdits' || item.permission === 'skipAll'
+        ? item.permission
+        : NEW_JOB_PERMISSION
 
     const job: CronJob = {
       id,

@@ -80,6 +80,16 @@ const logRecord = (id, payloadType, payload) => {
   )
 }
 
+const heldByALiveMuse = (id) => {
+  try {
+    const hint = JSON.parse(fs.readFileSync(path.join(registryDir, id + '.json'), 'utf8'))
+    const pid = Number(/^pid=(\d+)$/.exec(hint.process_generation_hint)?.[1])
+    return pid > 0 && process.kill(pid, 0)
+  } catch {
+    return false
+  }
+}
+
 const pendingFile = (id) => path.join(pendingDir, id + '.json')
 const pendingOf = (id) => {
   try {
@@ -151,6 +161,7 @@ function serve() {
     if (msg.method === 'session/list') {
       append('fake-muse-listings.jsonl', { at: now() })
       const sessions = all()
+        .filter((s) => !(s.forkedFrom && heldByALiveMuse(s.id)))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
           sessionId: s.id,
@@ -388,32 +399,36 @@ function tui() {
     }
     status(`state=blocked:app=muse:kind=${kind}`)
   }
+  const write = (target, turnId, text) => {
+    const denied = denial(
+      fire('PreToolUse', {
+        turn_id: turnId,
+        tool_name: 'write_file',
+        tool_input: { path: target, content: 'written by fake muse\n' }
+      })
+    )
+    if (denied) return later(() => say(turnId, `Blocked: ${denied.permissionDecisionReason}`, text))
+    fs.writeFileSync(path.resolve(process.cwd(), target), 'written by fake muse\n')
+    fire('PostToolUse', {
+      turn_id: turnId,
+      tool_name: 'write_file',
+      tool_input: { path: target },
+      tool_response: {
+        filePath: target,
+        structuredPatch: [
+          { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+written by fake muse'] }
+        ]
+      }
+    })
+    return later(() => say(turnId, `Wrote ${target}`, text))
+  }
   const command = (text) => {
     if (text.startsWith('/write ')) {
       const target = text.slice('/write '.length).trim()
       const turnId = turn(text)
-      const denied = denial(
-        fire('PreToolUse', {
-          turn_id: turnId,
-          tool_name: 'write_file',
-          tool_input: { path: target, content: 'written by fake muse\n' }
-        })
-      )
-      if (denied)
-        return later(() => say(turnId, `Blocked: ${denied.permissionDecisionReason}`, text))
-      fs.writeFileSync(path.resolve(process.cwd(), target), 'written by fake muse\n')
-      fire('PostToolUse', {
-        turn_id: turnId,
-        tool_name: 'write_file',
-        tool_input: { path: target },
-        tool_response: {
-          filePath: target,
-          structuredPatch: [
-            { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+written by fake muse'] }
-          ]
-        }
-      })
-      return later(() => say(turnId, `Wrote ${target}`, text))
+      const writeAtMs = Number(read('fake-muse-write-at-ms', '0'))
+      if (writeAtMs) return setTimeout(() => write(target, turnId, text), writeAtMs)
+      return write(target, turnId, text)
     }
     if (text.startsWith('/sh ')) {
       const cmd = text.slice('/sh '.length).trim()
@@ -507,7 +522,9 @@ function tui() {
         Number(read('fake-muse-bg-ms', '2000'))
       )
     }
-    if (text === '/fork') {
+    // MUSE§20
+    if (text === '/fork' || text.startsWith('/fork ')) {
+      const prompt = text.slice('/fork'.length).trim()
       const child = {
         ...session,
         id: uuidv7(),
@@ -515,9 +532,25 @@ function tui() {
         createdAt: now(),
         updatedAt: now()
       }
+      logRecord(child.id, 'session.fork.created', {
+        fork_session_id: child.id,
+        source_session_id: session.id
+      })
       save(child)
-      process.stdout.write(`Fork created: ${child.id}\r\nSource session stays active.\r\n`)
-      return
+      if (!prompt) {
+        process.stdout.write(
+          `Fork created: ${child.id}\r\nSource session stays active.\r\nContinue the fork:\r\nmuse resume ${child.id}\r\n`
+        )
+        return
+      }
+      unregister()
+      session = child
+      register()
+      started = false
+      startSource = 'fork'
+      process.stdout.write(`resumed session ${child.id}\r\n`)
+      const turnId = turn(prompt)
+      return later(() => say(turnId, `echo: ${prompt}`, prompt))
     }
     if (text === '/usage') {
       const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))
@@ -612,10 +645,12 @@ function tui() {
     const turnId = turn(text)
     later(() => say(turnId, `echo: ${text}`, text))
   }
+  if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  // PLATFORM§35
+  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
-  if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
@@ -625,11 +660,11 @@ function tui() {
     }
     for (const ch of text.replace(/\x1b\[20[01]~/g, '')) {
       if (blocked) {
-        blocked(ch === '\n' ? '\r' : ch)
+        blocked(ch)
         continue
       }
       // MUSE§7
-      if (ch === '\r' || (ch === '\n' && enterArrivesAsLineFeed)) {
+      if (ch === '\r') {
         const done = typed
         typed = ''
         line(done.trim())

@@ -180,6 +180,76 @@ describe('store: claude → shell revert, only after a session actually bound', 
   })
 })
 
+describe('store: closing the session you watch lands on the butler, whichever of session end and terminal exit comes first', () => {
+  let butlersOpened: number
+  const { settings, butlerTab } = useStore.getState()
+  afterEach(() => useStore.setState({ settings, butlerTab }))
+  beforeEach(() => {
+    butlersOpened = 0
+    ;(globalThis as { window?: unknown }).window = {
+      api: {
+        conductors: {
+          open: () => {
+            butlersOpened++
+            return new Promise(() => {})
+          }
+        }
+      }
+    }
+    useStore.setState({
+      butlerTab: null,
+      settings: { ...useStore.getState().settings, assist: { on: true, backend: 'claude' } }
+    })
+  })
+
+  it('lands on the butler when the session ended before its terminal exited', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'end-first', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.setSessions([session('end-first')])
+    s.setSessions([])
+    expect(useStore.getState().tabs[0].kind).toBe('shell')
+
+    useStore.getState().removeTab('end-first')
+
+    expect(butlersOpened).toBe(1)
+  })
+
+  it('does not start the butler again when the butler’s own session ended before its terminal exited', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'own-butler', kind: 'claude', title: 'Alfred', cwd: '/w', alive: true })
+    s.setSessions([{ ...session('own-butler'), butler: true }])
+    s.setSessions([])
+
+    useStore.getState().removeTab('own-butler')
+
+    expect(butlersOpened).toBe(0)
+  })
+
+  it('stays put when a session that ended in a background tab is picked and closed later', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'bg-ended', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.addTab({ id: 'bg-watched', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.setSessions([session('bg-ended'), session('bg-watched')])
+    s.setSessions([session('bg-watched')])
+    s.setActive('bg-ended')
+
+    useStore.getState().removeTab('bg-ended')
+
+    expect(butlersOpened).toBe(0)
+  })
+
+  it('stays put when a plain terminal that once ran claude is closed', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'plain-term', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.setSessions([session('plain-term')])
+    s.setSessions([])
+
+    useStore.getState().removeTab('plain-term')
+
+    expect(butlersOpened).toBe(0)
+  })
+})
+
 describe('store: a sessions push changes only what it changed', () => {
   it('a push that changes nothing leaves the sessions array as it was and notifies nobody', () => {
     const s = useStore.getState()

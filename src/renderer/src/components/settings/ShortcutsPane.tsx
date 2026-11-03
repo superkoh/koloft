@@ -15,7 +15,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your primary method (⌘⏎ another one), in the workspace, worktree and title Koloft Assist picks, or in the one you name with @; ⇧⏎ starts a new line; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
+            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your default method (⌘⏎ another one), in the workspace, worktree and title Koloft Assist picks, or in the one you name with @; ⇧⏎ starts a new line; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -160,7 +160,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { where: 'Workbench', what: 'Finds in the active tab: file, file list or web page.' },
           { where: 'Terminal tab', what: 'Nothing.' },
           { where: 'Editing a file', what: 'Off.' },
-          { where: 'Conversation', what: 'Goes to Claude.' }
+          { where: 'Conversation', what: 'Goes to the agent.' }
         ]
       },
       {
@@ -172,7 +172,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Saves the file being edited. Nothing when it is unchanged.'
           },
           { where: 'Note', what: 'Saves the note.' },
-          { where: 'Conversation', what: 'Goes to Claude.' }
+          { where: 'Conversation', what: 'Goes to the agent.' }
         ]
       },
       {
@@ -184,7 +184,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Closes the first thing open, in this order: image zoom, find bar, menu, then full width back to side-by-side.'
           },
           { where: 'Terminal tab', what: 'Goes to the shell.' },
-          { where: 'Conversation', what: 'Goes to Claude (interrupt).' },
+          // CODEX§25 MUSE§7 AGY§15
+          { where: 'Conversation', what: 'Goes to the agent, which stops a running turn.' },
           { where: 'Note', what: 'Sends the caret back to where it was.' },
           { where: 'Dialog', what: 'Closes it.' }
         ]
@@ -242,7 +243,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       {
         keys: ['⇧⏎'],
         name: 'New line',
-        uses: [{ what: "Adds a line in Claude's input box without sending." }]
+        // CC§12 CODEX§2 MUSE§7 AGY§15
+        uses: [{ what: "Adds a line in the agent's input box without sending." }]
       }
     ]
   },

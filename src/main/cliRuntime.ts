@@ -3,6 +3,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { LoginShellError, readLoginShell } from './loginShell'
+import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
 
@@ -83,6 +84,6 @@ export async function resolveCliRuntime(
     binary,
     env,
     version: `${major}.${minor}.${patch}`,
-    verified: `${major}.${minor}` === spec.testedLine
+    verified: !isNewer(`${major}.${minor}`, spec.testedLine)
   }
 }

@@ -96,6 +96,18 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
   )
 }
 
+export const FIVE_HOUR_STOP = 0.9
+export const FIVE_HOUR_MINUTES = 5 * 60
+export const WEEK_MINUTES = 7 * 24 * 60
+
+export function windowStopped(used: number, resetsAt: number, nowSec: number): boolean {
+  return !resetElapsed(resetsAt, nowSec) && used >= FIVE_HOUR_STOP
+}
+
+export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
+  return windowStopped(u.u5, u.r5, nowSec)
+}
+
 export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
 
 export function resetElapsed(r: number, nowSec: number): boolean {
@@ -168,6 +180,7 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
 interface UsedWindow {
   used: number
   resetsAt?: number
+  minutes?: number
 }
 
 function heaviestOf(windows: UsedWindow[]): number {
@@ -212,6 +225,8 @@ export interface HomeRoom {
   used: number
   walled: boolean
   backAt: number
+  longWindows: UsedWindow[]
+  fiveHourStoppedUntil?: number
 }
 
 // AGY§23
@@ -224,7 +239,18 @@ export function homeRoom(
   const used = heaviestOf(windows)
   const backAt = backAtOf(windows)
   const full = a.limits ? codexWalled(a.limits) : used >= 1
-  return { used, walled: full && !resetElapsed(backAt, nowSec), backAt }
+  const stopped = windows.filter(
+    (w) => w.minutes === FIVE_HOUR_MINUTES && windowStopped(w.used, w.resetsAt ?? 0, nowSec)
+  )
+  return {
+    used,
+    walled: full && !resetElapsed(backAt, nowSec),
+    backAt,
+    longWindows: windows.filter((w) => w.minutes !== FIVE_HOUR_MINUTES),
+    ...(stopped.length > 0 && {
+      fiveHourStoppedUntil: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
+    })
+  }
 }
 
 // AGY§23
@@ -306,7 +332,7 @@ export interface PoolSnapshot {
   usable: number
   walled: number
   tension: number
-  t5: number
+  t5: number | null
   t7: number
   tfable: number | null
   fableSpentAll: boolean
@@ -323,7 +349,10 @@ export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapsho
   const walledRows = M.filter(isWalled)
   const usable = live.filter((a) => !a.usage || !accountWalled(a.usage, nowSec)).length
   const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
-  const t5 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1))) : 0
+  const with5h = M.filter((a) => (a.usage as UsageSnapshot).has5h)
+  const t5 = with5h.length
+    ? mean(with5h.map((a) => Math.min((a.usage as UsageSnapshot).u5, 1)))
+    : null
   const t7 = M.length ? mean(M.map((a) => Math.min((a.usage as UsageSnapshot).u7, 1))) : 0
   const tension = M.length
     ? mean(
@@ -526,7 +555,14 @@ export function accountLine(
   ].join(' · ')
 }
 
+export const METERED_NOTE = 'Metered — used only when every subscription is rate-limited'
+
+export function meteredTag(name: string): string {
+  return `${name} (API key, metered)`
+}
+
 export function launchLine(a: AccountView, nowMs: number): string {
+  if (a.apiKey) return `koloft: → ${meteredTag(a.name)}`
   if (a.limits)
     return accountLine(
       a.name,

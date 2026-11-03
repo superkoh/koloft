@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
+import { windowLabel } from '../../src/shared/accountUsage'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   E2E_MUSE_ACCOUNT,
@@ -17,6 +18,7 @@ import {
   agentRow,
   centerTerm,
   chooseBackend,
+  dialogPrimary,
   gitCommitAll,
   gitInit,
   newSessionInWith,
@@ -27,6 +29,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
   waitBooted,
@@ -51,13 +54,14 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
   return museCalls(env)[before]
 }
 
+const OUTLASTS_A_MUSE_USAGE_READ_MS = 30_000
 const ROWS_FOLLOW_A_LISTING_MS = 2_000
 const SAMPLE_EVERY_MS = 100
 
 async function textsAcrossAWindow(locator: Locator, ms: number): Promise<string[]> {
   const seen: string[] = []
   for (const end = Date.now() + ms; Date.now() < end;) {
-    seen.push(await locator.innerText())
+    seen.push((await locator.allInnerTexts()).join('\n'))
     await new Promise((resolve) => setTimeout(resolve, SAMPLE_EVERY_MS))
   }
   return seen
@@ -188,6 +192,83 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§13
+  test('a Muse API key pasted in Settings ▸ Accounts is marked API KEY and metered there and in the usage panel, draws no bar in the capsule, and a Muse tab starts on it only once the Meta sign-in is at its limit, its account line saying it is metered', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    const quota = path.join(env.home, 'fake-muse-quota.json')
+    fs.writeFileSync(quota, JSON.stringify({ current: 40, weekly: 7 }))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page
+        .locator('.set-grp', { hasText: /^Muse$/ })
+        .locator('xpath=following-sibling::div[1]')
+        .getByRole('button', { name: 'Paste API key' })
+        .click()
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Add Muse API key')
+      await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
+      await dialog.locator('input[type="password"]').fill('meta-made-up-key')
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 })
+      const metered = 'Metered — used only when every subscription is rate-limited'
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^metered$/ })
+      })
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(row.locator('.acct-note')).toHaveText(metered)
+      await expect(row.locator('.acct-status')).toHaveCount(0)
+      await page.keyboard.press('Escape')
+
+      await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
+      await page.locator('.tbu').click()
+      const pop = page.locator('.tbu-pop')
+      const popRow = pop.locator('.tbu-row', { hasText: 'metered' })
+      await expect(popRow.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(popRow.locator('.acct-note')).toHaveText(metered)
+      await expect(
+        pop
+          .locator('.tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+          .locator('.acct-meter[data-win="5h"] .m-pct')
+      ).toHaveText('40%', { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
+      await page.keyboard.press('Escape')
+
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
+      )
+      fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 7 }))
+      await expect
+        .poll(
+          async () => {
+            const views = await page.evaluate(() => window.api.accounts.probe())
+            return views
+              .find((a) => a.name === E2E_MUSE_ACCOUNT)
+              ?.limits?.windows.find((w) => windowLabel(w.minutes) === '5h')?.used
+          },
+          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
+        )
+        .toBe(1)
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'koloft: → metered (API key, metered)'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
   test('a muse login that fails closes its sign-in tab and brings Settings ▸ Accounts back with muse’s error under “Sign-in did not complete.” and no row for the new account', async ({
     env
   }) => {
@@ -252,6 +333,40 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         first.sessionId
       ])
       expect(museCalls(env)[2].sessionId).toBe(first.sessionId)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§20
+  test('/fork with a message moves the tab onto a new copy that gets the message; the session it left keeps its row, cold, through a listing Muse leaves the held copy out of, and a click resumes it', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'first topic')
+      await expect(museRows(page).filter({ hasText: 'first topic' })).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/fork second topic')
+      const copy = museRows(page).filter({ hasText: 'second topic' })
+      await expect(copy.and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      const left = museRows(page).filter({ hasText: 'first topic' })
+      await expect(left).toHaveClass(/cold/)
+      const listedBefore = museListings(env)
+      await expect.poll(() => museListings(env)).toBeGreaterThan(listedBefore)
+      const rows = await textsAcrossAWindow(museRows(page), ROWS_FOLLOW_A_LISTING_MS)
+      expect(rows.filter((t) => !t.includes('first topic') || !t.includes('second topic'))).toEqual(
+        []
+      )
+      expect(museCalls(env)).toHaveLength(1)
+      await left.click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
     } finally {
       await quitAndClose(app)
     }
@@ -405,6 +520,47 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
         'committed on the branch'
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('C8: typing the name of a Muse worktree whose preparation was interrupted says it will start Muse, and recovers it into a Muse session', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    const name = 'interrupted-muse'
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'muse-sessions.json',
+      name
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
+      await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
+      await expect(
+        dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
+      ).toContainText('and start Muse.')
+      await expect(dialogPrimary(dialog)).toContainText('Recover · Muse')
+      await dialogPrimary(dialog).click()
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      expect(museCalls(env)[0].cwd).toBe(cwd)
+      await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
     } finally {
       await quitAndClose(app)
     }

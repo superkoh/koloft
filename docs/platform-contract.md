@@ -114,6 +114,16 @@ method. A recheck adds its date, version and command to the bullet.
   `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
   24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
   of that day.)
+- **Keys written right behind the launch line reach the program it starts, except a
+  signal key.** At zsh's signal, one write of `export …; clear` CR, `exec <program>` CR
+  and then `hello` CR: the program, which turned raw mode on 1 s after it started
+  (`TCSADRAIN`; which mode libuv uses is not checked), read `hello\r` whole. With the CR written 0.3 s later
+  instead, while the program was still in canonical mode, it read `hello\n` (`ICRNL`).
+  A Ctrl+C written behind the two lines threw the queued `exec` line away and left
+  zsh at its prompt, so the program never started; a Ctrl+Z or Ctrl+\ there reached
+  the program as a byte. (2026-11-01, Python `pty` probe,
+  macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
+  instead threw the queued keys away.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -341,6 +351,55 @@ method. A recheck adds its date, version and command to the bullet.
   page shown.
 - **A `<webview>` with no `partition` quietly uses the default session**, and nothing
   errors.
+- **Sign-in popups need a real window with an opener.** React 19.3 drops `allowpopups: true`
+  on a `<webview>` (the rendered tag has no such attribute), but Koloft's own
+  `will-attach-webview` sets `disablePopups` false for the browser partition, so every
+  `window.open` still reaches the window-open handler. Answered with `deny` (and opened as a
+  web tab), the page's `window.open` returns `null` and the tab's `window.opener` is `null`,
+  so a page waiting for a sign-in result by `postMessage` never gets it: seen for a sized
+  `window.open`, an unsized one, a `target="_blank"` link and one with `rel="opener"`. A
+  sized `window.open` (`"width=500,height=600"`) arrives with `disposition: 'new-window'`; an
+  unsized one does not. Answered with `allow`, it opens a `BrowserWindow` in the opener's
+  partition whose `window.opener` survives cross-origin redirects, so the last page's
+  `postMessage` reaches the opener. That window's `web-contents-created` fires with
+  `getType()` `'window'`, which electron-chrome-extensions' action popup also has in the same
+  session (its source builds a `BrowserWindow`), so a sign-in window is told apart by the
+  window-open handler that made it, not by type. 2026-10-31, Electron 43.8.1, React 19.3.0,
+  local test pages in an e2e run (BB-M34, BB-M24) and a page on a Docker ssh machine
+  (E-SSH-42).
+- **A sign-in window with an address bar hosts the popup in a view of its own.** An `allow`
+  answer's `createWindow` gets `options.webContents` (missing from Electron's typings): the
+  popup's own, already created `webContents`. Put in `new WebContentsView({ webContents })`
+  under a window whose own page is the address bar, it keeps `window.opener`, the opener's
+  session and its preloads, and `BrowserWindow.fromWebContents` returns the host window. What a
+  plain `allow` window does by itself has to be done by hand: closing the host leaves the
+  view's `webContents` alive until `close()` is called on it, and `window.resizeTo` moves
+  nothing until the view's `content-bounds-updated` (outer bounds, as Chrome's popups count
+  them, address bar included) is passed to the host's `setBounds`; the popup's own
+  `window.close()` destroys the view's `webContents`. A host whose `close` handler calls
+  `preventDefault` (to wait for the page's `beforeunload`) cancels `app.quit()`: Koloft stayed
+  running (BB-M35, measured with that handler in place). URL events on that `webContents`: a 302 fires one `did-navigate` with the
+  final URL; `pushState` fires `did-navigate-in-page`; a refused certificate fires
+  `certificate-error` (main frame) and `did-fail-load`, no `did-navigate`, with `getURL()` the
+  refused URL. Measured in ccremote (its platform ledger §66, Electron 43.8.3) and checked here
+  2026-11-03, Electron 43.8.1, by BB-M35 (redirect, `pushState`, `resizeTo`, a trusted and a
+  refused certificate, `window.close()`).
+- **Chrome's address bar puts no mark on a local address or a failed load.** Chrome's
+  security level (`components/security_state/core/security_state.cc`, `GetSecurityLevel`)
+  marks a major certificate error dangerous first; then a page with no connection info, which
+  an error page has, gets none; https with a certificate gets the lock; and an http page gets
+  "Not secure" only when it is not an error page and `network::IsUrlPotentiallyTrustworthy` is
+  false. That function (`net/base/is_potentially_trustworthy.cc`) counts a host as trustworthy
+  through `net::IsLocalhost` (`net/base/url_util.cc`): `localhost` or a name ending in
+  `.localhost`, either with one trailing dot dropped, any case; or an IP literal for which
+  `IPAddress::IsLoopback` (`net/base/ip_address.cc`) holds: 127.0.0.0/8 and `::1` only, so
+  `::ffff:127.0.0.1` does not count. Read from Chromium's source on `main`, 2026-11-03.
+  On the sign-in view (Electron 43.8.1, 2026-11-03), `did-fail-load` for an https page whose
+  server closed the connection leaves `getURL()` the failed URL, as for a refused certificate
+  (BB-M35). A load that ends without a new page does not fire `did-fail-load` at all, so it
+  never wipes the mark of the page still shown: `window.stop()` while an image still loads, a
+  move to a 204 reply, and a move to a custom-scheme callback (`koloftprobe://cb`) each fired
+  nothing within 10 s (a probe step in BB-M35, then removed).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,
@@ -539,6 +598,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   (read in Electron 43.8.1's `electron.d.ts`), and Chromium resolves the name on its own.
   A host name can only be judged by a separate DNS lookup made first, so a name whose
   answer changes between the two lookups (DNS rebinding) gets past such a check.
+- **`onBeforeRequest` cannot move a websocket.** A page's `new WebSocket('ws://127.0.0.1:A/x')`
+  reaches the listener with `resourceType: 'webSocket'` and the page's `webContentsId`;
+  answered `{ redirectURL: 'ws://127.0.0.1:B/x' }`, the socket still opens to A, `ws.url`
+  stays A's, and B never sees an upgrade. An http `fetch` redirected the same way reaches B.
+  Answered `{ cancel: true }`, the page gets `error` then `close` 1006 with no reason, and A
+  sees nothing. (2026-10-31, Electron 43.8.1, a hidden window on its own partition and two
+  local servers with a hand-written websocket upgrade; scratch script.)
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -991,6 +1057,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   for an alt-screen TUI the rows that grow back stay blank.
 - **xterm answers some queries by itself** (focus reports, mouse reports, DA/CPR) on the
   same `onData` path as real keys, so pty input alone cannot show that a person typed.
+  Each answer is one `onData` call of its own. The CSI answers end in `R` (cursor
+  position), `c` (device attributes), `n` (status, colour scheme), `$y` (mode report),
+  `t` (window size) or `u` (keyboard flags); the rest are OSC (`ESC ]` … BEL or ST) and
+  DCS (`ESC P` … ST). A person's key can share the `R` shape: xterm sends Shift+F3 as
+  `ESC [ 1 ; 2 R`. (Read from `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`,
+  2026-11-01.)
 - **xterm's hidden textarea keeps the Tab key**: focus that reaches a terminal does not
   move on, so a forward Tab walk has to start past it.
 - **XTVERSION**: the query is `CSI > 0 q` (or `CSI > q`) and a reply is
@@ -1118,6 +1190,13 @@ inferred, not checked.
   (`content: ''; position: absolute; inset: 0`) on the element 16 of 16; the same cover
   with `pointer-events: none` 6 of 16; a `no-drag` button inside a `drag` bar 16 of 16, so
   the drag region is not the cause.
+- **When an overlay goes away from under a still mouse, the element now under it gets
+  `mouseenter` but no `mousemove`.** Measured 2026-10-31 (Electron 43.8.1, the hidden
+  e2e window, the mouse placed with Playwright): a modal's backdrop closed by Enter
+  over a sidebar row fired the row's `mouseenter`, and no `mousemove` reached `window`
+  until the mouse was moved again (`sidebar-hover-menu.spec.ts` T-HM-04, red before
+  hover-intent waited for a move, green after). Not yet measured with a real mouse on a
+  shown window.
 
 ## §25 React and zustand
 
@@ -1185,6 +1264,13 @@ inferred, not checked.
   20 000-file node_modules was 1 240 022 bytes).
 - **`execFileSync` with `cwd: undefined` quietly runs in `process.cwd()`** (seen: a
   fixture helper ran `git init` and a commit in the checkout it was started from).
+- **On macOS a server holding a port on one address does not stop a bind on another**, so
+  "is this Mac port free" needs a test bind on each of the four. Measured with
+  `net.createServer().listen({ host, port, exclusive: true })`: a server on `::`
+  (Node's default, both families) blocks only a test bind on `::` and on `0.0.0.0`; one on
+  `0.0.0.0` blocks only `0.0.0.0`; one on `127.0.0.1` only `127.0.0.1`; one on `::1` (and one
+  on `localhost`, which lands there) only `::1`. (2026-10-31, Node 24.13.0
+  on macOS 27, a scratch script; pinned by a unit test.)
 - **`https.get` throws synchronously on a non-https URL**; during a redirect that throw
   is inside the parent response callback and escapes to `uncaughtException`.
 - **A failed `fetch`'s error `cause` chain can turn the request options into text,
@@ -1585,6 +1671,38 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
   ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
   ssh lab.)
+- **A local forward can be added to a live ControlMaster too, with no new login.**
+  `ssh -O forward -L 127.0.0.1:<mac port>:localhost:<machine port> host` exits 0 at
+  once (4–14 ms over two runs) and prints nothing; sshd's log shows no new `Accepted` line, and
+  normal commands keep riding the master. A page served on the machine's 127.0.0.1 then
+  answers on the Mac at `127.0.0.1:<mac port>` and at `localhost:<mac port>` (30 fetches
+  at once all came back), and `localhost` on the machine side also reaches a server bound
+  to `::1` only. Facts around it:
+  - **`-L` refuses port `0`**: `Bad local forwarding specification`, exit 255 — unlike
+    `-R`, ssh will not pick the Mac port, so the caller picks a free one itself.
+  - The same spec asked twice exits 0 (whether a second listener appeared was not
+    checked). The same Mac port aimed at
+    another machine port, or a Mac port another program already listens on, exits 255
+    with `Port forwarding failed`; the master stays up.
+  - `-O cancel -L` with the spec written without its `127.0.0.1:` prints `port not
+forwarded` and still **exits 0**, and the forward stays; the spec exactly as asked
+    cancels it. A cancel of a forward already gone does the same.
+  - When the master goes (`-O exit`), the forward goes with it (connection refused).
+  - The forward is accepted even when nothing will answer: a machine port nothing listens
+    on, and a login whose sshd has `AllowTcpForwarding no`, both give exit 0 to `-O
+    forward`, and then each connection is reset (`ECONNRESET`). The two give the same
+    exit code, the same (empty) stderr and the same connection error.
+  - With `MaxSessions 2` for that login and two `ssh host 'sleep 30'` started on the
+    master 1.5 s earlier, the forward still carried a page (whether those two had opened
+    their sessions by then was not checked).
+
+  (2026-10-30, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm, reached
+  directly, the master opened with Koloft's own ssh options; the e2e Docker ssh lab image;
+  a scratch script.) Through a ProxyJump bastion the same holds: the forward carries the
+  page, a second forward with the same Mac port bound as `[::1]:<mac port>:…` carries it on
+  the Mac's `::1` too, a forward on another Mac port runs beside them, and `-O cancel -L` with the
+  exact spec closes the Mac port (refused on a fresh connection), while a connection
+  already open through it keeps answering. (2026-10-31, same versions, e2e E-SSH-40.)
 - **How long "does the machine answer" (`ssh host true`) takes.** With the master up and
   the machine up: 7 ms (median of 10, max 8 ms). With no master yet: about 205 ms (it
   opens one). Machine stopped, master up or not: about 130 ms, exit 255 (`Connection
@@ -1708,6 +1826,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   default action after `exec` (2026-10-28, dash in the same image, `setsid -w` per case:
   untrapped, the shell died with 130; trapped, it saw the child's 5; a child that did not
   handle INT died with 130 as before).
+- **The tmux client passes each key on at once; the pane's own terminal decides the rest.**
+  A program in the pane that put its terminal in raw mode got a single `y` with no Enter,
+  and Enter as `\r`. One that left it as it was read whole lines: `abc`, Ctrl-U, `xy`,
+  Backspace, `z`, Enter reached it as one line `xz\n`, edited by the pane's terminal
+  (2026-11-01, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run in a python
+  pty with `TERM=xterm-256color`, each pane a python script logging the bytes it read).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
 - **A tmux client whose login names no UTF-8 locale draws `_` for every character
@@ -1739,8 +1863,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **Git-review cache**: pull request state lives in
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
   `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
-  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). Each
-  statusline render starts ccstatusline's own background `gh` fetch.
+  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24; the same
+  in 2.2.32's `dist/ccstatusline-*.js`, read 2026-11-03). Each statusline render
+  starts ccstatusline's own background `gh` fetch.
+- **Its code is split across several files in `dist/`** from 2.2.32 on (2.2.30
+  shipped `dist/ccstatusline.js` alone). The entry `dist/ccstatusline.js` imports
+  `./ccstatusline-<hash>.js` chunks by relative path, so the entry copied alone stops
+  with `ERR_MODULE_NOT_FOUND` before it prints anything (run with node 24,
+  2026-11-03); a copy of the bundle takes every file in `dist/`, about 3 MB in all.
 - **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
   `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
@@ -1818,6 +1948,28 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+- **A program on a machine whose login left it no working UTF-8 locale runs in the C
+  locale, and `ls` on a terminal there prints `中文.txt` as
+  `''$'\344\270\255\346\226\207''.txt'`.** That happens with no `LANG`, with `LANG=C`,
+  and with a `LANG` that names a UTF-8 locale the machine lacks (`LANG=en_US.UTF-8`, the
+  one a Mac's ssh hands over, on a box with only `C`, `C.utf8`, `POSIX`). `locale charmap`
+  tells them apart: `UTF-8` when it works, `ANSI_X3.4-1968` for the C locale on glibc
+  (after a `locale: Cannot set …` line when the named locale is missing), `US-ASCII` for
+  it on macOS; it costs about 0.5 ms. A UTF-8 locale picked from `locale -a` (Debian
+  lists `C.utf8`, macOS 27 `C.UTF-8`; one with only `en_US.utf8` gives that) makes `ls`
+  print the name as it is: as `LC_CTYPE` beside no `LANG` or `LANG=C`, but **not beside a
+  `LANG` the machine lacks** — with `LANG=en_US.UTF-8` missing, `LC_CTYPE=C.utf8` left
+  `ls` escaping and perl warning (the whole locale fails), so that `LANG` itself has to go.
+  **A locale name the machine lacks breaks things when no UTF-8 locale is left to fall
+  back on:** with `C.utf8` removed from `/usr/lib/locale`, `LANG=C.UTF-8` left `ls`
+  escaping, made perl print "Setting locale failed" at every start, and made tmux refuse
+  to start (`tmux: invalid LC_ALL, LC_CTYPE or LANG`). A set `LC_ALL` (or `LC_CTYPE`)
+  wins over any `LANG`. (2026-11-01: the `koloft-e2e-sshd` image, Debian bookworm, tmux
+  3.3a, probe scripts run with `docker exec -t`, locales removed or copied under
+  `/usr/lib/locale`; and this Mac, macOS 27.) So Koloft's remote scripts act only when
+  `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
+  locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
+  `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
 
 ## §38 ssh through a JumpServer bastion
 
@@ -1895,9 +2047,19 @@ Gateway (the live connection that pushes events):
     `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
   - From the docs, not measured: the first answer must come within 3 s; the token
     works for 15 minutes; a guild can take at most 200 command creates a day; an app
-    with no answer shows "The application did not respond". That two Gateway
-    connections of one bot (two Koloft installs) both receive each interaction is
-    inferred, not checked.
+    with no answer shows "The application did not respond".
+- **Two Gateway connections on one bot token (two Koloft installs on one bot)** —
+  measured 2026-11-02 and 2026-11-03 with the test bot on the test server, a
+  hand-written client (Node `fetch`, Node's built-in `WebSocket`), intents `GUILDS |
+  GUILD_MESSAGES`, the second identify 5.5–6 s after the first:
+  - Both connections got `READY` with `shard: null`; Discord did not close, or send
+    op 7 or op 9 to, the first one when the second identified, and over 60 s both
+    stayed open with every heartbeat acked.
+  - A message the bot posted in a channel both could see arrived as `MESSAGE_CREATE`
+    on both connections, within 5 ms of each other (both runs).
+  - Whether an interaction (a slash command or a button press) reaches both
+    connections or only one is not probed: only a real user can start one, and the
+    owner chose not to. Two Koloft installs sharing one bot are not supported.
 - **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
   on a server where the bot role was the one the invite gave (`101440`) and the owner
   read each message in the Discord app:

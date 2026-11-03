@@ -20,6 +20,7 @@ import {
   terminalText,
   termIds,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { startCodex } from './helpers/codex'
@@ -183,9 +184,26 @@ async function fetchNow(page: Page, ws: string): Promise<void> {
 
 async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () => {}) {
   await startSessionIn(page, 'ws-a', { method: 'Claude' })
-  await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  await waitStartupTurnOver(page, 'ws-a')
   await beforeCodex()
   await startCodex(page, env)
+  await codexStartupTurnOver(page)
+}
+
+async function codexStartupTurnOver(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const codex = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === 'codex' && s.alive
+        )
+        return (await pendingAttention(page)).some(
+          (m) => m.tabId === codex?.tabId && m.kind === 'turn-done'
+        )
+      },
+      { timeout: NOTICE_ARRIVES_WITHIN_MS }
+    )
+    .toBe(true)
 }
 
 async function marksOnceAllWait(

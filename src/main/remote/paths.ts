@@ -33,6 +33,8 @@ export function tabPackageDir(userData: string, tabId: string): string {
   return path.join(userData, 'remote', 'tabs', tabId)
 }
 
+export const REMOTE_CLAUDE_PROJECTS = '.claude/projects'
+
 export const REMOTE_HOME = '$HOME/.koloft'
 export function remoteMachineDir(machineName: string): string {
   return `${REMOTE_HOME}/${machineName}`
@@ -50,5 +52,8 @@ export function remoteBrowserAddressFile(tabId: string): string {
 }
 export function browserForwardFile(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'browser-forward.json')
+}
+export function pageForwardsFile(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'page-forwards.json')
 }
 export const dq = (s: string): string => `"${s}"`

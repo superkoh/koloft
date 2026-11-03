@@ -1,12 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
 import {
+  agentRow,
   centerTerm,
   chooseBackend,
   gitInit,
@@ -17,8 +18,10 @@ import {
   openMenu,
   openWorktreeSession,
   processAlive,
+  readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   startSessionIn,
   switchToRow,
   terminalText,
@@ -28,6 +31,7 @@ import {
 } from './helpers/p1'
 import {
   addRemoteWorkspace,
+  breakConnection,
   installCodexOnFakeRemote,
   killFakeRemote,
   launchWithRemote,
@@ -38,7 +42,7 @@ import {
   remoteKey,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 
 test.setTimeout(180_000)
@@ -46,6 +50,7 @@ test.setTimeout(180_000)
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
+const TURN_OUTLIVES_THE_QUIT_MS = 15_000
 
 interface TuiCall {
   argv: string[]
@@ -161,6 +166,29 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
       await expect.poll(() => serverAlive(env, server.tabId!), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0039 CODEX§15 CODEX§16
+  test('E-RC-14: a Codex session there whose Mac account is a pasted OpenAI API key signs the machine’s app-server in with that key, which never lands on the machine, and binds in the sidebar', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const key = 'sk-proj-e2e-made-up-key'
+    fs.writeFileSync(
+      path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'),
+      JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: key })
+    )
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
+        { type: 'apiKey', accessToken: null, accountId: null, apiKey: key }
+      ])
+      expect(fs.existsSync(path.join(server.codexHome, 'auth.json'))).toBe(false)
     } finally {
       await quitAndClose(app)
     }
@@ -441,6 +469,79 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
   })
 
+  test('E-RC-15: ⌘W on a remote Codex tab with ssh down closes the tab and says Codex is still running on the machine, where its app-server stays up', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const [tabId] = await termIds(page)
+
+      breakConnection(env)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect(page.locator('.toast .toast-msg')).toHaveText(
+        'Could not stop Codex on devbox: ssh exited with 255. It is still running there.'
+      )
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(tabId)
+      expect(serverAlive(env, server.tabId!)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0039
+  test("E-RC-13: quitting Koloft leaves on the machine only the app-server of a remote Codex tab whose turn is working, which finishes that turn with no screen connected; an idle tab's server ends, and the next Koloft start ends the one left behind", async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    fs.writeFileSync(
+      path.join(machineHome(env), 'fake-codex-busy-ms'),
+      String(TURN_OUTLIVES_THE_QUIT_MS)
+    )
+    const answers = (): string[] =>
+      codexAnswers(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+    const first = await launchWithRemote(env)
+    let idleTab = ''
+    let workingTab = ''
+    try {
+      await addRemoteWorkspace(first.page, env)
+      await newSessionInWith(first.page, REMOTE_WS_NAME, 'Codex')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
+      await newSessionInWith(first.page, REMOTE_WS_NAME, 'Codex')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(2)
+      idleTab = machineServers(env)[0].tabId!
+      workingTab = machineServers(env)[1].tabId!
+      const rows = wsRows(first.page, REMOTE_WS_NAME)
+      await expect(rows.and(first.page.locator('.st-waiting'))).toHaveCount(2, {
+        timeout: 60_000
+      })
+      await first.page.evaluate(
+        ([id, line]) => window.api.terminal.write(id, line),
+        [workingTab, '/busy\r']
+      )
+      await expect(rows.and(first.page.locator('.st-working'))).toHaveCount(1, {
+        timeout: 30_000
+      })
+    } finally {
+      await quitAndClose(first.app)
+    }
+    await expect.poll(() => serverAlive(env, idleTab), { timeout: 30_000 }).toBe(false)
+    await expect
+      .poll(answers, { timeout: TURN_OUTLIVES_THE_QUIT_MS + 30_000 })
+      .toContain('Codex fixture answered: /busy')
+    expect(serverAlive(env, workingTab)).toBe(true)
+
+    const again = await launchWithRemote(env)
+    try {
+      await expect.poll(() => serverAlive(env, workingTab), { timeout: 60_000 }).toBe(false)
+    } finally {
+      await quitAndClose(again.app)
+    }
+  })
+
   test('E-RC-06: an idle remote Codex session goes to sleep — its app-server on the machine ends while its row, red dot and tab stay — and clicking it wakes the same thread on a new server there', async ({
     env
   }) => {
@@ -521,6 +622,70 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       expect(statusLine(tuiCalls(env)[0].argv)).toEqual([])
       expect(server.argv).toContain(CODEX_ASKS_AND_WAITS)
       expect(statusLine(server.argv)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-12: with Claude switched off in Settings ▸ Sessions, Codex becomes the default and what Koloft Assist runs on, the last method left on cannot be switched off, and the New session menus of this Mac and of the remote workspace offer no Claude and start Codex', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
+      const defaultMethod = page.getByRole('button', { name: 'Default session method' })
+      const methodSwitch = (name: string): Locator =>
+        page.getByRole('switch', { name: `Enable ${name}`, exact: true })
+      await expect(defaultMethod).toHaveText('Claude')
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
+      await methodSwitch('Claude').uncheck()
+      await expect(defaultMethod).toHaveText('Codex')
+      await expect.poll(() => settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
+      await methodSwitch('Muse').uncheck()
+      await expect(methodSwitch('Codex')).toBeEnabled()
+      await methodSwitch('Antigravity').uncheck()
+      await expect(methodSwitch('Codex')).toBeChecked()
+      await expect(methodSwitch('Codex')).toBeDisabled()
+      await expect(methodSwitch('Claude')).toBeEnabled()
+      await page.getByRole('tab', { name: 'Assist', exact: true }).click()
+      const runsOn = page.getByRole('button', { name: 'Koloft Assist runs on' })
+      await expect(runsOn).toHaveText('Codex')
+      await runsOn.click()
+      await expect(agentRow(page, 'Claude')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Claude')).toContainText('Off')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.set-main')).toHaveCount(0)
+
+      const offeredIn = async (wsName: string): Promise<string[]> => {
+        await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+        const items = await menuItemTexts(page)
+        await page.keyboard.press('Escape')
+        await expect(page.locator('.menu')).toHaveCount(0)
+        return items
+      }
+      const local = (await offeredIn('ws-a')).join(' | ')
+      expect(local).toContain('New session')
+      expect(local).not.toMatch(/Claude/)
+      await expect
+        .poll(async () => (await offeredIn(REMOTE_WS_NAME)).join(' | '), { timeout: 60_000 })
+        .toContain('New session')
+      expect((await offeredIn(REMOTE_WS_NAME)).join(' | ')).not.toMatch(/Claude/)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'New session' }).click()
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
+      expect(tuiCalls(env)[0].cwd).toBe(env.workspaces.a)
+      await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      await page.locator('.menu .mi', { hasText: 'New session' }).click()
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(readCalls(env)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

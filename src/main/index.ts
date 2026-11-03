@@ -12,6 +12,7 @@ import {
   screen,
   Notification,
   webContents,
+  type BaseWindow,
   type WebContents
 } from 'electron'
 import path from 'path'
@@ -26,6 +27,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
   museShowsItsInputBox,
@@ -60,6 +62,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
@@ -87,7 +90,10 @@ import {
   backendsFrom,
   messagingOf,
   reachedBySendMessage,
-  preferredAssistBackend
+  preferredAssistBackend,
+  effectiveBackend,
+  turnedOffLine,
+  SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
@@ -119,6 +125,7 @@ import {
   forgetAssistMarkers,
   localNotice,
   markAnswerable,
+  markOwnerAsleep,
   noticeFile,
   pruneStale,
   quotedPrompt,
@@ -143,6 +150,7 @@ import {
   writeToMachineSocket
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
+import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
 import {
   ENSURE_CODEX_SH,
@@ -170,6 +178,7 @@ import {
 import {
   browserForwardFile,
   machinePackageBase,
+  pageForwardsFile,
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
@@ -179,7 +188,7 @@ import {
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
-import { AGENT_SHIM_WAITS_MS, OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -209,6 +218,7 @@ import {
   setWorkbenchAvailable,
   type MenuShortcut
 } from './menu'
+import { openSignInWindow } from './signInWindow'
 import { applyKeepAwake } from './keepAwake'
 import {
   approve as approveQuit,
@@ -246,6 +256,7 @@ import { WorkspaceManager, scratchRootsAround, type LiveSession } from './worksp
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
+  workspaceOfWorkbenchKey,
   sanitizeSessionWorkbench,
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
@@ -307,22 +318,19 @@ import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
 import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
-import { whatsNewDecision } from './releaseNotes'
-import {
-  checkForUpdates,
-  downloadAndInstall,
-  fetchPublishedReleases,
-  fixturePath,
-  releasePageUrl,
-  restartApp
-} from './updater'
+import { checkForUpdates, downloadAndInstall, releasePageUrl, restartApp } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
 import { busyInCheckout } from '@shared/freshnessOps'
 import {
+  aPageOnTheMachineAsks,
   canOpenExternally,
+  loopbackPortOf,
   MACHINE_PAGE_SCHEME,
   machinePageOf,
+  onMacPort,
+  PREVIEW_FILE_SCHEME,
+  previewFileOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -466,7 +474,6 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  WhatsNew,
   GitStepResult,
   PrChecks,
   PrWorktreeResult,
@@ -493,8 +500,10 @@ import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
+  claudeDialog,
   codexDialog,
   isAskedCall,
+  questionsOf,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -518,6 +527,7 @@ import {
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,
+  claudeShowsAPanelOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
@@ -532,6 +542,7 @@ import {
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
+  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   resolveWorkspace,
   sessionVerb,
   workspaceVerb,
@@ -547,6 +558,7 @@ import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
+import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -633,6 +645,10 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
+    if (butler?.isButlerTab(tabId)) {
+      ownerAsleep.awakeTabsChanged()
+      syncAnswerable()
+    }
     discordTyping?.refresh(tabId)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
@@ -667,6 +683,7 @@ function showAskOnItsRow(tabId: string): void {
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 sessionBackends.noAccountMessage = noAccountNow
+sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -682,16 +699,29 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
-const panelOpenOn: Record<
-  BackendId,
-  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
-> = {
-  claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
-  codex: async () => undefined,
-  muse: async (tabId, _sessionId, screen) => {
+type PanelOpen = (
+  tabId: string,
+  sessionId: string,
+  screen?: string[]
+) => Promise<boolean | undefined>
+
+function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
+  return async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
-    return lines && !museShowsItsInputBox(lines)
+    return lines && shows(lines)
+  }
+}
+
+const panelOpenOn: Record<BackendId, PanelOpen> = {
+  claude: async (tabId, sessionId) => {
+    if (!sessionId) return undefined
+    const host = tracker.remoteOf(tabId)?.host
+    if (!host) return claudeShowsAPanel(sessionId)
+    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
+    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
+  codex: panelOnScreen(codexShowsAPanel),
+  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
   agy: async () => undefined
 }
 
@@ -1011,7 +1041,53 @@ const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
+const ownerAsleep = new OwnerAsleep(
+  {
+    machines: () => [
+      THIS_MAC,
+      ...new Set([
+        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
+    ],
+    mark: async (machine, awakeTabs) => {
+      if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
+      if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
+      return !!hookRegDir
+    },
+    awakeTabs: () => {
+      const tab = butler?.liveTab()
+      return tab ? [tab] : []
+    },
+    tabs: ptyTabIds,
+    asked: async (tabId) => {
+      const stored = await pendingAskOf(tabId)
+      if (stored) {
+        const questions = 'questions' in stored ? stored.questions.length : 0
+        return { question: questions > 0, questions, text: codexDialog(stored).text }
+      }
+      const claude =
+        discordRelay?.heldAsk(tabId) ??
+        (tracker.statusOf(tabId) === 'approval' ? discordRelay?.askOf(tabId) : undefined)
+      if (!claude) return undefined
+      const questions = questionsOf(claude).length
+      return { question: questions > 0, questions, text: claudeDialog(claude).text }
+    },
+    answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
+    titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
+    changedSince: (since) => awayDigest?.changedSince(since) ?? [],
+    report: (text) => discordRelay?.tell(butlerDestination(), text),
+    now: Date.now
+  },
+  loadSettings().ownerAsleepSince
+)
+
+function ownerCameBack(): void {
+  if (ownerAsleep.asleep()) commitSettings({ ownerAsleepSince: null })
+}
+
 function ownerAway(): boolean {
+  if (ownerAsleep.asleep()) return false
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
   if (pretend)
     return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
@@ -1187,6 +1263,9 @@ let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
+  hosts.machine(host).realFiles(files)
+tracker.realFilesOn = realFilesOn
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 const browserTunnels = new BrowserTunnels({
@@ -1197,6 +1276,14 @@ const browserTunnels = new BrowserTunnels({
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
   endpointOnMachine: relayEndpointOnMachine,
   renewEndpointOnMachine: renewRelayEndpointOnMachine
+})
+const pageForwards = new PageForwards({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  macPortFree,
+  anyFreeMacPort,
+  forwardFile: (host) => pageForwardsFile(app.getPath('userData'), host)
 })
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
@@ -1247,7 +1334,10 @@ function machinePackage(): MachinePackage {
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
-    pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
+    // PLATFORM§36
+    const bundleDir = path.dirname(bundlePath())
+    for (const name of fs.readdirSync(bundleDir))
+      pkgFiles[`statusline/${name}`] = fs.readFileSync(path.join(bundleDir, name))
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
     pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
     pkgFiles['statusline/run.sh'] = remoteWrapperScript()
@@ -1315,7 +1405,7 @@ function syncAnswerable(): void {
   if (!hookRegDir || !all) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = discordConnected && !!all.channelOfTab(s.tabId)
+    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -1328,15 +1418,7 @@ const BOOT_TIME = Date.now()
 let rendererReady = false
 
 // CC§7
-const usageViews = new Map<
-  string,
-  {
-    usage?: UsageSnapshot
-    limits?: CodexLimits
-    quota?: QuotaBucket[]
-    probeError?: ProbeErrorKind
-  }
->()
+const usageViews = new Map<string, Omit<AccountView, keyof AccountMeta>>()
 
 function viewKey(name: string, kind: AccountKind): string {
   return `${kind}:${name.toLowerCase()}`
@@ -1595,7 +1677,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 }
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
-  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+  enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1604,8 +1686,12 @@ async function whyAssistCannotRunOn(
   backend: BackendId,
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
-  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  if (!enabled[backend]) return turnedOffLine(backend)
   return whyAssistCannotRun[backend]()
+}
+
+function turnedOffNow(backend: BackendId): string | null {
+  return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
 }
 
 const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
@@ -1658,6 +1744,16 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
   'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
+// CC§11
+async function liveClaudeRegistryOn(host: string): Promise<string> {
+  await loginEnvReady()
+  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+    controlDir: remoteControlDir
+  })
+  if (r.code !== 0) throw new Error(problemOf(r))
+  return r.stdout
+}
+
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
   const sessionId = sessionOfTab(tabId)?.sessionId
@@ -1668,15 +1764,7 @@ async function sendPeerLine(tabId: string, line: string, ms: number): Promise<vo
     if (!socket) throw new Error(NO_MESSAGE_SOCKET)
     return writeLineInTurn(socket, line)
   }
-  await loginEnvReady()
-  const readLiveRegistry = async (): Promise<string> => {
-    const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
-      controlDir: remoteControlDir
-    })
-    if (r.code !== 0) throw new Error(problemOf(r))
-    return r.stdout
-  }
-  const socket = await whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, () => liveClaudeRegistryOn(host))
   if (!socket) throw new Error(NO_MESSAGE_SOCKET)
   await writeLineInTurn(`${host}:${socket}`, line, (l) =>
     writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
@@ -1735,8 +1823,10 @@ const sessionSync = new SessionSync({
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
+  tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
+  turnedOff: turnedOffNow,
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
@@ -1751,7 +1841,7 @@ const sessionDeps: SessionVerbDeps = {
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
-  whatIsLeft: whatClosingWouldLose,
+  whatIsLeft: (target, waitUntil) => whatClosingWouldLose(target, undefined, waitUntil),
   closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
       for (const target of inOrder) {
@@ -1773,6 +1863,7 @@ const sessionDeps: SessionVerbDeps = {
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
+  transcriptPlaces: (key) => sessionBackends.transcriptPlaces(key),
   quotedPrompt: (tabId) => {
     const host = tracker.remoteOf(tabId)?.host
     const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
@@ -1855,6 +1946,7 @@ const agentRequests = new AgentRequests({
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
       open: openSignInEndOn,
@@ -1892,6 +1984,7 @@ const agentRequests = new AgentRequests({
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
         return tree ? whatIsLeft(hostGitOut, tree, merged) : null
       },
+      deleting: (row) => treeRemovals.has(row.cwd),
       worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
@@ -2023,14 +2116,18 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
 interface LoginWatch {
   name: string
   buf: string
-  startedAt: number
   sawUrl: boolean
   done: boolean
+  giveUp: NodeJS.Timeout
   installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
+const LOGIN_TIMED_OUT = 'Sign-in timed out'
+// CC§10
+const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -2050,17 +2147,15 @@ function feedLoginWatcher(tabId: string, data: string): void {
     const rest = afterOutputStart(seen)
     if (rest === null) {
       w.installing.carry = outputStartCarry(seen)
+      w.giveUp.refresh()
       w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
       return
     }
+    clearTimeout(w.giveUp)
+    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
     w.installing = undefined
-    w.startedAt = Date.now()
     w.buf = ''
     data = rest
-  }
-  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
-    failLogin(tabId, 'Sign-in timed out')
-    return
   }
   w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
@@ -2074,31 +2169,42 @@ function feedLoginWatcher(tabId: string, data: string): void {
     }
     return
   }
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   void completeLogin(tabId, w.name, m[0])
 }
 
-function failLogin(tabId: string, why: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
+function endLoginWatch(tabId: string, w: LoginWatch): void {
   w.done = true
   loginWatchers.delete(tabId)
+  clearTimeout(w.giveUp)
+}
+
+function failLogin(tabId: string, why: string, terminalKept = true): void {
+  const w = loginWatchers.get(tabId)
+  if (!w || w.done) return
+  endLoginWatch(tabId, w)
   const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
     tail: `${why}${tail ? `\n${tail}` : ''}`,
-    tabId,
-    cwd: ptyMgr.get(tabId)?.cwd
+    ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
   })
+}
+
+function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    failLogin(tabId, why, false)
+    try {
+      ptyMgr.kill(tabId)
+    } catch {}
+  }, ms)
 }
 
 function cancelGuidedLogin(tabId: string): void {
   const w = loginWatchers.get(tabId)
   if (!w) return
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   try {
     ptyMgr.kill(tabId)
   } catch {}
@@ -2124,9 +2230,15 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
   loginWatchers.set(handle.id, {
     name,
     buf: '',
-    startedAt: Date.now(),
     sawUrl: false,
     done: false,
+    giveUp: installFirst
+      ? giveUpLoginAfter(
+          handle.id,
+          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          INSTALL_STALLED
+        )
+      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
     ...(installFirst && { installing: { carry: '' } })
   })
   loginPtys.add(handle.id)
@@ -2227,12 +2339,11 @@ async function addAccount(
   secret: string,
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
-  if (kind === 'muse-home') return addMuseKey(name, typeof secret === 'string' ? secret : '')
-  if (kind === 'agy-home') return addAgyKey(name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
+  if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
   if (kind === 'custom' && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
@@ -2289,7 +2400,8 @@ function pickCodexHome(
     codexSessions?.launchedSessions()
   )
   if (!picked) return undefined
-  const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+  const stale = (a: AccountView): boolean =>
+    a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
@@ -2308,9 +2420,14 @@ async function probeCodexAccount(name: string): Promise<void> {
   try {
     const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
     foldHomeSignIn(name, 'codex-home', r.signedIn)
-    usageViews.set(key, {
-      limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
-    })
+    usageViews.set(
+      key,
+      r.apiKey
+        ? { apiKey: true }
+        : {
+            limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+          }
+    )
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
@@ -2511,7 +2628,8 @@ async function probeMuseAccount(name: string): Promise<void> {
   try {
     const signIn = await museSignIn(serve)
     foldHomeSignIn(name, 'muse-home', signIn !== 'none')
-    if (signIn !== 'subscription') usageViews.delete(key)
+    if (signIn === 'apiKey') usageViews.set(key, { apiKey: true })
+    else if (signIn === 'none') usageViews.delete(key)
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
       fs.mkdirSync(dir, { recursive: true })
@@ -2535,20 +2653,6 @@ function probeMuseAccounts(): Promise<void> {
     museProbeRound = null
   })
   return museProbeRound
-}
-
-// MUSE§13
-async function addMuseKey(name: string, key: string): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, 'muse-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const trimmed = key.trim()
-  const serve = trimmed ? await museServeFor(name) : undefined
-  if (!serve) return { ok: false, error: 'unknown' }
-  noteHomeAccount(name, 'muse-home')
-  await storeMuseKey(serve, trimmed).catch(() => undefined)
-  await probeMuseAccount(name)
-  const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
-  return { ok: account?.status === 'ok', account }
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
@@ -2606,7 +2710,8 @@ async function probeAgyAccount(name: string): Promise<void> {
   const signedIn = agySignedIn(home, !!apiKey)
   foldHomeSignIn(name, 'agy-home', signedIn)
   const key = viewKey(name, 'agy-home')
-  if (signedIn && !apiKey) {
+  if (apiKey) usageViews.set(key, { apiKey: true })
+  else if (signedIn) {
     const quota = await agyUsage(home)
     usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
   }
@@ -2636,17 +2741,46 @@ function probeAgyAccounts(): Promise<void> {
   return agyProbeRound
 }
 
-// AGY§6
-async function addAgyKey(name: string, key: string): Promise<AccountAddResult> {
-  const v = validateNewAccount(name, 'agy-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const trimmed = key.trim()
-  if (!trimmed || !(await keychainWrite('agy-home', name, trimmed)))
+function markKeyAccountsSavedOnDisk(): void {
+  for (const a of listAccounts())
+    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](app.getPath('userData'), a.name))
+      usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
+}
+
+const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
+  // CODEX§15
+  'codex-home': async (name, key) => {
+    if (!codexSessions) throw new Error('Codex is not set up.')
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    await codexSessions.storeApiKey(home, key)
+  },
+  // MUSE§13
+  'muse-home': async (name, key) => {
+    const serve = await museServeFor(name)
+    if (!serve) throw new Error('Muse is not installed.')
+    await storeMuseKey(serve, key)
+  },
+  // AGY§6
+  'agy-home': async (name, key) => {
+    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+    setAgyApiKeyRoute(agyHomeFor(name), true)
+  }
+}
+
+async function addHomeKey(
+  kind: SignInFolderKind,
+  name: string,
+  key: string
+): Promise<AccountAddResult> {
+  try {
+    await storeHomeKey[kind](name, key)
+  } catch {
     return { ok: false, error: 'unknown' }
-  setAgyApiKeyRoute(agyHomeFor(name), true)
-  noteHomeAccount(name, 'agy-home')
-  await probeAgyAccount(name)
-  const account = accountViews().find((a) => a.kind === 'agy-home' && a.name === name)
+  }
+  noteHomeAccount(name, kind)
+  await probeHomeAccount[kind](name)
+  const account = accountViews().find((a) => a.kind === kind && a.name === name)
   return { ok: account?.status === 'ok', account }
 }
 
@@ -2694,7 +2828,7 @@ function installTool(backend: BackendId): { tabId: string; cwd: string } {
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'koloft-file',
+    scheme: PREVIEW_FILE_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -2765,7 +2899,7 @@ const teardownKilledPtys = new Set<string>()
 
 function rendererTeardown(): void {
   rendererReady = false
-  cronRunner?.onRendererTeardown()
+  cronRunner?.onRendererTeardown((tabId) => !!ptyMgr.get(tabId)?.alive)
   closeAllDirWatchers()
   closeAllFileWatchers()
   remoteSync?.unwatchAll()
@@ -2881,17 +3015,11 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   presence.macLastUsed()
-  protocol.handle('koloft-file', async (request) => {
-    const url = new URL(request.url)
-    const filePath = decodeURIComponent(url.pathname)
-    try {
-      const data = await fs.promises.readFile(filePath)
-      return new Response(new Uint8Array(data), {
-        headers: { 'content-type': mimeOf(filePath) }
-      })
-    } catch {
-      return new Response('Not found', { status: 404 })
-    }
+  protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
+    const file = previewFileOf(request.url)
+    const data = file === null ? null : await bytesOfAFileHere(file)
+    if (!file || !data) return new Response('Not found', { status: 404 })
+    return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
   setupBrowserPartition()
@@ -2906,6 +3034,7 @@ app.whenReady().then(() => {
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
+  setupGuestForwardsEnd()
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
@@ -3091,7 +3220,8 @@ app.whenReady().then(() => {
       signal: e.signal,
       asleep: sleepers.has(e.id),
       crashed: !quitCommitted && exitedAbnormally(e),
-      left: left ?? undefined
+      left: left ?? undefined,
+      ...(unexpected ? { unexpected } : {})
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
@@ -3146,8 +3276,10 @@ app.whenReady().then(() => {
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
+    const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)
     shimAccountRefusals.delete(e.id)
     // ADR-0030
@@ -3190,6 +3322,7 @@ app.whenReady().then(() => {
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
+    if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
     if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -3207,6 +3340,7 @@ app.whenReady().then(() => {
     projectInfo: projectInfoOnHost,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
+    realFilesOn,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer(CH.sessions.update, all)
@@ -3601,6 +3735,7 @@ app.whenReady().then(() => {
     },
     owner: () => butlerNow.owner(),
     ownerAway,
+    ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3635,6 +3770,7 @@ app.whenReady().then(() => {
       ptyMgr.wakeReady(tabId)
       void buttons.check(tabId)
       showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
     },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
@@ -3679,7 +3815,11 @@ app.whenReady().then(() => {
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
   const digest = awayDigest
-  setInterval(() => digest.marked(), AWAY_CHECKED_EVERY_MS).unref()
+  setInterval(() => {
+    digest.marked()
+    void ownerAsleep.reconcile()
+  }, AWAY_CHECKED_EVERY_MS).unref()
+  void ownerAsleep.reconcile()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3748,13 +3888,15 @@ app.whenReady().then(() => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
     onConnected: (host) => void freshness?.machineUp(host),
-    onConnectedRound: (host) =>
+    onConnectedRound: (host) => {
+      void pageForwards.checkMaster(host)
       void browserTunnels.sync(
         host,
         ptyTabIds()
           .filter((id) => remoteHostOfTab(id) === host)
           .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
       )
+    }
   })
   ptyMgr.on('typed', (tabId: string) => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
@@ -3815,6 +3957,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
+    turnedOff: turnedOffNow,
     noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -3842,17 +3985,22 @@ app.whenReady().then(() => {
 
   registerIpc()
   setupAppMenu(
-    (action) => {
+    (action, from) => {
       if (action === 'toggle-keep-awake') {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
+      if (keptBySignInWindow(from, action === 'close-tab' ? 'closes-it' : 'acts-on-the-app')) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
+    (cmd, from) => {
+      if (keptBySignInWindow(from, cmd === 'browser-close-tab' ? 'closes-it' : 'acts-on-its-page'))
+        return
+      sendToRenderer(CH.shortcut.browser, cmd)
+    },
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake)
+  applyKeepAwake(loadSettings().keepAwake || ownerAsleep.asleep())
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
@@ -3911,6 +4059,7 @@ app.whenReady().then(() => {
   screen.on('display-removed', requestWebglRepair)
   screen.on('display-metrics-changed', requestWebglRepair)
 
+  markKeyAccountsSavedOnDisk()
   createWindow()
   startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
@@ -3961,6 +4110,7 @@ app.on('before-quit', (e) => {
   if (!quitCommitted) {
     rememberOpenTabs()
     browserTunnels.cancelOnQuit()
+    pageForwards.cancelOnQuit()
   }
   quitCommitted = true
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
@@ -4113,10 +4263,53 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
+const signInWindows = new WeakSet<BaseWindow>()
+
+function keptBySignInWindow(
+  from: BaseWindow | undefined,
+  key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
+): boolean {
+  if (!from || !signInWindows.has(from)) return false
+  if (key === 'closes-it') from.close()
+  if (key !== 'acts-on-the-app') return true
+  mainWindow?.show()
+  return false
+}
+
+const webPageWatchers: ((contents: WebContents) => void)[] = []
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return
+  for (const w of webPageWatchers) w(contents)
+})
+
+function onEveryWebPage(watch: (contents: WebContents) => void): void {
+  webPageWatchers.push(watch)
+}
+
+function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
+  signInWindows.add(win)
+  popup.on('input-event', handsOnKoloft)
+  const host = mainWindow
+  const close = (): void => {
+    if (!win.isDestroyed()) win.close()
+  }
+  opener.once('destroyed', close)
+  host?.once('closed', close)
+  win.once('closed', () => {
+    opener.removeListener('destroyed', close)
+    host?.removeListener('closed', close)
+  })
+  const popupId = popup.id
+  void reportedOwner(opener.id).then((owner) => {
+    if (owner) recordGuestOwner(popupId, owner)
+  })
+  for (const w of webPageWatchers) w(popup)
+}
+
 // PLATFORM§12
 function setupGuestUnload(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('will-prevent-unload', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       event.preventDefault()
@@ -4130,11 +4323,56 @@ const guestOwners = new WeakMap<WebContents, string>()
 function tabOwningGuest(guest: WebContents): string | null {
   return guestOwners.get(guest) ?? uiActiveTabId
 }
+
+const A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS = 3000
+const ownerWaiters = new Map<number, ((owner: string | null) => void)[]>()
+
+function reportedOwner(guestId: number): Promise<string | null> {
+  const guest = webContents.fromId(guestId)
+  if (!guest || overlayGuests.has(guestId)) return Promise.resolve(null)
+  const known = guestOwners.get(guest)
+  if (known) return Promise.resolve(known)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const left = (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
+      if (left.length) ownerWaiters.set(guestId, left)
+      else ownerWaiters.delete(guestId)
+      resolve(guestOwners.get(guest) ?? null)
+    }, A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
+    const answer = (owner: string | null): void => {
+      clearTimeout(timer)
+      resolve(owner)
+    }
+    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), answer])
+  })
+}
+
+function recordGuestOwner(guestId: number, owner: string): void {
+  const guest = webContents.fromId(guestId)
+  if (guest) guestOwners.set(guest, owner)
+  for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(owner)
+  ownerWaiters.delete(guestId)
+}
+
+function machineOfOwner(owner: string): string | undefined {
+  return isWorkspaceWorkbenchKey(owner)
+    ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
+    : machineOfTab(owner)
+}
+
+function setupGuestForwardsEnd(): void {
+  onEveryWebPage((contents) => {
+    const id = contents.id
+    contents.once('destroyed', () => {
+      ownerWaiters.delete(id)
+      pageForwards.pageGone(id)
+    })
+  })
+}
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('input-event', (_ev, input) => {
       if (CHROMIUM_USER_ACTIVATION_INPUTS.has(input.type)) {
         guestGestures.set(contents, Date.now())
@@ -4149,21 +4387,46 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
+const POPUP_WINDOW_FEATURES = /(^|[\s,])(popup|(inner)?width|(inner)?height)\s*(=|,|$)/i
+
+function opensAsSignInWindow(
+  from: WebContents,
+  { url, disposition, features }: Electron.HandlerDetails
+): boolean {
+  return (
+    disposition === 'new-window' &&
+    POPUP_WINDOW_FEATURES.test(features) &&
+    /^https?:/i.test(url) &&
+    !isOverlayGuest(from) &&
+    sessionDrivingGuest(from.id) === null &&
+    !guestDrivenFromAnotherMachine(from.id) &&
+    takeGuestGesture(from)
+  )
+}
+
 function setupGuestPopups(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.setWindowOpenHandler(({ url }) => {
-      if (contents.session === session.fromPartition(BROWSER_PARTITION)) {
-        routeGuestPopup(url, contents)
+  onEveryWebPage((contents) => {
+    contents.setWindowOpenHandler((details) => {
+      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
+      // PLATFORM§8
+      if (opensAsSignInWindow(contents, details)) {
+        return {
+          action: 'allow',
+          createWindow: (options) => {
+            const { host, page } = openSignInWindow(options, !BACKGROUND_TEST)
+            adoptSignInWindow(host, page, contents)
+            return page
+          }
+        }
       }
+      routeGuestPopup(details.url, contents)
       return { action: 'deny' }
     })
   })
 }
 
 function setupGuestContextMenu(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('context-menu', (_event, params) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       const items = guestMenuItems(params)
@@ -4185,8 +4448,7 @@ function setupGuestContextMenu(): void {
 // PLATFORM§8
 function muteGuestsUnderTest(): void {
   if (!BACKGROUND_TEST) return
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.setAudioMuted(true)
   })
 }
@@ -4216,8 +4478,7 @@ function setupGuestPermissionQuery(): void {
 }
 
 function setupPermissionCleanup(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     // PLATFORM§5
     const guestId = contents.id
     contents.once('destroyed', () => {
@@ -4434,6 +4695,10 @@ function relayDeps(): RelayDeps {
     setAttached: (sessionId, targetIds) => {
       const payload: BrowserCdpAttached = { sessionId, targetIds }
       sendToRenderer(CH.browser.cdpAttached, payload)
+    },
+    cameThroughAForward: (guestId, url) => {
+      const port = loopbackPortOf(url)
+      return port !== null && pageForwards.carries(guestId, port)
     }
   }
 }
@@ -4534,17 +4799,28 @@ const MACHINE_PAGE_HEADERS = {
     'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
 }
 
+async function bytesOfAFileHere(file: string): Promise<Buffer | null> {
+  const machine = parseRemoteKey(file)?.host
+  if (machine && !workspaceMgr?.remoteTargets().some((t) => t.host === machine)) return null
+  return hosts
+    .of(file)
+    .readBytes(file)
+    .catch(() => null)
+}
+
+function bodyOf(data: Buffer): Uint8Array {
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+}
+
 async function machinePageResponse(request: Request): Promise<Response> {
   const page = machinePageOf(request.url)
-  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
-  const machine = page && known ? hosts.machine(page.host) : null
-  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  const body = page && (await bytesOfAFileHere(formatRemoteKey(page.host, page.path)))
   if (!page || !body)
     return new Response(fileNotFoundHtml(page?.path ?? request.url), {
       status: 404,
       headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
     })
-  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+  return new Response(bodyOf(body), {
     headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
   })
 }
@@ -4555,6 +4831,43 @@ const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
 function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
   if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
   return !machinePageOf(details.frame?.url ?? '')
+}
+
+function fenceRequest(
+  details: Electron.OnBeforeRequestListenerDetails,
+  callback: (response: Electron.CallbackResponse) => void
+): void {
+  const guest = details.webContentsId
+  const fenced =
+    guest !== undefined
+      ? guestDrivenFromAnotherMachine(guest)
+      : details.initiatorOrigin !== undefined &&
+        originDrivenFromAnotherMachine(details.initiatorOrigin)
+  if (!fenced) return callback({})
+  if (FRAME_LOADS.has(details.resourceType)) notePageOpenedForAMachine(details.url)
+  if (details.url.startsWith('file:') || machinePageOf(details.url))
+    return callback({ cancel: true })
+  void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
+}
+
+// ADR-0046 PLATFORM§12 PLATFORM§33
+async function loopbackOnTheMachine(
+  details: Electron.OnBeforeRequestListenerDetails,
+  guest: number,
+  machinePort: number
+): Promise<Electron.CallbackResponse | null> {
+  const owner = await reportedOwner(guest)
+  const host = owner ? machineOfOwner(owner) : undefined
+  if (!host) return null
+  if (!aPageOnTheMachineAsks(details.resourceType, details.initiatorOrigin)) return { cancel: true }
+  const frame = FRAME_LOADS.has(details.resourceType)
+  if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
+  const macPort = await pageForwards.macPortFor(host, machinePort, guest, frame)
+  if (!webContents.fromId(guest)) pageForwards.pageGone(guest)
+  if (macPort === null) return { cancel: true }
+  const there = onMacPort(details.url, macPort)
+  if (there === details.url) return {}
+  return details.resourceType === 'webSocket' ? { cancel: true } : { redirectURL: there }
 }
 
 function setupBrowserPartition(): void {
@@ -4606,7 +4919,7 @@ function setupBrowserPartition(): void {
     if (decision.kind !== 'ask') return false
     return rememberedPermission(decision.origin, decision.permission) ?? false
   })
-  ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
+  ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
     const target = localFilePath(request.url)
@@ -4653,17 +4966,13 @@ function setupBrowserPartition(): void {
     )
       return callback({ cancel: true })
     const guest = details.webContentsId
-    const fenced =
-      guest !== undefined
-        ? guestDrivenFromAnotherMachine(guest)
-        : details.initiatorOrigin !== undefined &&
-          originDrivenFromAnotherMachine(details.initiatorOrigin)
-    if (!fenced) return callback({})
-    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
-      notePageOpenedForAMachine(details.url)
-    if (details.url.startsWith('file:') || machinePageOf(details.url))
-      return callback({ cancel: true })
-    void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
+    const machinePort = loopbackPortOf(details.url)
+    if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
+      return fenceRequest(details, callback)
+    void loopbackOnTheMachine(details, guest, machinePort).then(
+      (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+      () => callback({ cancel: true })
+    )
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -4803,6 +5112,7 @@ function killTabFromMain(tabId: string): void {
 }
 
 function killTabPty(tabId: string, restarting = false): Promise<boolean> {
+  if (!restarting) cronRunner?.tabClosed(tabId, !!ptyMgr.get(tabId)?.alive)
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
@@ -4847,9 +5157,6 @@ function archiveSession(id: string): boolean {
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
-const ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS = 5_000
-const A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS =
-  AGENT_SHIM_WAITS_MS - ROOM_FOR_THE_CLOSE_CHECK_ITSELF_MS
 
 function closableSessions(): ClosableSession[] {
   const live: ClosableSession[] = allSessions()
@@ -4889,7 +5196,8 @@ const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody ans
 
 async function whatClosingWouldLose(
   target: ClosableSession,
-  info?: ProjectInfo
+  info: ProjectInfo | undefined,
+  waitUntil: number
 ): Promise<string[]> {
   if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
   // CODEX§20
@@ -4897,7 +5205,6 @@ async function whatClosingWouldLose(
     target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
       ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
       : []
-  const waitUntil = Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
   let left = await leftOnceRemovalsEnd(target, info, waitUntil)
   if (left.length && treeRemovals.has(target.treeRoot))
     left = await leftOnceRemovalsEnd(target, info, waitUntil)
@@ -5014,7 +5321,11 @@ async function whatClosingTheRunWouldLose(
 ): Promise<string[]> {
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  return whatClosingWouldLose(
+    session,
+    cronRunTree(root, worktree),
+    Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  )
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -5306,15 +5617,20 @@ async function saveDiscordToken(token: string): Promise<boolean> {
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
-const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
-
 function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
   return startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
     ownerWords: words,
-    backend: HAS_WORKBENCH_BROWSER.includes(butler.backendId) ? butler.backendId : 'claude'
+    backend: discordHelperBackend(butler.backendId)
   }))
+}
+
+function discordHelperBackend(butlerBackend: BackendId): BackendId {
+  const methods = loadSettings().sessionMethods
+  return methods.enabled[butlerBackend]
+    ? butlerBackend
+    : effectiveBackend(methods, new Set(SESSION_BACKENDS))
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
@@ -5471,7 +5787,8 @@ function commitSettings(patch: Partial<Settings>): Settings {
   sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
-  applyKeepAwake(s.keepAwake)
+  if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
+  applyKeepAwake(s.keepAwake || ownerAsleep.asleep())
   setKeepAwakeChecked(s.keepAwake)
   return s
 }
@@ -5597,13 +5914,6 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (
-        opts.kind !== 'shell' &&
-        !opts.resumeSessionId &&
-        !loadSettings().sessionMethods.enabled[opts.kind]
-      ) {
-        throw new Error('This session method is disabled in Settings ▸ Sessions.')
-      }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
@@ -5629,6 +5939,7 @@ function registerIpc(): void {
 
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -5636,6 +5947,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     if (guard?.isBackground(id)) void guard.free(id)
+    if (typedAfter?.includes('\r')) ownerCameBack()
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
@@ -5673,6 +5985,7 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     sessionCommand.tabMoved(oldTabId, newTabId)
+    cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
   })
@@ -5757,16 +6070,6 @@ function registerIpc(): void {
   ipcMain.on(CH.update.restart, () => restartApp())
   ipcMain.handle(CH.update.offer, () => currentOffer())
   ipcMain.on(CH.update.openRelease, () => sendOverlayOpen(releasePageUrl(), 'now'))
-  ipcMain.handle(CH.update.whatsNew, async (): Promise<WhatsNew | null> => {
-    if (!app.isPackaged && !fixturePath()) return null
-    const { show, record } = await whatsNewDecision(
-      loadSettings().lastSeenVersion,
-      app.getVersion(),
-      fetchPublishedReleases
-    )
-    if (record) commitSettings({ lastSeenVersion: record })
-    return show
-  })
 
   ipcMain.handle(CH.accounts.list, () => accountViews())
   ipcMain.handle(
@@ -6203,11 +6506,13 @@ function registerIpc(): void {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
+    if (!on) return
+    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(null)
+    ownerWaiters.delete(guestId)
   })
   ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    const guest = webContents.fromId(guestId)
-    if (guest) guestOwners.set(guest, ownerTabId)
+    recordGuestOwner(guestId, ownerTabId)
   })
   ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
@@ -6257,6 +6562,11 @@ function registerIpc(): void {
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
     const picked = await pickElement(guest)
     if (!picked) return null
+    if (picked.pictureFailed)
+      sendToRenderer(
+        CH.cron.toast,
+        `The picture of the element could not be taken: ${picked.pictureFailed}`
+      )
     const machine = machineOfTab(tabId)
     const picture = picked.png
       ? await (

@@ -618,6 +618,16 @@ describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
     expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
   })
 
+  // AGY§8 AGY§19
+  it("the tab's Scratchpad is agy's own folder for the conversation it holds, under the account folder agy runs with, so it is the very path agy writes its plans to, and follows the tab to the next conversation after /clear", async () => {
+    const id = await boundTab()
+    const brain = path.join(picked!.home, 'antigravity-cli', 'brain')
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, A))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, B))
+  })
+
   it('moves the tab to a stored conversation picked with /resume inside agy, and keeps the one it left', async () => {
     writeSummaries(gemini, [
       {
@@ -811,6 +821,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
     const id = await boundTab()
     const made = path.join(repo, 'new.md')
+    fs.writeFileSync(made, 'a\nb\nc\n')
     hook(id, 'PostToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: made } } })
     hook(id, 'PostToolUse', {
       toolCall: {
@@ -820,6 +831,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     })
     await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
     const edited = path.join(repo, 'old.md')
+    fs.writeFileSync(edited, 'y\nz\nw\n')
     appendConversation(gemini, A, [
       {
         type: 'GENERIC',
@@ -840,6 +852,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it("lists a file agy 1.4.7 wrote with write_file, from its Path, with the Content's lines as added", async () => {
     const id = await boundTab()
     const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\ntwo\n')
     hook(id, 'PostToolUse', {
       toolCall: { name: 'write_file', args: { Path: made, Content: 'one\ntwo\n' } }
     })
@@ -852,6 +865,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   it('lists a file agy 1.4.7 edited with edit_file, from its Path, counting only the lines where Target and Replacement differ', async () => {
     const id = await boundTab()
     const edited = path.join(repo, 'edited.txt')
+    fs.writeFileSync(edited, 'one\nTWO\n2b\nthree')
     hook(id, 'PostToolUse', {
       toolCall: {
         name: 'edit_file',
@@ -873,6 +887,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     const id = await boundTab()
     const missed = path.join(repo, 'missed.txt')
     const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\n')
     hook(id, 'PostToolUse', {
       toolCall: { name: 'edit_file', args: { Path: missed, Target: 'absent', Replacement: 'x' } },
       error: 'target not found'
@@ -1381,6 +1396,30 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       { type: 'prompt' },
       { type: 'stop' }
     ])
+  })
+
+  // AGY§12
+  it("a tab on that machine learns where agy keeps its conversations there from the first hook, and its Scratchpad follows it to the next conversation after /clear, even when that one's first hook comes before the switch", async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const brain = '/home/me/.koloft/agy/work/antigravity-cli/brain'
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: A, artifactDirectoryPath: `${brain}/${A}` }
+      }
+    ])
+    expect(sessions.list()[0].scratchpadDir).toBe(`ssh://devbox${brain}/${A}`)
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: B, artifactDirectoryPath: `${brain}/${B}` }
+      },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0]).toMatchObject({
+      nativeSessionId: B,
+      scratchpadDir: `ssh://devbox${brain}/${B}`
+    })
   })
 
   it("closing the tab ends the machine's tmux session by the name agy's title script gave it, by the conversation's name before that, and by the tab's launch name before it binds; quitting Koloft leaves it running to attach to again", async () => {

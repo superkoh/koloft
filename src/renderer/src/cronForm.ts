@@ -56,13 +56,9 @@ export function emptyFields(backend: BackendId = 'claude', now = new Date()): Jo
     model: '',
     modelOther: '',
     effort: '',
-    permission: NEW_JOB_PERMISSION[backend],
+    permission: NEW_JOB_PERMISSION,
     autoClose: false
   }
-}
-
-export function permissionAfterSwitch(f: JobFields, backend: BackendId): CronPermission {
-  return f.permission === NEW_JOB_PERMISSION[f.backend] ? NEW_JOB_PERMISSION[backend] : f.permission
 }
 
 export function fieldsToSchedule(f: JobFields): Schedule | null {

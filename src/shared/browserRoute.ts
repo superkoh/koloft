@@ -46,19 +46,51 @@ function textOfHex(hex: string): string {
   return new TextDecoder().decode(Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16)))
 }
 
+function machineUrl(scheme: string, host: string, p: string): string {
+  return `${scheme}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
+}
+
+function decodedPathOf(u: URL): string | null {
+  try {
+    return decodeURIComponent(u.pathname)
+  } catch {
+    return null
+  }
+}
+
+function machineFileOf(u: URL, hex: string): RemoteKey | null {
+  const p = decodedPathOf(u)
+  return p === null ? null : parseRemoteKey(formatRemoteKey(textOfHex(hex), p))
+}
+
 export function machinePageUrl(host: string, p: string): string {
-  return `${MACHINE_PAGE_SCHEME}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
+  return machineUrl(MACHINE_PAGE_SCHEME, host, p)
 }
 
 export function machinePageOf(url: string): RemoteKey | null {
   const u = urlOrNull(url)
   const hex = MACHINE_HOST.exec(u?.hostname ?? '')?.[1]
   if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !hex) return null
-  try {
-    return parseRemoteKey(formatRemoteKey(textOfHex(hex), decodeURIComponent(u.pathname)))
-  } catch {
-    return null
-  }
+  return machineFileOf(u, hex)
+}
+
+export const PREVIEW_FILE_SCHEME = 'koloft-file'
+const THIS_MAC = 'localhost'
+
+export function previewFileUrl(p: string): string {
+  const remote = parseRemoteKey(p)
+  return remote
+    ? machineUrl(PREVIEW_FILE_SCHEME, remote.host, remote.path)
+    : `${PREVIEW_FILE_SCHEME}://${THIS_MAC}${encodedPath(p)}`
+}
+
+export function previewFileOf(url: string): string | null {
+  const u = urlOrNull(url)
+  if (u?.protocol !== `${PREVIEW_FILE_SCHEME}:`) return null
+  const hex = MACHINE_HOST.exec(u.hostname)?.[1]
+  const machine = hex ? machineFileOf(u, hex) : null
+  if (machine) return formatRemoteKey(machine.host, machine.path)
+  return u.hostname === THIS_MAC ? decodedPathOf(u) : null
 }
 
 export function pagePathOf(url: string): string | null {
@@ -154,6 +186,7 @@ const DISCORD_DESKTOP_APP_HOST = '127.0.0.1'
 const DISCORD_DESKTOP_APP_FIRST_PORT = 6463
 const DISCORD_DESKTOP_APP_LAST_PORT = 6472
 export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+export const LOOPBACK_NAME = /^(localhost|.+\.localhost)\.?$/i
 
 export function urlOrNull(raw: string): URL | null {
   try {
@@ -161,6 +194,31 @@ export function urlOrNull(raw: string): URL | null {
   } catch {
     return null
   }
+}
+
+const SECURE_SCHEMES = new Set(['https:', 'wss:'])
+const FORWARDABLE_SCHEMES = new Set(['http:', 'ws:', ...SECURE_SCHEMES])
+
+export function loopbackPortOf(url: string): number | null {
+  const u = urlOrNull(url)
+  if (!u || !FORWARDABLE_SCHEMES.has(u.protocol) || !LOOPBACK_HOSTS.has(u.hostname)) return null
+  return Number(u.port) || (SECURE_SCHEMES.has(u.protocol) ? 443 : 80)
+}
+
+const PAGE_LOADS = new Set(['mainFrame', 'subFrame'])
+
+export function aPageOnTheMachineAsks(
+  resourceType: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (PAGE_LOADS.has(resourceType) || initiatorOrigin === undefined) return true
+  return loopbackPortOf(initiatorOrigin) !== null
+}
+
+export function onMacPort(url: string, macPort: number): string {
+  const u = new URL(url)
+  u.port = String(macPort)
+  return u.toString()
 }
 
 // PLATFORM§39

@@ -17,13 +17,19 @@ through `ssh … codex app-server proxy`, speaks WebSocket over that line, and a
 opens a new line and resumes the thread. After the TUI's `initialized` the relay signs
 the server in with `chatgptAuthTokens` read from the picked account's home on the Mac,
 holds the TUI's frames until `account/login/completed`, and answers every token refresh
-request itself. Closing the tab ends the server; the first launch or side question on a
-machine in each app run ends the servers a crash left behind, the side app-server too.
+request itself. Closing the tab ends the server. Quitting Koloft ends it too, unless
+its tab's turn is still working: that server is left to finish the turn with no client,
+as a remote Claude tab's tmux is. The first launch or side question on a
+machine in each app run ends the servers a crash or a quit left behind, the side
+app-server too, so a turn still working when Koloft opens again is cut off then.
 **Rejected**:
 - The TUI in tmux on the machine, like Claude: Koloft would need a relay and node on
   the machine to see the frames, and a second copy of everything CodexObservation does.
 - One shared app-server per machine: one process holds one login and one environment,
   so two tabs on two accounts, or the `koloft` command telling its tab, would clash.
 - `--stdio` over each ssh line: the server and its running turn die with the line.
+- Leaving every server at quit and joining the reopened tab to it: the server keeps the
+  old tab's `KOLOFT_TAB_ID`, finding it needs the thread id, not the tab id, and a
+  server whose tab never reopens stays on the machine.
 - Copying `auth.json` to the machine, or `codex login` there: a refresh token on the
   machine, and a sign-in per machine per account.

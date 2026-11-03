@@ -47,7 +47,7 @@ const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
 const ONE_SESSION_PER_PULL_REQUEST =
-  'When one task will end in several pull requests, start one such session for each pull request; this session then only plans the order, hands out the work and collects the results.'
+  'When work will end in several pull requests, split it by pull request first: each pull request gets its own -w session, whose task covers only that pull request and asks it to push its branch; this session then only plans the order, hands out the work and collects the results. Stacked pull requests (each one built on the one before) go one at a time: start the next session only once the branch it builds on is pushed, and tell it to start its own branch from that one. If you already work in a worktree of your own on such work, even when your task names all of it, make only one pull request yourself, then start the next session the same way and collect its result before you report back.'
 
 const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
@@ -78,6 +78,14 @@ const HELPER_RULES: Record<BackendId, string[]> = {
 }
 
 export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
+
+// MUSE§11 AGY§13 AGY§14
+export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
+  claude: 'AskUserQuestion',
+  codex: CODEX_WAITING_QUESTION_TOOL,
+  muse: 'request_user_input',
+  agy: 'ask_question'
+}
 
 const QUESTION_RULE: Record<BackendId, string> = {
   claude: '',
@@ -120,7 +128,7 @@ koloft help
     Show this guide.
 
 koloft open <file or web address>
-    Show a file or a web page in this session's Workbench.
+    Show a file or a web page in this session's Workbench. In a session on another machine, localhost there means that machine (see WEB PAGES).
     Example: koloft open docs/plan.md
 
 koloft diff <file>
@@ -147,7 +155,7 @@ When it runs: --every 30m, --every 2h, --daily 09:00, --weekly mon,wed,fri@09:00
     --once runs one time on that day at that time, then the task turns itself off.
     --after waits that long after each run's tab is gone, then starts the next run. The wait also starts again when the task is saved or turned on.
 Options: --backend ${BACKEND_CHOICE}, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
-    same: the same permission as a session started from the sidebar's + button.
+    same (the default): the same permission as a session started from the sidebar's + button. With Skip permission prompts off in Settings ▸ Accounts, a run then waits on each ask until someone answers.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
     --when-done close: once the run has finished all its work, its tab, its sidebar row and its worktree go, so the next run is not skipped. A run that asks something, still has work running, or would lose a change or a commit stays open. The default, open, leaves it open for you.
@@ -187,7 +195,7 @@ A workspace is a folder in Koloft's sidebar. Where a command takes --workspace, 
 A session's name often has spaces: put it in quotes, like "Fix docs links". If you forget, Koloft still finds it: where a command takes only a name, all the words are the name; where a message or keys come after the name, the name is the first words that make up a session's name. If two sessions' names could both fit, nothing is done and you are asked for the id.
 
 koloft session list [--workspace <workspace>]
-    List every session the workspace shows in Koloft's sidebar: first the open ones, with name and state (working, asking the owner a question, finished its turn, or idle), and for a Claude session the path of its transcript (the file that holds its conversation); then the rest, closed or asleep, with the machine each runs on, when it was last active and its id. A session started with "koloft session new" says who started it: "started by: you", or the name of the session that did.
+    List every session the workspace shows in Koloft's sidebar: first the open ones, with name and state (working, asking the owner a question, finished its turn, or idle), the id of each one you reach with "koloft session send", and the path of its transcript, the file that holds its whole conversation, every turn and tool call, from its first turn on: a file you can read where you run, or machine:path for one only on a machine you reach with ssh; then the rest, closed or asleep, with the machine each runs on, when it was last active and its id. A session started with "koloft session new" says who started it: "started by: you", or the name of the session that did.
     The butler (Koloft's own AI, which the owner talks to in Koloft or through Discord) takes no options here and gets every session in every workspace, open or closed: name, ${EVERY_KIND}, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, its id, its workspace, and who started it.
 
 koloft session read <id or name> [--last <number>]
@@ -308,7 +316,8 @@ WEB PAGES
 To use the web pages in this session's Workbench, drive them with the playwright-cli command (a tool that controls a browser), which Koloft puts in ${ALL_KINDS} sessions on this computer. Run it by that name, not through npx or a full path, so you get Koloft's copy. "playwright-cli --help" lists its commands.
     Example: playwright-cli open https://example.com
     Example: playwright-cli snapshot
-When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A Claude Code session on another machine (over SSH) reaches the Workbench browser too, through Koloft's ssh connection: there playwright-cli reads the address each time it runs, so $KOLOFT_BROWSER_CDP is not set there and Playwright MCP tools cannot use the Workbench browser, and after Koloft restarts or the connection comes back, run "playwright-cli close" and open the page again. From there it cannot open file:// pages, upload files, or open any address of the owner's Mac (localhost, 127.0.0.1, [::1], the Mac's own network addresses, or a name that points at one of them): those would be the owner's Mac, not the machine, so a web server you start on the machine cannot be opened in the Workbench browser. Other sessions on another machine cannot reach the Workbench browser.`
+When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A Claude Code session on another machine (over SSH) reaches the Workbench browser too, through Koloft's ssh connection: there playwright-cli reads the address each time it runs, so $KOLOFT_BROWSER_CDP is not set there and Playwright MCP tools cannot use the Workbench browser, and after Koloft restarts or the connection comes back, run "playwright-cli close" and open the page again. From there it cannot open file:// pages, upload files, or open a server of the owner's Mac (the Mac's own network addresses, its other 127.x addresses, names ending in .localhost, or a name that points at the Mac). Other sessions on another machine cannot reach the Workbench browser.
+In a web tab of a session on another machine, only localhost, 127.0.0.1 and [::1] mean the machine, not the owner's Mac (0.0.0.0 does not, nor a name set in the machine's own hosts file): a web server you start there opens at that address, and Koloft brings its port over the ssh connection. If nothing answers on that port, or the machine's ssh server does not allow port forwarding, the page does not open and the owner sees why. If the owner's Mac already uses that port, the page opens on another port number, and what the page still sends to the old port, its websocket too, fails: then start the server on a port the Mac does not use.`
 
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'

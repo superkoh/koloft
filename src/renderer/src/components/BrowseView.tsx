@@ -20,6 +20,7 @@ import type {
 } from '@shared/types'
 import { HIDDEN_BY_DEFAULT_NAMES } from '@shared/types'
 import { basename } from '@shared/preview'
+import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
   NO_MATCHES,
@@ -213,7 +214,8 @@ export function BrowseView({
   showIgnoredRef.current = showIgnored
 
   const home = window.api.home
-  const scratchpadDir = session?.details?.claude?.scratchpadDir
+  const scratchpadDir = session?.scratchpadDir
+  const backendId = session?.backendId
 
   const loadDir = useCallback(async (dir: string): Promise<void> => {
     if (loadedRef.current.has(dir)) return
@@ -346,18 +348,23 @@ export function BrowseView({
 
   // CC§2
   const scratchTimerRef = useRef<{ dir: string; t: ReturnType<typeof setTimeout> } | null>(null)
+  const agyScratch =
+    backendId === 'agy' && scratchpadDir ? `${scratchpadDir}/${AGY_SCRATCH_FOLDER}` : undefined
   useEffect(() => {
     if (!active || !scratchpadDir) return
     const pending = scratchTimerRef.current
     if (pending?.dir === scratchpadDir) return
     if (pending) clearTimeout(pending.t)
-    const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => relist(scratchpadDir)
+    const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => {
+      relist(scratchpadDir)
+      if (agyScratch) relist(agyScratch)
+    }
     const t = setTimeout(() => {
       scratchTimerRef.current = null
       relistScratchpadWithoutRelistingEveryExpandedDir()
     }, SCRATCHPAD_RELIST_THROTTLE_MS)
     scratchTimerRef.current = { dir: scratchpadDir, t }
-  }, [active, scratchpadDir, session?.updatedAt, relist])
+  }, [active, scratchpadDir, agyScratch, session?.updatedAt, relist])
   useEffect(
     () => () => {
       if (scratchTimerRef.current) clearTimeout(scratchTimerRef.current.t)
@@ -365,23 +372,27 @@ export function BrowseView({
     []
   )
 
-  // CC§2 PLATFORM§28
+  // CC§2 PLATFORM§28 AGY§8
   const scratchLive = !!scratchpadDir && (children[scratchpadDir]?.length ?? 0) > 0
   useEffect(() => {
     const dir = scratchpadDir
     if (!active || !dir) return
-    relist(dir)
+    const relistWithScratch = (): void => {
+      relist(dir)
+      if (agyScratch) relist(agyScratch)
+    }
+    relistWithScratch()
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed) => {
       if (changed !== dir) return
-      relist(dir)
+      relistWithScratch()
       setFsTick((x) => x + 1)
     })
     return () => {
       off()
       window.api.fs.unwatchDir(dir)
     }
-  }, [active, scratchpadDir, scratchLive, root, relist])
+  }, [active, scratchpadDir, agyScratch, scratchLive, root, relist])
 
   const idx = useMemo(() => sessionIndex(session, root), [session, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
@@ -389,8 +400,14 @@ export function BrowseView({
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
 
   const scratchEntries = useMemo(
-    () => scratchpadEntries(scratchpadDir ? children[scratchpadDir] : undefined, scratchpadDir),
-    [children, scratchpadDir]
+    () =>
+      scratchpadEntries(
+        scratchpadDir ? children[scratchpadDir] : undefined,
+        scratchpadDir,
+        backendId,
+        children
+      ),
+    [children, scratchpadDir, backendId]
   )
   const scratchListed = useMemo(() => {
     const s = new Set<string>()
@@ -733,7 +750,10 @@ export function BrowseView({
     const entries = children[dir]
     if (!entries)
       return loading.has(dir) ? <div className="ft-hint bv-loading">Loading…</div> : <></>
-    const visible = section === 'scratchpad' ? scratchpadEntries(entries, scratchpadDir) : entries
+    const visible =
+      section === 'scratchpad'
+        ? scratchpadEntries(entries, scratchpadDir, backendId, children)
+        : entries
     const hidden = hiddenTouchedUnder(dir, visible, idx.touchedInProject)
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)

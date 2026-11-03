@@ -92,6 +92,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- **No folder of the session's own drafts or plans.** 2026-10-31, `Muse Code 1.4.11
+  (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`, no network), `muse exec
+  --approval-mode never` against a fake model server: the session folder held
+  `session.jsonl`, `subagent/<child>/`, `cron.db`, `approval-review/`, a `cli-*.log` and
+  `.session.lock`, all Muse's own records, and the work folder stayed empty. The
+  binary's own prompt text lists a session folder as `session.jsonl`, `subagent/` and
+  `tool-outputs/` (large tool outputs). Its `image_generation` tool says "Results are
+  saved under generated_images/", but that tool was not offered to the fake model even
+  with `supports_image_generation: true` in its catalog row, so where `generated_images/`
+  sits is **not probed yet** (it needs a Meta account).
 - **Tokens per model call** (2026-10-19, Muse Code 1.4.9 Linux arm64, `muse exec` in
   Docker against a fake model server, numbers checked against what it sent): one
   `runtime.session` record with `payload.kind == "run"` and `payload.event.kind ==
@@ -159,6 +169,20 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
   file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.
+- **A second `muse resume` of a held session neither refuses nor opens.** 2026-11-02,
+  `Muse Code 1.4.11 (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`,
+  `--network none`), two TUIs on `--provider echo --trust-workspace`, each in a pty
+  driver that answered the terminal's queries: the first TUI's registry file named its
+  own pid (`pid=15`, `/proc/15/comm` `muse-bin-1.4.11`) and it held the session's
+  `.session.lock` (a `FLOCK WRITE` in `/proc/locks`). `muse resume <id>` of that session
+  from a second pty stayed on "Validating session data" for the 45 s watched, typed
+  text changed nothing, it wrote no registry file and the first file kept `pid=15`; it
+  was still stuck 10 s after the first TUI was killed with SIGKILL. With the first TUI
+  killed before the resume, the same command went on through "Restoring conversation"
+  to its prompt and rewrote the file with its own pid. So the registry file plus a live
+  pid whose `/proc/<pid>/comm` names muse is the check on Linux too, read over ssh for a
+  session on another machine: the file outlives its muse (above), and a container that
+  restarts hands low pids such as 15 out again.
 - **Muse must create `runtime/muse/sessions` itself**: when that folder already existed
   before muse started, muse wrote no registry file at all (Linux).
 - Subagent logs sit under `<session>/subagent/<child>/session.jsonl`.
@@ -221,6 +245,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
   python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
   macOS.
+- Esc during a turn stops it and puts the prompt back in the input box: with the fake
+  model server holding `POST /responses` open, the screen read "◇ Thinking (4s · esc to
+  interrupt)"; one Esc removed that line and left `please list the files` in the box,
+  unsent; text typed next was added after it, and Enter sent both as a new turn
+  (2026-10-31, muse 1.4.11, `koloft-muse-probe-1411` Docker image `--network none`,
+  tmux 3.3a, the fake model server of the preamble). macOS: not probed.
 
 ## §8 Shell commands inside Muse (macOS)
 
@@ -666,3 +696,49 @@ butler's to-do method, which names the files each agent reads.
   the prompt and its echoed reply were in every one of them.
 - **`/diff` is not a Muse command.** Typed the same way, it went to the model as a prompt:
   a `userMessage` "/diff" and the reply "echo: /diff".
+
+## §20 `/fork`
+
+How established: 2026-11-01, `Muse Code 1.4.14 (1.4.14-R7309.1)` (the
+`koloft-muse-probe-1411` image after `muse --version` with `MUSE_SYNC_UPDATE=1`), Linux
+Docker with `--network none` and `MUSE_NO_AUTO_UPDATE=1`, `muse --provider echo
+--trust-workspace` in a tmux 3.3a pane (160×50), every hook event of §9 logged through
+`TBH_MANAGED_HOOKS_PATH`, the registry folder (§4) and `muse serve` (§5) read after each
+step: `/fork` alone in four runs, `/fork <text>` in three, the same each time; the
+30-second listing below in one. OSC 7501 frames were not seen (tmux, §6). macOS: not
+probed.
+
+The command menu shows `/fork [prompt]` — "Branch this session from the latest message".
+It has two forms that behave differently.
+
+- **`/fork` alone makes a copy and stays where it was.** Below the last reply it prints
+  `Fork created: <new id>`, `Source session stays active.`, `Continue the fork:` and
+  `muse resume <new id>`. No hook fires, the registry file keeps the old id, and the next
+  prompt goes to the old session (its `UserPromptSubmit` and `Stop` carry the old id).
+  The copy's folder holds only `.session.lock` and `session.jsonl`.
+- **`/fork <text>` moves the terminal onto a new copy and sends `<text>` there.** The
+  screen redraws with `resumed session <new id>` and the copied turns, then the prompt
+  and its reply. Hooks, in order: `SessionEnd` (whose `session_id` is the new id),
+  `SessionStart` with `source: "fork"`, then `UserPromptSubmit` and `Stop`, all with the
+  new id. The old id's registry file goes and the new id's file appears with the same
+  pid, as on `/clear` (§4). Every later prompt goes to the new session.
+- **The copy's `session.jsonl` starts with a `session.fork.created` record** (about
+  700 bytes, compact JSON with `"payload_type":"session.fork.created"` in its first
+  300 bytes), payload `{fork_session_id, source_session_id, source_cut_cursor,
+  created_by_command_id, …}`, then `session.fork.model_prefix` and one
+  `session.fork.turn` per copied turn. The copied turns' own records follow only as
+  `{"retained_marker":"omitted_live_only", …, "omitted_record":{…}}` lines, with no
+  top-level `payload_type`; the moved-onto copy then has
+  `runtime.session_start.intake_v3` with `activation_source: "fork"`. A session started
+  fresh or by `/clear` starts with another record. On `/fork <text>` this file was
+  written about 0.25 s before the registry swap (its `createdAt` against the registry
+  file's mtime, one run). The source's own log gets
+  `command.invoked {command: "/fork"}` and `runtime.command_intake.branch.received
+  {command: {kind: "session_fork", requested_fork_session_id}}`.
+- **`session/list`**: the copy is `kind: "root"` with `workspaceRoot: null` and
+  `forkedFrom: {sessionId: <source id>, commandId, cutCursor, cutExplicit: false}`;
+  `title` and `firstUserPrompt` are the source's first prompt; `path` is its own
+  `session.jsonl`. A `/fork` copy has no `name` and is listed within seconds. A
+  `/fork <text>` copy is **not listed at all while the TUI holds it** (15 listings over
+  30 s), and is listed after `/exit` with a made-up `name` and `turnCount` counting the
+  copied turns too. The source stays listed either way.

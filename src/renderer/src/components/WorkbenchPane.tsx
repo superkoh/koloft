@@ -10,7 +10,7 @@ import {
   type JSX
 } from 'react'
 import { IconDownload, IconMore } from '../icons'
-import { folderFileOf, routeFor } from '@shared/browserRoute'
+import { folderFileOf, loopbackPortOf, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -162,7 +162,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const ownerBackend = useStore(
-    (s) => backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ?? 'claude'
+    (s) =>
+      backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ??
+      s.settings.sessionMethods.defaultBackend
   )
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
@@ -248,6 +250,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const countedUrl = useRef(new Map<string, string>())
   const panelWorkspace = useStore((s) =>
     ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
+  )
+  const panelMachine = useStore(
+    (s) => s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote
   )
 
   // PLATFORM§9
@@ -1025,12 +1030,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     closeFind()
   }, [activeTab?.id, ownerTab])
 
-  useWatchlessRefresh(
-    watchDead && visible,
-    session?.updatedAt,
-    WATCHLESS_REFRESH_THROTTLE_MS,
-    reread
-  )
+  useWatchlessRefresh(watchDead && visible, session, WATCHLESS_REFRESH_THROTTLE_MS, reread)
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {
     setCaps((prev) => (sameCaps(prev[tabId] ?? NO_CAPS, next) ? prev : { ...prev, [tabId]: next }))
@@ -1324,6 +1324,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         <BrowserAddressBar
           url={activeTab?.url ?? ''}
           workspace={panelWorkspace}
+          machine={
+            panelMachine && loopbackPortOf(activeTab?.url ?? '') !== null ? panelMachine : null
+          }
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
           canForward={activeRuntime.canForward}
@@ -1551,6 +1554,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             sessionCold={sessionCold}
             live={!!activeTab && live.includes(activeTab.id)}
             agentLabel={BACKEND_LABEL[ownerBackend]}
+            machine={panelMachine?.host ?? null}
             onLoad={(t) => activate(t.id)}
             onReloadCrashed={(t) =>
               patchRuntime(t.id, {

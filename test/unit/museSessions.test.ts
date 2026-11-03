@@ -582,6 +582,7 @@ describe('MuseSessions turns from hooks', () => {
 
   it('lists a file muse wrote with its added and removed lines', async () => {
     const id = await boundTab()
+    fs.writeFileSync(path.join(repo, 'notes.md'), 'new\nmore\n')
     hook(id, 'PostToolUse', {
       session_id: A,
       tool_name: 'edit_file',

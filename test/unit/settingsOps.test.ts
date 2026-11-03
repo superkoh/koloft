@@ -40,7 +40,7 @@ describe('buildResetPatch (FR-12)', () => {
         'hintsOff',
         'hintsSeen',
         'keepAwake',
-        'lastSeenVersion',
+        'ownerAsleepSince',
         'onboardingSeen',
         'notesFolded',
         'notesHeight',
@@ -48,7 +48,6 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
-        'showUsage',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
@@ -243,6 +242,20 @@ describe('sanitizeLoadedSettings and where new projects go', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
+  it('drops the last-seen version an older build kept for its What’s new window, so the next save clears it from disk', () => {
+    expect(
+      sanitizeLoadedSettings({ fontSize: 13, lastSeenVersion: '0.59.1' } as never)
+    ).not.toHaveProperty('lastSeenVersion')
+  })
+
+  it('drops the cost and context usage switch an older build saved, so the next save clears it from disk', () => {
+    expect(sanitizeLoadedSettings({ fontSize: 13, showUsage: true } as never)).not.toHaveProperty(
+      'showUsage'
+    )
+  })
+})
+
 describe('sanitizeLoadedSettings and the account list', () => {
   it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
     const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
@@ -307,21 +320,63 @@ describe('session methods', () => {
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })
-  it('keeps Claude enabled and replaces a disabled or unknown default', () => {
-    for (const raw of [
-      null,
-      'codex',
-      { defaultBackend: 'unknown' },
-      { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
-    ]) {
+  it('replaces a disabled or unknown default with the first method still on', () => {
+    for (const raw of [null, 'codex', { defaultBackend: 'unknown' }]) {
       const methods = sanitizeLoadedSettings({ sessionMethods: raw }).sessionMethods
       expect(methods.defaultBackend).toBe('claude')
       expect(methods.enabled.claude).toBe(true)
     }
     expect(
       sanitizeLoadedSettings({
+        sessionMethods: { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'muse',
+      enabled: { claude: false, codex: false, muse: true, agy: true }
+    })
+    expect(
+      sanitizeLoadedSettings({
         sessionMethods: { defaultBackend: 'codex', enabled: { codex: true } }
       }).sessionMethods.defaultBackend
     ).toBe('codex')
+  })
+  it('lets Claude be off while another method is on, and turns Claude back on when nothing is', () => {
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'claude',
+          enabled: { claude: false, codex: true, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'codex',
+      enabled: { claude: false, codex: true, muse: false, agy: false }
+    })
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'agy',
+          enabled: { claude: false, codex: false, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'claude',
+      enabled: { claude: true, codex: false, muse: false, agy: false }
+    })
+  })
+  it('moves Assist off a method that is switched off, to the default method, and leaves it on one that is on', () => {
+    const off = { claude: false, codex: true, muse: true, agy: true }
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: true, backend: 'claude' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: true, backend: 'muse' })
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: false, backend: 'agy' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: false, backend: 'agy' })
   })
 })

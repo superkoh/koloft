@@ -5,6 +5,7 @@ import { TurnLog, type Turn } from '@shared/turns'
 import { record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
 import { labelsOf, type Question } from './discord/dialog'
+import { pipeSecretTo } from './secretOnStdin'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
 const LIST_PAGE = 200
@@ -100,7 +101,7 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-// MUSE§5
+// MUSE§5 MUSE§20
 function museSession(
   raw: unknown,
   rootOf: (sessionId: string) => string | undefined
@@ -214,7 +215,8 @@ type MuseSignIn = 'subscription' | 'apiKey' | 'none'
 // MUSE§13
 const SIGN_IN_OF_STATE: Record<string, MuseSignIn> = {
   accountLogin: 'subscription',
-  apiKey: 'apiKey'
+  apiKey: 'apiKey',
+  envKey: 'apiKey'
 }
 
 // MUSE§13
@@ -227,21 +229,12 @@ export async function museSignIn(options: ServeOptions): Promise<MuseSignIn> {
 
 // MUSE§13
 export function storeMuseKey(options: ServeOptions, key: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(options.binary, ['auth', 'set', '--provider', 'meta', '--api-key-stdin'], {
-      cwd: os.homedir(),
-      env: options.env,
-      stdio: ['pipe', 'ignore', 'pipe']
-    })
-    let said = ''
-    child.stderr.on('data', (chunk) => (said += String(chunk)))
-    child.on('error', reject)
-    child.stdin.on('error', reject)
-    child.on('exit', (code) =>
-      code === 0 ? resolve() : reject(new Error(said.trim() || 'muse auth set failed'))
-    )
-    child.stdin.end(key)
-  })
+  return pipeSecretTo(
+    options.binary,
+    ['auth', 'set', '--provider', 'meta', '--api-key-stdin'],
+    options.env,
+    key
+  )
 }
 
 // MUSE§5

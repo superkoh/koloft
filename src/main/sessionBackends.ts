@@ -20,6 +20,11 @@ import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
 
+export interface TranscriptPlaces {
+  onThisMac?: string
+  onMachine?: string
+}
+
 export interface SessionBackend {
   id: BackendId
   recoversWorktrees?: true
@@ -42,6 +47,7 @@ export interface SessionBackend {
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
+  transcriptPlaces(key: string): TranscriptPlaces | undefined
   permissionClass(tabId: string): ModeClass
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
@@ -67,6 +73,7 @@ export class SessionBackends {
   askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
+  turnedOff: (backend: BackendId) => string | null = () => null
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -167,6 +174,10 @@ export class SessionBackends {
     return this.forSession(key).turns(key, n)
   }
 
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    return this.forSession(key).transcriptPlaces(key)
+  }
+
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
   }
@@ -220,7 +231,9 @@ export class SessionBackends {
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const refused = this.noUsableAccount(options.kind)
+    const refused =
+      (!options.resumeSessionId && this.turnedOff(options.kind)) ||
+      this.noUsableAccount(options.kind)
     if (refused) return Promise.reject(new Error(refused))
     return this.get(options.kind).create(options)
   }

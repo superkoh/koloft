@@ -1,6 +1,8 @@
 import { execFileSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
+import http from 'http'
+import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -37,7 +39,7 @@ import {
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { BROWSER, guestByUrl } from './helpers/browser'
+import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -61,6 +63,7 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
+  switchToRow,
   terminalText,
   termIds,
   waitBooted,
@@ -87,6 +90,7 @@ import {
   remoteKeyFor,
   runOnBastion,
   runOnTarget,
+  servePageOnTarget,
   startSshLab,
   stopMachine,
   stopSshLab,
@@ -119,6 +123,7 @@ const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
 const NOT_ASCII = '中文 ⏺ …'
+const NOT_ASCII_FILE = '中文.txt'
 
 function mirroredSaidFiles(env: E2EEnv): string[] {
   const root = path.join(env.userData, 'remote')
@@ -261,6 +266,33 @@ function publishOnOrigin(lab: SshLab, from: number, to: number): void {
     'kuser',
     `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
   )
+}
+
+function portFreeOnTheMac(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as net.AddressInfo
+      s.close(() => resolve(port))
+    })
+  })
+}
+
+function serveOnTheMac(port: number, body: string): Promise<http.Server> {
+  return new Promise((resolve) => {
+    const s = http.createServer((_q, r) => r.end(body)).listen(port, () => resolve(s))
+  })
+}
+
+function fetchOnTheMacOnAFreshConnection(port: number, host = '127.0.0.1'): Promise<string> {
+  return new Promise((resolve) => {
+    http
+      .get({ host, port, agent: false }, (r) => {
+        let body = ''
+        r.on('data', (c) => (body += c))
+        r.on('end', () => resolve(body))
+      })
+      .on('error', () => resolve('refused'))
+  })
 }
 
 async function addMachine(page: Page, alias: LabAlias, user: string): Promise<void> {
@@ -725,6 +757,30 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  // PLATFORM§37
+  test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets the machine’s C.UTF-8 as LC_CTYPE, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page, lab }) => {
+      runOnTarget(lab, 'kuser', `: > "proj/${NOT_ASCII_FILE}"`)
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write('/sh echo "ctype=[$LC_CTYPE]"\r')
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
+        .toContain('ctype=[C.utf8]')
+      await openSessionTerminal(app, page)
+      const shell = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
+      if (!shell) throw new Error('the Workbench shell carries no data-pty')
+      await runIn(page, panelTerm(page), 'ls ~/proj; echo "LS_$((6*7))"')
+      await expect
+        .poll(() => terminalText(page, shell), { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        .toContain('LS_42')
+      expect(await terminalText(page, shell)).toContain(NOT_ASCII_FILE)
+    })
+  })
+
   test('E-SSH-14: koloft open, run inside a session on the machine, shows a file there in that session’s Workbench, and a file the machine does not have is refused', async ({
     env
   }) => {
@@ -789,7 +845,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-35: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
+  test('E-SSH-36: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
     env
   }) => {
     await withLab(env, async ({ app, page }) => {
@@ -850,6 +906,88 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       })
     } finally {
       await server.close()
+    }
+  })
+
+  // PLATFORM§33
+  test('E-SSH-40: a localhost page the agent opens in a session on a machine behind the jump host, while a session on this Mac is the one selected, or drives with playwright-cli there, is the machine’s, through a forward on that ssh connection that keeps the port while the Mac has it free, takes another while a Mac server holds it, and goes when its web tab closes', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [free, heldOnMac] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const macServer = await serveOnTheMac(heldOnMac, 'from the Mac')
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(lab, free, '<title>first</title><body>first page on the machine</body>')
+        servePageOnTarget(
+          lab,
+          heldOnMac,
+          '<title>second</title><body>second page on the machine</body>'
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+        await startSessionIn(page, 'ws-a')
+
+        await page.evaluate(
+          ([t, l]) => window.api.terminal.write(t, l + '\r'),
+          [remoteTab, `/open http://localhost:${free}/`]
+        )
+        await expect
+          .poll(() => terminalText(page, remoteTab), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain(`opened http://localhost:${free}/`)
+        await switchToRow(page, remoteRow)
+        const first = await guestByUrl(app, `localhost:${free}/`)
+        await expect(first.locator('body')).toHaveText('first page on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+        expect(await fetchOnTheMacOnAFreshConnection(free)).toContain('first page on the machine')
+        expect(await fetchOnTheMacOnAFreshConnection(free, '::1')).toContain(
+          'first page on the machine'
+        )
+
+        await expect
+          .poll(
+            () => runOnTarget(lab, 'kuser', `cat .koloft/tabs/${remoteTab}.cdp 2>/dev/null; true`),
+            {
+              timeout: BACKGROUND_CONNECT_MS
+            }
+          )
+          .toMatch(/^ws:\/\//)
+        const run = agentShell(page, remoteTab, KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS)
+        expect(
+          (await run(`playwright-cli open http://localhost:${free}/`)).replace(/\n/g, '')
+        ).toContain('Page Title: first')
+        await run('playwright-cli close')
+
+        await runIn(page, centerTerm(page), `/open http://localhost:${heldOnMac}/`)
+        const second = await guestByUrl(
+          app,
+          new RegExp(`localhost:(?!${free}/|${heldOnMac}/)\\d+/$`),
+          { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS }
+        )
+        await expect(second.locator('body')).toHaveText('second page on the machine')
+        const macPort = Number(new URL(second.url()).port)
+        await expect.poll(() => addressValue(page)).toBe(`http://localhost:${macPort}/`)
+        expect(await fetchOnTheMacOnAFreshConnection(heldOnMac)).toBe('from the Mac')
+
+        const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
+        while ((await webTabs.count()) > 0)
+          await webTabs.first().locator(BROWSER.tabCloseIn).click()
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free, '::1'), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
+          .toBe('refused')
+      })
+    } finally {
+      macServer.close()
     }
   })
 
@@ -1515,6 +1653,67 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       },
       (lab) => installFakeCodexOnTarget(lab)
     )
+  })
+
+  // PLATFORM§33
+  test('E-SSH-41: a localhost address typed into a web tab of a Codex session on a machine behind the jump host opens the machine’s page there, as in a Claude Code tab', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    const port = await portFreeOnTheMac()
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        servePageOnTarget(lab, port, '<body>a page Codex serves on the machine</body>')
+        await codexTabOnKtKey(page)
+        await newWebTab(page)
+        await typeInAddressBar(page, `localhost:${port}`)
+        const guest = await guestByUrl(app, `localhost:${port}/`)
+        await expect(guest.locator('body')).toHaveText('a page Codex serves on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // PLATFORM§8 PLATFORM§33
+  test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, hands its result back to the page that opened it, and its address bar does not call that localhost Not secure', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [port, popupPort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    await withLab(env, async ({ app, page, lab }) => {
+      servePageOnTarget(
+        lab,
+        port,
+        '<title>machine</title><p id="result">waiting</p>' +
+          `<button id="signin" onclick="window.open('http://localhost:${popupPort}/popup', 'signin', 'width=400,height=400')">sign in</button>` +
+          '<script>addEventListener("message", (e) => { document.getElementById("result").textContent = e.data })</script>'
+      )
+      servePageOnTarget(
+        lab,
+        popupPort,
+        '<title>popup</title><script>window.opener.postMessage("popup on the machine", "*")</script>'
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await newWebTab(page)
+      await typeInAddressBar(page, `localhost:${port}`)
+      const guest = await guestByUrl(app, `localhost:${port}/`)
+      await guest.click('#signin')
+      await expect(guest.locator('#result')).toHaveText('popup on the machine', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(page.locator(BROWSER.tabOpen)).toHaveCount(1)
+      let bar: Page | undefined
+      await expect
+        .poll(() => (bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))))
+        .toBeTruthy()
+      await expect(bar!.getByRole('textbox', { name: 'Address' })).toHaveValue(
+        `http://localhost:${popupPort}/popup`
+      )
+      await expect(bar!.getByText('Not secure')).toBeHidden()
+    })
   })
 
   // CC§3

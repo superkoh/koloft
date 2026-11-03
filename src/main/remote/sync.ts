@@ -10,6 +10,7 @@ import {
   type ShellReport
 } from './install'
 import { sessionIdOfTmux } from './launch'
+import { REMOTE_CLAUDE_PROJECTS } from './paths'
 
 // CC§2 CC§4 PLATFORM§34
 function projectFlags(slugs: string[]): string[] {
@@ -332,7 +333,7 @@ export class RemoteSync {
         const transcripts = await pull(
           'transcripts',
           mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
-          '.claude/projects',
+          REMOTE_CLAUDE_PROJECTS,
           target.mirrorProjectsRoot,
           projectFlags(slugs)
         )

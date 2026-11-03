@@ -5,7 +5,7 @@ import {
   scoreSnapshot,
   leximaxFinalists,
   RESET_TIE_S,
-  D5,
+  DW,
   GRACE,
   type Score,
   type ScoreRoute
@@ -25,6 +25,7 @@ function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
     r7: 0,
     roi: 0,
     overage: '?',
+    has5h: true,
     hasOi: false,
     at: NOW_S * 1000,
     ...p
@@ -41,51 +42,48 @@ function finalists(cands: { name: string; score: Score }[]): string[] {
 
 describe('U2 · disc edges', () => {
   it('r=0 (missing) → 1.0 — conservative, no discount', () => {
-    expect(disc(0, D5, NOW_S)).toBe(1.0)
+    expect(disc(0, DW, NOW_S)).toBe(1.0)
   })
   it('reset already past → 0.0 — the window data is void', () => {
-    expect(disc(NOW_S - 10, D5, NOW_S)).toBe(0.0)
+    expect(disc(NOW_S - 10, DW, NOW_S)).toBe(0.0)
   })
   it('halfway inside the window → linear 0.5', () => {
-    expect(disc(NOW_S + D5 / 2, D5, NOW_S)).toBeCloseTo(0.5, 10)
+    expect(disc(NOW_S + DW / 2, DW, NOW_S)).toBeCloseTo(0.5, 10)
   })
   it('at/after the window edge → 1.0', () => {
-    expect(disc(NOW_S + D5, D5, NOW_S)).toBe(1.0)
+    expect(disc(NOW_S + DW, DW, NOW_S)).toBe(1.0)
   })
 })
 
 describe('U2 · component formulas', () => {
-  it('"90% but clears in 10 min": p5 = 0.9 × 600/10800 = 0.05 — beats an idle 50% account', () => {
-    const hot = score({ u5: 0.9, r5: NOW_S + 600 })
-    expect(hot.s1).toBeCloseTo(0.05, 10)
-    const mild = score({ u5: 0.5 })
+  it('weekly use counts from 0%, and 5h use does not count at all: a hot-5h 10% week beats an idle-5h 30% week', () => {
+    expect(score({ u7: 0.2 }).s1).toBeCloseTo(0.2, 10)
     expect(
       finalists([
-        { name: 'hot', score: hot },
-        { name: 'mild', score: mild }
+        { name: 'hot5h', score: score({ u5: 0.85, u7: 0.1 }) },
+        { name: 'busyWeek', score: score({ u5: 0, u7: 0.3 }) }
       ])
-    ).toEqual(['hot'])
+    ).toEqual(['hot5h'])
   })
 
-  it('ramp has NO upper clamp: u7·f7=0.95 → exactly 1.0; u7·f7=1.0 → 1.2', () => {
-    expect(score({ u7: 0.95 }).s1).toBeCloseTo(1.0, 10)
-    expect(score({ u7: 1.0 }).s1).toBeCloseTo(1.2, 10)
+  it('a week resetting soon is discounted: 50% used with half the 6h window left reads 25%', () => {
+    expect(score({ u7: 0.5, r7: NOW_S + DW / 2 }).s1).toBeCloseTo(0.25, 10)
   })
 
   it('rejected but resetting inside grace: pen=0.5, NOT hard-limited', () => {
     const s = score({ u5: 0.99, s5: 'rejected', r5: NOW_S + 900 })
-    expect(s.s1).toBeCloseTo(0.99 * (900 / 10800) + 900 / 1800, 10)
+    expect(s.s1).toBeCloseTo(900 / 1800, 10)
     expect(s.hardLimited).toBe(false)
   })
 
   it('rejected with reset ≥ grace away: pen=1.0 and hard-limited', () => {
     const s = score({ u5: 1.0, s5: 'rejected', r5: NOW_S + 3600 })
-    expect(s.s1).toBeCloseTo(1.0 * (3600 / 10800) + 1.0, 10)
+    expect(s.s1).toBeCloseTo(1.0, 10)
     expect(s.hardLimited).toBe(true)
   })
 
   it('rejected with UNKNOWN reset (r=0): pen=0, not hard-limited — never spend on unknowns', () => {
-    const s = score({ u5: 0.4, s5: 'rejected', r5: 0 })
+    const s = score({ u7: 0.4, s7: 'rejected', r7: 0 })
     expect(s.s1).toBeCloseTo(0.4, 10)
     expect(s.hardLimited).toBe(false)
   })
@@ -109,14 +107,14 @@ describe('U2 · fable saturation semantics', () => {
     expect(
       finalists([
         { name: 'full', score: full },
-        { name: 'idle', score: score({ u5: 0.5 }) }
+        { name: 'idle', score: score({ u7: 0.5 }) }
       ])
     ).toEqual(['idle'])
   })
 
-  it('ALL fable-full → L1 ties at 1.25, L2 compares 5h', () => {
-    const a = score({ uoi: 1.0, u5: 0.6 })
-    const b = score({ uoi: 1.0, u5: 0.2 })
+  it('ALL fable-full → L1 ties at 1.25, L2 compares the week', () => {
+    const a = score({ uoi: 1.0, u7: 0.6 })
+    const b = score({ uoi: 1.0, u7: 0.2 })
     expect(
       finalists([
         { name: 'a', score: a },
@@ -138,13 +136,13 @@ describe('U2 · route: opus discards the fable dimension', () => {
     expect(finalists(cands('opus'))).toEqual(['B'])
   })
 
-  it('opus keeps THREE components (s3 is 0, never undefined) so a full tie still resolves', () => {
-    const s = scoreSnapshot(snap({ u5: 0.3, uoi: 1.0, soi: 'allowed', hasOi: true }), NOW_S, 'opus')
-    expect(s.s3).toBe(0)
+  it('opus scores the fable part as 0, never undefined, so a full tie still resolves', () => {
+    const s = scoreSnapshot(snap({ u7: 0.3, uoi: 1.0, soi: 'allowed', hasOi: true }), NOW_S, 'opus')
+    expect(s.s2).toBe(0)
     expect(s.s1).toBeCloseTo(0.3, 10)
     const tied = [
-      { name: 'x', score: scoreSnapshot(snap({ u5: 0.3 }), NOW_S, 'opus') },
-      { name: 'y', score: scoreSnapshot(snap({ u5: 0.3 }), NOW_S, 'opus') }
+      { name: 'x', score: scoreSnapshot(snap({ u7: 0.3 }), NOW_S, 'opus') },
+      { name: 'y', score: scoreSnapshot(snap({ u7: 0.3 }), NOW_S, 'opus') }
     ]
     expect(finalists(tied)).toEqual(['x', 'y'])
   })
@@ -167,10 +165,9 @@ describe('U2 · route: opus discards the fable dimension', () => {
 })
 
 describe('U2 · eps-cascaded leximax', () => {
-  const raw = (s1: number, s2 = 0, s3 = 0, tiebreak = 0): Score => ({
+  const raw = (s1: number, s2 = 0, tiebreak = 0): Score => ({
     s1,
     s2,
-    s3,
     tiebreak,
     pen: 0,
     hardLimited: false
@@ -211,9 +208,9 @@ describe('U2 · eps-cascaded leximax', () => {
   it('full tie → a clearly earlier fable weekly reset wins alone; missing tiebreak reads as +∞', () => {
     expect(
       finalists([
-        { name: 'late', score: raw(0.1, 0, 0, NOW_S + 1001 + RESET_TIE_S) },
-        { name: 'early', score: raw(0.1, 0, 0, NOW_S + 1000) },
-        { name: 'none', score: raw(0.1, 0, 0, 0) }
+        { name: 'late', score: raw(0.1, 0, NOW_S + 1001 + RESET_TIE_S) },
+        { name: 'early', score: raw(0.1, 0, NOW_S + 1000) },
+        { name: 'none', score: raw(0.1, 0, 0) }
       ])
     ).toEqual(['early'])
   })
@@ -221,8 +218,8 @@ describe('U2 · eps-cascaded leximax', () => {
   it('tiebreak also equal → both stay, in list order', () => {
     expect(
       finalists([
-        { name: 'first', score: raw(0.1, 0, 0, NOW_S + 1000) },
-        { name: 'second', score: raw(0.1, 0, 0, NOW_S + 1000) }
+        { name: 'first', score: raw(0.1, 0, NOW_S + 1000) },
+        { name: 'second', score: raw(0.1, 0, NOW_S + 1000) }
       ])
     ).toEqual(['first', 'second'])
   })
@@ -230,16 +227,16 @@ describe('U2 · eps-cascaded leximax', () => {
   it('finalists: a reset within RESET_TIE_S of the earliest stays, one past it drops', () => {
     expect(
       finalists([
-        { name: 'early', score: raw(0.1, 0, 0, NOW_S + 1000) },
-        { name: 'in', score: raw(0.1, 0, 0, NOW_S + 1000 + RESET_TIE_S) },
-        { name: 'out', score: raw(0.1, 0, 0, NOW_S + 1001 + RESET_TIE_S) },
-        { name: 'none', score: raw(0.1, 0, 0, 0) }
+        { name: 'early', score: raw(0.1, 0, NOW_S + 1000) },
+        { name: 'in', score: raw(0.1, 0, NOW_S + 1000 + RESET_TIE_S) },
+        { name: 'out', score: raw(0.1, 0, NOW_S + 1001 + RESET_TIE_S) },
+        { name: 'none', score: raw(0.1, 0, 0) }
       ])
     ).toEqual(['early', 'in'])
     expect(
       finalists([
-        { name: 'a', score: raw(0, 0, 0, 0) },
-        { name: 'b', score: raw(0, 0, 0, 0) }
+        { name: 'a', score: raw(0, 0, 0) },
+        { name: 'b', score: raw(0, 0, 0) }
       ])
     ).toEqual(['a', 'b'])
   })

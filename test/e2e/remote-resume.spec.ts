@@ -63,15 +63,15 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
   }) => {
     test.setTimeout(240_000)
     const tokens = { alpha: 'sk-ant-oat01-fixture-alpha', bravo: 'sk-ant-oat01-fixture-bravo' }
-    const fiveHourUse: Record<string, number> = { [tokens.alpha]: 0.1, [tokens.bravo]: 0.8 }
+    const weekUse: Record<string, number> = { [tokens.alpha]: 0.1, [tokens.bravo]: 0.8 }
     const probe = http.createServer((req, res) => {
       const token = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '')
       req.resume()
       req.on('end', () => {
         res.writeHead(200, {
           'content-type': 'application/json',
-          'anthropic-ratelimit-unified-5h-utilization': String(fiveHourUse[token] ?? 0),
-          'anthropic-ratelimit-unified-7d-utilization': '0.2',
+          'anthropic-ratelimit-unified-5h-utilization': '0.1',
+          'anthropic-ratelimit-unified-7d-utilization': String(weekUse[token] ?? 0),
           'anthropic-ratelimit-unified-5h-status': 'allowed',
           'anthropic-ratelimit-unified-7d-status': 'allowed'
         })
