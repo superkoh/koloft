@@ -27,7 +27,6 @@ import {
   hasHistory,
   resolveBuckets,
   resolvePending,
-  startingTabBoundSince,
   type Bucket,
   type JsonlTail,
   type PendingLaunch,
@@ -786,12 +785,7 @@ export class WorkspaceManager {
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    const bindings = this.deps.runningBindings()
-    this.lastRunningKey = [...bindings.keys()].join(',')
-    const runningIds = new Set(bindings.keys())
-
-    const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
-    for (const l of this.launches.values()) l.sessionId = sessionIdByTab.get(l.tabId)
+    this.lastRunningKey = [...this.deps.runningBindings().keys()].join(',')
     const launches = [...this.launches.values()]
 
     const payload: WorkspaceRows[] = []
@@ -821,14 +815,18 @@ export class WorkspaceManager {
         for (const l of launches) if (l.host === key.host && l.cwd === key.path) l.cwd = scanPath
       }
       const dirBySlug = new Map(buckets.map((b) => [b.slug, b.dir]))
-      const wsRunningIds = key
-        ? new Set([...runningIds, ...(this.deps.remoteRunning?.(key.host) ?? [])])
-        : runningIds
       const claudeRow = (r: BackendSessionRow): SessionRow => ({
         ...r,
         ...sourceOf('claude', ws.path)
       })
       const disk = await this.readBuckets(root, scanPath, buckets, dirBySlug, !key)
+      const bindings = this.deps.runningBindings()
+      const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
+      for (const l of launches) l.sessionId = sessionIdByTab.get(l.tabId)
+      const wsRunningIds = new Set([
+        ...bindings.keys(),
+        ...((key && this.deps.remoteRunning?.(key.host)) || [])
+      ])
       const allRows = aggregateSessions(buckets, {
         listJsonl: (slug) => {
           const files = disk.files.get(slug) ?? []
@@ -944,10 +942,7 @@ export class WorkspaceManager {
     this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
-    const tabsBoundAtStart = new Set(sessionIdByTab.keys())
-    if (startingTabBoundSince(this.rowsCache, tabsBoundAtStart, this.deps.runningBindings()))
-      this.scheduleRescan()
-    else this.deps.pushRows(this.rowsCache)
+    this.deps.pushRows(this.rowsCache)
     this.firstScanDone()
     this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
   }

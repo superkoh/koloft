@@ -3,7 +3,6 @@ import {
   PENDING_SESSION_TITLE,
   PLACEHOLDER_SESSION_TITLE,
   type BackendSessionRow,
-  type WorkspaceRows,
   type WorktreeStateMeta
 } from '@shared/types'
 import {
@@ -341,17 +340,6 @@ export function resolvePending(
     })
   }
   return out
-}
-
-export function startingTabBoundSince(
-  all: WorkspaceRows[],
-  tabsBoundThen: ReadonlySet<string>,
-  tabOfSessionNow: ReadonlyMap<string, string>
-): boolean {
-  const boundNow = new Set(tabOfSessionNow.values())
-  return all.some((w) =>
-    w.rows.some((r) => r.pending && boundNow.has(r.id) && !tabsBoundThen.has(r.id))
-  )
 }
 
 export type RescanEvent =
