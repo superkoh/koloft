@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
+import { windowLabel } from '../../src/shared/accountUsage'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   E2E_MUSE_ACCOUNT,
@@ -17,6 +18,7 @@ import {
   agentRow,
   centerTerm,
   chooseBackend,
+  dialogPrimary,
   gitCommitAll,
   gitInit,
   newSessionInWith,
@@ -27,6 +29,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
   waitBooted,
@@ -51,6 +54,7 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
   return museCalls(env)[before]
 }
 
+const OUTLASTS_A_MUSE_USAGE_READ_MS = 30_000
 const ROWS_FOLLOW_A_LISTING_MS = 2_000
 const SAMPLE_EVERY_MS = 100
 
@@ -228,9 +232,15 @@ test.describe('Muse Code sessions through the real method chooser, status signal
 
       await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
       await page.locator('.tbu').click()
-      const popRow = page.locator('.tbu-pop .tbu-row', { hasText: 'metered' })
+      const pop = page.locator('.tbu-pop')
+      const popRow = pop.locator('.tbu-row', { hasText: 'metered' })
       await expect(popRow.locator('.acct-badge')).toHaveText('API KEY')
       await expect(popRow.locator('.acct-note')).toHaveText(metered)
+      await expect(
+        pop
+          .locator('.tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+          .locator('.acct-meter[data-win="5h"] .m-pct')
+      ).toHaveText('40%', { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
       await page.keyboard.press('Escape')
 
       await startMuse(page, env)
@@ -238,7 +248,17 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
       )
       fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 7 }))
-      await page.evaluate(() => window.api.accounts.probe())
+      await expect
+        .poll(
+          async () => {
+            const views = await page.evaluate(() => window.api.accounts.probe())
+            return views
+              .find((a) => a.name === E2E_MUSE_ACCOUNT)
+              ?.limits?.windows.find((w) => windowLabel(w.minutes) === '5h')?.used
+          },
+          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
+        )
+        .toBe(1)
       await startMuse(page, env)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         'koloft: → metered (API key, metered)'
@@ -466,6 +486,47 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
         'committed on the branch'
       )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('C8: typing the name of a Muse worktree whose preparation was interrupted says it will start Muse, and recovers it into a Muse session', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    const name = 'interrupted-muse'
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'muse-sessions.json',
+      name
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
+      await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
+      await expect(
+        dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
+      ).toContainText('and start Muse.')
+      await expect(dialogPrimary(dialog)).toContainText('Recover · Muse')
+      await dialogPrimary(dialog).click()
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      expect(museCalls(env)[0].cwd).toBe(cwd)
+      await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
     } finally {
       await quitAndClose(app)
     }

@@ -1443,9 +1443,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const macFile = path.join(env.home, 'only-on-the-mac.html')
       fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
       const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
-      const refused = 'cannot reach files or local servers of the Mac'
+      const refused = 'cannot reach files or servers of the Mac'
       expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
-      expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
+      const toAMacServer = lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))
+      expect(toAMacServer).toContain(refused)
+      expect(toAMacServer).toContain('only localhost, 127.0.0.1 and [::1] mean the machine')
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
       await run(
         `playwright-cli eval "() => { location.href = '${onTheMac.replace(NAME_OF_THIS_MAC_THAT_IS_NOT_LOCALHOST, '127.0.0.2')}' }"`

@@ -169,6 +169,20 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
   file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.
+- **A second `muse resume` of a held session neither refuses nor opens.** 2026-11-02,
+  `Muse Code 1.4.11 (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`,
+  `--network none`), two TUIs on `--provider echo --trust-workspace`, each in a pty
+  driver that answered the terminal's queries: the first TUI's registry file named its
+  own pid (`pid=15`, `/proc/15/comm` `muse-bin-1.4.11`) and it held the session's
+  `.session.lock` (a `FLOCK WRITE` in `/proc/locks`). `muse resume <id>` of that session
+  from a second pty stayed on "Validating session data" for the 45 s watched, typed
+  text changed nothing, it wrote no registry file and the first file kept `pid=15`; it
+  was still stuck 10 s after the first TUI was killed with SIGKILL. With the first TUI
+  killed before the resume, the same command went on through "Restoring conversation"
+  to its prompt and rewrote the file with its own pid. So the registry file plus a live
+  pid whose `/proc/<pid>/comm` names muse is the check on Linux too, read over ssh for a
+  session on another machine: the file outlives its muse (above), and a container that
+  restarts hands low pids such as 15 out again.
 - **Muse must create `runtime/muse/sessions` itself**: when that folder already existed
   before muse started, muse wrote no registry file at all (Linux).
 - Subagent logs sit under `<session>/subagent/<child>/session.jsonl`.

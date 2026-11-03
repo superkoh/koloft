@@ -338,6 +338,16 @@ for f in "\${XDG_CONFIG_HOME:-$HOME/.config}/muse/trust.json" "$HOME"/.koloft/mu
 done
 exit 1`
 
+// MUSE§4
+export const MUSE_HELD_SH = `for f in "\${XDG_DATA_HOME:-$HOME/.local/share}/muse/runtime/muse/sessions/$1.json" "/tmp/tbh-$(id -u)-rt/muse/sessions/$1.json"; do
+  [ -f "$f" ] && python3 -c 'import json, os, re, sys
+m = re.fullmatch(r"pid=(\\d+)", str(json.load(open(sys.argv[1])).get("process_generation_hint")))
+p = int(m.group(1)) if m else 0
+os.kill(p, 0) if p > 0 else sys.exit(1)
+sys.exit(0 if not os.path.isdir("/proc/self") or "muse" in open("/proc/%d/comm" % p).read() else 1)' "$f" 2>/dev/null && exit 0
+done
+exit 1`
+
 export interface MuseRunSpec {
   tabId: string
   account: string

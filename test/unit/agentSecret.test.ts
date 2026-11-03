@@ -6,6 +6,7 @@ import {
   NO_SUCH_FIELD,
   NOT_IN_TIME,
   NOT_LOOPBACK,
+  OWNER_ASLEEP,
   PAGE_CHANGED,
   secretVerb,
   type FieldPage,
@@ -49,6 +50,7 @@ function setup(over: Partial<SecretVerbDeps> = {}, answer: string | undefined | 
       asked.push(a)
       return answer
     },
+    ownerAsleep: () => false,
     machine: () => undefined,
     pages: () => [],
     open: async (_tab, url) => {
@@ -77,6 +79,12 @@ describe('koloft secret sudo (what Koloft’s password helper runs)', () => {
     expect((await setup({}, null).verb(['sudo', 'Password:', 'x'], caller())).text).toBe(NO_DISCORD)
     const late = setup({ ask: async () => undefined })
     expect((await late.verb(['sudo', 'Password:', 'x'], caller())).text).toBe(NOT_IN_TIME)
+  })
+
+  it('while the owner is asleep, sudo is told so at once and nothing is asked on Discord, so the phone stays quiet', async () => {
+    const { verb, asked } = setup({ ownerAsleep: () => true })
+    expect((await verb(['sudo', 'Password:', 'x'], caller())).text).toBe(OWNER_ASLEEP)
+    expect(asked).toEqual([])
   })
 })
 

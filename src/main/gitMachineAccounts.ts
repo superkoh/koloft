@@ -22,6 +22,7 @@ import {
   REMOTE_URLS_LINE_TAG,
   REMOTE_URLS_OF_EACH,
   REPO_KEYS,
+  REPO_KEYS_LINE_TAG,
   SYNC_FILES,
   clueKey,
   fileLines,
@@ -189,11 +190,12 @@ export class GitMachineAccounts {
   async repoKeys(machine: string, paths: string[]): Promise<(string | null)[]> {
     if (!paths.length) return []
     const r = await this.run(machine, REPO_KEYS, paths)
-    const lines = r.code === 0 ? r.stdout.split('\n') : []
-    return paths.map((_, i) => {
-      const real = lines[i]?.trim()
-      return real?.startsWith('/') ? formatRemoteKey(machine, real) : null
-    })
+    const lines = r.stdout
+      .split('\n')
+      .filter((l) => l.startsWith(REPO_KEYS_LINE_TAG))
+      .map((l) => l.slice(REPO_KEYS_LINE_TAG.length).replace(/\r$/, ''))
+    if (r.code !== 0 || lines.length !== paths.length) return paths.map(() => null)
+    return lines.map((real) => (real.startsWith('/') ? formatRemoteKey(machine, real) : null))
   }
 
   async remoteUrlsOfEach(machine: string, repos: string[]): Promise<string[] | null> {

@@ -35,6 +35,7 @@ export function histText(h: HistoryLine): string {
 
 function histBase(h: HistoryLine): string {
   if (h.state === 'closed') return 'Closed by you'
+  if (h.state === 'quit') return 'Agent quit'
   if (h.state === 'finished') return 'Done — closed itself'
   if (h.state === 'ended') return 'Ended — Koloft quit'
   if (h.state === 'failed') return 'Could not start'
@@ -80,6 +81,7 @@ export function liveWords(job: Pick<CronJob, 'autoClose'>, run: LiveRun): string
 
 export const HIST_WORDS: Record<HistoryLine['state'], string> = {
   closed: 'closed by you',
+  quit: 'agent quit',
   finished: 'done — closed itself',
   ended: 'ended — Koloft quit',
   failed: 'could not start',

@@ -38,6 +38,7 @@ import {
   encodeCwd,
   focusOwner,
   gitInit,
+  killSession,
   menuItemTexts,
   openMenu,
   openWorktreeSession,
@@ -551,7 +552,34 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M06: closing a finished run yourself takes its folder and branch away and leaves its row, and resuming it from the sidebar makes the folder again for the same session', async ({
+  test('BB-M35: a run whose agent is killed after the run started reads Agent quit in History, with how it ended, not Closed by you', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      await expect(cronRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      killSession(call.pid, env)
+
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toMatch(/^Agent quit — killed \(signal \d+\)$/)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText('agent quit')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('BB-M06:closing a finished run yourself takes its folder and branch away and leaves its row, and resuming it from the sidebar makes the folder again for the same session', async ({
     env
   }) => {
     test.setTimeout(180_000)
