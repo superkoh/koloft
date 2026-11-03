@@ -91,6 +91,7 @@ import {
   reachedBySendMessage,
   preferredAssistBackend,
   effectiveBackend,
+  turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
@@ -680,6 +681,7 @@ function showAskOnItsRow(tabId: string): void {
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 sessionBackends.noAccountMessage = noAccountNow
+sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -1672,7 +1674,7 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 }
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
-  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+  enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1681,8 +1683,12 @@ async function whyAssistCannotRunOn(
   backend: BackendId,
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
-  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  if (!enabled[backend]) return turnedOffLine(backend)
   return whyAssistCannotRun[backend]()
+}
+
+function turnedOffNow(backend: BackendId): string | null {
+  return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
 }
 
 const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
@@ -1817,6 +1823,7 @@ const sessionDeps: SessionVerbDeps = {
   tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
+  turnedOff: turnedOffNow,
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
@@ -3945,6 +3952,7 @@ app.whenReady().then(() => {
     tidyRun,
     foldersInUse,
     quitting: () => quitCommitted,
+    turnedOff: turnedOffNow,
     noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -5824,13 +5832,6 @@ function registerIpc(): void {
   ipcMain.handle(
     CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (
-        opts.kind !== 'shell' &&
-        !opts.resumeSessionId &&
-        !loadSettings().sessionMethods.enabled[opts.kind]
-      ) {
-        throw new Error('This session method is disabled in Settings ▸ Sessions.')
-      }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
