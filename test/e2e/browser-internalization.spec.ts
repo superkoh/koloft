@@ -1,8 +1,9 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { gitInit, startSessionIn, clickAppMenuItem } from './helpers/p1'
+import { BROWSER_PARTITION } from '../../src/shared/types'
 import {
   BROWSER,
   BROWSER_MENU_IDS,
@@ -115,7 +116,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
     }
   })
 
-  test('BB-M24: `window.open` / OAuth popup is routed into a new Browser tab, never a system window', async ({
+  test('BB-M24: a `window.open` with no size is routed into a new Browser tab, never a window', async ({
     app,
     page,
     env
@@ -147,6 +148,222 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
       expect(readOpenCalls(env)).toEqual(openCallsBefore)
     } finally {
       await idp.close()
+      await server.close()
+    }
+  })
+
+  // PLATFORM§8
+  test('BB-M34: a sign-in popup (`window.open` with a size) opens as a Koloft window in the web tabs’ own session that keeps its opener, so the sign-in hands its result back to the page; one opened with no click, a Shift+click and a sized mailto go where they went before; Close Tab from that window closes only it, and closing the opener’s tab closes it', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const server = await startEchoServer()
+    const idp = await startFakeIdp()
+    try {
+      idp.finalUrl = server.page(
+        '/signin-done',
+        '<!doctype html><title>done</title><script>' +
+          'window.opener.postMessage("signed in", "*"); window.close()</script>'
+      )
+      server.page('/stays', '<!doctype html><title>stays</title><p>a popup that stays</p>')
+      const opener = server.page(
+        '/signs-in',
+        '<!doctype html><title>signs in</title><p id="result">signed out</p>' +
+          '<button id="google">google</button><button id="stays">stays</button>' +
+          '<button id="mail">mail</button><a id="shift" href="/stays#shift">shift</a><script>' +
+          'document.getElementById("mail").onclick = () => window.open("mailto:someone@example.com", "mail", "width=400,height=400");' +
+          'addEventListener("message", (e) => { document.getElementById("result").textContent = e.data });' +
+          `document.getElementById("google").onclick = () => window.open(${JSON.stringify(idp.loginUrl)}, "signin", "width=500,height=600");` +
+          'document.getElementById("stays").onclick = () => window.open("/stays", "other", "width=400,height=400")' +
+          '</script>'
+      )
+      gitInit(env.workspaces.a)
+      await startSessionIn(page, 'ws-a')
+      await browserSession(page)
+      const openCallsBefore = readOpenCalls(env)
+      await typeInAddressBar(page, opener)
+      const guest = await guestByUrl(app, '/signs-in')
+      const windowsBefore = (await windowStates(app)).length
+
+      await guest.evaluate(
+        (u) => void window.open(u, 'unasked', 'width=400,height=400'),
+        server.page('/unasked', '<!doctype html><title>unasked</title>')
+      )
+      await expect(openTabs(page)).toHaveCount(2, { timeout: 30_000 })
+      expect((await windowStates(app)).length).toBe(windowsBefore)
+
+      await guest.click('#google')
+      await expect(guest.locator('#result')).toHaveText('signed in', { timeout: 30_000 })
+      expect(idp.count('/callback')).toBe(1)
+      await expect.poll(async () => (await windowStates(app)).length).toBe(windowsBefore)
+      await expect(openTabs(page)).toHaveCount(2)
+      expect(readOpenCalls(env)).toEqual(openCallsBefore)
+
+      await guest.click('#stays')
+      const popupInWebSession = (): Promise<boolean | null> =>
+        app.evaluate(({ webContents, session }, partition) => {
+          const popup = webContents
+            .getAllWebContents()
+            .find((wc) => wc.getType() === 'window' && wc.getURL().endsWith('/stays'))
+          return popup ? popup.session === session.fromPartition(partition) : null
+        }, BROWSER_PARTITION)
+      await expect.poll(popupInWebSession, { timeout: 30_000 }).toBe(true)
+      await app.evaluate(({ BrowserWindow, Menu, webContents }) => {
+        const popup = webContents
+          .getAllWebContents()
+          .find((wc) => wc.getType() === 'window' && wc.getURL().endsWith('/stays'))!
+        const win = BrowserWindow.fromWebContents(popup)!
+        Menu.getApplicationMenu()!
+          .getMenuItemById('close-tab')!
+          .click(undefined, win, win.webContents)
+      })
+      await expect.poll(popupInWebSession).toBeNull()
+      await expect(openTabs(page)).toHaveCount(2)
+
+      await guest.click('#mail')
+      await expect.poll(() => readExternalOpens(env).join('\n')).toContain('mailto:someone@')
+      await guest.click('#shift', { modifiers: ['Shift'] })
+      await expect(openTabs(page)).toHaveCount(3, { timeout: 30_000 })
+      expect((await windowStates(app)).length).toBe(windowsBefore)
+
+      await guest.click('#stays')
+      await expect.poll(popupInWebSession, { timeout: 30_000 }).toBe(true)
+      await openTabs(page).first().locator(BROWSER.tabCloseIn).click()
+      await expect.poll(popupInWebSession).toBeNull()
+    } finally {
+      await idp.close()
+      await server.close()
+    }
+  })
+
+  // PLATFORM§8
+  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves, marks http and a refused certificate Not secure and https with a lock; the page still resizes the window and closes it, and Koloft still quits while one is open', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const tls = await startHttpsServer()
+    try {
+      env.extraArgs.push(tls.hostResolverSwitch)
+      tls.page('/tls', '<!doctype html><title>tls</title>')
+      server.page('/landed', '<!doctype html><title>landed</title>')
+      server.route('/hop', (_q, res) => {
+        res.writeHead(302, { location: '/landed' })
+        res.end()
+      })
+      const first = server.page('/first', '<!doctype html><title>first</title>')
+      const opener = server.page(
+        '/bar-opener',
+        '<!doctype html><title>bar opener</title><button id="open">open</button><script>' +
+          `document.getElementById("open").onclick = () => { window.signin = window.open(${JSON.stringify(first)}, "signin", "width=500,height=600") }` +
+          '</script>'
+      )
+      gitInit(env.workspaces.a)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await page.waitForLoadState('domcontentloaded')
+        await app.evaluate(({ session }, partition) => {
+          session
+            .fromPartition(partition)
+            .setCertificateVerifyProc((req, answer) =>
+              answer(req.hostname === 'koloft-a.test' ? 0 : -3)
+            )
+        }, BROWSER_PARTITION)
+        await startSessionIn(page, 'ws-a')
+        await browserSession(page)
+        await typeInAddressBar(page, opener)
+        const guest = await guestByUrl(app, '/bar-opener')
+        const windowsBefore = (await windowStates(app)).length
+
+        await guest.click('#open')
+        let bar: Page | undefined
+        await expect
+          .poll(() => (bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))), {
+            timeout: 30_000
+          })
+          .toBeTruthy()
+        const address = bar!.getByRole('textbox', { name: 'Address' })
+        await expect(address).toHaveValue(first)
+        await expect(address).not.toBeEditable()
+        await expect(bar!.getByText('Not secure')).toBeVisible()
+
+        await guest.evaluate((u) => {
+          ;(window as unknown as { signin: Window }).signin.location.href = u
+        }, server.url('/hop'))
+        await expect(address).toHaveValue(server.url('/landed'))
+        await guest.evaluate(() => {
+          ;(window as unknown as { signin: Window }).signin.history.pushState(
+            {},
+            '',
+            '/landed?step=2'
+          )
+        })
+        await expect(address).toHaveValue(server.url('/landed?step=2'))
+
+        const pageArea = (): Promise<number[]> =>
+          guest.evaluate(() => {
+            const signin = (window as unknown as { signin: Window }).signin
+            return [signin.innerWidth, signin.innerHeight]
+          })
+        const [widthBefore, heightBefore] = await pageArea()
+        await guest.evaluate(() => {
+          ;(window as unknown as { signin: Window }).signin.resizeBy(140, 100)
+        })
+        await expect.poll(pageArea).toEqual([widthBefore + 140, heightBefore + 100])
+
+        await guest.evaluate(
+          (u) => {
+            ;(window as unknown as { signin: Window }).signin.location.href = u
+          },
+          tls.aliasUrl('koloft-a.test', '/tls')
+        )
+        await expect(address).toHaveValue(tls.aliasUrl('koloft-a.test', '/tls'))
+        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeVisible()
+        await expect(bar!.getByText('Not secure')).toBeHidden()
+
+        await guest.evaluate(
+          (u) => {
+            ;(window as unknown as { signin: Window }).signin.location.href = u
+          },
+          tls.aliasUrl('koloft-b.test', '/tls')
+        )
+        await expect(address).toHaveValue(tls.aliasUrl('koloft-b.test', '/tls'))
+        await expect(bar!.getByText('Not secure')).toBeVisible()
+        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeHidden()
+
+        await guest.evaluate((u) => {
+          ;(window as unknown as { signin: Window }).signin.location.href = u
+        }, server.url('/landed'))
+        await expect(address).toHaveValue(server.url('/landed'))
+        await app.evaluate(({ webContents }) => {
+          const popup = webContents
+            .getAllWebContents()
+            .find((wc) => wc.getType() === 'window' && wc.getURL().includes('/landed'))!
+          void popup.executeJavaScript('window.close()')
+        })
+        await expect.poll(async () => (await windowStates(app)).length).toBe(windowsBefore)
+        expect(
+          await guest.evaluate(() => (window as unknown as { signin: Window }).signin.closed)
+        ).toBe(true)
+
+        await guest.click('#open')
+        await expect
+          .poll(() => app.windows().some((w) => w.url().endsWith('/sign-in-bar.html')))
+          .toBe(true)
+        const exited = app.waitForEvent('close', { timeout: 30_000 }).then(
+          () => true,
+          () => false
+        )
+        await page.evaluate(() => window.api.app.approveQuit()).catch(() => {})
+        expect(await exited).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
+    } finally {
+      await tls.close()
       await server.close()
     }
   })

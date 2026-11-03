@@ -1,4 +1,4 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, Menu, type BaseWindow, type MenuItemConstructorOptions } from 'electron'
 import type { BrowserCommand } from '@shared/types'
 
 export type MenuShortcut =
@@ -21,8 +21,8 @@ export type MenuShortcut =
 
 // PLATFORM§7
 export function setupAppMenu(
-  onShortcut: (action: MenuShortcut) => void,
-  onBrowserCommand: (cmd: BrowserCommand) => void,
+  onShortcut: (action: MenuShortcut, from?: BaseWindow) => void,
+  onBrowserCommand: (cmd: BrowserCommand, from?: BaseWindow) => void,
   keepAwake = false
 ): void {
   const isMac = process.platform === 'darwin'
@@ -34,21 +34,25 @@ export function setupAppMenu(
     id,
     label,
     accelerator,
-    click: () => onBrowserCommand(id)
+    click: (_item, win) => onBrowserCommand(id, win)
   })
+  const shortcut =
+    (action: MenuShortcut): MenuItemConstructorOptions['click'] =>
+    (_item, win) =>
+      onShortcut(action, win)
 
   // PLATFORM§7
   const appMenu: MenuItemConstructorOptions = {
     label: app.name,
     submenu: [
       { role: 'about' },
-      { label: 'Check for Updates…', click: () => onShortcut('check-update') },
+      { label: 'Check for Updates…', click: shortcut('check-update') },
       { type: 'separator' },
       {
         id: 'open-settings',
         label: 'Settings…',
         accelerator: 'CmdOrCtrl+,',
-        click: () => onShortcut('open-settings')
+        click: shortcut('open-settings')
       },
       { type: 'separator' },
       { role: 'services' },
@@ -68,19 +72,19 @@ export function setupAppMenu(
         id: 'new-session',
         label: 'New Session…',
         accelerator: 'CmdOrCtrl+N',
-        click: () => onShortcut('new-session')
+        click: shortcut('new-session')
       },
       {
         id: 'new-worktree-session',
         label: 'New Worktree Session…',
         accelerator: 'Shift+CmdOrCtrl+N',
-        click: () => onShortcut('new-worktree-session')
+        click: shortcut('new-worktree-session')
       },
       {
         id: 'add-workspace',
         label: 'Add Workspace…',
         accelerator: 'Shift+CmdOrCtrl+O',
-        click: () => onShortcut('add-workspace')
+        click: shortcut('add-workspace')
       },
       { type: 'separator' },
       {
@@ -88,16 +92,21 @@ export function setupAppMenu(
         label: 'Save',
         accelerator: 'CmdOrCtrl+S',
         enabled: false,
-        click: () => onShortcut('save')
+        click: shortcut('save')
       },
       { type: 'separator' },
-      { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => onShortcut('close-tab') },
+      {
+        id: 'close-tab',
+        label: 'Close Tab',
+        accelerator: 'CmdOrCtrl+W',
+        click: shortcut('close-tab')
+      },
       { type: 'separator' },
       {
         id: 'restart-session',
         label: 'Restart Session',
         accelerator: 'Shift+CmdOrCtrl+R',
-        click: () => onShortcut('restart-session')
+        click: shortcut('restart-session')
       },
       { type: 'separator' },
       isMac
@@ -134,13 +143,13 @@ export function setupAppMenu(
         id: 'find-in-page',
         label: 'Find',
         accelerator: isMac ? 'CmdOrCtrl+F' : undefined,
-        click: () => onShortcut('find')
+        click: shortcut('find')
       },
       {
         id: 'find-files',
         label: 'Search Files',
         accelerator: isMac ? 'Shift+CmdOrCtrl+F' : undefined,
-        click: () => onShortcut('find-files')
+        click: shortcut('find-files')
       }
     ]
   }
@@ -153,7 +162,7 @@ export function setupAppMenu(
         id: 'command-palette',
         label: 'Command Palette…',
         accelerator: 'CmdOrCtrl+P',
-        click: () => onShortcut('command-palette')
+        click: shortcut('command-palette')
       },
       { type: 'separator' },
       {
@@ -161,26 +170,26 @@ export function setupAppMenu(
         label: 'New Terminal Tab',
         accelerator: 'Control+`',
         enabled: false,
-        click: () => onShortcut('new-terminal-tab')
+        click: shortcut('new-terminal-tab')
       },
       {
         id: 'toggle-sidebar',
         label: 'Toggle Sidebar',
         accelerator: 'CmdOrCtrl+B',
-        click: () => onShortcut('toggle-sidebar')
+        click: shortcut('toggle-sidebar')
       },
       browserItem('toggle-browser', 'Toggle Workbench', 'Shift+CmdOrCtrl+B'),
       {
         id: 'focus-notes',
         label: 'Notes',
         accelerator: 'Alt+CmdOrCtrl+N',
-        click: () => onShortcut('focus-notes')
+        click: shortcut('focus-notes')
       },
       {
         id: 'next-waiting-session',
         label: 'Next Waiting Session',
         accelerator: 'CmdOrCtrl+J',
-        click: () => onShortcut('next-waiting-session')
+        click: shortcut('next-waiting-session')
       },
       { type: 'separator' },
       browserItem('browser-new-tab', 'New Browser Tab'),
