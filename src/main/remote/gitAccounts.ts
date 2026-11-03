@@ -4,6 +4,7 @@ import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 import { credentialRequest, gcmProviderOf } from '../gitCredentialManager'
 import { GH_SIGNED_OUT } from '../prChecks'
 import { GH_TOKEN_EXPORTS, MACHINE_TOKEN_FROM_HELPER } from '../gitCredentialScripts'
+import { REMOTE_URLS } from '../gitSshRemotes'
 import { FETCH_FN, REMOTE_GIT_DIR } from './install'
 import type { RunResult } from './ssh'
 import {
@@ -154,6 +155,14 @@ export const CLUE_GIT = `${OWN_SETUP_ONLY}
 ${INTO_REPO_OR_128}
 shift
 ${NO_PROMPTS} git "$@"`
+
+export const REMOTE_URLS_LINE_TAG = 'remotes '
+
+export const REMOTE_URLS_OF_EACH = `${OWN_SETUP_ONLY}
+for p in "$@"; do
+  printf '${REMOTE_URLS_LINE_TAG}%s\\n' "$(cd "$p" 2>/dev/null && git config --get-regexp ${shq(REMOTE_URLS)} | base64 | tr -d '\\n')"
+done
+exit 0`
 
 export const CLUE_SSH = `${OWN_SETUP_ONLY}
 if [ "$1" = -G ]; then exec ssh "$@"; fi
