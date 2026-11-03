@@ -285,10 +285,11 @@ describe('a tab whose session went away (§4.4)', () => {
   })
 })
 
-describe("a session on another machine never reaches this Mac's files or local servers through the Workbench browser", () => {
+describe("a session on another machine never reaches this Mac's files or servers through the Workbench browser", () => {
   const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
   const NAME_FOR_THE_MAC = 'http://mac-server.test/'
-  const REFUSED = 'cannot reach files or local servers of the Mac'
+  const REFUSED = 'cannot reach files or servers of the Mac'
+  const LOOPBACK_MEANS_THE_MACHINE = 'only localhost, 127.0.0.1 and [::1] mean the machine'
   const errorOf = (reply: Record<string, unknown>): string =>
     String((reply.error as { message?: string } | undefined)?.message ?? '')
 
@@ -311,7 +312,7 @@ describe("a session on another machine never reaches this Mac's files or local s
 
   const NOTES = 'file:///Users/me/notes.html'
 
-  it('refuses to open, navigate to, upload or drag in a Mac file, or open a server on the Mac, however the address is written; web pages still work', async () => {
+  it('refuses to open, navigate to, upload or drag in a Mac file, or open a server on the Mac, however the address is written, and only an address it opens or goes to is answered with the addresses that do mean the machine; web pages still work', async () => {
     relay.relayEndpointOnMachine(TAB)
     const guest = fakeGuest(11)
     const c = await registered()
@@ -324,8 +325,11 @@ describe("a session on another machine never reaches this Mac's files or local s
       'http://127.0.0.2:8888/tree',
       'http://dev.localhost:3000/',
       NAME_FOR_THE_MAC
-    ])
-      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toContain(REFUSED)
+    ]) {
+      const refusal = errorOf(await c.cmd('Target.createTarget', { url }))
+      expect(refusal, url).toContain(REFUSED)
+      expect(refusal, url).toContain(LOOPBACK_MEANS_THE_MACHINE)
+    }
     expect(deps.create).not.toHaveBeenCalled()
 
     const sid = await attachedTo(c, 'http://x/a')
@@ -348,7 +352,9 @@ describe("a session on another machine never reaches this Mac's files or local s
         { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
       ]
     ] as const) {
-      expect(errorOf(await c.cmd(method, params, sid))).toContain(REFUSED)
+      const refusal = errorOf(await c.cmd(method, params, sid))
+      expect(refusal, method).toContain(REFUSED)
+      expect(refusal.includes(LOOPBACK_MEANS_THE_MACHINE), method).toBe(method === 'Page.navigate')
     }
     const sent = (): string[] =>
       guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
