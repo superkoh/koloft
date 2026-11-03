@@ -77,29 +77,27 @@ const HELPER_RULES: Record<BackendId, string[]> = {
   ]
 }
 
-export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
-
 // MUSE§11 AGY§13 AGY§14
 export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
   claude: 'AskUserQuestion',
-  codex: CODEX_WAITING_QUESTION_TOOL,
+  codex: 'request_user_input',
   muse: 'request_user_input',
   agy: 'ask_question'
 }
 
-function questionRule(askWith: string, after = ''): string {
+function questionRule(askWith: string, after?: string): string {
   return `
 
 QUESTIONS
 
-When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after}`
+When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after ? ` ${after}` : ''}`
 }
 
 const QUESTION_RULE: Record<BackendId, string> = {
   claude: '',
   codex: questionRule(
-    `${CODEX_WAITING_QUESTION_TOOL}, called as a tool of its own (not inside exec)`,
-    ` Never use ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait, and never sleep or poll while you wait.`
+    `${WAITING_QUESTION_TOOL.codex}, called as a tool of its own (not inside exec)`,
+    `Never use ${WAITING_QUESTION_TOOL.codex}_async, which does not wait, and never sleep or poll while you wait.`
   ),
   muse: questionRule(WAITING_QUESTION_TOOL.muse),
   agy: questionRule(WAITING_QUESTION_TOOL.agy)
