@@ -287,6 +287,7 @@ export function tabEvictedNotice(title: string): string {
 
 const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
+const watchedSessionEndedIn = new Set<string>()
 const restarting = new Set<string>()
 const restartedPtys = new Set<string>()
 const RESTART_COOLDOWN_MS = 1000
@@ -355,7 +356,7 @@ function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
     s.activeTabId === tabId &&
-    (isSessionKind(leaving?.kind) || lastSessionId.has(tabId)) &&
+    (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
@@ -447,6 +448,7 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
+  watchedSessionEndedIn.delete(oldId)
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
@@ -755,6 +757,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       everBoundSession.delete(id)
       lastSessionId.delete(id)
+      watchedSessionEndedIn.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
       let activeTabId = s.activeTabId
@@ -1013,6 +1016,7 @@ export const useStore = create<AppState>((set, get) => ({
         ) {
           changed = true
           if (t.id === s.activeTabId) activeReverted = true
+          if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
         }
         return t
