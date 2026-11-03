@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
 import type { JSX } from 'react'
-import { render, cleanup, fireEvent, screen, waitFor, act } from '@testing-library/react'
 import {
   DEFAULT_SETTINGS,
   type BackendId,
@@ -14,6 +13,15 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
   SessionBackendIcon: ({ backend }: { backend: BackendId }) => <i data-backend={backend} />
 }))
 
+const REACT_TASK_LAG_MS = 40
+const realSetImmediate = globalThis.setImmediate
+let reactTasksLag = false
+Object.assign(globalThis, {
+  setImmediate: (run: (...args: unknown[]) => void, ...args: unknown[]) =>
+    reactTasksLag ? setTimeout(run, REACT_TASK_LAG_MS, ...args) : realSetImmediate(run, ...args)
+})
+
+const { render, cleanup, fireEvent, screen, waitFor, act } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
 const { SessionLaunchButtons, useSessionLaunch } =
   await import('../../src/renderer/src/components/SessionLaunchButtons')
@@ -41,6 +49,7 @@ beforeAll(() => {
 })
 
 afterEach(() => {
+  reactTasksLag = false
   cleanup()
   useStore.setState((s) => ({
     settings: {
@@ -149,19 +158,24 @@ const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => HTMLEle
 
 describe('SessionLaunchButtons while a behind workspace pulls before a start', () => {
   it.each(pullDialogs)(
-    '%s: Pulling… shows the icon of the agent picked from the arrow, and a failed pull leaves Enter on the default agent',
+    '%s: Pulling… shows the icon of the agent picked from the arrow, and a failed pull leaves Enter on the default agent, even pressed while React’s effects still lag the screen',
     async (_name, dialog, prepare) => {
       useStore.setState((s) => ({ settings: { ...s.settings, gitAutoFetch: false } }))
       const started: BackendId[] = []
       render(dialog(started))
       const enterTarget = prepare()
-      fireEvent.click(await screen.findByRole('button', { name: 'Pick an agent' }))
+      const pickAgent = await screen.findByRole<HTMLButtonElement>('button', {
+        name: 'Pick an agent'
+      })
+      await waitFor(() => expect(pickAgent.disabled).toBe(false))
+      fireEvent.click(pickAgent)
       fireEvent.click(await screen.findByRole('option', { name: new RegExp(BACKEND_LABEL.codex) }))
       const lead = (): string | null | undefined =>
         document.querySelector('button[data-default] [data-backend]')?.getAttribute('data-backend')
       await screen.findAllByText(/Pulling origin\/main…/)
       expect(lead()).toBe('codex')
 
+      reactTasksLag = true
       act(() => answerPull({ ok: false, reason: 'not a fast-forward' }))
       await screen.findAllByText(/Pull failed/)
       expect(lead()).toBe('claude')

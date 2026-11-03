@@ -1,6 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -177,7 +178,8 @@ export function WorktreeSessionDialog({
     item: aim.kind === 'item' ? aim.item.number : undefined
   }
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     launchLock.current = locked
     return () => {
       launchLock.current = false
@@ -189,7 +191,8 @@ export function WorktreeSessionDialog({
       : sessionLaunch.choice()
   const confirmBackend = useRef<BackendId>(choice.lead)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       const layer = escPeel({

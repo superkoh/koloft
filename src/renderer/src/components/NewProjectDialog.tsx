@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
@@ -55,7 +55,8 @@ export function NewProjectDialog({
   const choice = sessionLaunch.choice()
   const [listOpen, setListOpen] = useState(false)
   const locked = sessionLaunch.starting
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     launchLock.current = locked
     return () => {
       launchLock.current = false
@@ -66,7 +67,8 @@ export function NewProjectDialog({
     folderRef.current?.focus()
   }, [])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape' && !locked) onClose()
     }

@@ -1210,6 +1210,16 @@ inferred, not checked.
   LAST one in its key map and never deletes the first; once the list changes shape
   ahead of it, the first one's nodes stay in the document for good (seen live: one
   session's rows stacked twice).
+- **After a render that did not start from a user event (a promise resolving, a
+  timer), React 19 commits the DOM, yields to the host, and runs that render's
+  `useEffect`s in a later task.** In that gap the screen already shows the new state,
+  while a `window` listener or a ref an effect keeps up to date still holds the old
+  one, so a key pressed then is judged by the old state. `useLayoutEffect` runs inside
+  the commit and has no gap. A render from a click or key runs its effects at the end
+  of the commit, with no gap either. Measured 2026-11-03, react-dom 19.3.1 under
+  vitest + jsdom: with the scheduler's `setImmediate` delayed 40 ms, an Enter pressed
+  as soon as the picker showed "Pull failed" was dropped every run with `useEffect`
+  and acted on every run with `useLayoutEffect` (`sessionLaunchButtons.test.tsx`).
 - **zustand's `set()` notifies every subscriber even when nothing changed**, because it
   merges into a new state object (seen: a queued hint card appeared one tick early).
 

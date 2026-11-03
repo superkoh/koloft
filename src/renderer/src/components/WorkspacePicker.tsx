@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -79,7 +79,8 @@ export function WorkspacePicker({
   const [listOpen, setListOpen] = useState(false)
   const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     launchLock.current = locked
     return () => {
       launchLock.current = false
@@ -139,7 +140,8 @@ export function WorkspacePicker({
     if (!locked) onClose()
   }
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
         const layer = escPeel({ locked, confirmOpen: confirm !== null })
