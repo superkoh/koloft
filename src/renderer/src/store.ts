@@ -987,7 +987,10 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       const sessions = keepUnchangedSessions(s.sessions, pushed)
       const liveTabs = new Set(sessions.map((x) => x.tabId))
-      for (const id of liveTabs) everBoundSession.add(id)
+      for (const id of liveTabs) {
+        everBoundSession.add(id)
+        watchedSessionEndedIn.delete(id)
+      }
       for (const x of sessions) {
         if (!x.sessionId) continue
         lastSessionId.set(x.tabId, x.sessionId)
@@ -1015,8 +1018,10 @@ export const useStore = create<AppState>((set, get) => ({
           !restarting.has(t.id)
         ) {
           changed = true
-          if (t.id === s.activeTabId) activeReverted = true
-          if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+          if (t.id === s.activeTabId) {
+            activeReverted = true
+            if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+          }
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
         }
         return t

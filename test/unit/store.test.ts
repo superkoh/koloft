@@ -182,6 +182,8 @@ describe('store: claude → shell revert, only after a session actually bound', 
 
 describe('store: closing the session you watch lands on the butler, whichever of session end and terminal exit comes first', () => {
   let butlersOpened: number
+  const { settings, butlerTab } = useStore.getState()
+  afterEach(() => useStore.setState({ settings, butlerTab }))
   beforeEach(() => {
     butlersOpened = 0
     ;(globalThis as { window?: unknown }).window = {
@@ -219,6 +221,19 @@ describe('store: closing the session you watch lands on the butler, whichever of
     s.setSessions([])
 
     useStore.getState().removeTab('own-butler')
+
+    expect(butlersOpened).toBe(0)
+  })
+
+  it('stays put when a session that ended in a background tab is picked and closed later', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'bg-ended', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.addTab({ id: 'bg-watched', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.setSessions([session('bg-ended'), session('bg-watched')])
+    s.setSessions([session('bg-watched')])
+    s.setActive('bg-ended')
+
+    useStore.getState().removeTab('bg-ended')
 
     expect(butlersOpened).toBe(0)
   })
