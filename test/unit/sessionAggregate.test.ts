@@ -9,7 +9,7 @@ import {
   planRescan,
   resolvePending,
   TITLE_MAX,
-  withoutStartingRowsOfListedSessions,
+  startingTabBoundSince,
   type AggregateDeps,
   type Bucket,
   type SessionMeta,
@@ -510,38 +510,36 @@ describe('resolvePending', () => {
     )
     expect(out).toEqual({ rows: [], promoted: [] })
   })
+})
 
-  describe('withoutStartingRowsOfListedSessions (a tab that binds while the list is read never shows as a Starting… row beside its own row)', () => {
-    const starting = (tabId: string): SessionRow => ({
-      ...realRow(tabId),
-      title: PENDING_SESSION_TITLE,
-      running: false,
-      pending: true
-    })
-    const ws = (path: string, rows: SessionRow[]): WorkspaceRows => ({
-      workspace: { path, missing: false, isGit: true, hasHistory: true },
-      rows
-    })
-    const ids = (all: WorkspaceRows[]): string[][] => all.map((w) => w.rows.map((r) => r.id))
+describe('startingTabBoundSince (a list read while a starting tab bound is stale: it would show a Starting… row beside the session’s own row)', () => {
+  const row = (id: string, pending?: true): SessionRow => ({
+    id,
+    backendId: 'claude',
+    host: 'ssh',
+    title: pending ? PENDING_SESSION_TITLE : 't',
+    worktree: 'leaving',
+    cwd: WT,
+    running: !pending,
+    invalidCwd: false,
+    mtime: 1000,
+    ...(pending && { pending })
+  })
+  const listed: WorkspaceRows[] = [
+    {
+      workspace: { path: WS, missing: false, isGit: true, hasHistory: true },
+      rows: [row('tab-1', true), row('s1')]
+    }
+  ]
+  const tab1Bound = new Map([['s1', 'tab-1']])
 
-    it('drops the Starting… row of a tab now bound to a session listed in the same workspace', () => {
-      const listed = [ws(WS, [starting('tab-1'), realRow('s1')])]
-      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map([['s1', 'tab-1']])))).toEqual([
-        ['s1']
-      ])
-    })
+  it('says so when the Starting… row’s tab bound after the list began to be read', () => {
+    expect(startingTabBoundSince(listed, new Set(), tab1Bound)).toBe(true)
+  })
 
-    it('keeps it while the tab is unbound, or bound to a session only another workspace lists', () => {
-      const listed = [ws(WS, [starting('tab-1')]), ws('/Users/dev/other', [realRow('s1')])]
-      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map()))).toEqual([
-        ['tab-1'],
-        ['s1']
-      ])
-      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map([['s1', 'tab-1']])))).toEqual([
-        ['tab-1'],
-        ['s1']
-      ])
-    })
+  it('says no while the tab is still unbound, and no for a tab already bound when the read began, so a list is never held back twice for one binding', () => {
+    expect(startingTabBoundSince(listed, new Set(), new Map())).toBe(false)
+    expect(startingTabBoundSince(listed, new Set(['tab-1']), tab1Bound)).toBe(false)
   })
 })
 

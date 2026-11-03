@@ -343,19 +343,15 @@ export function resolvePending(
   return out
 }
 
-export function withoutStartingRowsOfListedSessions(
+export function startingTabBoundSince(
   all: WorkspaceRows[],
-  tabOfSession: ReadonlyMap<string, string>
-): WorkspaceRows[] {
-  let changed = false
-  const out = all.map((w) => {
-    const bound = new Set(w.rows.filter((r) => !r.pending).map((r) => tabOfSession.get(r.id)))
-    const rows = w.rows.filter((r) => !(r.pending && bound.has(r.id)))
-    if (rows.length === w.rows.length) return w
-    changed = true
-    return { ...w, rows }
-  })
-  return changed ? out : all
+  tabsBoundThen: ReadonlySet<string>,
+  tabOfSessionNow: ReadonlyMap<string, string>
+): boolean {
+  const boundNow = new Set(tabOfSessionNow.values())
+  return all.some((w) =>
+    w.rows.some((r) => r.pending && boundNow.has(r.id) && !tabsBoundThen.has(r.id))
+  )
 }
 
 export type RescanEvent =

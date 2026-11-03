@@ -27,7 +27,7 @@ import {
   hasHistory,
   resolveBuckets,
   resolvePending,
-  withoutStartingRowsOfListedSessions,
+  startingTabBoundSince,
   type Bucket,
   type JsonlTail,
   type PendingLaunch,
@@ -651,11 +651,6 @@ export class WorkspaceManager {
     if (key !== this.lastRunningKey) {
       this.lastRunningKey = key
       this.lastLiveKey = this.liveKey()
-      const rows = withoutStartingRowsOfListedSessions(this.rowsCache, this.deps.runningBindings())
-      if (rows !== this.rowsCache) {
-        this.rowsCache = rows
-        this.deps.pushRows(rows)
-      }
       this.scheduleRescan()
       return
     }
@@ -946,14 +941,13 @@ export class WorkspaceManager {
     this.bucketDirById = bucketDirById
     this.transcriptFileById = transcriptFileById
     const ordered = this.inLayoutOrder(payload)
-    const revealed = await this.revealDirsExisting(ordered)
-    this.rowsCache = withoutStartingRowsOfListedSessions(
-      this.stampLive(ordered, revealed),
-      this.deps.runningBindings()
-    )
+    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
-    this.deps.pushRows(this.rowsCache)
+    const tabsBoundAtStart = new Set(sessionIdByTab.keys())
+    if (startingTabBoundSince(this.rowsCache, tabsBoundAtStart, this.deps.runningBindings()))
+      this.scheduleRescan()
+    else this.deps.pushRows(this.rowsCache)
     this.firstScanDone()
     this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
   }
