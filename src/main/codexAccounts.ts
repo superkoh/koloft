@@ -1,11 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import {
-  RESUME_KEEPS_ACCOUNT_UP_TO,
-  homeRoom,
-  usableAccounts,
-  type HomeRoom
-} from '@shared/accountUsage'
+import { homeRoom, usableAccounts, type HomeRoom } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
 import { joinProjectTables } from './codexTrust'
 import {
@@ -14,7 +9,7 @@ import {
   soonest,
   type LaunchedSession
 } from './accountPicker'
-import { EPS, weekUse } from './usageProbe'
+import { leximaxFinalists, weekUse } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -156,6 +151,13 @@ function weeklyScore(room: HomeRoom, nowSec: number): number {
   return Math.max(0, ...room.longWindows.map((w) => weekUse(w.used, w.resetsAt ?? 0, nowSec)))
 }
 
+function weekResetsAt(room: HomeRoom, nowSec: number): number {
+  const ahead = room.longWindows.flatMap((w) =>
+    w.resetsAt !== undefined && w.resetsAt > nowSec ? [w.resetsAt] : []
+  )
+  return ahead.length > 0 ? Math.min(...ahead) : 0
+}
+
 export class HomeAccountPicker {
   private turn = 0
 
@@ -175,23 +177,28 @@ export class HomeAccountPicker {
     const everySubscriptionFull = subscriptions.every(({ room }) => room?.walled)
     const rooms = keys.length > 0 && everySubscriptionFull ? keys : subscriptions
     const same = rooms.find(({ a }) => a.name === resumedOn)
-    if (same && (!same.room || (!same.room.walled && same.room.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
-      return same.a
+    if (same && (!same.room || same.room.keepsResumedSession)) return same.a
     const live = liveSessionsPerAccount(launched, undefined)
     const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
     const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
     const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
       ({ a, room }) => ({
-        a,
-        score:
-          (room ? weeklyScore(room, nowSec) : 0) +
-          (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
+        name: a.name,
+        score: {
+          s1:
+            (room ? weeklyScore(room, nowSec) : 0) +
+            (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION,
+          s2: 0,
+          tiebreak: room ? weekResetsAt(room, nowSec) : 0,
+          pen: 0,
+          hardLimited: false
+        }
       })
     )
     if (ranked.length > 0) {
-      const least = Math.min(...ranked.map((r) => r.score))
-      const finalists = ranked.filter((r) => r.score <= least + EPS)
-      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
+      const finalists = leximaxFinalists(ranked)
+      const winner = finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0]
+      return rooms.find(({ a }) => a.name === winner.name)!.a
     }
     if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
     return soonest(rooms, ({ room }) => room?.backAt || Infinity).a

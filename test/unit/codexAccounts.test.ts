@@ -239,6 +239,19 @@ describe('picking a Codex account', () => {
       expect(picker.pick([unknown, late])?.name).toBe('late')
     })
 
+    it('between accounts used about the same, the one whose week resets first wins every time, as Claude Code accounts are picked', () => {
+      const picker = new HomeAccountPicker('codex-home')
+      const weekBack = (days: number): AccountView['limits'] => ({
+        windows: [{ minutes: 10080, used: 0.3, resetsAt: nowSec + days * 86_400 }],
+        at: Date.now()
+      })
+      const pool = [
+        account('late', { limits: weekBack(5) }),
+        account('soon', { limits: weekBack(1) })
+      ]
+      expect([picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual(['soon', 'soon'])
+    })
+
     it('an Antigravity account at 90% of a 5-hour bucket is skipped for a new session even when its week is the lightest', () => {
       const picker = new HomeAccountPicker('agy-home')
       const quota = (fiveHour: number, week: number): AccountView['quota'] => [
@@ -301,7 +314,7 @@ describe('picking an Antigravity account by the quota /usage reports', () => {
     expect(allLimitedNotice(picked!, 'agy')).toMatch(/Every Antigravity account.*soon/)
   })
 
-  it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {
+  it('a resumed session keeps the account it ran on until a window that has not reset yet is past 95% used, as Claude Code accounts are kept, and is never stuck on one that cannot run', () => {
     const picker = new HomeAccountPicker('codex-home')
     const pool = (sameUsed?: number, over: Partial<AccountView> = {}): AccountView[] => [
       account('same', { ...(sameUsed !== undefined && { limits: used(sameUsed) }), ...over }),
@@ -312,6 +325,28 @@ describe('picking an Antigravity account by the quota /usage reports', () => {
     expect(picker.pick(pool(0.96), 'same')?.name).toBe('idle')
     expect(picker.pick(pool(0, { enabled: false }), 'same')?.name).toBe('idle')
     expect(picker.pick(pool(0, { status: 'expired' }), 'same')?.name).toBe('idle')
+    const nowSec = Math.floor(Date.now() / 1000)
+    const fiveHoursAt = (resetsAt: number): Partial<AccountView> => ({
+      limits: {
+        windows: [
+          { minutes: 300, used: 0.96, resetsAt },
+          { minutes: 10080, used: 0.2, resetsAt: nowSec + 86_400 }
+        ],
+        at: Date.now()
+      }
+    })
+    expect(picker.pick(pool(undefined, fiveHoursAt(nowSec - 100)), 'same')?.name).toBe('same')
+    expect(picker.pick(pool(undefined, fiveHoursAt(nowSec + 100)), 'same')?.name).toBe('idle')
+    const agyPicker = new HomeAccountPicker('agy-home')
+    const agyPool = (resetsAt: number): AccountView[] => [
+      account('same', {
+        kind: 'agy-home',
+        quota: [{ label: 'Gemini Models · 5h', used: 0.96, minutes: 300, resetsAt }]
+      }),
+      account('idle', { kind: 'agy-home', quota: [{ label: 'Gemini Models · 5h', used: 0 }] })
+    ]
+    expect(agyPicker.pick(agyPool(nowSec - 100), 'same')?.name).toBe('same')
+    expect(agyPicker.pick(agyPool(nowSec + 100), 'same')?.name).toBe('idle')
   })
 })
 
