@@ -62,11 +62,19 @@ export class Interactions {
   constructor(private d: InteractionDeps) {}
 
   async handle(i: DiscordInteraction): Promise<void> {
-    if (i.userId === this.d.owner()) this.d.ownerWrote()
+    const fromOwner = i.userId === this.d.owner()
+    try {
+      await this.dispatch(i, fromOwner)
+    } finally {
+      if (fromOwner) this.d.ownerWrote()
+    }
+  }
+
+  private async dispatch(i: DiscordInteraction, fromOwner: boolean): Promise<void> {
     if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
     if (i.type === FORM_SUBMIT_INTERACTION) return this.d.submit(i).catch(() => undefined)
     if (i.type !== COMMAND_INTERACTION) return
-    if (i.userId !== this.d.owner()) return this.reply(i, privately(ONLY_THE_OWNER))
+    if (!fromOwner) return this.reply(i, privately(ONLY_THE_OWNER))
     const text = commandTextOf(i)
     const problem = slashCommandProblem(text)
     if (problem) return this.reply(i, privately(didNotRun(problem)))
