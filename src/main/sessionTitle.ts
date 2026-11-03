@@ -26,12 +26,16 @@ const lineAsName = (line: string | undefined): string =>
     .slice(0, NAME_MAX_CHARS)
     .trim()
 
-export function firstLineName(text: string): string {
-  return lineAsName(nonEmptyLines(text)[0])
-}
+const ENDS_LIKE_A_SENTENCE = /[，,。.：:；;!！?？…]$/
+
+const looksLikeATitle = (line: string): boolean =>
+  line.length <= NAME_MAX_CHARS && !ENDS_LIKE_A_SENTENCE.test(line) && /\p{L}/u.test(line)
+
+const firstLineName = (text: string): string => lineAsName(nonEmptyLines(text)[0])
 
 function nameFromReply(reply: string): string {
-  return lineAsName(nonEmptyLines(reply).at(-1))
+  const lines = nonEmptyLines(reply)
+  return lineAsName(lines.find(looksLikeATitle) ?? lines[0])
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
 }
