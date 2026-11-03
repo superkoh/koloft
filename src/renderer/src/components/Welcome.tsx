@@ -630,7 +630,7 @@ export function Welcome({
                 </div>
               </div>
               <div className="wl-cue c-wb">
-                <b>Workbench</b> files it changed · browser · shell
+                <b>Workbench</b> files it changed · web · shell
               </div>
               <div className="wl-cue c-p">
                 <b>⌘P</b> say it in plain words
