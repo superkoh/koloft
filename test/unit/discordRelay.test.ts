@@ -88,6 +88,7 @@ function setup(
     download: async () => Buffer.from(''),
     owner: () => OWNER,
     ownerAway: () => true,
+    ownerWrote: () => {},
     butlerName: () => 'Assist',
     destinationOf: (c) => (c === CHANNEL ? conductor : undefined),
     channels: () => [

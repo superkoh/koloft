@@ -34,6 +34,14 @@ export function withoutMouseAndFocusReports(data: string): string {
   return data.replace(MOUSE_AND_FOCUS_REPORTS, '')
 }
 
+// PLATFORM§21
+const ONLY_THE_TERMINALS_OWN_ANSWERS =
+  /^(?:\x1b\[[?>]?[\d;]*(?:[Rcntu]|\$y)|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
+
+export function onlyTheTerminalsOwnAnswers(data: string): boolean {
+  return ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)
+}
+
 // CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],

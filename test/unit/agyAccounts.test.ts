@@ -253,7 +253,7 @@ describe('oneShotAgyHome (a throwaway folder for one agy -p run, AGY§6 AGY§20)
 })
 
 describe('agyQuotaFrom (/usage as JSON, AGY§20 AGY§23)', () => {
-  it('turns each bucket into a meter named by its group and window (5h, 7d) as the other accounts name theirs, with the share used — agy reports what is left — and the reset time in seconds', () => {
+  it('turns each bucket into a meter named by its group and window (5h, 7d) as the other accounts name theirs, with the share used — agy reports what is left — the reset time in seconds, and how long the window is so the picker can tell the 5 hours from the week', () => {
     const out = JSON.stringify({
       command: {
         name: 'usage',
@@ -288,9 +288,10 @@ describe('agyQuotaFrom (/usage as JSON, AGY§20 AGY§23)', () => {
       {
         label: 'Gemini Models · 7d',
         used: 0.75,
-        resetsAt: Date.UTC(2026, 9, 25, 7, 16, 11) / 1000
+        resetsAt: Date.UTC(2026, 9, 25, 7, 16, 11) / 1000,
+        minutes: 10080
       },
-      { label: 'Gemini Models · 5h', used: 0 },
+      { label: 'Gemini Models · 5h', used: 0, minutes: 300 },
       { label: 'Gemini Models · Daily', used: 0.5 },
       { label: 'Quota', used: 1 }
     ])

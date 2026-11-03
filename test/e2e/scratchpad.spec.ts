@@ -25,7 +25,7 @@ import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   agyReady,
-  boundRemoteAgy,
+  boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
   installRemoteAgy,
@@ -203,7 +203,7 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
   })
 
   // AGY§8 AGY§19
-  test('an Antigravity tab lists the plan agy wrote and its scratch folder from agy’s own folder for the conversation, never agy’s logs or the plan’s metadata file', async ({
+  test('an Antigravity tab lists the plan agy wrote from agy’s own folder for the conversation, and its scratch folder only once something is in it, never agy’s logs or the plan’s metadata file', async ({
     env
   }) => {
     installAgy(env)
@@ -225,16 +225,22 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
       )
       await expect
         .poll(() => scratchpadNames(page), { timeout: 30_000 })
-        .toEqual(['scratch', 'implementation_plan.md'])
+        .toEqual(['implementation_plan.md'])
       expect(fs.existsSync(path.join(dir, '.system_generated'))).toBe(true)
       expect(fs.existsSync(path.join(dir, 'implementation_plan.md.metadata.json'))).toBe(true)
+      expect(fs.readdirSync(path.join(dir, 'scratch'))).toEqual([])
+
+      fs.writeFileSync(path.join(dir, 'scratch', 'notes.md'), '# Notes\n')
+      await expect
+        .poll(() => scratchpadNames(page), { timeout: 30_000 })
+        .toEqual(['scratch', 'implementation_plan.md'])
     } finally {
       await quitAndClose(app)
     }
   })
 
   // AGY§12
-  test('a remote Antigravity tab lists agy’s folder for the conversation on that machine, named by agy’s hooks, and a file agy leaves there shows after its next turn', async ({
+  test('a remote Antigravity tab lists agy’s folder for the conversation on that machine, named by agy’s hooks, once agy left a file there, and shows it after its next turn; its scratch folder shows once something is in it', async ({
     env
   }) => {
     installAgy(env)
@@ -251,18 +257,24 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
       await runIn(page, centerTerm(page), 'remote words')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { id } = await boundRemoteAgy(page)
+      const { id } = await boundRemoteSession(page, 'agy')
+
+      const onMachine = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'brain', id)
+      expect(fs.readdirSync(path.join(onMachine, 'scratch'))).toEqual([])
+      fs.writeFileSync(path.join(onMachine, 'walkthrough.md'), '# Walkthrough\n')
+      await runIn(page, centerTerm(page), 'again')
 
       await showBrowse(page)
       await expect(scratchpadNode(page)).toBeVisible({ timeout: 60_000 })
       expect(await scratchpadNode(page).getAttribute('data-path')).toMatch(
         new RegExp(`^ssh://[^/]+/.+/antigravity-cli/brain/${id}$`)
       )
-      await expect.poll(() => scratchpadNames(page), { timeout: 30_000 }).toEqual(['scratch'])
+      await expect
+        .poll(() => scratchpadNames(page), { timeout: 60_000 })
+        .toEqual(['walkthrough.md'])
 
-      const onMachine = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'brain', id)
-      fs.writeFileSync(path.join(onMachine, 'walkthrough.md'), '# Walkthrough\n')
-      await runIn(page, centerTerm(page), 'again')
+      fs.writeFileSync(path.join(onMachine, 'scratch', 'notes.md'), '# Notes\n')
+      await runIn(page, centerTerm(page), 'once more')
       await expect
         .poll(() => scratchpadNames(page), { timeout: 60_000 })
         .toEqual(['scratch', 'walkthrough.md'])

@@ -2300,6 +2300,9 @@ function startApi() {
 
 async function startTui() {
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  // PLATFORM§35
+  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
   process.stdin.on('data', (chunk) => {
     try {
       feed(chunk.toString('utf8'))

@@ -1,4 +1,5 @@
 import fs from 'fs'
+import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
 import {
@@ -8,14 +9,50 @@ import {
   expectNoCodexWhileTheCheckIsOutNorAfter,
   FAKE_SESSION_TITLE,
   layoutOnDisk,
+  openMenu,
   openPicker,
   runIn,
   startSessionIn,
+  terminalText,
   transcriptFile,
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
+
+const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 1
+
+for (const remote of [false, true]) {
+  test(`what a person types into a new ${remote ? 'remote ' : ''}Claude Code tab while its shell is still starting waits for Koloft's launch line: the session binds and the agent takes it as its first prompt`, async ({
+    env
+  }) => {
+    if (remote) installFakeRemote(env)
+    fs.appendFileSync(
+      path.join(env.home, '.zshrc'),
+      `\nsleep ${RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S}\n`
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      const row = wsRows(page, workspace).first()
+      await openMenu(page, page.locator('.ws-head', { hasText: workspace }))
+      await page.locator('.menu .mi', { hasText: 'New session' }).click()
+      const tabId = (await row.getAttribute('data-tab-id', { timeout: 30_000 }))!
+      await page.evaluate((id) => window.api.terminal.write(id, '/answer early bird\r'), tabId)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('[fake-claude] answered: early bird')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
 
 test('with no Codex and a slow Codex check, the first ⌘N picker after launch never offers another agent, before or after the check answers', async ({
   env

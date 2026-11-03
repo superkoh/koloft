@@ -139,8 +139,10 @@ exit 0`
 
 export const HELPER_ANSWERS = `sh "$HOME/${REMOTE_GIT_DIR}/$1" "$2" get </dev/null 2>/dev/null | grep -q '^password='`
 
+export const REPO_KEYS_LINE_TAG = 'repo-key '
+
 export const REPO_KEYS = `for p in "$@"; do
-  printf '%s\\n' "$(cd "$p" 2>/dev/null && d="$(git rev-parse --git-common-dir 2>/dev/null)" && cd "$d" && pwd -P)"
+  printf '\\n%s%s\\n' '${REPO_KEYS_LINE_TAG}' "$(cd "$p" 2>/dev/null && d="$(git rev-parse --git-common-dir 2>/dev/null)" && cd "$d" && pwd -P)"
 done
 exit 0`
 
