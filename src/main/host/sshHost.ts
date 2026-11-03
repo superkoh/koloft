@@ -73,6 +73,8 @@ import {
   HOLD_FILE,
   NOTICE_THIS_TURN,
   noticeLine,
+  OWNER_ASLEEP_FILE,
+  ownerAsleepMarker,
   remoteNoticeFile,
   type NoticeFile
 } from '../hooks'
@@ -596,6 +598,10 @@ t="$fresh"; k=fresh
 [ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
 printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
 
+const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
+cat > "$f.part" && mv -f "$f.part" "$f"`
+
 const SAVE_PICK = `d="$HOME/.koloft/element-picks"
 mkdir -p "$d" && cd "$d" || exit 1
 find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
@@ -985,6 +991,13 @@ export class SshHost implements Host {
     const r = await this.sh(SAVE_PICK, [name], { input: png })
     if (r.code !== 0) throw new Error(problemOf(r))
     return r.stdout.toString('utf8')
+  }
+
+  async markOwnerAsleep(awakeTabs: string[] | null): Promise<boolean> {
+    const r = awakeTabs
+      ? await this.sh(MARK_OWNER_ASLEEP, [], { input: Buffer.from(ownerAsleepMarker(awakeTabs)) })
+      : await this.sh(`rm -f "${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"`, [])
+    return r.code === 0
   }
 
   notice(tabId: string): NoticeFile {

@@ -347,6 +347,7 @@ export interface Settings {
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
+  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
@@ -470,6 +471,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
+  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,

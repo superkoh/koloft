@@ -104,6 +104,7 @@ export interface RelayDeps {
   download(url: string): Promise<Buffer>
   owner(): string | undefined
   ownerAway(): boolean
+  ownerWrote(): void
   butlerName(): string
   destinationOf(channelId: string): Destination | undefined
   channels(): CaughtUpChannel[]
@@ -234,6 +235,7 @@ export class DiscordRelay {
     if (m.authorId !== this.d.owner()) return
     const dest = this.d.destinationOf(m.channelId)
     if (!dest) return
+    this.d.ownerWrote()
     this.seenLive.add(m.id)
     const butlerTab = dest.liveTab()
     if (butlerTab && this.held.delete(butlerTab) && this.dialogOpen(butlerTab)) {
@@ -567,6 +569,10 @@ export class DiscordRelay {
   dialog(tab: string): DialogView | undefined {
     const ask = this.openAsk(tab)
     return ask && claudeDialog(ask.payload)
+  }
+
+  askOf(tab: string): AskPayload | undefined {
+    return this.openAsk(tab)?.payload
   }
 
   heldAsk(tab: string): AskPayload | undefined {
