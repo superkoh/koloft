@@ -14,19 +14,24 @@ const titleInstructions = (ownerWords: string | undefined): string =>
   'Leave out background, rules and filler such as "research a question". ' +
   'Reply with the title alone, no quotes, no full stop.\n\nTask:\n'
 
-export function firstLineName(text: string): string {
-  const line = text
+const nonEmptyLines = (text: string): string[] =>
+  text
     .split('\n')
     .map((l) => l.trim())
-    .find(Boolean)
-  return (line ?? '')
+    .filter(Boolean)
+
+const lineAsName = (line: string | undefined): string =>
+  (line ?? '')
     .replace(/^-+\s*/, '')
     .slice(0, NAME_MAX_CHARS)
     .trim()
+
+export function firstLineName(text: string): string {
+  return lineAsName(nonEmptyLines(text)[0])
 }
 
 function nameFromReply(reply: string): string {
-  return firstLineName(reply)
+  return lineAsName(nonEmptyLines(reply).at(-1))
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
 }

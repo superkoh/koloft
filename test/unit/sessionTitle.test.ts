@@ -32,6 +32,15 @@ describe('the title behind koloft session new', () => {
     expect(await titleForTask('Fix the sidebar.', claudeAssist(bin), '把侧栏修好')).toBe('修侧栏')
   })
 
+  it('a reply that reasons for a few lines before its title is named by its last line', async () => {
+    const bin = fakeClaude(
+      'cat >/dev/null\necho "读取任务文件内容需要先看看它说了什么。这里我只需要生成标题，"\necho "不用真的去读文件。"\necho ""\necho "照任务文件做完"'
+    )
+    expect(await titleForTask('读 /tmp/task-a.md，照它做完。', claudeAssist(bin))).toBe(
+      '照任务文件做完'
+    )
+  })
+
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(
       'cat >/dev/null\necho "Failed to authenticate: OAuth session expired and could not be refreshed"\nexit 1'
