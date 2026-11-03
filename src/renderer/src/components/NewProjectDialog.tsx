@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
@@ -58,9 +58,16 @@ export function NewProjectDialog({
   const locked = sessionLaunch.starting
   useLaunchLock(launchLock, locked)
 
+  const fieldBeforeLock = useRef<HTMLElement | null>(null)
   // PLATFORM§25
   useLayoutEffect(() => {
-    if (!locked) folderRef.current?.focus()
+    if (locked) {
+      const at = document.activeElement
+      fieldBeforeLock.current = at instanceof HTMLElement && at !== document.body ? at : null
+      return
+    }
+    const back = fieldBeforeLock.current ?? folderRef.current
+    back?.focus()
   }, [locked])
 
   // PLATFORM§25

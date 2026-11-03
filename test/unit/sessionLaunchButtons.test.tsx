@@ -16,10 +16,20 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
 const REACT_TASK_LAG_MS = 40
 const realSetImmediate = globalThis.setImmediate
 let reactTasksLag = false
+let laggedTasks = 0
 Object.assign(globalThis, {
-  setImmediate: (run: (...args: unknown[]) => void, ...args: unknown[]) =>
-    reactTasksLag ? setTimeout(run, REACT_TASK_LAG_MS, ...args) : realSetImmediate(run, ...args)
+  setImmediate: (run: (...args: unknown[]) => void, ...args: unknown[]) => {
+    if (!reactTasksLag) return realSetImmediate(run, ...args)
+    laggedTasks++
+    return setTimeout(run, REACT_TASK_LAG_MS, ...args)
+  }
 })
+const lagReactTasks = (): void => {
+  reactTasksLag = true
+  laggedTasks = 0
+}
+const expectReactTasksLagged = (): void =>
+  expect(laggedTasks, 'React’s scheduler went through the lagging setImmediate').toBeGreaterThan(0)
 
 const { render, cleanup, fireEvent, screen, waitFor, act } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
@@ -191,9 +201,10 @@ describe('SessionLaunchButtons while a behind workspace pulls before a start', (
       expect(lead()).toBe('codex')
       dropFocusFromADisabledFieldAsChromiumDoes()
 
-      reactTasksLag = true
+      lagReactTasks()
       act(() => answerPull({ ok: false, reason: 'not a fast-forward' }))
       await screen.findAllByText(/Pull failed/)
+      expectReactTasksLagged()
       expect(lead()).toBe('claude')
       fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Enter' })
       await waitFor(() => expect(started).toEqual(['claude']))
@@ -202,7 +213,7 @@ describe('SessionLaunchButtons while a behind workspace pulls before a start', (
 })
 
 describe('New Project after a start fails', () => {
-  it('puts the cursor back in the folder field, so Enter tries again', async () => {
+  it('puts the cursor back in the field Enter was pressed in, so Enter tries again', async () => {
     useStore.setState((s) => ({
       settings: { ...s.settings, newProjectFolders: { local: '/projects' } }
     }))
@@ -219,13 +230,18 @@ describe('New Project after a start fails', () => {
     const folder = await screen.findByDisplayValue('demo')
     await waitFor(() => expect(document.activeElement).toBe(folder))
     await screen.findByRole('button', { name: 'Pick an agent' })
-    fireEvent.keyDown(folder, { key: 'Enter' })
+    const title = screen.getByRole('textbox', { name: 'Title' })
+    title.focus()
+    fireEvent.keyDown(title, { key: 'Enter' })
     await waitFor(() => expect(creates).toBe(1))
     dropFocusFromADisabledFieldAsChromiumDoes()
+    expect(document.activeElement).toBe(document.body)
 
-    reactTasksLag = true
+    lagReactTasks()
     act(() => answerCreate({ ok: false, reason: 'The folder already exists.' }))
     await screen.findByText(/already exists/)
+    expectReactTasksLagged()
+    expect(document.activeElement).toBe(title)
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Enter' })
     await waitFor(() => expect(creates).toBe(2))
   })

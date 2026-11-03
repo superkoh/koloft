@@ -1221,8 +1221,12 @@ inferred, not checked.
   esbuild, driven by Playwright): a `keydown` dispatched from the MutationObserver
   callback that saw the new text, and again from a `setTimeout(0)` after it, was judged
   by the old state 3 of 3 runs with `useEffect` and by the new state 3 of 3 runs with
-  `useLayoutEffect`. A ref such as `launchLock` written in such an effect lags the same
-  way (inferred, not checked).
+  `useLayoutEffect`. A ref written in such an effect (as `launchLock` is) lags the same
+  way: read from that MutationObserver callback it still held the old value 3 of 3
+  runs with `useEffect`, the new one 3 of 3 with `useLayoutEffect`. For a click, a
+  `window` click listener added by the effect of the render that click caused receives
+  that same click, with `useEffect` and `useLayoutEffect` alike (3 of 3 each), so moving
+  such an effect to a layout effect does not change what a click does.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless

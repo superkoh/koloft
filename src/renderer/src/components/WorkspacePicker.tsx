@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -180,7 +180,8 @@ export function WorkspacePicker({
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     boxRef.current?.focus()
   }, [locked, confirm])
