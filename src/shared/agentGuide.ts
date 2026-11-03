@@ -93,13 +93,17 @@ QUESTIONS
 When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after ? ` ${after}` : ''}`
 }
 
+// MUSE§11 AGY§14
 const QUESTION_RULE: Record<BackendId, string> = {
   claude: '',
   codex: questionRule(
     `${WAITING_QUESTION_TOOL.codex}, called as a tool of its own (not inside exec)`,
     `Never use ${WAITING_QUESTION_TOOL.codex}_async, which does not wait, and never sleep or poll while you wait.`
   ),
-  muse: questionRule(WAITING_QUESTION_TOOL.muse),
+  muse: questionRule(
+    WAITING_QUESTION_TOOL.muse,
+    'Leave out auto_resolution_ms, which ends the question by itself.'
+  ),
   agy: questionRule(WAITING_QUESTION_TOOL.agy)
 }
 
