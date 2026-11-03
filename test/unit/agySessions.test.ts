@@ -408,41 +408,49 @@ describe('AgySessions launch', () => {
   })
 
   // AGY§5
-  it("trusts a Koloft worktree's own folder in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders", async () => {
-    const recover = async (workspace: string): Promise<string> => {
+  it('trusts a worktree Koloft made in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders, but never a git worktree the person made', async () => {
+    const recover = async (workspace: string, name: string, managed = true): Promise<string> => {
       const resource = {
         id: crypto.randomUUID(),
         originalCwd: workspace,
-        worktreePath: `${workspace}/.claude/worktrees/wt`,
-        worktreeName: 'wt',
-        worktreeBranch: 'worktree-wt',
+        worktreePath: `${workspace}/.claude/worktrees/${name}`,
+        worktreeName: name,
+        worktreeBranch: `worktree-${name}`,
         originalHeadCommit: '0'.repeat(40),
         state: 'ready' as const,
-        managed: true
+        managed
       }
       sessions.store.putResource(resource)
       vi.spyOn(sessions.worktrees, 'rebuild').mockResolvedValueOnce(resource)
       await sessions.launch({ kind: 'agy', cwd: workspace, worktreeResourceId: resource.id })
       return resource.worktreePath
     }
-    const untrusted = await recover(repo)
-    expect(sessions.trustsFolder(untrusted)).toBe(false)
+    expect(sessions.trustsFolder(await recover(repo, 'before'))).toBe(false)
     fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
     fs.writeFileSync(
       path.join(gemini, 'antigravity-cli', 'settings.json'),
       JSON.stringify({ trustedWorkspaces: [repo] })
     )
-    expect(sessions.trustsFolder(await recover(repo))).toBe(true)
+    expect(sessions.trustsFolder(await recover(repo, 'own', false))).toBe(false)
+    expect(sessions.trustsFolder(await recover(repo, 'koloft'))).toBe(true)
 
+    const trustedThere = async (): Promise<string[]> => {
+      const at = (await recover(REMOTE_WS, `remote-${machine.launches.length}`)).slice(
+        'ssh://devbox'.length
+      )
+      const spec = machine.launches.at(-1)!
+      const settings = JSON.parse(spec.program.files[`${spec.tabId}.settings.json`])
+      return [at, ...settings.trustedWorkspaces]
+    }
+    const [notTrusted, ...before] = await trustedThere()
+    expect(before).not.toContain(notTrusted)
     machine.config = {
       ownersSettings: { trustedWorkspaces: ['/home/me/proj'] },
       ownersHooks: {},
       ownSettings: {}
     }
-    await recover(REMOTE_WS)
-    const [spec] = machine.launches
-    const settings = JSON.parse(spec.program.files[`${spec.tabId}.settings.json`])
-    expect(settings.trustedWorkspaces).toContain('/home/me/proj/.claude/worktrees/wt')
+    const [trusted, ...after] = await trustedThere()
+    expect(after).toContain(trusted)
   })
 
   it("hands agy Koloft's instructions when a conversation starts only when agent tools are on", async () => {
