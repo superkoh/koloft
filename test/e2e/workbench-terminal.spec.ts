@@ -62,7 +62,7 @@ import {
 } from './helpers/remote'
 
 const FILES_LABEL = 'Files'
-const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 1
+const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 3
 
 const SHELL_TITLE = 'zsh'
 
