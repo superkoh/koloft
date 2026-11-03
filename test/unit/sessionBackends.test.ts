@@ -9,6 +9,7 @@ import {
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
+  turnedOffLine,
   type Capabilities
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
@@ -183,6 +184,20 @@ describe('session backend boundary', () => {
       NO_USABLE_ACCOUNT.codex
     )
     expect(create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a new session of an agent turned off in Settings ▸ Sessions, whatever started it, but still resumes one', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
+    registry.register({ ...stubBackend('codex'), create })
+    registry.turnedOff = (b) => (b === 'codex' ? turnedOffLine(b) : null)
+    await expect(registry.create({ kind: 'codex', cwd: '/repo' })).rejects.toThrow(
+      'Codex is turned off in Settings ▸ Sessions'
+    )
+    expect(create).not.toHaveBeenCalled()
+    await expect(
+      registry.create({ kind: 'codex', cwd: '/repo', resumeSessionId: 'thread' })
+    ).resolves.toMatchObject({ ok: true })
   })
 })
 

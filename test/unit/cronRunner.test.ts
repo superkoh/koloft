@@ -11,7 +11,8 @@ import type { TidyResult } from '../../src/main/sessionClose'
 import { lastRunOf } from '../../src/shared/cronHistory'
 import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
-import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
+import { turnedOffLine } from '../../src/shared/sessionBackend'
+import type { BackendId, CronJob, CronSaveInput, CronState } from '../../src/shared/types'
 
 const ACCOUNT_CHECK_REASON = 'the reason the account check gave'
 const T0 = new Date(2026, 8, 2, 10, 0, 0, 0).getTime()
@@ -128,6 +129,7 @@ function makeHarness(
     tidyRun,
     foldersInUse: () => new Set(flags.inUse),
     quitting: () => flags.quitting,
+    turnedOff: () => null,
     noUsableAccount: () => (flags.account ? null : ACCOUNT_CHECK_REASON),
     trusted: () => true,
     ready: () => flags.ready,
@@ -369,6 +371,28 @@ describe('CronRunner — reasons a run does not start', () => {
       manual: true
     })
     expect(h.toasts).toEqual([`⏰ Nightly report could not start: ${ACCOUNT_CHECK_REASON}`])
+  })
+
+  it('refuses a job whose agent is turned off in Settings ▸ Sessions, a job saved with no agent counting as Claude, and says so in the history, the toast and the reply', async () => {
+    const turnedOff = (b: BackendId): string | null => (b === 'claude' ? turnedOffLine(b) : null)
+    const h = makeHarness([makeJob(), makeJob({ id: 'j2', backend: 'codex' })], { turnedOff })
+    expect(await h.runner.runNow('j1')).toEqual({
+      ok: false,
+      reason: 'turned-off',
+      why: 'Claude is turned off in Settings ▸ Sessions'
+    })
+    expect(h.jobs[0].history[0]).toEqual({
+      dueAt: T0,
+      state: 'failed',
+      note: 'Claude is turned off in Settings ▸ Sessions',
+      manual: true
+    })
+    expect(h.toasts).toEqual([
+      '⏰ Nightly report could not start: Claude is turned off in Settings ▸ Sessions'
+    ])
+    expect(h.launch).not.toHaveBeenCalled()
+    expect(await h.runner.runNow('j2')).toEqual({ ok: true })
+    expect(h.launches.map((l) => l.backend)).toEqual(['codex'])
   })
 
   it('writes "Claude exited before it started" as failed, never skipped, when the launch itself is refused', async () => {

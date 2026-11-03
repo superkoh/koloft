@@ -408,6 +408,7 @@ export interface SessionVerbDeps {
   tabOpen(tabId: string): boolean
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
+  turnedOff(backend: BackendId): string | null
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   waiting: WaitingLaunches
   assist: Assist
@@ -539,6 +540,11 @@ async function startSibling(
   helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
+  const turnedOff = d.turnedOff(backend)
+  if (turnedOff)
+    return refused(
+      `koloft session new: ${turnedOff}, so Koloft starts no ${BACKEND_LABEL[backend]} session. Do the task yourself, or start it with --backend and an agent that is on.`
+    )
   if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
