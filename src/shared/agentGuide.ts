@@ -87,15 +87,22 @@ export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
   agy: 'ask_question'
 }
 
-const QUESTION_RULE: Record<BackendId, string> = {
-  claude: '',
-  codex: `
+function questionRule(askWith: string, after = ''): string {
+  return `
 
 QUESTIONS
 
-When the owner has to choose or answer something, ask with ${CODEX_WAITING_QUESTION_TOOL}, called as a tool of its own (not inside exec): it shows the owner a box with choices and waits for the answer. Never use ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait, and never sleep or poll while you wait.`,
-  muse: '',
-  agy: ''
+When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after}`
+}
+
+const QUESTION_RULE: Record<BackendId, string> = {
+  claude: '',
+  codex: questionRule(
+    `${CODEX_WAITING_QUESTION_TOOL}, called as a tool of its own (not inside exec)`,
+    ` Never use ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait, and never sleep or poll while you wait.`
+  ),
+  muse: questionRule(WAITING_QUESTION_TOOL.muse),
+  agy: questionRule(WAITING_QUESTION_TOOL.agy)
 }
 
 export function koloftPrompt(backend: BackendId): string {
