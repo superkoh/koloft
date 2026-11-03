@@ -1677,7 +1677,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§8 PLATFORM§33
-  test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, and hands its result back to the page that opened it', async ({
+  test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, hands its result back to the page that opened it, and its address bar does not call that localhost Not secure', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -1705,6 +1705,11 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
       })
       await expect(page.locator(BROWSER.tabOpen)).toHaveCount(1)
+      const bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))!
+      await expect(bar.getByRole('textbox', { name: 'Address' })).toHaveValue(
+        `http://localhost:${popupPort}/popup`
+      )
+      await expect(bar.getByText('Not secure')).toBeHidden()
     })
   })
 
