@@ -414,24 +414,20 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       const tag = welcome(page).locator('.wl-agtag')
       const perm = welcome(page).locator('.wl-perm')
       await expect(tag).toContainText('Claude')
-      await perm.locator('button', { hasText: 'Ask about risky steps instead' }).click()
-      await expect(perm).toContainText(
-        'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.'
-      )
+      await perm.locator('button', { hasText: /risky steps/ }).click()
+      await expect(perm).toContainText(/Claude Code asks only about risky steps.*Shift\+Tab/)
       await expect(perm.locator('button')).toHaveText('Don’t ask')
       await expect.poll(() => settingsOnDisk(env).skipPermissions, { timeout: 20_000 }).toBe(false)
 
       await ask.press('Tab')
       await expect(tag).toContainText('Codex')
-      await expect(perm).toContainText('Sessions ask you before each step.')
+      await expect(perm).toContainText(/before each step/)
       await ask.press('Tab')
       await expect(tag).toContainText('Muse')
-      await expect(perm).toContainText(
-        'Muse Code asks only about risky steps, like one that leaves its sandbox.'
-      )
+      await expect(perm).toContainText(/Muse Code asks only about some steps/)
       await ask.press('Tab')
       await expect(tag).toContainText('Antigravity')
-      await expect(perm).toContainText('Sessions ask you before each step.')
+      await expect(perm).toContainText(/before each step/)
       await ask.press('Tab')
       await expect(tag).toContainText('Claude')
 

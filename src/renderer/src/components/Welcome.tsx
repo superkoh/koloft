@@ -55,20 +55,23 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
   agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
 }
 
-// CC§9 CC§14 MUSE§15 AGY§26
-const WHAT_SESSIONS_ASK: Record<BackendId, string> = {
-  claude:
-    'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
-  codex: 'Sessions ask you before each step.',
-  muse: 'Muse Code asks only about risky steps, like one that leaves its sandbox.',
-  agy: 'Sessions ask you before each step.'
+const ASKS_BEFORE_EACH_STEP = {
+  asks: 'Sessions ask you before each step.',
+  instead: 'Ask me first instead'
 }
 
-const ASK_INSTEAD: Record<BackendId, string> = {
-  claude: 'Ask about risky steps instead',
-  codex: 'Ask me first instead',
-  muse: 'Ask about risky steps instead',
-  agy: 'Ask me first instead'
+// CC§9 CC§14 MUSE§15 AGY§26
+const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
+  claude: {
+    asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
+    instead: 'Ask about risky steps instead'
+  },
+  codex: ASKS_BEFORE_EACH_STEP,
+  muse: {
+    asks: 'Muse Code asks only about some steps, like one that leaves its sandbox.',
+    instead: 'Ask about some steps instead'
+  },
+  agy: ASKS_BEFORE_EACH_STEP
 }
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
@@ -718,12 +721,12 @@ export function Welcome({
                 <>
                   Sessions run each step without stopping to ask.{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
-                    {ASK_INSTEAD[pick]}
+                    {WHAT_SESSIONS_ASK[pick].instead}
                   </button>
                 </>
               ) : (
                 <>
-                  {WHAT_SESSIONS_ASK[pick]}{' '}
+                  {WHAT_SESSIONS_ASK[pick].asks}{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
                     Don’t ask
                   </button>
