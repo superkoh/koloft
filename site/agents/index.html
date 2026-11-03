@@ -251,9 +251,9 @@
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
           Work that needs its own branch or worktree goes to a Koloft session started with
           <code class="nowrap">-w</code>. It never goes to a hidden helper, or to a branch in the
-          folder other sessions share. Work that will end in several pull requests (proposed code
-          changes) gets one such session per pull request. When each pull request builds on the one
-          before, the next session starts only once the branch it builds on is pushed.
+          folder other sessions share. Work that ends in several pull requests (proposed code
+          changes) gets one such session each. If one builds on another, its session waits until
+          that branch is pushed.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
