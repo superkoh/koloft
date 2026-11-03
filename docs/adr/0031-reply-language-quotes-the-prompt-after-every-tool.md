@@ -56,7 +56,15 @@ parent's last message from the owner that is neither a session's report nor Assi
 wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote to that session, not to you: «…»", Koloft writes those words as the child's
 saved words before it starts, local or on a remote machine (through the tab package), so
 its hook quotes them and skips its handed-over task, and the child's title is asked for in
-their language.
+their language. For the title the words are quoted only when their letters cannot tell the
+language: when they carry Han, kana or Hangul, the title prompt names Chinese, Japanese or
+Korean and leaves the words out, since a title model handed them titled a task that only
+points to a file ("读 <path>，照它做完。") with them instead. Measured 2026-11-03 with
+`claude -p --model haiku` and Assist's one-shot arguments, a Chinese owner sentence of
+about 50 characters and a scratchpad path: with the words quoted, 6 / 6 such titles came
+from the words (8 / 8 in the run that found it); with "Write it in Chinese", 0 / 12, and
+an English task was still titled in Chinese 12 / 12. (This is the title prompt only; for
+the reply reminder, naming the language alone did not help, below.)
 The rest of the preamble is in the owner's language too: an owner reading a child's tab
 met a paragraph of English before the task (2026-10-16). Assist's one-shot model
 translates Koloft's English sentence into the language of the owner's words; Koloft
