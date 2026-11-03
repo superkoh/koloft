@@ -95,6 +95,7 @@ export interface Host {
   gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   readText(file: string): Promise<string>
+  readBytes(file: string): Promise<Buffer>
   openForEdit(file: string): Promise<EditOpenResult>
   writeText(
     file: string,

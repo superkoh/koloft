@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install'
+import { formatRemoteKey } from '../../src/shared/remoteKey'
 import {
   CLUE_ALL,
   RECEIVE_FILES,
@@ -23,6 +24,7 @@ import { machineGhWrapperScript } from '../../src/main/gitCredentialScripts'
 import { GITHUB_URL, credentialUrlOf, fileNameOf } from '../../src/main/gitConfigFile'
 import { suggestFor } from '../../src/main/gitAccountSuggest'
 import { pushAccessOn } from '../../src/main/gitPlatformApi'
+import { REMOTE_URLS } from '../../src/main/gitSshRemotes'
 import type { GitAccount, GitAccountSuggestion } from '../../src/shared/types'
 
 let home: string
@@ -82,6 +84,43 @@ describe('the environment every remote shell gets', () => {
       env: { GIT_CONFIG_PARAMETERS: "'core.x'='1'" }
     })
     expect(r.stdout).toBe('yes\n1\n')
+  })
+
+  // PLATFORM§37
+  it('gives programs a UTF-8 locale the machine has (C.UTF-8, then en_US.UTF-8, then any) only when they would run in ASCII and no LC_ALL or LC_CTYPE was chosen: as LC_CTYPE beside no LANG or LANG=C, in place of a LANG the machine lacks', () => {
+    const bin = path.join(home, '.local/bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(
+      path.join(bin, 'locale'),
+      '#!/bin/sh\n[ "$1" = -a ] && exec cat "$HOME/locales"\ncat "$HOME/charmap"\n',
+      { mode: 0o755 }
+    )
+    const ASCII = 'ANSI_X3.4-1968\n'
+    const after = (charmap: string, locales: string[], env: NodeJS.ProcessEnv = {}): string => {
+      fs.writeFileSync(path.join(home, 'charmap'), charmap)
+      fs.writeFileSync(path.join(home, 'locales'), locales.map((l) => `${l}\n`).join(''))
+      return sh(`${REMOTE_ENV_LINES}\nprintf 'LANG=[%s] LC_CTYPE=[%s]' "$LANG" "$LC_CTYPE"`, {
+        env
+      }).stdout
+    }
+    const debian = ['C', 'C.utf8', 'POSIX', 'aa_DJ.utf8', 'en_US.utf8']
+    expect(after(ASCII, debian)).toBe('LANG=[] LC_CTYPE=[C.utf8]')
+    expect(after('US-ASCII\n', ['C', 'C.UTF-8', 'C.utf8', 'POSIX'])).toBe(
+      'LANG=[] LC_CTYPE=[C.UTF-8]'
+    )
+    expect(after(ASCII, debian, { LANG: 'C' })).toBe('LANG=[C] LC_CTYPE=[C.utf8]')
+    expect(after(ASCII, debian, { LANG: 'en_US.UTF-8' })).toBe('LANG=[C.utf8] LC_CTYPE=[]')
+    expect(after(ASCII, ['C', 'POSIX', 'aa_DJ.utf8', 'en_US.utf8'])).toBe(
+      'LANG=[] LC_CTYPE=[en_US.utf8]'
+    )
+    expect(after(ASCII, ['C', 'POSIX', 'de_DE.utf8'])).toBe('LANG=[] LC_CTYPE=[de_DE.utf8]')
+    expect(after(ASCII, ['C', 'POSIX'], { LANG: 'C' })).toBe('LANG=[C] LC_CTYPE=[]')
+    expect(after('UTF-8\n', debian, { LANG: 'en_US.UTF-8' })).toBe('LANG=[en_US.UTF-8] LC_CTYPE=[]')
+    expect(after('ISO-8859-1\n', debian, { LANG: 'de_DE.ISO-8859-1' })).toBe(
+      'LANG=[de_DE.ISO-8859-1] LC_CTYPE=[]'
+    )
+    expect(after(ASCII, debian, { LC_ALL: 'C' })).toBe('LANG=[] LC_CTYPE=[]')
+    expect(after(ASCII, debian, { LC_CTYPE: 'C' })).toBe('LANG=[] LC_CTYPE=[C]')
   })
 })
 
@@ -252,6 +291,50 @@ describe('a suggestion for a repository on a machine', () => {
   })
 })
 
+describe("the picked repositories' remote URLs a sync reads on a machine", () => {
+  it('come back in one trip for every repository, the same as a trip per repository, a missing folder as nothing, a login banner ignored, and a failed trip as no answer at all', async () => {
+    const make = (name: string, cmds: string): string => {
+      const dir = path.join(home, name)
+      sh(`git init -q '${dir}' && cd '${dir}' && ${cmds}`)
+      return dir
+    }
+    const repos = [
+      make('https', 'git remote add origin https://github.com/acme/app.git'),
+      path.join(home, 'gone'),
+      make(
+        'two',
+        'git remote add origin git@github.com:acme/app.git && git remote add up https://x.example/u.git && git config remote.origin.pushurl ssh://git@github.com:22/acme/app.git'
+      ),
+      make('bare', 'true')
+    ]
+    let trips = 0
+    const machine = new GitMachineAccounts(async (m, script, args = [], opts = {}) => {
+      trips++
+      const r = onMachine(script, args, opts.input)
+      if (m === 'down') return { code: 255, stdout: '', stderr: 'Connection closed' }
+      const banner = m === 'chatty' ? 'Welcome to box\n' : ''
+      return { code: r.status, stdout: banner + r.stdout, stderr: r.stderr }
+    })
+    const each = await machine.remoteUrlsOfEach('box', repos)
+    expect(trips).toBe(1)
+    const oneByOne = await Promise.all(
+      repos.map(
+        async (dir) =>
+          (await machine.clueGit('box', dir, ['config', '--get-regexp', REMOTE_URLS])).stdout
+      )
+    )
+    expect(each).toEqual(oneByOne)
+    expect(each![0]).toContain('remote.origin.url https://github.com/acme/app.git')
+    expect(each![2]).toContain('remote.origin.pushurl ssh://git@github.com:22/acme/app.git')
+    expect([each![1], each![3]]).toEqual(['', ''])
+    expect(await machine.remoteUrlsOfEach('chatty', repos)).toEqual(each)
+    expect(await machine.remoteUrlsOfEach('down', repos)).toBeNull()
+    trips = 0
+    expect(await machine.remoteUrlsOfEach('box', [])).toEqual([])
+    expect(trips).toBe(0)
+  })
+})
+
 describe('the files Koloft keeps in step on a machine', () => {
   it('replaces the set each time, removing what is no longer listed', () => {
     const send = (files: Record<string, string>): void => {
@@ -264,6 +347,29 @@ describe('the files Koloft keeps in step on a machine', () => {
     expect(fs.readdirSync(path.join(dir, 'accounts'))).toEqual(['b.gitconfig'])
     expect(fs.readFileSync(path.join(dir, 'config'), 'utf8')).toBe('two')
     expect(fs.readdirSync(dir).filter((n) => n.startsWith('.incoming'))).toEqual([])
+  })
+})
+
+describe('the repository key of each folder on a machine', () => {
+  it('stays with its own folder when the login shell prints a banner first, even one with no line end, and a short answer gives no key at all', async () => {
+    const repo = (name: string): string => {
+      const dir = path.join(home, name)
+      sh(`git init -q '${dir}'`)
+      return dir
+    }
+    const folders = [repo('one'), path.join(home, 'gone'), repo('two')]
+    const machine = new GitMachineAccounts(async (m, script, args = [], opts = {}) => {
+      const r = onMachine(script, args, opts.input)
+      const banner = m === 'chatty' ? 'Welcome to box\n\x1b]0;box\x07' : ''
+      const stdout = m === 'short' ? r.stdout.replace(/repo-key [^\n]*\n/, '') : r.stdout
+      return { code: r.status, stdout: banner + stdout, stderr: r.stderr }
+    })
+    expect(await machine.repoKeys('chatty', folders)).toEqual([
+      formatRemoteKey('chatty', path.join(home, 'one/.git')),
+      null,
+      formatRemoteKey('chatty', path.join(home, 'two/.git'))
+    ])
+    expect(await machine.repoKeys('short', folders)).toEqual([null, null, null])
   })
 })
 

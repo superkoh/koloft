@@ -8,6 +8,9 @@ import {
   NOT_FROM_THE_RELAY,
   NOTICE_SUFFIX,
   noticeLine,
+  OWNER_ASLEEP_FILE,
+  OWNER_ASLEEP_PUSH,
+  ownerAsleepMarker,
   seedHandedOverOwnerWords
 } from '../../src/main/hooks'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
@@ -60,7 +63,7 @@ const p2 = (n) => String(n).padStart(2, '0')
 const logDir = path.join(data, 'sessions', String(d.getFullYear()), p2(d.getMonth() + 1), p2(d.getDate()), sid)
 fs.mkdirSync(logDir, { recursive: true })
 const log = path.join(logDir, 'session.jsonl')
-fs.writeFileSync(log, JSON.stringify({ payload_type: 'session.name.changed', payload: { new_name: 'before-bind', source: 'user' } }) + '\\n')
+fs.writeFileSync(log, (process.env.FAKE_FIRST_RECORD || JSON.stringify({ payload_type: 'session.name.changed', payload: { new_name: 'before-bind', source: 'user' } })) + '\\n')
 process.stdin.setRawMode(true)
 let heard = ''
 process.stdin.on('data', (chunk) => {
@@ -143,7 +146,7 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       expect(mirror).toEqual(
         expect.arrayContaining([
           { t: 'state', seq: 1, state: 'idle', kind: null },
-          { t: 'bound', sessionId: SID },
+          { t: 'bound', sessionId: SID, forked: false },
           {
             t: 'log',
             seq: expect.any(Number),
@@ -172,6 +175,18 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       expect(fs.readFileSync(path.join(m.home, 'tmux-calls'), 'utf8')).toBe(
         `rename-session -t %7 k-${SID}\n`
       )
+    }, 15_000)
+
+    it("says a session it binds to is a /fork copy when the session's log starts with the record Muse writes for one", async () => {
+      const m = machine()
+      installFakeMuse(m)
+      m.env.FAKE_FIRST_RECORD = JSON.stringify({
+        payload_type: 'session.fork.created',
+        payload: { fork_session_id: SID, source_session_id: 'source' }
+      })
+      await runWrapper(m, [])
+      const mirror = lines(path.join(m.home, '.koloft', 'hook-sessions', 'pty-1.muse.jsonl'))
+      expect(mirror).toContainEqual({ t: 'bound', sessionId: SID, forked: true })
     }, 15_000)
 
     it('trusts the folders it is told to before Muse starts, and adds --trust-workspace only when the workspace it is asked about is trusted', async () => {
@@ -232,6 +247,7 @@ describe('the session-log lines muse-wrap.py passes on', () => {
     ]
   ]
   const readersARemoteTabLeavesToItsHooks = ['replyIn', 'turnEndedIn']
+  const readersTheWrapperRunsOnTheFirstLine = ['startsAsAFork']
   const notReaders = [
     'museHome',
     'museConfigHome',
@@ -261,6 +277,7 @@ describe('the session-log lines muse-wrap.py passes on', () => {
       [
         ...readersARemoteTabActsOn.map(([reader]) => reader.name),
         ...readersARemoteTabLeavesToItsHooks,
+        ...readersTheWrapperRunsOnTheFirstLine,
         ...notReaders
       ].sort()
     )
@@ -338,6 +355,27 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     expect(fs.existsSync(mirror)).toBe(false)
     expect(run('{"session_id":"a","stop_hook_active":true}')).toBe('')
     expect(lines(mirror)).toMatchObject([{ t: 'hook', event: 'Stop' }])
+  })
+
+  // MUSE§9
+  it('while the owner is asleep, a turn about to end on the machine is pushed once to go on by itself, and the butler is not', () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    fs.writeFileSync(
+      path.join(m.home, '.koloft', 'hook-sessions', OWNER_ASLEEP_FILE),
+      ownerAsleepMarker(['butler-tab'])
+    )
+    const run = (tab: string, input: string): string =>
+      spawnSync('bash', [script, tab, 'Stop'], { env: m.env, input, encoding: 'utf8' }).stdout
+    expect(JSON.parse(run('pty-1', '{"session_id":"a","stop_hook_active":false}'))).toEqual({
+      decision: 'block',
+      reason: `${OWNER_ASLEEP_PUSH}\n\n`
+    })
+    expect(run('pty-1', '{"session_id":"a","stop_hook_active":true}')).toBe('')
+    expect(run('butler-tab', '{"session_id":"b","stop_hook_active":false}')).toBe('')
   })
 
   it("a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request keep the quote of the owner's own last prompt", () => {

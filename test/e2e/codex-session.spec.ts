@@ -77,6 +77,7 @@ import {
   readCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   settingsOnDisk,
   snap,
@@ -1587,45 +1588,11 @@ test.describe('Codex sessions through the real method chooser, process transport
   }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
-    const resourceId = randomUUID()
     const name = 'interrupted-codex'
-    const cwd = path.join(env.workspaces.a, '.claude', 'worktrees', name)
-    const baseline = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: env.workspaces.a,
-      encoding: 'utf8'
-    }).trim()
-    fs.writeFileSync(
-      path.join(env.userData, 'sessions.json'),
-      JSON.stringify({
-        version: 1,
-        members: {},
-        resources: {
-          [resourceId]: {
-            id: resourceId,
-            originalCwd: env.workspaces.a,
-            worktreePath: cwd,
-            worktreeName: name,
-            worktreeBranch: 'worktree-' + name,
-            originalHeadCommit: baseline,
-            state: 'creating',
-            managed: true
-          }
-        }
-      })
-    )
-    execFileSync(
-      'git',
-      [
-        '-c',
-        'user.email=e2e@koloft.test',
-        '-c',
-        'user.name=koloft-e2e',
-        'commit',
-        '--allow-empty',
-        '-qm',
-        'Advance main'
-      ],
-      { cwd: env.workspaces.a }
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'sessions.json',
+      name
     )
     const app = await launchApp(env)
     try {
@@ -1639,7 +1606,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
       await expect(
         dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
-      ).toContainText('Codex')
+      ).toContainText('and start Codex.')
       await expect(dialog.locator('.modal-foot button')).toHaveCount(2)
       await expect(dialogPrimary(dialog)).toContainText('Recover · Codex')
       await expect(dialog.locator('.fresh-line')).toHaveCount(0)
@@ -1650,8 +1617,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
         baseline
       )
-      const saved = (): { resources: Record<string, { state: string }>; members: object } =>
-        JSON.parse(fs.readFileSync(path.join(env.userData, 'sessions.json'), 'utf8'))
       await expect
         .poll(() => Object.values(saved().members))
         .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])

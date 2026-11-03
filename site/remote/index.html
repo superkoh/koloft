@@ -188,9 +188,11 @@ your Mac                     the other machine
             then less and less often, down to once a minute. Close the session's tab meanwhile and
             Koloft says so:
             <code
-              >Could not stop “…” on &lt;machine&gt;: &lt;why&gt;. It is still running there.</code
+              >Could not stop … on &lt;machine&gt;: &lt;why&gt;. It is still running there.</code
             >
-            The row stays lit, and a click joins that session again.
+            (for Claude Code the … is the session's name in quotes, or <code>a session</code>; for
+            Muse and Antigravity it is their own name). The row stays lit, and a click joins that
+            session again.
           </li>
           <li>
             Codex is different: it runs as its own server on the machine, and the Codex screen on
@@ -199,7 +201,14 @@ your Mac                     the other machine
             the running turn keeps going there, and the tab reconnects by itself. Quit Koloft in the
             middle of a turn, and the turn keeps going there too, so it can finish; open Koloft
             again while it is still going, and Koloft stops it then. Closing the tab ends the
-            server; a click on the row resumes the same conversation on a new one. With
+            server; a click on the row resumes the same conversation on a new one. Once Codex has
+            opened the session there, close the tab while ssh is down, and the server keeps running
+            there; Koloft says so:
+            <code
+              >Could not stop Codex on &lt;machine&gt;: &lt;why&gt;. It is still running
+              there.</code
+            >
+            With
             <a href="../accounts/">Skip permission prompts</a> on, a new Codex session there runs
             with no sandbox and never asks, as on your Mac, whatever the account's own Codex
             settings say. With it off, in a folder the machine trusts, a shell command runs in

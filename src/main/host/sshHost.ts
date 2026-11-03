@@ -73,6 +73,8 @@ import {
   HOLD_FILE,
   NOTICE_THIS_TURN,
   noticeLine,
+  OWNER_ASLEEP_FILE,
+  ownerAsleepMarker,
   remoteNoticeFile,
   type NoticeFile
 } from '../hooks'
@@ -226,9 +228,9 @@ const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
   'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
-const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
-const MACHINE_PAGE_READ_MS = 120_000
-const MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
+const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
+const WHOLE_FILE_READ_MS = 120_000
+const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -596,6 +598,10 @@ t="$fresh"; k=fresh
 [ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
 printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
 
+const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
+cat > "$f.part" && mv -f "$f.part" "$f"`
+
 const SAVE_PICK = `d="$HOME/.koloft/element-picks"
 mkdir -p "$d" && cd "$d" || exit 1
 find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
@@ -615,8 +621,8 @@ export class SshHost implements Host {
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
-  private pageReads = 0
-  private pageReadsWaiting: (() => void)[] = []
+  private wholeReads = 0
+  private wholeReadsWaiting: (() => void)[] = []
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -865,16 +871,16 @@ export class SshHost implements Host {
     return body.toString('utf8')
   }
 
-  async readPageFile(file: string): Promise<Buffer> {
-    while (this.pageReads >= MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
-      await new Promise<void>((free) => this.pageReadsWaiting.push(free))
-    this.pageReads++
+  async readBytes(file: string): Promise<Buffer> {
+    while (this.wholeReads >= WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
+      await new Promise<void>((free) => this.wholeReadsWaiting.push(free))
+    this.wholeReads++
     try {
-      const read = this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES, MACHINE_PAGE_READ_MS)
+      const read = this.readWithHeader(file, WHOLE_FILE_MAX_BYTES, WHOLE_FILE_READ_MS)
       return (await read).body
     } finally {
-      this.pageReads--
-      this.pageReadsWaiting.shift()?.()
+      this.wholeReads--
+      this.wholeReadsWaiting.shift()?.()
     }
   }
 
@@ -985,6 +991,13 @@ export class SshHost implements Host {
     const r = await this.sh(SAVE_PICK, [name], { input: png })
     if (r.code !== 0) throw new Error(problemOf(r))
     return r.stdout.toString('utf8')
+  }
+
+  async markOwnerAsleep(awakeTabs: string[] | null): Promise<boolean> {
+    const r = awakeTabs
+      ? await this.sh(MARK_OWNER_ASLEEP, [], { input: Buffer.from(ownerAsleepMarker(awakeTabs)) })
+      : await this.sh(`rm -f "${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"`, [])
+    return r.code === 0
   }
 
   notice(tabId: string): NoticeFile {

@@ -165,9 +165,6 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.acct-foot .acct-refresh {
-  margin-left: auto;
-}
 .acct-add {
   display: flex;
   flex-direction: column;
