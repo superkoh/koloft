@@ -12,9 +12,9 @@ const ITS_ELLIPSIS_AS_A_UTF8_OR_ANOTHER_TMUX_CLIENT_DRAWS_IT = ['…', '_']
 // CC§4
 const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
 // CC§1 CC§4
-const CLAUDE_RESUME_HINT_COMMAND = /^claude (?:\S+ )*--resume \S+$/
+const CLAUDE_RESUME_HINT_COMMAND = /^claude (?:\S+ )*--resume \S/
 // CC§1 CC§4
-const ROOM_FOR_A_RESUME_HINT_WHOSE_FLAGS_FILL_A_WIDE_TERMINAL = 2048
+const ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL = 2048
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 // CC§4 PLATFORM§35
@@ -56,7 +56,7 @@ export class WorktreeRemovalWatch {
       for (
         let removing = seen.indexOf(line, after);
         removing >= 0 &&
-        removing - after <= ROOM_FOR_A_RESUME_HINT_WHOSE_FLAGS_FILL_A_WIDE_TERMINAL;
+        removing - after <= ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL;
         removing = seen.indexOf(line, removing + 1)
       ) {
         const ellipsis = seen[removing + line.length]
@@ -71,7 +71,7 @@ export class WorktreeRemovalWatch {
       }
       if (
         seen.length - after <=
-        ROOM_FOR_A_RESUME_HINT_WHOSE_FLAGS_FILL_A_WIDE_TERMINAL + line.length
+        ROOM_FOR_A_RESUME_HINT_NO_WIDER_THAN_A_1900_COLUMN_TERMINAL + line.length
       )
         keepFrom = Math.min(keepFrom, title)
     }

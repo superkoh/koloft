@@ -132,14 +132,16 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `claude --model haiku --effort high --dangerously-skip-permissions --resume <id>`,
   `claude --settings ../koloft/tab.json --model opus --resume <id>`. `--session-id`,
   `--name`, `-w`/`--worktree` and `--resume` are never repeated; every other flag is,
-  with its value as written and unquoted. When one value holds a character outside
-  `[\w./:@=+-]` (a space, a quote) no flag is repeated, so the `--settings` path under
+  with its value as written and unquoted. When one value does not match
+  `^[\w./:+][\w./:@=+-]*$` (a space, a quote) no flag is repeated (the pattern read
+  from `strings`; the space case run), so the `--settings` path under
   `~/Library/Application Support/` that Koloft's shim passes on the Mac keeps the bare
   `claude --resume <id>`; a tab on another machine passes
   `--settings "$HOME/.koloft/tabs/<tab>.json"`, which has no space. When the repeated
   flags hold a `/` or a `.`, they are printed only when the whole line fits the
   terminal's width; without one they are printed at any width (at 60 columns the
-  terminal wraps the line, the bytes stay one line). An empty
+  terminal wraps the line, the bytes stay one line). A Koloft launch always passes a
+  `--settings` path with a `/`, so its hint line is never wider than its terminal. An empty
   `CLAUDE_CODE_RELAUNCH_RESUME_HINT_FLAGS` in the env stands in for the flags and
   gives the bare form. Measured 2026-11-03 on 2.1.316 and 2.1.317 darwin-arm64: python
   pty at 60, 120 and 400 columns, scratch `HOME`, a fake API key, one `hello` and then

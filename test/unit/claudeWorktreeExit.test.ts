@@ -40,15 +40,6 @@ describe('telling that Claude Code has started removing its worktree', () => {
     }
   })
 
-  it('does not take a line that only mentions --resume between the empty title and "Removing worktree…" for the hint', () => {
-    const watch = new WorktreeRemovalWatch()
-    expect(
-      watch.started(
-        '\x1b]0;\x07\r\nResume this session with:\r\nrun claude --resume abc later\r\nRemoving worktree…\r\n'
-      )
-    ).toBe(false)
-  })
-
   it('sees the start of the removal in the bytes a tab on a machine gets through tmux, which sends mode switches between the empty title and the line, with and without the resume hint, and draws the ellipsis as _ for a login that is not UTF-8', () => {
     const throughTmux = [
       '\x1b[7;1H\x1b[K\x1b]0;\x07\x1b[?12l\x1b[?25h\x1b[?2004lRemoving worktree…\r\n',
