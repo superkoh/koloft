@@ -1305,11 +1305,8 @@ describe('CodexSessions', () => {
       ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
-    expect(on.configOverrides).toEqual(
-      expect.arrayContaining([
-        'sandbox_workspace_write.network_access=true',
-        `sandbox_workspace_write.writable_roots=${JSON.stringify(['/owner/root', cache])}`
-      ])
+    expect(on.configOverrides).toContain(
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(['/owner/root', cache])}`
     )
     expect(fs.statSync(cache).isDirectory()).toBe(true)
     const zdot = vi.mocked(deps.pty.create).mock.calls[0][0].processEnv!.ZDOTDIR!
@@ -1369,6 +1366,9 @@ describe('CodexSessions', () => {
   it("every tab's sandbox may reach the network from launch, with or without the Workbench browser, the butler's alike, so a git account picked later works without a restart", async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     await sessions.launch({ kind: 'codex', cwd: other, conductor: true })
+    vi.mocked(deps.browserEndpoint).mockReturnValue('ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32))
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(mocks.create).toHaveBeenCalledTimes(3)
     for (const [o] of mocks.create.mock.calls)
       expect((o as CodexTransportOptions).configOverrides).toContain(
         'sandbox_workspace_write.network_access=true'

@@ -398,7 +398,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
   })
 
   // ADR-0047
-  test("GA-06: with the Workbench browser off, a Codex tab in a picked repository and one in another repository both load Koloft's git config and may reach the network, so a pick made later works in the running tab", async ({
+  test("GA-06: with the Workbench browser off, a Codex tab in a picked repository and one in another repository both load Koloft's git config and may reach the network", async ({
     env
   }) => {
     test.setTimeout(180_000)
