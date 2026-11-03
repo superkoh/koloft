@@ -3392,7 +3392,6 @@ app.whenReady().then(() => {
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
-        picked: (cwd) => gitAccounts!.pickedAt(cwd),
         ghWrapper
       }
     })

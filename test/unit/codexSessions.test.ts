@@ -225,7 +225,6 @@ beforeEach(() => {
     agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
-      picked: vi.fn(async () => false),
       ghWrapper: path.join(directory, 'shim', 'gh')
     }
   }
@@ -1288,7 +1287,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§26 PLATFORM§17 ADR-0029
-  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
+  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the writable folders stay as they were", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
     const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
@@ -1332,7 +1331,9 @@ describe('CodexSessions', () => {
     vi.mocked(deps.browserEndpoint).mockReturnValue('')
     await sessions.launch({ kind: 'codex', cwd: repo })
     const off = mocks.create.mock.calls[2][0] as CodexTransportOptions
-    expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
+    expect(
+      off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.writable_roots'))
+    ).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
       ...RESERVED_TAB_PLAYWRIGHT_ENV
@@ -1364,16 +1365,14 @@ describe('CodexSessions', () => {
     )
   })
 
-  // CODEX§29
-  it('a tab in a repository with a picked git account may reach the network, and one without stays offline', async () => {
-    vi.mocked(deps.gitAccounts.picked).mockImplementation(async (cwd) => cwd === repo)
+  // ADR-0047 CODEX§29
+  it("every tab's sandbox may reach the network from launch, with or without the Workbench browser, the butler's alike, so a git account picked later works without a restart", async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
-    await sessions.launch({ kind: 'codex', cwd: other })
-    const [picked, unpicked] = mocks.create.mock.calls.map(([o]) => o as CodexTransportOptions)
-    expect(picked.configOverrides).toContain('sandbox_workspace_write.network_access=true')
-    expect(unpicked.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(
-      false
-    )
+    await sessions.launch({ kind: 'codex', cwd: other, conductor: true })
+    for (const [o] of mocks.create.mock.calls)
+      expect((o as CodexTransportOptions).configOverrides).toContain(
+        'sandbox_workspace_write.network_access=true'
+      )
   })
 
   // ADR-0029 CODEX§11

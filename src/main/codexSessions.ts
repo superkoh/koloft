@@ -58,8 +58,9 @@ import {
   permissionConfig,
   permissionFlags,
   PERMISSIONS,
-  browserSandboxOverrides,
+  playwrightCacheRootOverride,
   playwrightEnvOverrides,
+  SANDBOX_NETWORK,
   seedAssistMemory,
   STATUS_LINE_CONFIG,
   trustedInPlace,
@@ -290,7 +291,6 @@ export interface CodexSessionDeps extends StoredSessionDeps {
     skillsFolder(): string | undefined
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
-    picked(cwd: string): Promise<boolean>
     ghWrapper: string
   }
 }
@@ -566,7 +566,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     fs.mkdirSync(cacheDir, { recursive: true })
     return [
       ...playwrightEnvOverrides(config.mcp_servers),
-      ...browserSandboxOverrides(config.sandbox_workspace_write, cacheDir)
+      playwrightCacheRootOverride(config.sandbox_workspace_write, cacheDir)
     ]
   }
 
@@ -818,10 +818,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const holdHere = holding && !machine ? this.deps.holdScript : undefined
     const endpoint = machine ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
-    // CODEX§29
-    const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
-      ? ['sandbox_workspace_write.network_access=true']
-      : []
     this.assertStarting()
     let bound: CodexRun | undefined
     const observe = (event: CodexEvent): void => {
@@ -905,7 +901,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       configOverrides: [
         ...(builtInStatusLine ? [STATUS_LINE_CONFIG] : []),
         ...browser,
-        ...gitNetwork,
+        SANDBOX_NETWORK,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
         ...(opts.resumeSessionId ? permissionConfig(permissions) : []),
         CODEX_ASKS_AND_WAITS
