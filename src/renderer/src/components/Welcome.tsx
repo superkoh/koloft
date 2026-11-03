@@ -1,4 +1,13 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
@@ -371,7 +380,8 @@ export function Welcome({
   })()
   const steppedAside = !!signInTabId && activeTabId === signInTabId && !peek
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (steppedAside || aDialogIsOpen()) return
       if (e.key === 'Escape') {

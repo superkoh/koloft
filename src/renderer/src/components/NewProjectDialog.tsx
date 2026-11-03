@@ -16,6 +16,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch,
   type StartSession
 } from './SessionLaunchButtons'
@@ -55,17 +56,12 @@ export function NewProjectDialog({
   const choice = sessionLaunch.choice()
   const [listOpen, setListOpen] = useState(false)
   const locked = sessionLaunch.starting
+  useLaunchLock(launchLock, locked)
+
   // PLATFORM§25
   useLayoutEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
-
-  useEffect(() => {
-    folderRef.current?.focus()
-  }, [])
+    if (!locked) folderRef.current?.focus()
+  }, [locked])
 
   // PLATFORM§25
   useLayoutEffect(() => {

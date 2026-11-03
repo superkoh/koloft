@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -72,6 +73,16 @@ export function useLaunchChoice(host: HostId) {
     retry: () => setRetry((n) => n + 1),
     checkFailed
   }
+}
+
+export function useLaunchLock(launchLock: { current: boolean }, locked: boolean): void {
+  // PLATFORM§25
+  useLayoutEffect(() => {
+    launchLock.current = locked
+    return () => {
+      launchLock.current = false
+    }
+  }, [locked, launchLock])
 }
 
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {

@@ -55,6 +55,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch,
   type SessionLaunchOptions,
   type StartSession
@@ -178,13 +179,7 @@ export function WorktreeSessionDialog({
     item: aim.kind === 'item' ? aim.item.number : undefined
   }
   const locked = phase === 'pulling' || sessionLaunch.starting
-  // PLATFORM§25
-  useLayoutEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
+  useLaunchLock(launchLock, locked)
   const choice =
     aim.kind === 'recover'
       ? sessionLaunch.choice({ backends: [aim.backend], chosen: aim.backend })
@@ -211,7 +206,8 @@ export function WorktreeSessionDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [locked, confirm, hot, query, onClose])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     inputRef.current?.focus()
   }, [locked, confirm])

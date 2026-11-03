@@ -28,6 +28,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch
 } from './SessionLaunchButtons'
 import '../workspacePicker.css'
@@ -79,13 +80,7 @@ export function WorkspacePicker({
   const [listOpen, setListOpen] = useState(false)
   const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
-  // PLATFORM§25
-  useLayoutEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
+  useLaunchLock(launchLock, locked)
   const failedHere = phase === 'failed' && !!target && failedFor === target.workspace.path
   const morph =
     mode === 'main' &&
