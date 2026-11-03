@@ -145,12 +145,14 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       { name: 'tasks', path: SCRATCH + '/tasks', isDir: true },
       { name: 'plan.md', path: SCRATCH + '/plan.md', isDir: false }
     ]
-    expect(scratchpadEntries(entries, SCRATCH, 'claude').map((e) => e.name)).toEqual(['plan.md'])
-    expect(scratchpadEntries(undefined, SCRATCH, 'claude')).toEqual([])
+    expect(scratchpadEntries(entries, SCRATCH, 'claude', {}).map((e) => e.name)).toEqual([
+      'plan.md'
+    ])
+    expect(scratchpadEntries(undefined, SCRATCH, 'claude', {})).toEqual([])
   })
 
   // AGY§8 AGY§19
-  it('an Antigravity conversation folder shows its artifacts and scratch/, never agy’s own logs, uploads folder or an artifact’s metadata file; files of those names the model made deeper down, or in another agent’s scratchpad, still show', () => {
+  it('an Antigravity conversation folder shows its artifacts and a scratch/ with something in it, never agy’s own logs, uploads folder or an artifact’s metadata file; files of those names the model made deeper down, or in another agent’s scratchpad, still show', () => {
     const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
     const entry = (dir: string, name: string, isDir = false): DirEntry => ({
       name,
@@ -165,15 +167,28 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
       entry(brain, 'implementation_plan.md.metadata.json'),
       entry(brain, 'tasks', true)
     ]
-    expect(scratchpadEntries(top, brain, 'agy').map((e) => e.name)).toEqual([
+    const scratchHasAFile = { [brain + '/scratch']: [entry(brain + '/scratch', 'notes.md')] }
+    expect(scratchpadEntries(top, brain, 'agy', scratchHasAFile).map((e) => e.name)).toEqual([
       'scratch',
       'implementation_plan.md',
       'tasks'
     ])
     const deeper = [entry(brain + '/scratch', 'run.md.metadata.json')]
-    expect(scratchpadEntries(deeper, brain, 'agy')).toEqual(deeper)
+    expect(scratchpadEntries(deeper, brain, 'agy', {})).toEqual(deeper)
     const claudes = [entry(SCRATCH, 'build.md.metadata.json')]
-    expect(scratchpadEntries(claudes, SCRATCH, 'claude')).toEqual(claudes)
+    expect(scratchpadEntries(claudes, SCRATCH, 'claude', {})).toEqual(claudes)
+  })
+
+  // AGY§8
+  it('an Antigravity conversation folder hides the scratch/ agy makes empty at the first prompt while it is empty or not yet listed; a file named scratch still shows', () => {
+    const brain = '/home/u/.gemini/antigravity-cli/brain/c1'
+    const scratch: DirEntry = { name: 'scratch', path: `${brain}/scratch`, isDir: true }
+    const plan: DirEntry = { name: 'plan.md', path: `${brain}/plan.md`, isDir: false }
+    const names = (top: DirEntry[], listed: Record<string, DirEntry[]>): string[] =>
+      scratchpadEntries(top, brain, 'agy', listed).map((e) => e.name)
+    expect(names([scratch, plan], {})).toEqual(['plan.md'])
+    expect(names([scratch, plan], { [scratch.path]: [] })).toEqual(['plan.md'])
+    expect(names([{ ...scratch, isDir: false }, plan], {})).toEqual(['scratch', 'plan.md'])
   })
 })
 
