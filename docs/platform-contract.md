@@ -353,9 +353,25 @@ method. A recheck adds its date, version and command to the bullet.
   partition whose `window.opener` survives cross-origin redirects, so the last page's
   `postMessage` reaches the opener. That window's `web-contents-created` fires with
   `getType()` `'window'`, which electron-chrome-extensions' action popup also has in the same
-  session (its source builds a `BrowserWindow`), so a sign-in window is told apart by
-  `did-create-window`, not by type. 2026-10-31, Electron 43.8.1, React 19.3.0, local test
-  pages in an e2e run (BB-M34, BB-M24) and a page on a Docker ssh machine (E-SSH-42).
+  session (its source builds a `BrowserWindow`), so a sign-in window is told apart by the
+  window-open handler that made it, not by type. 2026-10-31, Electron 43.8.1, React 19.3.0,
+  local test pages in an e2e run (BB-M34, BB-M24) and a page on a Docker ssh machine
+  (E-SSH-42).
+- **A sign-in window with an address bar hosts the popup in a view of its own.** An `allow`
+  answer's `createWindow` gets `options.webContents` (missing from Electron's typings): the
+  popup's own, already created `webContents`. Put in `new WebContentsView({ webContents })`
+  under a window whose own page is the address bar, it keeps `window.opener`, the opener's
+  session and its preloads, and `BrowserWindow.fromWebContents` returns the host window. What a
+  plain `allow` window does by itself has to be done by hand: closing the host leaves the
+  view's `webContents` alive until `close({ waitForBeforeUnload: true })` is called on it, and
+  `window.resizeTo` moves nothing until the view's `content-bounds-updated` (outer bounds) is
+  passed to the host's `setBounds`; the popup's own `window.close()` destroys the view's
+  `webContents`. URL events on that `webContents`: a 302 fires one `did-navigate` with the
+  final URL; `pushState` fires `did-navigate-in-page`; a refused certificate fires
+  `certificate-error` (main frame) and `did-fail-load`, no `did-navigate`, with `getURL()` the
+  refused URL. Measured in ccremote (its platform ledger §66, Electron 43.8.3) and checked here
+  2026-11-03, Electron 43.8.1, by BB-M35 (redirect, `pushState`, `resizeTo`, a trusted and a
+  refused certificate, `window.close()`).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,

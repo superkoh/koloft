@@ -215,6 +215,7 @@ import {
   setWorkbenchAvailable,
   type MenuShortcut
 } from './menu'
+import { openSignInWindow } from './signInWindow'
 import { applyKeepAwake } from './keepAwake'
 import {
   approve as approveQuit,
@@ -4185,8 +4186,7 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
   webPageWatchers.push(watch)
 }
 
-function adoptSignInWindow(win: BrowserWindow, opener: WebContents): void {
-  const popup = win.webContents
+function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
   const host = mainWindow
   const close = (): void => {
     if (!win.isDestroyed()) win.close()
@@ -4307,12 +4307,18 @@ function setupGuestPopups(): void {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
       // PLATFORM§8
       if (opensAsSignInWindow(contents, details)) {
-        return { action: 'allow', overrideBrowserWindowOptions: { show: !BACKGROUND_TEST } }
+        return {
+          action: 'allow',
+          createWindow: (options) => {
+            const { host, page } = openSignInWindow(options, !BACKGROUND_TEST)
+            adoptSignInWindow(host, page, contents)
+            return page
+          }
+        }
       }
       routeGuestPopup(details.url, contents)
       return { action: 'deny' }
     })
-    contents.on('did-create-window', (win) => adoptSignInWindow(win, contents))
   })
 }
 

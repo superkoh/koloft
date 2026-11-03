@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { gitInit, startSessionIn, clickAppMenuItem } from './helpers/p1'
 import { BROWSER_PARTITION } from '../../src/shared/types'
 import {
@@ -203,17 +203,18 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
 
       await guest.click('#stays')
       const popupInWebSession = (): Promise<boolean | null> =>
-        app.evaluate(({ BrowserWindow, session }, partition) => {
-          const win = BrowserWindow.getAllWindows().find((w) =>
-            w.webContents.getURL().endsWith('/stays')
-          )
-          return win ? win.webContents.session === session.fromPartition(partition) : null
+        app.evaluate(({ webContents, session }, partition) => {
+          const popup = webContents
+            .getAllWebContents()
+            .find((wc) => wc.getType() === 'window' && wc.getURL().endsWith('/stays'))
+          return popup ? popup.session === session.fromPartition(partition) : null
         }, BROWSER_PARTITION)
       await expect.poll(popupInWebSession, { timeout: 30_000 }).toBe(true)
-      await app.evaluate(({ BrowserWindow, Menu }) => {
-        const win = BrowserWindow.getAllWindows().find((w) =>
-          w.webContents.getURL().endsWith('/stays')
-        )!
+      await app.evaluate(({ BrowserWindow, Menu, webContents }) => {
+        const popup = webContents
+          .getAllWebContents()
+          .find((wc) => wc.getType() === 'window' && wc.getURL().endsWith('/stays'))!
+        const win = BrowserWindow.fromWebContents(popup)!
         Menu.getApplicationMenu()!
           .getMenuItemById('close-tab')!
           .click(undefined, win, win.webContents)
@@ -233,6 +234,127 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
       await expect.poll(popupInWebSession).toBeNull()
     } finally {
       await idp.close()
+      await server.close()
+    }
+  })
+
+  // PLATFORM§8
+  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves, marks http and a refused certificate Not secure and https with a lock; the page still resizes the window and closes it', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const tls = await startHttpsServer()
+    try {
+      env.extraArgs.push(tls.hostResolverSwitch)
+      tls.page('/tls', '<!doctype html><title>tls</title>')
+      server.page('/landed', '<!doctype html><title>landed</title>')
+      server.route('/hop', (_q, res) => {
+        res.writeHead(302, { location: '/landed' })
+        res.end()
+      })
+      const first = server.page('/first', '<!doctype html><title>first</title>')
+      const opener = server.page(
+        '/bar-opener',
+        '<!doctype html><title>bar opener</title><button id="open">open</button><script>' +
+          `document.getElementById("open").onclick = () => { window.signin = window.open(${JSON.stringify(first)}, "signin", "width=500,height=600") }` +
+          '</script>'
+      )
+      gitInit(env.workspaces.a)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await page.waitForLoadState('domcontentloaded')
+        await app.evaluate(({ session }, partition) => {
+          session
+            .fromPartition(partition)
+            .setCertificateVerifyProc((req, answer) =>
+              answer(req.hostname === 'koloft-a.test' ? 0 : -3)
+            )
+        }, BROWSER_PARTITION)
+        await startSessionIn(page, 'ws-a')
+        await browserSession(page)
+        await typeInAddressBar(page, opener)
+        const guest = await guestByUrl(app, '/bar-opener')
+        const windowsBefore = (await windowStates(app)).length
+
+        await guest.click('#open')
+        let bar: Page | undefined
+        await expect
+          .poll(() => (bar = app.windows().find((w) => w.url().startsWith('data:text/html'))), {
+            timeout: 30_000
+          })
+          .toBeTruthy()
+        const address = bar!.getByRole('textbox', { name: 'Address' })
+        await expect(address).toHaveValue(first)
+        await expect(address).not.toBeEditable()
+        await expect(bar!.getByText('Not secure')).toBeVisible()
+
+        await guest.evaluate((u) => {
+          ;(window as unknown as { signin: Window }).signin.location.href = u
+        }, server.url('/hop'))
+        await expect(address).toHaveValue(server.url('/landed'))
+        await guest.evaluate(() => {
+          ;(window as unknown as { signin: Window }).signin.history.pushState(
+            {},
+            '',
+            '/landed?step=2'
+          )
+        })
+        await expect(address).toHaveValue(server.url('/landed?step=2'))
+
+        const popupWindowSize = (): Promise<number[] | null> =>
+          app.evaluate(({ BrowserWindow, webContents }) => {
+            const popup = webContents
+              .getAllWebContents()
+              .find((wc) => wc.getType() === 'window' && wc.getURL().includes('/landed'))
+            const win = popup && BrowserWindow.fromWebContents(popup)
+            return win ? win.getSize() : null
+          })
+        await guest.evaluate(() => {
+          ;(window as unknown as { signin: Window }).signin.resizeTo(640, 700)
+        })
+        await expect.poll(popupWindowSize).toEqual([640, 700])
+
+        await guest.evaluate(
+          (u) => {
+            ;(window as unknown as { signin: Window }).signin.location.href = u
+          },
+          tls.aliasUrl('koloft-a.test', '/tls')
+        )
+        await expect(address).toHaveValue(tls.aliasUrl('koloft-a.test', '/tls'))
+        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeVisible()
+        await expect(bar!.getByText('Not secure')).toBeHidden()
+
+        await guest.evaluate(
+          (u) => {
+            ;(window as unknown as { signin: Window }).signin.location.href = u
+          },
+          tls.aliasUrl('koloft-b.test', '/tls')
+        )
+        await expect(address).toHaveValue(tls.aliasUrl('koloft-b.test', '/tls'))
+        await expect(bar!.getByText('Not secure')).toBeVisible()
+        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeHidden()
+
+        await guest.evaluate((u) => {
+          ;(window as unknown as { signin: Window }).signin.location.href = u
+        }, server.url('/landed'))
+        await expect(address).toHaveValue(server.url('/landed'))
+        await app.evaluate(({ webContents }) => {
+          const popup = webContents
+            .getAllWebContents()
+            .find((wc) => wc.getType() === 'window' && wc.getURL().includes('/landed'))!
+          void popup.executeJavaScript('window.close()')
+        })
+        await expect.poll(async () => (await windowStates(app)).length).toBe(windowsBefore)
+        expect(
+          await guest.evaluate(() => (window as unknown as { signin: Window }).signin.closed)
+        ).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
+    } finally {
+      await tls.close()
       await server.close()
     }
   })
