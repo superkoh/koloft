@@ -384,6 +384,22 @@ method. A recheck adds its date, version and command to the bullet.
   refused URL. Measured in ccremote (its platform ledger §66, Electron 43.8.3) and checked here
   2026-11-03, Electron 43.8.1, by BB-M35 (redirect, `pushState`, `resizeTo`, a trusted and a
   refused certificate, `window.close()`).
+- **Chrome's address bar puts no mark on a local address or a failed load.** Chrome's
+  security level (`components/security_state/core/security_state.cc`, `GetSecurityLevel`)
+  marks a major certificate error dangerous first; then a page with no connection info, which
+  an error page has, gets none; https with a certificate gets the lock; and an http page gets
+  "Not secure" only when it is not an error page and `network::IsUrlPotentiallyTrustworthy` is
+  false. That function (`net/base/is_potentially_trustworthy.cc`) counts a host as trustworthy
+  through `net::IsLocalhost` (`net/base/url_util.cc`): `localhost` or a name ending in
+  `.localhost`, either with one trailing dot dropped, any case; or an IP literal for which
+  `IPAddress::IsLoopback` (`net/base/ip_address.cc`) holds: 127.0.0.0/8 and `::1` only, so
+  `::ffff:127.0.0.1` does not count. Read from Chromium's source on `main`, 2026-11-03.
+  On the sign-in view (Electron 43.8.1, 2026-11-03), `did-fail-load` for an https page whose
+  server closed the connection leaves `getURL()` the failed URL, as for a refused certificate
+  (BB-M35). A load that ends without a new page does not fire `did-fail-load` at all, so it
+  never wipes the mark of the page still shown: `window.stop()` while an image still loads, a
+  move to a 204 reply, and a move to a custom-scheme callback (`koloftprobe://cb`) each fired
+  nothing within 10 s (a probe step in BB-M35, then removed).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,

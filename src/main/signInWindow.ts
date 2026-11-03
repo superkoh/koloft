@@ -1,6 +1,7 @@
 import path from 'path'
 import { BrowserWindow, WebContentsView, type WebContents } from 'electron'
 import { addressSecurity } from '@shared/signInAddress'
+import { urlOrNull } from '@shared/browserRoute'
 
 export const ADDRESS_BAR_HEIGHT = 36
 const BROWSER_WINDOW_DEFAULT_SIZE = { width: 800, height: 600 }
@@ -12,11 +13,7 @@ function loadAddressBar(host: BrowserWindow): void {
 }
 
 function hostOf(url: string): string | null {
-  try {
-    return new URL(url).host
-  } catch {
-    return null
-  }
+  return urlOrNull(url)?.host ?? null
 }
 
 // PLATFORM§8
@@ -59,11 +56,15 @@ export function openSignInWindow(
   host.on('resize', layOut)
 
   const refusedHosts = new Set<string>()
+  let loadFailed = false
   const showAddress = (): void => {
     if (host.isDestroyed() || page.isDestroyed()) return
     const url = page.getURL()
-    const refused = refusedHosts.has(hostOf(url) ?? '')
-    const state = { url, security: addressSecurity(url, refused) }
+    const certificateRefused = refusedHosts.has(hostOf(url) ?? '')
+    const state = {
+      url,
+      security: addressSecurity(url, { certificateRefused, failed: loadFailed })
+    }
     void host.webContents.executeJavaScript(`show(${JSON.stringify(state)})`).catch(() => {})
   }
   // PLATFORM§8
@@ -72,12 +73,18 @@ export function openSignInWindow(
     if (refused) refusedHosts.add(refused)
   })
   host.webContents.on('did-finish-load', showAddress)
-  page.on('did-navigate', showAddress)
+  page.on('did-navigate', () => {
+    loadFailed = false
+    showAddress()
+  })
   page.on('did-navigate-in-page', (_e, _url, isMainFrame) => {
     if (isMainFrame) showAddress()
   })
+  // PLATFORM§8
   page.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => {
-    if (isMainFrame) showAddress()
+    if (!isMainFrame) return
+    loadFailed = true
+    showAddress()
   })
   page.on('page-title-updated', (_e, title) => {
     if (!host.isDestroyed()) host.setTitle(title)

@@ -1,10 +1,9 @@
 import dns from 'dns'
 import net from 'net'
 import os from 'os'
-import { urlOrNull } from '@shared/browserRoute'
+import { LOOPBACK_NAME, urlOrNull } from '@shared/browserRoute'
 
 const SCHEMES_THAT_REACH_A_SERVER = new Set(['http:', 'https:', 'ws:', 'wss:'])
-const LOOPBACK_NAME = /^(localhost|.+\.localhost)\.?$/i
 const IPV4_MAPPED = '::ffff:'
 
 function bare(host: string): string {

@@ -239,7 +239,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
   })
 
   // PLATFORM§8
-  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves, marks http and a refused certificate Not secure and https with a lock; the page still resizes the window and closes it, and Koloft still quits while one is open', async ({
+  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves and marks a page the way Chrome does: Not secure for http and a refused certificate, a lock for https, and neither for a local address (localhost, 127.0.0.1, [::1]) or a page that failed to load; the page still resizes the window and closes it, and Koloft still quits while one is open', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -248,18 +248,24 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
     try {
       env.extraArgs.push(tls.hostResolverSwitch)
       tls.page('/tls', '<!doctype html><title>tls</title>')
+      tls.route('/drop', (_q, res) => {
+        res.socket?.destroy()
+      })
       server.page('/landed', '<!doctype html><title>landed</title>')
       server.route('/hop', (_q, res) => {
         res.writeHead(302, { location: '/landed' })
         res.end()
       })
-      const first = server.page('/first', '<!doctype html><title>first</title>')
-      const opener = server.page(
+      const named = (p: string): string => server.hostUrl('koloft-a.test', p)
+      server.page('/first', '<!doctype html><title>first</title>')
+      const first = named('/first')
+      server.page(
         '/bar-opener',
         '<!doctype html><title>bar opener</title><button id="open">open</button><script>' +
           `document.getElementById("open").onclick = () => { window.signin = window.open(${JSON.stringify(first)}, "signin", "width=500,height=600") }` +
           '</script>'
       )
+      const opener = named('/bar-opener')
       gitInit(env.workspaces.a)
       const app = await launchApp(env)
       try {
@@ -286,14 +292,19 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
           })
           .toBeTruthy()
         const address = bar!.getByRole('textbox', { name: 'Address' })
+        const lock = bar!.getByRole('img', { name: 'Connection is secure' })
+        const notSecure = bar!.getByText('Not secure')
+        const goTo = async (u: string, shown = u): Promise<void> => {
+          await guest.evaluate((to) => {
+            ;(window as unknown as { signin: Window }).signin.location.href = to
+          }, u)
+          await expect(address).toHaveValue(shown)
+        }
         await expect(address).toHaveValue(first)
         await expect(address).not.toBeEditable()
-        await expect(bar!.getByText('Not secure')).toBeVisible()
+        await expect(notSecure).toBeVisible()
 
-        await guest.evaluate((u) => {
-          ;(window as unknown as { signin: Window }).signin.location.href = u
-        }, server.url('/hop'))
-        await expect(address).toHaveValue(server.url('/landed'))
+        await goTo(named('/hop'), named('/landed'))
         await guest.evaluate(() => {
           ;(window as unknown as { signin: Window }).signin.history.pushState(
             {},
@@ -301,7 +312,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
             '/landed?step=2'
           )
         })
-        await expect(address).toHaveValue(server.url('/landed?step=2'))
+        await expect(address).toHaveValue(named('/landed?step=2'))
 
         const pageArea = (): Promise<number[]> =>
           guest.evaluate(() => {
@@ -314,30 +325,32 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
         })
         await expect.poll(pageArea).toEqual([widthBefore + 140, heightBefore + 100])
 
-        await guest.evaluate(
-          (u) => {
-            ;(window as unknown as { signin: Window }).signin.location.href = u
-          },
-          tls.aliasUrl('koloft-a.test', '/tls')
-        )
-        await expect(address).toHaveValue(tls.aliasUrl('koloft-a.test', '/tls'))
-        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeVisible()
-        await expect(bar!.getByText('Not secure')).toBeHidden()
+        for (const local of [
+          server.localhostUrl('/landed'),
+          server.url('/landed'),
+          server.hostUrl('[::1]', '/landed')
+        ]) {
+          await goTo(named('/landed'))
+          await expect(notSecure).toBeVisible()
+          await goTo(local)
+          await expect(notSecure).toBeHidden()
+          await expect(lock).toBeHidden()
+        }
 
-        await guest.evaluate(
-          (u) => {
-            ;(window as unknown as { signin: Window }).signin.location.href = u
-          },
-          tls.aliasUrl('koloft-b.test', '/tls')
-        )
-        await expect(address).toHaveValue(tls.aliasUrl('koloft-b.test', '/tls'))
-        await expect(bar!.getByText('Not secure')).toBeVisible()
-        await expect(bar!.getByRole('img', { name: 'Connection is secure' })).toBeHidden()
+        await goTo(tls.aliasUrl('koloft-a.test', '/tls'))
+        await expect(lock).toBeVisible()
+        await expect(notSecure).toBeHidden()
+        await goTo(tls.aliasUrl('koloft-a.test', '/drop'))
+        await expect(lock).toBeHidden()
+        await expect(notSecure).toBeHidden()
+        await goTo(tls.aliasUrl('koloft-a.test', '/tls'))
+        await expect(lock).toBeVisible()
 
-        await guest.evaluate((u) => {
-          ;(window as unknown as { signin: Window }).signin.location.href = u
-        }, server.url('/landed'))
-        await expect(address).toHaveValue(server.url('/landed'))
+        await goTo(tls.aliasUrl('koloft-b.test', '/tls'))
+        await expect(notSecure).toBeVisible()
+        await expect(lock).toBeHidden()
+
+        await goTo(server.url('/landed'))
         await app.evaluate(({ webContents }) => {
           const popup = webContents
             .getAllWebContents()
