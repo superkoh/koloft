@@ -373,10 +373,12 @@ method. A recheck adds its date, version and command to the bullet.
   under a window whose own page is the address bar, it keeps `window.opener`, the opener's
   session and its preloads, and `BrowserWindow.fromWebContents` returns the host window. What a
   plain `allow` window does by itself has to be done by hand: closing the host leaves the
-  view's `webContents` alive until `close({ waitForBeforeUnload: true })` is called on it, and
-  `window.resizeTo` moves nothing until the view's `content-bounds-updated` (outer bounds) is
-  passed to the host's `setBounds`; the popup's own `window.close()` destroys the view's
-  `webContents`. URL events on that `webContents`: a 302 fires one `did-navigate` with the
+  view's `webContents` alive until `close()` is called on it, and `window.resizeTo` moves
+  nothing until the view's `content-bounds-updated` (outer bounds, as Chrome's popups count
+  them, address bar included) is passed to the host's `setBounds`; the popup's own
+  `window.close()` destroys the view's `webContents`. A host whose `close` handler calls
+  `preventDefault` (to wait for the page's `beforeunload`) cancels `app.quit()`: Koloft stayed
+  running (BB-M35, measured with that handler in place). URL events on that `webContents`: a 302 fires one `did-navigate` with the
   final URL; `pushState` fires `did-navigate-in-page`; a refused certificate fires
   `certificate-error` (main frame) and `did-fail-load`, no `did-navigate`, with `getURL()` the
   refused URL. Measured in ccremote (its platform ledger §66, Electron 43.8.3) and checked here

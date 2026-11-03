@@ -239,7 +239,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
   })
 
   // PLATFORM§8
-  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves, marks http and a refused certificate Not secure and https with a lock; the page still resizes the window and closes it', async ({
+  test('BB-M35: a sign-in window shows a read-only address bar that follows redirects and in-page moves, marks http and a refused certificate Not secure and https with a lock; the page still resizes the window and closes it, and Koloft still quits while one is open', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -281,7 +281,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
         await guest.click('#open')
         let bar: Page | undefined
         await expect
-          .poll(() => (bar = app.windows().find((w) => w.url().startsWith('data:text/html'))), {
+          .poll(() => (bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))), {
             timeout: 30_000
           })
           .toBeTruthy()
@@ -303,18 +303,16 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
         })
         await expect(address).toHaveValue(server.url('/landed?step=2'))
 
-        const popupWindowSize = (): Promise<number[] | null> =>
-          app.evaluate(({ BrowserWindow, webContents }) => {
-            const popup = webContents
-              .getAllWebContents()
-              .find((wc) => wc.getType() === 'window' && wc.getURL().includes('/landed'))
-            const win = popup && BrowserWindow.fromWebContents(popup)
-            return win ? win.getSize() : null
+        const pageArea = (): Promise<number[]> =>
+          guest.evaluate(() => {
+            const signin = (window as unknown as { signin: Window }).signin
+            return [signin.innerWidth, signin.innerHeight]
           })
+        const [widthBefore, heightBefore] = await pageArea()
         await guest.evaluate(() => {
-          ;(window as unknown as { signin: Window }).signin.resizeTo(640, 700)
+          ;(window as unknown as { signin: Window }).signin.resizeBy(140, 100)
         })
-        await expect.poll(popupWindowSize).toEqual([640, 700])
+        await expect.poll(pageArea).toEqual([widthBefore + 140, heightBefore + 100])
 
         await guest.evaluate(
           (u) => {
@@ -350,6 +348,17 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
         expect(
           await guest.evaluate(() => (window as unknown as { signin: Window }).signin.closed)
         ).toBe(true)
+
+        await guest.click('#open')
+        await expect
+          .poll(() => app.windows().some((w) => w.url().endsWith('/sign-in-bar.html')))
+          .toBe(true)
+        const exited = app.waitForEvent('close', { timeout: 30_000 }).then(
+          () => true,
+          () => false
+        )
+        await page.evaluate(() => window.api.app.approveQuit()).catch(() => {})
+        expect(await exited).toBe(true)
       } finally {
         await quitAndClose(app)
       }

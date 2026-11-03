@@ -3985,11 +3985,12 @@ app.whenReady().then(() => {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
-      if (keptByAnotherWindow(from, action === 'close-tab')) return
+      if (keptBySignInWindow(from, action === 'close-tab' ? 'closes-it' : 'acts-on-the-app')) return
       sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
     (cmd, from) => {
-      if (keptByAnotherWindow(from, cmd === 'browser-close-tab')) return
+      if (keptBySignInWindow(from, cmd === 'browser-close-tab' ? 'closes-it' : 'acts-on-its-page'))
+        return
       sendToRenderer(CH.shortcut.browser, cmd)
     },
     loadSettings().keepAwake
@@ -4257,10 +4258,17 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
-function keptByAnotherWindow(from: BaseWindow | undefined, closesIt: boolean): boolean {
-  if (!from || from === mainWindow) return false
-  if (closesIt) from.close()
-  return true
+const signInWindows = new WeakSet<BaseWindow>()
+
+function keptBySignInWindow(
+  from: BaseWindow | undefined,
+  key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
+): boolean {
+  if (!from || !signInWindows.has(from)) return false
+  if (key === 'closes-it') from.close()
+  if (key !== 'acts-on-the-app') return true
+  mainWindow?.show()
+  return false
 }
 
 const webPageWatchers: ((contents: WebContents) => void)[] = []
@@ -4275,6 +4283,8 @@ function onEveryWebPage(watch: (contents: WebContents) => void): void {
 }
 
 function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
+  signInWindows.add(win)
+  popup.on('input-event', handsOnKoloft)
   const host = mainWindow
   const close = (): void => {
     if (!win.isDestroyed()) win.close()
@@ -4372,7 +4382,7 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
-const SIZED_WINDOW_FEATURES = /(^|[\s,])(width|height)\s*=/i
+const POPUP_WINDOW_FEATURES = /(^|[\s,])(popup|(inner)?width|(inner)?height)\s*(=|,|$)/i
 
 function opensAsSignInWindow(
   from: WebContents,
@@ -4380,8 +4390,8 @@ function opensAsSignInWindow(
 ): boolean {
   return (
     disposition === 'new-window' &&
-    SIZED_WINDOW_FEATURES.test(features) &&
-    routeFor(url, 'user').dest === 'browser' &&
+    POPUP_WINDOW_FEATURES.test(features) &&
+    /^https?:/i.test(url) &&
     !isOverlayGuest(from) &&
     sessionDrivingGuest(from.id) === null &&
     !guestDrivenFromAnotherMachine(from.id) &&

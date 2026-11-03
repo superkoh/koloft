@@ -40,7 +40,15 @@ export default defineConfig({
   },
   renderer: {
     resolve: { alias },
-    build: { license },
+    build: {
+      license,
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          signInBar: resolve(__dirname, 'src/renderer/sign-in-bar.html')
+        }
+      }
+    },
     plugins: [react()]
   }
 })
