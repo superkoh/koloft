@@ -57,8 +57,8 @@ wrapper, or, when another session started it, that session's words) into the han
 saved words before it starts, local or on a remote machine (through the tab package), so
 its hook quotes them and skips its handed-over task, and the child's title is asked for in
 their language. For the title the words are quoted only when their letters cannot tell the
-language: when they carry Han, kana or Hangul, the title prompt names Chinese, Japanese or
-Korean and leaves the words out, since a title model handed them titled a task that only
+language: when, outside code and paths, they carry hiragana, Hangul or Han — the reminder's
+own rule below — the title prompt names Japanese, Korean or Chinese and leaves the words out, since a title model handed them titled a task that only
 points to a file ("读 <path>，照它做完。") with them instead. Measured 2026-11-03 with
 `claude -p --model haiku` and Assist's one-shot arguments, a Chinese owner sentence of
 about 50 characters and a scratchpad path: with the words quoted, 6 / 6 such titles came

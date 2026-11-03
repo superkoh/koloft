@@ -5,8 +5,9 @@ const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
 
 const TITLE_SYSTEM = 'You write short titles.'
 
+const CODE_AND_PATHS = /`[^`]*`|\S*\/\S*/g
 const LANGUAGE_THE_LETTERS_TELL: [RegExp, string][] = [
-  [/[\p{Script=Hiragana}\p{Script=Katakana}]/u, 'Japanese'],
+  [/\p{Script=Hiragana}/u, 'Japanese'],
   [/\p{Script=Hangul}/u, 'Korean'],
   [/\p{Script=Han}/u, 'Chinese']
 ]
@@ -14,7 +15,8 @@ const LANGUAGE_THE_LETTERS_TELL: [RegExp, string][] = [
 // ADR-0031
 function languageLine(ownerWords: string | undefined): string {
   if (!ownerWords) return 'Write it in the language of the task. '
-  const language = LANGUAGE_THE_LETTERS_TELL.find(([letters]) => letters.test(ownerWords))?.[1]
+  const words = ownerWords.replace(CODE_AND_PATHS, ' ')
+  const language = LANGUAGE_THE_LETTERS_TELL.find(([letters]) => letters.test(words))?.[1]
   return language
     ? `Write it in ${language}, whatever language the task is in. `
     : `Write it in the language of these words of the person, whatever language the task is in: «${ownerWords}». `

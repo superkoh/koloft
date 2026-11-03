@@ -44,7 +44,8 @@ describe('the title behind koloft session new', () => {
     ['把侧栏修好', 'Chinese'],
     ['テストをぜんぶ走らせて', 'Japanese'],
     ['日本語で書いてください', 'Japanese'],
-    ['전체 테스트를 돌려줘', 'Korean']
+    ['전체 테스트를 돌려줘', 'Korean'],
+    ['把按钮文字改成「ログイン」', 'Chinese']
   ])(
     'owner words «%s» get the title asked for in %s by name, without the words, so a task that only points to a file is never titled with them',
     async (ownerWords, language) => {
@@ -54,12 +55,15 @@ describe('the title behind koloft session new', () => {
     }
   )
 
-  it('owner words in letters that do not tell the language are handed to the title model as they are', async () => {
-    const prompt = await titlePromptFor('Read /tmp/task-a.md and do it.', 'Lance tous les tests')
-    expect(prompt).toContain(
-      'Write it in the language of these words of the person, whatever language the task is in: «Lance tous les tests».'
-    )
-  })
+  it.each(['Lance tous les tests', 'Open ~/文档/plan.md and rename `设置` to Settings'])(
+    'owner words «%s», whose letters outside code and paths do not tell the language, are handed to the title model as they are',
+    async (ownerWords) => {
+      const prompt = await titlePromptFor('Read /tmp/task-a.md and do it.', ownerWords)
+      expect(prompt).toContain(
+        `Write it in the language of these words of the person, whatever language the task is in: «${ownerWords}».`
+      )
+    }
+  )
 
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(
