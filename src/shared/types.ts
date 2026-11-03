@@ -1057,6 +1057,10 @@ export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>
   return exit.exitCode !== 0 || !!exit.signal
 }
 
+export function endedRowNote(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): string {
+  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
+}
+
 export interface TerminalProcessTitle {
   id: string
   name: string
@@ -1455,7 +1459,8 @@ export interface CronJob {
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState =
+  'closed' | 'quit' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number
