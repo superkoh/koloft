@@ -51,6 +51,7 @@ function commandTextOf(i: DiscordInteraction): string {
 
 export interface InteractionDeps {
   owner(): string | undefined
+  ownerWrote(): void
   run(text: string): Promise<string>
   press(i: DiscordInteraction): Promise<void>
   submit(i: DiscordInteraction): Promise<void>
@@ -61,6 +62,7 @@ export class Interactions {
   constructor(private d: InteractionDeps) {}
 
   async handle(i: DiscordInteraction): Promise<void> {
+    if (i.userId === this.d.owner()) this.d.ownerWrote()
     if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
     if (i.type === FORM_SUBMIT_INTERACTION) return this.d.submit(i).catch(() => undefined)
     if (i.type !== COMMAND_INTERACTION) return
