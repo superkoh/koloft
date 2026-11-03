@@ -108,8 +108,7 @@ describe("claude's own session registry: the socket a session takes messages on"
         messagingSocketPath: '/tmp/cc-socks/29948.sock'
       })
     )
-    const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
-    expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
+    expect(await waiting).toBe('/tmp/cc-socks/29948.sock')
     expect(await whenMessagingSocket('not-running', 100, dir, startOf)).toBeNull()
   })
 

@@ -120,19 +120,30 @@ export async function claudeShowsAPanel(
   return panelFromStatus((await liveEntryOf(sessionId, dir, startOf))?.status)
 }
 
+async function socketWithin(
+  ms: number,
+  everyMs: number,
+  read: () => Promise<string | null>
+): Promise<string | null> {
+  const deadline = Date.now() + ms
+  for (;;) {
+    const socket = await read()
+    const left = deadline - Date.now()
+    if (socket || left <= 0) return socket
+    await sleep(Math.min(everyMs, left))
+  }
+}
+
 // PLATFORM§28
-export async function whenMessagingSocket(
+export function whenMessagingSocket(
   sessionId: string,
   ms: number,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<string | null> {
-  const deadline = Date.now() + ms
-  for (;;) {
-    const socket = await messagingSocketOf(sessionId, dir, startOf)
-    if (socket || Date.now() >= deadline) return socket
-    await sleep(REGISTRY_IS_READ_AGAIN_AFTER_MS)
-  }
+  return socketWithin(ms, REGISTRY_IS_READ_AGAIN_AFTER_MS, () =>
+    messagingSocketOf(sessionId, dir, startOf)
+  )
 }
 
 // CC§11
@@ -178,17 +189,14 @@ export function claudeShowsAPanelOnMachine(
 
 const REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS = 1000
 
-export async function whenMessagingSocketOnMachine(
+export function whenMessagingSocketOnMachine(
   sessionId: string,
   ms: number,
   readLiveRegistry: () => Promise<string>
 ): Promise<string | null> {
-  const deadline = Date.now() + ms
-  for (;;) {
-    const socket = tabSocketOnMachine(await readLiveRegistry(), sessionId)
-    if (socket || Date.now() >= deadline) return socket
-    await sleep(REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS)
-  }
+  return socketWithin(ms, REGISTRY_ON_A_MACHINE_IS_READ_AGAIN_AFTER_MS, async () =>
+    tabSocketOnMachine(await readLiveRegistry(), sessionId)
+  )
 }
 
 export function claudePeerNames(
