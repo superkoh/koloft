@@ -1160,7 +1160,6 @@ export interface KoloftApi {
     readText(path: string): Promise<string>
     openFileDialog(): Promise<string | null>
     osOpen(path: string): void
-    fileUrl(path: string): string
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number

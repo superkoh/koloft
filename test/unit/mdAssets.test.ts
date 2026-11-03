@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { assets } from '../../src/renderer/src/markdown/assets'
+import { previewFileOf } from '../../src/shared/browserRoute'
 
 const md = new MarkdownIt().use(assets)
 const env = { srcPath: '/ws/docs/design.md' }
@@ -25,6 +26,12 @@ describe('assets', () => {
   it('percent-encodes a path with spaces and non-ASCII', () => {
     const html = md.render('![pic](<./my pic.png>)\n', { srcPath: '/ws/设计/a.md' })
     expect(html).toContain('koloft-file://localhost/ws/%E8%AE%BE%E8%AE%A1/my%20pic.png')
+  })
+
+  it('points an image in a markdown file on an ssh machine at that machine, not at this Mac', () => {
+    const html = md.render('![pic](./pic.png)\n', { srcPath: 'ssh://u@Box/srv/docs/a.md' })
+    const src = /src="([^"]+)"/.exec(html)?.[1] ?? ''
+    expect(previewFileOf(src)).toBe('ssh://u@Box/srv/docs/pic.png')
   })
 
   it('blocks an http image and shows its address instead', () => {

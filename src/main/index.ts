@@ -326,6 +326,8 @@ import {
   MACHINE_PAGE_SCHEME,
   machinePageOf,
   onMacPort,
+  PREVIEW_FILE_SCHEME,
+  previewFileOf,
   webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
@@ -2795,7 +2797,7 @@ function installTool(backend: BackendId): { tabId: string; cwd: string } {
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'koloft-file',
+    scheme: PREVIEW_FILE_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -2982,17 +2984,11 @@ function rendererUrl(): string {
 
 app.whenReady().then(() => {
   presence.macLastUsed()
-  protocol.handle('koloft-file', async (request) => {
-    const url = new URL(request.url)
-    const filePath = decodeURIComponent(url.pathname)
-    try {
-      const data = await fs.promises.readFile(filePath)
-      return new Response(new Uint8Array(data), {
-        headers: { 'content-type': mimeOf(filePath) }
-      })
-    } catch {
-      return new Response('Not found', { status: 404 })
-    }
+  protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
+    const file = previewFileOf(request.url)
+    const data = file === null ? null : await bytesOfAFileHere(file)
+    if (!file || !data) return new Response('Not found', { status: 404 })
+    return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
   setupBrowserPartition()
@@ -4693,17 +4689,28 @@ const MACHINE_PAGE_HEADERS = {
     'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
 }
 
+async function bytesOfAFileHere(file: string): Promise<Buffer | null> {
+  const machine = parseRemoteKey(file)?.host
+  if (machine && !workspaceMgr?.remoteTargets().some((t) => t.host === machine)) return null
+  return hosts
+    .of(file)
+    .readBytes(file)
+    .catch(() => null)
+}
+
+function bodyOf(data: Buffer): Uint8Array {
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+}
+
 async function machinePageResponse(request: Request): Promise<Response> {
   const page = machinePageOf(request.url)
-  const known = workspaceMgr?.remoteTargets().some((t) => t.host === page?.host)
-  const machine = page && known ? hosts.machine(page.host) : null
-  const body = page && (await machine?.readPageFile(machine.keyed(page.path)).catch(() => null))
+  const body = page && (await bytesOfAFileHere(formatRemoteKey(page.host, page.path)))
   if (!page || !body)
     return new Response(fileNotFoundHtml(page?.path ?? request.url), {
       status: 404,
       headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
     })
-  return new Response(new Uint8Array(body.buffer, body.byteOffset, body.byteLength), {
+  return new Response(bodyOf(body), {
     headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
   })
 }
@@ -4802,7 +4809,7 @@ function setupBrowserPartition(): void {
     if (decision.kind !== 'ask') return false
     return rememberedPermission(decision.origin, decision.permission) ?? false
   })
-  ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
+  ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
     const target = localFilePath(request.url)

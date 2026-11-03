@@ -228,9 +228,9 @@ const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
   'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
-const MACHINE_PAGE_FILE_MAX_BYTES = 32 * 1024 * 1024
-const MACHINE_PAGE_READ_MS = 120_000
-const MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
+const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
+const WHOLE_FILE_READ_MS = 120_000
+const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
 
 const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
@@ -621,8 +621,8 @@ export class SshHost implements Host {
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
   private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
-  private pageReads = 0
-  private pageReadsWaiting: (() => void)[] = []
+  private wholeReads = 0
+  private wholeReadsWaiting: (() => void)[] = []
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -871,16 +871,16 @@ export class SshHost implements Host {
     return body.toString('utf8')
   }
 
-  async readPageFile(file: string): Promise<Buffer> {
-    while (this.pageReads >= MACHINE_PAGE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
-      await new Promise<void>((free) => this.pageReadsWaiting.push(free))
-    this.pageReads++
+  async readBytes(file: string): Promise<Buffer> {
+    while (this.wholeReads >= WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
+      await new Promise<void>((free) => this.wholeReadsWaiting.push(free))
+    this.wholeReads++
     try {
-      const read = this.readWithHeader(file, MACHINE_PAGE_FILE_MAX_BYTES, MACHINE_PAGE_READ_MS)
+      const read = this.readWithHeader(file, WHOLE_FILE_MAX_BYTES, WHOLE_FILE_READ_MS)
       return (await read).body
     } finally {
-      this.pageReads--
-      this.pageReadsWaiting.shift()?.()
+      this.wholeReads--
+      this.wholeReadsWaiting.shift()?.()
     }
   }
 
