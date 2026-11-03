@@ -398,7 +398,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-18: a sentence typed on the last screen starts a new session with it as the first prompt, in the session’s folder, and Tab walks the four agents', async ({
+  test('T-OB-18: a sentence typed on the last screen starts a new session with it as the first prompt, in the session’s folder, Tab walks the four agents, and with asking on the line says what each agent asks about', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -412,20 +412,28 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await advanceTo(page, 4)
       const ask = welcome(page).locator('.wl-ask input')
       const tag = welcome(page).locator('.wl-agtag')
+      const perm = welcome(page).locator('.wl-perm')
       await expect(tag).toContainText('Claude')
+      await perm.locator('button', { hasText: 'Ask about risky steps instead' }).click()
+      await expect(perm).toContainText(
+        'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.'
+      )
+      await expect(perm.locator('button')).toHaveText('Don’t ask')
+      await expect.poll(() => settingsOnDisk(env).skipPermissions, { timeout: 20_000 }).toBe(false)
+
       await ask.press('Tab')
       await expect(tag).toContainText('Codex')
+      await expect(perm).toContainText('Sessions ask you before each step.')
       await ask.press('Tab')
+      await expect(tag).toContainText('Muse')
+      await expect(perm).toContainText(
+        'Muse Code asks only about risky steps, like one that leaves its sandbox.'
+      )
       await ask.press('Tab')
       await expect(tag).toContainText('Antigravity')
+      await expect(perm).toContainText('Sessions ask you before each step.')
       await ask.press('Tab')
       await expect(tag).toContainText('Claude')
-
-      await welcome(page).locator('.wl-perm button', { hasText: 'Ask me first instead' }).click()
-      await expect(welcome(page).locator('.wl-perm')).toContainText(
-        'Sessions ask you before each step.'
-      )
-      await expect.poll(() => settingsOnDisk(env).skipPermissions, { timeout: 20_000 }).toBe(false)
 
       await ask.fill('explain this project')
       await ask.press('Enter')

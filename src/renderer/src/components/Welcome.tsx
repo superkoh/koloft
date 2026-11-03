@@ -55,6 +55,22 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
   agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
 }
 
+// CC§9 CC§14 MUSE§15 AGY§26
+const WHAT_SESSIONS_ASK: Record<BackendId, string> = {
+  claude:
+    'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
+  codex: 'Sessions ask you before each step.',
+  muse: 'Muse Code asks only about risky steps, like one that leaves its sandbox.',
+  agy: 'Sessions ask you before each step.'
+}
+
+const ASK_INSTEAD: Record<BackendId, string> = {
+  claude: 'Ask about risky steps instead',
+  codex: 'Ask me first instead',
+  muse: 'Ask about risky steps instead',
+  agy: 'Ask me first instead'
+}
+
 const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
 const SIGN_IN_SETTLE_MS = 4000
@@ -702,12 +718,12 @@ export function Welcome({
                 <>
                   Sessions run each step without stopping to ask.{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
-                    Ask me first instead
+                    {ASK_INSTEAD[pick]}
                   </button>
                 </>
               ) : (
                 <>
-                  Sessions ask you before each step.{' '}
+                  {WHAT_SESSIONS_ASK[pick]}{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
                     Don’t ask
                   </button>
