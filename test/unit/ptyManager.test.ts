@@ -498,12 +498,12 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed()).toEqual(['\x03', BOTH[0] + 'hi'])
   })
 
-  it('never holds keys in a plain terminal, even one Koloft types a line into', () => {
+  it('holds keys in a plain terminal Koloft types a line into too, so the PATH line and the ssh line reach the shell whole', () => {
     const type = launch(LAUNCH, 'shell')
-    type('h')
-    expect(typed()).toEqual(['h'])
+    type('ls\r')
+    expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed()).toEqual(['h', BOTH[0]])
+    expect(typed()).toEqual([BOTH[0] + 'ls\r'])
   })
 
   it('types nothing into a pty Koloft did not start a shell in, and holds none of its keys', () => {

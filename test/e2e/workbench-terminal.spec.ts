@@ -53,8 +53,16 @@ import {
   wbTabs,
   workbenchPanel
 } from './helpers/workbench'
+import {
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  installFakeRemote,
+  killFakeRemote,
+  machineHome
+} from './helpers/remote'
 
 const FILES_LABEL = 'Files'
+const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 1
 
 const SHELL_TITLE = 'zsh'
 
@@ -157,6 +165,43 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         await app.close().catch(() => {})
       }
     })
+
+    for (const remote of [false, true]) {
+      test(`a line typed into a new ${remote ? 'remote ' : ''}terminal tab while its shell is still starting waits for Koloft's own line, so it runs ${remote ? 'on the machine' : "with Koloft's shim dir first on PATH"}`, async ({
+        env
+      }) => {
+        test.setTimeout(240_000)
+        if (remote) installFakeRemote(env)
+        fs.appendFileSync(
+          path.join(env.home, '.zshrc'),
+          `\nsleep ${RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S}\n`
+        )
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          if (remote) await addRemoteWorkspace(page, env)
+          await startSessionIn(page, remote ? REMOTE_WS_NAME : 'ws-a', { remote })
+          const before = await termBodies(page).count()
+          await sendShortcut(app, 'shortcut:new-terminal-tab')
+          const shell = termBodies(page).nth(before)
+          await expect(shell).toHaveAttribute('data-pty', /.+/, { timeout: 40_000 })
+          const ptyId = (await shell.getAttribute('data-pty'))!
+          const check = remote
+            ? `[ "$HOME" = '${machineHome(env)}' ]`
+            : `[ "\${PATH%%:*}" = '${env.shimDir}' ]`
+          await page.evaluate(
+            ([id, line]) => window.api.terminal.write(id, line),
+            [ptyId, `${check} && echo EARLY_$((6 * 7))\r`]
+          )
+
+          await expect(panelTerm(page)).toContainText('EARLY_42', { timeout: 60_000 })
+        } finally {
+          await quitAndClose(app)
+          if (remote) killFakeRemote(env)
+        }
+      })
+    }
   })
 
   test.describe('closing a terminal tab', () => {
