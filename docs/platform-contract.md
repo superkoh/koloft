@@ -1847,8 +1847,14 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Git-review cache**: pull request state lives in
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
   `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
-  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). Each
-  statusline render starts ccstatusline's own background `gh` fetch.
+  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24; the same
+  in 2.2.32's `dist/ccstatusline-*.js`, read 2026-11-03). Each statusline render
+  starts ccstatusline's own background `gh` fetch.
+- **Its code is split across several files in `dist/`** from 2.2.32 on (2.2.30
+  shipped `dist/ccstatusline.js` alone). The entry `dist/ccstatusline.js` imports
+  `./ccstatusline-<hash>.js` chunks by relative path, so the entry copied alone stops
+  with `ERR_MODULE_NOT_FOUND` before it prints anything (run with node 24,
+  2026-11-03); a copy of the bundle takes every file in `dist/`, about 3 MB in all.
 - **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
   `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
