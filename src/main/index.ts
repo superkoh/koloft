@@ -1332,6 +1332,7 @@ function machinePackage(): MachinePackage {
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
+    // PLATFORM§36
     const bundleDir = path.dirname(bundlePath())
     for (const name of fs.readdirSync(bundleDir))
       pkgFiles[`statusline/${name}`] = fs.readFileSync(path.join(bundleDir, name))
