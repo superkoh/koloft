@@ -3278,6 +3278,7 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
+    if (!rendererReady) cronRunner?.tabClosed(e.id, false)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
     if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)
@@ -5292,7 +5293,7 @@ async function removeUntouchedWorktree(
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree)) return
+  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>

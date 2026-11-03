@@ -1157,10 +1157,13 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
   }
+  const agyTabLaunches = (env: E2EEnv): { pid: number }[] =>
+    agyCalls(env).filter((c) => !c.argv.includes('-p') && !c.argv.includes('--version'))
   const STORED_AGENTS: {
     agent: NonNullable<JobSpec['agent']>
     setUp: (env: E2EEnv) => void
     launches: (env: E2EEnv) => number
+    lastPid: (env: E2EEnv) => number | undefined
   }[] = [
     {
       agent: 'Codex',
@@ -1168,7 +1171,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installCodex(env)
         gitInit(env.workspaces.a)
       },
-      launches: (env) => codexCalls(env).length
+      launches: (env) => codexCalls(env).length,
+      lastPid: (env) => codexCalls(env).at(-1)?.pid
     },
     {
       agent: 'Muse',
@@ -1177,15 +1181,61 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         trustInMuse(env, env.workspaces.a)
         gitInit(env.workspaces.a)
       },
-      launches: (env) => museCalls(env).length
+      launches: (env) => museCalls(env).length,
+      lastPid: (env) => museCalls(env).at(-1)?.pid
     },
     {
       agent: 'Antigravity',
       setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
-      launches: (env) =>
-        agyCalls(env).filter((c) => !c.argv.includes('-p') && !c.argv.includes('--version')).length
+      launches: (env) => agyTabLaunches(env).length,
+      lastPid: (env) => agyTabLaunches(env).at(-1)?.pid
     }
   ]
+  for (const { agent, setUp, lastPid } of STORED_AGENTS) {
+    test(`BB-M34 in ${agent}: a run whose agent dies after the run started keeps its tab and History reads Agent quit; a run folder it has stays until the tab is closed`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      setUp(env)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await createJob(page, dlg, { agent, name: 'Nightly report', task: 'look around' })
+        await clickRunNow(page, 'Nightly report')
+        await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(
+          page,
+          'Nightly report',
+          cronRows(page, 'ws-a')
+        )
+        const row = wsRows(page, 'ws-a')
+        await expect(row).toHaveCount(1)
+        const home = runTree(env.workspaces.a, '')
+        const [wt] = fs.existsSync(home) ? fs.readdirSync(home) : []
+        const tree = wt ? runTree(env.workspaces.a, wt) : ''
+
+        killSession(lastPid(env)!, env)
+        await expect(row.locator('.ws-tab-sub')).toContainText(/killed \(signal \d+\)/, {
+          timeout: 30_000
+        })
+        await expect.poll(() => tabDisplays(page)).toHaveLength(1)
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+          .toMatch(/^Agent quit — killed \(signal \d+\)$/)
+        if (!tree) return
+        await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+        expect(fs.existsSync(tree)).toBe(true)
+        await closeCron(page)
+        await row.click()
+        await expect(row).toHaveClass(/\bactive\b/)
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
   for (const { agent, setUp, launches } of STORED_AGENTS) {
     test(`BB-M08 in ${agent}: a run left open at quit, whose process Koloft stops first, comes back as the open run, so Run now skips it`, async ({
       env
