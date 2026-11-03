@@ -778,9 +778,7 @@ export interface BackendSessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  // CC§2
   details?: {
-    claude?: { scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]
@@ -790,6 +788,7 @@ export interface BackendSessionInfo {
   lastAction?: string
   account?: string
   pickedAccount?: string
+  // CC§2
   scratchpadDir?: string
   alive: boolean
   // ADR-0025
@@ -815,8 +814,6 @@ export const PLAN_READY = 'Plan ready: implement it?'
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
-  // CC§2
-  scratchpadDir?: string
   files: PreviewItem[]
 }
 

@@ -38,7 +38,6 @@ import {
   midTruncate,
   outsideFiles,
   persistableExpansion,
-  scratchpadDirOf,
   scratchpadEntries,
   sessionIndex,
   truncationNotice,
@@ -215,7 +214,7 @@ export function BrowseView({
   showIgnoredRef.current = showIgnored
 
   const home = window.api.home
-  const scratchpadDir = scratchpadDirOf(session)
+  const scratchpadDir = session?.scratchpadDir
   const backendId = session?.backendId
 
   const loadDir = useCallback(async (dir: string): Promise<void> => {
