@@ -1077,7 +1077,8 @@ const ownerAsleep = new OwnerAsleep(
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
     changedSince: (since) => awayDigest?.changedSince(since) ?? [],
     report: (text) => discordRelay?.tell(butlerDestination(), text),
-    now: Date.now
+    now: Date.now,
+    answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
   },
   loadSettings().ownerAsleepSince
 )

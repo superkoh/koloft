@@ -1,5 +1,7 @@
+import fs from 'fs'
 import { FROM_KOLOFT } from './crossSessionMessage'
 import { digestLine, quoteOf, type DigestItem } from './awayDigest'
+import { writeWholeBeforeVisible } from './jsonDrops'
 
 export const OWNER_ASLEEP_ANSWER =
   'The owner is asleep and cannot answer. Choose the option you recommend, note the choice in your report, and go on. If that choice cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords), do not make it: leave it for the owner and go on with the rest.'
@@ -34,6 +36,15 @@ export interface OwnerAsleepDeps {
   changedSince(since: number): DigestItem[]
   report(text: string): void
   now(): number
+  answeredFile: string
+}
+
+function answeredIn(file: string): AnsweredForOwner[] {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return []
+  }
 }
 
 function howLong(ms: number): string {
@@ -83,7 +94,7 @@ function repliesTo(asked: AskedOwner): string[] {
 }
 
 export class OwnerAsleep {
-  private answered: AnsweredForOwner[] = []
+  private answered: AnsweredForOwner[]
   private settled = new Set<string>()
   private everMarked = new Set<string>()
   private generation = 0
@@ -92,7 +103,14 @@ export class OwnerAsleep {
   constructor(
     private readonly d: OwnerAsleepDeps,
     private since: number | null
-  ) {}
+  ) {
+    this.answered = since === null ? [] : answeredIn(d.answeredFile)
+  }
+
+  private keepAnswered(answered: AnsweredForOwner[]): void {
+    this.answered = answered
+    writeWholeBeforeVisible(this.d.answeredFile, JSON.stringify(answered))
+  }
 
   asleep(): boolean {
     return this.since !== null
@@ -103,7 +121,7 @@ export class OwnerAsleep {
     if (since === sleptAt) return false
     this.since = since
     if (since !== null && sleptAt === null) {
-      this.answered = []
+      this.keepAnswered([])
       for (const tabId of this.d.tabs()) void this.asks(tabId)
     }
     if (since === null && sleptAt !== null) {
@@ -112,7 +130,7 @@ export class OwnerAsleep {
         this.d.changedSince(sleptAt),
         this.answered
       )
-      this.answered = []
+      this.keepAnswered([])
       if (text) this.d.report(text)
     }
     this.awakeTabsChanged()
@@ -162,7 +180,7 @@ export class OwnerAsleep {
           break
         }
       }
-      this.answered.push(entry)
+      this.keepAnswered([...this.answered, entry])
     } finally {
       this.answering.delete(tabId)
     }

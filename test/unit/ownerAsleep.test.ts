@@ -1,3 +1,6 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { describe, expect, it } from 'vitest'
 import {
   OWNER_ASLEEP_ANSWER,
@@ -41,6 +44,10 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     changedSince: () => [],
     report: (text) => reports.push(text),
     now: () => now,
+    answeredFile: path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-')),
+      'answered.json'
+    ),
     ...over
   }
   const asleep = new OwnerAsleep(d, since)
@@ -55,6 +62,7 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     await settle()
   }
   return {
+    d,
     asleep,
     asks,
     refuses,
@@ -174,5 +182,22 @@ describe('owner asleep', () => {
     await quiet.fallAsleep()
     await quiet.wakeAfter(HOUR_MS)
     expect(quiet.reports).toEqual([])
+  })
+
+  it('what Koloft answered before a restart in the night is still in the morning report, and the next night starts with none', async () => {
+    const t = setup()
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    await t.asleep.asks('a')
+    const restarted = new OwnerAsleep(t.d, 0)
+    t.asks.set('b', approval('npm publish'))
+    await restarted.asks('b')
+    restarted.set(null)
+    expect(t.reports).toHaveLength(1)
+    expect(t.reports[0]).toContain('"Session a" asked the owner "Blue or red?"')
+    expect(t.reports[0]).toContain('"Session b" asked to be allowed: "npm publish"')
+
+    new OwnerAsleep(t.d, HOUR_MS).set(null)
+    expect(t.reports).toHaveLength(1)
   })
 })
