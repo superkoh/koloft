@@ -186,6 +186,18 @@ async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () =
   await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   await beforeCodex()
   await startCodex(page, env)
+  await codexStartupTurnOver(page)
+}
+
+async function codexStartupTurnOver(page: Page): Promise<void> {
+  const tab = await tabOf(page, 'codex')
+  await expect
+    .poll(
+      async () =>
+        (await pendingAttention(page)).some((m) => m.tabId === tab && m.kind === 'turn-done'),
+      { timeout: NOTICE_ARRIVES_WITHIN_MS }
+    )
+    .toBe(true)
 }
 
 async function marksOnceAllWait(
