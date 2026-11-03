@@ -1,15 +1,13 @@
 import * as pty from 'node-pty'
 import { Terminal } from '@xterm/headless'
 import type { CodexLimits, CodexLimitWindow } from '@shared/types'
+import { FIVE_HOUR_MINUTES, WEEK_MINUTES } from '@shared/accountUsage'
 import { museShowsItsInputBox } from './museSessions'
 import { typeKeys } from './typeKeys'
 import type { PtyManager } from './ptyManager'
 
 // MUSE§13
 const QUOTA_ARGS = ['--no-session-log', '--trust-workspace']
-// MUSE§13
-const CURRENT_WINDOW_MINUTES = 5 * 60
-const WEEK_MINUTES = 7 * 24 * 60
 const COLS = 120
 const ROWS = 40
 const QUOTA_READ_DEADLINE_MS = 20_000
@@ -42,7 +40,7 @@ export function museQuotaFrom(lines: string[], now: Date): CodexLimits | undefin
     const m = WINDOW_LINE.exec(line)
     if (!m) continue
     windows.push({
-      minutes: m[1] === 'Weekly' ? WEEK_MINUTES : CURRENT_WINDOW_MINUTES,
+      minutes: m[1] === 'Weekly' ? WEEK_MINUTES : FIVE_HOUR_MINUTES,
       used: Number(m[2]) / 100,
       resetsAt: resetsAtFrom(m[3], now)
     })

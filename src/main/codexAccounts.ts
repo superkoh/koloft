@@ -1,14 +1,20 @@
 import fs from 'fs'
 import path from 'path'
-import { RESUME_KEEPS_ACCOUNT_UP_TO, homeRoom, usableAccounts } from '@shared/accountUsage'
+import {
+  RESUME_KEEPS_ACCOUNT_UP_TO,
+  homeRoom,
+  usableAccounts,
+  type HomeRoom
+} from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
 import { joinProjectTables } from './codexTrust'
 import {
   SCORE_PER_LIVE_SESSION,
   liveSessionsPerAccount,
+  soonest,
   type LaunchedSession
 } from './accountPicker'
-import { EPS } from './usageProbe'
+import { EPS, weekUse } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -146,6 +152,10 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   }
 }
 
+function weeklyScore(room: HomeRoom, nowSec: number): number {
+  return Math.max(0, ...room.longWindows.map((w) => weekUse(w.used, w.resetsAt ?? 0, nowSec)))
+}
+
 export class HomeAccountPicker {
   private turn = 0
 
@@ -168,11 +178,14 @@ export class HomeAccountPicker {
     if (same && (!same.room || (!same.room.walled && same.room.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
       return same.a
     const live = liveSessionsPerAccount(launched, undefined)
-    const open = rooms.filter(({ room }) => room && !room.walled)
-    const ranked = (open.length > 0 ? open : rooms.filter(({ room }) => !room)).map(
+    const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
+    const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
+    const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
       ({ a, room }) => ({
         a,
-        score: (room?.used ?? 0) + (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
+        score:
+          (room ? weeklyScore(room, nowSec) : 0) +
+          (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
       })
     )
     if (ranked.length > 0) {
@@ -180,8 +193,8 @@ export class HomeAccountPicker {
       const finalists = ranked.filter((r) => r.score <= least + EPS)
       return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
     }
-    const backAt = ({ room }: (typeof rooms)[number]): number => room?.backAt || Infinity
-    return rooms.reduce((best, r) => (backAt(r) < backAt(best) ? r : best)).a
+    if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
+    return soonest(rooms, ({ room }) => room?.backAt || Infinity).a
   }
 
   peek(accounts: AccountView[]): AccountView | undefined {
