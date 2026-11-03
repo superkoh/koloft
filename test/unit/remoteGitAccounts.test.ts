@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install'
+import { formatRemoteKey } from '../../src/shared/remoteKey'
 import {
   CLUE_ALL,
   RECEIVE_FILES,
@@ -264,6 +265,29 @@ describe('the files Koloft keeps in step on a machine', () => {
     expect(fs.readdirSync(path.join(dir, 'accounts'))).toEqual(['b.gitconfig'])
     expect(fs.readFileSync(path.join(dir, 'config'), 'utf8')).toBe('two')
     expect(fs.readdirSync(dir).filter((n) => n.startsWith('.incoming'))).toEqual([])
+  })
+})
+
+describe('the repository key of each folder on a machine', () => {
+  it('stays with its own folder when the login shell prints a banner first, even one with no line end, and a short answer gives no key at all', async () => {
+    const repo = (name: string): string => {
+      const dir = path.join(home, name)
+      sh(`git init -q '${dir}'`)
+      return dir
+    }
+    const folders = [repo('one'), path.join(home, 'gone'), repo('two')]
+    const machine = new GitMachineAccounts(async (m, script, args = [], opts = {}) => {
+      const r = onMachine(script, args, opts.input)
+      const banner = m === 'chatty' ? 'Welcome to box\n\x1b]0;box\x07' : ''
+      const stdout = m === 'short' ? r.stdout.replace(/repo-key [^\n]*\n/, '') : r.stdout
+      return { code: r.status, stdout: banner + stdout, stderr: r.stderr }
+    })
+    expect(await machine.repoKeys('chatty', folders)).toEqual([
+      formatRemoteKey('chatty', path.join(home, 'one/.git')),
+      null,
+      formatRemoteKey('chatty', path.join(home, 'two/.git'))
+    ])
+    expect(await machine.repoKeys('short', folders)).toEqual([null, null, null])
   })
 })
 
