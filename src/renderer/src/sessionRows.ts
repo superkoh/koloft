@@ -350,29 +350,13 @@ export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): 
   })
 }
 
-function withoutStartingRowsOfListedSessions(
-  all: WorkspaceRows[],
-  sessions: readonly LiveSession[]
-): WorkspaceRows[] {
-  const shown = new Set(all.flatMap((w) => w.rows.map((r) => r.id)))
-  const bound = new Set(
-    sessions.filter((x) => x.alive && shown.has(x.sessionId)).map((x) => x.tabId)
-  )
-  const doubled = (r: SessionRow): boolean => !!r.pending && bound.has(r.id)
-  if (!all.some((w) => w.rows.some(doubled))) return all
-  return all.map((w) =>
-    w.rows.some(doubled) ? { ...w, rows: w.rows.filter((r) => !doubled(r)) } : w
-  )
-}
-
 export function shownRows(s: {
   workspaceRows: WorkspaceRows[]
   butlerWorkspace: WorkspaceRows | null
   tabs: readonly EndedTab[]
-  sessions: readonly LiveSession[]
 }): { workspaceRows: WorkspaceRows[]; butlerWorkspace: WorkspaceRows | null } {
   const every = everyWorkspaceRows(s)
-  const all = withEndedRows(withoutStartingRowsOfListedSessions(every, s.sessions), s.tabs)
+  const all = withEndedRows(every, s.tabs)
   if (all === every) return { workspaceRows: s.workspaceRows, butlerWorkspace: s.butlerWorkspace }
   return s.butlerWorkspace
     ? { workspaceRows: all.slice(0, -1), butlerWorkspace: all[all.length - 1] }

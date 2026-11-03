@@ -3,6 +3,7 @@ import {
   PENDING_SESSION_TITLE,
   PLACEHOLDER_SESSION_TITLE,
   type BackendSessionRow,
+  type WorkspaceRows,
   type WorktreeStateMeta
 } from '@shared/types'
 import {
@@ -340,6 +341,21 @@ export function resolvePending(
     })
   }
   return out
+}
+
+export function withoutStartingRowsOfListedSessions(
+  all: WorkspaceRows[],
+  tabOfSession: ReadonlyMap<string, string>
+): WorkspaceRows[] {
+  let changed = false
+  const out = all.map((w) => {
+    const bound = new Set(w.rows.filter((r) => !r.pending).map((r) => tabOfSession.get(r.id)))
+    const rows = w.rows.filter((r) => !(r.pending && bound.has(r.id)))
+    if (rows.length === w.rows.length) return w
+    changed = true
+    return { ...w, rows }
+  })
+  return changed ? out : all
 }
 
 export type RescanEvent =

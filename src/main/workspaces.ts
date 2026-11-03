@@ -27,6 +27,7 @@ import {
   hasHistory,
   resolveBuckets,
   resolvePending,
+  withoutStartingRowsOfListedSessions,
   type Bucket,
   type JsonlTail,
   type PendingLaunch,
@@ -650,6 +651,11 @@ export class WorkspaceManager {
     if (key !== this.lastRunningKey) {
       this.lastRunningKey = key
       this.lastLiveKey = this.liveKey()
+      const rows = withoutStartingRowsOfListedSessions(this.rowsCache, this.deps.runningBindings())
+      if (rows !== this.rowsCache) {
+        this.rowsCache = rows
+        this.deps.pushRows(rows)
+      }
       this.scheduleRescan()
       return
     }
@@ -940,7 +946,11 @@ export class WorkspaceManager {
     this.bucketDirById = bucketDirById
     this.transcriptFileById = transcriptFileById
     const ordered = this.inLayoutOrder(payload)
-    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
+    const revealed = await this.revealDirsExisting(ordered)
+    this.rowsCache = withoutStartingRowsOfListedSessions(
+      this.stampLive(ordered, revealed),
+      this.deps.runningBindings()
+    )
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)

@@ -9,13 +9,19 @@ import {
   planRescan,
   resolvePending,
   TITLE_MAX,
+  withoutStartingRowsOfListedSessions,
   type AggregateDeps,
   type Bucket,
   type SessionMeta,
   type RescanState
 } from '../../src/main/sessionAggregate'
 import { handoverInOwnersLanguage, withHandover } from '../../src/main/handover'
-import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
+import {
+  PENDING_SESSION_TITLE,
+  PLACEHOLDER_SESSION_TITLE,
+  type SessionRow,
+  type WorkspaceRows
+} from '@shared/types'
 
 const WS = '/Users/dev/proj'
 const WT = '/Users/dev/proj/.claude/worktrees/bugfix'
@@ -503,6 +509,39 @@ describe('resolvePending', () => {
       NOW
     )
     expect(out).toEqual({ rows: [], promoted: [] })
+  })
+
+  describe('withoutStartingRowsOfListedSessions (a tab that binds while the list is read never shows as a Starting… row beside its own row)', () => {
+    const starting = (tabId: string): SessionRow => ({
+      ...realRow(tabId),
+      title: PENDING_SESSION_TITLE,
+      running: false,
+      pending: true
+    })
+    const ws = (path: string, rows: SessionRow[]): WorkspaceRows => ({
+      workspace: { path, missing: false, isGit: true, hasHistory: true },
+      rows
+    })
+    const ids = (all: WorkspaceRows[]): string[][] => all.map((w) => w.rows.map((r) => r.id))
+
+    it('drops the Starting… row of a tab now bound to a session listed in the same workspace', () => {
+      const listed = [ws(WS, [starting('tab-1'), realRow('s1')])]
+      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map([['s1', 'tab-1']])))).toEqual([
+        ['s1']
+      ])
+    })
+
+    it('keeps it while the tab is unbound, or bound to a session only another workspace lists', () => {
+      const listed = [ws(WS, [starting('tab-1')]), ws('/Users/dev/other', [realRow('s1')])]
+      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map()))).toEqual([
+        ['tab-1'],
+        ['s1']
+      ])
+      expect(ids(withoutStartingRowsOfListedSessions(listed, new Map([['s1', 'tab-1']])))).toEqual([
+        ['tab-1'],
+        ['s1']
+      ])
+    })
   })
 })
 
