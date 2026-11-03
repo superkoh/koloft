@@ -39,9 +39,15 @@ export interface OwnerAsleepDeps {
   answeredFile: string
 }
 
-function answeredIn(file: string): AnsweredForOwner[] {
+interface KeptAnswers {
+  since: number | null
+  answered: AnsweredForOwner[]
+}
+
+function answeredSince(file: string, since: number): AnsweredForOwner[] {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
+    const kept: KeptAnswers = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return kept?.since === since && Array.isArray(kept.answered) ? kept.answered : []
   } catch {
     return []
   }
@@ -104,12 +110,17 @@ export class OwnerAsleep {
     private readonly d: OwnerAsleepDeps,
     private since: number | null
   ) {
-    this.answered = since === null ? [] : answeredIn(d.answeredFile)
+    this.answered = since === null ? [] : answeredSince(d.answeredFile, since)
   }
 
   private keepAnswered(answered: AnsweredForOwner[]): void {
     this.answered = answered
-    writeWholeBeforeVisible(this.d.answeredFile, JSON.stringify(answered))
+    const kept: KeptAnswers = { since: this.since, answered }
+    try {
+      writeWholeBeforeVisible(this.d.answeredFile, JSON.stringify(kept))
+    } catch {
+      return
+    }
   }
 
   asleep(): boolean {

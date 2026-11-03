@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import {
   OWNER_ASLEEP_ANSWER,
   OwnerAsleep,
@@ -11,6 +11,9 @@ import {
 } from '../../src/main/ownerAsleep'
 
 const HOUR_MS = 60 * 60_000
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
+let setups = 0
+afterAll(() => fs.rmSync(userData, { recursive: true, force: true }))
 
 const question = (text: string, questions = 1): AskedOwner => ({ question: true, questions, text })
 const approval = (text: string): AskedOwner => ({ question: false, questions: 0, text })
@@ -44,10 +47,7 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     changedSince: () => [],
     report: (text) => reports.push(text),
     now: () => now,
-    answeredFile: path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-')),
-      'answered.json'
-    ),
+    answeredFile: path.join(userData, `answered-${++setups}.json`),
     ...over
   }
   const asleep = new OwnerAsleep(d, since)
