@@ -128,6 +128,27 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   folder and a `-w` keep exit; the lines come dim right after the screen reset, since the
   default (not fullscreen) mode uses no alternate screen. Koloft reads this hint only to
   see past it to a worktree removal's first line (§4).
+  **Since 2.1.317 the command line can repeat launch flags ahead of `--resume`**:
+  `claude --model haiku --effort high --dangerously-skip-permissions --resume <id>`,
+  `claude --settings ../koloft/tab.json --model opus --resume <id>`. `--session-id`,
+  `--name`, `-w`/`--worktree` and `--resume` are never repeated; every other flag is,
+  with its value as written and unquoted. When one value does not match
+  `^[\w./:+][\w./:@=+-]*$` (a space, a quote) no flag is repeated (the pattern read
+  from `strings`; the space case run), so the `--settings` path under
+  `~/Library/Application Support/` that Koloft's shim passes on the Mac keeps the bare
+  `claude --resume <id>`; a tab on another machine passes
+  `--settings "$HOME/.koloft/tabs/<tab>.json"`, which has no space. When the repeated
+  flags hold a `/` or a `.`, they are printed only when the whole line fits the
+  terminal's width; without one they are printed at any width (at 60 columns the
+  terminal wraps the line, the bytes stay one line). A Koloft launch always passes a
+  `--settings` path with a `/`, so its hint line is never wider than its terminal. An empty
+  `CLAUDE_CODE_RELAUNCH_RESUME_HINT_FLAGS` in the env stands in for the flags and
+  gives the bare form. Measured 2026-11-03 on 2.1.316 and 2.1.317 darwin-arm64: python
+  pty at 60, 120 and 400 columns, scratch `HOME`, a fake API key, one `hello` and then
+  `/exit` out of a `-w` session, 15 runs on 2.1.317, the raw bytes saved; 2.1.316
+  printed the bare form with the same flags. That the linux-arm64 build repeats the
+  same flags is read from its `strings` (the same skip list, value pattern and env
+  name), not run: inferred, not checked.
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -860,7 +881,12 @@ as a taken name so a scheduled run never hands `-w` such a name.
   only then exits. The line follows the title at once only while the session has no
   message; once it has one, the two dim lines `Resume this session with:` and `claude
   --resume <id>` (§1) come between them, and nothing else does: 119 bytes with a session
-  id and their colour codes, on both builds. The TUI's own
+  id and their colour codes, on both builds. Since 2.1.317 the second line may carry
+  the launch flags ahead of `--resume` (§1), and the hint grows with them: 162 and 178
+  bytes for the two examples in §1, 302–320 bytes for a `--settings`, `--plugin-dir` or
+  `--append-system-prompt-file` path plus `--model` at 400 columns; the title, the
+  `Removing worktree…` line and the result line are unchanged (2026-11-03, the §1
+  runs). The TUI's own
   `⏳ Removing worktree…` is drawn before the empty title. (Measured 2026-10-20 on CC
   2.1.303 and 2.1.304: a `-w` session with one turn, in fullscreen and with
   `CLAUDE_CODE_NO_FLICKER=0`, a python pty, the raw bytes saved.) Success lines start with `Worktree removed`
