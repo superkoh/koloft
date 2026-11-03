@@ -298,7 +298,11 @@ export function oneShotAgyHome(
   }
 }
 
-export function agyTrustsFolder(home: string, dir: string): boolean {
-  const list = readJson(settingsFile(home)).trustedWorkspaces
+export function trustsIn(settings: Record<string, unknown>, dir: string): boolean {
+  const list = settings.trustedWorkspaces
   return Array.isArray(list) && list.includes(dir)
+}
+
+export function agyTrustsFolder(home: string, dir: string): boolean {
+  return trustsIn(readJson(settingsFile(home)), dir)
 }

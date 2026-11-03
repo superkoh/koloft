@@ -17,6 +17,11 @@ for good.
   nobody is at the terminal to answer. A worktree it starts is trusted by the first
   rule's code; a folder the sidebar does not hold (the caller's own fallback folder,
   home) gets nothing.
+- an Antigravity session in one of Koloft's worktrees — a recovered one, a resumed one,
+  a scheduled run's — whose workspace agy already trusts (that earlier yes covers it): agy does not carry a folder's trust down to its
+  subfolders and has no flag that trusts for one run (`AGY§5`), so the worktree folder is
+  written as well. Muse gets the same outcome without writing, from `--trust-workspace`
+  for that run.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run itself keeps the jobs form's warning,
 and a launch that fell back to another folder writes nothing. The same rule holds on a remote

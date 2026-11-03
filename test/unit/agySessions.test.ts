@@ -407,6 +407,44 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§5
+  it("trusts a Koloft worktree's own folder in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders", async () => {
+    const recover = async (workspace: string): Promise<string> => {
+      const resource = {
+        id: crypto.randomUUID(),
+        originalCwd: workspace,
+        worktreePath: `${workspace}/.claude/worktrees/wt`,
+        worktreeName: 'wt',
+        worktreeBranch: 'worktree-wt',
+        originalHeadCommit: '0'.repeat(40),
+        state: 'ready' as const,
+        managed: true
+      }
+      sessions.store.putResource(resource)
+      vi.spyOn(sessions.worktrees, 'rebuild').mockResolvedValueOnce(resource)
+      await sessions.launch({ kind: 'agy', cwd: workspace, worktreeResourceId: resource.id })
+      return resource.worktreePath
+    }
+    const untrusted = await recover(repo)
+    expect(sessions.trustsFolder(untrusted)).toBe(false)
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(await recover(repo))).toBe(true)
+
+    machine.config = {
+      ownersSettings: { trustedWorkspaces: ['/home/me/proj'] },
+      ownersHooks: {},
+      ownSettings: {}
+    }
+    await recover(REMOTE_WS)
+    const [spec] = machine.launches
+    const settings = JSON.parse(spec.program.files[`${spec.tabId}.settings.json`])
+    expect(settings.trustedWorkspaces).toContain('/home/me/proj/.claude/worktrees/wt')
+  })
+
   it("hands agy Koloft's instructions when a conversation starts only when agent tools are on", async () => {
     agentTools = true
     const on = await launch()

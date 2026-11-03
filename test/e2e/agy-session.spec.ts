@@ -21,15 +21,19 @@ import {
   agentRow,
   agyConversationOnceFirstTurnEnded,
   centerTerm,
+  chooseBackend,
+  dialogPrimary,
   gitCommitAll,
   gitInit,
   newSessionInWith,
   oneStillRunning,
   openMenu,
+  openWorktreeSession,
   processAlive,
   readAllCalls,
   restoreOffered,
   runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
   terminalText,
@@ -621,6 +625,135 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveCount(1)
       await expect(agyRows(page)).toContainText('survive a restart')
       await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a new Antigravity worktree session runs agy in its own worktree folder, trusted there for it, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await dialog.locator('input').fill('agy-tree')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      const [call] = sessionCalls(env)
+      expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions'])
+      expect(fs.realpathSync(call.cwd)).not.toBe(fs.realpathSync(env.workspaces.a))
+      expect(path.basename(call.cwd)).toBe('agy-tree')
+      await runIn(page, centerTerm(page), 'work in the tree')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain('Answer to: work in the tree')
+      await expect(agyRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session whose .claude/worktrees folder was deleted and whose worktree Koloft has no record of is rebuilt there from its branch on a click, for the same conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    let app = await launchApp(env)
+    let first: AgyCall
+    let id = ''
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await dialog.locator('input').fill('agy-lost')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      first = sessionCalls(env)[0]
+      await runIn(page, centerTerm(page), 'keep the tree')
+      id = (await agyConversationOnceFirstTurnEnded(page)).id
+      fs.writeFileSync(path.join(first.cwd, 'kept.txt'), 'committed on the branch')
+      gitCommitAll(first.cwd)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(agyRows(page)).toHaveClass(/cold/)
+    } finally {
+      await quitAndClose(app)
+    }
+    const storeFile = path.join(env.userData, 'agy-sessions.json')
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    store.resources = {}
+    for (const member of Object.values<{ worktreeResourceId?: string }>(store.members))
+      delete member.worktreeResourceId
+    fs.writeFileSync(storeFile, JSON.stringify(store))
+    fs.rmSync(first.cwd, { recursive: true, force: true })
+
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await agyRows(page).click()
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].cwd).toBe(first.cwd)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
+      expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
+        'committed on the branch'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('C8: typing the name of an Antigravity worktree whose preparation was interrupted says it will start Antigravity, and recovers it into an Antigravity session that, as agy trusts its workspace, takes the first line typed as a prompt rather than asking its trust question', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    const name = 'interrupted-agy'
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'agy-sessions.json',
+      name
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
+      await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
+      await expect(
+        dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
+      ).toContainText('and start Antigravity.')
+      await expect(dialogPrimary(dialog)).toContainText('Recover · Antigravity')
+      await dialogPrimary(dialog).click()
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      expect(sessionCalls(env)[0].cwd).toBe(cwd)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await runIn(page, centerTerm(page), 'work in the recovered tree')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain('Answer to: work in the recovered tree')
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
     } finally {
       await quitAndClose(app)
     }
