@@ -3278,7 +3278,6 @@ app.whenReady().then(() => {
     claudeAsks.delete(e.id)
     const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
-    if (!rendererReady) cronRunner?.tabClosed(e.id, false)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
     if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)

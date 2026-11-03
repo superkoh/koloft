@@ -104,6 +104,7 @@ interface KeptTab {
   worktree: string
   sessionId?: string
   left: LeftTab
+  closedWhileRunning?: true
 }
 
 export interface RunLeftovers {
@@ -312,6 +313,7 @@ export class CronRunner {
   private live = new Map<string, LiveRun>()
   private killedRuns = new Map<string, string>()
   private kept = new Map<string, KeptTab>()
+  private windowShowsTabs = false
   private inFlight = new Set<string>()
   private launching = new Set<string>()
   private reopening = new Set<string>()
@@ -427,10 +429,12 @@ export class CronRunner {
   }
 
   onRendererTeardown(ptyAlive: (tabId: string) => boolean): void {
+    this.windowShowsTabs = false
     for (const [tabId, kept] of [...this.kept]) if (!ptyAlive(tabId)) this.letGo(tabId, kept)
   }
 
   onRendererReady(): void {
+    this.windowShowsTabs = true
     if (this.held.size === 0) return
     const piles = [...this.held.values()]
     this.held.clear()
@@ -791,10 +795,15 @@ export class CronRunner {
     const killedJobId = this.killedRuns.get(tabId)
     this.killedRuns.delete(tabId)
     const restartedInPlace = !!wasKept && !left
+    const stays =
+      !quitting &&
+      this.windowShowsTabs &&
+      !wasKept?.closedWhileRunning &&
+      (!!exit?.unexpected || restartedInPlace)
     const hold = run && this.runStarted(run) ? this.folderOf(run) : wasKept
-    if (hold && !quitting && (exit?.unexpected || restartedInPlace))
-      this.kept.set(tabId, { ...hold, left: left ?? wasKept?.left ?? {} })
-    if (left) this.onTabGone(left, [run?.jobId, killedJobId, wasKept?.jobId], tabId)
+    if (hold && stays) this.kept.set(tabId, { ...hold, left: left ?? wasKept?.left ?? {} })
+    else if (wasKept) return this.letGo(tabId, { ...wasKept, left: left ?? wasKept.left })
+    if (left) this.onTabGone(left, [run?.jobId, killedJobId], tabId)
   }
 
   runStartedIn(tabId: string): boolean {
@@ -820,12 +829,13 @@ export class CronRunner {
   tabClosed(tabId: string, ptyAlive: boolean): void {
     const kept = this.kept.get(tabId)
     if (!kept) return
-    if (ptyAlive) this.kept.delete(tabId)
+    if (ptyAlive) kept.closedWhileRunning = true
     else this.letGo(tabId, kept)
   }
 
   private letGo(tabId: string, kept: KeptTab): void {
     this.kept.delete(tabId)
+    if (this.d.quitting()) return
     const job = this.byId(kept.jobId)
     if (job?.history.some((h) => h.worktree === kept.worktree))
       return this.onTabGone(kept.left, [job.id], tabId)
@@ -833,26 +843,37 @@ export class CronRunner {
   }
 
   private async tidyFolderNoLineNames(kept: KeptTab, tabId: string): Promise<void> {
-    if (this.d.quitting()) return
-    const folder = runFolder(kept.root, kept.worktree)
-    if (this.inFlight.has(folder) || this.d.foldersInUse(tabId).has(folder)) return
-    this.inFlight.add(folder)
+    const { root, worktree } = kept
+    if (!this.mayTidy(root, worktree, this.d.foldersInUse(tabId))) return
     try {
-      await this.d.tidyRun(kept.root, kept.worktree, kept.sessionId)
+      const result = await this.tidyOne(root, worktree, kept.sessionId)
+      const left = headlines(result.kept)
+      if (!result.removed && left) this.d.toast(`⏰ ${worktree}: folder kept: ${left}`)
     } catch (error) {
-      this.d.toast(`⏰ ${kept.worktree}: ${String(error)}`)
+      this.d.toast(`⏰ ${worktree}: ${String(error)}`)
     } finally {
-      this.inFlight.delete(folder)
       this.refreshFolders()
     }
   }
 
-  holdsFolder(folder: string): boolean {
-    return this.heldFolders().has(folder)
+  private mayTidy(root: string, name: string, busy: Set<string>): boolean {
+    const folder = runFolder(root, name)
+    const open = [...this.live.values()].some((r) => r.worktree === name)
+    return !open && !this.holdsFolder(folder) && !this.inFlight.has(folder) && !busy.has(folder)
   }
 
-  private heldFolders(): Set<string> {
-    return new Set([...this.kept.values()].map((k) => runFolder(k.root, k.worktree)))
+  private async tidyOne(root: string, name: string, sessionId?: string): Promise<TidyResult> {
+    const folder = runFolder(root, name)
+    this.inFlight.add(folder)
+    try {
+      return await this.d.tidyRun(root, name, sessionId)
+    } finally {
+      this.inFlight.delete(folder)
+    }
+  }
+
+  holdsFolder(folder: string): boolean {
+    return [...this.kept.values()].some((k) => runFolder(k.root, k.worktree) === folder)
   }
 
   tabMoved(oldTabId: string, newTabId: string): void {
@@ -872,7 +893,7 @@ export class CronRunner {
       return
     }
     const line = lineOf(run)
-    if (!this.runStarted(run)) {
+    if (run.state === 'launching') {
       const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
       this.writeHistory(job, { ...line, state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
@@ -938,20 +959,12 @@ export class CronRunner {
     let busy = this.d.foldersInUse(leavingTabId)
     let unreachable: TidyResult | undefined
     let changed = false
-    const held = this.heldFolders()
     for (const name of new Set([...listed, ...named])) {
-      const folder = runFolder(root, name)
-      const open = [...this.live.values()].some((r) => r.worktree === name)
-      if (open || held.has(folder) || this.inFlight.has(folder) || busy.has(folder)) continue
+      if (!this.mayTidy(root, name, busy)) continue
       const line = job.history.find((h) => h.worktree === name)
       let result = unreachable
       if (!result) {
-        this.inFlight.add(folder)
-        try {
-          result = await this.d.tidyRun(root, name, line?.sessionId)
-        } finally {
-          this.inFlight.delete(folder)
-        }
+        result = await this.tidyOne(root, name, line?.sessionId)
         busy = this.d.foldersInUse(leavingTabId)
         if (result.unreachable) unreachable = result
       }

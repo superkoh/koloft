@@ -1487,6 +1487,7 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
 
     async function crashedRun(): Promise<ReturnType<typeof makeHarness>> {
       const h = makeHarness([makeJob()])
+      h.runner.onRendererReady()
       await h.runner.runNow('j1')
       h.runner.onBound('tab-1', 'sess-1')
       h.tidied.set(RUN, REMOVED)
@@ -1545,20 +1546,44 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
       expect(h.jobs[0].history).toHaveLength(1)
     })
 
-    it('a queued run whose process dies never started: it reads Could not start and holds nothing', async () => {
+    it('a queued run whose process dies never started, so it holds nothing', async () => {
       const h = makeHarness([makeJob()], {
         launch: vi.fn(
           () => ({ ok: true, tabId: 'tab-1', startsLater: new Promise(() => {}) }) as LaunchResult
         )
       })
+      h.runner.onRendererReady()
       await h.runner.runNow('j1')
       h.tidied.set(RUN, REMOVED)
       h.flags.folders = [RUN]
       expect(h.runner.runStartedIn('tab-1')).toBe(false)
       h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN) }, crash)
       await flush()
-      expect(h.jobs[0].history[0].state).toBe('failed')
       expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, undefined]])
+    })
+
+    it('with no window to keep a tab in, a crash holds nothing and the folder is tidied at once', async () => {
+      const h = makeHarness([makeJob()])
+      h.runner.onRendererReady()
+      h.runner.onRendererTeardown(() => false)
+      await h.runner.runNow('j1')
+      h.runner.onBound('tab-1', 'sess-1')
+      h.tidied.set(RUN, REMOVED)
+      h.runner.onPtyExit('tab-1', left, crash)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+
+    it('a resumed session closed while it runs, whose job is deleted before it ends, still has its folder tidied when it ends', async () => {
+      const h = await crashedRun()
+      h.runner.tabMoved('tab-1', 'tab-2')
+      h.runner.tabClosed('tab-2', true)
+      h.runner.delete('j1')
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+      h.runner.onPtyExit('tab-2', {}, { exitCode: 0 })
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
     })
 
     it('⇧⌘R again on the resumed session keeps the hold, so a later crash of the new session still keeps the folder', async () => {
