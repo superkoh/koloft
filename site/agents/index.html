@@ -133,7 +133,15 @@
             phone and paste the last address
           </li>
         </ul>
-        <p>With no Discord channel bound, all three are refused with a message that says so.</p>
+        <p>
+          With no Discord channel bound, all three are refused with a message that says so. While
+          you <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), they are
+          refused too:
+          <code
+            >koloft: the owner is asleep and cannot give a password or a code now. Skip this step,
+            go on with the rest, and say in your report that it waits for the owner.</code
+          >
+        </p>
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
@@ -243,7 +251,9 @@
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
           Work that needs its own branch or worktree goes to a Koloft session started with
           <code class="nowrap">-w</code>. It never goes to a hidden helper, or to a branch in the
-          folder other sessions share.
+          folder other sessions share. Work that will end in several pull requests (proposed code
+          changes) gets one such session per pull request. When each pull request builds on the one
+          before, the next session starts only once the branch it builds on is pushed.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs

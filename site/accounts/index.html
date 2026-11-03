@@ -105,20 +105,20 @@
           <code>Try again</code> button, and takes a new account off the list.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 728; --ar-phone: 764 / 1092">
+        <figure class="shot" style="--ar: 1322 / 904; --ar-phone: 764 / 1168">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone6.webp"
+                srcset="../img/h-settings-accounts-phone7.webp"
                 width="764"
-                height="1092"
+                height="1168"
               />
               <img
-                src="../img/h-settings-accounts-pane6.webp"
+                src="../img/h-settings-accounts-pane7.webp"
                 width="1322"
-                height="728"
-                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions, the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+                height="904"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions; an Account usage row with a Refresh usage button; then the Claude part: the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in and Paste token buttons"
               />
             </picture>
           </div>
@@ -255,14 +255,15 @@
           Mac has no <code>codex</code> yet, the dialog says so and the same tab runs its official
           installer first, then signs in. Or <code>Paste API key</code>: Koloft hands an OpenAI API
           key to <code>codex login --with-api-key</code>, which keeps it in the new account's own
-          folder. New Codex sessions start on the least-used Codex sign-in, and skip one that has
-          hit its limit while another is free. A sign-in with no reading yet (one just added, say)
-          is used only when no sign-in with a reading has room. When every sign-in has a reading and
-          all are at their limit, the session runs on the one that resets first, and a message says
-          so. If you have an <a href="#api-keys">API key account</a>, it runs on that instead.
-          Settings and the <code>Account usage</code> panel show each account's use for each limit
-          Codex reports (such as 5 hours and a week), its credits, and the resets it has saved, like
-          <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
+          folder. New Codex sessions go by weekly use, as Claude sessions do: the sign-in that has
+          used the least of its week wins, and one that has hit its limit, or used 90% of its 5
+          hours, is skipped while another has room. A sign-in with no reading yet (one just added,
+          say) is used only when no sign-in with a reading has room. When every sign-in has a
+          reading and all are at their limit, the session runs on the one that resets first, and a
+          message says so. If you have an <a href="#api-keys">API key account</a>, it runs on that
+          instead. Settings and the <code>Account usage</code> panel show each account's use for
+          each limit Codex reports (such as 5 hours and a week), its credits, and the resets it has
+          saved, like <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
           An account that hit its limit shows <code>WALLED</code> in the panel. When it has a saved
