@@ -703,7 +703,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                   primary: {
                     usedPercent: auth.usedPercent,
                     windowDurationMins: 10080,
-                    resetsAt: now + 3600
+                    resetsAt: now + 3 * 86400
                   },
                   secondary: null,
                   credits:
@@ -1013,6 +1013,21 @@ async function startTui() {
             continue
           }
           // CODEX§20
+          if (question?.note !== undefined) {
+            if (ch !== '\r') question.note += ch
+            else {
+              const answers = {
+                [question.key]: { answers: ['None of the above', `user_note: ${question.note}`] }
+              }
+              ws.send(JSON.stringify({ id: question.id, result: { answers } }))
+              question = undefined
+            }
+            continue
+          }
+          if (question && ch === '\t') {
+            question.note = ''
+            continue
+          }
           const picked = question?.labels[Number(ch) - 1]
           if (picked) {
             const answers = { [question.key]: { answers: [picked] } }

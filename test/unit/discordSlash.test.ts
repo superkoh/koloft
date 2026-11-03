@@ -94,6 +94,94 @@ describe('a slash command typed into a session', () => {
     }
   )
 
+  describe('in Antigravity, which keeps a command’s output only on screen', () => {
+    const DRAFT_SCREEN = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      '─'.repeat(60),
+      '> hello there',
+      '',
+      '  REPLY(hi)',
+      '',
+      RULE,
+      '> /usage',
+      RULE,
+      '> /usage  View model quota usage',
+      '',
+      '  ↑/↓ Navigate · enter Select · tab Complete'
+    ]
+    const OUTPUT_SCREEN = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      RULE,
+      '>',
+      RULE,
+      '└ Models & Quota',
+      '',
+      '  ⢿  Loading quota summary...'
+    ]
+
+    function agyWhoseEnterLandsOnThe(enterThatLands: number) {
+      let shown = DRAFT_SCREEN
+      let screenReads = 0
+      const typed: string[] = []
+      const { slash, posts } = setup({
+        backendOf: () => 'agy',
+        screen: async () => shown,
+        outputOnlyOnScreen: async () => {
+          screenReads++
+          return shown.join('\n')
+        },
+        typeNow: async (_t, keys) => {
+          typed.push(...keys)
+          if (typed.filter((k) => k === '\r').length === enterThatLands) shown = OUTPUT_SCREEN
+        }
+      })
+      return {
+        slash,
+        posts,
+        typed,
+        screenReads: () => screenReads,
+        land: () => {
+          shown = OUTPUT_SCREEN
+        }
+      }
+    }
+
+    it('a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
+      const { slash, posts, typed } = agyWhoseEnterLandsOnThe(2)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r'])
+      expect(posts).toEqual([])
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS - SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r'])
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
+    })
+
+    it('an Enter that lands only after the first look at the screen gets no second Enter, and its output is posted from the next look', async () => {
+      const { slash, posts, typed, land } = agyWhoseEnterLandsOnThe(Infinity)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      land()
+      await vi.advanceTimersByTimeAsync(
+        AN_ENTER_LANDS_WITHIN_MS + SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS
+      )
+      expect(typed).toEqual(['/usage', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
+    })
+
+    it('when the second Enter is lost too, Koloft stops looking at the screen, then closes the menu and empties the box, since Esc alone leaves the command typed', async () => {
+      const { slash, posts, typed, screenReads } = agyWhoseEnterLandsOnThe(3)
+      await slash.typeWhenIdle(child, '/usage', CHANNEL)
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(screenReads()).toBe(2)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b', '\x05\x15'])
+      expect(posts).toHaveLength(1)
+      expect(posts[0]).toContain('here is its screen')
+    })
+  })
+
   it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {
     const { slash, typed } = setup({
       screen: async () => ['❯ /config', RULE, '  Settings', '  Theme  dark']

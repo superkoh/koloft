@@ -236,7 +236,6 @@ const api: KoloftApi = {
     readText: (p) => ipcRenderer.invoke(CH.preview.readText, p),
     openFileDialog: () => ipcRenderer.invoke(CH.preview.openFileDialog),
     osOpen: (p) => ipcRenderer.send(CH.preview.osOpen, p),
-    fileUrl: (p) => `koloft-file://localhost${encodeURI(p)}`,
     onOpenRequest: (cb) => {
       const handler = (_e: unknown, r: OpenRequest): void => cb(r)
       ipcRenderer.on(CH.preview.openFile, handler)

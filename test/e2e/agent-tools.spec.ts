@@ -44,6 +44,7 @@ const CENTER = '.term-island .term-wrap'
 const PANEL = '.wb-panel .wb-term'
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
+const FIRST_SIBLING_STILL_STARTING_MS = 30_000
 const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
 const A_REMOVAL_STILL_DELETING_WHEN_CLOSE_ASKS_MS = 3_000
 const WAITING_TO_IDLE_MS = 1000
@@ -264,6 +265,27 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await caller.locator('.ws-tab-fold').click()
     await expect(nested).toHaveCount(1)
     await expect(caller.locator('.ws-tab-parked')).toHaveCount(0)
+  })
+
+  test('a second koloft session new whose task gets the same title, run while the first sibling has not started yet, names its sibling with a number, so SendMessage tells the two apart', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const callsBefore = readCalls(env).length
+    fs.writeFileSync(
+      path.join(env.home, 'fake-claude-delay'),
+      String(FIRST_SIBLING_STILL_STARTING_MS)
+    )
+
+    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+
+    const calls = await waitForCalls(env, callsBefore + 2, 60_000)
+    const names = calls.slice(-2).map((c) => c.argv[c.argv.indexOf('--name') + 1])
+    expect(names.sort()).toEqual(['hello (titled)', 'hello (titled) 2'])
   })
 
   test('koloft session list gives every open session’s transcript, Claude, Codex, Muse and Antigravity alike, as a file on this Mac that holds what the session was asked', async ({

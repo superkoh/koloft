@@ -7,9 +7,12 @@ const alias = {
   '@renderer': resolve(__dirname, 'src/renderer/src')
 }
 
+const license = { fileName: '.vite/license.json' }
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: { license },
     resolve: {
       alias: {
         ...alias,
@@ -25,6 +28,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {
+      license,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
@@ -36,6 +40,7 @@ export default defineConfig({
   },
   renderer: {
     resolve: { alias },
+    build: { license },
     plugins: [react()]
   }
 })

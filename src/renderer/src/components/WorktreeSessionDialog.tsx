@@ -305,7 +305,7 @@ export function WorktreeSessionDialog({
       return (
         <p className="field-hint">
           Recover the saved worktree at <code>{shortenHome(aim.dir, window.api.home)}</code> and
-          start Codex.
+          start {BACKEND_LABEL[aim.backend]}.
         </p>
       )
     }

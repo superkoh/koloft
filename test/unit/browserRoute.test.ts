@@ -9,7 +9,9 @@ import {
   onMacPort,
   machinePageUrl,
   MACHINE_PAGE_SCHEME,
-  pagePathOf
+  pagePathOf,
+  previewFileOf,
+  previewFileUrl
 } from '@shared/browserRoute'
 
 describe('routeFor — the §05B routing table', () => {
@@ -136,6 +138,16 @@ describe('routeFor — the §05B routing table', () => {
     )
     expect(pagePathOf('file:///w/a.html')).toBe('/w/a.html')
     expect(pagePathOf(`${MACHINE_PAGE_SCHEME}://zz/srv/a.html`)).toBeNull()
+  })
+
+  it('a Workbench preview address names the machine its file is on, and reads back as the same file, while an address naming no machine reads as none', () => {
+    for (const file of ['/w/my pic#1.png', 'ssh://u@Box.lan/srv/my pic#1.png']) {
+      expect(previewFileOf(previewFileUrl(file))).toBe(file)
+      expect(previewFileOf(`${previewFileUrl(file)}?v=3`)).toBe(file)
+    }
+    expect(previewFileUrl('/w/a.pdf')).toBe('koloft-file://localhost/w/a.pdf')
+    expect(previewFileOf('koloft-file://elsewhere/w/a.pdf')).toBeNull()
+    expect(previewFileOf('file:///w/a.pdf')).toBeNull()
   })
 
   it('hands mailto:/tel: to the OS on a user action only (SEC-4)', () => {

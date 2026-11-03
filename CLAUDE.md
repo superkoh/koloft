@@ -260,7 +260,7 @@ Working principles:
     report success.
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
-  - Grep or read only paths you saw; else grep -rl 'word' src.
+  - Grep/read only printed paths; else grep -rl 'word' src.
   - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
   - {0,N} spans: grep (ugrep) fails; /usr/bin/grep -o -E fails above 255 too.
