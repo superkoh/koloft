@@ -1705,11 +1705,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
       })
       await expect(page.locator(BROWSER.tabOpen)).toHaveCount(1)
-      const bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))!
-      await expect(bar.getByRole('textbox', { name: 'Address' })).toHaveValue(
+      let bar: Page | undefined
+      await expect
+        .poll(() => (bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))))
+        .toBeTruthy()
+      await expect(bar!.getByRole('textbox', { name: 'Address' })).toHaveValue(
         `http://localhost:${popupPort}/popup`
       )
-      await expect(bar.getByText('Not secure')).toBeHidden()
+      await expect(bar!.getByText('Not secure')).toBeHidden()
     })
   })
 

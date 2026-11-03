@@ -394,8 +394,12 @@ method. A recheck adds its date, version and command to the bullet.
   `.localhost`, either with one trailing dot dropped, any case; or an IP literal for which
   `IPAddress::IsLoopback` (`net/base/ip_address.cc`) holds: 127.0.0.0/8 and `::1` only, so
   `::ffff:127.0.0.1` does not count. Read from Chromium's source on `main`, 2026-11-03.
-  `did-fail-load` on the sign-in view for an https page whose server closed the connection
-  leaves `getURL()` the failed URL, as for a refused certificate (BB-M35, Electron 43.8.1).
+  On the sign-in view (Electron 43.8.1, 2026-11-03), `did-fail-load` for an https page whose
+  server closed the connection leaves `getURL()` the failed URL, as for a refused certificate
+  (BB-M35). A load that ends without a new page does not fire `did-fail-load` at all, so it
+  never wipes the mark of the page still shown: `window.stop()` while an image still loads, a
+  move to a 204 reply, and a move to a custom-scheme callback (`koloftprobe://cb`) each fired
+  nothing within 10 s (a probe step in BB-M35, then removed).
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,

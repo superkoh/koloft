@@ -22,6 +22,8 @@ describe('the sign-in window marks an address the way Chrome does', () => {
     for (const url of [
       'http://localhost.example.com/',
       'http://mylocalhost/',
+      'http://127.example.com/',
+      'http://127.0.0.1.nip.io/',
       'http://128.0.0.1/',
       'http://[::ffff:127.0.0.1]/',
       'http://10.0.0.5/'

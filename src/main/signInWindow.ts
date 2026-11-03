@@ -1,6 +1,7 @@
 import path from 'path'
 import { BrowserWindow, WebContentsView, type WebContents } from 'electron'
 import { addressSecurity } from '@shared/signInAddress'
+import { urlOrNull } from '@shared/browserRoute'
 
 export const ADDRESS_BAR_HEIGHT = 36
 const BROWSER_WINDOW_DEFAULT_SIZE = { width: 800, height: 600 }
@@ -12,11 +13,7 @@ function loadAddressBar(host: BrowserWindow): void {
 }
 
 function hostOf(url: string): string | null {
-  try {
-    return new URL(url).host
-  } catch {
-    return null
-  }
+  return urlOrNull(url)?.host ?? null
 }
 
 // PLATFORM§8
@@ -83,6 +80,7 @@ export function openSignInWindow(
   page.on('did-navigate-in-page', (_e, _url, isMainFrame) => {
     if (isMainFrame) showAddress()
   })
+  // PLATFORM§8
   page.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => {
     if (!isMainFrame) return
     loadFailed = true
