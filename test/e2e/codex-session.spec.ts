@@ -58,6 +58,7 @@ import {
   type CodexWireLine
 } from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
+import { turnedOffLine } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
   centerTerm,
@@ -1704,7 +1705,7 @@ test.describe('Codex sessions through the real method chooser, process transport
           return String(e)
         }
       }, env.workspaces.a)
-      expect(refusal).toContain('disabled')
+      expect(refusal).toContain(turnedOffLine('codex'))
       const row = codexRows(page).filter({ hasText: 'default-worktree' })
       await row.click()
       await clickAppMenuItem(app, page, 'restart-session')
