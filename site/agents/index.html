@@ -339,7 +339,8 @@
         <p>
           Koloft hands the address to the Playwright MCP server in your Codex settings. If your
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
-          Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
+          Koloft and not a browser of their own, and run without asking first, unless you set an
+          approval mode on that entry yourself. Those tools and <code>playwright-cli</code> reach
           the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets the
           network and Playwright's cache folder, for that session only. A session started with
           <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
