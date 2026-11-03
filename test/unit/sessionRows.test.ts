@@ -19,6 +19,7 @@ import {
   rowStateClass,
   selectionRoot,
   sessionTree,
+  shownRows,
   rowsUnder,
   welcomeQuietLine,
   welcomeTarget,
@@ -79,6 +80,47 @@ describe('withEndedRows (a tab whose agent died on its own keeps one row until i
     expect(withEndedRows(all, [died])).toBe(all)
     const bound = [ws('/a', ['s1'])]
     expect(withEndedRows(bound, [{ ...died, sessionId: 's1' }])).toBe(bound)
+  })
+})
+
+describe('shownRows (a starting tab and its session never show as two rows)', () => {
+  const row = (id: string, pending?: true): WorkspaceRows['rows'][number] => ({
+    id,
+    title: pending ? 'Starting…' : id,
+    worktree: 'leaving',
+    cwd: '/p/.claude/worktrees/leaving',
+    running: true,
+    invalidCwd: false,
+    mtime: 0,
+    backendId: 'claude',
+    host: 'ssh',
+    ...(pending && { pending })
+  })
+  const ws = (rows: WorkspaceRows['rows']): WorkspaceRows => ({
+    workspace: { path: 'ssh://devbox/p', missing: false, isGit: true, hasHistory: true },
+    rows
+  })
+  const ids = (s: Parameters<typeof shownRows>[0]): string[] =>
+    shownRows(s).workspaceRows.flatMap((w) => w.rows.map((r) => r.id))
+
+  it('drops the Starting… row once its tab is bound to a session whose own row the list already has, though the list still carries both', () => {
+    const listed = [ws([row('t1', true), row('s1')])]
+    const bound = [{ sessionId: 's1', tabId: 't1', alive: true }]
+    expect(
+      ids({ workspaceRows: listed, butlerWorkspace: null, tabs: [], sessions: bound })
+    ).toEqual(['s1'])
+  })
+
+  it('keeps the Starting… row while its tab is bound to no listed session, and hands back the same lists when nothing is dropped', () => {
+    const listed = [ws([row('t1', true), row('s9')])]
+    const s = {
+      workspaceRows: listed,
+      butlerWorkspace: null,
+      tabs: [],
+      sessions: [{ sessionId: 's1', tabId: 't1', alive: true }]
+    }
+    expect(ids(s)).toEqual(['t1', 's9'])
+    expect(shownRows(s).workspaceRows).toBe(listed)
   })
 })
 

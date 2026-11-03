@@ -1134,8 +1134,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
   const { workspaceRows: rows, butlerWorkspace } = useMemo(
-    () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
-    [listedRows, listedButler, storeTabs]
+    () =>
+      shownRows({
+        workspaceRows: listedRows,
+        butlerWorkspace: listedButler,
+        tabs: storeTabs,
+        sessions
+      }),
+    [listedRows, listedButler, storeTabs, sessions]
   )
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
