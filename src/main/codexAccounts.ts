@@ -147,15 +147,14 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   }
 }
 
-function weeklyScore(room: HomeRoom, nowSec: number): number {
-  return Math.max(0, ...room.longWindows.map((w) => weekUse(w.used, w.resetsAt ?? 0, nowSec)))
-}
-
-function weekResetsAt(room: HomeRoom, nowSec: number): number {
-  const ahead = room.longWindows.flatMap((w) =>
-    w.resetsAt !== undefined && w.resetsAt > nowSec ? [w.resetsAt] : []
+function bindingWeek(room: HomeRoom, nowSec: number): { use: number; resetsAt: number } {
+  return room.longWindows.reduce(
+    (heaviest, w) => {
+      const use = weekUse(w.used, w.resetsAt ?? 0, nowSec)
+      return use > heaviest.use ? { use, resetsAt: w.resetsAt ?? 0 } : heaviest
+    },
+    { use: -1, resetsAt: 0 }
   )
-  return ahead.length > 0 ? Math.min(...ahead) : 0
 }
 
 export class HomeAccountPicker {
@@ -182,23 +181,23 @@ export class HomeAccountPicker {
     const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
     const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
     const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
-      ({ a, room }) => ({
-        name: a.name,
-        score: {
-          s1:
-            (room ? weeklyScore(room, nowSec) : 0) +
-            (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION,
-          s2: 0,
-          tiebreak: room ? weekResetsAt(room, nowSec) : 0,
-          pen: 0,
-          hardLimited: false
+      ({ a, room }) => {
+        const week = room ? bindingWeek(room, nowSec) : { use: 0, resetsAt: 0 }
+        return {
+          a,
+          score: {
+            s1:
+              Math.max(0, week.use) +
+              (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION,
+            s2: 0,
+            tiebreak: week.resetsAt > nowSec ? week.resetsAt : 0
+          }
         }
-      })
+      }
     )
     if (ranked.length > 0) {
       const finalists = leximaxFinalists(ranked)
-      const winner = finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0]
-      return rooms.find(({ a }) => a.name === winner.name)!.a
+      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
     }
     if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
     return soonest(rooms, ({ room }) => room?.backAt || Infinity).a

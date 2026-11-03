@@ -108,7 +108,7 @@ export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
   return windowStopped(u.u5, u.r5, nowSec)
 }
 
-export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
+const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
 
 export function resetElapsed(r: number, nowSec: number): boolean {
   return r > 0 && r <= nowSec

@@ -250,6 +250,24 @@ describe('picking a Codex account', () => {
         account('soon', { limits: weekBack(1) })
       ]
       expect([picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual(['soon', 'soon'])
+      const agyPicker = new HomeAccountPicker('agy-home')
+      const bucket = (used: number, days: number) => ({
+        label: `${days}d bucket`,
+        used,
+        minutes: 10080,
+        resetsAt: nowSec + days * 86_400
+      })
+      const buckets = [
+        account('late-heaviest', {
+          kind: 'agy-home',
+          quota: [bucket(0.3, 5), bucket(0, 0.5)]
+        }),
+        account('soon-heaviest', { kind: 'agy-home', quota: [bucket(0.3, 2)] })
+      ]
+      expect([agyPicker.pick(buckets)?.name, agyPicker.pick(buckets)?.name]).toEqual([
+        'soon-heaviest',
+        'soon-heaviest'
+      ])
     })
 
     it('an Antigravity account at 90% of a 5-hour bucket is skipped for a new session even when its week is the lightest', () => {
