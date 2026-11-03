@@ -15,6 +15,7 @@ export interface Question {
   question: string
   options: Option[]
   ownWords?: true
+  multiSelect?: true
 }
 
 export interface CodexApproval {
@@ -41,9 +42,15 @@ export function questionsOf(p: AskPayload): Question[] {
   const raw = p.tool_input?.questions
   if (!Array.isArray(raw)) return []
   return raw.flatMap((q) => {
-    const r = q as { question?: unknown; options?: unknown }
+    const r = q as { question?: unknown; options?: unknown; multiSelect?: unknown }
     if (typeof r.question !== 'string') return []
-    return [{ question: r.question, options: labelsOf(r.options) }]
+    return [
+      {
+        question: r.question,
+        options: labelsOf(r.options),
+        ...(r.multiSelect === true && { multiSelect: true as const })
+      }
+    ]
   })
 }
 
@@ -93,8 +100,7 @@ export function optionChoices(q: Question): Choice[] {
 
 function singlePick(p: AskPayload): Question | undefined {
   const qs = questionsOf(p)
-  const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
-  return qs.length === 1 && raw[0]?.multiSelect !== true ? qs[0] : undefined
+  return qs.length === 1 && !qs[0]!.multiSelect ? qs[0] : undefined
 }
 
 export function choicesOf(p: AskPayload): Choice[] {
@@ -129,12 +135,19 @@ export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
 
 export const ONE_LINE_PER_QUESTION =
   'Reply with one line per question: a number or your own answer.'
+const ONE_LINE_PER_QUESTION_SOME_PICK_SEVERAL =
+  'Reply with one line per question: a number (or several, split by commas, where it takes more than one) or your own answer.'
+const PICK_SEVERAL =
+  'Reply with the numbers of the options you pick, split by commas, or your own answer.'
 
 export function askHow(p: AskPayload): string {
-  if (p.tool_name === 'AskUserQuestion')
-    return questionsOf(p).length > 1
-      ? ONE_LINE_PER_QUESTION
-      : 'Reply with a number or your own answer.'
+  if (p.tool_name === 'AskUserQuestion') {
+    const qs = questionsOf(p)
+    const several = qs.some((q) => q.multiSelect)
+    if (qs.length > 1)
+      return several ? ONE_LINE_PER_QUESTION_SOME_PICK_SEVERAL : ONE_LINE_PER_QUESTION
+    return several ? PICK_SEVERAL : 'Reply with a number or your own answer.'
+  }
   return planOf(p) === undefined
     ? 'Reply yes or no.'
     : 'Reply yes to approve, or say what to change.'
@@ -180,20 +193,55 @@ export function hookAnswer(p: AskPayload, reply: string): Record<string, unknown
 }
 
 const ESC = '\x1b'
-const ONE_QUESTION_BY_KEYS =
-  'Koloft answers this dialog by its keys, so it can only answer one question that takes one option. Assist can still answer this one by pressing its keys.'
 const YES_OR_NO_BY_KEYS = 'Koloft answers this dialog by its keys, so it can only answer yes or no.'
+
+function pickOf(q: Question, word: string): number {
+  const pick = /^\d+$/.test(word)
+    ? Number(word)
+    : q.options.findIndex((o) => o.label.toLowerCase() === word.toLowerCase()) + 1
+  return pick >= 1 && pick <= q.options.length ? pick : 0
+}
+
+function picksOf(q: Question, line: string): number[] | undefined {
+  const picks = line.split(/\s*,\s*/).map((word) => pickOf(q, word))
+  return picks.every((n) => n > 0) ? [...new Set(picks)] : undefined
+}
+
+// CC§14
+const NEXT_QUESTION_AFTER_TICKS = '\t'
+const SUBMIT_ON_THE_REVIEW_PAGE = '1'
+
+// CC§14
+function questionKeys(q: Question, line: string): string[] {
+  const options = q.options.length
+  if (!q.multiSelect) {
+    const pick = pickOf(q, line)
+    return pick ? [String(pick)] : [String(options + 1), ...typedPieces(line), '\r']
+  }
+  const picks = picksOf(q, line)
+  if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
+  return [
+    ...keysFor(q.options.map(() => 'Down')),
+    ...typedPieces(line),
+    NEXT_QUESTION_AFTER_TICKS,
+    '\r'
+  ]
+}
 
 // CC§14
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
-    const q = singlePick(p)
-    if (!q) return fail(ONE_QUESTION_BY_KEYS)
-    const options = q.options.length
-    const pick = /^\d+$/.test(text) ? Number(text) : 0
-    if (pick >= 1 && pick <= options) return { ok: true, value: [String(pick)] }
-    return { ok: true, value: [String(options + 1), text, '\r'] }
+    const only = singlePick(p)
+    if (only) return { ok: true, value: questionKeys(only, text) }
+    const qs = questionsOf(p)
+    const all = replyLines(text)
+    const lines = qs.length === 1 ? [all.join(' ')] : all
+    if (!qs.length || lines.length !== qs.length) return fail(askHow(p))
+    return {
+      ok: true,
+      value: [...qs.flatMap((q, i) => questionKeys(q, lines[i]!)), SUBMIT_ON_THE_REVIEW_PAGE]
+    }
   }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
@@ -277,10 +325,8 @@ export function cannotAnswer(q: Asked): string {
 export type QuestionAnswer = { pick: number } | { words: string }
 
 function answerTo(q: Question, line: string): QuestionAnswer | undefined {
-  const pick = /^\d+$/.test(line)
-    ? Number(line)
-    : q.options.findIndex((o) => o.label.toLowerCase() === line.toLowerCase()) + 1
-  if (pick >= 1 && pick <= q.options.length) return { pick }
+  const pick = pickOf(q, line)
+  if (pick) return { pick }
   return q.ownWords && line ? { words: line } : undefined
 }
 

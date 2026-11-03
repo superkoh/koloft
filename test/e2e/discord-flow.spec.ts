@@ -1027,7 +1027,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a Claude session’s question draws on its screen and never reaches Discord; the butler answers it with koloft session answer, and the reply that ends that turn is handed to the butler, whose answer reaches the owner in the channel unasked; koloft session keys picks the option of the next one', async ({
+  test('a Claude session’s question draws on its screen and never reaches Discord; the butler answers it with koloft session answer, and the reply that ends that turn is handed to the butler, whose answer reaches the owner in the channel unasked; koloft session keys picks the option of the next one; a dialog of two questions, the second taking several picks, is answered with one line per question', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -1066,6 +1066,13 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Round')
+
+      await type('/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry')
+      await expect.poll(dialogs).toBe(3)
+      fake.say(OWNER, `/koloft session answer ${managed} "$(printf 'Purple\\n1, 3')"`)
+      await expect
+        .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Purple, Apple, Cherry')
       expect(fake.posted.filter((p) => p.card)).toEqual([])
     } finally {
       await quitAndClose(app)

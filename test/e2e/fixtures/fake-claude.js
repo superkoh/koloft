@@ -777,15 +777,70 @@ process.stdin.on('data', (chunk) =>
 )
 process.stdin.on('end', () => typedLines.end())
 // CC§14
-function keyOnTheDialog() {
+function keysOnTheDialog(answerOnceDone) {
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
     dialogKey = (key) => {
+      const answer = answerOnceDone(key)
+      if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
-      resolve(key)
+      resolve(answer)
     }
   })
+}
+const keyOnTheDialog = () => keysOnTheDialog((key) => key)
+const DOWN_KEYS = ['\x1b[B', '\x1bOB']
+// CC§14
+function tabbedQuestionKeys(questions) {
+  const state = questions.map(() => ({ ticked: new Set(), words: '', pick: 0 }))
+  let at = 0
+  let row = 0
+  let typing = false
+  const next = () => {
+    at += 1
+    row = 0
+    typing = false
+  }
+  const answerOf = (q, s) =>
+    q.multiSelect
+      ? [
+          ...[...s.ticked].sort((a, b) => a - b).map((n) => q.labels[n - 1]),
+          ...(s.words ? [s.words] : [])
+        ].join(', ')
+      : s.words || q.labels[s.pick - 1]
+  return (key) => {
+    if (at === questions.length)
+      return key === '1' ? questions.map((q, i) => answerOf(q, state[i])).join(', ') : undefined
+    const q = questions[at]
+    const s = state[at]
+    const options = q.labels.length
+    const tick = (n) => (s.ticked.has(n) ? s.ticked.delete(n) : s.ticked.add(n))
+    if (typing) {
+      if (q.multiSelect && key === '\t') {
+        typing = false
+        row = options + 1
+      } else if (key === '\r') next()
+      else s.words += key
+      return undefined
+    }
+    if (/^\d$/.test(key) && Number(key) >= 1 && Number(key) <= options) {
+      if (q.multiSelect) tick(Number(key))
+      else {
+        s.pick = Number(key)
+        next()
+      }
+    } else if (!q.multiSelect && key === String(options + 1)) typing = true
+    else if (q.multiSelect && DOWN_KEYS.includes(key)) {
+      row = Math.min(row + 1, options + 1)
+      typing = row === options
+    } else if (q.multiSelect && key === '\t') next()
+    else if (q.multiSelect && key === '\r') {
+      if (row === options + 1) next()
+      else tick(row + 1)
+    }
+    return undefined
+  }
 }
 const rl = readline.createInterface({ input: typedLines })
 const PASTE_START = '\x1b[200~'
@@ -1545,7 +1600,7 @@ function handleLine(line) {
     return
   }
   // CC§14
-  const ask = async (name, input, allowed, keyed) => {
+  const ask = async (name, input, allowed, keyed, dialogKeys = (key) => key) => {
     const toolUseId = `toolu_ask_${Date.now()}`
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([
@@ -1574,7 +1629,7 @@ function handleLine(line) {
     if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
     else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
     else {
-      const key = keyOnTheDialog()
+      const key = keysOnTheDialog(dialogKeys)
       process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
       // CC§14
       setTimeout(() => {
@@ -1607,23 +1662,31 @@ function handleLine(line) {
     process.stdout.write(`[fake-claude] ${picked}\r\n> `)
   }
   if (text.startsWith('/ask ')) {
-    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const questions = text
+      .slice('/ask '.length)
+      .split('||')
+      .map((part) => {
+        const [question, ...labels] = part.split('|')
+        const multiSelect = question.startsWith('+')
+        return { question: multiSelect ? question.slice(1) : question, labels, multiSelect }
+      })
     const input = {
-      questions: [
-        {
-          question,
-          header: 'Pick',
-          options: labels.map((label) => ({ label, description: `The ${label} one` })),
-          multiSelect: false
-        }
-      ]
+      questions: questions.map((q) => ({
+        question: q.question,
+        header: 'Pick',
+        options: q.labels.map((label) => ({ label, description: `The ${label} one` })),
+        multiSelect: q.multiSelect
+      }))
     }
+    const [first] = questions
+    const tabbed = questions.length > 1 || first.multiSelect
     const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
       (updated) => pickedText(Object.values(updated.answers).join(', ')),
-      (key) => pickedText(labels[Number(key) - 1] ?? key)
+      (key) => pickedText(tabbed ? key : (first.labels[Number(key) - 1] ?? key)),
+      tabbed ? tabbedQuestionKeys(questions) : undefined
     )
   }
   if (text.startsWith('/bash ')) {

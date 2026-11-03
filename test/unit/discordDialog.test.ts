@@ -137,20 +137,37 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   })
 
   // CC§14
-  it('a number presses that option, own words press the option after the last, then type and Enter; a second question or many picks are refused', () => {
+  it('a number or a label presses that option, own words press the option after the last, then type and Enter', () => {
     expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: ['2'] })
+    expect(claudeKeysFor(colour, 'green')).toEqual({ ok: true, value: ['2'] })
     expect(claudeKeysFor(colour, 'Purple')).toEqual({ ok: true, value: ['4', 'Purple', '\r'] })
     expect(claudeKeysFor(colour, '7')).toEqual({ ok: true, value: ['4', '7', '\r'] })
-    const two = {
-      ...colour,
-      tool_input: { questions: [...colour.tool_input.questions, colour.tool_input.questions[0]] }
+  })
+
+  // CC§14
+  it('several questions take one line each: a pick moves on, picks of a many-pick question are ticked and Tab moves on, own words go in its last row, and 1 on the review page sends them all', () => {
+    const [q] = colour.tool_input.questions
+    const fruit = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+      multiSelect: true
     }
-    expect(claudeKeysFor(two, '1').ok).toBe(false)
-    const many = {
-      ...colour,
-      tool_input: { questions: [{ ...colour.tool_input.questions[0], multiSelect: true }] }
-    }
-    expect(claudeKeysFor(many, '1').ok).toBe(false)
+    const ask = (...questions: object[]): typeof colour =>
+      ({ ...colour, tool_input: { questions } }) as typeof colour
+    const DOWN = '\x1b[B'
+    expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
+      ok: true,
+      value: ['2', '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(fruit, q), 'Mango juice\nPurple')).toEqual({
+      ok: true,
+      value: [DOWN, DOWN, DOWN, 'Mango juice', '\t', '\r', '4', 'Purple', '\r', '1']
+    })
+    expect(claudeKeysFor(ask(fruit), '3, 1, 3')).toEqual({ ok: true, value: ['3', '1', '\t', '1'] })
+    expect(claudeKeysFor(ask(q, fruit), '2')).toEqual({
+      ok: false,
+      error: askHow(ask(q, fruit))
+    })
   })
 
   // CC§14
