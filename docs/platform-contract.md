@@ -1954,9 +1954,19 @@ Gateway (the live connection that pushes events):
     `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
   - From the docs, not measured: the first answer must come within 3 s; the token
     works for 15 minutes; a guild can take at most 200 command creates a day; an app
-    with no answer shows "The application did not respond". That two Gateway
-    connections of one bot (two Koloft installs) both receive each interaction is
-    inferred, not checked.
+    with no answer shows "The application did not respond".
+- **Two Gateway connections on one bot token (two Koloft installs on one bot)** —
+  measured 2026-11-02 and 2026-11-03 with the test bot on the test server, a
+  hand-written client (Node `fetch`, Node's built-in `WebSocket`), intents `GUILDS |
+  GUILD_MESSAGES`, the second identify 5.5–6 s after the first:
+  - Both connections got `READY` with `shard: null`; Discord did not close, or send
+    op 7 or op 9 to, the first one when the second identified, and over 60 s both
+    stayed open with every heartbeat acked.
+  - A message the bot posted in a channel both could see arrived as `MESSAGE_CREATE`
+    on both connections, within 5 ms of each other (both runs).
+  - Whether an interaction (a slash command or a button press) reaches both
+    connections or only one is not probed: only a real user can start one, and the
+    owner chose not to. Two Koloft installs sharing one bot are not supported.
 - **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
   on a server where the bot role was the one the invite gave (`101440`) and the owner
   read each message in the Discord app:
