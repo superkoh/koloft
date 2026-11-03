@@ -866,6 +866,33 @@ describe('koloft session send', () => {
     expect(queued.map((q) => q.tabId)).toEqual(['me'])
   })
 
+  it.each(
+    (['codex', 'muse', 'agy'] as const).flatMap((caller) => [
+      { caller, machine: 'this Mac', cwd: WS, remote: undefined },
+      { caller, machine: 'another machine', cwd: 'ssh://box/srv/api', remote: { host: 'box' } }
+    ])
+  )(
+    'a $caller session on $machine tells apart two same-named Claude sessions there by the ids koloft session list gives them, since it has no SendMessage to reach them by',
+    async ({ caller, cwd, remote }) => {
+      const there = { cwd, treeRoot: cwd, remote }
+      const { verb, lines } = harness([
+        session('me', caller, there),
+        session('a', 'claude', { ...there, title: 'Nightly check' }),
+        session('b', 'claude', { ...there, title: 'Nightly check' })
+      ])
+      const me = { tabId: 'me', cwd }
+      expect((await verb(['list'], me)).text.split('\n').slice(1)).toEqual([
+        'Nightly check · Claude · idle · id: a-session',
+        'Nightly check · Claude · idle · id: b-session'
+      ])
+      expect((await verb(['send', 'Nightly check', 'hi'], me)).text).toContain(
+        '2 sessions are named "Nightly check"'
+      )
+      expect((await verb(['send', 'b-session', 'hi'], me)).exit).toBe(0)
+      expect(lines.map((l) => l.tabId)).toEqual(['b'])
+    }
+  )
+
   it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it', async () => {
     const PARENT_KEY = `codex:local:${OTHER_THREAD}`
     const { verb, lines, queued, resumed, startedSessions } = harness(
