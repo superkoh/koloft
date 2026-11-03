@@ -1243,16 +1243,20 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   (counted by `\banthropic-[a-z0-9-]+\b`, so not comparable with the 87 above); dated
   beta names 54 → 56 (`claude-code-side-query-2026-09-29`,
   `program-use-case-ids-2026-09-17`); `CLAUDE_CODE_*` gains 16 (among them
-  `DISABLE_NESTED_SESSION_ID`, `RELAUNCH_RESUME_HINT_FLAGS` (§1),
+  `DISABLE_NESTED_SESSION_ID`, `RELAUNCH_RESUME_HINT_FLAGS`,
   `DISABLE_SUBAGENT_HANDBACK`, `PERSONAL_HOOKS_OFF`) and loses 1 (`LAZY_ENV_GETTERS`),
   none of which `src/` sets; `tengu_*` gains 77 and loses 5, none of the names this
   ledger mentions among them; the linux-arm64 build names the same, apart from a few
-  names `strings` glued to the next byte; the 15 `CLAUDE_CODE_*`, `ANTHROPIC_*` and
-  `CLAUDE_CONFIG_DIR` names `src/` spells out are in both builds.
+  names `strings` glued to the next byte; the 14 names `src/` spells out (8
+  `ANTHROPIC_*`, 6 `CLAUDE_CODE_*`; it spells no `DISABLE_*` and no
+  `CLAUDE_CONFIG_DIR`) are in both builds.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
-  a session uses that session's id again) is read only when `CLAUDE_CODE_CHILD_SESSION`
-  and `CLAUDE_CODE_REMOTE_SESSION_ID` are set, which Koloft never sets and drops before
-  a launch (§9): read from `strings` only, inferred, not checked.
+  a cloud or self-hosted runner session uses that session's id again) is read only when
+  `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
+  only, inferred, not checked). Koloft sets neither; a terminal tab drops every
+  inherited `CLAUDE_CODE_*` (§9), but Assist's one-shot passes on Koloft's own env with
+  only the auth names removed (`pickedAccountEnv` in `src/main/index.ts`), so it would
+  carry them only if Koloft itself were started inside such a runner session.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1740,20 +1744,23 @@ other bullets of §9 were not re-measured on this build.
   with a short title in the task's language. With the default system prompt and setting
   sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
   `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
-  `--no-session-persistence` it left no transcript in its cwd's project folder.
-  **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
-  the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
-  Assist's exact argv (`--setting-sources ''` among it) run twice, signed in and not,
-  left every file on 2.1.316 and 2.1.317, and so did a plain `claude -p`, whose
-  `--debug-file` showed no cleanup step at all in a one-shot that short (2026-11-03,
-  scratch `HOME`s, 11 cases). Both builds' cleanup entry skips the sweep, before any
-  delete, when user settings are not read and no other source sets
-  `cleanupPeriodDays` (`Skipping retention cleanup: userSettings source is disabled…`,
-  `strings`), so the 2.1.317 changelog's "old transcripts not being cleaned up … such
-  as runs using `--setting-sources`" does not make Assist sweep with the 30-day
-  default; that the skip holds in a run long enough to sweep is inferred, not checked. Behind
+  `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
   an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
   the exit code tells a title from an error.
+- **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
+  the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
+  Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
+  file on 2.1.316 and 2.1.317; so did a plain `claude -p`, with 365 and with no
+  `cleanupPeriodDays` at all, and the `--debug-file` of both kinds of `-p` showed no
+  cleanup step in a one-shot that short (2026-11-03, scratch `HOME`s, each setup run
+  twice, files listed at exit and 5 s later). Both builds' cleanup entry skips the
+  sweep, before any delete, when user settings are not read and no other source (a
+  managed policy, a `--settings` file) sets `cleanupPeriodDays` (`Skipping retention
+  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked);
+  Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
+  cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
+  the 30-day default; that the skip holds in a run long enough to sweep, and what a
+  managed `cleanupPeriodDays` does there, is not probed.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -2756,13 +2763,15 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `update` and `project`, byte-identical to 2.1.314's; 2.1.315 has no changelog
   section and was not downloaded) and 2.1.317 (`2.1.317 (Claude Code)`, 2026-11-03;
   its `--help` and the nine subcommand helps above other than `self-hosted-runner`
-  byte-identical to 2.1.316's; `self-hosted-runner --help` adds three lines under
+  byte-identical to 2.1.316's; `self-hosted-runner --help` adds one sentence, wrapped
+  over three lines, under
   `--trust-workspace`: "A session that the server starts without the repository's own
   settings gets no workspace trust, as with false, whatever this flag says.").
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
-  (2026-11-03); what changed is not read.
+  (2026-11-03); what changed is not read, and that the `--version` the shim runs
+  before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
