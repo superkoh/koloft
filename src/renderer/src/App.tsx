@@ -1636,15 +1636,22 @@ export default function App(): JSX.Element {
         <div className="side-me">
           <TopbarUsage />
           <button
-            className={'tb-ico' + (keepAwake ? ' on' : '')}
+            className={'tb-ico' + (keepAwake || asleep ? ' on' : '')}
+            disabled={asleep}
             onClick={() => {
               const on = !keepAwake
               setSettings({ ...useStore.getState().settings, keepAwake: on })
               void window.api.settings.set({ keepAwake: on })
             }}
-            title={keepAwake ? 'Keeping Mac awake — click to allow sleep' : 'Keep Mac awake'}
+            title={
+              asleep
+                ? "Kept awake while you're asleep"
+                : keepAwake
+                  ? 'Keeping Mac awake — click to allow sleep'
+                  : 'Keep Mac awake'
+            }
             aria-label="Keep Mac awake"
-            aria-pressed={keepAwake}
+            aria-pressed={keepAwake || asleep}
           >
             <IconKeepAwake size={20} />
           </button>

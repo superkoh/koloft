@@ -3998,7 +3998,7 @@ app.whenReady().then(() => {
     },
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake || ownerAsleep.asleep())
+  holdMacAwake(loadSettings().keepAwake)
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
@@ -5785,9 +5785,14 @@ function commitSettings(patch: Partial<Settings>): Settings {
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
   if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
-  applyKeepAwake(s.keepAwake || ownerAsleep.asleep())
-  setKeepAwakeChecked(s.keepAwake)
+  holdMacAwake(s.keepAwake)
   return s
+}
+
+function holdMacAwake(keepAwake: boolean): void {
+  const held = keepAwake || ownerAsleep.asleep()
+  applyKeepAwake(held)
+  setKeepAwakeChecked(held, !ownerAsleep.asleep())
 }
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
