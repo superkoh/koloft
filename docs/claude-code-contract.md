@@ -198,7 +198,10 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   same order), and on 2.1.314, darwin-arm64 and linux-arm64 (`strings`, 2026-10-30: the
   same 33 names in the same order), and on 2.1.316, darwin-arm64 and linux-arm64
   (`strings`, 2026-10-31: the same 33 names in the same order, the same SessionEnd
-  reasons and SessionStart sources).
+  reasons and SessionStart sources), and on 2.1.317, darwin-arm64 and linux-arm64
+  (`strings`, 2026-11-03: the same 33 names in the same order, the same SessionEnd
+  reasons `clear`, `resume`, `logout`, `prompt_input_exit`, `other` and SessionStart
+  sources `startup`, `resume`, `clear`, `compact`, `fork`).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -1234,6 +1237,22 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   build names the same, apart from a few names `strings` glued to the next byte; the 14
   `CLAUDE_CODE_*`, `ANTHROPIC_*`, `DISABLE_*` and `CLAUDE_CONFIG_DIR` names `src/`
   spells out are in both builds.
+  Between 2.1.316 and 2.1.317 (`strings -n 6`, 2026-11-03, darwin-arm64, and
+  linux-arm64 2.1.317 against darwin-arm64 2.1.317): `ANTHROPIC_*` and `*_MODEL`
+  identical at 71 and 14; the lowercase `anthropic-*` header names identical at 88
+  (counted by `\banthropic-[a-z0-9-]+\b`, so not comparable with the 87 above); dated
+  beta names 54 → 56 (`claude-code-side-query-2026-09-29`,
+  `program-use-case-ids-2026-09-17`); `CLAUDE_CODE_*` gains 16 (among them
+  `DISABLE_NESTED_SESSION_ID`, `RELAUNCH_RESUME_HINT_FLAGS` (§1),
+  `DISABLE_SUBAGENT_HANDBACK`, `PERSONAL_HOOKS_OFF`) and loses 1 (`LAZY_ENV_GETTERS`),
+  none of which `src/` sets; `tengu_*` gains 77 and loses 5, none of the names this
+  ledger mentions among them; the linux-arm64 build names the same, apart from a few
+  names `strings` glued to the next byte; the 15 `CLAUDE_CODE_*`, `ANTHROPIC_*` and
+  `CLAUDE_CONFIG_DIR` names `src/` spells out are in both builds.
+  `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
+  a session uses that session's id again) is read only when `CLAUDE_CODE_CHILD_SESSION`
+  and `CLAUDE_CODE_REMOTE_SESSION_ID` are set, which Koloft never sets and drops before
+  a launch (§9): read from `strings` only, inferred, not checked.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1634,7 +1653,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
-2.1.312 (2026-10-28), 2.1.314 (2026-10-30) and 2.1.316 (2026-10-31).
+2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31) and 2.1.317
+(2026-11-03).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1720,7 +1740,18 @@ other bullets of §9 were not re-measured on this build.
   with a short title in the task's language. With the default system prompt and setting
   sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
   `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
-  `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
+  `--no-session-persistence` it left no transcript in its cwd's project folder.
+  **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
+  the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
+  Assist's exact argv (`--setting-sources ''` among it) run twice, signed in and not,
+  left every file on 2.1.316 and 2.1.317, and so did a plain `claude -p`, whose
+  `--debug-file` showed no cleanup step at all in a one-shot that short (2026-11-03,
+  scratch `HOME`s, 11 cases). Both builds' cleanup entry skips the sweep, before any
+  delete, when user settings are not read and no other source sets
+  `cleanupPeriodDays` (`Skipping retention cleanup: userSettings source is disabled…`,
+  `strings`), so the 2.1.317 changelog's "old transcripts not being cleaned up … such
+  as runs using `--setting-sources`" does not make Assist sweep with the 30-day
+  default; that the skip holds in a run long enough to sweep is inferred, not checked. Behind
   an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
   the exit code tells a title from an error.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
@@ -2009,9 +2040,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them. **2.1.314 adds a 19th
   key, `asksForConvertedSkills`**, a boolean or null, absent from 2.1.312's strings
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
-  reader parses the JSON and counts no keys. That 2.1.316 writes the same keys is read
-  from `strings` of the code that writes `<pid>.json` (2026-10-31), not from a run:
-  inferred, not checked. A daemon-hosted
+  reader parses the JSON and counts no keys. That 2.1.316 and 2.1.317 write the same
+  keys is read from `strings` of the code that writes `<pid>.json` (2026-10-31 and
+  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed),
+  not from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2722,7 +2754,15 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   has no changelog section and was not downloaded) and 2.1.316 (`2.1.316 (Claude
   Code)`, 2026-10-31; its `--help` and the same seven subcommand helps, plus `auth`,
   `update` and `project`, byte-identical to 2.1.314's; 2.1.315 has no changelog
-  section and was not downloaded).
+  section and was not downloaded) and 2.1.317 (`2.1.317 (Claude Code)`, 2026-11-03;
+  its `--help` and the nine subcommand helps above other than `self-hosted-runner`
+  byte-identical to 2.1.316's; `self-hosted-runner --help` adds three lines under
+  `--trust-workspace`: "A session that the server starts without the repository's own
+  settings gets no workspace trust, as with false, whatever this flag says.").
+  The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
+  refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
+  `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
+  (2026-11-03); what changed is not read.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2786,7 +2826,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.312, `stable` still 2.1.308; on 2026-10-30 npm `latest` and `next` and the
   download host's `latest` offered 2.1.314, npm's and the download host's `stable` still
   2.1.308; on 2026-10-31 npm `latest` and `next` and the download host's `latest`
-  offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309.
+  offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309;
+  on 2026-11-03 npm `latest` and `next` and the download host's `latest` offered
+  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2810,7 +2852,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   file's MD5, strings stamp `2.1.312` only), and on 2026-10-30
   `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5), and on
   2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
-  strings stamp `2.1.316`) — each ran as
+  strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
+  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
