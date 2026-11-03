@@ -536,6 +536,72 @@
           sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
           hidden.
         </p>
+
+        <h2 id="asleep">While you sleep</h2>
+        <p>
+          Going to bed with work still running? Click the moon at the bottom of the sidebar, between
+          Keep Mac awake and Settings. Its tip reads
+          <code>Going to sleep — sessions keep going without you</code>. While the moon is lit,
+          every session knows you cannot answer, and keeps going instead of waiting for you:
+        </p>
+        <div class="typed-table">
+          <table>
+            <thead>
+              <tr>
+                <th>when a session</th>
+                <th>what happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>finishes its turn</td>
+                <td>
+                  Koloft tells it, once per turn, that you are asleep. It should do what it still
+                  can, pick what it would recommend instead of asking you, and leave you only what
+                  cannot be undone, such as merging, pushing to main or spending money. Then it may
+                  stop.
+                </td>
+              </tr>
+              <tr>
+                <td>asks you a question</td>
+                <td>
+                  Koloft answers for you: it tells the session to pick the option it recommends, say
+                  so in its report and go on, but to leave you a choice that cannot be undone. When
+                  that answer does not fit, as with a question that takes no typed words, Koloft
+                  picks the first option.
+                </td>
+              </tr>
+              <tr>
+                <td>asks for your OK</td>
+                <td>Koloft gives it, even for a step that cannot be undone.</td>
+              </tr>
+              <tr>
+                <td>needs a password, a code or a sign-in</td>
+                <td>
+                  Koloft says no at once, and tells it to skip that step and say it waits for you
+                  (see <a href="../agents/#secrets">passwords and codes</a>).
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Discord stays quiet, as it does <a href="../discord/#at-the-mac">while you use Koloft</a>,
+          and the Mac stays awake, even with Keep Mac awake off. Your butler is left out: it is not
+          told to go on, and Koloft answers none of its questions. Its password and code asks are
+          turned down too.
+        </p>
+        <p>
+          Click the moon again when you are back. Writing to your butler on Discord, or pressing
+          <kbd>⏎</kbd> in any terminal in Koloft, turns it off too. If anything happened while you
+          slept, your butler then gets one note: how long you slept, what the sessions did and what
+          Koloft answered for you. Your butler passes it on to you.
+        </p>
+        <p>
+          This works for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+          One difference: in a remote folder, a Claude Code question with several parts is not
+          answered; it waits for you.
+        </p>
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>
