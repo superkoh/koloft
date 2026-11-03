@@ -23,7 +23,7 @@ import {
 import {
   REMOTE_WS_NAME,
   agyReady,
-  boundRemoteAgy,
+  boundRemoteSession,
   installFakeRemote,
   installRemoteAgy,
   killFakeRemote,
@@ -93,7 +93,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { id } = await boundRemoteAgy(page)
+      const { id } = await boundRemoteSession(page, 'agy')
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
       await runIn(page, centerTerm(page), '/write remote-notes.txt')
       await expect(row.locator('.ws-tab-act')).toHaveText('Last: Wrote remote-notes.txt', {
@@ -174,14 +174,14 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await runIn(page, centerTerm(page), 'keep remote')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'keep remote' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { id } = await boundRemoteAgy(page)
+      const { id } = await boundRemoteSession(page, 'agy')
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(`k-${id}`)
       await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
       await row.click()
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
       expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${id}`)
-      expect((await boundRemoteAgy(page)).id).toBe(id)
+      expect((await boundRemoteSession(page, 'agy')).id).toBe(id)
       await expect(page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })).toHaveCount(
         0
       )
@@ -203,7 +203,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await runIn(page, centerTerm(page), 'die remote')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'die remote' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { tabId } = await boundRemoteAgy(page)
+      const { tabId } = await boundRemoteSession(page, 'agy')
 
       killSession(machineAgyCalls(env)[0].pid, env)
 
@@ -271,7 +271,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(
         wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'survive a restart' })
       ).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { id } = await boundRemoteAgy(page)
+      const { id } = await boundRemoteSession(page, 'agy')
       await quitAndClose(app)
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
 
@@ -284,7 +284,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await waitBooted(page)
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'survive a restart' })
       await expect(row).not.toHaveClass(/cold/, { timeout: 90_000 })
-      await expect.poll(async () => (await boundRemoteAgy(page)).id).toBe(id)
+      await expect.poll(async () => (await boundRemoteSession(page, 'agy')).id).toBe(id)
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       expect(machineAgyCalls(env)).toHaveLength(1)
       await runIn(page, centerTerm(page), 'after the restart')
@@ -311,7 +311,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
         /st-waiting/,
         { timeout: 60_000 }
       )
-      const agy = await boundRemoteAgy(page)
+      const agy = await boundRemoteSession(page, 'agy')
 
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       let sender = ''

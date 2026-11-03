@@ -616,10 +616,12 @@ function tui() {
     const turnId = turn(text)
     later(() => say(turnId, `echo: ${text}`, text))
   }
+  if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  // PLATFORM§35
+  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
-  if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
@@ -629,11 +631,11 @@ function tui() {
     }
     for (const ch of text.replace(/\x1b\[20[01]~/g, '')) {
       if (blocked) {
-        blocked(ch === '\n' ? '\r' : ch)
+        blocked(ch)
         continue
       }
       // MUSE§7
-      if (ch === '\r' || (ch === '\n' && enterArrivesAsLineFeed)) {
+      if (ch === '\r') {
         const done = typed
         typed = ''
         line(done.trim())

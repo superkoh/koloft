@@ -744,6 +744,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       fs.mkdirSync(path.join(machineHome(env), '.koloft'), { recursive: true })
@@ -759,7 +760,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         remoteDir(env),
         (await boundSessionId(page, tabId)) ?? ''
       )
-      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+      const guest = await openPickPage(
+        app,
+        page,
+        server.page('/pick', PICK_PAGE).replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      )
 
       await startPick(page)
       await clickPicked(page, guest, '#buy')

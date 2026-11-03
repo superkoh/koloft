@@ -821,6 +821,29 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.runner.state().live).toEqual([])
   })
 
+  it.each([
+    [{ exitCode: 1 }, 'exited (code 1)'],
+    [{ exitCode: 0, signal: 9 }, 'killed (signal 9)']
+  ])(
+    'an agent that quits on its own after the run started is written as quit with how it ended, never as closed by you (%o)',
+    async (how, note) => {
+      const h = await started()
+      h.runner.onBound('tab-1', 'sess-1')
+      h.runner.onPtyExit('tab-1', undefined, { ...how, unexpected: true })
+      expect(h.jobs[0].history).toEqual([
+        {
+          dueAt: T0,
+          state: 'quit',
+          note,
+          worktree: 'nightly-report-260902-1000',
+          manual: true,
+          sessionId: 'sess-1'
+        }
+      ])
+      expect(h.runner.state().live).toEqual([])
+    }
+  )
+
   it('a pty exit before it ever bound reads "Claude exited before it started"', async () => {
     const h = await started()
     h.runner.onPtyExit('tab-1')

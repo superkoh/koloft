@@ -31,6 +31,7 @@ import {
 } from './helpers/p1'
 import {
   addRemoteWorkspace,
+  breakConnection,
   installCodexOnFakeRemote,
   killFakeRemote,
   launchWithRemote,
@@ -466,6 +467,29 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
     const [side] = sideServers(env)
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
+  })
+
+  test('E-RC-15: ⌘W on a remote Codex tab with ssh down closes the tab and says Codex is still running on the machine, where its app-server stays up', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const [tabId] = await termIds(page)
+
+      breakConnection(env)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect(page.locator('.toast .toast-msg')).toHaveText(
+        'Could not stop Codex on devbox: ssh exited with 255. It is still running there.'
+      )
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(tabId)
+      expect(serverAlive(env, server.tabId!)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   // ADR-0039

@@ -25,7 +25,7 @@ import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   agyReady,
-  boundRemoteAgy,
+  boundRemoteSession,
   installCodexOnFakeRemote,
   installFakeRemote,
   installRemoteAgy,
@@ -251,7 +251,7 @@ test.describe('the same ⌗ Scratchpad node for the other agents: the folder out
       await runIn(page, centerTerm(page), 'remote words')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const { id } = await boundRemoteAgy(page)
+      const { id } = await boundRemoteSession(page, 'agy')
 
       await showBrowse(page)
       await expect(scratchpadNode(page)).toBeVisible({ timeout: 60_000 })

@@ -1809,6 +1809,7 @@ const sessionSync = new SessionSync({
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.butler),
+  tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {
@@ -3191,7 +3192,8 @@ app.whenReady().then(() => {
       signal: e.signal,
       asleep: sleepers.has(e.id),
       crashed: !quitCommitted && exitedAbnormally(e),
-      left: left ?? undefined
+      left: left ?? undefined,
+      ...(unexpected ? { unexpected } : {})
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
