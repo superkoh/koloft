@@ -355,7 +355,7 @@ function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
     s.activeTabId === tabId &&
-    isSessionKind(leaving?.kind) &&
+    (isSessionKind(leaving?.kind) || lastSessionId.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
