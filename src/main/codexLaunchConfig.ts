@@ -60,7 +60,7 @@ export function playwrightMcpOverrides(mcpServers: unknown): string[] {
     if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
     return [
       `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`,
-      ...(entry.default_tools_approval_mode === undefined
+      ...(entry.default_tools_approval_mode == null
         ? [`mcp_servers.${name}.default_tools_approval_mode="approve"`]
         : [])
     ]

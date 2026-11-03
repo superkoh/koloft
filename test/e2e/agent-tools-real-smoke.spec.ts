@@ -1125,7 +1125,6 @@ const HAVE_PLAYWRIGHT_MCP = !!process.env.KOLOFT_SMOKE_TOOLS_DIR && fs.existsSyn
 const NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT = '--headless'
 // CODEX§26
 const CODEX_MCP_TOOL_QUESTION = /Allow the playwright MCP server to run tool/
-const CODEX_ASKED = 'Codex asked before running its Playwright tool'
 
 function codexReadsTheTitleWithItsBrowserTool(url: string): string {
   return `Use your playwright MCP browser tools, never the shell: navigate to ${url}, then reply with only that page's title.`
@@ -1174,11 +1173,12 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
         await expect
           .poll(
             async () =>
-              CODEX_MCP_TOOL_QUESTION.test(await screen(page)) ? CODEX_ASKED : newReplies(),
+              CODEX_MCP_TOOL_QUESTION.test(await screen(page)) || newReplies().includes(title),
             { intervals: [1_000], timeout: A_REAL_MODEL_TURN_MS }
           )
-          .toMatch(new RegExp(`${title}|${CODEX_ASKED}`))
-        expect(newReplies(), CODEX_ASKED).toContain(title)
+          .toBe(true)
+        expect(await screen(page)).not.toMatch(CODEX_MCP_TOOL_QUESTION)
+        expect(newReplies()).toContain(title)
         await test.info().attach(`reply-${thread}`, { body: newReplies() })
         await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
         expect(

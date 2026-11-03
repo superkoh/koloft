@@ -9,7 +9,9 @@ answers yes to.
 Playwright MCP entry in the owner's Codex config
 `default_tools_approval_mode="approve"`, one server-wide setting that covers every tool,
 `browser_run_code_unsafe` included, though it runs any JavaScript in the MCP server's
-process outside Codex's sandbox. An entry where the owner set a server-wide mode of
+process outside Codex's sandbox. The butler and scheduled runs get it too, so
+there such a call, `browser_run_code_unsafe` included, runs with nobody watching instead
+of waiting on a question. An entry where the owner set a server-wide mode of
 their own keeps it, and a tool's own `approval_mode` still wins over the server's
 (CODEX§26). A remote tab's MCP entries are not touched; the machine's own config decides
 there.
