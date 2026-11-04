@@ -111,7 +111,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       expect(card.content).toContain('sudo asked: Password:')
       const typed = 'hunter2-sudo "x" \\'
       await enter(fake, card, typed)
-      await expect.poll(() => terminalText(page, tab)).toContain('got-it')
+      await expect.poll(() => terminalText(page, tab)).toContain('sh exit=0')
       expect(await terminalText(page, tab)).toContain(typed)
       await expect
         .poll(() =>

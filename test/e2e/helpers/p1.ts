@@ -621,8 +621,12 @@ export async function startSessionIn(
   })
 }
 
-export async function waitStartupTurnOver(page: Page, wsName: string): Promise<void> {
-  const titled = wsRows(page, wsName).filter({ hasText: FAKE_SESSION_TITLE })
+export async function waitStartupTurnOver(
+  page: Page,
+  wsName: string,
+  title = FAKE_SESSION_TITLE
+): Promise<void> {
+  const titled = wsRows(page, wsName).filter({ hasText: title })
   const tabId = await titled.getAttribute('data-tab-id', { timeout: 60_000 })
   await expect
     .poll(async () => (await pendingAttention(page)).some((e) => e.tabId === tabId), {
