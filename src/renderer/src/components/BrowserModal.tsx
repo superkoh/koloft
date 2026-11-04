@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState, type JSX } from 'react'
 
+const CAPTURE_BEFORE_XTERM = true
+
 export interface BrowserDialog {
   id: string
   kind: 'alert' | 'confirm' | 'prompt' | 'auth'
@@ -28,10 +30,11 @@ export function BrowserModal({
   const [user, setUser] = useState('')
   const [pass, setPass] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
+  const safeButton = useRef<HTMLButtonElement>(null)
 
   // PLATFORM§25
   useLayoutEffect(() => {
-    firstField.current?.focus()
+    ;(firstField.current ?? safeButton.current)?.focus()
   }, [dialog.id])
 
   const accept = (): void => {
@@ -48,10 +51,11 @@ export function BrowserModal({
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
+      e.stopPropagation()
       latestCancel.current()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+    return () => window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
   }, [])
 
   return (
@@ -62,7 +66,7 @@ export function BrowserModal({
         aria-modal="true"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') accept()
+          if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) accept()
         }}
       >
         <div className="bmodal-head">
@@ -106,11 +110,15 @@ export function BrowserModal({
         </div>
         <div className="bmodal-foot">
           {dialog.kind !== 'alert' && (
-            <button className="mini" onClick={cancel}>
+            <button className="mini" ref={safeButton} onClick={cancel}>
               Cancel
             </button>
           )}
-          <button className="btn-primary" onClick={accept}>
+          <button
+            className="btn-primary"
+            ref={dialog.kind === 'alert' ? safeButton : undefined}
+            onClick={accept}
+          >
             OK
           </button>
         </div>
