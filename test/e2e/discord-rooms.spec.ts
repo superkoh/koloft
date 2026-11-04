@@ -290,6 +290,40 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     })
   })
 
+  test('the butler opens the room of a session started at the Mac with koloft discord thread open, and prints its link; a helper in its own folder gets none', async ({
+    env
+  }) => {
+    await withTheButler(env, async (page, fake) => {
+      await startSessionIn(page, 'ws-a')
+      const session = await sessionOf(page, 'claude')
+      fake.say(OWNER, `/koloft discord thread open ${session.sessionId}`)
+      const room = await theRoom(fake)
+      const butler = (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)!
+      await expect
+        .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(`<#${room.id}>`)
+      await expect
+        .poll(() => fake.threadMembers)
+        .toContainEqual({ threadId: room.id, userId: OWNER.id })
+
+      fake.say(OWNER, '/koloft session new --name Tidy -- sort it')
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.alive && s.title === 'Tidy' && s.sessionId
+            ),
+          { timeout: STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(true)
+      fake.say(OWNER, '/koloft discord thread open Tidy')
+      await expect
+        .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain('gets no room')
+      expect(fake.threads).toHaveLength(1)
+    })
+  })
+
   test('the owner’s words in the butler’s channel go to the butler alone, never to a session whose room is open', async ({
     env
   }) => {
