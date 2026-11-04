@@ -505,7 +505,6 @@ import { ButlerTyping } from './discord/butlerTyping'
 import { shootHtml, shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
-import type { SessionChoice } from './discord/link'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
@@ -558,7 +557,6 @@ import { workbenchVerbs } from './agentWorkbench'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
-  placedRows,
   resolveWorkspace,
   sessionVerb,
   workspaceVerb,
@@ -3780,12 +3778,9 @@ app.whenReady().then(() => {
         butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
         text
       ),
-    sessionChoices,
-    openRoom: openRoomPicked,
     press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
     submit: (i) => secrets.submit(i),
-    respond: (i, body) => link.respond(i, body),
-    replyLater: (i, content) => link.replyLater(i, content)
+    respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
@@ -5873,49 +5868,6 @@ function commandInto(dest: Destination | undefined, text: string): string {
   return `Koloft will type ${text} into ${dest.name} once its turn ends, and post what it prints in Discord.`
 }
 
-// PLATFORM§39
-const SESSION_CHOICES_AT_MOST = 25
-const CHOICE_TEXT_LIMIT = 100
-const choiceIds = new Map<string, string>()
-
-function roomable(): PlacedRow[] {
-  return placedRows(projectRows(), allSessions())
-}
-
-function sessionChoices(typed: string): SessionChoice[] {
-  const needle = typed.trim().toLowerCase()
-  const running = (p: PlacedRow): number => (p.live || p.row.running ? 1 : 0)
-  choiceIds.clear()
-  return roomable()
-    .filter((p) => p.title.toLowerCase().includes(needle))
-    .sort((a, b) => running(b) - running(a) || b.row.mtime - a.row.mtime)
-    .slice(0, SESSION_CHOICES_AT_MOST)
-    .map((p, i) => {
-      const value = p.row.id.length <= CHOICE_TEXT_LIMIT ? p.row.id : `pick-${i}`
-      if (value !== p.row.id) choiceIds.set(value, p.row.id)
-      const where = whereOf({ backend: p.row.backendId, workspace: p.workspace })
-      return { name: `${p.title} · ${where}`.slice(0, CHOICE_TEXT_LIMIT), value }
-    })
-}
-
-const HELPERS_GET_NO_ROOM =
-  'a helper in the butler’s own folder gets no room; its questions already come to the butler’s channel.'
-
-async function roomByRef(
-  ref: string
-): Promise<{ ok: true; title: string; threadId: string } | { ok: false; error: string }> {
-  const found = await findSessionRow(sessionDeps, ref)
-  if (!found.ok) return found
-  if (found.value.workspace === conductorFolder(app.getPath('userData')))
-    return { ok: false, error: HELPERS_GET_NO_ROOM }
-  return { ok: true, title: found.value.title, threadId: await openRoomFor(found.value) }
-}
-
-async function openRoomPicked(picked: string): Promise<string> {
-  const room = await roomByRef(choiceIds.get(picked) ?? picked)
-  return room.ok ? `${room.title}: ${roomLink(room.threadId)}` : room.error
-}
-
 async function openRoomFor(p: PlacedRow): Promise<string> {
   const r = rooms
   if (!r) throw new Error(STILL_STARTING)
@@ -5949,10 +5901,15 @@ async function showWhereItIs(threadId: string, s: RoomSubject): Promise<void> {
 }
 
 async function openRoomByRef(ref: string): Promise<AgentReply> {
-  const room = await roomByRef(ref)
-  if (!room.ok) return refused(`koloft discord thread open: ${room.error}`)
+  const found = await findSessionRow(sessionDeps, ref)
+  if (!found.ok) return refused(`koloft discord thread open: ${found.error}`)
+  if (found.value.workspace === conductorFolder(app.getPath('userData')))
+    return refused(
+      'koloft discord thread open: a helper in your own folder gets no room; its questions already come to your channel.'
+    )
+  const threadId = await openRoomFor(found.value)
   return answered(
-    `Opened the room of ${room.title}: ${roomLink(room.threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
+    `Opened the room of ${found.value.title}: ${roomLink(threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
   )
 }
 

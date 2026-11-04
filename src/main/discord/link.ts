@@ -61,30 +61,14 @@ export interface DiscordFile {
 export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
 export const COMPONENT_INTERACTION = 3
-export const AUTOCOMPLETE_INTERACTION = 4
 export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
-const REPLY_LATER = 5
-const AUTOCOMPLETE_CHOICES = 8
 const ONLY_THE_SENDER_SEES_IT = 64
 const THREAD_FOLDS_AFTER_A_DAY_MINUTES = 1440
 const THREAD_NAME_LIMIT = 100
 
 export function privately(content: string): unknown {
   return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
-}
-
-export function privatelyLater(): unknown {
-  return { type: REPLY_LATER, data: { flags: ONLY_THE_SENDER_SEES_IT } }
-}
-
-export interface SessionChoice {
-  name: string
-  value: string
-}
-
-export function choicesOf(choices: SessionChoice[]): unknown {
-  return { type: AUTOCOMPLETE_CHOICES, data: { choices } }
 }
 
 export interface DiscordInteraction {
@@ -502,18 +486,6 @@ export class DiscordLink {
   // PLATFORM§39
   addToThread(threadId: string, userId: string): Promise<unknown> {
     return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
-  }
-
-  // PLATFORM§39
-  async replyLater(i: DiscordInteraction, content: string): Promise<void> {
-    await this.api().request(
-      'PATCH',
-      `/webhooks/${this.applicationId}/${i.token}/messages/@original`,
-      {
-        content,
-        allowed_mentions: NO_MENTIONS
-      }
-    )
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {
