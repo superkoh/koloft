@@ -1231,10 +1231,14 @@ inferred, not checked.
   `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
   render's `useEffect`s inside the commit, so only a component's own `useState` set
   from a promise or an IPC callback has the gap. Measured 2026-11-04, react-dom 19.3.1,
-  zustand 5.0.16, jsdom 28.1.0 under vitest with React's `setImmediate` delayed 40 ms:
-  a `window` Escape listener added by `useEffect` received an Escape fired as soon as
-  the new text showed 3 of 3 runs when a store update opened it, and 0 of 3 when a
-  `useState` set from a resolved promise did (`useLayoutEffect`: 3 of 3 both ways).
+  zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
+  28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
+  listener added by `useEffect` received an Escape dispatched from the
+  MutationObserver callback that saw the new element 3 of 3 runs when a store update
+  showed it, and 0 of 3 when a `useState` set from a resolved promise did
+  (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
+  lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
+  `useEffect`.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless

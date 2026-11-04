@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useLayoutEffect, useRef, useState, type JSX } from 'react'
 
 export interface BrowserDialog {
   id: string
@@ -29,7 +29,8 @@ export function BrowserModal({
   const [pass, setPass] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     firstField.current?.focus()
   }, [dialog.id])
 
@@ -40,7 +41,8 @@ export function BrowserModal({
   }
   const cancel = (): void => onAnswer(dialog.id, { ok: false })
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
