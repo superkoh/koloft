@@ -40,17 +40,19 @@ export function BrowserModal({
     else onAnswer(dialog.id, { ok: true })
   }
   const cancel = (): void => onAnswer(dialog.id, { ok: false })
+  const latestCancel = useRef(cancel)
+  latestCancel.current = cancel
 
   // PLATFORM§25
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
-      cancel()
+      latestCancel.current()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  })
+  }, [])
 
   return (
     <div className="bmodal-backdrop" onMouseDown={cancel}>
