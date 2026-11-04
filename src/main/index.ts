@@ -2899,7 +2899,7 @@ const teardownKilledPtys = new Set<string>()
 
 function rendererTeardown(): void {
   rendererReady = false
-  cronRunner?.onRendererTeardown()
+  cronRunner?.onRendererTeardown((tabId) => !!ptyMgr.get(tabId)?.alive)
   closeAllDirWatchers()
   closeAllFileWatchers()
   remoteSync?.unwatchAll()
@@ -3276,8 +3276,10 @@ app.whenReady().then(() => {
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
+    const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)
     shimAccountRefusals.delete(e.id)
     // ADR-0030
@@ -3998,7 +4000,7 @@ app.whenReady().then(() => {
     },
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake || ownerAsleep.asleep())
+  holdMacAwake(loadSettings().keepAwake)
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
@@ -5110,6 +5112,7 @@ function killTabFromMain(tabId: string): void {
 }
 
 function killTabPty(tabId: string, restarting = false): Promise<boolean> {
+  if (!restarting) cronRunner?.tabClosed(tabId, !!ptyMgr.get(tabId)?.alive)
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
@@ -5289,7 +5292,7 @@ async function removeUntouchedWorktree(
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree)) return
+  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
@@ -5785,9 +5788,14 @@ function commitSettings(patch: Partial<Settings>): Settings {
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
   if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
-  applyKeepAwake(s.keepAwake || ownerAsleep.asleep())
-  setKeepAwakeChecked(s.keepAwake)
+  holdMacAwake(s.keepAwake)
   return s
+}
+
+function holdMacAwake(keepAwake: boolean): void {
+  const asleep = ownerAsleep.asleep()
+  applyKeepAwake(keepAwake || asleep)
+  setKeepAwakeChecked(keepAwake || asleep, !asleep)
 }
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
@@ -5982,6 +5990,7 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     sessionCommand.tabMoved(oldTabId, newTabId)
+    cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
   })
