@@ -6,7 +6,12 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import {
+  AGENT_SHIM_WAITS_MS,
+  CLAUDE_AGENT_SHIM,
+  REMOTE_AGENT_SHIM,
+  writeAgentShim
+} from '../../src/main/agentShim'
 import {
   AgentRequests,
   answered,
@@ -20,6 +25,7 @@ import type { SessionInfo } from '../../src/shared/types'
 import { AGENT_GUIDE } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
+const ANSWERS_LATE_BY_MS = 1000
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
 
 let base: string
@@ -33,7 +39,11 @@ const verbs: AgentVerbs = {
     received.push({ argv: args, tabId: caller.tabId })
     return answered(args[0] ?? '')
   },
-  fail: () => refused('it broke: "x"', 3)
+  fail: () => refused('it broke: "x"', 3),
+  open: async () => {
+    await new Promise((resolve) => setTimeout(resolve, AGENT_SHIM_WAITS_MS + ANSWERS_LATE_BY_MS))
+    return answered('opened, and its pictures sent')
+  }
 }
 
 const session = (tabId: string): SessionInfo => ({
@@ -107,6 +117,16 @@ describe('koloft command in a Claude session', () => {
     expect(r.status).toBe(0)
     expect(fs.readdirSync(agentDir)).toEqual([])
   })
+
+  it(
+    'koloft open waits past the usual wait, since the copy it sends to Discord can take a page shot of tens of seconds',
+    async () => {
+      listen(agentDir)
+      const r = await run(path.join(shimDir, 'koloft'), ['open', 'plan.html'], claudeEnv())
+      expect(r.stdout).toBe('opened, and its pictures sent\n')
+    },
+    3 * AGENT_SHIM_WAITS_MS
+  )
 
   it('prints a refusal on stderr and exits with the code Koloft gave', async () => {
     listen(agentDir)
