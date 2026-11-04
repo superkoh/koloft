@@ -444,6 +444,64 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     })
   }
 
+  for (const agent of [{ label: 'Claude' as const }, ...OTHER_AGENTS_ON_THE_MACHINE]) {
+    test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      if ('install' in agent) agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        const dir = remoteDir(env)
+        fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+        gitInit(dir)
+        gitCommitAll(dir)
+        fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+        await addRemoteWorkspace(page, env)
+        if ('install' in agent) {
+          await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+          await agent.bound?.(page)
+        } else {
+          await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+          await wsRows(page, REMOTE_WS_NAME).first().click()
+        }
+        await page
+          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+          .filter({ hasText: 'Changes' })
+          .click()
+        const shown = (): Promise<string[]> =>
+          page
+            .locator('.wb-panel .cv-row')
+            .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+
+        await runIn(page, centerTerm(page), '/write old-session.txt')
+        await expect
+          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .toEqual(['old-session.txt', 'tracked.txt'])
+        await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
+        await expect(page.locator('.wb-bar .fv-menu')).toBeVisible()
+        await page
+          .locator('.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]')
+          .click()
+        await page.keyboard.press('Escape')
+        await expect.poll(shown, { timeout: 30_000 }).toEqual(['old-session.txt'])
+
+        await runIn(page, centerTerm(page), '/clear')
+        await expect.poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS }).toEqual([])
+
+        await runIn(page, centerTerm(page), '/write new-session.txt')
+        await expect
+          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .toEqual(['new-session.txt'])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
   for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
     test(`${KOLOFT_OPEN_CASE_OF[agent.label]}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
       env

@@ -859,21 +859,35 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       }
     })
 
-  for (const agent of ['Claude', 'Muse'] as const)
+  for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
     test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
       env
     }) => {
       const fx = setupChangeFixture(env.workspaces.a)
+      if (agent === 'Codex') installCodex(env)
       if (agent === 'Muse') {
         installMuse(env)
         trustInMuse(env, env.workspaces.a)
+      }
+      if (agent === 'Antigravity') {
+        installAgy(env)
+        trustInAgy(env, env.workspaces.a)
       }
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await openChanges(page, 'ws-a', agent === 'Muse' ? agent : undefined)
-        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
+        const firstWrite = `/write ${fx.rel(fx.paths.agentTs)}`
+        if (agent === 'Antigravity') {
+          await newSessionInWith(page, 'ws-a', agent)
+          await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+          await runIn(page, centerTerm(page), firstWrite)
+          await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
+          await showChanges(page)
+        } else {
+          await openChanges(page, 'ws-a', agent === 'Claude' ? undefined : agent)
+          await runIn(page, centerTerm(page), firstWrite)
+        }
         await pickChip(page, 'Ownership', 'session')
         await expect
           .poll(() => shownPaths(page), { timeout: 30_000 })
