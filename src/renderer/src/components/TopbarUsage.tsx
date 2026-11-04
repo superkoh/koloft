@@ -137,6 +137,7 @@ export function TopbarUsage(): JSX.Element | null {
     (a) => a.kind === 'agy-home' && a.enabled && (a.quota || a.apiKey)
   )
   const agy = agyRows.filter((a) => a.quota)
+  const agyGlyphs = agy.map((a) => quotaGlyph(a))
   const homePools = [
     { label: 'Codex', accounts: codex },
     { label: 'Muse', accounts: muse }
@@ -197,7 +198,8 @@ export function TopbarUsage(): JSX.Element | null {
         className="tbu"
         aria-label={[
           ...(claude ? [capsuleAria(members, now)] : []),
-          ...homePools.map((h) => homeAria(h.glyphs, h.label))
+          ...homePools.map((h) => homeAria(h.glyphs, h.label)),
+          ...(agy.length > 0 ? [homeAria(agyGlyphs, 'Antigravity')] : [])
         ].join('; ')}
         aria-expanded={pop !== null}
         onMouseEnter={enter}
@@ -232,8 +234,8 @@ export function TopbarUsage(): JSX.Element | null {
         ))}
         {agy.length > 0 && (
           <span className="tbu-group">
-            {agy.map((a) => (
-              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={quotaGlyph(a)} />
+            {agy.map((a, i) => (
+              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={agyGlyphs[i]} />
             ))}
           </span>
         )}

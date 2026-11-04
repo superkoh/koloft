@@ -902,7 +902,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§23
-  test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it, with no tab started and nothing clicked', async ({
+  test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it and names it for a screen reader, with no tab started and nothing clicked', async ({
     env
   }) => {
     const binary = path.join(env.fakeBin, 'agy')
@@ -921,6 +921,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const page = await app.firstWindow()
       await waitBooted(page)
       await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
+      await expect(page.locator('.tbu')).toHaveAttribute('aria-label', '1 Antigravity account')
       expect(agyCalls(env).filter((c) => c.argv.includes('/usage'))).toHaveLength(1)
       expect(sessionCalls(env)).toEqual([])
     } finally {
