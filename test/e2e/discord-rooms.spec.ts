@@ -4,12 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { startSessionIn, terminalText, waitBooted, waitConductorStarted } from './helpers/p1'
-import {
-  AUTOCOMPLETE,
-  startFakeDiscord,
-  type FakeDiscord,
-  type FakeThread
-} from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import {
   addRemoteWorkspace,
   installCodexOnFakeRemote,
@@ -214,32 +209,25 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
       )
     })
 
-  test('the owner picks a session started at the Mac with /session, which lists it as they type and answers privately with its room’s link; the room is the same one each time, and stays carried through a restart and a /clear typed in the room; closing the session posts that it closed before the room is archived, and writing in the room of the closed session resumes it and hands it the words', async ({
+  test('a session started at the Mac keeps the same room each time the butler opens it, and the room stays carried through a restart and a /clear typed in the room; closing the session posts that it closed before the room is archived, and writing in the room of the closed session resumes it and hands it the words', async ({
     env
   }) => {
     await withTheButler(env, async (page, fake, app) => {
       await startSessionIn(page, 'ws-a')
       const first = await sessionOf(page, 'claude')
-      const typing = fake.interact(
-        OWNER,
-        'session',
-        { session: '' },
-        { type: AUTOCOMPLETE, focused: 'session' }
-      )
-      await expect.poll(() => fake.callbacks.some((c) => c.interactionId === typing)).toBe(true)
-      const offered = fake.callbacks.find((c) => c.interactionId === typing)!.data as {
-        choices: { name: string; value: string }[]
-      }
-      expect(offered.choices).toHaveLength(1)
-      expect(offered.choices[0].name).toContain(first.title)
-      const picked = fake.interact(OWNER, 'session', { session: offered.choices[0].value })
-      await expect.poll(() => fake.callbacks.find((c) => c.interactionId === picked)?.type).toBe(5)
+      fake.say(OWNER, `/koloft discord thread open ${first.sessionId}`)
       const room = await theRoom(fake)
       await expect
-        .poll(() => fake.laterReplies.map((r) => r.content).join('\n'))
-        .toContain(`<#${room.id}>`)
-      fake.interact(OWNER, 'session', { session: offered.choices[0].value })
-      await expect.poll(() => fake.laterReplies).toHaveLength(2)
+        .poll(() => inRoom(fake, room.id).filter((p) => p.includes('where it is')).length, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe(1)
+      fake.say(OWNER, `/koloft discord thread open ${first.sessionId}`)
+      await expect
+        .poll(() => inRoom(fake, room.id).filter((p) => p.includes('where it is')).length, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe(2)
       expect(fake.threads).toHaveLength(1)
 
       await app.evaluate(({ Menu }) =>

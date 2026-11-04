@@ -114,7 +114,6 @@ export interface FakeCallback {
 
 export const SLASH_COMMAND = 2
 export const BUTTON_PRESS = 3
-export const AUTOCOMPLETE = 4
 export const FORM_SUBMIT = 5
 export const OPEN_A_FORM = 9
 
@@ -145,7 +144,6 @@ export interface FakeDiscord {
   archived: string[]
   postsBeforeArchive: number[]
   threadMembers: { threadId: string; userId: string }[]
-  laterReplies: { token: string; content: string }[]
   press(author: FakeAuthor, button: FakeButton, channelId: string): string
   submit(author: FakeAuthor, formId: string, typed: string, channelId: string): string
   say(
@@ -157,7 +155,7 @@ export interface FakeDiscord {
     author: FakeAuthor,
     command: string,
     options: Record<string, string>,
-    opts?: { type?: number; channelId?: string; focused?: string }
+    opts?: { type?: number; channelId?: string }
   ): string
   close(): Promise<void>
 }
@@ -172,7 +170,6 @@ const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
 const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
 const THREAD_ON_MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
 const THREAD_MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
-const ORIGINAL_REPLY_ROUTE = /^\/webhooks\/\d+\/([^/]+)\/messages\/@original$/
 
 function bodyOf(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -246,7 +243,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     archived: [],
     postsBeforeArchive: [],
     threadMembers: [],
-    laterReplies: [],
     press: (author, button, channelId) => {
       const id = String(++nextId)
       for (const ws of sockets)
@@ -314,8 +310,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
                 options: Object.entries(options).map(([name, value]) => ({
                   name,
                   value,
-                  type: 3,
-                  ...(opts.focused === name ? { focused: true } : {})
+                  type: 3
                 }))
               }
             }
@@ -435,12 +430,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     if (member && req.method === 'PUT') {
       fake.threadMembers.push({ threadId: member[1], userId: member[2] })
       return { status: 204 }
-    }
-    const original = ORIGINAL_REPLY_ROUTE.exec(route)
-    if (original && req.method === 'PATCH') {
-      const { content } = JSON.parse((await bodyOf(req)).toString()) as { content: string }
-      fake.laterReplies.push({ token: original[1], content })
-      return { status: 200, body: { id: '1' } }
     }
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }
