@@ -40,6 +40,7 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { startEchoServer } from './helpers/fixtureServer'
+import { runGit } from './helpers/gitFixture'
 import {
   addRemoteWorkspace,
   agyReady,
@@ -600,6 +601,81 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await quitAndClose(app)
       await fake.close()
       await server.close()
+    }
+  })
+
+  test('the butler’s koloft open, in a turn the owner started on Discord, also sends to its channel: an HTML file as a picture, Markdown as text with the file, any other file as itself, and koloft diff as a picture of the changes; a session with no room sends nothing, though the owner is away', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const dir = path.join(env.home, 'shown')
+    fs.mkdirSync(dir)
+    fs.writeFileSync(
+      path.join(dir, 'plan.html'),
+      '<!doctype html><title>plan</title><h1>The plan</h1>'
+    )
+    fs.writeFileSync(
+      path.join(dir, 'plan.md'),
+      '# Plan\n\n| step | who |\n|---|---|\n| ship | me |\n'
+    )
+    fs.writeFileSync(path.join(dir, 'notes.bin'), 'some bytes')
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'const a = 1\n')
+    runGit(dir, 'init', '-q')
+    runGit(dir, 'add', '-A')
+    runGit(dir, 'commit', '-q', '-m', 'init')
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'const a = 2\n')
+    const { app, page } = await connected(env, fake)
+    try {
+      const butlerTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+      const shown = async (args: string, reply: string): Promise<FakePost> => {
+        const before = uploads(fake).length
+        fake.say(OWNER, `/koloft ${args}`)
+        await expect
+          .poll(() => uploads(fake).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe(before + 1)
+        const unwrapped = (s: string): string => s.replace(/\s/g, '')
+        await expect
+          .poll(async () => unwrapped(await terminalText(page, butlerTab)))
+          .toContain(unwrapped(reply))
+        return uploads(fake)[before]
+      }
+
+      const picture = await shown(
+        `open ${path.join(dir, 'plan.html')}`,
+        'Sent a picture of the page to the Discord channel the owner talks to you in.'
+      )
+      expect(picture.channelId).toBe(CHANNEL)
+      expect(isPng(picture.files[0].data)).toBe(true)
+
+      const doc = await shown(`open ${path.join(dir, 'plan.md')}`, 'as text, with the file.')
+      expect(doc.content).toContain('**ship**\n> who: me')
+      expect(doc.files.map((f) => f.name)).toEqual(['plan.md'])
+
+      const file = await shown(`open ${path.join(dir, 'notes.bin')}`, 'Sent the file to')
+      expect(file.files).toEqual([
+        expect.objectContaining({ name: 'notes.bin', text: 'some bytes' })
+      ])
+
+      const diff = await shown(
+        `diff ${path.join(dir, 'app.ts')}`,
+        'Sent a picture of its changes to'
+      )
+      expect(diff.files).toHaveLength(1)
+      expect(isPng(diff.files[0].data)).toBe(true)
+
+      await startSessionIn(page, 'ws-a')
+      const roomless = await tabOf(page, (await waitForCalls(env, 1))[0].sessionId)
+      const sentBefore = fake.posted.length
+      await runIn(page, centerTerm(page), `/koloft open ${path.join(dir, 'plan.html')}`)
+      await expect
+        .poll(() => terminalText(page, roomless), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('koloft exit=0')
+      expect(await terminalText(page, roomless)).not.toContain('Sent')
+      expect(fake.posted.length).toBe(sentBefore)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
     }
   })
 
