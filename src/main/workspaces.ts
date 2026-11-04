@@ -535,9 +535,14 @@ export class WorkspaceManager {
   leftWorktree(sessionId: string, removed: boolean): void {
     const leaving = this.leavingTheirWorktree.get(sessionId)
     if (!leaving) return
-    if (removed) leaving.tabEnded = true
-    else this.leavingTheirWorktree.delete(sessionId)
-    this.scheduleRescan()
+    if (!removed) {
+      this.leavingTheirWorktree.delete(sessionId)
+      this.scheduleRescan()
+      return
+    }
+    leaving.tabEnded = true
+    if (this.layout.members.includes(sessionId)) this.forget(sessionId, 'its worktree was removed')
+    else this.scheduleRescan()
   }
 
   launchEnded(tabId: string): void {
@@ -805,7 +810,12 @@ export class WorkspaceManager {
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    this.lastRunningKey = [...this.deps.runningBindings().keys()].join(',')
+    const boundAtStart = this.deps.runningBindings()
+    this.lastRunningKey = [...boundAtStart.keys()].join(',')
+    for (const [id, leaving] of this.leavingTheirWorktree) {
+      const tab = boundAtStart.get(id)
+      if (tab && tab !== leaving.tabId) this.leavingTheirWorktree.delete(id)
+    }
     const launches = [...this.launches.values()]
 
     const payload: WorkspaceRows[] = []
@@ -844,13 +854,6 @@ export class WorkspaceManager {
       const bindings = this.deps.runningBindings()
       const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
       for (const l of launches) l.sessionId = sessionIdByTab.get(l.tabId)
-      for (const [id, leaving] of this.leavingTheirWorktree) {
-        const tab = bindings.get(id)
-        if (tab && tab !== leaving.tabId) this.leavingTheirWorktree.delete(id)
-      }
-      const awaitingTheirTab = new Set(
-        launches.flatMap((l) => (!l.sessionId && l.pickedSessionId ? [l.pickedSessionId] : []))
-      )
       const wsRunningIds = new Set([
         ...bindings.keys(),
         ...((key && this.deps.remoteRunning?.(key.host)) || [])
@@ -891,14 +894,21 @@ export class WorkspaceManager {
       for (const r of allRows) wsBySession.set(r.id, ws.path)
       for (const r of filterOwned(allRows, owned, wsRunningIds)) listed.add(r.id)
       const visible = allRows
-        .filter((r) => !this.hidden(r.id) && !awaitingTheirTab.has(r.id))
+        .filter((r) => !this.hidden(r.id))
         .map((r) => (!r.running && wsRunningIds.has(r.id) ? { ...r, running: true } : r))
-      const rows = filterOwned(visible, owned, wsRunningIds)
+      const ownedOrRunning = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
         wantedBucketDirs.add(path.join(root, b.slug))
       }
-      const pending = resolvePending(buckets, launches, rows, Date.now())
+      const pending = resolvePending(buckets, launches, ownedOrRunning, Date.now())
+      const startingTabs = new Set(pending.rows.filter((r) => r.pending).map((r) => r.id))
+      const awaitingTheirTab = new Set(
+        launches.flatMap((l) =>
+          startingTabs.has(l.tabId) && l.pickedSessionId ? [l.pickedSessionId] : []
+        )
+      )
+      const rows = ownedOrRunning.filter((r) => !awaitingTheirTab.has(r.id))
       for (const tabId of pending.promoted) this.launches.delete(tabId)
       for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({

@@ -1278,7 +1278,6 @@ export class SshHost implements Host {
         cwd,
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
-        sessionId: sid,
         attachTo: mode === 'attach' ? sid : undefined,
         pickKey
       }

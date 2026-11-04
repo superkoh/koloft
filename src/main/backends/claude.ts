@@ -1099,7 +1099,7 @@ export class ClaudeBackend implements SessionBackend {
           machine.root,
           spec.worktree,
           machine.tracking.host,
-          machine.sessionId
+          sessionIdOfTmux(machine.tracking.tmuxName) ?? undefined
         )
       }
       this.d.remoteSync()?.pokeNow(machine.tracking.host)
