@@ -261,7 +261,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('[Discord] hello there')
       expect(peerMessages(env)).toEqual([
-        `<cross-session-message from-mode="bypass">\n[Discord] hello there\n(Koloft message koloft-discord-${hello})\n</cross-session-message>`
+        `<cross-session-message from-mode="bypass">\n[Discord] hello there (Koloft: the owner is away from the Mac right now.)\n(Koloft message koloft-discord-${hello})\n</cross-session-message>`
       ])
       expect(fake.typing).toContain(CHANNEL)
       expect(said(fake).join('\n')).not.toContain('not the owner')
@@ -646,7 +646,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
+  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and a press on the card’s button answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -670,7 +670,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         .toBe(true)
-      fake.say(OWNER, '1')
+      const [merge] = fake.posted.find((p) => p.content.startsWith(card))!.buttons!
+      fake.press(OWNER, merge, CHANNEL)
       await expect
         .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Merge')
@@ -686,7 +687,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and the owner’s number answers it', async ({
+  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and a press on the card’s button answers it', async ({
     env
   }) => {
     installCodex(env)
@@ -701,7 +702,10 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         .toBe(true)
-      fake.say(OWNER, '2')
+      const green = fake.posted
+        .find((p) => p.content.startsWith(card))!
+        .buttons!.find((b) => b.label === 'Green')!
+      fake.press(OWNER, green, CHANNEL)
       await expect
         .poll(
           () =>
