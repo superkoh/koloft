@@ -1481,6 +1481,145 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     })
   })
 
+  describe('a run whose agent quits after it started keeps its tab (#1277)', () => {
+    const left = { treeRoot: folderOf(RUN), sessionId: 'sess-1' }
+    const crash = { exitCode: 1, unexpected: true as const }
+
+    async function crashedRun(): Promise<ReturnType<typeof makeHarness>> {
+      const h = makeHarness([makeJob()])
+      h.runner.onRendererReady()
+      await h.runner.runNow('j1')
+      h.runner.onBound('tab-1', 'sess-1')
+      h.tidied.set(RUN, REMOVED)
+      h.flags.folders = [RUN]
+      expect(h.runner.runStartedIn('tab-1')).toBe(true)
+      h.runner.onPtyExit('tab-1', left, crash)
+      await flush()
+      return h
+    }
+
+    it('keeps its folder while the kept tab is open, through any later sweep, and tidies it with the usual rules once the tab is closed', async () => {
+      const h = await crashedRun()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+      expect(h.jobs[0].history[0]).toMatchObject({ state: 'quit', worktree: RUN })
+      expect(h.jobs[0].history[0].removed).toBeUndefined()
+
+      h.runner.sweepLeftFolders()
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+
+      h.runner.tabClosed('tab-1', false)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+      expect(h.jobs[0].history[0]).toMatchObject({ state: 'quit', removed: true })
+    })
+
+    it('a run that quits before it started is not kept: its folder is tidied at once', async () => {
+      const h = makeHarness([makeJob()])
+      await h.runner.runNow('j1')
+      h.tidied.set(RUN, REMOVED)
+      h.flags.folders = [RUN]
+      expect(h.runner.runStartedIn('tab-1')).toBe(false)
+      h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN) }, crash)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, undefined]])
+      expect(h.jobs[0].history[0].state).toBe('failed')
+    })
+
+    it('after ⇧⌘R resumes the session in the kept tab, closing it waits for that session’s process to end before the folder goes, and a second crash keeps it again', async () => {
+      const h = await crashedRun()
+      h.runner.tabMoved('tab-1', 'tab-2')
+      h.runner.tabClosed('tab-1', false)
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+
+      h.runner.onPtyExit('tab-2', left, crash)
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+
+      h.runner.tabClosed('tab-2', true)
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+      h.runner.onPtyExit('tab-2', left, { exitCode: 0 })
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+      expect(h.jobs[0].history).toHaveLength(1)
+    })
+
+    it('a queued run whose process dies never started, so it holds nothing', async () => {
+      const h = makeHarness([makeJob()], {
+        launch: vi.fn(
+          () => ({ ok: true, tabId: 'tab-1', startsLater: new Promise(() => {}) }) as LaunchResult
+        )
+      })
+      h.runner.onRendererReady()
+      await h.runner.runNow('j1')
+      h.tidied.set(RUN, REMOVED)
+      h.flags.folders = [RUN]
+      expect(h.runner.runStartedIn('tab-1')).toBe(false)
+      h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN) }, crash)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, undefined]])
+    })
+
+    it('with no window to keep a tab in, a crash holds nothing and the folder is tidied at once', async () => {
+      const h = makeHarness([makeJob()])
+      h.runner.onRendererReady()
+      h.runner.onRendererTeardown(() => false)
+      await h.runner.runNow('j1')
+      h.runner.onBound('tab-1', 'sess-1')
+      h.tidied.set(RUN, REMOVED)
+      h.runner.onPtyExit('tab-1', left, crash)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+
+    it('a resumed session closed while it runs, whose job is deleted before it ends, still has its folder tidied when it ends', async () => {
+      const h = await crashedRun()
+      h.runner.tabMoved('tab-1', 'tab-2')
+      h.runner.tabClosed('tab-2', true)
+      h.runner.delete('j1')
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+      h.runner.onPtyExit('tab-2', {}, { exitCode: 0 })
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+
+    it('⇧⌘R again on the resumed session keeps the hold, so a later crash of the new session still keeps the folder', async () => {
+      const h = await crashedRun()
+      h.runner.tabMoved('tab-1', 'tab-2')
+      h.runner.onPtyExit('tab-2', undefined, { exitCode: 0 })
+      h.runner.tabMoved('tab-2', 'tab-3')
+      h.runner.onPtyExit('tab-3', left, crash)
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+
+      h.runner.tabClosed('tab-3', false)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+
+    it('closing the kept tab of a job deleted meanwhile still tidies its folder, though no job or line names it any more', async () => {
+      const h = await crashedRun()
+      h.runner.delete('j1')
+      h.runner.tabClosed('tab-1', false)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+
+    it('a window that closes or reloads lets go of every kept tab whose process is gone, and keeps the hold of one still running', async () => {
+      const h = await crashedRun()
+      h.runner.onRendererTeardown(() => true)
+      await flush()
+      expect(h.tidyRun).not.toHaveBeenCalled()
+
+      h.runner.onRendererTeardown(() => false)
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    })
+  })
+
   describe('in a remote workspace', () => {
     const REMOTE = 'ssh://devbox/home/me/app'
     const A = 'nightly-report-260901-1000'
