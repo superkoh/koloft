@@ -14,6 +14,7 @@ import {
 import { BYTES_PER_FILE, MB, type DiscordFile } from './discord/link'
 import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
 import type { PagePictures } from './discord/pageShot'
+import { picturesSent } from './discord/phoneCopy'
 
 export const DISCORD_USAGE =
   'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
@@ -101,23 +102,9 @@ async function shot(
   const url = pageUrl(before[0], cwd)
   if (!url) return refused(NOT_A_PAGE)
   if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
-  const { files, shown, page } = await d.shoot(url)
-  await d.send(channelId, files, text)
-  const sent =
-    files.length === 1
-      ? 'Sent a picture of the page to Discord.'
-      : `Sent the page to Discord as ${files.length} pictures, top to bottom.`
-  return answered(
-    [
-      sent,
-      shown.height < page.height &&
-        `The page is ${page.height} pixels tall; the pictures stop at ${shown.height}.`,
-      shown.width < page.width &&
-        `The page is ${page.width} pixels wide; the pictures show its left ${shown.width}.`
-    ]
-      .filter(Boolean)
-      .join(' ')
-  )
+  const pictures = await d.shoot(url)
+  await d.send(channelId, pictures.files, text)
+  return answered(picturesSent(pictures, 'Discord'))
 }
 
 async function setup(

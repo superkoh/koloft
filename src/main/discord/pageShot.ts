@@ -1,18 +1,33 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { pathToFileURL } from 'url'
 import { session, WebContentsView, type WebContents } from 'electron'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
 import { within } from '../within'
 
 const SHOT_PARTITION = 'koloft-page-shot'
-const VIEW_WIDTH = 1280
-const VIEW_HEIGHT = 800
 // PLATFORM§16
 const LONGEST_SIDE_THAT_CAPTURED_PX = 16000
 const PAGE_LOADS_WITHIN_MS = 30_000
 const FONTS_LOAD_WITHIN_MS = 5000
 // PLATFORM§16
 const A_CAPTURE_ANSWERS_WITHIN_MS = 20_000
-const MOST_PICTURES = 10
 const SMALLER_PICTURE_QUALITY = 80
+
+export interface PageLook {
+  width: number
+  height: number
+  pictureHeight: number
+  mostPictures: number
+}
+
+export const PAGE_LOOK: PageLook = {
+  width: 1280,
+  height: 800,
+  pictureHeight: Infinity,
+  mostPictures: 10
+}
 
 interface Size {
   width: number
@@ -37,12 +52,17 @@ function shotSession(): Electron.Session {
 
 type Clip = Size & { y: number }
 
-export function pictureClips(page: Size, devicePixelRatio: number): Clip[] {
+export function pictureClips(
+  page: Size,
+  devicePixelRatio: number,
+  look: Pick<PageLook, 'pictureHeight' | 'mostPictures'> = PAGE_LOOK
+): Clip[] {
   const side = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / devicePixelRatio)
   const width = Math.min(page.width, side)
+  const tall = Math.min(side, look.pictureHeight)
   const clips: Clip[] = []
-  for (let y = 0; y < page.height && clips.length < MOST_PICTURES; y += side)
-    clips.push({ y, width, height: Math.min(side, page.height - y) })
+  for (let y = 0; y < page.height && clips.length < look.mostPictures; y += tall)
+    clips.push({ y, width, height: Math.min(tall, page.height - y) })
   return clips
 }
 
@@ -89,14 +109,25 @@ export interface PagePictures {
   page: Size
 }
 
+export async function shootHtml(html: string, look: PageLook): Promise<PagePictures> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'koloft-shot-'))
+  const file = path.join(dir, 'page.html')
+  try {
+    await fs.promises.writeFile(file, html)
+    return await shootPage(pathToFileURL(file).href, look)
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true })
+  }
+}
+
 // PLATFORM§16
-export async function shootPage(url: string): Promise<PagePictures> {
+export async function shootPage(url: string, look = PAGE_LOOK): Promise<PagePictures> {
   const view = new WebContentsView({
     webPreferences: { session: shotSession(), sandbox: true, contextIsolation: true }
   })
   const wc = view.webContents
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
-  view.setBounds({ x: 0, y: 0, width: VIEW_WIDTH, height: VIEW_HEIGHT })
+  view.setBounds({ x: 0, y: 0, width: look.width, height: look.height })
   try {
     await within(wc.loadURL(url), PAGE_LOADS_WITHIN_MS, 'it did not load in time.').catch(
       (error: unknown) => {
@@ -111,7 +142,7 @@ export async function shootPage(url: string): Promise<PagePictures> {
     ).catch(() => undefined)
     wc.debugger.attach('1.3')
     const { size, ratio } = await pageSize(wc)
-    const clips = pictureClips(size, ratio)
+    const clips = pictureClips(size, ratio, look)
     const last = clips.at(-1)
     if (!last) throw new Error(`${url} is an empty page: there is nothing to take a picture of.`)
     const files: DiscordFile[] = []
