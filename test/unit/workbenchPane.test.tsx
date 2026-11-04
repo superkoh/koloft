@@ -202,11 +202,15 @@ function Panel({
   )
 }
 
-async function panelOnFirstPage(p: string): Promise<HTMLElement> {
+function seedSession(p: string): void {
   useStore.setState({
     sessions: [{ tabId: `pty-${p}-a`, sessionId: `s-${p}-a`, updatedAt: 1 } as never],
     tabs: [{ id: `pty-${p}-a`, kind: 'claude', title: 'a', alive: true } as never]
   })
+}
+
+async function panelOnFirstPage(p: string): Promise<HTMLElement> {
+  seedSession(p)
   const { container } = render(<Panel p={p} />)
   for (const id of [`${p}-w2`, `${p}-f1`, `${p}-w1`]) {
     await act(async () => {
@@ -250,12 +254,9 @@ describe('WorkbenchPane: a busy tab bar or find bar redraws no tab body', () => 
 })
 
 describe('WorkbenchPane: a page’s dialog', () => {
-  it('while the Workbench is off screen, a page’s confirm takes neither focus nor Esc from the terminal; it takes both once the Workbench shows', async () => {
+  it('while the Workbench is off screen, a page’s confirm takes neither focus nor Esc from the terminal; it takes both once the Workbench shows', () => {
     const p = 'wbdialog'
-    useStore.setState({
-      sessions: [{ tabId: `pty-${p}-a`, sessionId: `s-${p}-a`, updatedAt: 1 } as never],
-      tabs: [{ id: `pty-${p}-a`, kind: 'claude', title: 'a', alive: true } as never]
-    })
+    seedSession(p)
     const answers: unknown[] = []
     const dialog = {
       id: 'c-1',

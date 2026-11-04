@@ -8,12 +8,10 @@ import {
 } from '../../src/renderer/src/components/BrowserModal'
 
 const answers: [string, BrowserDialogAnswer][] = []
-const undo: (() => void)[] = []
 
 afterEach(() => {
   cleanup()
   answers.length = 0
-  for (const u of undo.splice(0)) u()
 })
 
 function showBesideATerminalThatStopsKeys(dialog: BrowserDialog): HTMLTextAreaElement {
@@ -23,21 +21,7 @@ function showBesideATerminalThatStopsKeys(dialog: BrowserDialog): HTMLTextAreaEl
       <BrowserModal dialog={dialog} onAnswer={(id, a) => answers.push([id, a])} />
     </>
   )
-  const terminal = screen.getByRole('textbox', { name: 'terminal' })
-  return terminal as HTMLTextAreaElement
-}
-
-function listenPastTheDialog(): string[] {
-  const heard: string[] = []
-  const onWindow = (e: KeyboardEvent): void => void heard.push(`window ${e.key}`)
-  const onDocument = (e: KeyboardEvent): void => void heard.push(`document ${e.key}`)
-  window.addEventListener('keydown', onWindow)
-  document.addEventListener('keydown', onDocument, true)
-  undo.push(() => {
-    window.removeEventListener('keydown', onWindow)
-    document.removeEventListener('keydown', onDocument, true)
-  })
-  return heard
+  return screen.getByRole('textbox', { name: 'terminal' }) as HTMLTextAreaElement
 }
 
 describe('a page’s alert or confirm dialog takes Enter and Esc away from the session terminal', () => {
@@ -72,16 +56,25 @@ describe('a page’s alert or confirm dialog takes Enter and Esc away from the s
   })
 
   it('the Esc that cancels the dialog reaches nothing behind it, so the web overlay or a full Workbench stays open', () => {
-    const heard = listenPastTheDialog()
-    showBesideATerminalThatStopsKeys({
-      id: 'a-2',
-      kind: 'alert',
-      origin: 'https://site.test',
-      message: 'Hi'
-    })
-    fireEvent.keyDown(screen.getByRole('button', { name: 'OK' }), { key: 'Escape' })
-    expect(answers).toEqual([['a-2', { ok: false }]])
-    expect(heard).toEqual([])
+    const heard: string[] = []
+    const onWindow = (e: KeyboardEvent): void => void heard.push(`window ${e.key}`)
+    const onDocument = (e: KeyboardEvent): void => void heard.push(`document ${e.key}`)
+    window.addEventListener('keydown', onWindow)
+    document.addEventListener('keydown', onDocument, true)
+    try {
+      showBesideATerminalThatStopsKeys({
+        id: 'a-2',
+        kind: 'alert',
+        origin: 'https://site.test',
+        message: 'Hi'
+      })
+      fireEvent.keyDown(screen.getByRole('button', { name: 'OK' }), { key: 'Escape' })
+      expect(answers).toEqual([['a-2', { ok: false }]])
+      expect(heard).toEqual([])
+    } finally {
+      window.removeEventListener('keydown', onWindow)
+      document.removeEventListener('keydown', onDocument, true)
+    }
   })
 
   it('Enter on a focused Cancel button never answers OK first', () => {
@@ -92,7 +85,7 @@ describe('a page’s alert or confirm dialog takes Enter and Esc away from the s
       message: 'Sure?'
     })
     fireEvent.keyDown(screen.getByRole('button', { name: 'Cancel' }), { key: 'Enter' })
-    expect(answers.filter(([, a]) => a.ok)).toEqual([])
+    expect(answers).toEqual([])
   })
 
   it('once the dialog is answered, the keys go back to where they were before it showed', () => {
@@ -110,6 +103,26 @@ describe('a page’s alert or confirm dialog takes Enter and Esc away from the s
       expect(document.activeElement).toBe(terminal)
     } finally {
       terminal.remove()
+    }
+  })
+
+  it('a field clicked elsewhere while the dialog shows keeps the keys when the dialog goes away', () => {
+    const terminal = document.body.appendChild(document.createElement('textarea'))
+    const note = document.body.appendChild(document.createElement('textarea'))
+    try {
+      terminal.focus()
+      const { unmount } = render(
+        <BrowserModal
+          dialog={{ id: 'c-5', kind: 'confirm', origin: 'https://site.test', message: 'Sure?' }}
+          onAnswer={() => {}}
+        />
+      )
+      note.focus()
+      unmount()
+      expect(document.activeElement).toBe(note)
+    } finally {
+      terminal.remove()
+      note.remove()
     }
   })
 

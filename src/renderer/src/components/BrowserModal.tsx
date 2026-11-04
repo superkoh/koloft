@@ -31,12 +31,16 @@ export function BrowserModal({
   const [pass, setPass] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
   const safeButton = useRef<HTMLButtonElement>(null)
+  const box = useRef<HTMLDivElement>(null)
 
   // PLATFORM§25
   useLayoutEffect(() => {
     const before = document.activeElement as HTMLElement | null
+    const shown = box.current
     ;(firstField.current ?? safeButton.current)?.focus()
-    return () => before?.focus()
+    return () => {
+      if (shown?.contains(document.activeElement)) before?.focus()
+    }
   }, [dialog.id])
 
   const accept = (): void => {
@@ -63,6 +67,7 @@ export function BrowserModal({
   return (
     <div className="bmodal-backdrop" onMouseDown={cancel}>
       <div
+        ref={box}
         className="bmodal"
         role="dialog"
         aria-modal="true"
