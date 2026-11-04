@@ -61,7 +61,6 @@ export function BrowserModal({
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') accept()
-          else if (e.key === 'Escape') cancel()
         }}
       >
         <div className="bmodal-head">
