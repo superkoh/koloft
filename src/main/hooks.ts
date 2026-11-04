@@ -678,8 +678,18 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
+const DISCORD_IDS_SUFFIX = '.discord-ids'
+
 export function discordIdsFile(regDir: string, tabId: string): string {
-  return path.join(regDir, `${tabId}.discord-ids`)
+  return path.join(regDir, `${tabId}${DISCORD_IDS_SUFFIX}`)
+}
+
+export function remoteDiscordIdsFile(tabId: string): string {
+  return `${REMOTE_HOOK_DIR}/${tabId}${DISCORD_IDS_SUFFIX}`
+}
+
+export function noteDiscordId(regDir: string, tabId: string, id: string): void {
+  fs.appendFileSync(discordIdsFile(regDir, tabId), `${id}\n`)
 }
 
 export function discordSaidFile(regDir: string, tabId: string): string {

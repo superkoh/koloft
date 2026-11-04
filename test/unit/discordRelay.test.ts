@@ -212,7 +212,9 @@ describe('DiscordRelay: offline catch-up', () => {
       [message('101'), message('102', '556'), message('103')],
       {
         destinationOf: (c) => (c === ROOM ? room : undefined),
-        channels: () => [{ channelId: ROOM, lastMessageId: '100', seen: () => {}, room: true }]
+        channels: () => [
+          { channelId: ROOM, lastMessageId: '100', seen: () => {}, handsOverTo: room }
+        ]
       }
     )
     await relay.catchUp()

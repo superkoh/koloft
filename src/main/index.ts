@@ -122,8 +122,8 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOLD_FILE,
   HOOK_SCRIPT,
-  discordIdsFile,
   forgetAssistMarkers,
+  noteDiscordId,
   noteDiscordSaid,
   localNotice,
   markAnswerable,
@@ -504,7 +504,7 @@ import { ButlerTyping } from './discord/butlerTyping'
 import { shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
-import type { SessionChoice } from './discord/interactions'
+import type { SessionChoice } from './discord/link'
 import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
@@ -3355,7 +3355,7 @@ app.whenReady().then(() => {
     if (t.prev === 'approval') claudeAsks.delete(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    const asksOnDiscord = (butlerSide(t.tabId) && !!butler?.channel()) || !!roomOfTab(t.tabId)
+    const asksOnDiscord = !!askChannelOfTab(t.tabId)
     if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => {
@@ -3774,7 +3774,10 @@ app.whenReady().then(() => {
     owner: () => butlerNow.owner(),
     ownerWrote: ownerCameBack,
     run: async (text, channelId) =>
-      roomsNow.ofThread(channelId) ? commandIntoRoom(channelId, text) : commandIntoButler(text),
+      commandInto(
+        butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
+        text
+      ),
     sessionChoices,
     openRoom: openRoomPicked,
     press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
@@ -3805,20 +3808,23 @@ app.whenReady().then(() => {
           lastMessageId: butlerNow.lastMessageId(),
           seen: (id: string) => butlerNow.setLastMessage(id)
         },
-        ...butlerNow
-          .rooms()
-          .flatMap((r) => (r.keys.some((k) => rowOfKey(k)) ? [r] : []))
-          .map((r) => ({
-            channelId: r.threadId,
-            lastMessageId: r.lastMessageId,
-            seen: (id: string) => roomsNow.seen(r.threadId, id),
-            room: true
-          }))
+        ...butlerNow.rooms().flatMap((r) => {
+          const dest = roomDestination(r.threadId)
+          return dest && r.keys.some((k) => rowOfKey(k))
+            ? [
+                {
+                  channelId: r.threadId,
+                  lastMessageId: r.lastMessageId,
+                  seen: (id: string) => roomsNow.seen(r.threadId, id),
+                  handsOverTo: dest
+                }
+              ]
+            : []
+        })
       ]
     },
     replyChannelOf: (tabId) => butlerNow.channelOfTab(tabId) ?? roomOfTab(tabId),
-    askChannelOf: (tabId) =>
-      butlerSide(tabId) ? butlerNow.channel()?.channelId : roomOfTab(tabId),
+    askChannelOf: askChannelOfTab,
     lobbyLink: () => {
       const lobby = butlerNow.channel()
       return lobby && roomLink(lobby.channelId)
@@ -3826,7 +3832,7 @@ app.whenReady().then(() => {
     noteDiscordId: async (tabId, id) => {
       const host = machineOfTab(tabId)
       if (host) return hosts.machine(host).noteDiscordId(tabId, id)
-      fs.appendFileSync(discordIdsFile(hookPaths.regDir, tabId), `${id}\n`)
+      noteDiscordId(hookPaths.regDir, tabId, id)
     },
     noteDiscordSaid: async (tabId, text) => {
       const host = machineOfTab(tabId)
@@ -5747,10 +5753,15 @@ function roomOfTab(tabId: string): string | undefined {
   return butlerSide(tabId) ? undefined : rooms?.carried(tabId)
 }
 
+function askChannelOfTab(tabId: string): string | undefined {
+  return butlerSide(tabId) ? butler?.channel()?.channelId : roomOfTab(tabId)
+}
+
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
 
 function askUnreadablySoon(tabId: string): void {
   if (!roomOfTab(tabId)) return
+  if (storedOwnerOf(tabId)) return discordRelay?.asksUnreadably(tabId)
   setTimeout(() => {
     if (tracker.statusOf(tabId) === 'approval') discordRelay?.asksUnreadably(tabId)
   }, AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS)
@@ -5804,9 +5815,7 @@ function roomDestination(threadId: string): Destination | undefined {
       const row = rowOfKey(room.keys.at(-1))
       if (!row)
         throw new Error(`${room.name} is no longer in Koloft's sidebar, so it cannot be resumed.`)
-      const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
-      if (!resumed.ok) throw new Error(resumed.error)
-      return resumed.tabId
+      return sessionDeps.resume(row)
     },
     typeCommand: async (tabId, command) => {
       await slash.typeWhenIdle({ name: room.name, tabId, butler: false }, command, {
@@ -5818,11 +5827,11 @@ function roomDestination(threadId: string): Destination | undefined {
   }
 }
 
-function commandIntoRoom(threadId: string, text: string): string {
-  const dest = roomDestination(threadId)
+function commandInto(dest: Destination | undefined, text: string): string {
   if (!discordRelay || !dest) throw new Error(STILL_STARTING)
-  discordRelay.command(dest, text, threadId)
-  return `Koloft will type ${text} into ${dest.name} once its turn ends, and post what it prints here.`
+  if (!dest.channelId) throw new Error(NO_CHANNEL_BOUND)
+  discordRelay.command(dest, text, dest.channelId)
+  return `Koloft will type ${text} into ${dest.name} once its turn ends, and post what it prints in Discord.`
 }
 
 // PLATFORM§39
@@ -5850,24 +5859,28 @@ function sessionChoices(typed: string): SessionChoice[] {
     })
 }
 
+const HELPERS_GET_NO_ROOM =
+  'a helper in the butler’s own folder gets no room; its questions already come to the butler’s channel.'
+
+async function roomByRef(
+  ref: string
+): Promise<{ ok: true; title: string; threadId: string } | { ok: false; error: string }> {
+  const found = await findSessionRow(sessionDeps, ref)
+  if (!found.ok) return found
+  if (found.value.workspace === conductorFolder(app.getPath('userData')))
+    return { ok: false, error: HELPERS_GET_NO_ROOM }
+  return { ok: true, title: found.value.title, threadId: await openRoomFor(found.value) }
+}
+
 async function openRoomPicked(picked: string): Promise<string> {
-  const id = choiceIds.get(picked) ?? picked
-  const all = roomable()
-  const titled = all.filter((r) => r.title === picked)
-  const p = all.find((r) => r.row.id === id) ?? (titled.length === 1 ? titled[0] : undefined)
-  if (!p) return `There is no session "${picked}". Pick one from the list that shows as you type.`
-  return `${p.title}: ${roomLink(await openRoomFor(p))}`
+  const room = await roomByRef(choiceIds.get(picked) ?? picked)
+  return room.ok ? `${room.title}: ${roomLink(room.threadId)}` : room.error
 }
 
 async function openRoomFor(p: PlacedRow): Promise<string> {
   const r = rooms
   if (!r) throw new Error(STILL_STARTING)
-  let tabId = p.live?.tabId
-  if (!tabId) {
-    const resumed = await resumeRow(p.row, { rebuildGoneWorktree: true })
-    if (!resumed.ok) throw new Error(resumed.error)
-    tabId = resumed.tabId
-  }
+  const tabId = p.live?.tabId ?? (await sessionDeps.resume(p.row))
   const subject: RoomSubject = {
     tabId,
     key: p.row.id,
@@ -5897,15 +5910,10 @@ async function showWhereItIs(threadId: string, s: RoomSubject): Promise<void> {
 }
 
 async function openRoomByRef(ref: string): Promise<AgentReply> {
-  const found = await findSessionRow(sessionDeps, ref)
-  if (!found.ok) return refused(`koloft discord thread open: ${found.error}`)
-  if (found.value.workspace === conductorFolder(app.getPath('userData')))
-    return refused(
-      'koloft discord thread open: a helper in your own folder gets no room; its questions already come to your channel.'
-    )
-  const threadId = await openRoomFor(found.value)
+  const room = await roomByRef(ref)
+  if (!room.ok) return refused(`koloft discord thread open: ${room.error}`)
   return answered(
-    `Opened the room of ${found.value.title}: ${roomLink(threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
+    `Opened the room of ${room.title}: ${roomLink(room.threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
   )
 }
 
@@ -5965,11 +5973,7 @@ function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
 }
 
 function commandIntoButler(text: string): string {
-  const channelId = butler?.channel()?.channelId
-  if (!discordRelay) throw new Error(STILL_STARTING)
-  if (!channelId) throw new Error(NO_CHANNEL_BOUND)
-  discordRelay.command(butlerDestination(), text, channelId)
-  return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
+  return commandInto(butlerDestination(), text)
 }
 
 function fromPalette({ words, backend, about, at }: PaletteRequest): string {
