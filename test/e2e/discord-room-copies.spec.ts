@@ -5,6 +5,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { terminalText, waitBooted, waitConductorStarted } from './helpers/p1'
 import {
+  OPEN_A_FORM,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost,
@@ -123,7 +124,7 @@ function fixtureFiles(dir: string): void {
 }
 
 test.describe('Discord rooms: what a session shows the owner at the Mac also reaches its room on the phone', () => {
-  test('in a local session’s room, koloft open sends an HTML file as a picture, Markdown as text with the file and a line for each diagram, any other file as itself, and koloft diff a picture of the changes, none of it in the butler’s channel', async ({
+  test('in a local session’s room, koloft open sends an HTML file as a picture, Markdown as text with the file and a line for each diagram, any other file as itself, and koloft diff a picture of the changes, none of it in the butler’s channel; its sudo password card goes to the room too, and the password typed there reaches sudo', async ({
     env
   }) => {
     seedButler(env)
@@ -158,6 +159,25 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
       )
       expect(isPng(diff!.files[0].data)).toBe(true)
       expect(fake.posted.some((p) => p.channelId === CHANNEL && p.files.length)).toBe(false)
+
+      fake.say(
+        OWNER,
+        `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:' && echo got-it`,
+        { channelId: room.id }
+      )
+      const sudoCard = (): FakePost | undefined =>
+        fake.posted.find((p) => /asks for your sudo password/.test(p.content))
+      await expect.poll(sudoCard, { timeout: STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      const card = sudoCard()!
+      expect(card.channelId).toBe(room.id)
+      fake.press(OWNER, card.buttons![0], room.id)
+      await expect
+        .poll(() => fake.callbacks.find((c) => c.type === OPEN_A_FORM)?.data.custom_id)
+        .toBe(card.buttons![0].id)
+      fake.submit(OWNER, card.buttons![0].id, 'hunter2-room', room.id)
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain('hunter2-room\ngot-it')
     } finally {
       await quitAndClose(app)
       await fake.close()
