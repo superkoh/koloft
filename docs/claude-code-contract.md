@@ -2666,6 +2666,35 @@ below was one run.
     Claude's plan"), the turn ended and the session stayed in plan mode.
   - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
     allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).
+- **The keys that answer an `AskUserQuestion` of several questions, or one that takes
+  several picks.** 2026-11-03, CC 2.1.317 (the native binary, not the shim), a python
+  pty rendered with `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`,
+  `--dangerously-skip-permissions`, no hook, a local fake Messages API
+  (`ANTHROPIC_BASE_URL`, an `apiKeyHelper` key) that answered every turn with one canned
+  `AskUserQuestion` `tool_use` and echoed the `tool_result` it got back; 15 runs.
+  - One question with `multiSelect: false` is unchanged: `2` sent "Green" at once, and
+    `3`, the text, CR sent the text — no review page.
+  - Any other shape draws tabs across the top (`☐ Colour  ☐ Fruit  ✔ Submit`) and ends
+    on a "Review your answers" page offering `1. Submit answers`, `2. Cancel`; `1` sends
+    every answer at once.
+  - On a one-pick question a digit picks and moves to the next tab (or to the review
+    page after the last), and `N+1`, the text, CR answers it in your own words and
+    moves on.
+  - A many-pick question lists `1. [ ] Apple` … `N. [ ] …`, then `N+1. [ ] Type
+    something`, then a `Next` row (`Submit` on the last question). A digit ticks or
+    unticks that option and the highlight stays on row 1; Enter ticks the highlighted
+    row and never moves on; Tab moves to the next tab (the review page after the last).
+    `N+1` only ticks the "Type something" box, so typed text is lost; Down `N` times
+    reaches its text field, the text goes there and ticks it, and Tab then CR (Tab
+    moves to `Next`) moves on. CR in that text field only unticks it. A many-pick
+    question reached from an earlier tab opens with the highlight on row 1 too, and
+    when it is the last one, Tab then CR on its `Submit` row opens the review page.
+  - The answer of a many-pick question is its ticked labels joined by ", " (`"Apple,
+    Cherry"`; every run ticked in option order); own words alone are sent as typed.
+  - With Koloft's 300 ms between keys, `3` `Purple stripes` CR `1` `3` Tab `1` sent
+    `Purple stripes` / `Apple, Cherry`; Down Down Down `Mango juice` Tab CR `2` `1` sent
+    `Mango juice` / `Green`; `2` Down Down Down `Mango juice` Tab CR `1` sent `Green` /
+    `Mango juice`; `2` `3` Tab `1` on one many-pick question sent `Banana, Cherry`.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
