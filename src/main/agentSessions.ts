@@ -810,20 +810,22 @@ async function findRow(d: SessionVerbDeps, verb: string, ref: string): Promise<P
 }
 
 export async function findSessionRow(d: SessionVerbDeps, ref: string): Promise<Parsed<PlacedRow>> {
-  const found = findAmong(await allRows(d), 'list', ref)
-  return found.ok ? found : fail(found.error.replace(/^koloft session list: /, ''))
+  return matchAmong(await allRows(d), ref)
 }
 
-function findAmong({ all, names }: NamedRows, verb: string, ref: string): Parsed<PlacedRow> {
+function findAmong(rows: NamedRows, verb: string, ref: string): Parsed<PlacedRow> {
+  const found = matchAmong(rows, ref)
+  return found.ok ? found : fail(`koloft session ${verb}: ${found.error}`)
+}
+
+function matchAmong({ all, names }: NamedRows, ref: string): Parsed<PlacedRow> {
   const hit = matchRow(all, ref, names)
-  if (hit && !hit.ok) return fail(`koloft session ${verb}: ${hit.error}`)
+  if (hit && !hit.ok) return hit
   if (hit) {
     const name = names[all.indexOf(hit.value)]
     return { ok: true, value: name ? { ...hit.value, title: name } : hit.value }
   }
-  return fail(
-    `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
-  )
+  return fail(`there is no session "${ref}". Run "koloft session list" to see them.`)
 }
 
 async function readSession(d: SessionVerbDeps, rest: string[]): Promise<AgentReply> {

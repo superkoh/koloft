@@ -10,6 +10,7 @@ import {
   privately,
   privatelyLater,
   type DiscordInteraction,
+  type SessionChoice,
   type SlashCommandSpec
 } from './link'
 
@@ -65,11 +66,6 @@ function commandTextOf(i: DiscordInteraction): string {
     return focus ? `/compact ${focus}` : '/compact'
   }
   return (i.options.command ?? '').trim()
-}
-
-export interface SessionChoice {
-  name: string
-  value: string
 }
 
 export interface InteractionDeps {

@@ -78,7 +78,12 @@ export function privatelyLater(): unknown {
   return { type: REPLY_LATER, data: { flags: ONLY_THE_SENDER_SEES_IT } }
 }
 
-export function choicesOf(choices: { name: string; value: string }[]): unknown {
+export interface SessionChoice {
+  name: string
+  value: string
+}
+
+export function choicesOf(choices: SessionChoice[]): unknown {
   return { type: AUTOCOMPLETE_CHOICES, data: { choices } }
 }
 

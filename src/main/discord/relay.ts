@@ -101,7 +101,7 @@ export interface CaughtUpChannel {
   channelId: string
   lastMessageId?: string
   seen(messageId: string): void
-  room?: boolean
+  handsOverTo?: Destination
 }
 
 export interface RelayDeps {
@@ -162,7 +162,7 @@ function slashTextOf(content: string): string | undefined {
 }
 
 export class DiscordRelay {
-  private queues = new Map<string, { items: Inbound[]; pumping: boolean }>()
+  private queues = new Map<string, Inbound[]>()
   private told = 0
   private seenLive = new Set<string>()
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
@@ -355,31 +355,25 @@ export class DiscordRelay {
   }
 
   private enqueue(dest: Destination, item: Inbound): void {
-    const queue = this.queues.get(dest.channelId) ?? { items: [], pumping: false }
-    this.queues.set(dest.channelId, queue)
-    queue.items.push(item)
-    void this.pump(dest, queue)
+    const waiting = this.queues.get(dest.channelId)
+    if (waiting) return void waiting.push(item)
+    const items = [item]
+    this.queues.set(dest.channelId, items)
+    void this.pump(dest, items)
   }
 
-  private async pump(
-    dest: Destination,
-    queue: { items: Inbound[]; pumping: boolean }
-  ): Promise<void> {
-    if (queue.pumping) return
-    queue.pumping = true
+  private async pump(dest: Destination, items: Inbound[]): Promise<void> {
     try {
-      while (queue.items.length) {
-        const item = queue.items[0]
+      while (items.length) {
+        const item = items[0]
         const failed = await this.deliver(dest, item)
           .then(() => undefined)
           .catch(errorText)
-        queue.items.shift()
+        items.shift()
         item.settle(failed)
       }
     } finally {
-      queue.pumping = false
-      if (this.queues.get(dest.channelId) === queue && !queue.items.length)
-        this.queues.delete(dest.channelId)
+      this.queues.delete(dest.channelId)
     }
   }
 
@@ -774,39 +768,37 @@ export class DiscordRelay {
 
   // PLATFORM§39
   private missed(c: CaughtUpChannel, m: DiscordMessage): boolean {
-    const dest = c.room ? this.d.destinationOf(c.channelId) : undefined
-    if (!dest) {
+    if (!c.handsOverTo) {
       this.say(c.channelId, OFFLINE_REPLY, m.id)
       return false
     }
     this.seenLive.add(m.id)
-    this.take(dest, m)
+    this.take(c.handsOverTo, m)
     return true
+  }
+
+  private async catchUpOn(c: CaughtUpChannel, owner: string | undefined): Promise<void> {
+    if (!c.lastMessageId) {
+      const [latest] = await this.d.link.messages(c.channelId, undefined, 1)
+      if (latest) c.seen(latest.id)
+      return
+    }
+    let after = c.lastMessageId
+    let handedOver = false
+    for (;;) {
+      const page = await this.d.link.messages(c.channelId, after, PAGE)
+      for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
+        if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
+          handedOver = this.missed(c, m) || handedOver
+        after = m.id
+      }
+      if (page.length < PAGE) break
+    }
+    if (!handedOver) c.seen(after)
   }
 
   async catchUp(): Promise<void> {
     const owner = this.d.owner()
-    for (const c of this.d.channels()) {
-      const channelId = c.channelId
-      try {
-        if (!c.lastMessageId) {
-          const [latest] = await this.d.link.messages(channelId, undefined, 1)
-          if (latest) c.seen(latest.id)
-          continue
-        }
-        let after = c.lastMessageId
-        let handedOver = false
-        for (;;) {
-          const page = await this.d.link.messages(channelId, after, PAGE)
-          for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
-            if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
-              handedOver = this.missed(c, m) || handedOver
-            after = m.id
-          }
-          if (page.length < PAGE) break
-        }
-        if (!handedOver) c.seen(after)
-      } catch {}
-    }
+    await Promise.allSettled(this.d.channels().map((c) => this.catchUpOn(c, owner)))
   }
 }
