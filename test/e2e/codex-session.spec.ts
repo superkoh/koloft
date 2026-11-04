@@ -779,8 +779,8 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  // CODEX§26
-  test("a Codex tab hands the owner's Playwright MCP entry its own browser endpoint, keeping the entry's env_vars; a client there drives that tab's Workbench, and after /new the old client is sent away so a new one drives the new thread", async ({
+  // ADR-0048 CODEX§26
+  test("a Codex tab hands the owner's Playwright MCP entry its own browser endpoint, keeping the entry's env_vars, and lets its tools run without asking; a client there drives that tab's Workbench, and after /new the old client is sent away so a new one drives the new thread", async ({
     env
   }) => {
     installCodex(env)
@@ -805,7 +805,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
       for (const server of tabServers)
         expect(server.argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
-          'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+          'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
+          'mcp_servers.playwright.default_tools_approval_mode="approve"'
         ])
       const url = tabServers.at(-1)!.playwrightMcpEndpoint
       expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
