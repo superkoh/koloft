@@ -90,7 +90,6 @@ export interface DiscordInteraction {
   userId: string
   command: string
   options: Record<string, string>
-  focused?: string
   customId?: string
   fields?: Record<string, string>
 }
@@ -111,7 +110,7 @@ interface RawInteraction {
   data?: {
     name?: string
     custom_id?: string
-    options?: { name: string; value?: unknown; focused?: boolean }[]
+    options?: { name: string; value?: unknown }[]
     components?: RawComponent[]
   }
 }
@@ -157,11 +156,7 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   const pressed = raw.type === COMPONENT_INTERACTION || submitted ? data?.custom_id : undefined
   if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
   const options: Record<string, string> = {}
-  let focused: string | undefined
-  for (const o of data.options ?? []) {
-    options[o.name] = String(o.value ?? '')
-    if (o.focused) focused = o.name
-  }
+  for (const o of data.options ?? []) options[o.name] = String(o.value ?? '')
   return {
     id: raw.id,
     token: raw.token,
@@ -170,7 +165,6 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
     userId,
     command: data.name ?? '',
     options,
-    ...(focused ? { focused } : {}),
     ...(pressed ? { customId: pressed } : {}),
     ...(submitted ? { fields: fieldsOf(data.components ?? []) } : {})
   }

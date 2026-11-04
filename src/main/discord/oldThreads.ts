@@ -36,7 +36,7 @@ export class OldThreads {
   }
 
   private isOld(channelId: string, author: string): Promise<boolean> {
-    if (author !== this.d.owner() || this.d.isRoom(channelId)) return Promise.resolve(false)
+    if (author !== this.d.owner()) return Promise.resolve(false)
     let known = this.botThreads.get(channelId)
     if (!known) {
       known = this.d.link.isBotThread(channelId).catch(() => {

@@ -23,7 +23,7 @@ import {
 } from './helpers/remote'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
-import { CLOSED_IN_ROOM } from '../../src/main/discord/rooms'
+import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/main/discord/rooms'
 
 test.setTimeout(180_000)
 
@@ -127,13 +127,13 @@ async function talkedToInItsRoom(
 
 async function withTheButler(
   env: E2EEnv,
-  body: (page: Page, fake: FakeDiscord) => Promise<void>
+  body: (page: Page, fake: FakeDiscord, app: ElectronApplication) => Promise<void>
 ): Promise<void> {
   seedButler(env)
   const fake = await startFakeDiscord(env)
   const { app, page } = await connected(env, fake)
   try {
-    await body(page, fake)
+    await body(page, fake, app)
   } finally {
     await quitAndClose(app)
     await fake.close()
@@ -198,24 +198,25 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
       install(env)
       await withTheButlerAndARemoteWorkspace(env, (page, fake) =>
         talkedToInItsRoom(page, fake, backend, REMOTE_WS_NAME, async (session, messageId) => {
-          if (backend !== 'claude') return
-          const ids = path.join(
-            machineHome(env),
-            '.koloft',
-            'hook-sessions',
-            `${session.tabId}.discord-ids`
-          )
-          expect(fs.readFileSync(ids, 'utf8')).toContain(`koloft-discord-${messageId}`)
+          const marks = path.join(machineHome(env), '.koloft', 'hook-sessions', session.tabId)
+          if (backend === 'claude')
+            expect(fs.readFileSync(`${marks}.discord-ids`, 'utf8')).toContain(
+              `koloft-discord-${messageId}`
+            )
+          if (backend === 'muse')
+            expect(fs.readFileSync(`${marks}.discord-said`, 'utf8')).toContain(
+              '[Discord] how is the room'
+            )
         })
       )
     })
 
-  test('the owner picks a session started at the Mac with /session, which lists it as they type and answers privately with its room’s link; the room is the same one each time, closing the session posts that it closed before the room is archived, and writing in the room of the closed session resumes it and hands it the words', async ({
+  test('the owner picks a session started at the Mac with /session, which lists it as they type and answers privately with its room’s link; the room is the same one each time, and stays carried through a restart and a /clear typed in the room; closing the session posts that it closed before the room is archived, and writing in the room of the closed session resumes it and hands it the words', async ({
     env
   }) => {
-    await withTheButler(env, async (page, fake) => {
+    await withTheButler(env, async (page, fake, app) => {
       await startSessionIn(page, 'ws-a')
-      const session = await sessionOf(page, 'claude')
+      const first = await sessionOf(page, 'claude')
       const typing = fake.interact(
         OWNER,
         'session',
@@ -227,7 +228,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         choices: { name: string; value: string }[]
       }
       expect(offered.choices).toHaveLength(1)
-      expect(offered.choices[0].name).toContain(session.title)
+      expect(offered.choices[0].name).toContain(first.title)
       const picked = fake.interact(OWNER, 'session', { session: offered.choices[0].value })
       await expect.poll(() => fake.callbacks.find((c) => c.interactionId === picked)?.type).toBe(5)
       const room = await theRoom(fake)
@@ -238,7 +239,34 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
       await expect.poll(() => fake.laterReplies).toHaveLength(2)
       expect(fake.threads).toHaveLength(1)
 
-      fake.say(OWNER, '/koloft session stop ' + session.sessionId)
+      await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+      )
+      await expect
+        .poll(async () => (await sessionOf(page, 'claude')).tabId, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .not.toBe(first.tabId)
+      const session = await sessionOf(page, 'claude')
+      expect(session.sessionId).toBe(first.sessionId)
+      fake.say(OWNER, 'after the restart', { channelId: room.id })
+      await expect
+        .poll(() => inRoom(fake, room.id).some((p) => p.includes('after the restart')), {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      expect(inRoom(fake, room.id)).not.toContain(CLOSED_IN_ROOM)
+
+      fake.say(OWNER, '/clear', { channelId: room.id })
+      await expect
+        .poll(() => inRoom(fake, room.id), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(STARTED_OVER_IN_ROOM)
+      await expect
+        .poll(async () => (await sessionOf(page, 'claude')).sessionId)
+        .not.toBe(session.sessionId)
+      const cleared = await sessionOf(page, 'claude')
+
+      fake.say(OWNER, '/koloft session stop ' + cleared.sessionId)
       await expect
         .poll(() => inRoom(fake, room.id), { timeout: STARTS_AND_ANSWERS_MS })
         .toContain(CLOSED_IN_ROOM)

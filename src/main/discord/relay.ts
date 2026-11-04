@@ -28,7 +28,6 @@ import {
   crossSessionLine,
   type ModeClass
 } from '../crossSessionMessage'
-import { noteDiscordSaid } from '../hooks'
 import {
   answerKeys,
   ANSWER_KEYS,
@@ -118,6 +117,7 @@ export interface RelayDeps {
   askChannelOf(tabId: string): string | undefined
   lobbyLink(): string | undefined
   noteDiscordId(tabId: string, id: string): Promise<void>
+  noteDiscordSaid(tabId: string, text: string): Promise<void>
   helperTitle(tabId: string): string | undefined
   inRoom(tabId: string): boolean
   withButtons(tabId: string, view: DialogView, card: Card): Card
@@ -413,7 +413,7 @@ export class DiscordRelay {
     if (route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
     // ADR-0028 AGY§16
     if (backend !== 'agy' && text.startsWith(DISCORD_PREFIX))
-      noteDiscordSaid(this.d.regDir, tab, text)
+      await this.d.noteDiscordSaid(tab, text)
     if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
@@ -768,11 +768,15 @@ export class DiscordRelay {
   }
 
   // PLATFORM§39
-  private missed(c: CaughtUpChannel, m: DiscordMessage): void {
+  private missed(c: CaughtUpChannel, m: DiscordMessage): boolean {
     const dest = c.room ? this.d.destinationOf(c.channelId) : undefined
-    if (!dest) return this.say(c.channelId, OFFLINE_REPLY, m.id)
+    if (!dest) {
+      this.say(c.channelId, OFFLINE_REPLY, m.id)
+      return false
+    }
     this.seenLive.add(m.id)
     this.take(dest, m)
+    return true
   }
 
   async catchUp(): Promise<void> {
@@ -786,15 +790,17 @@ export class DiscordRelay {
           continue
         }
         let after = c.lastMessageId
+        let handedOver = false
         for (;;) {
           const page = await this.d.link.messages(channelId, after, PAGE)
           for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
-            if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id)) this.missed(c, m)
+            if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
+              handedOver = this.missed(c, m) || handedOver
             after = m.id
           }
           if (page.length < PAGE) break
         }
-        c.seen(after)
+        if (!handedOver) c.seen(after)
       } catch {}
     }
   }

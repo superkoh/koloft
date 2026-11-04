@@ -30,7 +30,8 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
   discordSaidFile,
-  NOT_FROM_THE_RELAY
+  NOT_FROM_THE_RELAY,
+  noteDiscordSaid
 } from '../../src/main/hooks'
 import { writeMuseHooks } from '../../src/main/museHooks'
 
@@ -101,6 +102,7 @@ function setup(
     lobbyLink: () => `<#${CHANNEL}>`,
     noteDiscordId: async (tab, id) =>
       fs.appendFileSync(path.join(dir, `${tab}.discord-ids`), `${id}\n`),
+    noteDiscordSaid: async (tab, text) => noteDiscordSaid(dir, tab, text),
     inRoom: () => false,
     helperTitle: () => undefined,
     withButtons: (_t, view, card) => ({
