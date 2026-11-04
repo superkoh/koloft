@@ -38,6 +38,7 @@ import {
   waitPanelAttached
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
+import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
@@ -70,7 +71,8 @@ import {
   worktreeDialog,
   wsGroup,
   wsMenuTexts,
-  wsRows
+  wsRows,
+  type ClaudeCall
 } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
@@ -1117,6 +1119,70 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         })
         .toMatch(/<cross-session-message from-mode=\\"\w+\\">\\n.*keep going/)
     })
+  })
+
+  test('E-SSH-45: with a folder for new projects remembered on the machine, ⌘P “a new …” there makes the project folder on the machine, adds it as a workspace and starts the agent in it with the words typed, without asking for the folder — Claude Code on ⏎; the same ask again on ⌘⏎ makes <name>-2 and starts Codex there', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true, newProjectFolders: { 'kt-key': '/home/kuser/projects' } })
+    installCodexSignedInForTheLab(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-claude-assist-reply'),
+      JSON.stringify({ workspace: null, machine: 'kt-key', newFolder: 'crawler', title: 'Crawler' })
+    )
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        runOnTarget(lab, 'kuser', 'mkdir projects')
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const claudeCallsOnTheMachine = (): ClaudeCall[] =>
+          runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as ClaudeCall)
+        const palette = page.locator('.modal.palette')
+        const askForANewCrawler = async (words: string, key: string): Promise<void> => {
+          await sendShortcut(app, 'shortcut:command-palette')
+          const askBox = palette.getByRole('textbox', { name: 'Ask or jump' })
+          await expect(askBox).toBeFocused()
+          await askBox.fill(words)
+          await expect(palette.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
+          await page.keyboard.press(key)
+        }
+
+        await askForANewCrawler('on kt-key, a new price crawler', 'Enter')
+        await expect.poll(() => claudeCallsOnTheMachine().length, { timeout: 90_000 }).toBe(1)
+        expect(
+          fs.readFileSync(path.join(env.home, 'fake-claude-assist-asked.txt'), 'utf8')
+        ).toContain('on kt-key, a new price crawler')
+        const [claude] = claudeCallsOnTheMachine()
+        expect(claude.cwd).toBe('/home/kuser/projects/crawler')
+        expect(claude.firstPrompt).toBe('on kt-key, a new price crawler')
+        expect(claude.argv[claude.argv.indexOf('--name') + 1]).toBe('Crawler')
+        await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })
+
+        await askForANewCrawler('another price crawler on kt-key', 'Meta+Enter')
+        await expect.poll(() => codexCalls(env).length, { timeout: 120_000 }).toBe(1)
+        const [codex] = codexCalls(env)
+        expect(codex.effectiveCwd).toBe('/home/kuser/projects/crawler-2')
+        expect(codex.argv.at(-1)).toBe('another price crawler on kt-key')
+        expect(
+          runOnTarget(
+            lab,
+            'kuser',
+            `find . -path '*/sessions/${codex.sessionId}.json' -exec cat {} +`
+          )
+        ).toContain('"cwd":"/home/kuser/projects/crawler-2"')
+        await expect(wsRows(page, 'crawler-2')).toHaveCount(1, { timeout: 60_000 })
+        expect(runOnTarget(lab, 'kuser', 'ls projects').split('\n').filter(Boolean)).toEqual([
+          'crawler',
+          'crawler-2'
+        ])
+        expect(claudeCallsOnTheMachine()).toHaveLength(1)
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
   })
 
   test('E-SSH-29: koloft session new --workspace on a machine that has gone down is refused with ssh’s reason for every agent, Claude too, instead of reported as started; New Claude session there says the same reason and opens no tab', async ({

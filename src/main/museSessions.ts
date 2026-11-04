@@ -124,6 +124,7 @@ export interface MuseMachine {
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
 
@@ -441,8 +442,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private async heldOnMachine(host: string, sessionId: string): Promise<boolean> {
     const remote = this.deps.remote
-    if (!remote?.gone(host, sessionId)) return false
-    return (await remote.machine(host).runScript(MUSE_HELD_SH, [sessionId])) !== null
+    if (!remote) return false
+    const machine = remote.machine(host)
+    if (!remote.gone(host, sessionId) && !(await machine.endedByKoloft(sessionId))) return false
+    return (await machine.runScript(MUSE_HELD_SH, [sessionId])) !== null
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
