@@ -152,6 +152,7 @@ export interface AgyMachine {
   agyConversations(): Promise<SummaryRow[]>
   agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
 
@@ -727,7 +728,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
-    if (resumeId && remote.gone(where.host, resumeId) && (await machine.agyHeldElsewhere(resumeId)))
+    if (
+      resumeId &&
+      (remote.gone(where.host, resumeId) || (await machine.endedByKoloft(resumeId))) &&
+      (await machine.agyHeldElsewhere(resumeId))
+    )
       throw new Error(HELD_ELSEWHERE)
     const [apiKey, config] = await Promise.all([
       this.deps.apiKeyOf(pick.account),
