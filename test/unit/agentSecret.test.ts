@@ -61,7 +61,7 @@ function setup(over: Partial<SecretVerbDeps> = {}, answer: SecretAnswer = typed(
     ownerAsleep: () => false,
     machine: () => undefined,
     pages: () => [],
-    showPage: (_tab, url) => void shown.push(url),
+    showSignIn: (_tab, url) => void shown.push(url),
     open: async (_tab, url) => {
       opened.push(url)
       return '200'
@@ -125,12 +125,12 @@ describe('koloft secret page', () => {
     expect((await verb(['page', '#otp'], caller())).text).toBe(FILLED_AND_EMPTIED)
   })
 
-  it('at the Mac, Koloft brings the page forward, asks about that page, and when the owner filled it in there, fills nothing itself but still empties a field the page kept', async () => {
+  it('at the Mac, Koloft puts the caret in the field, asks about that page by its guest, and when the owner filled it in there, fills nothing itself but still empties a field the page kept', async () => {
     const scripts: string[] = []
     const p = page('https://a.example/login', { count: 1, label: 'Password' }, scripts)
-    const { verb, asked, shown } = setup({ pages: () => [p] }, DONE_IN_KOLOFT)
+    const { verb, asked } = setup({ pages: () => [p] }, DONE_IN_KOLOFT)
     expect((await verb(['page', '#pw'], caller())).text).toBe(OWNER_FILLED)
-    expect(shown).toEqual(['https://a.example/login'])
+    expect(scripts.some((s) => s.includes('.focus()'))).toBe(true)
     expect(asked[0].shape).toEqual({
       kind: 'page',
       guestId: 7,
@@ -143,19 +143,21 @@ describe('koloft secret page', () => {
     expect((await again.verb(['page', '#otp'], caller())).text).toBe(OWNER_FILLED_AND_EMPTIED)
   })
 
-  it('asks nothing unless exactly one field in all open pages matches', async () => {
+  it('asks nothing, and touches no field, unless exactly one field in all open pages matches', async () => {
+    const scripts: string[] = []
     for (const pages of [
       [],
-      [page('https://a.example', { count: 2 })],
+      [page('https://a.example', { count: 2 }, scripts)],
       [
-        page('https://a.example', { count: 1, label: 'x' }),
-        page('https://b.example', { count: 1, label: 'y' })
+        page('https://a.example', { count: 1, label: 'x' }, scripts),
+        page('https://b.example', { count: 1, label: 'y' }, scripts)
       ]
     ]) {
       const { verb, asked } = setup({ pages: () => pages })
       expect((await verb(['page', 'input'], caller())).text).toBe(NO_SUCH_FIELD)
       expect(asked).toEqual([])
     }
+    expect(scripts.some((s) => s.includes('.focus()'))).toBe(false)
   })
 
   it('fills nothing when the page went to another site while the owner answered', async () => {

@@ -25,7 +25,7 @@ function setup(over: Partial<SecretAskDeps> = {}) {
   const edits: Card[] = []
   const responses: unknown[] = []
   const shown: SecretAskView[][] = []
-  const waiting: [string, boolean][] = []
+  const onlyInKoloft: string[] = []
   const ended: string[] = []
   const asks = new SecretAsks({
     owner: () => OWNER,
@@ -37,7 +37,7 @@ function setup(over: Partial<SecretAskDeps> = {}) {
     edit: async (_placed, card) => void edits.push(card),
     respond: async (_i, body) => void responses.push(body),
     show: (views) => void shown.push(views),
-    waiting: (tabId, alsoOnDiscord) => void waiting.push([tabId, alsoOnDiscord]),
+    askedOnlyInKoloft: (tabId) => void onlyInKoloft.push(tabId),
     ended: (tabId) => void ended.push(tabId),
     ...over
   })
@@ -61,11 +61,12 @@ function setup(over: Partial<SecretAskDeps> = {}) {
       tick()
     })
   const lastShown = (): SecretAskView[] => shown.at(-1) ?? []
-  return { asks, cards, edits, responses, shown, waiting, ended, interaction, posted, lastShown }
+  return { asks, cards, edits, responses, onlyInKoloft, ended, interaction, posted, lastShown }
 }
 
 const ask: SecretAsk = {
   tabId: 'tab-1',
+  from: 'tab-1',
   shape: { kind: 'sudo', command: 'sudo x', prompt: 'Password:' },
   header: (n: string) => `🔑 **${n}** asks`,
   body: 'Command: `sudo x`',
@@ -122,10 +123,10 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
   })
 
   it('while the owner is at the Mac and the turn did not come from Discord, the ask shows only in Koloft, with no card, and what is typed there reaches the asker', async () => {
-    const { asks, cards, waiting, ended, lastShown } = setup({ cardWanted: () => false })
+    const { asks, cards, onlyInKoloft, ended, lastShown } = setup({ cardWanted: () => false })
     const answer = asks.ask(ask, LONG)
     expect(lastShown()).toMatchObject([{ tabId: 'tab-1', kind: 'sudo', command: 'sudo x' }])
-    expect(waiting).toEqual([['tab-1', false]])
+    expect(onlyInKoloft).toEqual(['tab-1'])
     asks.answer(lastShown()[0].id, '')
     asks.answer(lastShown()[0].id, SECRET)
     expect(await answer).toEqual({ typed: SECRET })
@@ -181,24 +182,37 @@ describe('asking the owner for a secret, in Koloft and in Discord', () => {
     expect(edits[0].footer).toContain(TURNED_DOWN_IN_KOLOFT)
   })
 
-  it('a page ask ends once its own page loads another address; a sign-in ask ends once a page of its session lands on an http loopback address, and on nothing else', async () => {
+  it('a page ask ends once its own page loads another address; a sign-in ask ends only once the page that opened the sign-in lands on an http loopback address', async () => {
     const { asks } = setup({ cardWanted: () => false })
     const page = asks.ask(
       { ...ask, shape: { kind: 'page', guestId: 7, url: 'https://a.example/login', label: 'P' } },
       LONG
     )
-    const signIn = asks.ask({ ...ask, tabId: 'tab-2', shape: { kind: 'url', signIn: 'x' } }, LONG)
+    const signInUrl = 'https://auth.example/authorize?x=1'
+    const signIn = asks.ask({ ...ask, shape: { kind: 'url', signIn: signInUrl } }, LONG)
     let signedIn = false
     void signIn.then(() => (signedIn = true))
-    asks.navigated(8, 'tab-1', 'https://a.example/home')
-    asks.navigated(9, 'tab-2', 'https://auth.example/consent')
-    asks.navigated(9, 'tab-1', 'http://localhost:1455/auth/callback?code=c')
+    asks.navigated(8, 'https://a.example/home')
+    asks.navigated(9, 'http://localhost:3000/')
+    asks.navigationStarted(9, signInUrl)
+    asks.navigated(9, 'https://auth.example/consent')
+    asks.navigated(10, 'http://localhost:1455/auth/callback?code=c')
     await settle()
     expect(signedIn).toBe(false)
-    asks.navigated(7, 'tab-1', 'https://a.example/home')
+    asks.navigated(7, 'https://a.example/home')
     expect(await page).toEqual({ doneInKoloft: true })
-    asks.navigated(9, 'tab-2', 'http://127.0.0.1:1455/auth/callback?code=c')
+    asks.navigated(9, 'http://127.0.0.1:1455/auth/callback?code=c')
     expect(await signIn).toEqual({ doneInKoloft: true })
+  })
+
+  it('an ask from a Workbench shell ends when that shell closes, and one whose tab moves follows it to the new tab', async () => {
+    const { asks, lastShown } = setup({ cardWanted: () => false })
+    const fromShell = asks.ask({ ...ask, from: 'shell-1' }, LONG)
+    asks.forget('shell-1')
+    expect(await fromShell).toEqual({ ended: 'timeout' })
+    void asks.ask(ask, LONG)
+    asks.rehome('tab-1', 'tab-9')
+    expect(lastShown()).toMatchObject([{ tabId: 'tab-9' }])
   })
 
   it('past its wait, or once the session closes, the ask ends with nothing, and a later press says so', async () => {

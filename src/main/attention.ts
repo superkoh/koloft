@@ -63,7 +63,7 @@ export class AttentionTracker {
     this.raise(tabId, 'exited', subject)
   }
 
-  asksForASecret(tabId: string, subject: AttentionSubject = {}): void {
+  asksForASecret(tabId: string, subject: AttentionSubject): void {
     this.raise(tabId, 'approval', subject)
   }
 

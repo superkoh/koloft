@@ -26,7 +26,7 @@ import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
 import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
-import { firstSecretAsk, SecretPageBar } from './SecretAsk'
+import { SecretPageBar, webAskOf } from './SecretAsk'
 import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
@@ -631,14 +631,24 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     id ? els.current.get(id) : undefined
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
-  const secretAsk = useStore((s) => firstSecretAsk(s.secretAsks, ownerTab))
+  const secretAsk = useStore((s) => webAskOf(s.secretAsks, ownerTab))
   const secretBarAsk =
     secretAsk &&
     activeWebId &&
-    (secretAsk.kind === 'url' ||
-      (secretAsk.kind === 'page' && guestIdOf(activeWebId) === secretAsk.guestId))
+    (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
       ? secretAsk
       : undefined
+  const askedGuest = secretAsk?.kind === 'page' ? secretAsk.guestId : undefined
+  useEffect(() => {
+    if (askedGuest === undefined || !ownerTab) return
+    const hit = (statesRef.current[ownerTab] ?? NO_TABS).tabs.find(
+      (t) => t.kind === 'web' && guestIdOf(t.id) === askedGuest
+    )
+    if (!hit) return
+    const st = useStore.getState()
+    if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
+    activate(hit.id)
+  }, [askedGuest, ownerTab])
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined

@@ -480,7 +480,14 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
+import {
+  AgentRequests,
+  BUILTIN_VERBS,
+  errorText,
+  refused,
+  tabSpokenFor,
+  type AgentVerb
+} from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -1945,7 +1952,7 @@ const agentRequests = new AgentRequests({
       bindNewChannel: bindWithNewChannel
     }),
     [SECRET_VERB]: secretVerb({
-      sessionTab: (tabId) => ptyMgr.get(tabId)?.ownerTabId ?? tabId,
+      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
       ask: (a) =>
         secretAsks
           ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
@@ -1953,10 +1960,7 @@ const agentRequests = new AgentRequests({
       ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
-      showPage: (tabId, url) => {
-        const payload: BrowserOpenRequest = { tabId, url, source: 'user' }
-        sendToRenderer(CH.browser.open, payload)
-      },
+      showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
       open: openSignInEndOn,
       sleep
     }),
@@ -3718,9 +3722,7 @@ app.whenReady().then(() => {
     owner: () => butlerNow.owner(),
     cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
     show: (asks) => sendToRenderer(CH.secret.asks, asks),
-    waiting: (tabId, alsoOnDiscord) => {
-      if (!alsoOnDiscord) attention.asksForASecret(tabId, attentionSubjectOf(tabId))
-    },
+    askedOnlyInKoloft: (tabId) => attention.asksForASecret(tabId, attentionSubjectOf(tabId)),
     ended: (tabId) => {
       if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
     },
@@ -4327,9 +4329,10 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
 
 function setupSecretLanding(): void {
   onEveryWebPage((contents) => {
-    contents.on('did-navigate', (_e, url) =>
-      secretAsks?.navigated(contents.id, guestOwners.get(contents), url)
-    )
+    contents.on('did-start-navigation', (details) => {
+      if (details.isMainFrame) secretAsks?.navigationStarted(contents.id, details.url)
+    })
+    contents.on('did-navigate', (_e, url) => secretAsks?.navigated(contents.id, url))
   })
 }
 
@@ -6020,6 +6023,7 @@ function registerIpc(): void {
     cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+    secretAsks?.rehome(oldTabId, newTabId)
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())

@@ -66,30 +66,6 @@ function type(page: Page, tab: string, line: string): Promise<void> {
 const SUDO_BOX = '.term-wrap .secret-modal'
 const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
 
-function workbenchShellText(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    type Term = {
-      element?: HTMLElement
-      buffer: {
-        active: {
-          length: number
-          getLine(i: number): { translateToString(trim: boolean): string } | undefined
-        }
-      }
-    }
-    const terms = (window as unknown as { __koloftTerms?: Record<string, Term> }).__koloftTerms
-    return Object.values(terms ?? {})
-      .filter((t) => t.element?.closest('.wb-panel'))
-      .map((t) => {
-        const lines: string[] = []
-        for (let i = 0; i < t.buffer.active.length; i++)
-          lines.push(t.buffer.active.getLine(i)?.translateToString(true) ?? '')
-        return lines.join('')
-      })
-      .join('\n')
-  })
-}
-
 function askSudo(page: Page, tab: string): Promise<void> {
   return type(
     page,
@@ -322,6 +298,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
             await other.bound?.(page)
           } else await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
           await openSessionTerminal(app, page)
+          const shell = (await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty'))!
           await runIn(
             page,
             panelTerm(page),
@@ -341,7 +318,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
           ).toHaveLength(1)
           const bare = (s: string): string => s.replace(/\s+/g, '')
           await expect
-            .poll(async () => bare(await workbenchShellText(page)), { timeout: 30_000 })
+            .poll(async () => bare(await terminalText(page, shell)), { timeout: 30_000 })
             .toContain(bare(`Koloft opened the address on ${REMOTE_HOST}; it answered 200.`))
         } finally {
           await quitAndClose(app)

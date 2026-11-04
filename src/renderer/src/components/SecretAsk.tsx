@@ -4,12 +4,17 @@ import { IconClose, IconLock, IconSignIn } from '../icons'
 import { isComposing } from '../keys'
 
 export type SudoAsk = Extract<SecretAskView, { kind: 'sudo' }>
+export type WebAsk = Exclude<SecretAskView, { kind: 'sudo' }>
 
-export function firstSecretAsk(
+export function sudoAskOf(asks: readonly SecretAskView[], tabId: string): SudoAsk | undefined {
+  return asks.find((a): a is SudoAsk => a.tabId === tabId && a.kind === 'sudo')
+}
+
+export function webAskOf(
   asks: readonly SecretAskView[],
   tabId: string | null | undefined
-): SecretAskView | undefined {
-  return tabId ? asks.find((a) => a.tabId === tabId) : undefined
+): WebAsk | undefined {
+  return asks.find((a): a is WebAsk => a.tabId === tabId && a.kind !== 'sudo')
 }
 
 export function SudoDialog({ ask, shown }: { ask: SudoAsk; shown: boolean }): JSX.Element {
@@ -74,8 +79,7 @@ export function SudoDialog({ ask, shown }: { ask: SudoAsk; shown: boolean }): JS
   )
 }
 
-export function SecretPageBar({ ask }: { ask: SecretAskView }): JSX.Element | null {
-  if (ask.kind === 'sudo') return null
+export function SecretPageBar({ ask }: { ask: WebAsk }): JSX.Element {
   return (
     <div className="bperm" role="alertdialog" aria-label="Secret ask">
       <span className="bperm-ico">

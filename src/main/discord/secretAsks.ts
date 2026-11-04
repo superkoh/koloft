@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { LOOPBACK_HOSTS, urlOrNull } from '@shared/browserRoute'
+import { loopbackHttp, urlOrNull } from '@shared/browserRoute'
 import type { SecretAskShape, SecretAskView } from '@shared/types'
 import { accentOf, type Card, type CardButton } from './cards'
 import { privately, type DiscordInteraction } from './link'
@@ -25,6 +25,7 @@ export const TURNED_DOWN_IN_KOLOFT = '⏹ Turned down in Koloft.'
 
 export interface SecretAsk {
   tabId: string
+  from: string
   shape: SecretAskShape
   header(name: string): string
   body: string
@@ -47,7 +48,7 @@ export interface SecretAskDeps {
   edit(placed: PlacedCard, card: Card): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
   show(asks: SecretAskView[]): void
-  waiting(tabId: string, alsoOnDiscord: boolean): void
+  askedOnlyInKoloft(tabId: string): void
   ended(tabId: string): void
 }
 
@@ -55,12 +56,12 @@ interface Pending {
   ask: SecretAsk
   placed?: PlacedCard
   footer?: string
+  signInGuest?: number
   settle(answer: SecretAnswer): void
 }
 
-export function loopbackHttp(text: string): string | undefined {
-  const url = urlOrNull(text.trim())
-  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
+function sameUrl(a: string, b: string): boolean {
+  return (urlOrNull(a)?.href ?? a) === (urlOrNull(b)?.href ?? b)
 }
 
 export class SecretAsks {
@@ -79,9 +80,8 @@ export class SecretAsks {
       () => this.end(id, { ended: 'timeout' }, '⌛ Koloft stopped waiting.'),
       waitMs
     )
-    const onDiscord = this.d.cardWanted(ask.tabId)
-    this.d.waiting(ask.tabId, onDiscord)
-    if (onDiscord) void this.placeCard(id, pending)
+    if (this.d.cardWanted(ask.tabId)) void this.placeCard(id, pending)
+    else this.d.askedOnlyInKoloft(ask.tabId)
     const value = await answer
     clearTimeout(timer)
     return value
@@ -96,6 +96,7 @@ export class SecretAsks {
   }
 
   done(id: string): void {
+    if (this.pending.get(id)?.ask.shape.kind === 'sudo') return
     this.end(id, { doneInKoloft: true }, ANSWERED_IN_KOLOFT)
   }
 
@@ -103,14 +104,35 @@ export class SecretAsks {
     this.end(id, { ended: 'declined' }, TURNED_DOWN_IN_KOLOFT)
   }
 
-  navigated(guestId: number, tabId: string | undefined, url: string): void {
+  navigationStarted(guestId: number, url: string): void {
+    for (const p of this.pending.values()) {
+      const s = p.ask.shape
+      if (s.kind === 'url' && p.signInGuest === undefined && sameUrl(url, s.signIn))
+        p.signInGuest = guestId
+    }
+  }
+
+  navigated(guestId: number, url: string): void {
     for (const [id, p] of this.pending) {
       const s = p.ask.shape
       const landed =
         (s.kind === 'page' && s.guestId === guestId) ||
-        (s.kind === 'url' && p.ask.tabId === tabId && !!loopbackHttp(url))
+        (s.kind === 'url' &&
+          p.signInGuest === guestId &&
+          !!loopbackHttp(url) &&
+          !sameUrl(url, s.signIn))
       if (landed) this.done(id)
     }
+  }
+
+  rehome(fromTabId: string, toTabId: string): void {
+    let moved = false
+    for (const p of this.pending.values())
+      if (p.ask.tabId === fromTabId) {
+        p.ask = { ...p.ask, tabId: toTabId }
+        moved = true
+      }
+    if (moved) this.d.show(this.views())
   }
 
   private async placeCard(id: string, pending: Pending): Promise<void> {
@@ -178,7 +200,8 @@ export class SecretAsks {
 
   forget(tabId: string): void {
     for (const [id, p] of this.pending)
-      if (p.ask.tabId === tabId) this.end(id, { ended: 'timeout' }, '⏹ The session closed.')
+      if (p.ask.tabId === tabId || p.ask.from === tabId)
+        this.end(id, { ended: 'timeout' }, '⏹ The session closed.')
   }
 
   private end(id: string, answer: SecretAnswer, footer: string): void {

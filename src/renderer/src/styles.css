@@ -1114,19 +1114,12 @@ body {
 .modal.secret-modal {
   width: 480px;
 }
+.worktreesess .modal-body,
 .secret-modal .modal-body {
   gap: 12px;
 }
+.worktreesess .btn-primary .k,
 .secret-modal .btn-primary .k {
-  margin-left: 8px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  opacity: 0.65;
-}
-.worktreesess .modal-body {
-  gap: 12px;
-}
-.worktreesess .btn-primary .k {
   font-family: var(--mono);
   font-size: 10.5px;
   opacity: 0.65;
