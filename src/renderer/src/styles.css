@@ -1114,6 +1114,9 @@ body {
 .modal.secret-modal {
   width: 480px;
 }
+.secret-modal .field-hint {
+  overflow-wrap: anywhere;
+}
 .worktreesess .modal-body,
 .secret-modal .modal-body {
   gap: 12px;
