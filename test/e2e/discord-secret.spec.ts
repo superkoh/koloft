@@ -102,11 +102,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await expect.poll(() => fake.identifies).toBe(1)
       await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
       const tab = await sessionTab(page, env)
-      await type(
-        page,
-        tab,
-        `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:' && echo got-it`
-      )
+      await type(page, tab, `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:'`)
       const card = await secretCard(fake, /^🔑 \*\*.+ · ws-a\*\* asks for your sudo password/)
       expect(card.content).toContain('sudo asked: Password:')
       const typed = 'hunter2-sudo "x" \\'

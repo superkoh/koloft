@@ -24,6 +24,7 @@ import {
   centerTerm,
   discordOnDisk,
   closeMenu,
+  FAKE_CODEX_SESSION_TITLE,
   menuItemTexts,
   newSessionInWith,
   notesIsland,
@@ -610,7 +611,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     const { app, page, close } = await launched(env)
     try {
       await newSessionInWith(page, 'ws-b', 'Codex')
-      await waitStartupTurnOver(page, 'ws-b', 'Codex fixture session')
+      await waitStartupTurnOver(page, 'ws-b', FAKE_CODEX_SESSION_TITLE)
       const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)

@@ -486,6 +486,7 @@ export function seedGlobalTerm(
 }
 
 export const FAKE_SESSION_TITLE = 'Fake session: project notes'
+export const FAKE_CODEX_SESSION_TITLE = 'Codex fixture session'
 
 export function setNextSessionTitle(env: E2EEnv, title: string): void {
   fs.writeFileSync(path.join(env.home, 'fake-claude-next-title'), title)
