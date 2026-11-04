@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -28,6 +28,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch
 } from './SessionLaunchButtons'
 import '../workspacePicker.css'
@@ -79,12 +80,7 @@ export function WorkspacePicker({
   const [listOpen, setListOpen] = useState(false)
   const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
+  useLaunchLock(launchLock, locked)
   const failedHere = phase === 'failed' && !!target && failedFor === target.workspace.path
   const morph =
     mode === 'main' &&
@@ -139,7 +135,8 @@ export function WorkspacePicker({
     if (!locked) onClose()
   }
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
         const layer = escPeel({ locked, confirmOpen: confirm !== null })
@@ -183,7 +180,8 @@ export function WorkspacePicker({
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     boxRef.current?.focus()
   }, [locked, confirm])

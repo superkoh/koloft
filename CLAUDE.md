@@ -261,8 +261,8 @@ Working principles:
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - Grep/read only printed paths; else grep -rl 'word' src.
-  - macOS strings -o is offsets: use > file.
-  - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
+  - No gh api -o; strings -o is offsets: use > file.
+  - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
   - {0,N} spans: grep (ugrep) fails; /usr/bin/grep -o -E fails above 255 too.
   - Findings go in your final message; the harness refuses report files.
   ```

@@ -1210,6 +1210,30 @@ inferred, not checked.
   LAST one in its key map and never deletes the first; once the list changes shape
   ahead of it, the first one's nodes stay in the document for good (seen live: one
   session's rows stacked twice).
+- **After a render that did not start from a user event (a promise resolving, a
+  timer), React 19 commits the DOM, yields to the host, and runs that render's
+  `useEffect`s in a later task.** In that gap the screen already shows the new state,
+  while a `window` listener an effect keeps up to date still holds the old one, so a
+  key pressed then is judged by the old state, and a `focus()` an effect makes has not
+  happened yet. `useLayoutEffect` runs inside the commit and has no gap. A render from
+  a click or key runs its effects at the end of the commit, with no gap either.
+  Measured 2026-11-03, react-dom 19.3.1 in headless Chrome 156 (a page bundled with
+  esbuild, driven by Playwright): a `keydown` dispatched from the MutationObserver
+  callback that saw the new text, and again from a `setTimeout(0)` after it, was judged
+  by the old state 3 of 3 runs with `useEffect` and by the new state 3 of 3 runs with
+  `useLayoutEffect`. A ref written in such an effect (as `launchLock` is) lags the same
+  way: read from that MutationObserver callback it still held the old value 3 of 3
+  runs with `useEffect`, the new one 3 of 3 with `useLayoutEffect`. For a click, a
+  `window` click listener added by the effect of the render that click caused receives
+  that same click, with `useEffect` and `useLayoutEffect` alike (3 of 3 each), so moving
+  such an effect to a layout effect does not change what a click does.
+- **Chromium drops focus to `body` when the focused field or button becomes
+  `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
+  the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
+  Chrome 156: focus on an input, set `disabled`, and one task later
+  `document.activeElement` is `body`; it stays `body` after `disabled = false`. So a
+  dialog that disables its fields while it works must focus one again when it
+  unlocks, or Enter lands on `body` (`sessionLaunchButtons.test.tsx` acts this out).
 - **zustand's `set()` notifies every subscriber even when nothing changed**, because it
   merges into a new state object (seen: a queued hint card appeared one tick early).
 
