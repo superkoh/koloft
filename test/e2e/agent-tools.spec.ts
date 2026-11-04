@@ -44,7 +44,8 @@ const CENTER = '.term-island .term-wrap'
 const PANEL = '.wb-panel .wb-term'
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
-const ASSIST_TITLES_PAST_TEN_SECONDS_BUT_INSIDE_ITS_OWN_TIMEOUT_MS = 12_000
+const ASSIST_TITLES_PAST_THE_SHIMS_TEN_SECONDS_MS = 15_000
+const ASSIST_GIVES_UP_WELL_AFTER_THE_SLOW_TITLE_MS = 40_000
 const FIRST_SIBLING_STILL_STARTING_MS = 30_000
 const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
 const A_REMOVAL_STILL_DELETING_WHEN_CLOSE_ASKS_MS = 3_000
@@ -273,27 +274,33 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
   })
 
   test('koloft session new whose title takes Assist longer than the shim’s 10 s wait for other verbs still answers that it started the session, under the name Assist gave', async ({
-    page,
     env
   }) => {
     test.setTimeout(120_000)
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
-    const callsBefore = readCalls(env).length
-    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), 'Slow title\n')
-    fs.writeFileSync(
-      path.join(env.home, 'fake-claude-assist-ms'),
-      String(ASSIST_TITLES_PAST_TEN_SECONDS_BUT_INSIDE_ITS_OWN_TIMEOUT_MS)
-    )
+    env.launchEnv.KOLOFT_ASSIST_TIMEOUT_MS = String(ASSIST_GIVES_UP_WELL_AFTER_THE_SLOW_TITLE_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const callsBefore = readCalls(env).length
+      fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), 'Slow title\n')
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-assist-ms'),
+        String(ASSIST_TITLES_PAST_THE_SHIMS_TEN_SECONDS_MS)
+      )
 
-    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+      expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
 
-    expect(await shownTermText(page, CENTER)).toMatch(
-      /Started (?:\w+ )*session "Slow title" in a new tab/
-    )
-    const calls = await waitForCalls(env, callsBefore + 1, 60_000)
-    const kid = calls[calls.length - 1]
-    expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('Slow title')
+      expect(await shownTermText(page, CENTER)).toMatch(
+        /Started (?:\w+ )*session "Slow title" in a new tab/
+      )
+      const calls = await waitForCalls(env, callsBefore + 1, 60_000)
+      const kid = calls[calls.length - 1]
+      expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('Slow title')
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('a second koloft session new whose task gets the same title, run while the first sibling has not started yet, names its sibling with a number, so SendMessage tells the two apart', async ({
