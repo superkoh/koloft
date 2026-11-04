@@ -128,6 +128,8 @@ async function aChildWhoseParentTabWasClosed(
   )
   await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+  const parentClaude =
+    backend === 'claude' ? readCalls(env).find((c) => c.sessionId === parent.sessionId)! : undefined
   await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
   await expect
     .poll(async () =>
@@ -136,6 +138,8 @@ async function aChildWhoseParentTabWasClosed(
       )
     )
     .toBe(false)
+  if (parentClaude)
+    await expect.poll(() => processAlive(parentClaude.pid), { timeout: 30_000 }).toBe(false)
   return { parentId: parent.nativeSessionId ?? parent.sessionId, kidTab }
 }
 

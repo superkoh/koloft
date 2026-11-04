@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
@@ -16,6 +16,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch,
   type StartSession
 } from './SessionLaunchButtons'
@@ -55,18 +56,22 @@ export function NewProjectDialog({
   const choice = sessionLaunch.choice()
   const [listOpen, setListOpen] = useState(false)
   const locked = sessionLaunch.starting
-  useEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
+  useLaunchLock(launchLock, locked)
+
+  const fieldBeforeLock = useRef<HTMLElement | null>(null)
+  // PLATFORM§25
+  useLayoutEffect(() => {
+    if (locked) {
+      const at = document.activeElement
+      fieldBeforeLock.current = at instanceof HTMLElement && at !== document.body ? at : null
+      return
     }
-  }, [locked, launchLock])
+    const back = fieldBeforeLock.current ?? folderRef.current
+    back?.focus()
+  }, [locked])
 
-  useEffect(() => {
-    folderRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape' && !locked) onClose()
     }
