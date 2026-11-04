@@ -1075,49 +1075,65 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-45: with a folder for new projects remembered on the machine, ⌘P “a new …” there makes the project folder on the machine, adds it as a workspace and starts Claude Code in it with the words typed, without asking for the folder; the same ask again makes <name>-2', async ({
+  test('E-SSH-45: with a folder for new projects remembered on the machine, ⌘P “a new …” there makes the project folder on the machine, adds it as a workspace and starts the agent in it with the words typed, without asking for the folder — Claude Code on ⏎; the same ask again on ⌘⏎ makes <name>-2 and starts Codex there', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true, newProjectFolders: { 'kt-key': '/home/kuser/projects' } })
+    installCodexSignedInForTheLab(env)
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
       JSON.stringify({ workspace: null, machine: 'kt-key', newFolder: 'crawler', title: 'Crawler' })
     )
-    await withLab(env, async ({ app, page, lab }) => {
-      runOnTarget(lab, 'kuser', 'mkdir projects')
-      await addMachine(page, 'kt-key', 'kuser')
-      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-      const callsOnTheMachine = (): { argv: string[]; cwd: string }[] =>
-        runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :')
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => JSON.parse(line))
-      const askBox = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
-      const askForANewCrawler = async (words: string): Promise<void> => {
-        await sendShortcut(app, 'shortcut:command-palette')
-        await expect(askBox).toBeFocused()
-        await askBox.fill(words)
-        await page.keyboard.press('Enter')
-      }
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        runOnTarget(lab, 'kuser', 'mkdir projects')
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const lines = (text: string): Record<string, unknown>[] =>
+          text
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        const claudeCallsOnTheMachine = (): Record<string, unknown>[] =>
+          lines(runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :'))
+        const codexScreensOnTheMac = (): Record<string, unknown>[] => {
+          const file = path.join(env.home, 'fake-codex-calls.jsonl')
+          return fs.existsSync(file) ? lines(fs.readFileSync(file, 'utf8')) : []
+        }
+        const palette = page.locator('.modal.palette')
+        const askForANewCrawler = async (words: string, key: string): Promise<void> => {
+          await sendShortcut(app, 'shortcut:command-palette')
+          const askBox = palette.getByRole('textbox', { name: 'Ask or jump' })
+          await expect(askBox).toBeFocused()
+          await askBox.fill(words)
+          await expect(palette.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
+          await page.keyboard.press(key)
+        }
 
-      await askForANewCrawler('on kt-key, a new price crawler')
-      await expect.poll(() => callsOnTheMachine().length, { timeout: 90_000 }).toBe(1)
-      await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
-      const [first] = callsOnTheMachine()
-      expect(first.cwd).toBe('/home/kuser/projects/crawler')
-      expect(first.argv[first.argv.indexOf('--') + 1]).toBe('on kt-key, a new price crawler')
-      await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })
+        await askForANewCrawler('on kt-key, a new price crawler', 'Enter')
+        await expect.poll(() => claudeCallsOnTheMachine().length, { timeout: 90_000 }).toBe(1)
+        await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
+        const [claude] = claudeCallsOnTheMachine() as { argv: string[]; cwd: string }[]
+        expect(claude.cwd).toBe('/home/kuser/projects/crawler')
+        expect(claude.argv[claude.argv.indexOf('--') + 1]).toBe('on kt-key, a new price crawler')
+        await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })
 
-      await askForANewCrawler('another price crawler on kt-key')
-      await expect.poll(() => callsOnTheMachine().length, { timeout: 90_000 }).toBe(2)
-      await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
-      expect(callsOnTheMachine()[1].cwd).toBe('/home/kuser/projects/crawler-2')
-      await expect(wsRows(page, 'crawler-2')).toHaveCount(1, { timeout: 60_000 })
-      expect(runOnTarget(lab, 'kuser', 'ls projects').split('\n').filter(Boolean)).toEqual([
-        'crawler',
-        'crawler-2'
-      ])
-    })
+        await askForANewCrawler('another price crawler on kt-key', 'Meta+Enter')
+        await expect.poll(() => codexScreensOnTheMac().length, { timeout: 120_000 }).toBe(1)
+        await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
+        const [codex] = codexScreensOnTheMac() as { argv: string[]; effectiveCwd: string }[]
+        expect(codex.effectiveCwd).toBe('/home/kuser/projects/crawler-2')
+        expect(codex.argv.at(-1)).toBe('another price crawler on kt-key')
+        await expect(wsRows(page, 'crawler-2')).toHaveCount(1, { timeout: 60_000 })
+        expect(runOnTarget(lab, 'kuser', 'ls projects').split('\n').filter(Boolean)).toEqual([
+          'crawler',
+          'crawler-2'
+        ])
+        expect(claudeCallsOnTheMachine()).toHaveLength(1)
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
   })
 
   test('E-SSH-29: koloft session new --workspace on a machine that has gone down is refused with ssh’s reason for every agent, Claude too, instead of reported as started; New Claude session there says the same reason and opens no tab', async ({
