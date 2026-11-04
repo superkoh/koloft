@@ -95,6 +95,24 @@ describe('a page’s alert or confirm dialog takes Enter and Esc away from the s
     expect(answers.filter(([, a]) => a.ok)).toEqual([])
   })
 
+  it('once the dialog is answered, the keys go back to where they were before it showed', () => {
+    const terminal = document.body.appendChild(document.createElement('textarea'))
+    try {
+      terminal.focus()
+      const { unmount } = render(
+        <BrowserModal
+          dialog={{ id: 'c-4', kind: 'confirm', origin: 'https://site.test', message: 'Sure?' }}
+          onAnswer={() => {}}
+        />
+      )
+      expect(document.activeElement).not.toBe(terminal)
+      unmount()
+      expect(document.activeElement).toBe(terminal)
+    } finally {
+      terminal.remove()
+    }
+  })
+
   it('Enter in the sign-in fields still signs in', () => {
     showBesideATerminalThatStopsKeys({ id: 's-1', kind: 'auth', origin: 'https://site.test' })
     fireEvent.change(screen.getByPlaceholderText('Username'), { target: { value: 'me' } })

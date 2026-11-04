@@ -34,7 +34,9 @@ export function BrowserModal({
 
   // PLATFORM§25
   useLayoutEffect(() => {
+    const before = document.activeElement as HTMLElement | null
     ;(firstField.current ?? safeButton.current)?.focus()
+    return () => before?.focus()
   }, [dialog.id])
 
   const accept = (): void => {

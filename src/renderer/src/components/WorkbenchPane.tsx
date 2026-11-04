@@ -1587,7 +1587,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         />
       )}
 
-      {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
+      {dialog && visible && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
     </div>
   )
 })
