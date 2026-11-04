@@ -49,6 +49,12 @@ function codexAsked(env: E2EEnv): number {
   ).length
 }
 
+function codexTurnsEnded(env: E2EEnv): number {
+  return codexWire(env).filter(
+    (w) => w.direction === 'server' && w.frame.method === 'turn/completed'
+  ).length
+}
+
 function codexAnswers(env: E2EEnv): unknown[] {
   return codexWire(env)
     .filter((w) => w.direction === 'client' && w.frame.result?.answers)
@@ -100,6 +106,7 @@ test.describe('owner asleep', () => {
       const page = await app.firstWindow()
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await expect.poll(() => codexTurnsEnded(env)).toBe(1)
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.backendId === 'codex'
       )!.tabId
