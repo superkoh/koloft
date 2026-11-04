@@ -2863,7 +2863,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.308; on 2026-10-31 npm `latest` and `next` and the download host's `latest`
   offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309;
   on 2026-11-03 npm `latest` and `next` and the download host's `latest` offered
-  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311.
+  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311; on
+  2026-11-04 npm `latest` and `next` and the download host's `latest` offered 2.1.318,
+  and npm's and the download host's `stable` were still 2.1.311.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2888,7 +2890,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5), and on
   2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
   strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
-  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`) — each ran as
+  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`), and on 2026-11-04
+  `2.1.318/linux-arm64/claude` with 337,438,136 bytes (ETag the file's MD5) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
