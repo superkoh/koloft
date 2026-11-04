@@ -109,6 +109,7 @@ import {
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
+import { sudoAskOf, SudoDialog } from './components/SecretAsk'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -294,6 +295,7 @@ export default function App(): JSX.Element {
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
+  const secretAsks = useStore((s) => s.secretAsks)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -1005,6 +1007,13 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    const set = useStore.getState().setSecretAsks
+    const off = window.api.secret.onAsks(set)
+    void window.api.secret.list().then(set)
+    return off
+  }, [])
+
+  useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
@@ -1706,61 +1715,66 @@ export default function App(): JSX.Element {
                 </div>
               )}
               <div className="terminals">
-                {tabs.flatMap((t) => [
-                  t.ghost && (
+                {tabs.flatMap((t) => {
+                  const sudo = sudoAskOf(secretAsks, t.id)
+                  return [
+                    t.ghost && (
+                      <div
+                        key={t.ghost}
+                        className="term-wrap"
+                        style={{
+                          display:
+                            (t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue
+                              ? 'block'
+                              : 'none'
+                        }}
+                        onMouseDown={focusTuiFromMargin}
+                      >
+                        <TerminalView
+                          id={t.ghost}
+                          active={(t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue}
+                          scrollbar={false}
+                          focusSignal={tuiFocus}
+                          maxCols={CENTER_TERMINAL_MAX_COLS}
+                        />
+                      </div>
+                    ),
                     <div
-                      key={t.ghost}
+                      key={t.id}
                       className="term-wrap"
                       style={{
-                        display:
-                          (t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue
-                            ? 'block'
-                            : 'none'
+                        display: t.id === shown.id ? 'block' : 'none',
+                        visibility: t.ghost && !t.wakeOverdue ? 'hidden' : undefined
                       }}
                       onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
-                        id={t.ghost}
-                        active={(t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue}
+                        id={t.id}
+                        active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                         scrollbar={false}
-                        focusSignal={tuiFocus}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
+                        onUserInput={
+                          isSessionKind(t.kind)
+                            ? () => window.api.sessions.noteActivity(t.id)
+                            : undefined
+                        }
+                        autoFocus={!sudo}
+                        focusSignal={sudo ? undefined : tuiFocus}
+                        onRepainted={() => {
+                          if (t.id === activeTabId) setPaintedGen(switchGen)
+                        }}
+                        onOutput={
+                          t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
+                        }
                       />
+                      {/* CODEX§9 MUSE§10 AGY§5 */}
+                      {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
+                        <ResumingMask title={t.title} />
+                      )}
+                      {sudo && <SudoDialog key={sudo.id} ask={sudo} shown={t.id === shown.id} />}
                     </div>
-                  ),
-                  <div
-                    key={t.id}
-                    className="term-wrap"
-                    style={{
-                      display: t.id === shown.id ? 'block' : 'none',
-                      visibility: t.ghost && !t.wakeOverdue ? 'hidden' : undefined
-                    }}
-                    onMouseDown={focusTuiFromMargin}
-                  >
-                    <TerminalView
-                      id={t.id}
-                      active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
-                      scrollbar={false}
-                      maxCols={CENTER_TERMINAL_MAX_COLS}
-                      onUserInput={
-                        isSessionKind(t.kind)
-                          ? () => window.api.sessions.noteActivity(t.id)
-                          : undefined
-                      }
-                      focusSignal={tuiFocus}
-                      onRepainted={() => {
-                        if (t.id === activeTabId) setPaintedGen(switchGen)
-                      }}
-                      onOutput={
-                        t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
-                      }
-                    />
-                    {/* CODEX§9 MUSE§10 AGY§5 */}
-                    {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
-                      <ResumingMask title={t.title} />
-                    )}
-                  </div>
-                ])}
+                  ]
+                })}
                 {switching && activeTab && (
                   <ResumingMask
                     title={activeSessionTitle ?? activeTab.title}

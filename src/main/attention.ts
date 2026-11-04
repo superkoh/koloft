@@ -63,6 +63,14 @@ export class AttentionTracker {
     this.raise(tabId, 'exited', subject)
   }
 
+  asksForASecret(tabId: string, subject: AttentionSubject): void {
+    this.raise(tabId, 'approval', subject)
+  }
+
+  secretAnswered(tabId: string): void {
+    if (this.pending.get(tabId)?.kind === 'approval') this.drop(tabId)
+  }
+
   waitsOnApproval(tabId: string): boolean {
     return this.pending.get(tabId)?.kind === 'approval'
   }
