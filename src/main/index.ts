@@ -3762,7 +3762,7 @@ app.whenReady().then(() => {
   const secrets = new SecretAsks({
     owner: () => butlerNow.owner(),
     place: async (tabId, card) => {
-      const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
+      const channelId = butlerNow.channel()?.channelId
       if (!channelId) return undefined
       const name = await secretAskerName(tabId)
       const messageId = (await link.card(channelId, card(name))).at(-1)

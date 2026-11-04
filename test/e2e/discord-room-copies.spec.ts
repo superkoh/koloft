@@ -123,7 +123,7 @@ function fixtureFiles(dir: string): void {
 }
 
 test.describe('Discord rooms: what a session shows the owner at the Mac also reaches its room on the phone', () => {
-  test('in a local session’s room, koloft open sends an HTML file as a picture, Markdown as text with the file and a line for each diagram, any other file as itself, koloft diff a picture of the changes, and a secret card comes to the room, not the butler’s channel', async ({
+  test('in a local session’s room, koloft open sends an HTML file as a picture, Markdown as text with the file and a line for each diagram, any other file as itself, and koloft diff a picture of the changes, none of it in the butler’s channel', async ({
     env
   }) => {
     seedButler(env)
@@ -157,24 +157,6 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
         `Sent a picture of its changes to ${where}.`
       )
       expect(isPng(diff!.files[0].data)).toBe(true)
-
-      fake.say(OWNER, '/koloft secret url "https://auth.example.test/authorize?client=r"', {
-        channelId: room.id
-      })
-      await expect
-        .poll(
-          () =>
-            fake.posted.some(
-              (p) => p.channelId === room.id && p.content.includes('auth.example.test')
-            ),
-          {
-            timeout: STARTS_AND_ANSWERS_MS
-          }
-        )
-        .toBe(true)
-      expect(
-        fake.posted.some((p) => p.channelId === CHANNEL && p.content.includes('auth.example.test'))
-      ).toBe(false)
       expect(fake.posted.some((p) => p.channelId === CHANNEL && p.files.length)).toBe(false)
     } finally {
       await quitAndClose(app)
