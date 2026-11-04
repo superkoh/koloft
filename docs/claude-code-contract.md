@@ -148,7 +148,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `/exit` out of a `-w` session, 15 runs on 2.1.317, the raw bytes saved; 2.1.316
   printed the bare form with the same flags. That the linux-arm64 build repeats the
   same flags is read from its `strings` (the same skip list, value pattern and env
-  name), not run: inferred, not checked.
+  name), not run: inferred, not checked. 2.1.318, darwin-arm64 and linux-arm64, holds
+  the same skip list, value pattern and env name (`strings`, 2026-11-04, not run).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -222,7 +223,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   reasons and SessionStart sources), and on 2.1.317, darwin-arm64 and linux-arm64
   (`strings`, 2026-11-03: the same 33 names in the same order, the same SessionEnd
   reasons `clear`, `resume`, `logout`, `prompt_input_exit`, `other` and SessionStart
-  sources `startup`, `resume`, `clear`, `compact`, `fork`).
+  sources `startup`, `resume`, `clear`, `compact`, `fork`), and on 2.1.318, darwin-arm64
+  and linux-arm64 (`strings`, 2026-11-04: the same 33 names in the same order, the same
+  reasons and sources).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -1276,6 +1279,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   names `strings` glued to the next byte; the 14 names `src/` spells out (8
   `ANTHROPIC_*`, 6 `CLAUDE_CODE_*`; it spells no `DISABLE_*` and no
   `CLAUDE_CONFIG_DIR`) are in both builds.
+  Between 2.1.317 and 2.1.318 (`strings -n 6`, 2026-11-04, darwin-arm64 and
+  linux-arm64): `ANTHROPIC_*` and `*_MODEL` identical at 71 and 14, `anthropic-*`
+  header names identical at 88; dated beta names 56 → 57
+  (`tool-provenance-2026-10-26`); `CLAUDE_CODE_*` gains 16 (among them
+  `CONFIG_LOCK_WAIT_MS`, `RESUME_CACHE_WARM`, `TELEPORT_MOVE`) and loses 1
+  (`ENABLE_CONFIG_MISSING_READ_GUARD`), none of which `src/` sets; `tengu_*` gains 84
+  and loses 10, none of the names this ledger mentions among them; the same 14 names
+  `src/` spells out are in both builds.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
   a cloud or self-hosted runner session uses that session's id again) is read only when
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
@@ -1778,11 +1789,16 @@ other bullets of §9 were not re-measured on this build.
   was not tried). Assist's exact argv with a good token printed only the answer on
   stdout and nothing on stderr on both builds (same day). The 2.1.318 changelog's
   stderr warning "10 days before a stored claude.ai sign-in ends" and the
-  `credential_expires_at` / `loginExpiresAt` fields read the stored login's refresh
-  token (`strings`, not run): with the token in `CLAUDE_CODE_OAUTH_TOKEN`, as Koloft
-  passes it, `claude auth status` on 2.1.318 answers `"loginExpiresAt": null` (2.1.317
-  has no such key) and a `-p --output-format json` result carries no
-  `credential_expires_at` on either build (2026-11-04, a real account).
+  `credential_expires_at` / `loginExpiresAt` fields come from a stored login's
+  `refreshTokenExpiresAt` and need its refresh token (`strings`): with the token in
+  `CLAUDE_CODE_OAUTH_TOKEN`, as Koloft passes it, `claude auth status` on 2.1.318
+  answers `"loginExpiresAt": null` (2.1.317 has no such key), a `-p --output-format
+  json` result carries no `credential_expires_at` on either build (2026-11-04, a real
+  account), and `-p` text output prints no warning. With a made-up stored login ending
+  in 5 days (linux-arm64 2.1.318 in an offline Docker container, same day) `auth
+  status` gave its date, the JSON result the same `credential_expires_at`, and text
+  output printed `Warning: this sign-in ends between <date> and <date> …` on stderr
+  only; JSON output printed no warning.
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
@@ -1792,8 +1808,9 @@ other bullets of §9 were not re-measured on this build.
   twice, files listed at exit and 5 s later). Both builds' cleanup entry skips the
   sweep, before any delete, when user settings are not read and no other source (a
   managed policy, a `--settings` file) sets `cleanupPeriodDays` (`Skipping retention
-  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked);
-  Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
+  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked; the
+  same check and text in 2.1.318, `strings`, 2026-11-04, where the backup 2.1.318's
+  changelog adds is written only past it); Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
   cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
   the 30-day default; that the skip holds in a run long enough to sweep, and what a
   managed `cleanupPeriodDays` does there, is not probed.
@@ -2102,8 +2119,9 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
   reader parses the JSON and counts no keys. That 2.1.316 and 2.1.317 write the same
   keys is read from `strings` of the code that writes `<pid>.json` (2026-10-31 and
-  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed),
-  not from a run: inferred, not checked. A daemon-hosted
+  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed;
+  2026-11-04, the 2.1.318 code, darwin-arm64 and linux-arm64, identical to 2.1.317's the
+  same way, 23 keys), not from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2848,11 +2866,18 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   byte-identical to 2.1.316's; `self-hosted-runner --help` adds one sentence, wrapped
   over three lines, under
   `--trust-workspace`: "A session that the server starts without the repository's own
-  settings gets no workspace trust, as with false, whatever this flag says.").
+  settings gets no workspace trust, as with false, whatever this flag says.") and
+  2.1.318 (`2.1.318 (Claude Code)`, 2026-11-04; its `--help`, the same nine subcommand
+  helps and `auth status --help` byte-identical to 2.1.317's; `self-hosted-runner
+  --help` rewords `--release-idle-session-min`, `--hold-idle-file` and `--max-hold-min`,
+  no flag added or gone).
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
-  (2026-11-03); what changed is not read, and that the `--version` the shim runs
+  (2026-11-03); what changed is not read. 2.1.318 holds them 13 and 3 times
+  (darwin-arm64 and linux-arm64, 2026-11-04): it adds a mode that waits for the refresh
+  up to a deadline (`exitWaitsForOAuthRefreshUntilDeadline`), off by default, and with it
+  off the exit reads as before (`strings`, not run). That the `--version` the shim runs
   before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
@@ -2882,7 +2907,13 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `DISABLE_AUTOUPDATER=1` in the env stopped it (2026-10-14, pty probes of §1).
 - **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
   `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
-  so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
+  so a session already running on the old file keeps going. Version cleanup lists only
+  `~/.local/share/claude/versions` (plus its staging and lock folders) and keeps the
+  running `execPath`, the version the launch link points at, every version with a live
+  `locks/<version>@<pid>.lock`, and the 2 newest by mtime; since 2.1.318 a lock whose
+  pid answers `EPERM` (another user's process) counts as live, where 2.1.317 called it
+  dead (`strings`, darwin-arm64 and linux-arm64, 2026-11-04, not run). It never reaches
+  `~/.koloft`. npm: 2.1.250 → **2.1.293**,
   one behind the native channel that day, after printing "npm global folder isn't
   writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
   update failing is inferred, not checked. A Homebrew install was not run.
