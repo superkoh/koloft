@@ -59,7 +59,7 @@ import {
   permissionFlags,
   PERMISSIONS,
   browserSandboxOverrides,
-  playwrightEnvOverrides,
+  playwrightMcpOverrides,
   seedAssistMemory,
   STATUS_LINE_CONFIG,
   trustedInPlace,
@@ -565,7 +565,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
     fs.mkdirSync(cacheDir, { recursive: true })
     return [
-      ...playwrightEnvOverrides(config.mcp_servers),
+      ...playwrightMcpOverrides(config.mcp_servers),
       ...browserSandboxOverrides(config.sandbox_workspace_write, cacheDir)
     ]
   }

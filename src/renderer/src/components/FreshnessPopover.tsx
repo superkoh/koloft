@@ -385,7 +385,8 @@ export function FreshnessPopover({
   const [failed, setFailed] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (pulling) return
     if (confirm !== null) {
       const onKey = (e: KeyboardEvent): void => {

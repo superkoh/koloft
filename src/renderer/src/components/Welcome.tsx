@@ -1,4 +1,13 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
@@ -53,6 +62,25 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
     'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',
   muse: 'A terminal tab opens with a code to enter in your browser. It closes by itself once you are in.',
   agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
+}
+
+const ASKS_BEFORE_EACH_STEP = {
+  asks: 'Sessions ask you before each step.',
+  instead: 'Ask me first instead'
+}
+
+// CC§9 CC§14 MUSE§15 AGY§26
+const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
+  claude: {
+    asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
+    instead: 'Ask about risky steps instead'
+  },
+  codex: ASKS_BEFORE_EACH_STEP,
+  muse: {
+    asks: 'Muse Code asks only about some steps, like one that leaves its sandbox.',
+    instead: 'Ask about some steps instead'
+  },
+  agy: ASKS_BEFORE_EACH_STEP
 }
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
@@ -371,7 +399,8 @@ export function Welcome({
   })()
   const steppedAside = !!signInTabId && activeTabId === signInTabId && !peek
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (steppedAside || aDialogIsOpen()) return
       if (e.key === 'Escape') {
@@ -702,12 +731,12 @@ export function Welcome({
                 <>
                   Sessions run each step without stopping to ask.{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
-                    Ask me first instead
+                    {WHAT_SESSIONS_ASK[pick].instead}
                   </button>
                 </>
               ) : (
                 <>
-                  Sessions ask you before each step.{' '}
+                  {WHAT_SESSIONS_ASK[pick].asks}{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
                     Don’t ask
                   </button>
