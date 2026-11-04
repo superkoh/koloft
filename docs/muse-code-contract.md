@@ -454,6 +454,19 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   Enter then. `muse schema generate-ts` (1.4.14) lists `userInput/answer` answers as
   `selectedLabel`, `selectedLabels` or `freeText`, plus `note`; §5's refusal of a second
   client's answer was not rechecked.
+- **A question waits for the owner with every permission flag Koloft passes.** Measured
+  2026-11-03 on `Muse Code 1.4.11 (1.4.11-R6667.1)` (`koloft-muse-probe-1411`,
+  `MUSE_NO_AUTO_UPDATE=1`), Docker with no network, tmux 160×50, the fake model above
+  answering with a one-question `request_user_input` call: with `--permission-profile
+  :unrestricted` (footer `YOLO`) and with `--approval-judge off --sandbox-network enabled`,
+  2 of 2 runs each drew the box ("◇ Request user input Fruit — running", the options,
+  "None of the above", "Enter to select · ↑/↓ to move · Tab for an optional note · Esc to
+  interrupt"), sent no model request for 22–70 s, and after `2` then Enter sent
+  `{"status":"answered","answers":[{"id":"fruit","selected_label":"Banana"}]}`. The `❯`
+  input row stayed drawn under the box. The tool's schema has an optional
+  `auto_resolution_ms` (60000–240000) and says: "On a goal-carried run, omitting
+  auto_resolution_ms still arms a fixed 300000 millisecond whole-prompt safety deadline;
+  other runs keep no deadline when it is omitted." A call that sets it was not tried.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting

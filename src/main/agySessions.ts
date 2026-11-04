@@ -65,7 +65,8 @@ import {
   mergedAgySettings,
   ownersTitleCommand,
   prepareAgyHome,
-  titleCommandIn
+  titleCommandIn,
+  trustsIn
 } from './agyAccounts'
 import { readJson } from './museAccounts'
 import { LineTail } from './museSessionLog'
@@ -458,11 +459,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return this.deps.remote
       .machine(key.host)
       .readAgyConfig(picked.account)
-      .then((config) =>
-        [config.ownSettings, config.ownersSettings].some(
-          (s) => Array.isArray(s.trustedWorkspaces) && s.trustedWorkspaces.includes(key.path)
-        )
-      )
+      .then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
   }
 
   protected async listHistory(): Promise<HistoryListing<HistoryEntry>> {
@@ -616,8 +613,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     keepKoloftSkillIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
+    const koloftWorktreeOfTrustedWorkspace = (): boolean =>
+      !opts.scheduled &&
+      !!resource?.managed &&
+      [pick.home, gemini].some((home) => agyTrustsFolder(home, workspace))
     mergeAgySettings(pick.home, gemini, {
-      trust: freshWorktree || opts.trustFolder || assist ? trust : [],
+      trust:
+        freshWorktree || opts.trustFolder || assist || koloftWorktreeOfTrustedWorkspace()
+          ? trust
+          : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
@@ -732,10 +736,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.assertStarting()
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const permission = this.permissionOf(opts)
-    const trusted = freshWorktree || opts.trustFolder
-    const trust = [where.path, parseRemoteKey(workspace)?.path ?? where.path].filter(
-      (d, i, all) => all.indexOf(d) === i
-    )
+    const workspacePath = parseRemoteKey(workspace)?.path ?? where.path
+    const koloftWorktreeOfTrustedWorkspace =
+      !opts.scheduled &&
+      !!resource?.managed &&
+      trustsIn(workspacePath, config.ownSettings, config.ownersSettings)
+    const trusted = freshWorktree || opts.trustFolder || koloftWorktreeOfTrustedWorkspace
+    const trust = [where.path, workspacePath].filter((d, i, all) => all.indexOf(d) === i)
     const m = remote.machineName()
     const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {

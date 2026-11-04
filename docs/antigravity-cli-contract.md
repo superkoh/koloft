@@ -253,6 +253,12 @@ only downloaded the public release.
   replaces `modelProvider` (§6).
 - Trust is keyed by the folder path as given in `PWD`, not its real path: a symlinked
   folder is saved as the link path.
+- Trust does not reach down into subfolders: with `trustedWorkspaces` `["/home/u/ws"]`,
+  agy in `/home/u/ws` opens on the prompt, while in `/home/u/ws/.claude/worktrees/wt` it
+  asks "Do you trust the contents of this project?" just as in an unrelated folder, and
+  `trustedWorkspaces` is unchanged after. None of the flags in §1 trusts a folder for one
+  run. (1.4.12 Linux arm64 from the manifest, sha512 checked, Docker, tmux, API-key route
+  with `onboarding.json`, 2026-11-03.)
 - **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
   Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
   `trustedWorkspaces` shows the same trust screen, but the title script already runs
@@ -853,6 +859,19 @@ only downloaded the public release.
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
   Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
   not tried.
+- **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
+  `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
+  no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
+  Gemini server answering with `ask_question {questions:[{question, options:["Apple",
+  "Banana"], is_multi_select:false}]}`, 2026-11-03. With the flag (its log line
+  "--dangerously-skip-permissions: auto-approving all tool permissions") and without it,
+  2 of 2 runs each drew "Question 1/1: Which fruit do you want?" with "3. Write-in..." and
+  "↑/↓ Navigate · enter Select · esc Skip", sent no model request for 12 s, and after `2`
+  gave the model `Created At: …\nCompleted At: …\nA1: Banana`. With `AGY_CLI_OSC7501=on`,
+  `tmux pipe-pane` saw `idle`, `working`, `blocked:kind=question` (msg the base64
+  question), `done`. In 1.4.12 `ask_question`'s schema is only `questions[{question,
+  options (2 or more strings), is_multi_select?}]` with `additionalProperties: false`: no
+  `toolSummary` or `toolAction`.
 
 ## §15 Typing into it
 

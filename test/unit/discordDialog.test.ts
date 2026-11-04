@@ -86,6 +86,28 @@ describe('the conductor’s own dialog, asked in Discord and answered from there
     })
   })
 
+  it('a many-pick answer reads numbers and names alike, on one line split by commas or one per line, and sends the picked labels in option order, as the keys of the same reply would', () => {
+    const fruit = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+            multiSelect: true
+          }
+        ]
+      }
+    }
+    for (const reply of ['3, 1, cherry,', '1\ncherry'])
+      expect(decisionOf(hookAnswer(fruit, reply))).toMatchObject({
+        updatedInput: { answers: { 'Which fruits?': 'Apple, Cherry' } }
+      })
+    expect(decisionOf(hookAnswer(fruit, 'Mango juice'))).toMatchObject({
+      updatedInput: { answers: { 'Which fruits?': 'Mango juice' } }
+    })
+  })
+
   it('"no" refuses the question with the owner’s words, unless "No" is one of its options', () => {
     const own = { ...colour, tool_input: { questions: [{ question: 'Go?', options: [] }] } }
     expect(decisionOf(hookAnswer(own, 'no, stop here'))).toEqual({
@@ -94,7 +116,7 @@ describe('the conductor’s own dialog, asked in Discord and answered from there
     })
     expect(decisionOf(hookAnswer(colour, 'no'))).toMatchObject({
       behavior: 'allow',
-      updatedInput: { answers: { 'Which colour?': 'no' } }
+      updatedInput: { answers: { 'Which colour?': 'No' } }
     })
   })
 
@@ -137,20 +159,48 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   })
 
   // CC§14
-  it('a number presses that option, own words press the option after the last, then type and Enter; a second question or many picks are refused', () => {
+  it('a number or a label presses that option, own words press the option after the last, then type and Enter', () => {
     expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: ['2'] })
+    expect(claudeKeysFor(colour, 'green')).toEqual({ ok: true, value: ['2'] })
     expect(claudeKeysFor(colour, 'Purple')).toEqual({ ok: true, value: ['4', 'Purple', '\r'] })
     expect(claudeKeysFor(colour, '7')).toEqual({ ok: true, value: ['4', '7', '\r'] })
-    const two = {
-      ...colour,
-      tool_input: { questions: [...colour.tool_input.questions, colour.tool_input.questions[0]] }
+  })
+
+  // CC§14
+  it('several questions take one line each: a pick moves on, picks of a many-pick question are ticked and Tab moves on, own words go in its last row, and 1 on the review page sends them all', () => {
+    const [q] = colour.tool_input.questions
+    const fruit = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+      multiSelect: true
     }
-    expect(claudeKeysFor(two, '1').ok).toBe(false)
-    const many = {
-      ...colour,
-      tool_input: { questions: [{ ...colour.tool_input.questions[0], multiSelect: true }] }
-    }
-    expect(claudeKeysFor(many, '1').ok).toBe(false)
+    const ask = (...questions: object[]): typeof colour =>
+      ({ ...colour, tool_input: { questions } }) as typeof colour
+    const DOWN = '\x1b[B'
+    expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
+      ok: true,
+      value: ['2', '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(fruit, q), 'Mango juice\nPurple')).toEqual({
+      ok: true,
+      value: [DOWN, DOWN, DOWN, 'Mango juice', '\t', '\r', '4', 'Purple', '\r', '1']
+    })
+    expect(claudeKeysFor(ask(fruit), '3, 1, 3,')).toEqual({
+      ok: true,
+      value: ['1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(fruit), '1\ncherry')).toEqual({
+      ok: true,
+      value: ['1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(colour, 'Purple\nstripes')).toEqual({
+      ok: true,
+      value: ['4', 'Purple stripes', '\r']
+    })
+    expect(claudeKeysFor(ask(q, fruit), '2')).toEqual({
+      ok: false,
+      error: askHow(ask(q, fruit))
+    })
   })
 
   // CC§14
