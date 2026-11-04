@@ -30,6 +30,8 @@ function setup(over: Partial<InteractionDeps> = {}) {
   const pressed: DiscordInteraction[] = []
   const submitted: DiscordInteraction[] = []
   const order: string[] = []
+  const channels: string[] = []
+  const later: string[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
     ownerWrote: () => void order.push('owner back'),
@@ -38,15 +40,36 @@ function setup(over: Partial<InteractionDeps> = {}) {
       order.push('pressed')
     },
     submit: async (i) => void submitted.push(i),
-    run: async (text) => {
+    run: async (text, channelId) => {
       runs.push(text)
+      channels.push(channelId)
       order.push('ran')
       return `Typing ${text}`
     },
+    sessionChoices: (typed) => [
+      { name: `Fix login · koloft · Claude Code (${typed})`, value: 'k1' }
+    ],
+    openRoom: async (picked) => {
+      order.push(`opened ${picked}`)
+      return `Fix login: <#${THREAD}>`
+    },
     respond: async (_i, body) => void replies.push(body),
+    replyLater: async (_i, content) => {
+      later.push(content)
+      order.push('replied later')
+    },
     ...over
   }
-  return { interactions: new Interactions(deps), replies, runs, pressed, submitted, order }
+  return {
+    interactions: new Interactions(deps),
+    replies,
+    runs,
+    channels,
+    later,
+    pressed,
+    submitted,
+    order
+  }
 }
 
 describe('a Discord interaction from the owner counts as the owner back, once it is handled', () => {
@@ -85,11 +108,57 @@ describe('Discord slash commands', () => {
     expect(runs).toEqual(['/clear'])
   })
 
-  it('none of the commands asks which session: they all go to the butler', () => {
-    expect(SLASH_COMMANDS.flatMap((c) => c.options ?? []).map((o) => o.name)).toEqual([
-      'command',
-      'focus'
+  it('/run, /clear and /compact carry the channel they were used in, so in a room they go to that room’s session', async () => {
+    const { interactions, channels } = setup()
+    await interactions.handle(interaction({ command: 'clear', channelId: THREAD }))
+    await interactions.handle(interaction({ command: 'clear' }))
+    expect(channels).toEqual([THREAD, CHANNEL])
+  })
+
+  it('/session offers the owner the sessions that match what is typed so far, and someone else none', async () => {
+    const { interactions, replies } = setup()
+    const typing = { type: 4, command: 'session', options: { session: 'fix' }, focused: 'session' }
+    await interactions.handle(interaction(typing))
+    await interactions.handle(interaction({ ...typing, userId: '666' }))
+    expect(replies).toEqual([
+      {
+        type: 8,
+        data: { choices: [{ name: 'Fix login · koloft · Claude Code (fix)', value: 'k1' }] }
+      },
+      { type: 8, data: { choices: [] } }
     ])
+  })
+
+  it('/session answers at once that it is on its way, privately, then opens the room and puts its link in that answer', async () => {
+    const replies: unknown[] = []
+    const { interactions, later, order } = setup({
+      respond: async (_i, body) => {
+        replies.push(body)
+        order.push('replied')
+      }
+    })
+    await interactions.handle(interaction({ command: 'session', options: { session: 'k1' } }))
+    expect(replies).toEqual([{ type: 5, data: { flags: 64 } }])
+    expect(later).toEqual([`Fix login: <#${THREAD}>`])
+    expect(order).toEqual(['replied', 'opened k1', 'replied later', 'owner back'])
+  })
+
+  it('/session that cannot open the room says why in that same answer', async () => {
+    const { interactions, later } = setup({
+      openRoom: async () => {
+        throw new Error('No Discord channel is bound.')
+      }
+    })
+    await interactions.handle(interaction({ command: 'session', options: { session: 'k1' } }))
+    expect(later).toEqual(['⚠ No Discord channel is bound.'])
+  })
+
+  it('the only option Discord fills in as the owner types is /session’s', () => {
+    expect(
+      SLASH_COMMANDS.flatMap((c) => c.options ?? [])
+        .filter((o) => o.autocomplete)
+        .map((o) => o.name)
+    ).toEqual(['session'])
   })
 
   it('a button pressed is handed on as a press, never run as a command', async () => {

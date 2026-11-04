@@ -11,7 +11,14 @@ const CHANNEL: DiscordChannel = { guildId: '1', channelId: '200', name: 'global'
 const OLD = '701'
 const OTHER = '800'
 
-function setup(over: { listFails?: boolean; archiveFails?: string[]; lookupFails?: number } = {}) {
+function setup(
+  over: {
+    listFails?: boolean
+    archiveFails?: string[]
+    lookupFails?: number
+    rooms?: string[]
+  } = {}
+) {
   let now = 1_000_000
   let lookupFails = over.lookupFails ?? 0
   let archived = false
@@ -42,6 +49,7 @@ function setup(over: { listFails?: boolean; archiveFails?: string[]; lookupFails
     channel: () => CHANNEL,
     archived: () => archived,
     markArchived: () => void (archived = true),
+    isRoom: (id) => !!over.rooms?.includes(id),
     now: () => now
   })
   return {
@@ -81,6 +89,18 @@ describe('session threads an older Koloft opened under the butler’s channel', 
     await t.threads.archiveOnce()
     expect(t.archivedThreads).toEqual([OLD, '702'])
     expect(t.archived()).toBe(true)
+  })
+
+  it('a session’s room Koloft keeps today is never archived with them, and the owner writing or pressing in it is not sent to the butler’s channel', async () => {
+    const t = setup({ rooms: [OLD] })
+    await t.threads.archiveOnce()
+    expect(t.archivedThreads).toEqual(['702'])
+    expect(t.archived()).toBe(true)
+    await t.threads.onMessage(message('1', OLD))
+    await t.threads.onInteraction(interaction(OLD))
+    expect(t.posts).toEqual([])
+    expect(t.responses).toEqual([])
+    expect(t.lookups).toEqual([])
   })
 
   it('a thread Discord will not archive is skipped and the rest still are, and the job is tried again on the next connect, as it is when Discord will not give the list', async () => {

@@ -122,6 +122,7 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOLD_FILE,
   HOOK_SCRIPT,
+  discordIdsFile,
   forgetAssistMarkers,
   localNotice,
   markAnswerable,
@@ -480,7 +481,15 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
+import {
+  AgentRequests,
+  answered,
+  BUILTIN_VERBS,
+  errorText,
+  refused,
+  type AgentReply,
+  type AgentVerb
+} from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -493,6 +502,9 @@ import { secretVerb } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
 import { shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
+import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
+import type { SessionChoice } from './discord/interactions'
+import { accentOf } from './discord/cards'
 import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
@@ -543,11 +555,14 @@ import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
+  findSessionRow,
+  placedRows,
   resolveWorkspace,
   sessionVerb,
   workspaceVerb,
   type ButlerHelperTask,
   type ClosableSession,
+  type PlacedRow,
   type SessionScreen,
   type SessionVerbDeps,
   type Target
@@ -557,7 +572,7 @@ import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
-import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
+import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
@@ -650,6 +665,7 @@ const sessionBackends = new SessionBackends({
       syncAnswerable()
     }
     discordTyping?.refresh(tabId)
+    rooms?.bound(tabId, key, !idleCompaction)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
@@ -770,7 +786,12 @@ tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
-    if (butler?.channelOfTab(s.tabId) || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+    if (
+      butler?.channelOfTab(s.tabId) ||
+      roomOfTab(s.tabId) ||
+      workspaceMgr?.isResident(s.sessionId)
+    )
+      held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.waitsOnApproval(id)
@@ -1359,6 +1380,7 @@ let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordTyping: ButlerTyping | null = null
 let awayDigest: AwayDigest | null = null
+let rooms: Rooms | null = null
 let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
@@ -1905,7 +1927,13 @@ const sessionDeps: SessionVerbDeps = {
     target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, { tell: tellCaller }),
-  screen: screenOf
+  screen: screenOf,
+  roomOf: (key) => {
+    const room = rooms?.ofKey(key)
+    if (!room) return undefined
+    return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
+  },
+  roomForNew
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
@@ -1942,7 +1970,8 @@ const agentRequests = new AgentRequests({
         const appId = discordLink?.status().applicationId
         return appId ? inviteLink(appId) : null
       },
-      bindNewChannel: bindWithNewChannel
+      bindNewChannel: bindWithNewChannel,
+      openRoom: openRoomByRef
     }),
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
@@ -3229,6 +3258,10 @@ app.whenReady().then(() => {
     for (const [id, t] of sleepers)
       if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
     tabLifecycle.emit('exit', exit)
+    if (quitCommitted || exit.asleep) rooms?.forget(e.id)
+    else if (unexpected) rooms?.stopped(e.id)
+    else void rooms?.closed(e.id)
+    touchedAt.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -3318,9 +3351,13 @@ app.whenReady().then(() => {
     if (t.prev === 'approval') claudeAsks.delete(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
+    const asksOnDiscord = (butlerSide(t.tabId) && !!butler?.channel()) || !!roomOfTab(t.tabId)
+    if (t.prev === 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
-      void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+      void pendingAskOf(t.tabId).then((a) => {
+        if (a) return discordRelay?.codexAsked(t.tabId, a)
+        if (t.next === 'approval') askUnreadablySoon(t.tabId)
+      })
     if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
     if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
@@ -3652,11 +3689,12 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     onMessage: (m) => {
-      if (butler?.isButlerChannel(m.channelId)) discordRelay?.onMessage(m)
+      if (butler?.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
+        discordRelay?.onMessage(m)
       else void oldThreads.onMessage(m)
     },
     onInteraction: (i) =>
-      void (butler?.isButlerChannel(i.channelId)
+      void (butler?.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
         : oldThreads.onInteraction(i)),
     onReady: () => {
@@ -3673,6 +3711,14 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const butlerNow = butler
+  const roomsNow = new Rooms({
+    link,
+    owner: () => butlerNow.owner(),
+    lobby: () => butlerNow.channel(),
+    rooms: () => butlerNow.rooms(),
+    save: (list) => butlerNow.saveRooms(list)
+  })
+  rooms = roomsNow
   const oldThreads = new OldThreads({
     link,
     owner: () => butlerNow.owner(),
@@ -3680,6 +3726,7 @@ app.whenReady().then(() => {
     channel: () => butlerNow.channel(),
     archived: () => butlerNow.oldThreadsArchived(),
     markArchived: () => butlerNow.markOldThreadsArchived(),
+    isRoom: (threadId) => !!roomsNow.ofThread(threadId),
     now: Date.now
   })
   discordTyping = new ButlerTyping({
@@ -3722,10 +3769,14 @@ app.whenReady().then(() => {
   const interactions = new Interactions({
     owner: () => butlerNow.owner(),
     ownerWrote: ownerCameBack,
-    run: async (text) => commandIntoButler(text),
+    run: async (text, channelId) =>
+      roomsNow.ofThread(channelId) ? commandIntoRoom(channelId, text) : commandIntoButler(text),
+    sessionChoices,
+    openRoom: openRoomPicked,
     press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
     submit: (i) => secrets.submit(i),
-    respond: (i, body) => link.respond(i, body)
+    respond: (i, body) => link.respond(i, body),
+    replyLater: (i, content) => link.replyLater(i, content)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
@@ -3740,21 +3791,37 @@ app.whenReady().then(() => {
     ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
-      butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
+      butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
     channels: () => {
       const channel = butlerNow.channel()
-      return channel
-        ? [
-            {
-              channelId: channel.channelId,
-              lastMessageId: butlerNow.lastMessageId(),
-              seen: (id: string) => butlerNow.setLastMessage(id)
-            }
-          ]
-        : []
+      if (!channel) return []
+      return [
+        {
+          channelId: channel.channelId,
+          lastMessageId: butlerNow.lastMessageId(),
+          seen: (id: string) => butlerNow.setLastMessage(id)
+        },
+        ...butlerNow.rooms().map((r) => ({
+          channelId: r.threadId,
+          lastMessageId: r.lastMessageId,
+          seen: (id: string) => roomsNow.seen(r.threadId, id),
+          room: true
+        }))
+      ]
     },
-    butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
-    askChannelOf: (tabId) => (butlerSide(tabId) ? butlerNow.channel()?.channelId : undefined),
+    replyChannelOf: (tabId) => butlerNow.channelOfTab(tabId) ?? roomOfTab(tabId),
+    askChannelOf: (tabId) =>
+      butlerSide(tabId) ? butlerNow.channel()?.channelId : roomOfTab(tabId),
+    lobbyLink: () => {
+      const lobby = butlerNow.channel()
+      return lobby && roomLink(lobby.channelId)
+    },
+    noteDiscordId: async (tabId, id) => {
+      const host = machineOfTab(tabId)
+      if (host) return hosts.machine(host).noteDiscordId(tabId, id)
+      fs.appendFileSync(discordIdsFile(hookPaths.regDir, tabId), `${id}\n`)
+    },
+    inRoom: (tabId) => !!roomOfTab(tabId),
     helperTitle: (tabId) =>
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
@@ -3798,6 +3865,8 @@ app.whenReady().then(() => {
     reachable: () => discordConnected && !!butlerNow.channel(),
     marks: () => attention.list(),
     butlerSide,
+    inRoom: (tabId) => !!roomOfTab(tabId),
+    touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
       const s = sessionOfTab(mark.tabId)
@@ -3810,7 +3879,8 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      return relay.delivering() || (!!tab && !relay.takesCommand(tab))
+      const lobby = butlerNow.channel()?.channelId
+      return (!!lobby && relay.delivering(lobby)) || (!!tab && !relay.takesCommand(tab))
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,
@@ -5654,8 +5724,197 @@ function ownersPermission(): 'bypass' | 'default' {
 
 const NO_CHANNEL_BOUND = 'No Discord channel is bound.'
 
+function ownerIsWhere(): string {
+  if (ownerAsleep.asleep()) return '(Koloft: the owner is asleep right now.)'
+  return ownerAway()
+    ? '(Koloft: the owner is away from the Mac right now.)'
+    : '(Koloft: the owner is at the Mac right now.)'
+}
+
+function roomOfTab(tabId: string): string | undefined {
+  return butlerSide(tabId) ? undefined : rooms?.carried(tabId)
+}
+
+const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
+
+function askUnreadablySoon(tabId: string): void {
+  if (!roomOfTab(tabId)) return
+  setTimeout(() => {
+    if (tracker.statusOf(tabId) === 'approval') discordRelay?.asksUnreadably(tabId)
+  }, AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS)
+}
+
+const touchedAt = new Map<string, number>()
+const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
+
+function ownerTouched(tabId: string): void {
+  if (!backendIdOf(ptyMgr.get(tabId)?.kind)) return
+  touchedAt.set(tabId, Date.now())
+  rooms?.handsOn(tabId)
+}
+
+function touchedBefore(left: number): string[] {
+  return [...touchedAt].flatMap(([tabId, at]) => {
+    const title = ptyMgr.get(tabId)?.alive && sessionOfTab(tabId)?.title
+    return title && at >= left - TOUCHED_BEFORE_LEAVING_WITHIN_MS && !butlerSide(tabId)
+      ? [title]
+      : []
+  })
+}
+
+function rowOfKey(key: string | undefined): SessionRow | undefined {
+  return (workspaceMgr?.rows() ?? []).flatMap((w) => w.rows).find((r) => r.id === key)
+}
+
+function liveTabOfRoom(threadId: string, keys: string[]): string | undefined {
+  const tab = rooms?.tabOfThread(threadId)
+  if (tab && ptyMgr.get(tab)?.alive) return tab
+  return allSessions().find((s) => s.alive && keys.includes(s.sessionId))?.tabId
+}
+
+function roomDestination(threadId: string): Destination | undefined {
+  const room = rooms?.ofThread(threadId)
+  if (!room) return undefined
+  const liveTab = (): string | undefined => liveTabOfRoom(threadId, room.keys)
+  return {
+    channelId: threadId,
+    name: room.name,
+    liveTab,
+    open: async () => {
+      const live = liveTab()
+      if (live) return live
+      const row = rowOfKey(room.keys.at(-1))
+      if (!row)
+        throw new Error(`${room.name} is no longer in Koloft's sidebar, so it cannot be resumed.`)
+      const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
+      if (!resumed.ok) throw new Error(resumed.error)
+      return resumed.tabId
+    },
+    typeCommand: async (tabId, command) => {
+      await slash.typeWhenIdle({ name: room.name, tabId, butler: false }, command, {
+        channelId: threadId
+      })
+    },
+    seen: (id) => rooms?.seen(threadId, id),
+    ownerSpoke: () => rooms?.ownerSpoke(threadId)
+  }
+}
+
+function commandIntoRoom(threadId: string, text: string): string {
+  const dest = roomDestination(threadId)
+  if (!discordRelay || !dest) throw new Error(STILL_STARTING)
+  discordRelay.command(dest, text, threadId)
+  return `Koloft will type ${text} into ${dest.name} once its turn ends, and post what it prints here.`
+}
+
+// PLATFORM§39
+const SESSION_CHOICES_AT_MOST = 25
+const CHOICE_TEXT_LIMIT = 100
+const choiceIds = new Map<string, string>()
+
+function roomable(): PlacedRow[] {
+  return placedRows(projectRows(), allSessions())
+}
+
+function sessionChoices(typed: string): SessionChoice[] {
+  const needle = typed.trim().toLowerCase()
+  const running = (p: PlacedRow): number => (p.live || p.row.running ? 1 : 0)
+  choiceIds.clear()
+  return roomable()
+    .filter((p) => p.title.toLowerCase().includes(needle))
+    .sort((a, b) => running(b) - running(a) || b.row.mtime - a.row.mtime)
+    .slice(0, SESSION_CHOICES_AT_MOST)
+    .map((p, i) => {
+      const value = p.row.id.length <= CHOICE_TEXT_LIMIT ? p.row.id : `pick-${i}`
+      if (value !== p.row.id) choiceIds.set(value, p.row.id)
+      const where = whereOf({ backend: p.row.backendId, workspace: p.workspace })
+      return { name: `${p.title} · ${where}`.slice(0, CHOICE_TEXT_LIMIT), value }
+    })
+}
+
+async function openRoomPicked(picked: string): Promise<string> {
+  const id = choiceIds.get(picked) ?? picked
+  const all = roomable()
+  const p = all.find((r) => r.row.id === id) ?? all.find((r) => r.title === picked)
+  if (!p) return `There is no session "${picked}". Pick one from the list that shows as you type.`
+  return `${p.title}: ${roomLink(await openRoomFor(p))}`
+}
+
+async function openRoomFor(p: PlacedRow): Promise<string> {
+  const r = rooms
+  if (!r) throw new Error(STILL_STARTING)
+  let tabId = p.live?.tabId
+  if (!tabId) {
+    const resumed = await resumeRow(p.row, { rebuildGoneWorktree: true })
+    if (!resumed.ok) throw new Error(resumed.error)
+    tabId = resumed.tabId
+  }
+  const subject: RoomSubject = {
+    tabId,
+    key: p.row.id,
+    name: p.title,
+    backend: p.row.backendId,
+    workspace: p.workspace
+  }
+  return r.open(subject, (threadId) => showWhereItIs(threadId, subject))
+}
+
+function stateWords(tabId: string | undefined): string {
+  if (!tabId || tracker.statusOf(tabId) === undefined) return 'It is starting up.'
+  if (asksTheOwner(tabId)) return 'It is waiting for you: its question is below.'
+  return tracker.statusOf(tabId) === 'working' ? 'It is working.' : 'It finished its turn.'
+}
+
+const LAST_WORDS_QUOTED = 600
+
+async function showWhereItIs(threadId: string, s: RoomSubject): Promise<void> {
+  const [turn] = s.key ? await sessionBackends.turns(s.key, 1).catch(() => []) : []
+  const said = turn?.reply.trim() ? `It last said: “${quoteOf(turn.reply, LAST_WORDS_QUOTED)}”` : ''
+  const body = [`-# ${whereOf(s)}`, stateWords(s.tabId), said].filter(Boolean).join('\n\n')
+  await discordLink
+    ?.card(threadId, { accent: accentOf(s.name), header: `📍 **${s.name}**: where it is`, body })
+    .catch(() => undefined)
+  if (s.tabId) discordRelay?.roomOpened(s.tabId)
+}
+
+async function openRoomByRef(ref: string): Promise<AgentReply> {
+  const found = await findSessionRow(sessionDeps, ref)
+  if (!found.ok) return refused(`koloft discord thread open: ${found.error}`)
+  if (found.value.workspace === conductorFolder(app.getPath('userData')))
+    return refused(
+      'koloft discord thread open: a helper in your own folder gets no room; its questions already come to your channel.'
+    )
+  const threadId = await openRoomFor(found.value)
+  return answered(
+    `Opened the room of ${found.value.title}: ${roomLink(threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
+  )
+}
+
+async function roomForNew(
+  callerTab: string,
+  tabId: string,
+  workspace: string,
+  name: string | undefined
+): Promise<string | undefined> {
+  if (!rooms || !discordRelay?.answeringDiscord(callerTab)) return undefined
+  const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+  if (!backend) return undefined
+  const subject: RoomSubject = {
+    tabId,
+    name: name || sessionOfTab(tabId)?.title || `${BACKEND_LABEL[backend]} session`,
+    backend,
+    workspace
+  }
+  const threadId = await rooms
+    .open(subject, (id) => showWhereItIs(id, subject))
+    .catch(() => undefined)
+  return threadId && roomLink(threadId)
+}
+
 function butlerDestination(): Destination {
   return {
+    channelId: butler?.channel()?.channelId ?? '',
+    ownerIsWhere,
     name: butlerNameNow(),
     liveTab: () => butler?.liveTab(),
     open: async () => {
@@ -5947,6 +6206,7 @@ function registerIpc(): void {
   ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
+    if (ownerTyped(data)) ownerTouched(id)
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -5955,6 +6215,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     if (guard?.isBackground(id)) void guard.free(id)
     if (typedAfter?.includes('\r')) ownerCameBack()
+    ownerTouched(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })

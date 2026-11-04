@@ -234,7 +234,8 @@ function rowLines(
   starters: (string | undefined)[],
   withWorkspace: boolean,
   now: number,
-  asking: (tabId: string) => boolean
+  asking: (tabId: string) => boolean,
+  roomOf: (key: string) => string | undefined = () => undefined
 ): string[] {
   return placed.map(({ workspace, shownAs, row, title, live: info }, i) => {
     const parts = [
@@ -248,6 +249,8 @@ function rowLines(
     if (names[i]) parts.push(`name: ${names[i]}`)
     parts.push(...starterPart(starters[i]))
     if (withWorkspace) parts.push(`workspace: ${shownAs}`)
+    const room = roomOf(row.id)
+    if (room) parts.push(room)
     return parts.join(' · ')
   })
 }
@@ -448,6 +451,13 @@ export interface SessionVerbDeps {
     tellCaller: (said: string) => void
   ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
+  roomOf(key: string): string | undefined
+  roomForNew(
+    callerTab: string,
+    tabId: string,
+    workspace: string,
+    name: string | undefined
+  ): Promise<string | undefined>
 }
 
 export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
@@ -477,6 +487,8 @@ const aSessionOf = (backend: BackendId): string => {
   const label = BACKEND_LABEL[backend]
   return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
 }
+export const roomStarted = (link: string): string =>
+  `The owner asked for it on Discord, so it has a room there, where the owner talks to it: ${link}. Give the owner that link exactly as written.`
 const hasNoName = (backend: BackendId): string =>
   `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
@@ -570,10 +582,15 @@ async function startSibling(
           : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
       }; "koloft session close ${tabId}" takes it off the queue.`
     )
-  if (conductorTab)
+  if (conductorTab) {
+    const room =
+      workspace === d.butlerFolder()
+        ? undefined
+        : await d.roomForNew(conductorTab, tabId, workspace, name)
     return answered(
-      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.${room ? ` ${roomStarted(room)}` : ''}`
     )
+  }
   const listHint =
     args.workspace === undefined
       ? 'koloft session list'
@@ -790,6 +807,11 @@ function namesARow({ all, names }: NamedRows, ref: string): boolean {
 
 async function findRow(d: SessionVerbDeps, verb: string, ref: string): Promise<Parsed<PlacedRow>> {
   return findAmong(await allRows(d), verb, ref)
+}
+
+export async function findSessionRow(d: SessionVerbDeps, ref: string): Promise<Parsed<PlacedRow>> {
+  const found = findAmong(await allRows(d), 'list', ref)
+  return found.ok ? found : fail(found.error.replace(/^koloft session list: /, ''))
 }
 
 function findAmong({ all, names }: NamedRows, verb: string, ref: string): Parsed<PlacedRow> {
@@ -1282,7 +1304,8 @@ export function sessionVerb(d: SessionVerbDeps): {
           placedStarters(d, placed, placed, caller.session),
           true,
           Date.now(),
-          d.asking
+          d.asking,
+          d.roomOf
         ).join('\n')
       )
     }

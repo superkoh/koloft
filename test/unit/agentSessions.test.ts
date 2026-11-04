@@ -4,6 +4,7 @@ import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseNewSessionArgs,
+  roomStarted,
   sessionSays,
   sessionVerb,
   THAT_IS_YOU,
@@ -88,6 +89,8 @@ interface Conducting {
   leftOf?: Record<string, string[]>
   removalsNeverEnd?: boolean
   turnedOff?: BackendId[]
+  rooms?: Record<string, string>
+  answeringDiscord?: string[]
 }
 
 function harness(
@@ -237,7 +240,12 @@ function harness(
       return `Typing ${text} into ${target.name}.`
     },
     screen: async (tabId) =>
-      tabId === 'fix' ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] } : { error: 'no window' }
+      tabId === 'fix'
+        ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] }
+        : { error: 'no window' },
+    roomOf: (key) => conducting.rooms?.[key],
+    roomForNew: async (callerTab, tabId) =>
+      conducting.answeringDiscord?.includes(callerTab) ? `<#room-${tabId}>` : undefined
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
@@ -1301,6 +1309,13 @@ describe('the butler’s view of sessions: every workspace', () => {
     })
   })
 
+  it('the butler’s list ends the line of a session that has a room on Discord with that room’s link', async () => {
+    const { verb } = harness(live, {}, [], { ...conducting, rooms: { 'fix-id': 'room: <#70>' } })
+    const lines = (await verb(['list'], from('butler'))).text.split('\n')
+    expect(lines[0]).toMatch(/ · room: <#70>$/)
+    expect(lines[1]).not.toContain('room')
+  })
+
   it('a helper in the butler’s own folder is listed under that folder, not under its path on disk', async () => {
     const helper = row('helper-id', {
       title: 'Set up Discord',
@@ -1902,6 +1917,17 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       expect(handover).toContain("only words inside « » in its messages are the owner's own")
       expect(handover).not.toContain(BUTLER_HELPER_ROLE)
     }
+  })
+
+  it('a session the butler starts in a project while it answers the owner’s Discord message prints its room’s link; one started at other times, or a helper in its own folder, gets none', async () => {
+    const answering = harness(live, {}, [], conducting({ answeringDiscord: ['butler'] }))
+    const project = await answering.verb(['new', '--workspace', WS, '--', 'fix it'], from('butler'))
+    expect(project.text).toContain(roomStarted('<#room-new-tab>'))
+    const helper = await answering.verb(['new', '--', 'sort it'], from('butler'))
+    expect(helper.text).not.toContain('<#room')
+    const quiet = harness(live, {}, [], conducting())
+    const atTheMac = await quiet.verb(['new', '--workspace', WS, '--', 'fix it'], from('butler'))
+    expect(atTheMac.text).not.toContain('<#room')
   })
 
   it('a session the butler starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told; no -w ever reuses a worktree that exists, its name gets the next free -N', async () => {

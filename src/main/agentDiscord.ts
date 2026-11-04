@@ -16,7 +16,7 @@ import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
 import type { PagePictures } from './discord/pageShot'
 
 export const DISCORD_USAGE =
-  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
+  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
 export const NOT_A_PAGE =
   'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
@@ -34,6 +34,19 @@ export interface DiscordVerbDeps {
   reload(tabId: string): Promise<string>
   invite(): string | null
   bindNewChannel(): Promise<ConductorSaveResult>
+  openRoom(ref: string): Promise<AgentReply>
+}
+
+function thread(
+  d: DiscordVerbDeps,
+  rest: string[],
+  tabId: string
+): Promise<AgentReply> | AgentReply {
+  const [verb, ...words] = rest
+  const ref = words.join(' ').trim()
+  if (verb !== 'open' || !ref) return refused(DISCORD_USAGE, EXIT_USAGE)
+  if (!d.channelOf(tabId)) return refused(NOT_THE_BUTLER)
+  return d.openRoom(ref)
 }
 
 async function send(
@@ -135,6 +148,7 @@ export function discordVerb(d: DiscordVerbDeps): AgentVerb {
     const [sub, ...rest] = args
     if (sub === 'send') return send(d, rest, caller.tabId, caller.cwd)
     if (sub === 'shot') return shot(d, rest, caller.tabId, caller.cwd)
+    if (sub === 'thread') return thread(d, rest, caller.tabId)
     return setup(d, sub, rest, caller.tabId)
   }
 }

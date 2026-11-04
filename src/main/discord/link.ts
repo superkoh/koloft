@@ -61,12 +61,25 @@ export interface DiscordFile {
 export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
 export const COMPONENT_INTERACTION = 3
+export const AUTOCOMPLETE_INTERACTION = 4
 export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
+const REPLY_LATER = 5
+const AUTOCOMPLETE_CHOICES = 8
 const ONLY_THE_SENDER_SEES_IT = 64
+const THREAD_FOLDS_AFTER_A_DAY_MINUTES = 1440
+const THREAD_NAME_LIMIT = 100
 
 export function privately(content: string): unknown {
   return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
+}
+
+export function privatelyLater(): unknown {
+  return { type: REPLY_LATER, data: { flags: ONLY_THE_SENDER_SEES_IT } }
+}
+
+export function choicesOf(choices: { name: string; value: string }[]): unknown {
+  return { type: AUTOCOMPLETE_CHOICES, data: { choices } }
 }
 
 export interface DiscordInteraction {
@@ -77,6 +90,7 @@ export interface DiscordInteraction {
   userId: string
   command: string
   options: Record<string, string>
+  focused?: string
   customId?: string
   fields?: Record<string, string>
 }
@@ -97,7 +111,7 @@ interface RawInteraction {
   data?: {
     name?: string
     custom_id?: string
-    options?: { name: string; value?: unknown }[]
+    options?: { name: string; value?: unknown; focused?: boolean }[]
     components?: RawComponent[]
   }
 }
@@ -143,7 +157,11 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   const pressed = raw.type === COMPONENT_INTERACTION || submitted ? data?.custom_id : undefined
   if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
   const options: Record<string, string> = {}
-  for (const o of data.options ?? []) options[o.name] = String(o.value ?? '')
+  let focused: string | undefined
+  for (const o of data.options ?? []) {
+    options[o.name] = String(o.value ?? '')
+    if (o.focused) focused = o.name
+  }
   return {
     id: raw.id,
     token: raw.token,
@@ -152,6 +170,7 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
     userId,
     command: data.name ?? '',
     options,
+    ...(focused ? { focused } : {}),
     ...(pressed ? { customId: pressed } : {}),
     ...(submitted ? { fields: fieldsOf(data.components ?? []) } : {})
   }
@@ -466,6 +485,36 @@ export class DiscordLink {
 
   archiveThread(threadId: string): Promise<unknown> {
     return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
+  }
+
+  // PLATFORM§39
+  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
+    const thread = await this.api().request<{ id: string }>(
+      'POST',
+      `/channels/${channelId}/messages/${messageId}/threads`,
+      {
+        name: name.slice(0, THREAD_NAME_LIMIT),
+        auto_archive_duration: THREAD_FOLDS_AFTER_A_DAY_MINUTES
+      }
+    )
+    return thread.id
+  }
+
+  // PLATFORM§39
+  addToThread(threadId: string, userId: string): Promise<unknown> {
+    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
+  }
+
+  // PLATFORM§39
+  async replyLater(i: DiscordInteraction, content: string): Promise<void> {
+    await this.api().request(
+      'PATCH',
+      `/webhooks/${this.applicationId}/${i.token}/messages/@original`,
+      {
+        content,
+        allowed_mentions: NO_MENTIONS
+      }
+    )
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {

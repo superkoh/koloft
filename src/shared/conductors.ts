@@ -3,7 +3,8 @@ import type {
   ButlerSetting,
   DiscordChannel,
   DiscordGuild,
-  DiscordSettings
+  DiscordSettings,
+  SessionRoom
 } from './types'
 import { DEFAULT_BUTLER_NAME } from './types'
 import { basename } from './preview'
@@ -193,6 +194,7 @@ function boundChannel(
 export function sanitizeDiscord(raw: unknown): DiscordSettings {
   const doc = isRecord(raw) ? raw : {}
   const category = cleanChannel(doc.category)
+  const rooms = cleanRooms(doc.rooms)
   return {
     ...(category ? { category } : {}),
     ...(isDiscordId(doc.userId)
@@ -202,6 +204,25 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
         }
       : {}),
     ...boundChannel(doc),
-    ...(doc.oldThreadsArchived === true ? { oldThreadsArchived: true } : {})
+    ...(doc.oldThreadsArchived === true ? { oldThreadsArchived: true } : {}),
+    ...(rooms.length ? { rooms } : {})
   }
+}
+
+function cleanRooms(raw: unknown): SessionRoom[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((r: unknown) => {
+    if (!isRecord(r) || !isDiscordId(r.threadId) || typeof r.name !== 'string') return []
+    const keys = strings(r.keys)
+    if (!keys.length) return []
+    return [
+      {
+        threadId: r.threadId,
+        keys,
+        name: r.name,
+        ...(isDiscordId(r.lastMessageId) ? { lastMessageId: r.lastMessageId } : {}),
+        ...(r.putDown === true ? { putDown: true as const } : {})
+      }
+    ]
+  })
 }

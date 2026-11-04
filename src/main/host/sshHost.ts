@@ -592,6 +592,7 @@ const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
 const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
+const NOTE_DISCORD_ID = `mkdir -p "${REMOTE_HOOK_DIR}" && printf '%s\\n' "$2" >> "${REMOTE_HOOK_DIR}/$1.discord-ids"`
 const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
@@ -991,6 +992,12 @@ export class SshHost implements Host {
     const r = await this.sh(SAVE_PICK, [name], { input: png })
     if (r.code !== 0) throw new Error(problemOf(r))
     return r.stdout.toString('utf8')
+  }
+
+  // ADR-0028
+  async noteDiscordId(tabId: string, id: string): Promise<void> {
+    const r = await this.sh(NOTE_DISCORD_ID, [tabId, id])
+    if (r.code !== 0) throw new Error(problemOf(r))
   }
 
   async markOwnerAsleep(awakeTabs: string[] | null): Promise<boolean> {

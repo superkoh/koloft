@@ -7,7 +7,8 @@ import type {
   ConductorOpenResult,
   ConductorSaveResult,
   DiscordChannel,
-  DiscordSettings
+  DiscordSettings,
+  SessionRoom
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
@@ -143,6 +144,19 @@ export class Butler {
     const last = this.discord.lastMessageId
     if (last && !newerSnowflake(messageId, last)) return
     this.discord = { ...this.discord, lastMessageId: messageId }
+    this.saveSoon()
+  }
+
+  rooms(): SessionRoom[] {
+    return this.discord.rooms ?? []
+  }
+
+  saveRooms(rooms: SessionRoom[]): void {
+    this.discord = { ...this.discord, rooms }
+    this.saveSoon()
+  }
+
+  private saveSoon(): void {
     this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
   }
 
@@ -202,12 +216,16 @@ export class Butler {
 
   bind(channel: DiscordChannel): ConductorSaveResult {
     const same = this.discord.channel?.channelId === channel.channelId
-    this.write({ channel, lastMessageId: same ? this.discord.lastMessageId : undefined })
+    this.write({
+      channel,
+      lastMessageId: same ? this.discord.lastMessageId : undefined,
+      rooms: same ? this.discord.rooms : undefined
+    })
     return { ok: true }
   }
 
   unbind(): void {
-    this.write({ channel: undefined, lastMessageId: undefined })
+    this.write({ channel: undefined, lastMessageId: undefined, rooms: undefined })
   }
 
   startFresh(): Promise<ConductorOpenResult> {
