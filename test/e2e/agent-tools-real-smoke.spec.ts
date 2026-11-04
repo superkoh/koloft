@@ -1125,16 +1125,14 @@ const HAVE_PLAYWRIGHT_MCP = !!process.env.KOLOFT_SMOKE_TOOLS_DIR && fs.existsSyn
 const NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT = '--headless'
 // CODEX§26
 const CODEX_MCP_TOOL_QUESTION = /Allow the playwright MCP server to run tool/
-const ALLOW_FOR_THIS_SESSION = '2'
-const A_PICKED_OPTION_LEAVES_THE_SCREEN_MS = 500
 
 function codexReadsTheTitleWithItsBrowserTool(url: string): string {
   return `Use your playwright MCP browser tools, never the shell: navigate to ${url}, then reply with only that page's title.`
 }
 
-// CODEX§26
+// ADR-0048 CODEX§26
 test.describe("a REAL Codex drives its own tab's Workbench through the owner's Playwright MCP: an opt-in case; it spends real money", () => {
-  test('a real Codex reads a page title with its Playwright MCP tool through the Workbench of its own tab, and again in the new thread after /new', async ({
+  test('a real Codex reads a page title with its Playwright MCP tool through the Workbench of its own tab, with no question before the tool runs, and again in the new thread after /new', async ({
     env
   }) => {
     test.skip(
@@ -1174,21 +1172,13 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
         await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
         await expect
           .poll(
-            async () => {
-              if (CODEX_MCP_TOOL_QUESTION.test(await screen(page))) {
-                await page.evaluate(
-                  ([id, key]) => window.api.terminal.write(id, key),
-                  [tabId, ALLOW_FOR_THIS_SESSION]
-                )
-                await page.waitForTimeout(A_PICKED_OPTION_LEAVES_THE_SCREEN_MS)
-                if (CODEX_MCP_TOOL_QUESTION.test(await screen(page)))
-                  await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
-              }
-              return newReplies()
-            },
+            async () =>
+              CODEX_MCP_TOOL_QUESTION.test(await screen(page)) || newReplies().includes(title),
             { intervals: [1_000], timeout: A_REAL_MODEL_TURN_MS }
           )
-          .toContain(title)
+          .toBe(true)
+        expect(await screen(page)).not.toMatch(CODEX_MCP_TOOL_QUESTION)
+        expect(newReplies()).toContain(title)
         await test.info().attach(`reply-${thread}`, { body: newReplies() })
         await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
         expect(

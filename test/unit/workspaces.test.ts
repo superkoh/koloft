@@ -619,6 +619,25 @@ describe('WorkspaceManager: pending launches', () => {
     expect(latest(repo).rows.some((r) => r.pending)).toBe(false)
   })
 
+  it('never sends a list with both the Starting… row and the session’s own row when the tab binds while that list is being read, and counts that tab as running in it', async () => {
+    mgr.start()
+    mgr.launchStarted('tab-1', repo)
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['tab-1']))
+
+    own('new-one')
+    const release = await holdNextRescan()
+    writeJsonl(repo, 'new-one', '2026-08-08T12:00:00.000Z')
+    bindings.set('new-one', 'tab-1')
+    release()
+
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['new-one']))
+    const doubled = pushed.some((p) =>
+      p.some((w) => ['tab-1', 'new-one'].every((id) => w.rows.some((r) => r.id === id)))
+    )
+    expect(doubled).toBe(false)
+    expect(mgr.remove(repo)).toEqual({ running: 1, jobs: 0, removed: false })
+  })
+
   it('knows the workspace of a launched session from the moment it binds, before it writes any transcript, so a dialog in its first turn reaches a conductor', async () => {
     mgr.start()
     mgr.launchStarted('tab-1', repo)

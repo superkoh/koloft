@@ -113,6 +113,11 @@
           <li>the permission it gets</li>
           <li>when it is done: Leave it open (the default), or Close it</li>
         </ul>
+        <p>
+          If you later switch a job's agent off in Settings ▸ Sessions, its runs do not start.
+          History says <code>Could not start — Codex is turned off in Settings ▸ Sessions</code>,
+          with your agent's name in place of Codex.
+        </p>
 
         <div class="typed-table">
           <table>
@@ -212,8 +217,10 @@
           <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
           reconnect, and the run stays open. If the agent quits with an error after the run has
           started, the run is over at once: the wait starts, and History says
-          <code>Agent quit</code>. If the agent quits before the run starts, History says
-          <code>Could not start</code>.
+          <code>Agent quit</code>. Its tab stays open with its last screen, and its copy of the
+          folder stays until you close the tab; ⇧⌘R there picks the same session up again in the
+          same copy, as an ordinary session, not a new run. If the agent quits before the run
+          starts, its tab closes and History says <code>Could not start</code>.
         </p>
 
         <h2>Where it runs</h2>
@@ -358,7 +365,8 @@
                   The agent quit with an error after the run started, and nobody closed it. A run on
                   a remote machine says the agent's own exit code there (255 shows as 254); one
                   killed there reads 128 plus the signal's number, such as
-                  <code>exited (code 137)</code>. The folder line follows, as for Closed by you.
+                  <code>exited (code 137)</code>. The folder line follows, as for Closed by you,
+                  once you close the run's tab.
                 </td>
               </tr>
               <tr>

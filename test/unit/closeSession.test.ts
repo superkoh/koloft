@@ -26,8 +26,11 @@ describe('unexpectedExitWanted', () => {
     expect(unexpectedExitWanted({ kind: 'terminal' }, crash)).toBe(false)
     expect(unexpectedExitWanted(undefined, crash)).toBe(false)
   })
-  it('stands aside for a scheduled run that never bound, but not for one that did', () => {
+  it('stands aside for a scheduled run that never started, but keeps one main says had started, though a fresh run’s tab carries no session id of its own', () => {
     expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash)).toBe(false)
+    expect(
+      unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, { ...crash, runStarted: true })
+    ).toBe(true)
     expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash)).toBe(true)
   })
 })

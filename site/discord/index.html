@@ -136,11 +136,10 @@ your Mac
         <p>
           Open Settings ▸ Discord and click <code>Set up with Alfred</code> (the button carries your
           butler's name), or, with Assist on, type "set up Discord" in <kbd>⌘P</kbd>. Koloft starts
-          a helper of your butler. It needs a Workbench browser, which only Claude Code and Codex
-          have: it runs on your butler's agent if that is one of them, and on Claude Code if not.
-          The helper opens the Discord website in its browser and does each step it can; you sign
-          in, type your password and pass the "I am human" checks. Already have a bot? It can use it
-          too. The steps are:
+          a helper of your butler. It runs on your butler's agent. If that agent is switched off in
+          Settings ▸ Sessions, it runs on your default agent instead. The helper opens the Discord
+          website in its browser and does each step it can; you sign in, type your password and pass
+          the "I am human" checks. Already have a bot? It can use it too. The steps are:
         </p>
         <ol>
           <li>
@@ -254,7 +253,11 @@ your Mac
           question was waiting when you write, its card comes first, and Koloft tells you your
           message was not delivered: answer the question, then send your message again. A note that
           your butler could not reach a session shows in Koloft, not in Discord. Password and code
-          cards (below) always come to Discord.
+          cards (below) still come to Discord.
+        </p>
+        <p>
+          While the <a href="../sessions/#asleep">moon</a> in the sidebar is on, Discord stays quiet
+          the same way. Write to your butler in the channel and the moon goes off.
         </p>
 
         <h3 id="your-sessions">Your sessions</h3>
@@ -275,7 +278,9 @@ your Mac
           channel only if you do. Its answer to that message is not posted, and the bot does not
           type. Left out: your butler's own helpers, a turn whose reply already went back to whoever
           started the session, and a turn that only reports (see
-          <a href="../sessions/#red-dots">red dots</a>).
+          <a href="../sessions/#red-dots">red dots</a>). While the
+          <a href="../sessions/#asleep">moon</a> is on, no such message goes out; when you are back,
+          your butler gets one note about the night instead, if anything happened.
         </p>
         <p>
           A helper your butler started in its own folder is different: its questions come to the
@@ -313,6 +318,10 @@ your Mac
           does not stay in the chat. The card then ends with <code>✅ Passed on.</code>, or
           <code>⌛ Koloft stopped waiting.</code> if you did not answer in time. See
           <a href="../agents/#secrets">how the agent asks</a>.
+        </p>
+        <p>
+          While the <a href="../sessions/#asleep">moon</a> is on, no 🔑 card is sent: Koloft turns
+          the ask down and tells the session to skip that step.
         </p>
 
         <h3>Slash commands</h3>

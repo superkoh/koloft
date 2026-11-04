@@ -1220,8 +1220,8 @@ describe('CodexSessions', () => {
     ])
   })
 
-  // CODEX§26
-  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint; other entries, and names Codex's -c cannot spell, are left alone", async () => {
+  // ADR-0048 CODEX§26
+  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint, and its tools run without asking unless the owner set the entry's approval mode; other entries, and names Codex's -c cannot spell, are left alone", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'a'.repeat(32)
     vi.mocked(deps.browserEndpoint).mockImplementation((tabId) =>
       tabId === 'pty-reserved' ? endpoint : ''
@@ -1236,7 +1236,11 @@ describe('CodexSessions', () => {
                   args: ['@playwright/mcp@latest'],
                   env_vars: ['MINE']
                 },
-                'pw-global': { command: '/usr/local/bin/playwright-mcp', args: [] },
+                'pw-global': {
+                  command: '/usr/local/bin/playwright-mcp',
+                  args: [],
+                  default_tools_approval_mode: 'prompt'
+                },
                 'my.browser': { command: 'npx', args: ['@playwright/mcp'] },
                 github: { command: 'github-mcp', args: [], env_vars: ['GH_TOKEN'] }
               }
@@ -1247,13 +1251,13 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     const options = mocks.create.mock.calls[0][0] as CodexTransportOptions
     expect(mocks.request).toHaveBeenCalledWith('config/read', { cwd: repo }, '/homes/work')
-    expect(options.configOverrides).toEqual(
-      expect.arrayContaining([
-        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
-        'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
-      ])
-    )
-    expect(options.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    const mcp = (o: CodexTransportOptions): string[] =>
+      o.configOverrides!.filter((c) => c.startsWith('mcp_servers.'))
+    expect(mcp(options)).toEqual([
+      'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
+      'mcp_servers.playwright.default_tools_approval_mode="approve"',
+      'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+    ])
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].id).toBe('pty-reserved')
 
     const answer = mocks.request.getMockImplementation()!
@@ -1267,7 +1271,7 @@ describe('CodexSessions', () => {
     })
     await sessions.launch({ kind: 'codex', cwd: repo })
     const retried = mocks.create.mock.calls.at(-1)![0] as CodexTransportOptions
-    expect(retried.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    expect(mcp(retried)).toEqual(mcp(options))
     mocks.request.mockImplementation(answer)
 
     vi.mocked(deps.browserEndpoint).mockReturnValue('')
@@ -1560,8 +1564,8 @@ describe('CodexSessions', () => {
     expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
   })
 
-  // ADR-0029 CODEX§26
-  it('the butler reaches the Workbench browser like any tab, and its Playwright tools ask as any tab’s do', async () => {
+  // ADR-0029 ADR-0048 CODEX§26
+  it('the butler reaches the Workbench browser like any tab, and its Playwright tools run without asking as any tab’s do', async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32)
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
     const answer = mocks.request.getMockImplementation()!
@@ -1572,7 +1576,7 @@ describe('CodexSessions', () => {
     )
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
     expect(transports[0].options.sessionEnv?.KOLOFT_BROWSER_CDP).toBe(endpoint)
-    expect(transports[0].options.configOverrides).not.toContain(
+    expect(transports[0].options.configOverrides).toContain(
       'mcp_servers.playwright.default_tools_approval_mode="approve"'
     )
   })

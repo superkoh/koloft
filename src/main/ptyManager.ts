@@ -109,25 +109,19 @@ interface LinesToType {
 }
 
 // PLATFORM§2
-function typeOnceTheShellReads(
-  write: (text: string) => void,
-  text: string,
-  holdsEarlyKeys: boolean
-): LinesToType {
+function typeOnceTheShellReads(write: (text: string) => void, text: string): LinesToType {
   if (text === '') return { shellSaid: () => {}, held: () => false }
-  let typed = false
   let tail = ''
-  let early: string | undefined = holdsEarlyKeys ? '' : undefined
+  let early: string | undefined = ''
   const type = (): void => {
-    if (typed) return
-    typed = true
-    write(text + (early ?? ''))
+    if (early === undefined) return
+    write(text + early)
     early = undefined
   }
   setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   return {
     shellSaid: (output) => {
-      if (typed) return
+      if (early === undefined) return
       const seen = tail + output
       tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
       if (LINE_EDITOR_STARTS_READING.test(seen)) type()
@@ -304,8 +298,7 @@ export class PtyManager extends EventEmitter {
       [args.setupCommand, launchCommand]
         .filter((command): command is string => !!command)
         .map((command) => shortEnoughToType(command) + '\r')
-        .join(''),
-      args.kind !== 'shell'
+        .join('')
     )
     this.linesToType.set(handle, lines)
 

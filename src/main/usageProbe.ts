@@ -62,9 +62,11 @@ export interface Candidate {
 
 export const RESET_TIE_S = DW
 
-const tbOf = (c: Candidate): number => (c.score.tiebreak > 0 ? c.score.tiebreak : Infinity)
+type Ranked = { score: Pick<Score, 's1' | 's2' | 'tiebreak'> }
 
-export function leximaxFinalists(cands: Candidate[]): Candidate[] {
+const tbOf = (c: Ranked): number => (c.score.tiebreak > 0 ? c.score.tiebreak : Infinity)
+
+export function leximaxFinalists<C extends Ranked>(cands: C[]): C[] {
   let survivors = cands
   for (const key of ['s1', 's2'] as const) {
     if (survivors.length <= 1) break

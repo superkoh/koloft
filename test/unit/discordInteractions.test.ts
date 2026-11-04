@@ -29,19 +29,45 @@ function setup(over: Partial<InteractionDeps> = {}) {
   const runs: string[] = []
   const pressed: DiscordInteraction[] = []
   const submitted: DiscordInteraction[] = []
+  const order: string[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
-    press: async (i) => void pressed.push(i),
+    ownerWrote: () => void order.push('owner back'),
+    press: async (i) => {
+      pressed.push(i)
+      order.push('pressed')
+    },
     submit: async (i) => void submitted.push(i),
     run: async (text) => {
       runs.push(text)
+      order.push('ran')
       return `Typing ${text}`
     },
     respond: async (_i, body) => void replies.push(body),
     ...over
   }
-  return { interactions: new Interactions(deps), replies, runs, pressed, submitted }
+  return { interactions: new Interactions(deps), replies, runs, pressed, submitted, order }
 }
+
+describe('a Discord interaction from the owner counts as the owner back, once it is handled', () => {
+  it('the owner pressing a card button counts as the owner back', async () => {
+    const { interactions, order } = setup()
+    await interactions.handle(interaction({ type: 3, customId: 'ask:x:0' }))
+    expect(order).toEqual(['pressed', 'owner back'])
+  })
+
+  it('the owner running a slash command counts as the owner back', async () => {
+    const { interactions, order } = setup()
+    await interactions.handle(interaction({ command: 'clear' }))
+    expect(order).toEqual(['ran', 'owner back'])
+  })
+
+  it('someone else pressing a card button does not', async () => {
+    const { interactions, order } = setup()
+    await interactions.handle(interaction({ type: 3, userId: '666', customId: 'ask:x:0' }))
+    expect(order).toEqual(['pressed'])
+  })
+})
 
 describe('Discord slash commands', () => {
   it('the owner’s /run types the command into the butler, and answers at once', async () => {
@@ -90,9 +116,10 @@ describe('Discord slash commands', () => {
   })
 
   it('someone else gets a refusal only they can see, and nothing runs', async () => {
-    const { interactions, replies, runs } = setup()
+    const { interactions, replies, runs, order } = setup()
     await interactions.handle(interaction({ userId: '666', options: { command: '/clear' } }))
     expect(runs).toEqual([])
+    expect(order).toEqual([])
     expect(replies).toEqual([{ type: 4, data: { content: ONLY_THE_OWNER, flags: 64 } }])
   })
 

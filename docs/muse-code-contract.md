@@ -454,6 +454,19 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   Enter then. `muse schema generate-ts` (1.4.14) lists `userInput/answer` answers as
   `selectedLabel`, `selectedLabels` or `freeText`, plus `note`; §5's refusal of a second
   client's answer was not rechecked.
+- **A question waits for the owner with every permission flag Koloft passes.** Measured
+  2026-11-03 on `Muse Code 1.4.11 (1.4.11-R6667.1)` (`koloft-muse-probe-1411`,
+  `MUSE_NO_AUTO_UPDATE=1`), Docker with no network, tmux 160×50, the fake model above
+  answering with a one-question `request_user_input` call: with `--permission-profile
+  :unrestricted` (footer `YOLO`) and with `--approval-judge off --sandbox-network enabled`,
+  2 of 2 runs each drew the box ("◇ Request user input Fruit — running", the options,
+  "None of the above", "Enter to select · ↑/↓ to move · Tab for an optional note · Esc to
+  interrupt"), sent no model request for 22–70 s, and after `2` then Enter sent
+  `{"status":"answered","answers":[{"id":"fruit","selected_label":"Banana"}]}`. The `❯`
+  input row stayed drawn under the box. The tool's schema has an optional
+  `auto_resolution_ms` (60000–240000) and says: "On a goal-carried run, omitting
+  auto_resolution_ms still arms a fixed 300000 millisecond whole-prompt safety deadline;
+  other runs keep no deadline when it is omitted." A call that sets it was not tried.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting
@@ -564,8 +577,33 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   asking (fake model). Without the network flag a network fetch asks the user too, and
   on macOS 1.4.7 so did file writes and other commands the judge would have reviewed.
   On macOS 1.4.9 `write_file` and `edit_file` inside the folder no longer ask; a
-  network fetch (without the network flag), a shell command of several stages (`a; b`),
-  a command leaving the sandbox and a write outside it still do.
+  network fetch (without the network flag), a command leaving the sandbox and a write
+  outside it still do, and so did a shell command of several stages (`a; b`) on 1.4.9.
+  1.4.14 no longer asks for that: `echo a; echo b` ran with no question (macOS and
+  Linux, TUI, 2026-11-03).
+- **git inside the sandbox, with these two flags** (2026-11-03, `Muse Code 1.4.14
+  (1.4.14-R7309.1)`, official installer, a throwaway macOS 27 tart VM and a throwaway
+  Ubuntu 24.04 tart VM with unprivileged user namespaces allowed; the TUI driven by
+  `expect`, which answered the terminal queries and the 7501 query and counted
+  `blocked:kind=permission` frames; the fake model of the opening note calling `bash`
+  with one command per call; Koloft's bundled git 2.53.0 on macOS, Ubuntu's 2.43.0 on
+  Linux): in a repository, and in a worktree at
+  `<repo>/.claude/worktrees/<name>` whose git folder lies outside the workspace,
+  `git commit -am …` and then `git push` over http to a server that wants a token ran
+  with no question. Each VM copied the git setup one kind of Koloft tab has. On macOS,
+  a local tab's: an `include.path` given in `GIT_CONFIG_COUNT` names the account's
+  config, whose credential helper asks an answerer through a folder in `/tmp`. On
+  Linux, a remote tab's: the `include.path` comes from `GIT_CONFIG_PARAMETERS` and the
+  helper reads a token file under `~/.koloft`. The commit carried the account's
+  `user.name` and `user.email`, the server saw the token, and the remote-tracking
+  branch moved. `touch .git/x` worked while `touch ../x` was refused ("Operation not
+  permitted" on macOS, "Read-only file system" on Linux); the binary names a
+  `git_sandbox_relaxation` feature and `active_git_storage_roots`. `muse exec` under
+  the same flags gave the same results (macOS). Not probed yet: a push over ssh, a
+  helper that writes in the home folder (Git Credential Manager refreshing a token).
+- A `bash` call with `sandbox_permissions: "require_escalated"` (the tool's way to ask
+  for one run outside the sandbox) shows "Would you like to run the following command?"
+  with `blocked:kind=permission`, and `y` runs it (same runs).
 - No 1.4.9 launch flag makes Muse ask before `write_file` or `edit_file` (macOS VM,
   fake model, one tool per turn): not `--approval-mode untrusted` (with the judge on or
   off), `on-request --approval-judge off`, `--permission-profile :ask-me` or the
@@ -650,6 +688,19 @@ server of the opening note and with `--provider echo`; October 2026.
   machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
   with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
   tmux 3.3a, through Koloft, October 2026).
+- **On Ubuntu 24.04 as it ships, Muse's sandbox cannot start.** There
+  `kernel.apparmor_restrict_unprivileged_userns` is 1, and muse 1.4.14 (`1.4.14-R7309.1`,
+  a throwaway Ubuntu 24.04.5 tart VM, kernel 7.0, the runs of §15) fails every shell
+  command it sandboxes with `bwrap: setting up uid map: Permission denied`; its status
+  line says "The Linux sandbox uses Bubblewrap and needs access to create user
+  namespaces." Installing Ubuntu's `bubblewrap` package, which comes with an AppArmor
+  profile, changes nothing: muse runs its own copy. So under §15's flags `git commit`
+  and `git push` fail, and a command marked `require_escalated` asks once and then runs
+  outside the sandbox, the push still under Koloft's account. That the real model
+  retries a failed command that way is inferred, not checked. With the setting at 0 the
+  sandbox works and git behaves as in §15. The Docker lab fails the same way
+  (`No permissions to create a new namespace`; `setting up uid map` with seccomp and
+  AppArmor unconfined, or `--privileged`).
 
 ## §18 MCP servers and a project's instruction files
 

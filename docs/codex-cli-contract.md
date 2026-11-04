@@ -2514,6 +2514,10 @@ so its folders were not writable by default.
     'mcp_servers.playwright.tools.browser_run_code_unsafe.approval_mode="prompt"'` on the
     app-server was taken and showed the same way. A value from `config.toml` and one from
     `-c` look alike in `config/read`.
+  - 2026-11-03, codex-cli 0.166.0, the same way with no model turn: an entry with no
+    approval mode in `config.toml` comes back from `config/read` with no
+    `default_tools_approval_mode` key at all, while the same entry carries
+    `tool_timeout_sec: null`, so other unset fields of an entry do come back as `null`.
 - **Which calls ask, read from the `rust-v0.166.0` source, not run**
   (`codex-mcp/src/mcp/mod.rs` `mcp_permission_prompt_is_auto_approved`,
   `core/src/mcp_tool_call.rs` `requires_mcp_tool_approval_for_mode`,
@@ -2541,6 +2545,7 @@ so its folders were not writable by default.
 - **A failed `config/read` drops every browser setting at once**: Koloft builds the
   Playwright cache root and the `env_vars` passthrough from one `config/read`, so a read
   lost to section 28's race leaves a tab with no CDP endpoint for the MCP server.
+  Its Playwright tools then ask again too: their `approve` comes from the same read.
   `network_access` does not hang on that read: every tab gets it (ADR-0047).
 
 ## 27. Hooks on one app-server, and their trust

@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the butler’s message reaches the remote session on its message socket there; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
+  test('E-SSH-C1: the butler’s message reaches the remote session on its message socket there; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux, and a dialog of two questions, the second taking several picks, with one koloft session answer line per question; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -207,6 +207,18 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
             { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
           )
           .toBe(true)
+
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [remote.tabId, '/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry\r']
+        )
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toBe('approval')
+        fake.say(OWNER, `/koloft session answer ${remote.sessionId} "$(printf '2\\n1, 3')"`)
+        await expect
+          .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toContain('Picked: Green, Apple, Cherry')
         expect(fake.posted.filter((p) => p.card).map((p) => p.content.split('\n')[0])).toEqual([
           `⌨️ **Alfred** ran /koloft session send ${remote.sessionId} hello from Discord:`
         ])

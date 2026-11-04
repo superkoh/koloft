@@ -133,7 +133,15 @@
             phone and paste the last address
           </li>
         </ul>
-        <p>With no Discord channel bound, all three are refused with a message that says so.</p>
+        <p>
+          With no Discord channel bound, all three are refused with a message that says so. While
+          you <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), they are
+          refused too:
+          <code
+            >koloft: the owner is asleep and cannot give a password or a code now. Skip this step,
+            go on with the rest, and say in your report that it waits for the owner.</code
+          >
+        </p>
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
@@ -243,7 +251,9 @@
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
           Work that needs its own branch or worktree goes to a Koloft session started with
           <code class="nowrap">-w</code>. It never goes to a hidden helper, or to a branch in the
-          folder other sessions share.
+          folder other sessions share. Work that ends in several pull requests (proposed code
+          changes) gets one such session each. If one builds on another, its session is started only
+          after that branch is pushed.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
@@ -339,10 +349,12 @@
         <p>
           Koloft hands the address to the Playwright MCP server in your Codex settings. If your
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
-          Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
-          the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets
-          Playwright's cache folder, for that session only; every Codex session's sandbox already
-          has the network. A session started with
+          Koloft and not a browser of their own. In a session on this Mac they also run without
+          asking first, unless you set <code>default_tools_approval_mode</code> on that entry
+          yourself; on a remote machine, that machine's Codex settings decide. Those tools and
+          <code>playwright-cli</code> reach the web tabs. To let them, the session's sandbox (the
+          box Codex runs commands in) gets Playwright's cache folder, for that session only; every
+          Codex session's sandbox already has the network. A session started with
           <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
           this.
         </p>

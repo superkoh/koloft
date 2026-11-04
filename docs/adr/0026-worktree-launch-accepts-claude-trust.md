@@ -1,4 +1,4 @@
-# 0026 Only a worktree session the person starts, or a session an agent starts in a sidebar workspace, writes an agent's folder trust
+# 0026 Only a worktree session the person starts or opens, or a session an agent starts in a sidebar workspace, writes an agent's folder trust
 
 **Constraint**: `claude -w <name>` in a repo Claude has never been trusted in does not
 ask the trust question — it prints an error and exits at once (`CC§9`). In a folder it
@@ -17,6 +17,12 @@ for good.
   nobody is at the terminal to answer. A worktree it starts is trusted by the first
   rule's code; a folder the sidebar does not hold (the caller's own fallback folder,
   home) gets nothing.
+- the person opens an Antigravity session in a worktree Koloft made — a recovered one, a
+  resumed one — whose workspace agy already trusts: that earlier yes covers it, but agy
+  does not carry a folder's trust down to its subfolders and has no flag that trusts for
+  one run (`AGY§5`), so the worktree folder is written as well. Muse gets the same outcome
+  without writing, from `--trust-workspace` for that run. A git worktree the person made
+  themselves is not Koloft's and gets agy's own question.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run itself keeps the jobs form's warning,
 and a launch that fell back to another folder writes nothing. The same rule holds on a remote
