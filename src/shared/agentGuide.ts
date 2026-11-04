@@ -278,18 +278,18 @@ koloft todo file <workspace> <file>
 
 PASSWORDS, CODES AND SIGN-INS
 
-When a step needs the owner's password or a one-time code, Koloft asks the owner for it in the butler's Discord channel, on a card that names this session, and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel is bound, these are refused: ask the owner to do the step at the Mac.
+When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench), and also on a card in Discord when the owner is away from the Mac or talks to you from Discord. Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
 
 sudo
     In a command with no terminal, Koloft's sudo asks the owner for the password. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
     Example: sudo brew services restart nginx && sudo launchctl kickstart -k system/com.example
 
 koloft secret page <css selector>
-    The owner types a password or code into one field of a page in this session's Workbench browser, and Koloft submits the form. The selector must match exactly one input box in one open page. Then look at the page to see what happened. Only for passwords and codes: fill other fields yourself.
+    The owner types a password or code into one field of a page in this session's Workbench browser: into the page itself at the Mac, or from Discord, where Koloft fills it in and submits the form. The selector must match exactly one input box in one open page. Then look at the page to see what happened. Only for passwords and codes: fill other fields yourself.
     Example: koloft secret page "input[type=password]"
 
 koloft secret url "<sign-in address>"
-    For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. The owner finishes the sign-in on a phone and pastes the address it ended on; Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
+    For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. Koloft opens it in this session's Workbench, where the owner can finish it; or the owner finishes it on a phone and pastes the address it ended on, and Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
     Example: koloft secret url "https://auth.openai.com/oauth/authorize?..."
 
 DISCORD
@@ -329,7 +329,7 @@ When the owner allows browser control, it drives the Workbench browser, whose ad
 In a web tab of a session on another machine, only localhost, 127.0.0.1 and [::1] mean the machine, not the owner's Mac (0.0.0.0 does not, nor a name set in the machine's own hosts file): a web server you start there opens at that address, and Koloft brings its port over the ssh connection. If nothing answers on that port, or the machine's ssh server does not allow port forwarding, the page does not open and the owner sees why. If the owner's Mac already uses that port, the page opens on another port number, and what the page still sends to the old port, its websocket too, fails: then start the server on a port the Mac does not use.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const QUESTION_RULES = [
   "Check before you ask. Read the item's own record and make sure the premise is true: is it really waiting on the owner? Did the owner already decide it there (in what the session said, an issue comment, a task note)? Then act on that, including the change that makes a decided item stop counting, and do not ask again.",

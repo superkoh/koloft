@@ -489,7 +489,7 @@ import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
-import { secretVerb } from './agentSecret'
+import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
 import { shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
@@ -1945,11 +1945,18 @@ const agentRequests = new AgentRequests({
       bindNewChannel: bindWithNewChannel
     }),
     [SECRET_VERB]: secretVerb({
+      sessionTab: (tabId) => ptyMgr.get(tabId)?.ownerTabId ?? tabId,
       ask: (a) =>
-        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+        secretAsks
+          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+          : Promise.resolve({ ended: 'timeout' }),
       ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
+      showPage: (tabId, url) => {
+        const payload: BrowserOpenRequest = { tabId, url, source: 'user' }
+        sendToRenderer(CH.browser.open, payload)
+      },
       open: openSignInEndOn,
       sleep
     }),
@@ -3035,6 +3042,7 @@ app.whenReady().then(() => {
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
+  setupSecretLanding()
   setupGuestForwardsEnd()
   setupGuestPopups()
   setupGuestContextMenu()
@@ -3708,6 +3716,14 @@ app.whenReady().then(() => {
   askButtons = buttons
   const secrets = new SecretAsks({
     owner: () => butlerNow.owner(),
+    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
+    show: (asks) => sendToRenderer(CH.secret.asks, asks),
+    waiting: (tabId, alsoOnDiscord) => {
+      if (!alsoOnDiscord) attention.asksForASecret(tabId, attentionSubjectOf(tabId))
+    },
+    ended: (tabId) => {
+      if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
+    },
     place: async (tabId, card) => {
       const channelId = butlerNow.channel()?.channelId
       if (!channelId) return undefined
@@ -4307,6 +4323,14 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
     if (owner) recordGuestOwner(popupId, owner)
   })
   for (const w of webPageWatchers) w(popup)
+}
+
+function setupSecretLanding(): void {
+  onEveryWebPage((contents) => {
+    contents.on('did-navigate', (_e, url) =>
+      secretAsks?.navigated(contents.id, guestOwners.get(contents), url)
+    )
+  })
 }
 
 // PLATFORM§12
@@ -5591,11 +5615,12 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
-function guestPagesOf(tabId: string): GuestPage[] {
+function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
   return webContents
     .getAllWebContents()
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
+      guestId: wc.id,
       url: () => wc.getURL(),
       // PLATFORM§10
       run: async (script: string) => {
@@ -6011,6 +6036,16 @@ function registerIpc(): void {
     return id ? installTool(id) : null
   })
   ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
+  ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
+    if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)
+  })
+  ipcMain.on(CH.secret.done, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.done(id)
+  })
+  ipcMain.on(CH.secret.decline, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.decline(id)
+  })
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {

@@ -26,6 +26,7 @@ import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
 import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
+import { firstSecretAsk, SecretPageBar } from './SecretAsk'
 import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
@@ -630,6 +631,20 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     id ? els.current.get(id) : undefined
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
+  const secretAsk = useStore((s) => firstSecretAsk(s.secretAsks, ownerTab))
+  const secretBarAsk =
+    secretAsk &&
+    activeWebId &&
+    (secretAsk.kind === 'url' ||
+      (secretAsk.kind === 'page' && guestIdOf(activeWebId) === secretAsk.guestId))
+      ? secretAsk
+      : undefined
+  const secretBarGuest = visible && secretBarAsk ? activeWebId : null
+  useEffect(() => {
+    if (!secretBarGuest) return undefined
+    const raf = requestAnimationFrame(() => els.current.get(secretBarGuest)?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [secretBarGuest, secretBarAsk?.id])
   const activeGuestId = useCallback(
     () => (activeWebId ? guestIdOf(activeWebId) : 0),
     [activeWebId, guestIdOf]
@@ -1455,6 +1470,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           onExternalOpen(activeTab?.url || origin)
         }}
       />
+
+      {secretBarAsk && <SecretPageBar ask={secretBarAsk} />}
 
       <div className="wb-body">
         {/* PLATFORM§9 */}

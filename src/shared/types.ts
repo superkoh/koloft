@@ -689,6 +689,13 @@ export interface AttentionSubject {
   sessionId?: string
 }
 
+export type SecretAskShape =
+  | { kind: 'sudo'; command: string; prompt: string }
+  | { kind: 'page'; guestId: number; url: string; label: string }
+  | { kind: 'url'; signIn: string }
+
+export type SecretAskView = SecretAskShape & { id: string; tabId: string }
+
 export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
@@ -1148,6 +1155,13 @@ export interface KoloftApi {
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
+  }
+  secret: {
+    list(): Promise<SecretAskView[]>
+    onAsks(cb: (asks: SecretAskView[]) => void): () => void
+    answer(id: string, value: string): void
+    done(id: string): void
+    decline(id: string): void
   }
   attention: {
     list(): Promise<AttentionEvent[]>

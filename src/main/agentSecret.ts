@@ -1,12 +1,12 @@
-import { LOOPBACK_HOSTS, urlOrNull } from '@shared/browserRoute'
+import { urlOrNull } from '@shared/browserRoute'
+import type { SecretAskShape } from '@shared/types'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
-import type { SecretAsk } from './discord/secretAsks'
+import { loopbackHttp, type SecretAnswer, type SecretAsk } from './discord/secretAsks'
 
 export const SECRET_USAGE =
   'koloft: usage: koloft secret page <css selector> | koloft secret url "<sign-in address>"'
-export const NO_DISCORD =
-  "koloft: Koloft asks the owner for a secret only in the butler's Discord channel, and no Discord channel is bound. Ask the owner to do this step at the Mac."
 export const NOT_IN_TIME = 'koloft: the owner did not answer in time; nothing was passed on.'
+export const OWNER_DECLINED = 'koloft: the owner turned this down; nothing was passed on.'
 export const OWNER_ASLEEP =
   'koloft: the owner is asleep and cannot give a password or a code now. Skip this step, go on with the rest, and say in your report that it waits for the owner.'
 export const NO_SUCH_FIELD =
@@ -18,19 +18,25 @@ export const NOT_LOOPBACK =
 export const FILLED = 'Koloft filled the field and submitted the form.'
 export const FILLED_AND_EMPTIED =
   'Koloft filled the field and submitted the form, but the field still held the text afterwards, so Koloft emptied it: the sign-in may have failed. Look at the page.'
+export const OWNER_FILLED = 'The owner filled in the page in Koloft. Look at the page.'
+export const OWNER_FILLED_AND_EMPTIED =
+  'The owner filled in the page in Koloft, but the field still held the text afterwards, so Koloft emptied it: the sign-in may have failed. Look at the page.'
 
 const A_SUBMITTED_PAGE_MOVES_ON_MS = 3000
 
 export interface FieldPage {
+  guestId: number
   url(): string
   run(script: string): Promise<unknown>
 }
 
 export interface SecretVerbDeps {
-  ask(a: SecretAsk): Promise<string | undefined | null>
+  sessionTab(tabId: string): string
+  ask(a: SecretAsk): Promise<SecretAnswer>
   ownerAsleep(): boolean
   machine(tabId: string): string | undefined
   pages(tabId: string): FieldPage[]
+  showPage(tabId: string, url: string): void
   open(machine: string | undefined, url: string): Promise<string>
   sleep(ms: number): Promise<void>
 }
@@ -40,11 +46,14 @@ interface FieldFacts {
   label?: string
 }
 
-const describeField = (selector: string): string => `(() => {
+type Given = Exclude<SecretAnswer, { ended: unknown }>
+
+const describeAndFocusField = (selector: string): string => `(() => {
   const els = document.querySelectorAll(${JSON.stringify(selector)})
   if (els.length !== 1) return { count: els.length }
   const el = els[0]
   if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return { count: 0 }
+  el.focus()
   const named = (el.labels && el.labels[0] && el.labels[0].innerText) || el.getAttribute('aria-label') || el.placeholder || el.name || el.id || el.type
   return { count: 1, label: String(named || 'field').trim().slice(0, 80) }
 })()`
@@ -84,15 +93,20 @@ function originOf(url: string): string {
 }
 
 async function factsOn(page: FieldPage, selector: string): Promise<FieldFacts> {
-  const facts = (await page.run(describeField(selector)).catch(() => null)) as FieldFacts | null
+  const facts = (await page
+    .run(describeAndFocusField(selector))
+    .catch(() => null)) as FieldFacts | null
   return facts ?? { count: 0 }
 }
 
-async function askOwner(d: SecretVerbDeps, ask: SecretAsk): Promise<string | AgentReply> {
-  if (d.ownerAsleep()) return refused(OWNER_ASLEEP)
-  const value = await d.ask(ask)
-  if (value === null) return refused(NO_DISCORD)
-  return value ?? refused(NOT_IN_TIME)
+async function askOwner(d: SecretVerbDeps, ask: SecretAsk): Promise<Given | AgentReply> {
+  const a = await d.ask(ask)
+  if ('ended' in a) return refused(a.ended === 'declined' ? OWNER_DECLINED : NOT_IN_TIME)
+  return a
+}
+
+function isReply(v: Given | AgentReply): v is AgentReply {
+  return 'exit' in v
 }
 
 // PLATFORM§58
@@ -102,13 +116,16 @@ async function sudoPassword(
   prompt: string,
   command: string
 ): Promise<AgentReply> {
-  const value = await askOwner(d, {
+  const shape: SecretAskShape = { kind: 'sudo', command: command || 'sudo', prompt }
+  const v = await askOwner(d, {
     tabId,
+    shape,
     header: (name) => `🔑 **${name}** asks for your sudo password`,
-    body: `Command: \`${command || 'sudo'}\`\nsudo asked: ${prompt || 'Password:'}`,
+    body: `Command: \`${shape.command}\`\nsudo asked: ${prompt || 'Password:'}`,
     label: 'Your sudo password'
   })
-  return typeof value === 'string' ? answered(value) : value
+  if (isReply(v)) return v
+  return 'typed' in v ? answered(v.typed) : refused(NOT_IN_TIME)
 }
 
 // PLATFORM§17
@@ -119,33 +136,36 @@ async function pageField(d: SecretVerbDeps, tabId: string, selector: string): Pr
   const at = facts.findIndex((f) => f.count === 1)
   const page = pages[at]
   const label = facts[at].label ?? 'field'
-  const origin = originOf(page.url())
-  const value = await askOwner(d, {
+  const url = page.url()
+  const origin = originOf(url)
+  d.showPage(tabId, url)
+  const v = await askOwner(d, {
     tabId,
+    shape: { kind: 'page', guestId: page.guestId, url, label },
     header: (name) => `🔑 **${name}** asks you to fill in a field on a web page`,
     body: `Page: ${origin}\nField: ${label}`,
     label
   })
-  if (typeof value !== 'string') return value
-  if (originOf(page.url()) !== origin) return refused(PAGE_CHANGED)
-  if ((await page.run(fillAndSubmit(selector, value)).catch(() => false)) !== true)
-    return refused(PAGE_CHANGED)
-  await d.sleep(A_SUBMITTED_PAGE_MOVES_ON_MS)
-  const emptied = await page.run(emptyIfKept(selector)).catch(() => false)
-  return answered(emptied === true ? FILLED_AND_EMPTIED : FILLED)
-}
-
-function loopback(text: string): string | undefined {
-  const url = urlOrNull(text.trim())
-  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
+  if (isReply(v)) return v
+  if ('typed' in v) {
+    if (originOf(page.url()) !== origin) return refused(PAGE_CHANGED)
+    if ((await page.run(fillAndSubmit(selector, v.typed)).catch(() => false)) !== true)
+      return refused(PAGE_CHANGED)
+    await d.sleep(A_SUBMITTED_PAGE_MOVES_ON_MS)
+  }
+  const emptied = (await page.run(emptyIfKept(selector)).catch(() => false)) === true
+  if ('typed' in v) return answered(emptied ? FILLED_AND_EMPTIED : FILLED)
+  return answered(emptied ? OWNER_FILLED_AND_EMPTIED : OWNER_FILLED)
 }
 
 // CODEX§15
 async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Promise<AgentReply> {
   const machine = d.machine(tabId)
   const where = machine ?? 'this Mac'
-  const value = await askOwner(d, {
+  d.showPage(tabId, signIn)
+  const v = await askOwner(d, {
     tabId,
+    shape: { kind: 'url', signIn },
     header: (name) => `🔑 **${name}** needs the address a sign-in ends on`,
     body: [
       `1. Open this on your phone and finish the sign-in: ${signIn}`,
@@ -154,8 +174,12 @@ async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Prom
     ].join('\n'),
     label: 'The address the sign-in ended on'
   })
-  if (typeof value !== 'string') return value
-  const url = loopback(value)
+  if (isReply(v)) return v
+  if (!('typed' in v))
+    return answered(
+      `The owner finished the sign-in in this session's Workbench, and its last page loaded on ${where}.`
+    )
+  const url = loopbackHttp(v.typed)
   if (!url) return refused(NOT_LOOPBACK)
   const status = await d.open(machine, url)
   return answered(`Koloft opened the address on ${where}; it answered ${status}.`)
@@ -164,12 +188,15 @@ async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Prom
 export function secretVerb(d: SecretVerbDeps): AgentVerb {
   return (args, caller) => {
     const [sub, ...rest] = args
+    const tabId = d.sessionTab(caller.tabId)
+    const asleep = (go: () => Promise<AgentReply>): Promise<AgentReply> =>
+      d.ownerAsleep() ? Promise.resolve(refused(OWNER_ASLEEP)) : go()
     if (sub === 'sudo' && rest.length <= 2)
-      return sudoPassword(d, caller.tabId, rest[0] ?? '', rest[1] ?? '')
+      return asleep(() => sudoPassword(d, tabId, rest[0] ?? '', rest[1] ?? ''))
     if (sub === 'page' && rest.length === 1 && rest[0].trim())
-      return pageField(d, caller.tabId, rest[0])
+      return asleep(() => pageField(d, tabId, rest[0]))
     if (sub === 'url' && rest.length === 1 && rest[0].trim())
-      return signInEnd(d, caller.tabId, rest[0].trim())
+      return asleep(() => signInEnd(d, tabId, rest[0].trim()))
     return refused(SECRET_USAGE, EXIT_USAGE)
   }
 }

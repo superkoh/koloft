@@ -1107,6 +1107,22 @@ body {
 .modal.worktreesess {
   width: 600px;
 }
+.term-wrap > .modal-backdrop.in-session {
+  position: absolute;
+  z-index: 6;
+}
+.modal.secret-modal {
+  width: 480px;
+}
+.secret-modal .modal-body {
+  gap: 12px;
+}
+.secret-modal .btn-primary .k {
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  opacity: 0.65;
+}
 .worktreesess .modal-body {
   gap: 12px;
 }

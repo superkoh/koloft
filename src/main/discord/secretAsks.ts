@@ -1,4 +1,6 @@
 import { randomUUID } from 'crypto'
+import { LOOPBACK_HOSTS, urlOrNull } from '@shared/browserRoute'
+import type { SecretAskShape, SecretAskView } from '@shared/types'
 import { accentOf, type Card, type CardButton } from './cards'
 import { privately, type DiscordInteraction } from './link'
 import { ONLY_THE_OWNER_ANSWERS } from './buttons'
@@ -18,13 +20,19 @@ export const PLAIN_TEXT_WARNING =
 export const PASSED_ON = 'Koloft passed it on.'
 export const NO_LONGER_WAITING = 'Koloft is no longer waiting for this.'
 export const NOTHING_TYPED = 'Nothing was typed, so nothing was passed on.'
+export const ANSWERED_IN_KOLOFT = '✅ Answered in Koloft.'
+export const TURNED_DOWN_IN_KOLOFT = '⏹ Turned down in Koloft.'
 
 export interface SecretAsk {
   tabId: string
+  shape: SecretAskShape
   header(name: string): string
   body: string
   label: string
 }
+
+export type SecretAnswer =
+  { typed: string } | { doneInKoloft: true } | { ended: 'timeout' | 'declined' }
 
 export interface PlacedCard {
   channelId: string
@@ -34,15 +42,25 @@ export interface PlacedCard {
 
 export interface SecretAskDeps {
   owner(): string | undefined
+  cardWanted(tabId: string): boolean
   place(tabId: string, card: (name: string) => Card): Promise<PlacedCard | undefined>
   edit(placed: PlacedCard, card: Card): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
+  show(asks: SecretAskView[]): void
+  waiting(tabId: string, alsoOnDiscord: boolean): void
+  ended(tabId: string): void
 }
 
 interface Pending {
   ask: SecretAsk
   placed?: PlacedCard
-  settle(value: string | undefined): void
+  footer?: string
+  settle(answer: SecretAnswer): void
+}
+
+export function loopbackHttp(text: string): string | undefined {
+  const url = urlOrNull(text.trim())
+  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
 }
 
 export class SecretAsks {
@@ -50,25 +68,59 @@ export class SecretAsks {
 
   constructor(private d: SecretAskDeps) {}
 
-  async ask(ask: SecretAsk, waitMs: number): Promise<string | undefined | null> {
+  async ask(ask: SecretAsk, waitMs: number): Promise<SecretAnswer> {
     const id = randomUUID()
-    const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
-    let settle!: (value: string | undefined) => void
-    const answer = new Promise<string | undefined>((resolve) => (settle = resolve))
+    let settle!: (answer: SecretAnswer) => void
+    const answer = new Promise<SecretAnswer>((resolve) => (settle = resolve))
     const pending: Pending = { ask, settle }
     this.pending.set(id, pending)
-    const placed = await this.d
-      .place(ask.tabId, (name) => cardOf(ask, name, PLAIN_TEXT_WARNING, [button]))
-      .catch(() => undefined)
-    if (!placed) {
-      this.pending.delete(id)
-      return null
-    }
-    pending.placed = placed
-    const timer = setTimeout(() => this.end(id, undefined, '⌛ Koloft stopped waiting.'), waitMs)
+    this.d.show(this.views())
+    const timer = setTimeout(
+      () => this.end(id, { ended: 'timeout' }, '⌛ Koloft stopped waiting.'),
+      waitMs
+    )
+    const onDiscord = this.d.cardWanted(ask.tabId)
+    this.d.waiting(ask.tabId, onDiscord)
+    if (onDiscord) void this.placeCard(id, pending)
     const value = await answer
     clearTimeout(timer)
     return value
+  }
+
+  views(): SecretAskView[] {
+    return [...this.pending].map(([id, p]) => ({ ...p.ask.shape, id, tabId: p.ask.tabId }))
+  }
+
+  answer(id: string, typed: string): void {
+    if (typed) this.end(id, { typed }, ANSWERED_IN_KOLOFT)
+  }
+
+  done(id: string): void {
+    this.end(id, { doneInKoloft: true }, ANSWERED_IN_KOLOFT)
+  }
+
+  decline(id: string): void {
+    this.end(id, { ended: 'declined' }, TURNED_DOWN_IN_KOLOFT)
+  }
+
+  navigated(guestId: number, tabId: string | undefined, url: string): void {
+    for (const [id, p] of this.pending) {
+      const s = p.ask.shape
+      const landed =
+        (s.kind === 'page' && s.guestId === guestId) ||
+        (s.kind === 'url' && p.ask.tabId === tabId && !!loopbackHttp(url))
+      if (landed) this.done(id)
+    }
+  }
+
+  private async placeCard(id: string, pending: Pending): Promise<void> {
+    const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
+    const placed = await this.d
+      .place(pending.ask.tabId, (name) => cardOf(pending.ask, name, PLAIN_TEXT_WARNING, [button]))
+      .catch(() => undefined)
+    if (!placed) return
+    pending.placed = placed
+    if (pending.footer) this.editCard(pending)
   }
 
   private async pendingFor(i: DiscordInteraction): Promise<[string, Pending] | undefined> {
@@ -120,23 +172,30 @@ export class SecretAsks {
       await this.d.respond(i, privately(NOTHING_TYPED))
       return
     }
-    this.end(id, value, '✅ Passed on.')
+    this.end(id, { typed: value }, '✅ Passed on.')
     await this.d.respond(i, privately(PASSED_ON))
   }
 
   forget(tabId: string): void {
     for (const [id, p] of this.pending)
-      if (p.ask.tabId === tabId) this.end(id, undefined, '⏹ The session closed.')
+      if (p.ask.tabId === tabId) this.end(id, { ended: 'timeout' }, '⏹ The session closed.')
   }
 
-  private end(id: string, value: string | undefined, footer: string): void {
+  private end(id: string, answer: SecretAnswer, footer: string): void {
     const p = this.pending.get(id)
     if (!p) return
     this.pending.delete(id)
-    p.settle(value)
-    const placed = p.placed
-    if (!placed) return
-    void this.d.edit(placed, cardOf(p.ask, placed.name, `-# ${footer}`)).catch(() => undefined)
+    p.footer = footer
+    p.settle(answer)
+    this.d.show(this.views())
+    const tabId = p.ask.tabId
+    if (![...this.pending.values()].some((q) => q.ask.tabId === tabId)) this.d.ended(tabId)
+    if (p.placed) this.editCard(p)
+  }
+
+  private editCard(p: Pending): void {
+    const placed = p.placed!
+    void this.d.edit(placed, cardOf(p.ask, placed.name, `-# ${p.footer}`)).catch(() => undefined)
   }
 }
 

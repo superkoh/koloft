@@ -991,6 +991,50 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     }
   })
 
+  test('E-SSH-44: koloft secret url, run in a session on a machine behind the jump host, opens the sign-in in that session’s Workbench; once the owner’s sign-in lands on localhost, the page is the machine’s and the session hears it finished there, without the address and its code', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [free, idpPort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const callback = `http://localhost:${free}/auth/callback?code=z-44`
+    const idp = await serveOnTheMac(
+      idpPort,
+      `<title>sign in</title><a id="go" href="${callback}">Continue</a>`
+    )
+    env.extraArgs.push('--host-resolver-rules=MAP koloft-a.test 127.0.0.1')
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(lab, free, '<title>cb</title><body>signed in on the machine</body>')
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+        await switchToRow(page, remoteRow)
+        await page.evaluate(
+          ([t, l]) => window.api.terminal.write(t, l + '\r'),
+          [remoteTab, `/sh koloft secret url "http://koloft-a.test:${idpPort}/authorize"`]
+        )
+        const signIn = await guestByUrl(app, `koloft-a.test:${idpPort}/authorize`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(page.locator('[aria-label="Secret ask"]')).toContainText(
+          'finish this sign-in here'
+        )
+        await signIn.locator('#go').click()
+        await expect(signIn.locator('body')).toHaveText('signed in on the machine')
+        await expect
+          .poll(async () => (await terminalText(page, remoteTab)).replace(/\s+/g, ''), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain('itslastpageloadedonkt-key')
+        expect(await terminalText(page, remoteTab)).not.toContain('z-44')
+        await expect(page.locator('[aria-label="Secret ask"]')).toHaveCount(0)
+      })
+    } finally {
+      idp.close()
+    }
+  })
+
   test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it, whose reply-language hook starts from the owner’s last words, not from its task', async ({
     env
   }) => {

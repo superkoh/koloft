@@ -109,6 +109,7 @@ import {
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
+import { firstSecretAsk, SudoDialog, type SudoAsk } from './components/SecretAsk'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -294,6 +295,11 @@ export default function App(): JSX.Element {
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
+  const secretAsks = useStore((s) => s.secretAsks)
+  const sudoAskOf = (tabId: string): SudoAsk | undefined => {
+    const ask = firstSecretAsk(secretAsks, tabId)
+    return ask?.kind === 'sudo' ? ask : undefined
+  }
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -1001,6 +1007,13 @@ export default function App(): JSX.Element {
     const set = useStore.getState().setAttention
     const off = window.api.attention.onChanged(set)
     void window.api.attention.list().then(set)
+    return off
+  }, [])
+
+  useEffect(() => {
+    const set = useStore.getState().setSecretAsks
+    const off = window.api.secret.onAsks(set)
+    void window.api.secret.list().then(set)
     return off
   }, [])
 
@@ -1747,7 +1760,8 @@ export default function App(): JSX.Element {
                           ? () => window.api.sessions.noteActivity(t.id)
                           : undefined
                       }
-                      focusSignal={tuiFocus}
+                      autoFocus={!sudoAskOf(t.id)}
+                      focusSignal={sudoAskOf(t.id) ? undefined : tuiFocus}
                       onRepainted={() => {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
@@ -1758,6 +1772,9 @@ export default function App(): JSX.Element {
                     {/* CODEX§9 MUSE§10 AGY§5 */}
                     {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
                       <ResumingMask title={t.title} />
+                    )}
+                    {sudoAskOf(t.id) && (
+                      <SudoDialog ask={sudoAskOf(t.id)!} shown={t.id === shown.id} />
                     )}
                   </div>
                 ])}

@@ -110,6 +110,14 @@ export function sessionActivityBadge(
   }
 }
 
+export function statusWithSecrets(
+  status: SessionStatus | undefined,
+  tabId: string | undefined,
+  secretAsks: readonly { tabId: string }[]
+): SessionStatus | undefined {
+  return tabId && secretAsks.some((a) => a.tabId === tabId) ? 'approval' : status
+}
+
 export function rowStateClass(
   running: boolean,
   status: SessionStatus | undefined,
