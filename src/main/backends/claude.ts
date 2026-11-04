@@ -1094,7 +1094,13 @@ export class ClaudeBackend implements SessionBackend {
         workspaces?.onSessionBound(machine.attachTo)
         this.d.events(handle.id, { type: 'bound', key: machine.attachTo })
       } else if (!spec.resumeSessionId) {
-        workspaces?.launchStarted(handle.id, machine.root, spec.worktree, machine.tracking.host)
+        workspaces?.launchStarted(
+          handle.id,
+          machine.root,
+          spec.worktree,
+          machine.tracking.host,
+          machine.sessionId
+        )
       }
       this.d.remoteSync()?.pokeNow(machine.tracking.host)
     } else if (!spec.resumeSessionId || !workspaces?.isMember(spec.resumeSessionId)) {

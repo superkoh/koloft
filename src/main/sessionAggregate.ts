@@ -283,6 +283,7 @@ export interface PendingLaunch {
   worktree?: string
   sessionId?: string
   host?: string
+  pickedSessionId?: string
 }
 
 export interface PendingSplit {

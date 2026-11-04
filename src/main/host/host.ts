@@ -51,6 +51,7 @@ export interface MachineTab {
   cwd: string
   root: string
   hookMirror: string
+  sessionId: string
   attachTo?: string
   pickKey?: string
 }

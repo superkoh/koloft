@@ -582,6 +582,43 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
   })
 })
 
+describe('WorkspaceManager: a session leaving its worktree', () => {
+  async function leftItsWorktree(removed: boolean): Promise<void> {
+    writeJsonl(repo, 'wt-1')
+    own('wt-1')
+    bindings.set('wt-1', 'tab-1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+    mgr.leavingWorktree('wt-1', 'tab-1')
+    await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
+    bindings.delete('wt-1')
+    mgr.leftWorktree('wt-1', removed)
+    await mgr.whenScanned()
+  }
+
+  it('stays out of the list after its tab ends while it is still a member, until a rescan no longer lists it; a later resume lists it again', async () => {
+    await leftItsWorktree(true)
+    expect(latest(repo).rows).toEqual([])
+
+    mgr.dropOwnership('wt-1', 'claude ended (prompt_input_exit)')
+    await mgr.whenScanned()
+    mgr.adopt(['wt-1'])
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+  })
+
+  it('comes back as soon as another tab binds it, while it is still a member', async () => {
+    await leftItsWorktree(true)
+    bindings.set('wt-1', 'tab-2')
+    mgr.onTrackerUpdate()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+  })
+
+  it('comes back as soon as its tab ends when the worktree was not removed', async () => {
+    await leftItsWorktree(false)
+    expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1'])
+  })
+})
+
 describe('WorkspaceManager: pending launches', () => {
   it('holds a pending row until the session materializes, then swaps it in place', async () => {
     writeJsonl(repo, 'old-one')
@@ -1491,6 +1528,24 @@ describe('remote workspace: pending launches', () => {
       expect(latest(repo).rows.map((r) => r.id)).toEqual(['tab-local'])
       expect(latest(sameDirOnDevbox).rows.map((r) => r.id)).toEqual(['tab-remote'])
     })
+  })
+
+  it('a launch whose session id was picked before it ran shows only its Starting… row while the machine already reports that id running with a mirrored transcript, and only the session’s row once its tab binds', async () => {
+    layout.workspaces = [{ path: RKEY }]
+    const alive = new Set<string>()
+    mgr = remoteMgr({ remoteRunning: () => alive })
+    mgr.start()
+    mgr.launchStarted('tab-1', RPATH, undefined, 'devbox', 'picked-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['tab-1']))
+
+    alive.add('picked-1')
+    writeMirrorJsonl('picked-1')
+    await mgr.whenScanned()
+    expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['tab-1'])
+
+    bindings.set('picked-1', 'tab-1')
+    mgr.onSessionBound('picked-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['picked-1']))
   })
 
   it('a launch started on the typed path before the first heartbeat keeps its pending row once the path resolves to the real one', async () => {

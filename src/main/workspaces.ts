@@ -238,6 +238,7 @@ export class WorkspaceManager {
   private transcriptFileById = new Map<string, string>()
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
+  private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
   private rootWatchers = new Map<string, fs.FSWatcher>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
   private timer?: NodeJS.Timeout
@@ -315,7 +316,7 @@ export class WorkspaceManager {
   }
 
   private hidden(id: string): boolean {
-    return this.deps.hiddenRow?.(id) ?? false
+    return this.leavingTheirWorktree.has(id) || (this.deps.hiddenRow?.(id) ?? false)
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
@@ -515,8 +516,27 @@ export class WorkspaceManager {
     this.unpin(wsPath)
   }
 
-  launchStarted(tabId: string, cwd: string, worktree?: string, host?: string): void {
-    this.launches.set(tabId, { tabId, cwd, worktree, host })
+  launchStarted(
+    tabId: string,
+    cwd: string,
+    worktree?: string,
+    host?: string,
+    pickedSessionId?: string
+  ): void {
+    this.launches.set(tabId, { tabId, cwd, worktree, host, pickedSessionId })
+    this.scheduleRescan()
+  }
+
+  leavingWorktree(sessionId: string, tabId: string): void {
+    this.leavingTheirWorktree.set(sessionId, { tabId, tabEnded: false })
+    this.scheduleRescan()
+  }
+
+  leftWorktree(sessionId: string, removed: boolean): void {
+    const leaving = this.leavingTheirWorktree.get(sessionId)
+    if (!leaving) return
+    if (removed) leaving.tabEnded = true
+    else this.leavingTheirWorktree.delete(sessionId)
     this.scheduleRescan()
   }
 
@@ -797,6 +817,7 @@ export class WorkspaceManager {
     const bucketDirs: string[] = []
     const workspaceSlugs: string[] = []
     const wantedBucketDirs = new Set<string>()
+    const listed = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
     const butler = this.deps.butlerFolder
@@ -823,6 +844,13 @@ export class WorkspaceManager {
       const bindings = this.deps.runningBindings()
       const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
       for (const l of launches) l.sessionId = sessionIdByTab.get(l.tabId)
+      for (const [id, leaving] of this.leavingTheirWorktree) {
+        const tab = bindings.get(id)
+        if (tab && tab !== leaving.tabId) this.leavingTheirWorktree.delete(id)
+      }
+      const awaitingTheirTab = new Set(
+        launches.flatMap((l) => (!l.sessionId && l.pickedSessionId ? [l.pickedSessionId] : []))
+      )
       const wsRunningIds = new Set([
         ...bindings.keys(),
         ...((key && this.deps.remoteRunning?.(key.host)) || [])
@@ -861,8 +889,9 @@ export class WorkspaceManager {
       }
       allRows.unshift(...additional.filter((r) => r.pending))
       for (const r of allRows) wsBySession.set(r.id, ws.path)
+      for (const r of filterOwned(allRows, owned, wsRunningIds)) listed.add(r.id)
       const visible = allRows
-        .filter((r) => !this.hidden(r.id))
+        .filter((r) => !this.hidden(r.id) && !awaitingTheirTab.has(r.id))
         .map((r) => (!r.running && wsRunningIds.has(r.id) ? { ...r, running: true } : r))
       const rows = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
@@ -897,6 +926,8 @@ export class WorkspaceManager {
       })
     }
 
+    for (const [id, leaving] of this.leavingTheirWorktree)
+      if (leaving.tabEnded && !listed.has(id)) this.leavingTheirWorktree.delete(id)
     this.state = { bucketDirs, workspaceSlugs }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
