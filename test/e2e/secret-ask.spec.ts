@@ -2,8 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
-import { startSessionIn, terminalText, waitForCalls } from './helpers/p1'
+import { seedSettings, type E2EEnv } from './helpers/env'
+import { startSessionIn, switchToRow, terminalText, waitForCalls } from './helpers/p1'
 import { guestByUrl } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
 import { OWNER_DECLINED, OWNER_FILLED } from '../../src/main/agentSecret'
@@ -114,10 +114,11 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
     }
   })
 
-  test('koloft secret url opens the sign-in in the session’s Workbench with a bar above it; once it lands on its 127.0.0.1 address the session hears it finished, without the address and its code', async ({
+  test('koloft secret url from a session that is not on screen marks its row, opens the sign-in in its own Workbench with a bar above it; once that sign-in, after its redirects, lands on its 127.0.0.1 address the session hears it finished, without the address and its code', async ({
     env
   }) => {
     ownerAtTheMac(env)
+    seedSettings(env, { hintsOff: true })
     const server = await startEchoServer()
     const cli = await startEchoServer()
     env.extraArgs.push(`--host-resolver-rules=MAP ${SIGN_IN_HOST} 127.0.0.1`)
@@ -128,14 +129,23 @@ test.describe('Koloft asks the owner for a password in the session’s own tab, 
         res.end('signed in')
       })
       const callback = `http://localhost:${cli.port}/auth/callback?code=c-8`
+      server.route('/authorize', (_q, res) => {
+        res.writeHead(302, { location: '/sign-in' })
+        res.end()
+      })
       server.page(
-        '/authorize',
+        '/sign-in',
         `<!doctype html><title>sign in</title><a id="go" href="${callback}">Continue</a>`
       )
       const page = await app.firstWindow()
       const tab = await sessionTab(page, env)
+      await startSessionIn(page, 'ws-a')
+      await waitForCalls(env, 2)
       await type(page, tab, `/koloft secret url "${server.hostUrl(SIGN_IN_HOST, '/authorize')}"`)
-      const signIn = await guestByUrl(app, '/authorize')
+      const row = page.locator(`.ws-tab[data-tab-id="${tab}"]`)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await switchToRow(page, row)
+      const signIn = await guestByUrl(app, '/sign-in')
       await expect(page.locator(SECRET_BAR)).toContainText('finish this sign-in here')
       await signIn.locator('#go').click()
       await expect
