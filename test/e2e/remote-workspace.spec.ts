@@ -454,9 +454,14 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
 
         await addRemoteWorkspace(page, env)
-        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-        await agent.bound?.(page)
         const row = wsRows(page, REMOTE_WS_NAME).first()
+        if (agent.label === 'Claude') {
+          await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+          await row.click()
+        } else {
+          await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+          await agent.bound?.(page)
+        }
         await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
         await showChanges(page)
 
