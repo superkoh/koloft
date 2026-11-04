@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  couldNotSendInRoom,
   DIAGRAM_IN_WORDS,
+  diagramsInWords,
   DIFF_LOOK,
+  DIFF_ROWS_THAT_FILL_THE_PICTURES,
   REST_IN_THE_FILE,
   sendPhoneCopy,
   shownOf,
+  stillSending,
+  type FileDiff,
   type PhoneCopyDeps
 } from '../../src/main/discord/phoneCopy'
 import { BYTES_PER_FILE, type DiscordFile } from '../../src/main/discord/link'
@@ -15,22 +20,31 @@ import { formatRemoteKey } from '../../src/shared/remoteKey'
 const WHERE = 'the room'
 const page = { width: 1280, height: 900 }
 
+type Sent = { files: DiscordFile[]; parts: string[] }
+
 function deps(
-  over: Partial<PhoneCopyDeps> & { bytes?: Buffer; diff?: string } = {}
-): PhoneCopyDeps & {
-  sent: { files: DiscordFile[]; parts: string[] }[]
-} {
-  const sent: { files: DiscordFile[]; parts: string[] }[] = []
+  over: Partial<PhoneCopyDeps> & { bytes?: Buffer; diff?: string; truncated?: boolean } = {}
+): PhoneCopyDeps & { sent: Sent[]; read: string[] } {
+  const sent: Sent[] = []
+  const read: string[] = []
   return {
     sent,
+    read,
     shoot: async () => ({
       files: [{ name: 'page.png', data: Buffer.from('png') }],
       shown: page,
       page
     }),
     shootHtml: async () => ({ files: [], shown: page, page }),
-    readBytes: async () => over.bytes ?? Buffer.from('bytes'),
-    fileDiff: async () => over.diff ?? '',
+    size: async () => undefined,
+    readBytes: async (file) => {
+      read.push(file)
+      return over.bytes ?? Buffer.from('bytes')
+    },
+    fileDiff: async (): Promise<FileDiff> => ({
+      text: over.diff ?? '',
+      truncated: over.truncated ?? false
+    }),
     send: async (files, parts) => {
       sent.push({ files, parts })
     },
@@ -38,21 +52,60 @@ function deps(
   }
 }
 
+function diffShooter(tall: number): {
+  pictured: { html: string; look: PageLook }[]
+  shootHtml: PhoneCopyDeps['shootHtml']
+} {
+  const pictured: { html: string; look: PageLook }[] = []
+  return {
+    pictured,
+    shootHtml: async (html, look): Promise<PagePictures> => {
+      pictured.push({ html, look })
+      return {
+        files: [{ name: 'page.png', data: Buffer.from('png') }],
+        shown: {
+          width: look.width,
+          height: Math.min(tall, look.pictureHeight * look.mostPictures)
+        },
+        page: { width: look.width, height: tall }
+      }
+    }
+  }
+}
+
+const rowsOf = (n: number): string =>
+  `@@ -1,0 +1,${n} @@\n${Array.from({ length: n }, (_, i) => `+line ${i}`).join('\n')}\n`
+
 describe('what koloft open shows is sent to the phone as', () => {
-  it('a picture for an HTML file or a web address, the file itself for Markdown or anything else, a diff for koloft diff', () => {
+  it('a picture for an HTML file, a file:// address or a web address, the file itself for Markdown or anything else, a diff for koloft diff', () => {
     expect(shownOf('/w/plan.html', undefined)).toEqual({ page: 'file:///w/plan.html' })
     expect(shownOf('http://localhost:5173', undefined)).toEqual({ page: 'http://localhost:5173' })
     expect(shownOf('/w/plan.md', undefined)).toEqual({ markdown: '/w/plan.md' })
+    expect(shownOf('file:///w/plan.md', undefined)).toEqual({ markdown: '/w/plan.md' })
     expect(shownOf('/w/shot.png', undefined)).toEqual({ file: '/w/shot.png' })
     expect(shownOf('/w/app.ts', undefined, 'diff')).toEqual({ diff: '/w/app.ts' })
   })
 
-  it('in a session on another machine: its files are read there, and no page of it is pictured', () => {
+  it('in a session on another machine: its files are read there, its own pages are not pictured, a public page is', () => {
     const on = (p: string): string => formatRemoteKey('box', p)
     expect(shownOf('/w/plan.md', 'box')).toEqual({ markdown: on('/w/plan.md') })
     expect(shownOf('/w/app.ts', 'box', 'diff')).toEqual({ diff: on('/w/app.ts') })
-    expect(shownOf('/w/plan.html', 'box')).toEqual({ pageOnMachine: true })
-    expect(shownOf('http://localhost:3000', 'box')).toEqual({ pageOnMachine: true })
+    expect(shownOf('/w/plan.html', 'box')).toEqual({ pageOnMachine: '/w/plan.html' })
+    expect(shownOf('http://localhost:3000', 'box')).toEqual({
+      pageOnMachine: 'http://localhost:3000'
+    })
+    expect(shownOf('https://example.com/docs', 'box')).toEqual({
+      page: 'https://example.com/docs'
+    })
+  })
+})
+
+describe('a diagram in a Markdown file sent as text', () => {
+  it('becomes one line saying to look on the Mac, whatever its fence; code blocks stay, even one quoting a diagram', () => {
+    expect(diagramsInWords('a\n~~~mermaid\ngraph TD\n~~~\nb')).toBe(`a\n${DIAGRAM_IN_WORDS}\nb`)
+    expect(diagramsInWords('````md\n```mermaid\ngraph TD\n```\n````\nb')).toBe(
+      '````md\n```mermaid\ngraph TD\n```\n````\nb'
+    )
   })
 })
 
@@ -67,7 +120,7 @@ describe('sendPhoneCopy', () => {
 
   it('a page on another machine sends nothing and tells the session to say it in words', async () => {
     const d = deps()
-    expect(await sendPhoneCopy(d, { pageOnMachine: true }, WHERE)).toMatch(
+    expect(await sendPhoneCopy(d, { pageOnMachine: '/w/plan.html' }, WHERE)).toMatch(
       /no picture of a page on another machine.*say what it shows/
     )
     expect(d.sent).toEqual([])
@@ -82,6 +135,23 @@ describe('sendPhoneCopy', () => {
     expect(await sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE)).toBe(
       'Koloft could not also send it to the room: it did not load in time. Say what it shows in your reply.'
     )
+  })
+
+  it('a copy slower than the reply can wait for: the reply says it is still on its way, and a failure later is told in the room', async () => {
+    let fail!: (e: Error) => void
+    const d = deps({ shoot: () => new Promise((_, reject) => (fail = reject)) })
+    expect(await sendPhoneCopy(d, { page: 'http://localhost:1' }, WHERE, 0)).toBe(
+      stillSending(WHERE)
+    )
+    fail(new Error('it did not load in time.'))
+    await expect
+      .poll(() => d.sent)
+      .toEqual([
+        {
+          files: [],
+          parts: [couldNotSendInRoom('http://localhost:1', 'it did not load in time.')]
+        }
+      ])
   })
 
   it('Markdown goes as phone-readable text with the original file, a diagram as a line saying to look on the Mac', async () => {
@@ -110,56 +180,57 @@ describe('sendPhoneCopy', () => {
     expect(parts.at(-1)).toBe(REST_IN_THE_FILE)
   })
 
-  it('any other file goes as itself; one over 20 MB is not sent and the session is told why', async () => {
+  it('any other file goes as itself; one over 20 MB is not read, or not sent when its size shows only once read, and the session is told why', async () => {
     const d = deps()
     expect(await sendPhoneCopy(d, { file: '/w/shot.png' }, WHERE)).toBe(
       'Sent the file to the room.'
     )
     expect(d.sent[0].files.map((f) => f.name)).toEqual(['shot.png'])
-    const big = deps({ bytes: Buffer.alloc(BYTES_PER_FILE + 1) })
+
+    const big = deps({ size: async () => BYTES_PER_FILE + 1 })
     expect(await sendPhoneCopy(big, { file: '/w/film.mov' }, WHERE)).toMatch(
       /could not also send it.*the limit is 20 MB/
     )
-    expect(big.sent).toEqual([])
+    expect(big.read).toEqual([])
+
+    const bigThere = deps({ bytes: Buffer.alloc(BYTES_PER_FILE + 1) })
+    expect(await sendPhoneCopy(bigThere, { file: 'ssh://box/w/film.mov' }, WHERE)).toMatch(
+      /the limit is 20 MB/
+    )
+    expect(bigThere.sent).toEqual([])
   })
 
-  it('a diff goes as a phone-wide picture, since a diff code block shows no colours on the phone; one cut short also carries the whole diff as a file', async () => {
-    const pictured: { html: string; look: PageLook }[] = []
-    const shootHtml =
-      (tall: number) =>
-      async (html: string, look: PageLook): Promise<PagePictures> => {
-        pictured.push({ html, look })
-        return {
-          files: [{ name: 'page.png', data: Buffer.from('png') }],
-          shown: {
-            width: look.width,
-            height: Math.min(tall, look.pictureHeight * look.mostPictures)
-          },
-          page: { width: look.width, height: tall }
-        }
-      }
-    const short = deps({
-      diff: 'diff --git a/app.ts b/app.ts\n@@ -1 +1 @@\n-old\n+new\n',
-      shootHtml: shootHtml(100)
+  it('a diff goes as a phone-wide picture of its changed lines, a gap between its parts, since a diff code block shows no colours on the phone', async () => {
+    const { pictured, shootHtml } = diffShooter(100)
+    const d = deps({
+      diff: 'diff --git a/app.ts b/app.ts\n@@ -1 +1 @@\n-old\n+<new>\n@@ -9 +9 @@\n-x\n+y\n',
+      shootHtml
     })
-    expect(await sendPhoneCopy(short, { diff: '/w/app.ts' }, WHERE)).toBe(
+    expect(await sendPhoneCopy(d, { diff: '/w/app.ts' }, WHERE)).toBe(
       'Sent a picture of its changes to the room.'
     )
-    expect(short.sent).toEqual([
-      { files: [expect.objectContaining({ name: 'page.png' })], parts: [] }
-    ])
+    expect(d.sent).toEqual([{ files: [expect.objectContaining({ name: 'page.png' })], parts: [] }])
     expect(pictured[0].look).toBe(DIFF_LOOK)
     expect(pictured[0].html).toContain(
-      '<h1>app.ts</h1><div class="hunk">@@ -1 +1 @@</div><div class="del">-old</div><div class="add">+new</div>'
+      '<h1>app.ts</h1><div class="del">-old</div><div class="add">+&lt;new&gt;</div><div class="gap">⋯</div><div class="del">-x</div>'
     )
+  })
 
-    const diff = '@@ -1 +1 @@\n+<script>\n'
-    const long = deps({ diff, shootHtml: shootHtml(100_000) })
-    expect(await sendPhoneCopy(long, { diff: '/w/app.ts' }, WHERE)).toMatch(
-      /start of its changes.*whole diff as a file/
+  it('a diff longer than the pictures goes as pictures of its start with the whole diff as a file; a diff git cut short, or too large for a file, goes without it', async () => {
+    const long = rowsOf(DIFF_ROWS_THAT_FILL_THE_PICTURES + 1)
+    const tall = diffShooter(100_000)
+    const d = deps({ diff: long, shootHtml: tall.shootHtml })
+    expect(await sendPhoneCopy(d, { diff: '/w/app.ts' }, WHERE)).toBe(
+      'Sent a picture of the start of its changes to the room, with the whole diff as a file.'
     )
-    expect(pictured[1].html).toContain('+&lt;script&gt;')
-    expect(long.sent[0].files.at(-1)).toEqual({ name: 'app.ts.diff', data: Buffer.from(diff) })
+    expect(tall.pictured[0].html).not.toContain(`+line ${DIFF_ROWS_THAT_FILL_THE_PICTURES}<`)
+    expect(d.sent[0].files.at(-1)).toEqual({ name: 'app.ts.diff', data: Buffer.from(long) })
+
+    const cut = deps({ diff: rowsOf(3), truncated: true, shootHtml: diffShooter(100).shootHtml })
+    expect(await sendPhoneCopy(cut, { diff: '/w/app.ts' }, WHERE)).toMatch(
+      /start of its changes.*too large to send/
+    )
+    expect(cut.sent[0].files.map((f) => f.name)).toEqual(['page.png'])
   })
 
   it('a file with no git changes sends nothing', async () => {

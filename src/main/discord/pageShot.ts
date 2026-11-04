@@ -109,19 +109,27 @@ export interface PagePictures {
   page: Size
 }
 
-export async function shootHtml(html: string, look: PageLook): Promise<PagePictures> {
+export async function shootHtml(
+  html: string,
+  look: PageLook,
+  shownAs: string
+): Promise<PagePictures> {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'koloft-shot-'))
   const file = path.join(dir, 'page.html')
   try {
     await fs.promises.writeFile(file, html)
-    return await shootPage(pathToFileURL(file).href, look)
+    return await shootPage(pathToFileURL(file).href, look, shownAs)
   } finally {
     await fs.promises.rm(dir, { recursive: true, force: true })
   }
 }
 
 // PLATFORM§16
-export async function shootPage(url: string, look = PAGE_LOOK): Promise<PagePictures> {
+export async function shootPage(
+  url: string,
+  look = PAGE_LOOK,
+  shownAs = url
+): Promise<PagePictures> {
   const view = new WebContentsView({
     webPreferences: { session: shotSession(), sandbox: true, contextIsolation: true }
   })
@@ -131,7 +139,7 @@ export async function shootPage(url: string, look = PAGE_LOOK): Promise<PagePict
   try {
     await within(wc.loadURL(url), PAGE_LOADS_WITHIN_MS, 'it did not load in time.').catch(
       (error: unknown) => {
-        throw new Error(`Koloft could not open ${url}: ${(error as Error).message}`)
+        throw new Error(`Koloft could not open ${shownAs}: ${(error as Error).message}`)
       }
     )
     await settled(wc)
@@ -144,14 +152,15 @@ export async function shootPage(url: string, look = PAGE_LOOK): Promise<PagePict
     const { size, ratio } = await pageSize(wc)
     const clips = pictureClips(size, ratio, look)
     const last = clips.at(-1)
-    if (!last) throw new Error(`${url} is an empty page: there is nothing to take a picture of.`)
+    if (!last)
+      throw new Error(`${shownAs} is an empty page: there is nothing to take a picture of.`)
     const files: DiscordFile[] = []
     for (const [i, clip] of clips.entries()) {
       let shot = await capture(wc, clip)
       if (shot.data.length > BYTES_PER_FILE) shot = await capture(wc, clip, SMALLER_PICTURE_QUALITY)
       if (shot.data.length > BYTES_PER_FILE)
         throw new Error(
-          `A picture of ${url} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most ${BYTES_PER_FILE / MB} MB.`
+          `A picture of ${shownAs} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most ${BYTES_PER_FILE / MB} MB.`
         )
       const part = clips.length > 1 ? `-${i + 1}` : ''
       files.push({ name: `page${part}.${shot.format === 'png' ? 'png' : 'jpg'}`, data: shot.data })

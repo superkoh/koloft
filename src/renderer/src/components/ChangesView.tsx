@@ -13,7 +13,7 @@ import {
 } from 'react'
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
-import { parseUnifiedDiff, type ParsedDiff } from '../inlineDiff'
+import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
 import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'

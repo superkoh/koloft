@@ -492,8 +492,8 @@ import {
 } from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
-import { BYTES_PER_FILE, discordApiUrl, DiscordLink } from './discord/link'
-import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
+import { discordApiUrl, DiscordLink } from './discord/link'
+import { sendPhoneCopy, shownOf } from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -5741,30 +5741,26 @@ function phoneChannelOf(tabId: string): string | undefined {
   return butler?.channelOfTab(tabId) ?? roomOfTab(tabId)
 }
 
-async function readUnderDiscordLimit(file: string): Promise<Buffer> {
-  const size = isRemoteKey(file) ? 0 : (await fs.promises.stat(file)).size
-  if (size > BYTES_PER_FILE) throw new Error(tooLarge(size))
-  return hosts.of(file).readBytes(file)
-}
-
 async function copyToPhone(
   tabId: string,
   target: string,
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const channelId = relay?.reaches(tabId) ? phoneChannelOf(tabId) : undefined
+  const lobby = butler?.channelOfTab(tabId)
+  const channelId = relay?.reaches(tabId) ? (lobby ?? roomOfTab(tabId)) : undefined
   const shown = channelId && shownOf(target, machineOfTab(tabId), view)
   if (!relay || !channelId || !shown) return undefined
-  const where = butler?.channelOfTab(tabId)
+  const where = lobby
     ? 'the Discord channel the owner talks to you in'
     : "this session's room on the owner's Discord"
   return sendPhoneCopy(
     {
       shoot: shootPage,
       shootHtml,
-      readBytes: readUnderDiscordLimit,
-      fileDiff: async (file) => (await hosts.of(file).gitFileDiffFull(file)).text,
+      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+      readBytes: (file) => hosts.of(file).readBytes(file),
+      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
       send: (files, parts) => relay.sendParts(channelId, files, parts)
     },
     shown,
