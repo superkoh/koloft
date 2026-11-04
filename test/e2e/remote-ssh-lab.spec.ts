@@ -38,6 +38,7 @@ import {
   waitPanelAttached
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
+import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
@@ -70,7 +71,8 @@ import {
   worktreeDialog,
   wsGroup,
   wsMenuTexts,
-  wsRows
+  wsRows,
+  type ClaudeCall
 } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
@@ -1090,17 +1092,11 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         runOnTarget(lab, 'kuser', 'mkdir projects')
         await addMachine(page, 'kt-key', 'kuser')
         await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        const lines = (text: string): Record<string, unknown>[] =>
-          text
+        const claudeCallsOnTheMachine = (): ClaudeCall[] =>
+          runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :')
             .split('\n')
             .filter(Boolean)
-            .map((line) => JSON.parse(line))
-        const claudeCallsOnTheMachine = (): Record<string, unknown>[] =>
-          lines(runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :'))
-        const codexScreensOnTheMac = (): Record<string, unknown>[] => {
-          const file = path.join(env.home, 'fake-codex-calls.jsonl')
-          return fs.existsSync(file) ? lines(fs.readFileSync(file, 'utf8')) : []
-        }
+            .map((line) => JSON.parse(line) as ClaudeCall)
         const palette = page.locator('.modal.palette')
         const askForANewCrawler = async (words: string, key: string): Promise<void> => {
           await sendShortcut(app, 'shortcut:command-palette')
@@ -1113,18 +1109,27 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
         await askForANewCrawler('on kt-key, a new price crawler', 'Enter')
         await expect.poll(() => claudeCallsOnTheMachine().length, { timeout: 90_000 }).toBe(1)
-        await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
-        const [claude] = claudeCallsOnTheMachine() as { argv: string[]; cwd: string }[]
+        expect(
+          fs.readFileSync(path.join(env.home, 'fake-claude-assist-asked.txt'), 'utf8')
+        ).toContain('on kt-key, a new price crawler')
+        const [claude] = claudeCallsOnTheMachine()
         expect(claude.cwd).toBe('/home/kuser/projects/crawler')
-        expect(claude.argv[claude.argv.indexOf('--') + 1]).toBe('on kt-key, a new price crawler')
+        expect(claude.firstPrompt).toBe('on kt-key, a new price crawler')
+        expect(claude.argv[claude.argv.indexOf('--name') + 1]).toBe('Crawler')
         await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })
 
         await askForANewCrawler('another price crawler on kt-key', 'Meta+Enter')
-        await expect.poll(() => codexScreensOnTheMac().length, { timeout: 120_000 }).toBe(1)
-        await expect(page.getByRole('dialog', { name: 'New Project' })).toHaveCount(0)
-        const [codex] = codexScreensOnTheMac() as { argv: string[]; effectiveCwd: string }[]
+        await expect.poll(() => codexCalls(env).length, { timeout: 120_000 }).toBe(1)
+        const [codex] = codexCalls(env)
         expect(codex.effectiveCwd).toBe('/home/kuser/projects/crawler-2')
         expect(codex.argv.at(-1)).toBe('another price crawler on kt-key')
+        expect(
+          runOnTarget(
+            lab,
+            'kuser',
+            `find . -path '*/sessions/${codex.sessionId}.json' -exec cat {} +`
+          )
+        ).toContain('"cwd":"/home/kuser/projects/crawler-2"')
         await expect(wsRows(page, 'crawler-2')).toHaveCount(1, { timeout: 60_000 })
         expect(runOnTarget(lab, 'kuser', 'ls projects').split('\n').filter(Boolean)).toEqual([
           'crawler',
