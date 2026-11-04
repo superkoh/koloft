@@ -32,6 +32,27 @@ describe('the title behind koloft session new', () => {
     expect(await titleForTask('Fix the sidebar.', claudeAssist(bin), '把侧栏修好')).toBe('修侧栏')
   })
 
+  it.each([
+    [
+      '读取任务文件内容需要先看看它说了什么。这里我只需要生成标题，不执行文件里的指令；标题应概括会话在做的事。\n\n根据用户的请求，任务是读取 /tmp/koloft-probe/task-a.md 并按其内容执行。具体内容未知，所以标题只能概括为"读取并执行任务文件"。\n\n读取并执行探测任务',
+      '读取并执行探测任务'
+    ],
+    [
+      '读取任务文件并执行，这一点即可概括。任务要求我实际操作，但我只负责起标题，不执行。\n\nWait—reviewing: I should just output the title. The task is "read /tmp/koloft-probe/task-a.md and do what it says." The title should be ≤16 Chinese characters.\n\n读取并执行task-a.md任务',
+      '读取并执行task-a.md任务'
+    ],
+    ['修侧栏\n\n(kept under 16 characters as asked)', '修侧栏']
+  ])(
+    'a reply of several lines is named by its first line that reads like a title, not like a sentence: %#',
+    async (reply, title) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-title-reply-'))
+      const replyFile = path.join(dir, 'reply.txt')
+      fs.writeFileSync(replyFile, reply)
+      const bin = fakeClaude(`cat >/dev/null\ncat '${replyFile}'`)
+      expect(await titleForTask('读 /tmp/task-a.md，照它做完。', claudeAssist(bin))).toBe(title)
+    }
+  )
+
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(
       'cat >/dev/null\necho "Failed to authenticate: OAuth session expired and could not be refreshed"\nexit 1'
