@@ -176,6 +176,7 @@ async function museThenAgy(
   await agyReady(page, bindsWithinMs)
   await runIn(page, centerTerm(page), 'look around')
   await bound(page, 'agy', bindsWithinMs)
+  await firstTurnOver(page, 'agy', bindsWithinMs)
 }
 
 async function fetchNow(page: Page, ws: string): Promise<void> {
@@ -187,21 +188,16 @@ async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () =
   await waitStartupTurnOver(page, 'ws-a')
   await beforeCodex()
   await startCodex(page, env)
-  await codexStartupTurnOver(page)
+  await firstTurnOver(page, 'codex', NOTICE_ARRIVES_WITHIN_MS)
 }
 
-async function codexStartupTurnOver(page: Page): Promise<void> {
+async function firstTurnOver(page: Page, backendId: BackendId, timeout: number): Promise<void> {
+  const tab = await tabOf(page, backendId)
   await expect
     .poll(
-      async () => {
-        const codex = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === 'codex' && s.alive
-        )
-        return (await pendingAttention(page)).some(
-          (m) => m.tabId === codex?.tabId && m.kind === 'turn-done'
-        )
-      },
-      { timeout: NOTICE_ARRIVES_WITHIN_MS }
+      async () =>
+        (await pendingAttention(page)).some((m) => m.tabId === tab && m.kind === 'turn-done'),
+      { timeout }
     )
     .toBe(true)
 }

@@ -5,6 +5,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   newSessionInWith,
   startSessionIn,
+  terminalText,
   transcriptFile,
   waitForCalls,
   wsRows,
@@ -17,6 +18,7 @@ import { OWNER_ASLEEP_FILE, OWNER_ASLEEP_PUSH } from '../../src/main/hooks'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
 const THE_BUTLER_STARTS_AND_READS_IT_MS = 60_000
+const THE_OPENING_TURN_ENDS_MS = 30_000
 
 function transcriptText(env: E2EEnv, call: ClaudeCall): string {
   const file = transcriptFile(env.home, call.cwd, call.sessionId)
@@ -103,6 +105,9 @@ test.describe('owner asleep', () => {
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.backendId === 'codex'
       )!.tabId
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: THE_OPENING_TURN_ENDS_MS })
+        .toContain('Codex done')
       await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), tab)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/)
       expect(codexAsked(env)).toBe(1)

@@ -33,6 +33,7 @@ import type {
   MachineState,
   DiscordStatus,
   AttentionEvent,
+  SecretAskView,
   AccountView,
   GitAccountView,
   GitLoginProgress,
@@ -217,6 +218,17 @@ const api: KoloftApi = {
     pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
     channels: () => ipcRenderer.invoke(CH.discord.channels),
     setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
+  },
+  secret: {
+    list: () => ipcRenderer.invoke(CH.secret.list),
+    onAsks: (cb) => {
+      const handler = (_e: unknown, asks: SecretAskView[]): void => cb(asks)
+      ipcRenderer.on(CH.secret.asks, handler)
+      return () => ipcRenderer.removeListener(CH.secret.asks, handler)
+    },
+    answer: (id, value) => ipcRenderer.send(CH.secret.answer, id, value),
+    done: (id) => ipcRenderer.send(CH.secret.done, id),
+    decline: (id) => ipcRenderer.send(CH.secret.decline, id)
   },
   attention: {
     list: () => ipcRenderer.invoke(CH.attention.list),

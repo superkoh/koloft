@@ -60,6 +60,7 @@ import {
   rowLookups,
   rowActivityLine,
   rowStateClass,
+  statusWithSecrets,
   rowsUnder,
   sessionsInside,
   sessionsNeedYou,
@@ -1138,6 +1139,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     [listedRows, listedButler, storeTabs]
   )
   const activeTabId = useStore((s) => s.activeTabId)
+  const secretAsks = useStore((s) => s.secretAsks)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const selectedWs = useStore((s) => s.selectedWs)
   const showToast = useStore((s) => s.showToast)
@@ -1389,7 +1391,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         ? rowStateClass(false, undefined)
         : statusUnavailable(sess)
           ? ''
-          : rowStateClass(running, sess?.status, row.pending, sess?.turnOver)
+          : rowStateClass(
+              running,
+              statusWithSecrets(sess?.status, tabId, secretAsks),
+              row.pending,
+              sess?.turnOver
+            )
       const badge = sessionActivityBadge(sess, leftovers[row.id])
       const held = tabId ? machine?.held[tabId] : undefined
       const launching = resumeLaunch?.id === row.id

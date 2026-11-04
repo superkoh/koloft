@@ -421,7 +421,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
 
       await ask.press('Tab')
       await expect(tag).toContainText('Codex')
-      await expect(perm).toContainText(/before each step/)
+      await expect(perm).toContainText(/Codex asks only about some steps/)
       await ask.press('Tab')
       await expect(tag).toContainText('Muse')
       await expect(perm).toContainText(/Muse Code asks only about some steps/)

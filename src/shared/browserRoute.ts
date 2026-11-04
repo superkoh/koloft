@@ -199,6 +199,11 @@ export function urlOrNull(raw: string): URL | null {
 const SECURE_SCHEMES = new Set(['https:', 'wss:'])
 const FORWARDABLE_SCHEMES = new Set(['http:', 'ws:', ...SECURE_SCHEMES])
 
+export function loopbackHttp(text: string): string | undefined {
+  const url = urlOrNull(text.trim())
+  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
+}
+
 export function loopbackPortOf(url: string): number | null {
   const u = urlOrNull(url)
   if (!u || !FORWARDABLE_SCHEMES.has(u.protocol) || !LOOPBACK_HOSTS.has(u.hostname)) return null
