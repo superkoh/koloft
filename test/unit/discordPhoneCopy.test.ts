@@ -82,6 +82,10 @@ describe('what koloft open shows is sent to the phone as', () => {
     expect(shownOf('http://localhost:5173', undefined)).toEqual({ page: 'http://localhost:5173' })
     expect(shownOf('/w/plan.md', undefined)).toEqual({ markdown: '/w/plan.md' })
     expect(shownOf('file:///w/plan.md', undefined)).toEqual({ markdown: '/w/plan.md' })
+    expect(shownOf('file:///w/plan.html#part-2', undefined)).toEqual({
+      page: 'file:///w/plan.html#part-2'
+    })
+    expect(shownOf('file://server/share/plan.md', undefined)).toBeUndefined()
     expect(shownOf('/w/shot.png', undefined)).toEqual({ file: '/w/shot.png' })
     expect(shownOf('/w/app.ts', undefined, 'diff')).toEqual({ diff: '/w/app.ts' })
   })
@@ -176,7 +180,7 @@ describe('sendPhoneCopy', () => {
     })
     await sendPhoneCopy(d, { markdown: '/w/long.md' }, WHERE)
     const { parts } = d.sent[0]
-    expect(parts).toHaveLength(11)
+    expect(parts).toHaveLength(10)
     expect(parts.at(-1)).toBe(REST_IN_THE_FILE)
   })
 
@@ -209,7 +213,9 @@ describe('sendPhoneCopy', () => {
     expect(await sendPhoneCopy(d, { diff: '/w/app.ts' }, WHERE)).toBe(
       'Sent a picture of its changes to the room.'
     )
-    expect(d.sent).toEqual([{ files: [expect.objectContaining({ name: 'page.png' })], parts: [] }])
+    expect(d.sent).toEqual([
+      { files: [expect.objectContaining({ name: 'app.ts-changes.png' })], parts: [] }
+    ])
     expect(pictured[0].look).toBe(DIFF_LOOK)
     expect(pictured[0].html).toContain(
       '<h1>app.ts</h1><div class="del">-old</div><div class="add">+&lt;new&gt;</div><div class="gap">⋯</div><div class="del">-x</div>'
@@ -228,14 +234,18 @@ describe('sendPhoneCopy', () => {
 
     const cut = deps({ diff: rowsOf(3), truncated: true, shootHtml: diffShooter(100).shootHtml })
     expect(await sendPhoneCopy(cut, { diff: '/w/app.ts' }, WHERE)).toMatch(
-      /start of its changes.*too large to send/
+      /start of its changes.*too long to send/
     )
-    expect(cut.sent[0].files.map((f) => f.name)).toEqual(['page.png'])
+    expect(cut.sent[0].files.map((f) => f.name)).toEqual(['app.ts-changes.png'])
   })
 
-  it('a file with no git changes sends nothing', async () => {
+  it('a file with no git changes sends nothing; a change with no lines to draw sends nothing and the session is told to say it in words', async () => {
     const d = deps({ diff: '' })
     expect(await sendPhoneCopy(d, { diff: '/w/app.ts' }, WHERE)).toMatch(/no git changes/)
-    expect(d.sent).toEqual([])
+    const binary = deps({ diff: 'diff --git a/logo.png b/logo.png\nBinary files differ\n' })
+    expect(await sendPhoneCopy(binary, { diff: '/w/logo.png' }, WHERE)).toMatch(
+      /no lines to draw.*say what changed/
+    )
+    expect([...d.sent, ...binary.sent]).toEqual([])
   })
 })

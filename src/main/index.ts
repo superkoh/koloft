@@ -493,7 +493,7 @@ import {
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { sendPhoneCopy, shownOf } from './discord/phoneCopy'
+import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -5747,11 +5747,11 @@ async function copyToPhone(
   view?: ArtifactView
 ): Promise<string | undefined> {
   const relay = discordRelay
-  const lobby = butler?.channelOfTab(tabId)
-  const channelId = relay?.reaches(tabId) ? (lobby ?? roomOfTab(tabId)) : undefined
+  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
+  const channelId = reaches ? phoneChannelOf(tabId) : undefined
   const shown = channelId && shownOf(target, machineOfTab(tabId), view)
   if (!relay || !channelId || !shown) return undefined
-  const where = lobby
+  const where = butler?.channelOfTab(tabId)
     ? 'the Discord channel the owner talks to you in'
     : "this session's room on the owner's Discord"
   return sendPhoneCopy(
@@ -5759,7 +5759,13 @@ async function copyToPhone(
       shoot: shootPage,
       shootHtml,
       size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
-      readBytes: (file) => hosts.of(file).readBytes(file),
+      readBytes: (file) =>
+        hosts
+          .of(file)
+          .readBytes(file)
+          .catch((error: unknown) => {
+            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+          }),
       fileDiff: (file) => hosts.of(file).gitFileDiff(file),
       send: (files, parts) => relay.sendParts(channelId, files, parts)
     },

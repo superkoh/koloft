@@ -9,7 +9,7 @@ import { errorText } from '../agentRequests'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
 import { toDiscordMarkdown } from './markdown'
 import type { PageLook, PagePictures } from './pageShot'
-import { splitForDiscord } from './split'
+import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from './split'
 
 export type Shown =
   | { page: string }
@@ -33,16 +33,20 @@ export interface PhoneCopyDeps {
 }
 
 const MOST_MESSAGES = 10
+const MARKDOWN_CHARS_READ = MOST_MESSAGES * DISCORD_MESSAGE_LIMIT
 export const COPY_REPORTED_WITHIN_MS = 8000
 export const DIAGRAM_IN_WORDS = '*(A diagram is here: see it on the Mac.)*'
 export const REST_IN_THE_FILE = '-# The rest is in the attached file.'
 
-export const tooLarge = (bytes: number): string =>
-  `File too large (${(bytes / MB).toFixed(1)} MB); the limit is ${BYTES_PER_FILE / MB} MB.`
+export const tooLarge = (bytes?: number): string =>
+  `File too large${bytes === undefined ? '' : ` (${(bytes / MB).toFixed(1)} MB)`}; the limit is ${BYTES_PER_FILE / MB} MB.`
 
-function localPathOf(target: string): string | undefined {
-  if (!schemeOf(target)) return target
-  return schemeOf(target) === 'file:' ? fileURLToPath(target) : undefined
+function pathOfFileUrl(url: string): string | undefined {
+  try {
+    return fileURLToPath(url)
+  } catch {
+    return undefined
+  }
 }
 
 export function shownOf(
@@ -50,20 +54,28 @@ export function shownOf(
   machine: string | undefined,
   view?: ArtifactView
 ): Shown | undefined {
-  const local = machine ? (schemeOf(target) ? undefined : target) : localPathOf(target)
+  const scheme = schemeOf(target)
+  const local = !scheme
+    ? target
+    : scheme === 'file:' && !machine
+      ? pathOfFileUrl(target)
+      : undefined
   const file = local && machine ? formatRemoteKey(machine, local) : local
   if (view === 'diff') return file ? { diff: file } : undefined
-  const route = routeFor(file ?? target, 'agent')
+  const route = routeFor(scheme ? target : (file ?? target), 'agent')
   if (route.dest === 'browser') {
     const there = machine && (machinePageOf(route.target) || loopbackPortOf(route.target) !== null)
-    return there ? { pageOnMachine: target } : { page: route.target }
+    return there ? { pageOnMachine: target } : { page: scheme ? target : route.target }
   }
   if (!file) return undefined
   return previewKindForPath(file) === 'markdown' ? { markdown: file } : { file }
 }
 
 function nameOf(shown: Shown): string {
-  return 'page' in shown ? shown.page : basename(Object.values(shown)[0] as string)
+  if ('page' in shown) return shown.page
+  if ('pageOnMachine' in shown) return shown.pageOnMachine
+  if ('markdown' in shown) return basename(shown.markdown)
+  return basename('file' in shown ? shown.file : shown.diff)
 }
 
 export function picturesSent(p: PagePictures, where: string): string {
@@ -101,8 +113,12 @@ export function diagramsInWords(text: string): string {
   return out.join('\n')
 }
 
-function atMost(parts: string[]): string[] {
-  return parts.length > MOST_MESSAGES ? [...parts.slice(0, MOST_MESSAGES), REST_IN_THE_FILE] : parts
+export function markdownParts(text: string): string[] {
+  const read = text.slice(0, MARKDOWN_CHARS_READ)
+  const parts = splitForDiscord(toDiscordMarkdown(diagramsInWords(read)))
+  return parts.length > MOST_MESSAGES || read.length < text.length
+    ? [...parts.slice(0, MOST_MESSAGES - 1), REST_IN_THE_FILE]
+    : parts
 }
 
 const DIFF_STYLE = `body{margin:0;background:#fff;color:#1f2328;font:15px/1.5 ui-monospace,Menlo,monospace}
@@ -131,7 +147,7 @@ const PHONE_WIDTH_PX = 640
 const NO_TALLER_THAN_A_SHORT_DIFF_PX = 40
 const TWO_PHONE_SCREENS_PX = 1280
 const MOST_PICTURES_BESIDE_THE_DIFF_FILE = 9
-const DIFF_ROW_PX = 22
+const DIFF_ROW_PX = 22.5
 export const DIFF_LOOK: PageLook = {
   width: PHONE_WIDTH_PX,
   height: NO_TALLER_THAN_A_SHORT_DIFF_PX,
@@ -152,11 +168,17 @@ async function fileOf(d: PhoneCopyDeps, file: string): Promise<DiscordFile> {
 
 async function diffCopy(d: PhoneCopyDeps, file: string, where: string): Promise<string> {
   const diff = await d.fileDiff(file)
+  if (!diff.text.trim()) return `It has no git changes, so nothing was sent to ${where}.`
   const { rows, hasChange } = parseUnifiedDiff(diff.text)
-  if (!hasChange) return `It has no git changes, so nothing was sent to ${where}.`
+  if (!hasChange)
+    return `Its change has no lines to draw (a binary file, a rename or a mode change), so nothing was sent to ${where}; say what changed in your reply.`
   const name = basename(file)
   const shown = rows.slice(0, DIFF_ROWS_THAT_FILL_THE_PICTURES)
-  const pictures = await d.shootHtml(diffPage(name, shown), DIFF_LOOK, `the changes of ${name}`)
+  const shot = await d.shootHtml(diffPage(name, shown), DIFF_LOOK, `the changes of ${name}`)
+  const pictures = {
+    ...shot,
+    files: shot.files.map((f) => ({ ...f, name: f.name.replace(/^page/, `${name}-changes`) }))
+  }
   const many = pictures.files.length === 1 ? 'a picture' : `${pictures.files.length} pictures`
   const whole =
     !diff.truncated && shown.length === rows.length && pictures.shown.height >= pictures.page.height
@@ -169,7 +191,7 @@ async function diffCopy(d: PhoneCopyDeps, file: string, where: string): Promise<
   await d.send(attached ? [...pictures.files, { name: `${name}.diff`, data }] : pictures.files, [])
   return attached
     ? `Sent ${many} of the start of its changes to ${where}, with the whole diff as a file.`
-    : `Sent ${many} of the start of its changes to ${where}; the whole diff is too large to send.`
+    : `Sent ${many} of the start of its changes to ${where}; the whole diff is too long to send.`
 }
 
 async function copy(d: PhoneCopyDeps, shown: Shown, where: string): Promise<string> {
@@ -183,8 +205,7 @@ async function copy(d: PhoneCopyDeps, shown: Shown, where: string): Promise<stri
   if ('diff' in shown) return diffCopy(d, shown.diff, where)
   if ('markdown' in shown) {
     const original = await fileOf(d, shown.markdown)
-    const text = toDiscordMarkdown(diagramsInWords(original.data.toString('utf8')))
-    await d.send([original], atMost(splitForDiscord(text)))
+    await d.send([original], markdownParts(original.data.toString('utf8')))
     return `Sent it to ${where} as text, with the file.`
   }
   await d.send([await fileOf(d, shown.file)], [])
