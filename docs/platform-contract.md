@@ -2956,3 +2956,19 @@ call twice on one home, the second time over the link the first one made.
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
 Antigravity sign-in into the user's login shell with an account's environment, and
 `MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+
+## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
+
+- **A hidden `WebContentsView` shows a `.md` file as plain text.** Loaded from a
+  `file://` address, `document.contentType` was `text/markdown` and the body one
+  `<pre>` holding the source: no heading, no table. The Workbench's Markdown layout
+  comes from the renderer, so a picture of the file would show its raw source.
+  Measured 2026-11-04, Electron 43.8.6, a script loading a `.md` with a heading, a
+  table and a mermaid fence into a sandboxed view of its own session.
+- **A ```` ```diff ```` code block shows no colours in Discord's phone app**: added and
+  removed lines read the same. Seen by the owner on their phone, 2026-11-04, on a
+  message the dev test bot posted; a picture with green and red rows was the look
+  picked over an `ansi` block and a coloured square at the start of each line.
+
+Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
+`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.

@@ -6,6 +6,7 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import type { ArtifactView } from '@shared/types'
 import { parseUnifiedDiff, type DiffRow } from '@shared/unifiedDiff'
 import { errorText } from '../agentRequests'
+import { AGENT_SHIM_WAITS_MS } from '../agentShim'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
 import { toDiscordMarkdown } from './markdown'
 import type { PageLook, PagePictures } from './pageShot'
@@ -34,7 +35,8 @@ export interface PhoneCopyDeps {
 
 const MOST_MESSAGES = 10
 const MARKDOWN_CHARS_READ = MOST_MESSAGES * DISCORD_MESSAGE_LIMIT
-export const COPY_REPORTED_WITHIN_MS = 8000
+const THE_REPLY_REACHES_THE_SHIM_WITHIN_MS = 2000
+export const COPY_REPORTED_WITHIN_MS = AGENT_SHIM_WAITS_MS - THE_REPLY_REACHES_THE_SHIM_WITHIN_MS
 export const DIAGRAM_IN_WORDS = '*(A diagram is here: see it on the Mac.)*'
 export const REST_IN_THE_FILE = '-# The rest is in the attached file.'
 
@@ -113,6 +115,7 @@ export function diagramsInWords(text: string): string {
   return out.join('\n')
 }
 
+// PLATFORM§64
 export function markdownParts(text: string): string[] {
   const read = text.slice(0, MARKDOWN_CHARS_READ)
   const parts = splitForDiscord(toDiscordMarkdown(diagramsInWords(read)))
@@ -166,6 +169,7 @@ async function fileOf(d: PhoneCopyDeps, file: string): Promise<DiscordFile> {
   return { name: basename(file), data }
 }
 
+// PLATFORM§64
 async function diffCopy(d: PhoneCopyDeps, file: string, where: string): Promise<string> {
   const diff = await d.fileDiff(file)
   if (!diff.text.trim()) return `It has no git changes, so nothing was sent to ${where}.`
