@@ -6,22 +6,22 @@ import { ExtensionConfirm } from '../../src/renderer/src/components/ExtensionCon
 
 afterEach(cleanup)
 
-describe('an extension’s ask takes its Esc away from what sits behind it', () => {
-  it('the Esc that denies the ask reaches nothing behind it, so a web overlay or a full Workbench stays open', () => {
+describe('an extension’s ask takes its Esc away from the layers under it', () => {
+  it('the Esc that denies the ask reaches neither the web overlay, Settings, nor a full Workbench under it', () => {
     const answers: [string, boolean][] = []
     const heard: string[] = []
-    const onWindow = (e: KeyboardEvent): void => void heard.push(`window ${e.key}`)
-    const onDocument = (e: KeyboardEvent): void => void heard.push(`document ${e.key}`)
-    window.addEventListener('keydown', onWindow)
-    document.addEventListener('keydown', onDocument, true)
+    const overlayAndSettings = (e: KeyboardEvent): void => void heard.push(`window ${e.key}`)
+    const fullWorkbench = (e: KeyboardEvent): void => void heard.push(`document ${e.key}`)
+    window.addEventListener('keydown', overlayAndSettings)
+    document.addEventListener('keydown', fullWorkbench, true)
     try {
-      const request = {
+      const request: ExtensionPermissionRequest = {
         id: 'ext-1',
-        kind: 'permissions',
+        kind: 'permission',
         name: 'Helper',
         permissions: ['tabs'],
         origins: []
-      } as unknown as ExtensionPermissionRequest
+      }
       render(
         <ExtensionConfirm
           request={request}
@@ -32,8 +32,8 @@ describe('an extension’s ask takes its Esc away from what sits behind it', () 
       expect(answers).toEqual([['ext-1', false]])
       expect(heard).toEqual([])
     } finally {
-      window.removeEventListener('keydown', onWindow)
-      document.removeEventListener('keydown', onDocument, true)
+      window.removeEventListener('keydown', overlayAndSettings)
+      document.removeEventListener('keydown', fullWorkbench, true)
     }
   })
 })
