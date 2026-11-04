@@ -2091,7 +2091,7 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   darwin-arm64, scratch `HOME`s, a real `CLAUDE_CODE_OAUTH_TOKEN`; that linux-arm64
   does the same is inferred, not checked.) What this means for Koloft's two writers:
   the local one writes the onboarding flag only into a file that parses as a JSON
-  object; the remote one adds it after line 1 when that line is exactly `{`, without
+  object; the remote one puts it right after the `{` when line 1 is exactly `{`, without
   parsing the rest. Neither writes into an empty file, so on 2.1.318 an empty file
   opens the theme picker locally and, after the remote warm-up has filled it in, on a
   remote machine too. On a remote machine with a broken file, where Koloft supplies the
