@@ -1549,12 +1549,6 @@ const museOnMachines: MuseRemoteDeps = {
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
   connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
-  nextPull: (host) => {
-    if (!remoteSync) return Promise.resolve()
-    const pulled = remoteSync.nextPullDone(host)
-    remoteSync.pokeNow(host)
-    return pulled
-  },
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
 }
@@ -3444,6 +3438,12 @@ app.whenReady().then(() => {
         ...museOnMachines,
         machine: (host) => hosts.machine(host),
         mirrorGemini: (host) => mirrorAgyGemini(userData, host),
+        nextPull: (host) => {
+          if (!remoteSync) return Promise.resolve()
+          const pulled = remoteSync.nextPullDone(host)
+          remoteSync.pokeNow(host)
+          return pulled
+        },
         machineName: () => machinePackage().name
       },
       leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),

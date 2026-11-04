@@ -192,16 +192,11 @@ async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () =
 }
 
 async function firstTurnOver(page: Page, backendId: BackendId, timeout: number): Promise<void> {
+  const tab = await tabOf(page, backendId)
   await expect
     .poll(
-      async () => {
-        const session = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === backendId && s.alive
-        )
-        return (await pendingAttention(page)).some(
-          (m) => m.tabId === session?.tabId && m.kind === 'turn-done'
-        )
-      },
+      async () =>
+        (await pendingAttention(page)).some((m) => m.tabId === tab && m.kind === 'turn-done'),
       { timeout }
     )
     .toBe(true)
