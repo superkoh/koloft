@@ -5,6 +5,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   newSessionInWith,
   startSessionIn,
+  terminalText,
   transcriptFile,
   waitForCalls,
   wsRows,
@@ -17,6 +18,7 @@ import { OWNER_ASLEEP_FILE, OWNER_ASLEEP_PUSH } from '../../src/main/hooks'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
 const THE_BUTLER_STARTS_AND_READS_IT_MS = 60_000
+const THE_OPENING_TURN_ENDS_MS = 30_000
 
 function transcriptText(env: E2EEnv, call: ClaudeCall): string {
   const file = transcriptFile(env.home, call.cwd, call.sessionId)
@@ -46,12 +48,6 @@ const codexWire = (env: E2EEnv): WireFrame[] =>
 function codexAsked(env: E2EEnv): number {
   return codexWire(env).filter(
     (w) => w.direction === 'server' && w.frame.method === 'item/tool/requestUserInput'
-  ).length
-}
-
-function codexTurnsEnded(env: E2EEnv): number {
-  return codexWire(env).filter(
-    (w) => w.direction === 'server' && w.frame.method === 'turn/completed'
   ).length
 }
 
@@ -106,10 +102,12 @@ test.describe('owner asleep', () => {
       const page = await app.firstWindow()
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      await expect.poll(() => codexTurnsEnded(env)).toBe(1)
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.backendId === 'codex'
       )!.tabId
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: THE_OPENING_TURN_ENDS_MS })
+        .toContain('Codex done')
       await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), tab)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/)
       expect(codexAsked(env)).toBe(1)
