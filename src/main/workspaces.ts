@@ -63,6 +63,7 @@ import { mergeUse } from '@shared/firstRun'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
+const A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS = 10_000
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
 const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
@@ -535,14 +536,15 @@ export class WorkspaceManager {
   leftWorktree(sessionId: string, removed: boolean): void {
     const leaving = this.leavingTheirWorktree.get(sessionId)
     if (!leaving) return
-    if (!removed) {
+    const showAgain = (): void => {
+      if (this.leavingTheirWorktree.get(sessionId) !== leaving) return
       this.leavingTheirWorktree.delete(sessionId)
       this.scheduleRescan()
-      return
     }
+    if (!removed) return showAgain()
     leaving.tabEnded = true
-    if (this.layout.members.includes(sessionId)) this.forget(sessionId, 'its worktree was removed')
-    else this.scheduleRescan()
+    setTimeout(showAgain, A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS).unref()
+    this.scheduleRescan()
   }
 
   launchEnded(tabId: string): void {

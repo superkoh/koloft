@@ -595,13 +595,19 @@ describe('WorkspaceManager: a session leaving its worktree', () => {
     await mgr.whenScanned()
   }
 
-  it('leaves the sidebar once its tab ends with the worktree removed, stays out while the session still reads running, and a later resume lists it again', async () => {
-    await leftItsWorktree(true)
-    expect(dropped).toContain('wt-1: its worktree was removed')
-    expect(latest(repo).rows).toEqual([])
-
+  async function itsTabIsGone(): Promise<void> {
     bindings.delete('wt-1')
     mgr.onTrackerUpdate()
+    await mgr.whenScanned()
+  }
+
+  it('stays out after its tab ends with the worktree removed, while it still reads running and while it is still a member, until its SessionEnd drops it; a later resume lists it again', async () => {
+    await leftItsWorktree(true)
+    expect(latest(repo).rows).toEqual([])
+    await itsTabIsGone()
+    expect(latest(repo).rows).toEqual([])
+
+    mgr.dropOwnership('wt-1', 'claude ended (prompt_input_exit)')
     await mgr.whenScanned()
     mgr.adopt(['wt-1'])
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
@@ -609,9 +615,25 @@ describe('WorkspaceManager: a session leaving its worktree', () => {
 
   it('comes back as soon as another tab binds it', async () => {
     await leftItsWorktree(true)
+    await itsTabIsGone()
     bindings.set('wt-1', 'tab-2')
-    mgr.onSessionBound('wt-1')
+    mgr.onTrackerUpdate()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+  })
+
+  it('comes back as a cold member when its SessionEnd never drops it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      await leftItsWorktree(true)
+      await itsTabIsGone()
+      expect(latest(repo).rows).toEqual([])
+      vi.advanceTimersByTime(10_000)
+      await vi.waitFor(() =>
+        expect(latest(repo).rows).toMatchObject([{ id: 'wt-1', running: false }])
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('comes back as soon as its tab ends when the worktree was not removed', async () => {
