@@ -1095,7 +1095,7 @@ describe('DiscordRelay: a session’s room', () => {
 })
 
 describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {
-  it('the owner’s Discord words and Koloft’s own notices end with where the owner is right now; a slash command does not', async () => {
+  it('Koloft’s own notices end with where the owner is right now; the owner’s Discord words stay exactly as written, so its hook quotes only them, and a slash command gets nothing', async () => {
     const { relay, bodies, commands, conductor } = setup(
       {},
       [],
@@ -1109,7 +1109,7 @@ describe('DiscordRelay: what Koloft hands the butler says where the owner is', (
     relay.onMessage(message('812', OWNER, '/compact'))
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
     expect(bodies()).toEqual([
-      '[Discord] hi (Koloft: the owner is away from the Mac right now.)',
+      '[Discord] hi',
       '[Koloft] a note (Koloft: the owner is away from the Mac right now.)'
     ])
   })

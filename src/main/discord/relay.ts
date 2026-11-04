@@ -387,7 +387,8 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const first = !this.d.boundKey(tab)
     const said = await item.text()
-    const text = !item.command && dest.ownerIsWhere ? `${said} ${dest.ownerIsWhere()}` : said
+    const fromKoloft = !item.command && !item.fromDiscord
+    const text = fromKoloft && dest.ownerIsWhere ? `${said} ${dest.ownerIsWhere()}` : said
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
     if (item.quiet) this.quietTurns.add(tab)
