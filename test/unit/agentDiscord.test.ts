@@ -47,11 +47,34 @@ function verb(butler: boolean, pageHeight = 900, pageWidth = 1280, quiet = false
     bindNewChannel: async () => {
       bound++
       return { ok: true }
+    },
+    openRoom: async (ref) => {
+      opened.push(ref)
+      return { text: `Opened the room of ${ref}: <#70>.`, exit: 0 }
     }
   })
+  const opened: string[] = []
   const call = (args: string[]) => run(args, { tabId: 'pty-1', cwd, session: {} as SessionInfo })
-  return { call, sent, shot, bound: () => bound }
+  return { call, sent, shot, opened, bound: () => bound }
 }
+
+describe('koloft discord thread open', () => {
+  it('opens the named session’s room for the butler, taking a name with spaces whole', async () => {
+    const { call, opened } = verb(true)
+    expect(await call(['thread', 'open', 'Fix', 'login'])).toEqual({
+      text: 'Opened the room of Fix login: <#70>.',
+      exit: 0
+    })
+    expect(opened).toEqual(['Fix login'])
+  })
+
+  it('is refused to any other session, and without a session to open', async () => {
+    const { call, opened } = verb(false)
+    expect(await call(['thread', 'open', 'fix'])).toMatchObject({ text: NOT_THE_BUTLER })
+    expect(await verb(true).call(['thread', 'open'])).toMatchObject({ exit: EXIT_USAGE })
+    expect(opened).toEqual([])
+  })
+})
 
 describe('koloft discord setup commands', () => {
   it('run for any session, so the one the butler starts to set Discord up can use them', async () => {
