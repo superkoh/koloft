@@ -13,6 +13,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { setGuestLimit } from './helpers/env'
+import { guestByUrl } from './helpers/browser'
 import {
   waitPanelAttached,
   wbActiveTab,
@@ -182,6 +183,7 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     await wbTabs(page).nth(1).click()
     await expect.poll(() => server.count('/k04'), { timeout: 30_000 }).toBeGreaterThan(0)
 
+    await (await guestByUrl(app, '/k04')).waitForLoadState('load')
     await page.locator('.wb-panel webview').first().click()
 
     await sendShortcut(app, 'shortcut:find')
