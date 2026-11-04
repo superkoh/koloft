@@ -111,6 +111,9 @@ async function talkedToInItsRoom(
     session.remote?.host === REMOTE_HOST || identityOf(session.sessionId).sourceId === REMOTE_HOST
   expect(onTheMachineToo).toBe(workspace === REMOTE_WS_NAME)
 
+  await expect
+    .poll(async () => (await sessionOf(page, backend)).status, { timeout: STARTS_AND_ANSWERS_MS })
+    .toBe('waiting')
   const asked = fake.say(OWNER, 'how is the room', { channelId: room.id })
   await expect
     .poll(() => inRoom(fake, room.id).some((p) => p.includes('how is the room')), {

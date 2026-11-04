@@ -261,7 +261,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('[Discord] hello there')
       expect(peerMessages(env)).toEqual([
-        `<cross-session-message from-mode="bypass">\n[Discord] hello there (Koloft: the owner is away from the Mac right now.)\n(Koloft message koloft-discord-${hello})\n</cross-session-message>`
+        `<cross-session-message from-mode="bypass">\n[Discord] hello there\n(Koloft message koloft-discord-${hello})\n</cross-session-message>`
       ])
       expect(fake.typing).toContain(CHANNEL)
       expect(said(fake).join('\n')).not.toContain('not the owner')
@@ -704,7 +704,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .toBe(true)
       const green = fake.posted
         .find((p) => p.content.startsWith(card))!
-        .buttons!.find((b) => b.label === 'Green')!
+        .buttons!.find((b) => b.label === '2. Green')!
       fake.press(OWNER, green, CHANNEL)
       await expect
         .poll(
