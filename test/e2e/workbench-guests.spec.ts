@@ -182,7 +182,8 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     await wbTabs(page).nth(1).click()
     await expect.poll(() => server.count('/k04'), { timeout: 30_000 }).toBeGreaterThan(0)
 
-    await page.locator('.wb-panel webview').first().click()
+    await page.locator('.wb-panel webview').first().focus()
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('WEBVIEW')
 
     await sendShortcut(app, 'shortcut:find')
     await expect(page.locator('.wb-panel .find-bar')).toHaveCount(1)
