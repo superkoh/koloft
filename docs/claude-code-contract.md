@@ -1683,8 +1683,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
-2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31) and 2.1.317
-(2026-11-03).
+2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31), 2.1.317
+(2026-11-03) and 2.1.318 (2026-11-04).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1771,8 +1771,18 @@ other bullets of §9 were not re-measured on this build.
   sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
   `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
   `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
-  an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
-  the exit code tells a title from an error.
+  a token the API refuses it prints `Failed to authenticate. API Error: 401 OAuth access
+  token is invalid.` on stdout, nothing on stderr, and exits 1, so only the exit code
+  tells a title from an error (2026-11-04, CC 2.1.317 and 2.1.318, a made-up
+  `sk-ant-oat01-…` in `CLAUDE_CODE_OAUTH_TOKEN`, scratch `HOME`; an expired real token
+  was not tried). Assist's exact argv with a good token printed only the answer on
+  stdout and nothing on stderr on both builds (same day). The 2.1.318 changelog's
+  stderr warning "10 days before a stored claude.ai sign-in ends" and the
+  `credential_expires_at` / `loginExpiresAt` fields read the stored login's refresh
+  token (`strings`, not run): with the token in `CLAUDE_CODE_OAUTH_TOKEN`, as Koloft
+  passes it, `claude auth status` on 2.1.318 answers `"loginExpiresAt": null` (2.1.317
+  has no such key) and a `-p --output-format json` result carries no
+  `credential_expires_at` on either build (2026-11-04, a real account).
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
@@ -2046,6 +2056,23 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
 - **The first-run page on macOS is the text-style (theme) picker**, and
   `hasCompletedOnboarding: true` skips it: the same fresh install then opened on the
   folder-trust question. (2026-10-11, CC 2.1.296, macOS 27, pty probe with no login.)
+- **Since 2.1.318 a broken `~/.claude.json` stays broken until the user fixes it.**
+  `claude -p ok` (and `-p ok --max-turns 1`, the remote warm-up) with a file holding
+  `{broken`: 2.1.317 exits 1 and replaces the file with 178 bytes of defaults (no
+  `hasCompletedOnboarding`), so the next run works; 2.1.318 exits 1, leaves the file as
+  it is and says to fix the JSON or move the file aside, so every later `-p` fails too.
+  An empty (0-byte) file with no backup: 2.1.317 treats it as broken (exit 1, defaults
+  written); 2.1.318 answers (exit 0), prints "…was empty and no backup holds anything:
+  starting with defaults." on stderr and writes a full file, again without
+  `hasCompletedOnboarding`. An empty or broken file with a good backup in the backups
+  folder: 2.1.318 exits 1, leaves the file and prints a `cp -f <backup> …` line; it does
+  not restore by itself. Interactive start (pty, 12 s): `{broken` shows the same
+  "Configuration error … Exit and fix manually / Reset with default configuration"
+  dialog on both builds; an empty file with no backup shows that dialog on 2.1.317 and
+  the text-style (theme) picker on 2.1.318. (2026-11-04, CC 2.1.317 and 2.1.318
+  darwin-arm64, scratch `HOME`s, a real `CLAUDE_CODE_OAUTH_TOKEN`.) Koloft writes the
+  onboarding flag only into a file that parses as a JSON object, so it writes nothing
+  into an empty one on either build.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
@@ -3115,7 +3142,19 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   8 suggestions and 6 wrong.
 - **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
   with a usage-limit result; 3 of 5 `max` runs did.
-- **The findings are the result text.** `(none)` means the review found nothing.
+- **The findings are the result text.** `(none)` means the review found nothing. On
+  2.1.318 `-p "/code-review low origin/main...HEAD" --model haiku --output-format json`
+  on a one-line diff still answered exit 0, `is_error: false` and a `result` starting
+  with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
+  and times above were not re-measured).
+- **Since 2.1.318 a custom command that cannot run puts its error in `result`, still
+  with `is_error: false`.** In a scratch repo, a project command whose `` !`exit 3` ``
+  step is refused under `-p` answered `result: ""` on 2.1.317 and `Shell command
+  permission check failed for pattern …: This command requires approval` on 2.1.318;
+  a skill set `user-invocable: false` answered `""` and `This skill can only be invoked
+  by Claude, not directly by users. …`. Both exit 0, `is_error: false`, on both builds
+  (2026-11-04, `--model haiku`, text and JSON output). So a `/code-review` that failed
+  to expand reads as a review whose text is the error, where 2.1.317 gave an empty one.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 
