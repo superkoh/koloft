@@ -135,6 +135,7 @@ export interface MuseRemoteDeps {
   gone(host: string, sessionId: string): boolean
   connected(host: string): boolean
   poke(host: string): void
+  nextPull(host: string): Promise<void>
   setupLine(): string | undefined
   hookSettings(tabId: string): string | undefined
 }
@@ -441,7 +442,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private async heldOnMachine(host: string, sessionId: string): Promise<boolean> {
     const remote = this.deps.remote
-    if (!remote?.gone(host, sessionId)) return false
+    if (!remote?.connected(host)) return false
+    if (!remote.gone(host, sessionId)) await remote.nextPull(host)
+    if (!remote.gone(host, sessionId)) return false
     return (await remote.machine(host).runScript(MUSE_HELD_SH, [sessionId])) !== null
   }
 

@@ -15,6 +15,7 @@ import {
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { museSessionKey } from '../../src/main/sessionStore'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
+import { MUSE_HELD_SH } from '../../src/main/museRemote'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
@@ -899,6 +900,8 @@ describe('a Muse session on a remote machine', () => {
   let attach: boolean
   let killed: string[]
   let gone: boolean
+  let goneAtNextPull: boolean
+  let heldThere: boolean
   let reachable: boolean
   let nameThere: string | null
 
@@ -909,6 +912,8 @@ describe('a Muse session on a remote machine', () => {
     attach = false
     killed = []
     gone = false
+    goneAtNextPull = false
+    heldThere = false
     reachable = true
     nameThere = null
     const acct = path.join(home, 'acct')
@@ -932,7 +937,11 @@ describe('a Muse session on a remote machine', () => {
         killed.push(name)
         return undefined
       },
-      runScript: async (script) => (script === TAB_TMUX_NAME_SH ? nameThere : null)
+      runScript: async (script) => {
+        if (script === TAB_TMUX_NAME_SH) return nameThere
+        if (script === MUSE_HELD_SH) return heldThere ? '' : null
+        return null
+      }
     }
     sessions = new MuseSessions(path.join(home, 'remote-sessions.json'), {
       ...sessions['deps'],
@@ -946,6 +955,9 @@ describe('a Muse session on a remote machine', () => {
         gone: () => gone,
         connected: () => reachable,
         poke: () => {},
+        nextPull: async () => {
+          gone ||= goneAtNextPull
+        },
         setupLine: () => undefined,
         hookSettings: (tabId) => `/koloft/hooks/${tabId}.json`
       }
@@ -1156,6 +1168,19 @@ describe('a Muse session on a remote machine', () => {
     expect(events('prompt')).toHaveLength(0)
     mirror('pty-old', { t: 'state', seq: 3, state: 'done', kind: null })
     await vi.waitFor(() => expect(events('stop')).toHaveLength(1))
+  })
+
+  it('a session the last pull still saw in its tmux is looked at again after the next pull, so another muse on the machine that holds it still counts as running elsewhere', async () => {
+    onMachine()
+    heldThere = true
+    goneAtNextPull = true
+    expect(await sessions.runningElsewhere(museSessionKey(A, 'box'))).toBe(true)
+  })
+
+  it('a session still in its tmux after the next pull is not running elsewhere', async () => {
+    onMachine()
+    heldThere = true
+    expect(await sessions.runningElsewhere(museSessionKey(A, 'box'))).toBe(false)
   })
 
   it('closing the tab ends the tmux session on the machine under its bound name; quitting Koloft leaves it running', async () => {
