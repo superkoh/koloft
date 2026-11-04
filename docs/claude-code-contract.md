@@ -1808,9 +1808,10 @@ other bullets of §9 were not re-measured on this build.
   twice, files listed at exit and 5 s later). Both builds' cleanup entry skips the
   sweep, before any delete, when user settings are not read and no other source (a
   managed policy, a `--settings` file) sets `cleanupPeriodDays` (`Skipping retention
-  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked; the
-  same check and text in 2.1.318, `strings`, 2026-11-04, where the backup 2.1.318's
-  changelog adds is written only past it); Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
+  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked; 2.1.318
+  has the same check and text, and the fresh `~/.claude.json` backup its changelog
+  adds is taken only after that check, inside the sweep, `strings`, 2026-11-04, not
+  run); Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
   cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
   the 30-day default; that the skip holds in a run long enough to sweep, and what a
   managed `cleanupPeriodDays` does there, is not probed.
@@ -2087,9 +2088,16 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   "Configuration error … Exit and fix manually / Reset with default configuration"
   dialog on both builds; an empty file with no backup shows that dialog on 2.1.317 and
   the text-style (theme) picker on 2.1.318. (2026-11-04, CC 2.1.317 and 2.1.318
-  darwin-arm64, scratch `HOME`s, a real `CLAUDE_CODE_OAUTH_TOKEN`.) Koloft writes the
-  onboarding flag only into a file that parses as a JSON object, so it writes nothing
-  into an empty one on either build.
+  darwin-arm64, scratch `HOME`s, a real `CLAUDE_CODE_OAUTH_TOKEN`; that linux-arm64
+  does the same is inferred, not checked.) What this means for Koloft's two writers:
+  the local one writes the onboarding flag only into a file that parses as a JSON
+  object; the remote one adds it after line 1 when that line is exactly `{`, without
+  parsing the rest. Neither writes into an empty file, so on 2.1.318 an empty file
+  opens the theme picker locally and, after the remote warm-up has filled it in, on a
+  remote machine too. On a remote machine with a broken file, where Koloft supplies the
+  login, the warm-up now fails at every launch (it runs while `cachedGrowthBookFeatures` is missing, and its output is
+  thrown away) and the tab opens on the "Configuration error" dialog; on 2.1.317 the
+  first warm-up reset the file to defaults.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
@@ -2877,7 +2885,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   (2026-11-03); what changed is not read. 2.1.318 holds them 13 and 3 times
   (darwin-arm64 and linux-arm64, 2026-11-04): it adds a mode that waits for the refresh
   up to a deadline (`exitWaitsForOAuthRefreshUntilDeadline`), off by default, and with it
-  off the exit reads as before (`strings`, not run). That the `--version` the shim runs
+  off the exit reads as before (`strings`, not run: inferred, not checked). That the
+  `--version` the shim runs
   before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
@@ -2907,16 +2916,17 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `DISABLE_AUTOUPDATER=1` in the env stopped it (2026-10-14, pty probes of §1).
 - **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
   `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
-  so a session already running on the old file keeps going. Version cleanup lists only
-  `~/.local/share/claude/versions` (plus its staging and lock folders) and keeps the
-  running `execPath`, the version the launch link points at, every version with a live
-  `locks/<version>@<pid>.lock`, and the 2 newest by mtime; since 2.1.318 a lock whose
-  pid answers `EPERM` (another user's process) counts as live, where 2.1.317 called it
-  dead (`strings`, darwin-arm64 and linux-arm64, 2026-11-04, not run). It never reaches
-  `~/.koloft`. npm: 2.1.250 → **2.1.293**,
+  so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
   one behind the native channel that day, after printing "npm global folder isn't
   writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
   update failing is inferred, not checked. A Homebrew install was not run.
+- **Version cleanup keeps every version a running claude still uses.** It lists only
+  `~/.local/share/claude/versions` (plus its staging and lock folders) and keeps the
+  running `execPath`, the version the launch link points at, every version with a live
+  `locks/<version>@<pid>.lock`, and the 2 newest by mtime; it never reaches `~/.koloft`.
+  Since 2.1.318 a lock whose pid answers `EPERM` (another user's process) counts as
+  live, where 2.1.317 called it dead. (`strings`, darwin-arm64 and linux-arm64,
+  2026-11-04, not run: inferred, not checked.)
 - **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
   reverting each other's `~/.claude.json` writes from then on (§2), which the folder
   trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
@@ -2978,7 +2988,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
   strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
   331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`), and on 2026-11-04
-  `2.1.318/linux-arm64/claude` with 337,438,136 bytes (ETag the file's MD5) — each ran as
+  `2.1.318/linux-arm64/claude` with 337,438,136 bytes (ETag the file's MD5, strings
+  stamp `2.1.318` only) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
@@ -3177,7 +3188,9 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   2.1.318 `-p "/code-review low origin/main...HEAD" --model haiku --output-format json`
   on a one-line diff still answered exit 0, `is_error: false` and a `result` starting
   with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
-  and times above were not re-measured).
+  and times above were not re-measured, and that `scripts/code-review.mjs`'s own
+  `medium` / `claude-opus-5-5` argv answers the same way on 2.1.318 is inferred, not
+  checked).
 - **Since 2.1.318 a custom command that cannot run puts its error in `result`, still
   with `is_error: false`.** In a scratch repo, a project command whose `` !`exit 3` ``
   step is refused under `-p` answered `result: ""` on 2.1.317 and `Shell command
