@@ -859,6 +859,19 @@ only downloaded the public release.
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
   Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
   not tried.
+- **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
+  `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
+  no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
+  Gemini server answering with `ask_question {questions:[{question, options:["Apple",
+  "Banana"], is_multi_select:false}]}`, 2026-11-03. With the flag (its log line
+  "--dangerously-skip-permissions: auto-approving all tool permissions") and without it,
+  2 of 2 runs each drew "Question 1/1: Which fruit do you want?" with "3. Write-in..." and
+  "↑/↓ Navigate · enter Select · esc Skip", sent no model request for 12 s, and after `2`
+  gave the model `Created At: …\nCompleted At: …\nA1: Banana`. With `AGY_CLI_OSC7501=on`,
+  `tmux pipe-pane` saw `idle`, `working`, `blocked:kind=question` (msg the base64
+  question), `done`. In 1.4.12 `ask_question`'s schema is only `questions[{question,
+  options (2 or more strings), is_multi_select?}]` with `additionalProperties: false`: no
+  `toolSummary` or `toolAction`.
 
 ## §15 Typing into it
 
