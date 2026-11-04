@@ -8,6 +8,7 @@ import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
+import { runsPlaywrightMcp } from './browserControlEnv'
 
 const AGY_HOMES = 'agy-homes'
 
@@ -111,6 +112,7 @@ export interface KoloftSettings {
   statusLine?: string
   apiKey: boolean
   allowKoloft: boolean
+  playwrightMcp?: string[]
 }
 
 const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
@@ -120,6 +122,16 @@ const AGY_KOLOFT_ALLOW_RULE = 'command(koloft)'
 
 const strings = (list: unknown): string[] =>
   Array.isArray(list) ? list.filter((s): s is string => typeof s === 'string') : []
+
+// ADR-0048 AGY§26
+const allowEveryToolOf = (server: string): string => `mcp(${server}/*)`
+const KOLOFT_WHOLE_SERVER_RULE = /^mcp\([^/()]+\/\*\)$/
+
+// AGY§30
+export function ownersPlaywrightMcp(ownersGemini: string): string[] {
+  const servers = record(readJson(path.join(ownersGemini, 'config', 'mcp_config.json')).mcpServers)
+  return Object.keys(servers).filter((name) => runsPlaywrightMcp(servers[name]))
+}
 
 // AGY§27
 const NO_FLICKERING_RENDERING = { altScreenMode: 'always' }
@@ -132,7 +144,7 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
   )
 }
 
-// AGY§4 AGY§5 AGY§11 AGY§26 AGY§27
+// AGY§4 AGY§5 AGY§11 AGY§26 AGY§27 ADR-0048
 export function mergedAgySettings(
   own: Record<string, unknown>,
   owners: Record<string, unknown>,
@@ -154,10 +166,18 @@ export function mergedAgySettings(
   if (k.apiKey) merged.modelProvider = 'gemini'
   const permissions = { ...record(merged.permissions) }
   const ownerSetsPermissions = 'permissions' in owners
+  const ownersRules = Object.values(record(owners.permissions)).flatMap(strings)
+  const ownerRuled = (server: string): boolean =>
+    ownersRules.some((r) => r === `mcp(${server})` || r.startsWith(`mcp(${server}/`))
+  const ours = [
+    ...(k.allowKoloft ? [AGY_KOLOFT_ALLOW_RULE] : []),
+    ...(k.playwrightMcp ?? []).filter((s) => !ownerRuled(s)).map(allowEveryToolOf)
+  ]
   const allow = strings(permissions.allow).filter(
-    (r) => ownerSetsPermissions || r !== AGY_KOLOFT_ALLOW_RULE
+    (r) =>
+      ownerSetsPermissions || (r !== AGY_KOLOFT_ALLOW_RULE && !KOLOFT_WHOLE_SERVER_RULE.test(r))
   )
-  if (k.allowKoloft && !allow.includes(AGY_KOLOFT_ALLOW_RULE)) allow.push(AGY_KOLOFT_ALLOW_RULE)
+  for (const rule of ours) if (!allow.includes(rule)) allow.push(rule)
   if (allow.length) permissions.allow = allow
   else delete permissions.allow
   if (Object.keys(permissions).length) merged.permissions = permissions

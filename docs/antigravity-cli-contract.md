@@ -1255,6 +1255,29 @@ only downloaded the public release.
   `WSL_INTEROP`) did the same: asked with no rule; with the rule, `koloft open x` and
   `koloft session send abc "hello there"` ran with no ask, while `pwd` and `koloft
   open x; touch …` asked.
+- **MCP tool calls** (1.4.12 and 1.5.0, the manifest's Linux arm64 builds, sha512
+  checked, Docker, tmux, fake Gemini server, `--gemini_dir`, 2026-11-04; two stdio MCP
+  servers `playwright` and `probe` in
+  `config/mcp_config.json`, each with a tool `browser_navigate` marked
+  `destructiveHint: true`, `browser_snapshot` marked `readOnlyHint: true` and `ping`
+  with no hints). The model gets them through one lazy tool, `call_mcp_tool
+  {ServerName, ToolName, Arguments}`; the system prompt lists each server's tools. In
+  the default mode every call asked, the read-only one too: "<server>/<tool> Allow
+  calling this tool? 1. Yes, allow tool call / 2. Yes, and always allow tool
+  '<server>/<tool>' in this conversation / 3. … (Persist to settings.json) / 4–6 No …".
+  It asked again for the same tool on its second call, after `/clear` and after a
+  restart. `2` kept that tool from asking for the rest of the conversation only; `3`
+  wrote `"permissions":{"allow":["mcp(playwright/browser_navigate)"]}` into the
+  `--gemini_dir` folder's `antigravity-cli/settings.json`, and that tool no longer
+  asked after `/clear` or a restart. `"mcp(playwright/*)"` written there before launch
+  let every `playwright` tool run with no ask, after `/clear` and a restart too, while
+  `probe/ping` still asked; `"mcp(playwright)"` did nothing.
+  `--dangerously-skip-permissions` asked nothing. The macOS build (1.5.0 darwin arm64,
+  sha512 checked, a throwaway macOS 26.6 tart VM with no screen, run under `expect`
+  answering the terminal queries, the same fake server and MCP servers, `WSL_INTEROP`)
+  did the same: with no rule `browser_navigate` asked on both of its calls in one
+  conversation and `browser_snapshot` and `probe/ping` asked too; with
+  `mcp(playwright/*)` only `probe/ping` asked; with the flag nothing asked.
 
 ## §27 Terminal modes
 
@@ -1368,8 +1391,15 @@ fake Gemini server with MCP servers that logged their start.
   reach its main checkout, nor a repository inside another the outer one. Measured
   2026-10-28, agy 1.4.9 (the manifest's `linux_arm64.json`), Docker, `agy -p` against a
   fake Gemini server, MCP servers that logged their start.
+- **A stdio MCP server gets agy's whole environment.** 1.4.12 and 1.5.0, the runs of
+  §26's MCP bullet: a server that wrote its environment to a file saw the variables
+  agy was started with, `PLAYWRIGHT_MCP_CDP_ENDPOINT`, `KOLOFT_TAB_ID` and
+  `GEMINI_API_KEY` among them, with nothing in the entry's `env`; the same after
+  `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
-Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
+Workbench browser's address and the allow rule for the owner's Playwright entries
+(`src/main/agyAccounts.ts`).
 
 ## §31 Skills
 
