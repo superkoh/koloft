@@ -64,23 +64,24 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
   agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
 }
 
-const ASKS_BEFORE_EACH_STEP = {
-  asks: 'Sessions ask you before each step.',
-  instead: 'Ask me first instead'
-}
-
-// CC§9 CC§14 MUSE§15 AGY§26
+// CC§9 CC§14 CODEX§11 MUSE§15 AGY§26
 const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
   claude: {
     asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
     instead: 'Ask about risky steps instead'
   },
-  codex: ASKS_BEFORE_EACH_STEP,
+  codex: {
+    asks: 'Codex asks only about some steps, like one that leaves its sandbox.',
+    instead: 'Ask about some steps instead'
+  },
   muse: {
     asks: 'Muse Code asks only about some steps, like one that leaves its sandbox.',
     instead: 'Ask about some steps instead'
   },
-  agy: ASKS_BEFORE_EACH_STEP
+  agy: {
+    asks: 'Sessions ask you before each step.',
+    instead: 'Ask me first instead'
+  }
 }
 
 const SIDEBAR_ROWS_PER_FOLDER = 4

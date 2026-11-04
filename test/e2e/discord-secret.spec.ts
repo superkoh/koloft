@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
@@ -30,7 +32,7 @@ import {
 import { guestByUrl } from './helpers/browser'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import { FILLED_AND_EMPTIED } from '../../src/main/agentSecret'
-import { PASSED_ON } from '../../src/main/discord/secretAsks'
+import { ANSWERED_IN_KOLOFT, NO_LONGER_WAITING, PASSED_ON } from '../../src/main/discord/secretAsks'
 
 test.setTimeout(120_000)
 
@@ -59,6 +61,17 @@ async function sessionTab(page: Page, env: E2EEnv): Promise<string> {
 
 function type(page: Page, tab: string, line: string): Promise<void> {
   return page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+}
+
+const SUDO_BOX = '.term-wrap .secret-modal'
+const SECRET_BAR = '[role="alertdialog"][aria-label="Secret ask"]'
+
+function askSudo(page: Page, tab: string): Promise<void> {
+  return type(
+    page,
+    tab,
+    `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:' && echo got-it`
+  )
 }
 
 async function secretCard(fake: FakeDiscord, header: RegExp): Promise<FakePost> {
@@ -90,7 +103,7 @@ function nowhereInDiscord(fake: FakeDiscord, typed: string): void {
 }
 
 test.describe('Discord secrets: the owner gives a session a password or sign-in address from Discord, which Koloft passes on and Discord never shows', () => {
-  test('sudo’s password helper posts a card with the command in the butler’s channel, naming the session and its workspace; the owner’s button opens a form, and what is typed there reaches sudo and nothing else', async ({
+  test('sudo’s password helper posts a card with the command in the butler’s channel, naming the session and its workspace; the owner’s button opens a form, and what is typed there reaches sudo and nothing else, and the box Koloft shows in the session meanwhile goes', async ({
     env
   }) => {
     seedBinding(env)
@@ -102,17 +115,14 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await expect.poll(() => fake.identifies).toBe(1)
       await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
       const tab = await sessionTab(page, env)
-      await type(
-        page,
-        tab,
-        `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:' && echo got-it`
-      )
+      await askSudo(page, tab)
       const card = await secretCard(fake, /^🔑 \*\*.+ · ws-a\*\* asks for your sudo password/)
       expect(card.content).toContain('sudo asked: Password:')
+      await expect(page.locator(SUDO_BOX)).toBeVisible()
       const typed = 'hunter2-sudo "x" \\'
       await enter(fake, card, typed)
-      await expect.poll(() => terminalText(page, tab)).toContain('got-it')
-      expect(await terminalText(page, tab)).toContain(typed)
+      await expect.poll(() => terminalText(page, tab)).toContain(`${typed}\ngot-it`)
+      await expect(page.locator(SUDO_BOX)).toHaveCount(0)
       await expect
         .poll(() =>
           fake.edits
@@ -122,6 +132,65 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
         )
         .toContain('✅ Passed on.')
       nowhereInDiscord(fake, typed)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('answered in the Koloft box first, the sudo card in Discord says so and loses its button, and a press on it opens no form', async ({
+    env
+  }) => {
+    seedBinding(env)
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => fake.identifies).toBe(1)
+      await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+      const tab = await sessionTab(page, env)
+      await askSudo(page, tab)
+      const card = await secretCard(fake, /asks for your sudo password/)
+      const typed = 'hunter2-in-koloft'
+      await page.locator(`${SUDO_BOX} input`).fill(typed)
+      await page.locator(`${SUDO_BOX} .btn-primary`).click()
+      await expect.poll(() => terminalText(page, tab)).toContain(`${typed}\ngot-it`)
+      const edited = (): FakePost | undefined => fake.edits.filter((e) => e.id === card.id).at(-1)
+      await expect.poll(() => edited()?.content).toContain(ANSWERED_IN_KOLOFT)
+      expect(edited()?.buttons ?? []).toEqual([])
+      fake.press(OWNER, card.buttons![0], card.channelId)
+      await expect
+        .poll(() => fake.callbacks.map((c) => c.data.content))
+        .toContain(NO_LONGER_WAITING)
+      expect(fake.callbacks.some((c) => c.type === OPEN_A_FORM)).toBe(false)
+      nowhereInDiscord(fake, typed)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('while the owner is at the Mac, sudo asks only in the Koloft box and posts no card to Discord', async ({
+    env
+  }) => {
+    seedBinding(env)
+    const presence = path.join(env.home, 'presence.txt')
+    fs.writeFileSync(presence, 'active')
+    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => fake.identifies).toBe(1)
+      await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+      const tab = await sessionTab(page, env)
+      await askSudo(page, tab)
+      await page.locator(`${SUDO_BOX} input`).fill('pw-at-the-mac')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => terminalText(page, tab)).toContain('pw-at-the-mac\ngot-it')
+      expect(fake.posted.filter((p) => /asks for your sudo password/.test(p.content))).toEqual([])
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -229,6 +298,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
             await other.bound?.(page)
           } else await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
           await openSessionTerminal(app, page)
+          const shell = (await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty'))!
           await runIn(
             page,
             panelTerm(page),
@@ -236,18 +306,20 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
           )
           const card = await secretCard(fake, /needs the address a sign-in ends on/)
           expect(card.content).toContain(`Koloft opens it on ${REMOTE_HOST}.`)
+          await expect(page.locator(SECRET_BAR)).toContainText('finish this sign-in here')
           const pasted = server.url('/auth/callback?code=c-2&state=s-2')
           await enter(fake, card, pasted)
+          await expect(page.locator(SECRET_BAR)).toHaveCount(0)
           await expect
             .poll(() => server.requestsFor('/auth/callback').map((r) => r.search))
             .toEqual(['?code=c-2&state=s-2'])
           expect(
             sshCommands(env).filter((c) => c.includes('curl') && c.includes(pasted))
           ).toHaveLength(1)
-          await expect(panelTerm(page)).toContainText(
-            `Koloft opened the address on ${REMOTE_HOST}; it answered 200.`,
-            { timeout: 30_000 }
-          )
+          const bare = (s: string): string => s.replace(/\s+/g, '')
+          await expect
+            .poll(async () => bare(await terminalText(page, shell)), { timeout: 30_000 })
+            .toContain(bare(`Koloft opened the address on ${REMOTE_HOST}; it answered 200.`))
         } finally {
           await quitAndClose(app)
           await fake.close()

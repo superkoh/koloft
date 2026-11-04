@@ -8,6 +8,7 @@ import {
   type AdoptableTab,
   type ArtifactView,
   type AttentionEvent,
+  type SecretAskView,
   type BaseChoice,
   type BrowserJsDialog,
   type CronState,
@@ -115,6 +116,7 @@ interface AppState {
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
+  secretAsks: SecretAskView[]
   revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
@@ -203,6 +205,7 @@ interface AppState {
   setSessions: (s: SessionInfo[]) => void
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
+  setSecretAsks: (asks: SecretAskView[]) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
@@ -642,6 +645,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessions: [],
   leftovers: {},
   attention: [],
+  secretAsks: [],
   revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
@@ -1036,6 +1040,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
+  setSecretAsks: (secretAsks) => set({ secretAsks }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),

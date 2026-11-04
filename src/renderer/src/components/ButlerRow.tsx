@@ -5,7 +5,7 @@ import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/co
 import { attentionReason } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
-import { rowStateClass } from '../sessionRows'
+import { rowStateClass, statusWithSecrets } from '../sessionRows'
 import { butlerSetUp, butlerTabOf } from '../butlerRows'
 import { visitTab } from '../sessionClick'
 import { SessionBackendIcon } from './SessionBackendIcon'
@@ -37,6 +37,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
+  const secretAsks = useStore((s) => s.secretAsks)
   const opened = useStore((s) => s.butlerTab)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
   const setBindButler = useStore((s) => s.setBindButler)
@@ -85,8 +86,12 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   }
 
   const stateClass =
-    rowStateClass(!!tabId, sess?.status, !!tabId && !sess, sess?.turnOver) +
-    (tabId && tabId === activeTabId ? ' active' : '')
+    rowStateClass(
+      !!tabId,
+      statusWithSecrets(sess?.status, tabId, secretAsks),
+      !!tabId && !sess,
+      sess?.turnOver
+    ) + (tabId && tabId === activeTabId ? ' active' : '')
 
   const title = (
     <>

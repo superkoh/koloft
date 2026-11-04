@@ -488,6 +488,7 @@ import {
   BUILTIN_VERBS,
   errorText,
   refused,
+  tabSpokenFor,
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
@@ -500,7 +501,7 @@ import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
-import { secretVerb } from './agentSecret'
+import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
 import { shootHtml, shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
@@ -1979,11 +1980,15 @@ const agentRequests = new AgentRequests({
       openRoom: openRoomByRef
     }),
     [SECRET_VERB]: secretVerb({
+      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
       ask: (a) =>
-        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+        secretAsks
+          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+          : Promise.resolve({ ended: 'timeout' }),
       ownerAsleep: () => ownerAsleep.asleep(),
       machine: machineOfTab,
       pages: guestPagesOf,
+      showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
       open: openSignInEndOn,
       sleep
     }),
@@ -3069,6 +3074,7 @@ app.whenReady().then(() => {
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
+  setupSecretLanding()
   setupGuestForwardsEnd()
   setupGuestPopups()
   setupGuestContextMenu()
@@ -3759,8 +3765,14 @@ app.whenReady().then(() => {
   askButtons = buttons
   const secrets = new SecretAsks({
     owner: () => butlerNow.owner(),
+    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
+    show: (asks) => sendToRenderer(CH.secret.asks, asks),
+    askedOnlyInKoloft: (tabId) => attention.asksForASecret(tabId, attentionSubjectOf(tabId)),
+    ended: (tabId) => {
+      if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
+    },
     place: async (tabId, card) => {
-      const channelId = butlerNow.channel()?.channelId
+      const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
       if (!channelId) return undefined
       const name = await secretAskerName(tabId)
       const messageId = (await link.card(channelId, card(name))).at(-1)
@@ -4392,6 +4404,15 @@ function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebCo
     if (owner) recordGuestOwner(popupId, owner)
   })
   for (const w of webPageWatchers) w(popup)
+}
+
+function setupSecretLanding(): void {
+  onEveryWebPage((contents) => {
+    contents.on('did-start-navigation', (details) => {
+      if (details.isMainFrame) secretAsks?.navigationStarted(contents.id, details.url)
+    })
+    contents.on('did-navigate', (_e, url) => secretAsks?.navigated(contents.id, url))
+  })
 }
 
 // PLATFORM§12
@@ -5676,11 +5697,12 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
-function guestPagesOf(tabId: string): GuestPage[] {
+function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
   return webContents
     .getAllWebContents()
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
+      guestId: wc.id,
       url: () => wc.getURL(),
       // PLATFORM§10
       run: async (script: string) => {
@@ -6275,6 +6297,7 @@ function registerIpc(): void {
     cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+    secretAsks?.rehome(oldTabId, newTabId)
   })
 
   ipcMain.handle(CH.sessions.list, () => allSessions())
@@ -6291,6 +6314,16 @@ function registerIpc(): void {
     return id ? installTool(id) : null
   })
   ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
+  ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
+    if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)
+  })
+  ipcMain.on(CH.secret.done, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.done(id)
+  })
+  ipcMain.on(CH.secret.decline, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.decline(id)
+  })
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {

@@ -983,6 +983,11 @@ export class SshHost implements Host {
     return kill
   }
 
+  async endedByKoloft(sessionId: string): Promise<boolean> {
+    await this.kills.get(tmuxSessionName(sessionId))
+    return this.killedSessions.has(sessionId)
+  }
+
   async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
     return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
   }

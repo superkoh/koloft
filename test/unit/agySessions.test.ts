@@ -260,6 +260,7 @@ beforeEach(() => {
           machine.ended.push(name)
           return undefined
         },
+        endedByKoloft: async (id) => machine.ended.includes(`k-${id}`),
         runScript: async (script) => (script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null)
       }),
       hosts: () => ['devbox'],
@@ -1682,6 +1683,17 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
 
   it('refuses to resume a conversation another agy on that machine holds', async () => {
     machine.held = true
+    remoteMember(A)
+    await expect(
+      sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    ).rejects.toThrow(/open in another agy window/)
+    expect(machine.launches).toEqual([])
+  })
+
+  it('refuses to resume a conversation another agy on that machine holds when Koloft just ended its tmux and the last pull still listed it', async () => {
+    machine.held = true
+    machine.alive.add(A)
+    machine.ended.push(`k-${A}`)
     remoteMember(A)
     await expect(
       sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
