@@ -124,6 +124,7 @@ import {
   HOOK_SCRIPT,
   discordIdsFile,
   forgetAssistMarkers,
+  noteDiscordSaid,
   localNotice,
   markAnswerable,
   markOwnerAsleep,
@@ -666,7 +667,11 @@ const sessionBackends = new SessionBackends({
       syncAnswerable()
     }
     discordTyping?.refresh(tabId)
-    rooms?.bound(tabId, key, !idleCompaction)
+    void rooms?.bound(
+      tabId,
+      key,
+      async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
+    )
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
@@ -3245,6 +3250,7 @@ app.whenReady().then(() => {
       !!backendIdOf(exited?.kind)
     if (unexpected && exited) unexpectedExits.set(e.id, unexpectedExitHeading(exited, e))
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
+    const restarting = closedTabs.get(e.id) === null
     closedTabs.delete(e.id)
     const exit: TabExit = {
       tabId: e.id,
@@ -3260,9 +3266,7 @@ app.whenReady().then(() => {
     for (const [id, t] of sleepers)
       if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
     tabLifecycle.emit('exit', exit)
-    if (quitCommitted || exit.asleep) rooms?.forget(e.id)
-    else if (unexpected) rooms?.stopped(e.id)
-    else void rooms?.closed(e.id)
+    roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
@@ -3354,7 +3358,7 @@ app.whenReady().then(() => {
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     const asksOnDiscord = (butlerSide(t.tabId) && !!butler?.channel()) || !!roomOfTab(t.tabId)
-    if (t.prev === 'approval') discordRelay?.stoppedAsking(t.tabId)
+    if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => {
         if (a) return discordRelay?.codexAsked(t.tabId, a)
@@ -3803,12 +3807,15 @@ app.whenReady().then(() => {
           lastMessageId: butlerNow.lastMessageId(),
           seen: (id: string) => butlerNow.setLastMessage(id)
         },
-        ...butlerNow.rooms().map((r) => ({
-          channelId: r.threadId,
-          lastMessageId: r.lastMessageId,
-          seen: (id: string) => roomsNow.seen(r.threadId, id),
-          room: true
-        }))
+        ...butlerNow
+          .rooms()
+          .flatMap((r) => (r.keys.some((k) => rowOfKey(k)) ? [r] : []))
+          .map((r) => ({
+            channelId: r.threadId,
+            lastMessageId: r.lastMessageId,
+            seen: (id: string) => roomsNow.seen(r.threadId, id),
+            room: true
+          }))
       ]
     },
     replyChannelOf: phoneChannelOf,
@@ -3822,6 +3829,11 @@ app.whenReady().then(() => {
       const host = machineOfTab(tabId)
       if (host) return hosts.machine(host).noteDiscordId(tabId, id)
       fs.appendFileSync(discordIdsFile(hookPaths.regDir, tabId), `${id}\n`)
+    },
+    noteDiscordSaid: async (tabId, text) => {
+      const host = machineOfTab(tabId)
+      if (host) return hosts.machine(host).noteDiscordSaid(tabId, text)
+      noteDiscordSaid(hookPaths.regDir, tabId, text)
     },
     inRoom: (tabId) => !!roomOfTab(tabId),
     helperTitle: (tabId) =>
@@ -5801,6 +5813,12 @@ function touchedBefore(left: number): string[] {
   })
 }
 
+function roomOfEndedTab(tabId: string, sessionGoesOn: boolean, unexpected: boolean): void {
+  if (sessionGoesOn) rooms?.forget(tabId)
+  else if (unexpected) rooms?.stopped(tabId)
+  else void rooms?.closed(tabId)
+}
+
 function rowOfKey(key: string | undefined): SessionRow | undefined {
   return (workspaceMgr?.rows() ?? []).flatMap((w) => w.rows).find((r) => r.id === key)
 }
@@ -5874,7 +5892,8 @@ function sessionChoices(typed: string): SessionChoice[] {
 async function openRoomPicked(picked: string): Promise<string> {
   const id = choiceIds.get(picked) ?? picked
   const all = roomable()
-  const p = all.find((r) => r.row.id === id) ?? all.find((r) => r.title === picked)
+  const titled = all.filter((r) => r.title === picked)
+  const p = all.find((r) => r.row.id === id) ?? (titled.length === 1 ? titled[0] : undefined)
   if (!p) return `There is no session "${picked}". Pick one from the list that shows as you type.`
   return `${p.title}: ${roomLink(await openRoomFor(p))}`
 }

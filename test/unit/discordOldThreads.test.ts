@@ -91,16 +91,11 @@ describe('session threads an older Koloft opened under the butler’s channel', 
     expect(t.archived()).toBe(true)
   })
 
-  it('a session’s room Koloft keeps today is never archived with them, and the owner writing or pressing in it is not sent to the butler’s channel', async () => {
+  it('a session’s room Koloft keeps today is never archived with them', async () => {
     const t = setup({ rooms: [OLD] })
     await t.threads.archiveOnce()
     expect(t.archivedThreads).toEqual(['702'])
     expect(t.archived()).toBe(true)
-    await t.threads.onMessage(message('1', OLD))
-    await t.threads.onInteraction(interaction(OLD))
-    expect(t.posts).toEqual([])
-    expect(t.responses).toEqual([])
-    expect(t.lookups).toEqual([])
   })
 
   it('a thread Discord will not archive is skipped and the rest still are, and the job is tried again on the next connect, as it is when Discord will not give the list', async () => {

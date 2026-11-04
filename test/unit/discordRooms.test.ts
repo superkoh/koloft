@@ -39,6 +39,7 @@ function setup(saved: SessionRoom[] = []) {
 }
 
 const fix: RoomSubject = { tabId: 'tab-1', key: 'k1', name: 'Fix login', backend: 'claude' }
+const fresh = async (): Promise<boolean> => true
 
 describe('a session’s room on Discord', () => {
   it('is opened once, as a thread on a card in the butler’s channel, shows where the session is and then adds the owner; opening it again reuses the same thread', async () => {
@@ -50,33 +51,51 @@ describe('a session’s room on Discord', () => {
       'show t701',
       `add t701 ${OWNER}`
     ])
-    expect(stored()).toEqual([{ threadId: 't701', keys: ['k1'], name: 'Fix login' }])
+    expect(stored()).toEqual([
+      { threadId: 't701', keys: ['k1'], name: 'Fix login', lastMessageId: 't701' }
+    ])
     calls.length = 0
     expect(await rooms.open(fix, show)).toBe('t701')
     expect(calls).toEqual(['show t701', `add t701 ${OWNER}`])
   })
 
-  it('a session that has no id yet keeps its room by its tab, and the room is saved under its id once it binds', async () => {
+  it('a session that has no id yet keeps its room by its tab, and the room is saved under its id once it binds, also when it binds before the thread is made', async () => {
     const { rooms, stored, show } = setup()
     await rooms.open({ tabId: 'tab-2', name: 'New work', backend: 'codex' }, show)
     expect(stored()).toEqual([])
     expect(rooms.carried('tab-2')).toBe('t701')
-    rooms.bound('tab-2', 'k2', true)
-    expect(stored()).toEqual([{ threadId: 't701', keys: ['k2'], name: 'New work' }])
+    await rooms.bound('tab-2', 'k2', fresh)
+    expect(stored()).toEqual([
+      { threadId: 't701', keys: ['k2'], name: 'New work', lastMessageId: 't701' }
+    ])
+    const opening = rooms.open({ tabId: 'tab-3', name: 'Quick', backend: 'claude' }, show)
+    await rooms.bound('tab-3', 'k3', fresh)
+    await opening
+    expect(rooms.ofKey('k3')?.threadId).toBe('t702')
   })
 
   it('after /clear in the same tab it is still the same room, now also under the new id, and says so in the room; a resume into its own id says nothing', async () => {
     const { rooms, calls, stored, show } = setup()
     await rooms.open(fix, show)
-    rooms.bound('tab-1', 'k1', true)
+    await rooms.bound('tab-1', 'k1', fresh)
     calls.length = 0
-    rooms.bound('tab-1', 'k1b', true)
+    await rooms.bound('tab-1', 'k1b', fresh)
     expect(stored()[0].keys).toEqual(['k1', 'k1b'])
     expect(calls).toEqual([`post t701 ${STARTED_OVER_IN_ROOM}`])
     calls.length = 0
-    rooms.bound('tab-9', 'k1b', true)
+    await rooms.bound('tab-9', 'k1b', fresh)
     expect(calls).toEqual([])
     expect(rooms.carried('tab-9')).toBe('t701')
+  })
+
+  it('a tab that resumes another session that already talked leaves the room behind with the session it belongs to', async () => {
+    const { rooms, calls, stored, show } = setup()
+    await rooms.open(fix, show)
+    calls.length = 0
+    await rooms.bound('tab-1', 'other', async () => false)
+    expect(stored()[0].keys).toEqual(['k1'])
+    expect(rooms.carried('tab-1')).toBeUndefined()
+    expect(calls).toEqual([])
   })
 
   it('is put down (archived) when the owner works on the session at the Mac, and is carried again only when the owner opens it or speaks in it', async () => {

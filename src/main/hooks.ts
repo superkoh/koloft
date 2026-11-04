@@ -688,7 +688,7 @@ export function discordSaidFile(regDir: string, tabId: string): string {
 
 // ADR-0028
 export function noteDiscordSaid(regDir: string, tabId: string, text: string): void {
-  fs.appendFileSync(discordSaidFile(regDir, tabId), `${JSON.stringify(text).slice(1, -1)}\n`)
+  fs.appendFileSync(discordSaidFile(regDir, tabId), discordSaidLine(text))
 }
 
 export function saidFile(regDir: string, tabId: string): string {
@@ -701,6 +701,14 @@ export function noticeFile(regDir: string, tabId: string): string {
 
 export function remoteNoticeFile(tabId: string): string {
   return `${REMOTE_HOOK_DIR}/${tabId}${NOTICE_SUFFIX}`
+}
+
+export function remoteDiscordSaidFile(tabId: string): string {
+  return `${REMOTE_HOOK_DIR}/${tabId}${DISCORD_SAID_SUFFIX}`
+}
+
+export function discordSaidLine(text: string): string {
+  return `${JSON.stringify(text).slice(1, -1)}\n`
 }
 
 export function ownerAsleepMarker(awakeTabs: string[]): string {

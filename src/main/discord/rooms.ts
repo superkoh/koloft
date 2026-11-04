@@ -75,7 +75,9 @@ export class Rooms {
   private change(threadId: string, patch: Partial<SessionRoom>): void {
     const waiting = [...this.unbound.values()].find((r) => r.threadId === threadId)
     if (waiting) Object.assign(waiting, patch)
-    this.d.save(this.d.rooms().map((r) => (r.threadId === threadId ? { ...r, ...patch } : r)))
+    const stored = this.d.rooms()
+    if (stored.some((r) => r.threadId === threadId))
+      this.d.save(stored.map((r) => (r.threadId === threadId ? { ...r, ...patch } : r)))
   }
 
   private store(room: SessionRoom): void {
@@ -111,13 +113,20 @@ export class Rooms {
     if (!lobby) throw new Error(NO_LOBBY)
     const [opener] = await this.d.link.card(lobby.channelId, openerCard(s))
     const threadId = await this.d.link.startThread(lobby.channelId, opener, s.name)
-    const room: SessionRoom = { threadId, keys: s.key ? [s.key] : [], name: s.name }
-    if (s.key) this.store(room)
+    const key = s.key ?? (s.tabId && this.keyOfTab.get(s.tabId))
+    // PLATFORM§39
+    const room: SessionRoom = {
+      threadId,
+      keys: key ? [key] : [],
+      name: s.name,
+      lastMessageId: threadId
+    }
+    if (key) this.store(room)
     else if (s.tabId) this.unbound.set(s.tabId, room)
     return threadId
   }
 
-  bound(tabId: string, key: string, newConversation: boolean): void {
+  async bound(tabId: string, key: string, newConversation: () => Promise<boolean>): Promise<void> {
     const before = this.keyOfTab.get(tabId)
     this.keyOfTab.set(tabId, key)
     if (this.ofKey(key)) return
@@ -128,9 +137,9 @@ export class Rooms {
       return
     }
     const carried = before ? this.ofKey(before) : undefined
-    if (!carried) return
+    if (!carried || !(await newConversation()) || this.keyOfTab.get(tabId) !== key) return
     this.change(carried.threadId, { keys: [...carried.keys, key] })
-    if (newConversation && !carried.putDown) this.say(carried.threadId, STARTED_OVER_IN_ROOM)
+    if (!carried.putDown) void this.say(carried.threadId, STARTED_OVER_IN_ROOM)
   }
 
   private say(threadId: string, text: string): Promise<unknown> {
