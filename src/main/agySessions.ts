@@ -628,7 +628,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
       allowKoloft: !!agent,
-      playwrightMcp: endpoint ? ownersPlaywrightMcp(gemini) : []
+      playwrightServers: ownersPlaywrightMcp(gemini),
+      workbenchBrowser: !!endpoint
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -760,7 +761,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
       apiKey: !!apiKey,
-      allowKoloft: agentTools
+      allowKoloft: agentTools,
+      playwrightServers: [],
+      workbenchBrowser: false
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,

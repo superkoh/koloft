@@ -84,7 +84,9 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
     trust: ['/w/new'],
     titleCommand: '/bin/sh "/k/koloft-agy-title"',
     apiKey: false,
-    allowKoloft: false
+    allowKoloft: false,
+    playwrightServers: [],
+    workbenchBrowser: false
   }
 
   it("starts from the owner's own settings and puts Koloft's title script, status line and trusted folders on top", () => {
@@ -154,15 +156,22 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
   // ADR-0048 AGY§26
   it("lets every tool of the owner's Playwright MCP run without an ask while the tab has the Workbench browser, and takes that back once it has none", () => {
     writeJson(settingsOf(home), {
-      permissions: { allow: ['mcp(playwright/browser_click)', 'command(ls)'] }
+      permissions: { allow: ['mcp(pw/browser_click)', 'mcp(github/*)', 'command(ls)'] }
     })
-    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true, playwrightMcp: ['pw'] })
+    const playwright = { ...koloft, playwrightServers: ['pw'] }
+    mergeAgySettings(home, owners, { ...playwright, allowKoloft: true, workbenchBrowser: true })
     expect(readJson(settingsOf(home)).permissions).toEqual({
-      allow: ['mcp(playwright/browser_click)', 'command(ls)', 'command(koloft)', 'mcp(pw/*)']
+      allow: [
+        'mcp(pw/browser_click)',
+        'mcp(github/*)',
+        'command(ls)',
+        'command(koloft)',
+        'mcp(pw/*)'
+      ]
     })
-    mergeAgySettings(home, owners, { ...koloft, playwrightMcp: [] })
+    mergeAgySettings(home, owners, playwright)
     expect(readJson(settingsOf(home)).permissions).toEqual({
-      allow: ['mcp(playwright/browser_click)', 'command(ls)']
+      allow: ['mcp(pw/browser_click)', 'mcp(github/*)', 'command(ls)']
     })
   })
 
@@ -171,10 +180,23 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
     writeJson(settingsOf(owners), {
       permissions: { deny: ['mcp(pw/browser_run_code_unsafe)'], allow: ['command(git status)'] }
     })
-    mergeAgySettings(home, owners, { ...koloft, playwrightMcp: ['pw', 'browser'] })
+    mergeAgySettings(home, owners, {
+      ...koloft,
+      playwrightServers: ['pw', 'browser'],
+      workbenchBrowser: true
+    })
     expect(readJson(settingsOf(home)).permissions).toEqual({
       deny: ['mcp(pw/browser_run_code_unsafe)'],
       allow: ['command(git status)', 'mcp(browser/*)']
+    })
+  })
+
+  // ADR-0048 AGY§26
+  it('adds no rule for a Playwright entry a refusal saved in the account folder names', () => {
+    writeJson(settingsOf(home), { permissions: { deny: ['mcp(pw/browser_run_code_unsafe)'] } })
+    mergeAgySettings(home, owners, { ...koloft, playwrightServers: ['pw'], workbenchBrowser: true })
+    expect(readJson(settingsOf(home)).permissions).toEqual({
+      deny: ['mcp(pw/browser_run_code_unsafe)']
     })
   })
 
@@ -348,11 +370,12 @@ describe('setAgyApiKeyRoute and agyTrustsFolder (AGY§5 AGY§6)', () => {
 })
 
 describe("ownersPlaywrightMcp (the owner's MCP entries that run Playwright, AGY§30)", () => {
-  it('names each entry whose command or arguments run @playwright/mcp or playwright-mcp', () => {
+  it('names each turned-on entry whose command or arguments run @playwright/mcp or playwright-mcp', () => {
     writeJson(path.join(owners, 'config', 'mcp_config.json'), {
       mcpServers: {
         pw: { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--headless'] },
         local: { command: '/opt/bin/playwright-mcp', args: [] },
+        off: { command: 'npx', args: ['@playwright/mcp'], disabled: true },
         github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
         remote: { serverUrl: 'https://example.com/mcp' }
       }

@@ -11,11 +11,8 @@ const isPlaywrightMcpWord = (word: unknown): boolean =>
   typeof word === 'string' &&
   (word.includes('@playwright/mcp') || basename(word) === 'playwright-mcp')
 
-export function runsPlaywrightMcp(entry: unknown): boolean {
-  if (!entry || typeof entry !== 'object') return false
-  const { command, args } = entry as { command?: unknown; args?: unknown }
-  return [command, ...(Array.isArray(args) ? args : [])].some(isPlaywrightMcpWord)
-}
+export const runsPlaywrightMcp = (command: unknown, args: unknown): boolean =>
+  [command, ...(Array.isArray(args) ? args : [])].some(isPlaywrightMcpWord)
 
 // PLATFORM§17
 export const browserControlEnv = (tabId: string, endpoint: string): Record<string, string> => ({

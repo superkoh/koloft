@@ -112,7 +112,8 @@ export interface KoloftSettings {
   statusLine?: string
   apiKey: boolean
   allowKoloft: boolean
-  playwrightMcp?: string[]
+  playwrightServers: string[]
+  workbenchBrowser: boolean
 }
 
 const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
@@ -125,12 +126,16 @@ const strings = (list: unknown): string[] =>
 
 // ADR-0048 AGY§26
 const allowEveryToolOf = (server: string): string => `mcp(${server}/*)`
-const KOLOFT_WHOLE_SERVER_RULE = /^mcp\([^/()]+\/\*\)$/
+const namesServer = (rule: string, server: string): boolean =>
+  rule === `mcp(${server})` || rule.startsWith(`mcp(${server}/`)
 
 // AGY§30
 export function ownersPlaywrightMcp(ownersGemini: string): string[] {
   const servers = record(readJson(path.join(ownersGemini, 'config', 'mcp_config.json')).mcpServers)
-  return Object.keys(servers).filter((name) => runsPlaywrightMcp(servers[name]))
+  return Object.keys(servers).filter((name) => {
+    const entry = record(servers[name])
+    return entry.disabled !== true && runsPlaywrightMcp(entry.command, entry.args)
+  })
 }
 
 // AGY§27
@@ -166,17 +171,19 @@ export function mergedAgySettings(
   if (k.apiKey) merged.modelProvider = 'gemini'
   const permissions = { ...record(merged.permissions) }
   const ownerSetsPermissions = 'permissions' in owners
-  const ownersRules = Object.values(record(owners.permissions)).flatMap(strings)
-  const ownerRuled = (server: string): boolean =>
-    ownersRules.some((r) => r === `mcp(${server})` || r.startsWith(`mcp(${server}/`))
+  const koloftWholeServer = k.playwrightServers.map(allowEveryToolOf)
+  const allow = strings(permissions.allow).filter(
+    (r) => ownerSetsPermissions || (r !== AGY_KOLOFT_ALLOW_RULE && !koloftWholeServer.includes(r))
+  )
+  const usersRules = Object.entries(permissions)
+    .filter(([list]) => ownerSetsPermissions || list !== 'allow')
+    .flatMap(([, rules]) => strings(rules))
   const ours = [
     ...(k.allowKoloft ? [AGY_KOLOFT_ALLOW_RULE] : []),
-    ...(k.playwrightMcp ?? []).filter((s) => !ownerRuled(s)).map(allowEveryToolOf)
+    ...(k.workbenchBrowser ? k.playwrightServers : [])
+      .filter((s) => !usersRules.some((r) => namesServer(r, s)))
+      .map(allowEveryToolOf)
   ]
-  const allow = strings(permissions.allow).filter(
-    (r) =>
-      ownerSetsPermissions || (r !== AGY_KOLOFT_ALLOW_RULE && !KOLOFT_WHOLE_SERVER_RULE.test(r))
-  )
   for (const rule of ours) if (!allow.includes(rule)) allow.push(rule)
   if (allow.length) permissions.allow = allow
   else delete permissions.allow

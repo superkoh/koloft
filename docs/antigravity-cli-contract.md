@@ -1398,8 +1398,8 @@ fake Gemini server with MCP servers that logged their start.
   `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
-Workbench browser's address and the allow rule for the owner's Playwright entries
-(`src/main/agyAccounts.ts`).
+Workbench browser's address in agy's environment (`src/main/agySessions.ts`); the allow
+rule for the owner's Playwright entries (`src/main/agyAccounts.ts`).
 
 ## §31 Skills
 
