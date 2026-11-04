@@ -253,6 +253,12 @@ only downloaded the public release.
   replaces `modelProvider` (§6).
 - Trust is keyed by the folder path as given in `PWD`, not its real path: a symlinked
   folder is saved as the link path.
+- Trust does not reach down into subfolders: with `trustedWorkspaces` `["/home/u/ws"]`,
+  agy in `/home/u/ws` opens on the prompt, while in `/home/u/ws/.claude/worktrees/wt` it
+  asks "Do you trust the contents of this project?" just as in an unrelated folder, and
+  `trustedWorkspaces` is unchanged after. None of the flags in §1 trusts a folder for one
+  run. (1.4.12 Linux arm64 from the manifest, sha512 checked, Docker, tmux, API-key route
+  with `onboarding.json`, 2026-11-03.)
 - **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
   Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
   `trustedWorkspaces` shows the same trust screen, but the title script already runs
