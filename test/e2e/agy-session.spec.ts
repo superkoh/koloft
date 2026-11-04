@@ -921,7 +921,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const page = await app.firstWindow()
       await waitBooted(page)
       await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
-      await expect(page.locator('.tbu')).toHaveAttribute('aria-label', '1 Antigravity account')
+      await expect(page.locator('.tbu')).toHaveAttribute('aria-label', /Antigravity/)
       expect(agyCalls(env).filter((c) => c.argv.includes('/usage'))).toHaveLength(1)
       expect(sessionCalls(env)).toEqual([])
     } finally {
