@@ -365,9 +365,19 @@ export interface MuseRunSpec {
   args: string[]
   trust: string[]
   trustIf?: string
+  sandboxed: boolean
 }
 
 const MUSE_WRITES_THROUGH_THESE_LINKS = ['settings.json', 'trust.json']
+
+export const MUSE_SANDBOX_CANNOT_START =
+  "[Koloft] Muse's sandbox cannot start on this machine (it may not create user namespaces), so every shell command Muse runs here fails with a bwrap error. To fix it, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` on the machine, or load an AppArmor profile that lets muse create user namespaces, or turn on Settings ▸ Accounts ▸ Skip permission prompts."
+
+// MUSE§17
+const SANDBOX_CHECK = `  if command -v unshare >/dev/null 2>&1 && ! unshare -Ur true >/dev/null 2>&1 && ! grep -rqs muse /etc/apparmor.d; then
+    printf '%s\\n' ${shq(MUSE_SANDBOX_CANNOT_START)}
+  fi
+`
 
 // MUSE§2 MUSE§13 MUSE§16 MUSE§17
 export function museRunLines(s: MuseRunSpec): string {
@@ -376,7 +386,7 @@ export function museRunLines(s: MuseRunSpec): string {
     ...(s.trustIf ? ['--trust-if', s.trustIf] : [])
   ]
   // PLATFORM§35
-  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
+  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}${s.sandboxed ? SANDBOX_CHECK : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
   A="$HOME/.koloft/muse-homes/"${shq(s.account)}
   mkdir -p "$A/muse" "$O" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"

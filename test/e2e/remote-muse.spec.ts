@@ -42,6 +42,18 @@ const ON_THE_MACHINE_WITHIN_MS = 60_000
 const A_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS = '5000'
 const APPROVE_KEY = 'y'
 const SKIPS_PERMISSION_PROMPTS_AS_SEEDED = ['--permission-profile', ':unrestricted']
+const MUSE_KEEPS_ITS_SANDBOX_AND_PROMPTS = [
+  '--approval-judge',
+  'off',
+  '--sandbox-network',
+  'enabled'
+]
+const SANDBOX_LINE_NAMES = [
+  'sandbox cannot start on this machine',
+  'kernel.apparmor_restrict_unprivileged_userns=0',
+  'AppArmor profile',
+  'Skip permission prompts'
+]
 
 function machineFile(env: E2EEnv, name: string, text: string): void {
   fs.writeFileSync(path.join(machineHome(env), name), text)
@@ -336,6 +348,48 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await quitAndClose(app)
     }
   })
+
+  for (const { title, unshareExit, shown } of [
+    {
+      title:
+        'E-RM-09: with permission prompts on, a machine where no user namespace can be made shows a line under the account line naming why Muse’s sandbox cannot start and the three fixes, and Muse still starts with its sandbox and prompts',
+      unshareExit: 1,
+      shown: true
+    },
+    {
+      title:
+        'E-RM-10: with permission prompts on, a machine where user namespaces work shows no sandbox line',
+      unshareExit: 0,
+      shown: false
+    }
+  ]) {
+    test(title, async ({ env }) => {
+      installFakeRemote(env)
+      const bin = path.join(machineHome(env), '.local', 'bin')
+      fs.mkdirSync(bin, { recursive: true })
+      fs.writeFileSync(path.join(bin, 'unshare'), `#!/bin/sh\nexit ${unshareExit}\n`, {
+        mode: 0o755
+      })
+      seedSettings(env, { skipPermissions: false })
+      const { app, page } = await launchWithMuseThere(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        const call = await startRemoteMuse(page, env)
+        expect(call.argv).toEqual(MUSE_KEEPS_ITS_SANDBOX_AND_PROMPTS)
+        const row = remoteRows(page)
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+        const tabId = (await row.getAttribute('data-tab-id'))!
+        const screen = async (): Promise<string> =>
+          (await terminalText(page, tabId)).replace(/\s/g, '')
+        await expect.poll(screen).toContain(`koloft:→${E2E_MUSE_ACCOUNT}`)
+        const line = await screen()
+        for (const words of SANDBOX_LINE_NAMES)
+          expect(line.includes(words.replace(/\s/g, ''))).toBe(shown)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('E-RM-05: a scheduled Muse job on a remote workspace runs muse on the machine in its own worktree made there by git, with the ignored files .worktreeinclude lists copied in there, trusted for that run', async ({
     env

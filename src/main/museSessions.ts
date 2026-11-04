@@ -643,6 +643,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       account: { name: account, auth: () => this.credentialFor(account, env, host) },
       banner,
       args: this.museArgv(opts, approvalFlags(permission), false),
+      sandboxed: permission !== 'bypass',
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context: agentTools ? koloftPrompt('muse') : undefined,

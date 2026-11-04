@@ -122,6 +122,7 @@ export interface MuseMachineLaunch {
   account: { name: string; auth(): string }
   banner?: string
   args: string[]
+  sandboxed: boolean
   trust: string[]
   trustIf?: string
   context?: string
@@ -1075,6 +1076,7 @@ export class SshHost implements Host {
               account: spec.account.name,
               banner: spec.banner,
               args: spec.args,
+              sandboxed: spec.sandboxed,
               trust: spec.trust.map((p) => this.bare(p)),
               trustIf: bareOrNot(spec.trustIf)
             }),

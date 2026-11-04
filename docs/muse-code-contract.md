@@ -701,6 +701,19 @@ server of the opening note and with `--provider echo`; October 2026.
   sandbox works and git behaves as in §15. The Docker lab fails the same way
   (`No permissions to create a new namespace`; `setting up uid map` with seccomp and
   AppArmor unconfined, or `--privileged`).
+- **How Koloft tells whether that sandbox can start** (2026-11-04, an Ubuntu 24.04.4
+  host with the setting at 1, the Docker containers on it, muse 1.4.14 `1.4.14-R7309.1`
+  in one of them): `unshare -Ur true` fails in the same places muse's sandbox failed
+  above — on stock Ubuntu 24.04 ("write failed /proc/self/uid_map: Operation not
+  permitted"), in a default container and in a `--privileged` one — and passes on the
+  host once the setting is 0. Two
+  checks that look closer do not work. `muse serve`'s `initialize` answers
+  `sandboxAvailability: "available"` in a container where `unshare -Ur true` fails.
+  The machine has no `bwrap` of its own: muse's strings name an embedded Bubblewrap it
+  runs from its own binary, behind private markers (`TBH_INTERNAL_MODE=__tbh_internal_bwrap`
+  alone exits 125, "invalid private Linux invocation markers"), so neither a system
+  `bwrap` nor muse's copy can be run as a check. Not probed yet: an AppArmor profile
+  for muse's binary, and whether it makes muse's sandbox start.
 
 ## §18 MCP servers and a project's instruction files
 
