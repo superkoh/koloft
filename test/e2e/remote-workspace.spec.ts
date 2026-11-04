@@ -74,9 +74,11 @@ import {
   panelTerm,
   runIn,
   sendShortcut,
+  sessionInRow,
   snap,
   startSessionIn,
   transcriptFile,
+  untilTheRowHoldsANewSession,
   waitBooted,
   waitForCalls,
   wsRows
@@ -93,8 +95,11 @@ import {
   expectOnePromptFromTheComment,
   sendFailingChecks,
   openInBrowse,
+  pickChip,
   rowMenu,
   showBrowse,
+  showChanges,
+  shownPaths,
   wbActiveTab
 } from './helpers/workbench'
 
@@ -363,26 +368,16 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await wsRows(page, REMOTE_WS_NAME).first().click()
-      await page
-        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-        .filter({ hasText: 'Changes' })
-        .click()
-      const rows = page.locator('.wb-panel .cv-row')
-      const shown = (): Promise<string[]> =>
-        rows.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+      await showChanges(page)
 
       await runIn(page, centerTerm(page), '/run printf made > shell-made.txt')
       await expect(centerTerm(page)).toContainText('ran printf made', { timeout: 60_000 })
-      await expect.poll(shown, { timeout: 60_000 }).toEqual(['shell-made.txt', 'tracked.txt'])
+      await expect
+        .poll(() => shownPaths(page), { timeout: 60_000 })
+        .toEqual(['shell-made.txt', 'tracked.txt'])
 
-      const menu = page.locator('.wb-bar .fv-menu')
-      await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
-      await expect(menu).toBeVisible()
-      await page
-        .locator('.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]')
-        .click()
-      await page.keyboard.press('Escape')
-      await expect.poll(shown, { timeout: 30_000 }).toEqual(['shell-made.txt'])
+      await pickChip(page, 'Ownership', 'session')
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['shell-made.txt'])
     } finally {
       await quitAndClose(app)
     }
@@ -409,15 +404,8 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         await agent.bound?.(page)
         const row = wsRows(page, REMOTE_WS_NAME).first()
         await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        await page
-          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-          .filter({ hasText: 'Changes' })
-          .click()
-        const shown = (): Promise<string[]> =>
-          page
-            .locator('.wb-panel .cv-row')
-            .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
-        await expect.poll(shown, { timeout: 30_000 }).toEqual(['tracked.txt'])
+        await showChanges(page)
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['tracked.txt'])
 
         const { writeLandsLate, turnHoldsAfterTheWrite } = CHANGES_MID_TURN[agent.label]
         fs.writeFileSync(
@@ -435,7 +423,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           .poll(() => fs.readFileSync(path.join(dir, HELD_FILE), 'utf8'), { timeout: 30_000 })
           .not.toBe('one\n')
         await expect
-          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .poll(() => shownPaths(page), { timeout: A_WRITE_REACHES_CHANGES_MS })
           .toEqual([HELD_FILE, 'tracked.txt'])
         await expect(row).toHaveClass(/st-working/)
       } finally {
@@ -444,12 +432,17 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     })
   }
 
-  for (const agent of [{ label: 'Claude' as const }, ...OTHER_AGENTS_ON_THE_MACHINE]) {
+  const EVERY_AGENT_ON_THE_MACHINE: {
+    label: AgentName
+    install?: (env: E2EEnv) => void
+    bound?: (page: Page) => Promise<unknown>
+  }[] = [{ label: 'Claude' }, ...OTHER_AGENTS_ON_THE_MACHINE]
+  for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
     test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes`, async ({
       env
     }) => {
       test.setTimeout(300_000)
-      if ('install' in agent) agent.install(env)
+      agent.install?.(env)
       seedSettings(env, { hintsOff: true })
       const { app, page } = await launchWithRemote(env)
       try {
@@ -461,40 +454,27 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
 
         await addRemoteWorkspace(page, env)
-        if ('install' in agent) {
-          await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-          await agent.bound?.(page)
-        } else {
-          await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-          await wsRows(page, REMOTE_WS_NAME).first().click()
-        }
-        await page
-          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-          .filter({ hasText: 'Changes' })
-          .click()
-        const shown = (): Promise<string[]> =>
-          page
-            .locator('.wb-panel .cv-row')
-            .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await showChanges(page)
 
         await runIn(page, centerTerm(page), '/write old-session.txt')
         await expect
-          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .poll(() => shownPaths(page), { timeout: A_WRITE_REACHES_CHANGES_MS })
           .toEqual(['old-session.txt', 'tracked.txt'])
-        await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
-        await expect(page.locator('.wb-bar .fv-menu')).toBeVisible()
-        await page
-          .locator('.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]')
-          .click()
-        await page.keyboard.press('Escape')
-        await expect.poll(shown, { timeout: 30_000 }).toEqual(['old-session.txt'])
+        await pickChip(page, 'Ownership', 'session')
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['old-session.txt'])
 
+        const old = await sessionInRow(page, row)
         await runIn(page, centerTerm(page), '/clear')
-        await expect.poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS }).toEqual([])
+        await untilTheRowHoldsANewSession(page, row, old, A_CLI_STEP_FINISHES_WITHIN_MS)
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
 
         await runIn(page, centerTerm(page), '/write new-session.txt')
         await expect
-          .poll(shown, { timeout: A_WRITE_REACHES_CHANGES_MS })
+          .poll(() => shownPaths(page), { timeout: A_WRITE_REACHES_CHANGES_MS })
           .toEqual(['new-session.txt'])
       } finally {
         await quitAndClose(app)

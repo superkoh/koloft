@@ -106,6 +106,50 @@ export function workbenchIcon(page: Page): Locator {
   return page.locator(WORKBENCH.titlebarIcon)
 }
 
+export const filterBtn = (page: Page): Locator =>
+  page.locator('.wb-bar .seg button', { hasText: 'Filter' })
+export const filesMenu = (page: Page): Locator => page.locator('.wb-bar .fv-menu')
+
+export async function showChanges(page: Page): Promise<void> {
+  const panel = workbenchPanel(page)
+  if (!(await panel.isVisible())) {
+    await workbenchIcon(page).click()
+    await expect(panel).toBeVisible({ timeout: 20_000 })
+  }
+  const pinned = page.locator(WORKBENCH.tabFiles)
+  if (!(await pinned.getAttribute('class'))?.split(/\s+/).includes('on')) await pinned.click()
+  const changes = page
+    .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+    .filter({ hasText: 'Changes' })
+  await expect(changes).toBeVisible({ timeout: 20_000 })
+  if ((await changes.getAttribute('aria-pressed')) !== 'true') await changes.click()
+  await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes', {
+    timeout: 20_000
+  })
+}
+
+export async function shownPaths(page: Page): Promise<string[]> {
+  return (await page
+    .locator('.wb-panel .cv-row')
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))) as string[]
+}
+
+export async function pickChip(
+  page: Page,
+  group: 'Status' | 'Ownership' | 'Type',
+  chip: string
+): Promise<void> {
+  const target = page.locator(
+    `.fv-filters .fv-fgroup[aria-label="${group}"] .ft-chip[data-chip="${chip}"]`
+  )
+  if ((await filesMenu(page).count()) === 0) await filterBtn(page).click()
+  await expect(filesMenu(page)).toBeVisible()
+  await target.click()
+  await expect(target).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
+  await expect(filesMenu(page)).toHaveCount(0)
+}
+
 export function wbTabs(page: Page): Locator {
   return page.locator(WORKBENCH.tab)
 }

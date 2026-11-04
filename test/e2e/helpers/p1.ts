@@ -251,6 +251,28 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
+export async function sessionInRow(page: Page, row: Locator): Promise<string | undefined> {
+  return boundSessionId(page, await row.getAttribute('data-tab-id'))
+}
+
+export async function untilTheRowHoldsANewSession(
+  page: Page,
+  row: Locator,
+  old: string | undefined,
+  timeout = 30_000
+): Promise<void> {
+  expect(old).toBeTruthy()
+  await expect
+    .poll(
+      async () => {
+        const now = await sessionInRow(page, row)
+        return now !== undefined && now !== old
+      },
+      { timeout }
+    )
+    .toBe(true)
+}
+
 export async function agyConversationOnceFirstTurnEnded(
   page: Page,
   tabId?: string

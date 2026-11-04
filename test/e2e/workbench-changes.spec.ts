@@ -20,9 +20,11 @@ import {
   newSessionInWith,
   runIn,
   sendShortcut,
+  sessionInRow,
   setNextSessionTitle,
   startSessionIn,
   transcriptFile,
+  untilTheRowHoldsANewSession,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -33,14 +35,19 @@ import {
   commentOnFirstHunk,
   countGitSpawns,
   expectOnePromptFromTheComment,
+  filesMenu,
+  filterBtn,
   installGitSpawnLog,
   installStallingGit,
   isAggregateDiff,
   layoutState,
   openFileTab,
   openInBrowse,
+  pickChip,
   seedWorkbenchDefault,
   showBrowse,
+  showChanges,
+  shownPaths,
   waitGitQuiet,
   wbTabs,
   workbenchIcon,
@@ -68,9 +75,6 @@ const badge = (page: Page): Locator => page.locator('.wb-panel .wb-tab.pinned .l
 const reloadBtn = (page: Page): Locator => page.locator('.wb-bar .icobtn[aria-label="Reload"]')
 const baseBtn = (page: Page): Locator =>
   page.locator('.wb-bar .seg button', { hasText: /^(base|vs HEAD) ▾$/ })
-const filterBtn = (page: Page): Locator =>
-  page.locator('.wb-bar .seg button', { hasText: 'Filter' })
-const filesMenu = (page: Page): Locator => page.locator('.wb-bar .fv-menu')
 
 const rows = (page: Page): Locator => page.locator(CV.row)
 const blocks = (page: Page): Locator => page.locator(CV.block)
@@ -103,30 +107,6 @@ function hangStatusReadsWhileFlagged(
   return { hangFromNowOn, hung }
 }
 
-async function shownPaths(page: Page): Promise<string[]> {
-  return (await rows(page).evaluateAll((els) =>
-    els.map((e) => (e as HTMLElement).dataset.path ?? '')
-  )) as string[]
-}
-
-async function showChanges(page: Page): Promise<void> {
-  const panel = workbenchPanel(page)
-  if (!(await panel.isVisible())) {
-    await workbenchIcon(page).click()
-    await expect(panel).toBeVisible({ timeout: 20_000 })
-  }
-  const pinned = page.locator(WORKBENCH.tabFiles)
-  if (!(await pinned.getAttribute('class'))?.split(/\s+/).includes('on')) await pinned.click()
-  const changes = page
-    .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-    .filter({ hasText: 'Changes' })
-  await expect(changes).toBeVisible({ timeout: 20_000 })
-  if ((await changes.getAttribute('aria-pressed')) !== 'true') await changes.click()
-  await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes', {
-    timeout: 20_000
-  })
-}
-
 const transientBlockNotesIncludingTheSettledLookingOne = /^(Loading…|No diff available\.)$/
 
 async function waitStream(page: Page, n: number, timeout = 30_000): Promise<void> {
@@ -150,26 +130,35 @@ function blockTop(page: Page, rel: string): Promise<number> {
   return blockOf(page, rel).evaluate((el) => (el as HTMLElement).offsetTop)
 }
 
-async function pickChip(
-  page: Page,
-  group: 'Status' | 'Ownership' | 'Type',
-  chip: string
-): Promise<void> {
-  const target = page.locator(
-    `.fv-filters .fv-fgroup[aria-label="${group}"] .ft-chip[data-chip="${chip}"]`
-  )
-  if ((await filesMenu(page).count()) === 0) await filterBtn(page).click()
-  await expect(filesMenu(page)).toBeVisible()
-  await target.click()
-  await expect(target).toHaveAttribute('aria-checked', 'true')
-  await page.keyboard.press('Escape')
-  await expect(filesMenu(page)).toHaveCount(0)
-}
-
 async function openChanges(page: Page, ws = 'ws-a', method?: AgentName): Promise<void> {
   await startSessionIn(page, ws, { method })
   await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
   await showChanges(page)
+}
+
+function installAgentFor(env: E2EEnv, agent: AgentName, ws: string): void {
+  if (agent === 'Codex') installCodex(env)
+  if (agent === 'Muse') {
+    installMuse(env)
+    trustInMuse(env, ws)
+  }
+  if (agent === 'Antigravity') {
+    installAgy(env)
+    trustInAgy(env, ws)
+  }
+}
+
+async function openChangesTyping(page: Page, agent: AgentName, line: string): Promise<void> {
+  if (agent === 'Antigravity') {
+    await newSessionInWith(page, 'ws-a', agent)
+    await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), line)
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
+    await showChanges(page)
+  } else {
+    await openChanges(page, 'ws-a', agent === 'Claude' ? undefined : agent)
+    await runIn(page, centerTerm(page), line)
+  }
 }
 
 async function relaunchWithGitLog(
@@ -823,30 +812,12 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     }) => {
       const fx = setupChangeFixture(env.workspaces.a)
       fx.modifyTracked(1)
-      if (agent === 'Codex') installCodex(env)
-      if (agent === 'Muse') {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-      }
-      if (agent === 'Antigravity') {
-        installAgy(env)
-        trustInAgy(env, env.workspaces.a)
-      }
+      installAgentFor(env, agent, env.workspaces.a)
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const line = `${SHELL_LINE[agent]} printf made > src/shell-made.ts`
-        if (agent === 'Antigravity') {
-          await newSessionInWith(page, 'ws-a', agent)
-          await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
-          await runIn(page, centerTerm(page), line)
-          await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
-          await showChanges(page)
-        } else {
-          await openChanges(page, 'ws-a', agent === 'Claude' ? undefined : agent)
-          await runIn(page, centerTerm(page), line)
-        }
+        await openChangesTyping(page, agent, `${SHELL_LINE[agent]} printf made > src/shell-made.ts`)
         await expect
           .poll(() => shownPaths(page), { timeout: 30_000 })
           .toEqual(['src/change-1.ts', 'src/shell-made.ts'])
@@ -864,36 +835,21 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       env
     }) => {
       const fx = setupChangeFixture(env.workspaces.a)
-      if (agent === 'Codex') installCodex(env)
-      if (agent === 'Muse') {
-        installMuse(env)
-        trustInMuse(env, env.workspaces.a)
-      }
-      if (agent === 'Antigravity') {
-        installAgy(env)
-        trustInAgy(env, env.workspaces.a)
-      }
+      installAgentFor(env, agent, env.workspaces.a)
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        const firstWrite = `/write ${fx.rel(fx.paths.agentTs)}`
-        if (agent === 'Antigravity') {
-          await newSessionInWith(page, 'ws-a', agent)
-          await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
-          await runIn(page, centerTerm(page), firstWrite)
-          await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
-          await showChanges(page)
-        } else {
-          await openChanges(page, 'ws-a', agent === 'Claude' ? undefined : agent)
-          await runIn(page, centerTerm(page), firstWrite)
-        }
+        await openChangesTyping(page, agent, `/write ${fx.rel(fx.paths.agentTs)}`)
         await pickChip(page, 'Ownership', 'session')
         await expect
           .poll(() => shownPaths(page), { timeout: 30_000 })
           .toEqual(['src/agent-notes.ts'])
 
+        const row = wsRows(page, 'ws-a').first()
+        const old = await sessionInRow(page, row)
         await runIn(page, centerTerm(page), '/clear')
+        await untilTheRowHoldsANewSession(page, row, old)
         await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
 
         await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
