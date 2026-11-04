@@ -108,16 +108,22 @@ export function fiveHourStopped(u: UsageSnapshot, nowSec: number): boolean {
   return windowStopped(u.u5, u.r5, nowSec)
 }
 
-export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
+const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
 
 export function resetElapsed(r: number, nowSec: number): boolean {
   return r > 0 && r <= nowSec
 }
 
+function windowKeepsResumedSession(used: number, resetsAt: number, nowSec: number): boolean {
+  return resetElapsed(resetsAt, nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
+}
+
 export function keepsResumedSession(u: UsageSnapshot, nowSec: number): boolean {
-  const roomLeft = (used: number, resetsAt: number): boolean =>
-    resetElapsed(resetsAt, nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
-  return !hardLimited(u, nowSec) && roomLeft(u.u5, u.r5) && roomLeft(u.u7, u.r7)
+  return (
+    !hardLimited(u, nowSec) &&
+    windowKeepsResumedSession(u.u5, u.r5, nowSec) &&
+    windowKeepsResumedSession(u.u7, u.r7, nowSec)
+  )
 }
 
 export type WindowTone = 'ok' | 'soon' | 'due' | 'hard'
@@ -222,7 +228,7 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
 }
 
 export interface HomeRoom {
-  used: number
+  keepsResumedSession: boolean
   walled: boolean
   backAt: number
   longWindows: UsedWindow[]
@@ -236,15 +242,16 @@ export function homeRoom(
 ): HomeRoom | undefined {
   if (!a.limits && !a.quota?.length) return undefined
   const windows: UsedWindow[] = a.limits?.windows ?? a.quota ?? []
-  const used = heaviestOf(windows)
   const backAt = backAtOf(windows)
-  const full = a.limits ? codexWalled(a.limits) : used >= 1
+  const full = a.limits ? codexWalled(a.limits) : heaviestOf(windows) >= 1
+  const walled = full && !resetElapsed(backAt, nowSec)
   const stopped = windows.filter(
     (w) => w.minutes === FIVE_HOUR_MINUTES && windowStopped(w.used, w.resetsAt ?? 0, nowSec)
   )
   return {
-    used,
-    walled: full && !resetElapsed(backAt, nowSec),
+    keepsResumedSession:
+      !walled && windows.every((w) => windowKeepsResumedSession(w.used, w.resetsAt ?? 0, nowSec)),
+    walled,
     backAt,
     longWindows: windows.filter((w) => w.minutes !== FIVE_HOUR_MINUTES),
     ...(stopped.length > 0 && {
