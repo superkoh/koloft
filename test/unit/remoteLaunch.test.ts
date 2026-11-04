@@ -19,7 +19,8 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
-import { MUSE_SANDBOX_CANNOT_START, museRunLines } from '../../src/main/museRemote'
+import { museRunLines } from '../../src/main/museRemote'
+import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'

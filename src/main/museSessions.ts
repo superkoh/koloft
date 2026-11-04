@@ -212,9 +212,11 @@ const MUSE: CliSpec = {
 // MUSE§14
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
+const keepsItsSandbox = (permission: LaunchPermission): boolean => permission !== 'bypass'
+
 // ADR-0038 MUSE§15
 function approvalFlags(permission: LaunchPermission): string[] {
-  if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
+  if (!keepsItsSandbox(permission)) return ['--permission-profile', ':unrestricted']
   return ['--approval-judge', 'off', '--sandbox-network', 'enabled']
 }
 
@@ -643,7 +645,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       account: { name: account, auth: () => this.credentialFor(account, env, host) },
       banner,
       args: this.museArgv(opts, approvalFlags(permission), false),
-      sandboxed: permission !== 'bypass',
+      sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context: agentTools ? koloftPrompt('muse') : undefined,

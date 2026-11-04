@@ -34,6 +34,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 
 test.setTimeout(240_000)
 test.afterEach(({ env }) => killFakeRemote(env))
@@ -48,12 +49,9 @@ const MUSE_KEEPS_ITS_SANDBOX_AND_PROMPTS = [
   '--sandbox-network',
   'enabled'
 ]
-const SANDBOX_LINE_NAMES = [
-  'sandbox cannot start on this machine',
-  'kernel.apparmor_restrict_unprivileged_userns=0',
-  'AppArmor profile',
-  'Skip permission prompts'
-]
+const noSpace = (s: string): string => s.replace(/\s/g, '')
+const SANDBOX_LINE = noSpace(MUSE_SANDBOX_CANNOT_START)
+const ACCOUNT_LINE = noSpace(`koloft: → ${E2E_MUSE_ACCOUNT}`)
 
 function machineFile(env: E2EEnv, name: string, text: string): void {
   fs.writeFileSync(path.join(machineHome(env), name), text)
@@ -352,13 +350,13 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
   for (const { title, unshareExit, shown } of [
     {
       title:
-        'E-RM-09: with permission prompts on, a machine where no user namespace can be made shows a line under the account line naming why Muse’s sandbox cannot start and the three fixes, and Muse still starts with its sandbox and prompts',
+        'E-RM-09: with permission prompts on, a machine where no user namespace can be made shows a line under the account line saying why Muse’s sandbox cannot start and how to fix it, and Muse still starts with its sandbox and prompts',
       unshareExit: 1,
       shown: true
     },
     {
       title:
-        'E-RM-10: with permission prompts on, a machine where user namespaces work shows no sandbox line',
+        'E-RM-10: with permission prompts on, a machine where user namespaces work shows no sandbox line, and Muse starts with its sandbox and prompts',
       unshareExit: 0,
       shown: false
     }
@@ -379,12 +377,15 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         const row = remoteRows(page)
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
         const tabId = (await row.getAttribute('data-tab-id'))!
-        const screen = async (): Promise<string> =>
-          (await terminalText(page, tabId)).replace(/\s/g, '')
-        await expect.poll(screen).toContain(`koloft:→${E2E_MUSE_ACCOUNT}`)
-        const line = await screen()
-        for (const words of SANDBOX_LINE_NAMES)
-          expect(line.includes(words.replace(/\s/g, ''))).toBe(shown)
+        const screen = async (): Promise<string> => noSpace(await terminalText(page, tabId))
+        await expect.poll(screen).toContain(ACCOUNT_LINE)
+        if (shown) {
+          await expect.poll(screen).toContain(SANDBOX_LINE)
+          const now = await screen()
+          expect(now.indexOf(ACCOUNT_LINE)).toBeLessThan(now.indexOf(SANDBOX_LINE))
+        } else {
+          expect(await screen()).not.toContain(SANDBOX_LINE)
+        }
       } finally {
         await quitAndClose(app)
       }

@@ -706,8 +706,7 @@ server of the opening note and with `--provider echo`; October 2026.
   in one of them): `unshare -Ur true` fails in the same places muse's sandbox failed
   above — on stock Ubuntu 24.04 ("write failed /proc/self/uid_map: Operation not
   permitted"), in a default container and in a `--privileged` one — and passes on the
-  host once the setting is 0. Two
-  checks that look closer do not work. `muse serve`'s `initialize` answers
+  host once the setting is 0. Two checks that look closer do not work. `muse serve`'s `initialize` answers
   `sandboxAvailability: "available"` in a container where `unshare -Ur true` fails.
   The machine has no `bwrap` of its own: muse's strings name an embedded Bubblewrap it
   runs from its own binary, behind private markers (`TBH_INTERNAL_MODE=__tbh_internal_bwrap`

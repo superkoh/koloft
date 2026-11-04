@@ -6,6 +6,7 @@ import { museHookScript } from './museHooks'
 import { remoteNoticeFile } from './hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 import { KOLOFT_SKILL } from './agentPlugin'
+import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -370,11 +371,8 @@ export interface MuseRunSpec {
 
 const MUSE_WRITES_THROUGH_THESE_LINKS = ['settings.json', 'trust.json']
 
-export const MUSE_SANDBOX_CANNOT_START =
-  "[Koloft] Muse's sandbox cannot start on this machine (it may not create user namespaces), so every shell command Muse runs here fails with a bwrap error. To fix it, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` on the machine, or load an AppArmor profile that lets muse create user namespaces, or turn on Settings ▸ Accounts ▸ Skip permission prompts."
-
-// MUSE§17
-const SANDBOX_CHECK = `  if command -v unshare >/dev/null 2>&1 && ! unshare -Ur true >/dev/null 2>&1 && ! grep -rqs muse /etc/apparmor.d; then
+// MUSE§1 MUSE§17
+const SANDBOX_CHECK = `  if command -v unshare >/dev/null 2>&1 && ! unshare -Ur true >/dev/null 2>&1; then
     printf '%s\\n' ${shq(MUSE_SANDBOX_CANNOT_START)}
   fi
 `
