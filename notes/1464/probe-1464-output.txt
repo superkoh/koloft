@@ -1,0 +1,27 @@
+$ npx playwright test test/e2e/probe-1464.spec.ts --workers=1 --reporter=line
+(run 2026-11-04 on a build of fix/1463-page-dialog-keys, whose main process is the same as main's)
+
+Running 1 test using 1 worker
+
+[1/1] test/e2e/probe-1464.spec.ts:6:5 › probe #1464: a second page asking for sign-in while the first one asks
+first dialog text: http://127.0.0.1:64997
+Koloft Test Realm
+This site is asking for a username and password.
+Cancel
+OK
+
+/auth requests before / after the second page: 1 2
+
+dialogs shown: 1
+
+dialog text now: http://127.0.0.1:64997
+Koloft Test Realm
+This site is asking for a username and password.
+Cancel
+OK
+
+fields now: [ 'first-user', 'first-pass' ]
+
+second page shows: 401
+
+  1 passed (6.6s)
