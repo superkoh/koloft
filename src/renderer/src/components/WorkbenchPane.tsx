@@ -916,7 +916,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     return window.api.browser.onFullscreen((on) => setPageFullscreen(on))
   }, [])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!pageFullscreen) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return

@@ -1,11 +1,24 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
-import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkbenchPaneProps } from '../../src/renderer/src/components/WorkbenchPane'
 
+const REACT_TASK_LAG_MS = 40
+const realSetImmediate = globalThis.setImmediate
+let reactTasksLag = false
+let laggedTasks = 0
+Object.assign(globalThis, {
+  setImmediate: (run: (...args: unknown[]) => void, ...args: unknown[]) => {
+    if (!reactTasksLag) return realSetImmediate(run, ...args)
+    laggedTasks++
+    return setTimeout(run, REACT_TASK_LAG_MS, ...args)
+  }
+})
+
 const drawn: Record<string, number> = {}
 const guests: Record<string, { onLoading(loading: boolean): void }> = {}
+const ranInPage: string[] = []
+let pageFullscreen: (on: boolean) => void = () => {}
 
 function counting(name: string) {
   return () => {
@@ -43,6 +56,10 @@ vi.mock('../../src/renderer/src/components/BrowserGuest', async (orig) => ({
         canGoForward: () => false,
         isLoading: () => false,
         loadURL: () => Promise.resolve(),
+        executeJavaScript: (code: string) => {
+          ranInPage.push(code)
+          return Promise.resolve()
+        },
         findInPage: () => 0,
         stopFindInPage: () => {},
         addEventListener: () => {},
@@ -78,8 +95,24 @@ function anyApi(): unknown {
       })
   })
 }
-;(window as unknown as { api: unknown }).api = anyApi()
+const api = anyApi() as Record<string, unknown>
+const browserApi = api.browser as Record<string, unknown>
+;(window as unknown as { api: unknown }).api = new Proxy(api, {
+  get: (t, k) =>
+    k === 'browser'
+      ? new Proxy(browserApi, {
+          get: (b, n) =>
+            n === 'onFullscreen'
+              ? (cb: (on: boolean) => void) => {
+                  pageFullscreen = cb
+                  return () => {}
+                }
+              : b[n as string]
+        })
+      : t[k as string]
+})
 
+const { render, cleanup, act, fireEvent, waitFor } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
 const { WorkbenchPane } = await import('../../src/renderer/src/components/WorkbenchPane')
 
@@ -92,7 +125,10 @@ beforeAll(() => {
   }
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  reactTasksLag = false
+  cleanup()
+})
 
 const tab = (id: string, kind: string, more: object = {}) => ({
   id,
@@ -212,5 +248,21 @@ describe('WorkbenchPane: a busy tab bar or find bar redraws no tab body', () => 
       })
     }
     expect(tabBodies('wbfind')).toEqual(before)
+  })
+})
+
+describe('WorkbenchPane page full screen', () => {
+  it('Esc pressed the moment the page goes full screen leaves it, even while React’s effects still lag the screen', async () => {
+    const container = await panelOnFirstPage('wbfull')
+    reactTasksLag = true
+    laggedTasks = 0
+    ranInPage.length = 0
+    await Promise.resolve().then(() => pageFullscreen(true))
+    await waitFor(() => expect(container.querySelector('.wb-panel.pagefull')).not.toBeNull())
+    expect(laggedTasks, 'React’s scheduler went through the lagging setImmediate').toBeGreaterThan(
+      0
+    )
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(ranInPage).toEqual(['document.exitFullscreen?.()'])
   })
 })
