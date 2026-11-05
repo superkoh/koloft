@@ -2297,8 +2297,9 @@ the one before, the screen read back through `pyte`.
   `CODEX_HOME`, otherwise as above) the TUI sent both `h` and `l` for 1000, 1002, 1003
   and 1006, and only `?1004h` (focus reports); the order was not recorded. What it does
   with a cut mouse report was not run.
-- Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
-  (§16).
+- Not run: the same keys in a remote Codex tab. Its TUI runs on the Mac too (§16,
+  ADR-0039), so the keys never cross ssh or tmux; only what the TUI then asks of the
+  app-server on the machine (an interrupt after Esc, say) does.
 - **A bare `codex` may stop on a "Background server has incompatible feature settings"
   dialog** (choices "Run without daemon this time" / "Restart with these settings"),
   which is why probes run `codex --no-daemon`; `codex features list` shows
