@@ -88,16 +88,16 @@
           sessions list. Give it a Discord channel (a chat room) and you can write to it from your
           phone too. It reaches your sessions for you: it starts them, reads them, sends them
           messages, and answers their questions the way you tell it to. Your other sessions stay off
-          Discord until you want to work on one from your phone: then your butler opens that session
-          a <a href="#rooms">room of its own</a>. One exception: while you are away, a session that
-          needs a password or a code sends a 🔑 card to your butler's channel (see
-          <a href="#secrets">below</a>).
+          Discord until you want to work on one from your phone: then your butler opens a
+          <a href="#rooms">room just for that session</a>. One exception: while you are away, a
+          session with no room that needs a password, a code or a sign-in sends a 🔑 card to your
+          butler's channel (see <a href="#secrets">below</a>).
         </p>
 
         <pre
           class="ascii"
           role="img"
-          aria-label="Your phone runs the Discord app. It talks to Discord on the internet, where your private server has one channel for your butler. Your Mac runs Koloft, signed in as your bot with its token. Messages in the channel go to your butler, which reaches your sessions."
+          aria-label="Your phone runs the Discord app. It talks to Discord on the internet, where your private server has one channel for your butler, and under it a room for each session you take to your phone. Your Mac runs Koloft, signed in as your bot with its token. Messages in the channel go to your butler, which reaches your sessions; messages in a room go to that session."
         >
 your phone
 +-----------------------------+
@@ -109,7 +109,9 @@ Discord, on the internet
 +-----------------------------+
 | your private server         |
 |   one channel, for your     |
-|   butler                    |
+|   butler, and under it a    |
+|   room for each session you |
+|   take to your phone        |
 +-----------------------------+
               ^ |
               | v
@@ -120,9 +122,9 @@ your Mac
 |          |                  |
 |       channel               |
 |          v                  |
-| your butler                 |
-|          |                  |
-|          v                  |
+| your butler       rooms     |
+|          |          |       |
+|          v          v       |
 | your sessions               |
 +-----------------------------+
 </pre>
@@ -219,8 +221,9 @@ your Mac
         <p>
           Coming from an older Koloft, where each folder could have its own channel? The Global
           channel, or else the one you wrote in last, becomes your butler's. The other channels are
-          left as they were, and no longer read. The old session threads under your butler's channel
-          are archived once. Write in one and Koloft answers
+          left as they were, and no longer read. The session threads an older Koloft left under your
+          butler's channel are archived once (the <a href="#rooms">rooms</a> below are new, and are
+          left alone). Write in an old thread and Koloft answers
           <code>Koloft no longer reads this thread. Talk to Alfred in #global.</code>
         </p>
 
@@ -347,10 +350,9 @@ your Mac
           While you are away, or talking to the session from its room, what it shows you with
           <code>koloft open</code> or <code>koloft diff</code> comes to the room too: a web page as
           pictures (at most 10, top to bottom), a Markdown file as text with the file attached, any
-          other file as itself (up to 20 MB, megabytes), and a diff as a picture of the changed
-          lines. Your butler's own <code>koloft open</code> comes to its channel the same way. A
-          page of a remote folder's machine is not pictured; the session is told to say it in words
-          instead.
+          other file as itself, and a diff as a picture of the changed lines. A file can be up to 20
+          MB (megabytes). A page on a remote folder's machine is not sent as a picture; the session
+          is told to describe it in words instead.
         </p>
         <p>
           Rooms work for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
@@ -384,9 +386,10 @@ your Mac
           passes it straight on: to <code>sudo</code>, into the page's field (and submits the form),
           or to the session's machine, which opens the address. The session never sees it, and it
           does not stay in the chat. The card then ends with <code>✅ Passed on.</code>, or
-          <code>⌛ Koloft stopped waiting.</code> if you did not answer in time. Whichever you
-          answer first, the card or Koloft, wins: answered at the Mac, the card says
-          <code>✅ Answered in Koloft.</code> and loses its button.
+          <code>⌛ Koloft stopped waiting.</code> if you did not answer in time, or
+          <code>⏹ The session closed.</code> The first answer wins, on the card or in Koloft. If you
+          answer at the Mac, the card says <code>✅ Answered in Koloft.</code> and loses its button;
+          if you press Cancel there, it says <code>⏹ Turned down in Koloft.</code>
         </p>
         <p>
           While the <a href="../sessions/#asleep">moon</a> is on, no 🔑 card is sent: Koloft turns
@@ -430,6 +433,10 @@ your Mac
           as several, top to bottom, at most 10.
         </p>
         <p>
+          What your butler shows you with <code>koloft open</code> or <code>koloft diff</code> comes
+          to its channel too, the same way a session's comes to its <a href="#rooms">room</a>.
+        </p>
+        <p>
           While you <a href="#at-the-mac">use Koloft</a>, your butler cannot send files or pictures,
           unless it is answering what you sent from Discord. It is told to show the file or page in
           the Workbench instead.
@@ -468,9 +475,9 @@ your Mac
                 <td>rooms</td>
                 <td>
                   For a session you gave a room: its name, folder and agent, its replies and its
-                  question cards, held while you use Koloft like the butler's, and copies of what it
-                  shows with <code>koloft open</code> or <code>koloft diff</code> while you are away
-                  or talking to it from there.
+                  question cards (held back while you use Koloft, as your butler's are), and copies
+                  of what it shows with <code>koloft open</code> or <code>koloft diff</code> while
+                  you are away or talking to it from there.
                 </td>
               </tr>
               <tr>
@@ -490,9 +497,9 @@ your Mac
               <tr>
                 <td>🔑 cards</td>
                 <td>
-                  Only while you are away or talking to that session from Discord: the session's
-                  name and folder, and what it asks for: the command for sudo, the page and field,
-                  or the sign-in address. Never what you type into the form.
+                  The session's name and folder, and what it asks for (the command for sudo, the
+                  page and field, or the sign-in address), only while you are away or talking to
+                  that session from Discord. Never what you type into the form.
                 </td>
               </tr>
               <tr>

@@ -196,15 +196,16 @@ your Mac                     the other machine
           </li>
           <li>
             Muse runs each shell command in a sandbox (a box that limits what the command may
-            touch), and on Linux that sandbox needs user namespaces. Some machines do not allow
-            them; a plain Ubuntu 24.04 does not. With
-            <a href="../accounts/">Skip permission prompts</a> off, a Muse tab there shows a
-            <code>[Koloft]</code> line under the account line before Muse starts: every shell
-            command Muse runs there fails until it is fixed. The line names three fixes: allow user
-            namespaces on the machine (on Ubuntu 24.04,
-            <code>sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0</code>, kept after a
-            restart with a file under <code>/etc/sysctl.d</code>), load an AppArmor profile that
-            lets muse make them, or turn Skip permission prompts on. The session still starts.
+            touch), and on Linux that sandbox needs user namespaces (a Linux feature that gives a
+            program its own walled-off space). Some machines turn them off; a plain Ubuntu 24.04
+            does. With <a href="../accounts/">Skip permission prompts</a> off, a Muse tab there
+            shows a <code>[Koloft]</code> line under the account line before Muse starts. Until it
+            is fixed, every shell command Muse runs there fails. The line names three fixes: allow
+            user namespaces on the machine; load an AppArmor profile (AppArmor is a Linux guard on
+            what programs may do) that lets muse make them; or turn Skip permission prompts on. On
+            Ubuntu 24.04 the first fix is
+            <code>sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0</code>, and a file
+            under <code>/etc/sysctl.d</code> keeps it after a restart. The session still starts.
           </li>
           <li>
             Codex is different: it runs as its own server on the machine, and the Codex screen on
