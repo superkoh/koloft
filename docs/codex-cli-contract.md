@@ -318,18 +318,64 @@ Read 2026-10-11 from Codex CLI 0.162.1: `codex features list` prints `worktrees 
 true` (on 0.164.0, 2026-10-23, `worktrees removed true` — the flag is gone and the
 feature always on, while `--worktree` is still in `codex --help` and `resume --help`);
 `codex`, `exec`, `resume` and `fork` take `--worktree` ("Run the session in a new
-managed Git worktree"); the model gets the MCP tools `codex_worktrees/create_worktree`
+managed Git worktree"); the strings hold the MCP tools `codex_worktrees/create_worktree`
 ("Defaults to the repository's remote default branch, not the current branch"),
-`get_worktree_creation_status` and `list_worktrees`; and the TUI's strings hold a
+`get_worktree_creation_status` and `list_worktrees` (which TUI offers them to the
+model: below); and the TUI's strings hold a
 picker "Where should the new conversation run?" / "Where should the forked conversation
 run?" with "Use current Git worktree", "Create new Git worktree", "Continue current
 conversation" and "Start new conversation", and "Managed worktrees are only supported
 for local sessions" / "require a local Git repository" / "The source project is not
-trusted". Where it puts them is not in the strings (only Desktop keys
-`desktop.git-worktree-root`, `desktop.worktree-auto-cleanup-enabled`), and whether the
-picker shows on `/new` in a TUI connected with `--remote` was not seen in the e2e run
-of that day (the Playwright MCP case does a `/new` and passed), so it is read, not
-run: **inferred, not checked**.
+trusted".
+
+**A TUI started with `--remote` gets no managed worktrees at all.** Measured
+2026-11-05 on codex-cli 0.166.0 (standalone build, macOS arm64) with no login: a
+throwaway `CODEX_HOME` holding a made-up API key, a stand-in Responses server that
+made the tool calls a model would, and the real TUI in a Python PTY. With `--remote
+unix://…` the TUI reached either a relay to `codex app-server --stdio` that logged
+every line both ways, or `codex app-server --listen unix://…` directly; both gave the
+same result. The app-server ran with no `-c` overrides. The repository had `main`
+pushed to a bare `origin` and a checked-out `feature` branch one commit ahead, plus
+one uncommitted file. The npm package was not run.
+
+- **Where they go:** `$CODEX_HOME/worktrees/<id>/<repository folder name>`, a linked
+  Git worktree on a detached HEAD, with a `.metadata_never_index` file in
+  `$CODEX_HOME/worktrees`; the five checkouts made had ids of 4 hex digits (`1bf0`,
+  `56b5`, `0e31`, `816c`, `80d5`). With `CODEX_HOME` set apart from `$HOME/.codex`,
+  nothing went under `$HOME`. The uncommitted file was not in the `exec --worktree`
+  checkout.
+- **`codex exec --worktree`** makes the checkout before it reads the prompt, from the
+  commit checked out (`feature`), and the session's workdir is the new checkout.
+- **`create_worktree` in a TUI with no `--remote`** (`--no-daemon`): the tools are not
+  in the model's tool list; `tool_search` names the source `codex_worktrees`, and a
+  search returns the namespace `mcp__codex_worktrees` with `create_worktree`
+  (`allowAsync: true` required, `ref` optional), `list_worktrees` and
+  `get_worktree_creation_status` (`operationId`). The call answers `{"type":
+  "pending", "operationId": …}`; the status call then answers `{"type": "created",
+  "worktree": {"root", "workspaceRoot", "sourceCwd"}, "message": "Keep the task cwd.
+  Use the returned workspaceRoot explicitly and request filesystem permissions if
+  needed."}`. The checkout was made from `origin/main`, not from `feature`. The
+  thread's `cwd` in its rollout stayed the first folder for the whole turn: the thread
+  does not move, the model is told to work in the other folder by its path.
+- **The same TUI with `--remote unix://…`:** its `thread/start` carries
+  `dynamicTools` with one namespace, `codex_tui` (`list_threads`,
+  `list_archived_threads`, `read_thread`, `wait_threads`, `set_thread_title`,
+  `set_thread_archived`, all `deferLoading`), and no worktree tool; the model's
+  `tool_search` lists only "Dynamic tools" and "Multi-agent tools", so the model is
+  never offered `create_worktree` and no checkout was made.
+- **`/new` and `/fork`:** with `--remote` the TUI sends a fresh `thread/start` (or
+  `thread/fork`) with the same `cwd` at once, and no picker shows; with no `--remote`
+  `/new` shows "Where should the new conversation run?" (`/fork` with no `--remote`
+  not run).
+- **`codex --remote … --worktree`** prints "Error: `--worktree` is only supported for
+  local sessions" and exits before it connects.
+- **`--disable worktrees`** changes nothing on 0.166.0: a TUI with no `--remote` still
+  offers the tools and makes the checkout.
+
+Not probed yet: a TUI on the shared background app-server (no `--no-daemon`, no
+`--remote`), a `ws://` remote, an app-server on Linux, one given an enclosing app's
+`-c` overrides, and the agents panel's "new worktree" key (`agents.new_worktree` in
+the TUI's key map) under `--remote`.
 
 **A thread goes on in a worktree deleted and made again at the same path.** Checked
 2026-10-25 with codex-cli 0.162.0 and this Mac's own login: `codex app-server` (stdio)
