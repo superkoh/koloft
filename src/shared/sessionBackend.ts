@@ -7,6 +7,7 @@ import type {
   SessionSource
 } from './types'
 import { hostOf } from './remoteKey'
+import { settingsPaneName } from './paletteFeatures'
 
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
@@ -26,8 +27,12 @@ export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
 export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'
 
+export function turnedOffLead(backend: BackendId): string {
+  return `${BACKEND_LABEL[backend]} is turned off in `
+}
+
 export function turnedOffLine(backend: BackendId): string {
-  return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  return turnedOffLead(backend) + settingsPaneName('sessions')
 }
 
 export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {

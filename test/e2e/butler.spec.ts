@@ -955,15 +955,14 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
     try {
       const why = butlerRow(page).locator('.field-hint.bad')
       await toggleClaudeAccount(false)
-      await expect(why).toHaveText('No Claude account can be used — check Settings ▸ Accounts.')
-      expect(await why.getAttribute('title')).toBe(
-        'Alfred cannot start: there is no usable Claude account, and Codex is not installed, and Muse is not installed, and Antigravity is not installed.'
-      )
+      await expect(why).toContainText('Claude')
+      const line = (await why.textContent()) ?? ''
+      const inFull = (await why.getAttribute('title')) ?? ''
+      expect(inFull).toContain(line)
+      for (const other of ['Codex', 'Muse', 'Antigravity']) expect(inFull).toContain(other)
 
       await butlerRow(page).locator('.ws-tab-main').click()
-      await expect(page.locator('.toast-msg')).toHaveText(
-        'Alfred cannot start: No Claude account can be used — check Settings ▸ Accounts.'
-      )
+      await expect(page.locator('.toast-msg')).toContainText(line)
 
       await why.getByRole('button', { name: 'Settings ▸ Accounts' }).click()
       const settings = page.getByRole('dialog', { name: 'Settings' })

@@ -4,7 +4,8 @@ import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
 import { attentionReason } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
-import { butlerStart, PANE_LABEL } from '@shared/butlerStart'
+import { butlerStart } from '@shared/butlerStart'
+import { settingsPaneName } from '@shared/paletteFeatures'
 import type { BackendId } from '@shared/types'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { useStore } from '../store'
@@ -168,7 +169,7 @@ function WhyButlerCannotStart({ backend }: { backend: BackendId }): JSX.Element 
           openSettingsPane(fixedIn)
         }}
       >
-        {PANE_LABEL[fixedIn]}
+        {settingsPaneName(fixedIn)}
       </button>
       .
     </p>

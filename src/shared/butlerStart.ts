@@ -1,53 +1,30 @@
 import type { AccountMeta, BackendAvailability, BackendId, SessionMethods } from './types'
-import { ACCOUNTS_PANE, hasUsableAccount, noUsableAccountLead } from './accountUsage'
-import { BACKEND_LABEL, backendAvailable, backendsFrom, turnedOffLine } from './sessionBackend'
+import { hasUsableAccount, noUsableAccountLead } from './accountUsage'
+import { BACKEND_LABEL, backendAvailable, backendsFrom, turnedOffLead } from './sessionBackend'
+import { settingsPaneName, type SettingsPaneId } from './paletteFeatures'
 
-export interface ButlerStartInputs {
-  enabled: SessionMethods['enabled']
-  installed: BackendAvailability[]
-  accounts: readonly AccountMeta[]
-}
-
-export type FixedInPane = 'accounts' | 'sessions'
-
-export const PANE_LABEL: Record<FixedInPane, string> = {
-  accounts: ACCOUNTS_PANE,
-  sessions: 'Settings ▸ Sessions'
-}
-
-export interface CannotRun {
-  clause: string
+interface CannotRun {
   lead: string
-  fixedIn: FixedInPane
+  fixedIn: SettingsPaneId
 }
 
-export function whyButlerCannotRunOn(
+function whyButlerCannotRunOn(
   backend: BackendId,
-  inputs: ButlerStartInputs
-): CannotRun | undefined {
-  const label = BACKEND_LABEL[backend]
-  if (!inputs.enabled[backend])
-    return {
-      clause: turnedOffLine(backend),
-      lead: `${label} is turned off in `,
-      fixedIn: 'sessions'
-    }
-  if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))
-    return {
-      clause: `${label} is not installed`,
-      lead: `${label} is not installed — add it in `,
-      fixedIn: 'accounts'
-    }
-  if (hasUsableAccount(inputs.accounts, backend)) return undefined
-  return {
-    clause: `there is no usable ${label} account`,
-    lead: noUsableAccountLead(inputs.accounts, backend),
-    fixedIn: 'accounts'
+  inputs: {
+    enabled: SessionMethods['enabled']
+    installed: BackendAvailability[]
+    accounts: readonly AccountMeta[]
   }
+): CannotRun | undefined {
+  if (!inputs.enabled[backend]) return { lead: turnedOffLead(backend), fixedIn: 'sessions' }
+  if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))
+    return { lead: `${BACKEND_LABEL[backend]} is not installed — add it in `, fixedIn: 'accounts' }
+  if (hasUsableAccount(inputs.accounts, backend)) return undefined
+  return { lead: noUsableAccountLead(inputs.accounts, backend), fixedIn: 'accounts' }
 }
 
-export function cannotRunLine(why: CannotRun): string {
-  return `${why.lead}${PANE_LABEL[why.fixedIn]}.`
+function lineOf(why: CannotRun): string {
+  return `${why.lead}${settingsPaneName(why.fixedIn)}.`
 }
 
 export type ButlerStart =
@@ -55,7 +32,7 @@ export type ButlerStart =
 
 export function butlerStart(
   preferred: BackendId,
-  inputs: ButlerStartInputs,
+  inputs: Parameters<typeof whyButlerCannotRunOn>[1],
   name: string
 ): ButlerStart {
   const [first, ...others] = backendsFrom(preferred)
@@ -67,13 +44,13 @@ export function butlerStart(
     if (!otherWhy)
       return {
         backend: other,
-        because: `${name} runs on ${BACKEND_LABEL[other]} this time: ${why.clause}.`
+        because: `${name} runs on ${BACKEND_LABEL[other]} this time. ${lineOf(why)}`
       }
     whys.push(otherWhy)
   }
   return {
-    error: `${name} cannot start: ${cannotRunLine(why)}`,
-    inFull: `${name} cannot start: ${whys.map((w) => w.clause).join(', and ')}.`,
+    error: `${name} cannot start. ${lineOf(why)}`,
+    inFull: `${name} cannot start. ${whys.map(lineOf).join(' ')}`,
     preferred: why
   }
 }
