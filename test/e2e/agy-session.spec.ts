@@ -35,9 +35,11 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   staysOnTheFolderPageNotTheButler,
   terminalText,
   termIds,
+  TWO_LINE_PROMPT,
   waitBooted,
   waitConductorStarted,
   wsGroup,
@@ -655,6 +657,28 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const { id } = await agyConversationOnceFirstTurnEnded(page)
       expect(transcriptOf(env, id)).toContain('Answer to: work in the tree')
       await expect(agyRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§15
+  test('⇧⏎ in an Antigravity tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain(
+        JSON.stringify(`Answer to: ${TWO_LINE_PROMPT}`).slice(1, -1)
+      )
     } finally {
       await quitAndClose(app)
     }

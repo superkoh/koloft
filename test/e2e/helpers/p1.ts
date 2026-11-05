@@ -713,6 +713,17 @@ export async function runIn(page: Page, term: Locator, cmd: string): Promise<voi
   await page.keyboard.press('Enter')
 }
 
+export const TWO_LINE_PROMPT = 'first line\nsecond line'
+
+export async function sendTwoLinesJoinedByShiftEnter(page: Page, term: Locator): Promise<void> {
+  const [first, second] = TWO_LINE_PROMPT.split('\n')
+  await term.click()
+  await page.keyboard.type(first)
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type(second)
+  await page.keyboard.press('Enter')
+}
+
 const BETWEEN_SAMPLES_MS = 100
 const SAMPLES_WHILE_THE_CHECK_IS_OUT = 5
 

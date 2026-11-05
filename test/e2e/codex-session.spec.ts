@@ -80,12 +80,14 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   snap,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
   switchToRow,
   termIds,
+  TWO_LINE_PROMPT,
   waitBooted,
   worktreeDialog,
   wsRows
@@ -1324,6 +1326,23 @@ test.describe('Codex sessions through the real method chooser, process transport
       await confirm.getByRole('button', { name: 'Close', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/cold/)
       expect(codexCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§2
+  test('⇧⏎ in a Codex tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      await expect.poll(() => codexPrompts(env)).toContain(TWO_LINE_PROMPT)
     } finally {
       await quitAndClose(app)
     }

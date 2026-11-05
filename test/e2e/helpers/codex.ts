@@ -47,6 +47,14 @@ export function codexAnswers(wire: CodexWireLine[]): string[] {
   )
 }
 
+export function codexPromptsSent(wire: CodexWireLine[]): unknown[] {
+  return wire.flatMap(({ direction, frame }) =>
+    direction === 'client' && frame.method === 'turn/start'
+      ? [(frame.params as { input?: { text?: string }[] }).input?.[0]?.text]
+      : []
+  )
+}
+
 export function codexCalls(env: E2EEnv): CodexCall[] {
   return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
 }
