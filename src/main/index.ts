@@ -578,8 +578,7 @@ import {
   type PlacedRow,
   type SessionScreen,
   type SessionVerbDeps,
-  type Target,
-  workspaceLabel
+  type Target
 } from './agentSessions'
 import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
@@ -1957,7 +1956,7 @@ function inboxSessionOfTab(tabId: string): AskedSession | undefined {
     tabId,
     title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
     backend: s.backendId,
-    workspace: ws ? workspaceLabel(ws) : undefined,
+    workspace: ws ? path.basename(parseRemoteKey(ws)?.path ?? ws) : undefined,
     machine: ws ? parseRemoteKey(ws)?.host : undefined
   }
 }
