@@ -3,7 +3,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
-import { ASKPASS_NAME, writeSudoShims } from '../../src/main/sudoShim'
+import {
+  ASKPASS_NAME,
+  SUDO_FILES_SHARED_WITH_SHELL_TABS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '../../src/main/sudoShim'
 
 let base: string
 let shimDir: string
@@ -27,6 +32,12 @@ function run(
   })
 }
 
+const MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL = '/usr/bin/script'
+
+function runWithATerminalOfItsOwn(file: string, args: string[]): Promise<{ status: number }> {
+  return run(MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL, ['-q', '/dev/null', file, ...args])
+}
+
 const logged = (): string[] => fs.readFileSync(log, 'utf8').trim().split('\n')
 
 beforeEach(() => {
@@ -36,7 +47,7 @@ beforeEach(() => {
   log = path.join(base, 'calls.log')
   fs.mkdirSync(shimDir)
   fs.mkdirSync(realDir)
-  writeSudoShims(shimDir)
+  writeSudoShims(shimDir, SUDO_SHIM_FILES)
   fs.writeFileSync(
     path.join(realDir, 'sudo'),
     `#!/bin/sh\necho "askpass=$SUDO_ASKPASS args=$*" >> '${log}'\n`,
@@ -69,6 +80,21 @@ describe("Koloft's sudo in a session", () => {
       'askpass= args=-S true',
       'askpass= args=-n true',
       'askpass=/own/helper args=true'
+    ])
+  })
+
+  it('a command an agent runs with a terminal of its own, which no one sees, still asks Koloft for the password', async () => {
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([`askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`])
+  })
+
+  it('sudo typed into a shell tab, whose terminal the owner sees, asks in that terminal as usual', async () => {
+    writeSudoShims(shimDir, SUDO_FILES_SHARED_WITH_SHELL_TABS)
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    await run(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([
+      'askpass= args=true',
+      `askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`
     ])
   })
 

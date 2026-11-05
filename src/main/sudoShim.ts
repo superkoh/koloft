@@ -4,8 +4,14 @@ import path from 'path'
 export const SECRET_VERB = 'secret'
 export const ASKPASS_NAME = 'koloft-askpass'
 
+const A_TERMINAL_OF_ITS_OWN = '(exec </dev/tty) 2>/dev/null'
+
 // PLATFORM§58
-export const SUDO_WRAPPER = `#!/bin/sh
+function sudoWrapper(aTerminalOfItsOwnAsksInIt: boolean): string {
+  const leaveAlone = aTerminalOfItsOwnAsksInIt
+    ? `[ -n "$SUDO_ASKPASS" ] || ${A_TERMINAL_OF_ITS_OWN}`
+    : '[ -n "$SUDO_ASKPASS" ]'
+  return `#!/bin/sh
 : koloft sudo wrapper
 self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
 real=""
@@ -24,7 +30,7 @@ if [ -z "$real" ]; then
   echo "sudo: not found" >&2
   exit 127
 fi
-if [ -n "$SUDO_ASKPASS" ] || (exec </dev/tty) 2>/dev/null; then exec "$real" "$@"; fi
+if ${leaveAlone}; then exec "$real" "$@"; fi
 for a in "$@"; do
   case "$a" in
     -S|--stdin|-n|--non-interactive) exec "$real" "$@" ;;
@@ -35,6 +41,7 @@ for a in "$@"; do
 done
 SUDO_ASKPASS="$self/${ASKPASS_NAME}" exec "$real" -A "$@"
 `
+}
 
 // PLATFORM§58
 export const ASKPASS = `#!/bin/sh
@@ -42,13 +49,19 @@ export const ASKPASS = `#!/bin/sh
 exec "$(dirname "$0")/koloft" ${SECRET_VERB} sudo "$1" "$(ps -o args= -p "$PPID" 2>/dev/null)"
 `
 
-export const SUDO_SHIM_FILES: Record<string, string> = {
-  sudo: SUDO_WRAPPER,
+export const SUDO_FILES_SHARED_WITH_SHELL_TABS: Record<string, string> = {
+  sudo: sudoWrapper(true),
   [ASKPASS_NAME]: ASKPASS
 }
 
-export function writeSudoShims(dir: string): void {
-  for (const [name, text] of Object.entries(SUDO_SHIM_FILES)) {
+// CODEX§12 MUSE§8 AGY§25
+export const SUDO_SHIM_FILES: Record<string, string> = {
+  sudo: sudoWrapper(false),
+  [ASKPASS_NAME]: ASKPASS
+}
+
+export function writeSudoShims(dir: string, files: Record<string, string>): void {
+  for (const [name, text] of Object.entries(files)) {
     const file = path.join(dir, name)
     fs.writeFileSync(file, text, { mode: 0o755 })
     fs.chmodSync(file, 0o755)

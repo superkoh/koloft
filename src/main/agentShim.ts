@@ -8,7 +8,7 @@ import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
 import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
-import { SECRET_VERB, writeSudoShims } from './sudoShim'
+import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from './sudoShim'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
@@ -125,5 +125,5 @@ export function writeAgentShim(shimDir: string, requestDir: string, backend: Bac
   fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
     mode: 0o755
   })
-  writeSudoShims(shimDir)
+  writeSudoShims(shimDir, SUDO_SHIM_FILES)
 }
