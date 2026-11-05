@@ -13,7 +13,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
@@ -126,6 +126,12 @@ function said(fake: FakeDiscord): string[] {
 
 function conductorSaid(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL && !p.card).map((p) => p.content)
+}
+
+function questionCards(fake: FakeDiscord, channelId: string): FakePost[] {
+  return fake.posted.filter(
+    (p) => p.channelId === channelId && p.card && p.content.startsWith('❓')
+  )
 }
 
 function ran(fake: FakeDiscord): string[] {
@@ -478,7 +484,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§14
-  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question draws in the session’s terminal and never reaches the channel, the owner’s "pick Green" to the conductor answers it with koloft session answer or keys, and the session takes Green', async ({
+  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question draws in the session’s terminal and comes as a card with a button per option in the session’s own room on Discord, never in the butler’s channel; the owner’s "pick Green" to the conductor answers it with koloft session answer or keys, and the session takes Green', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -499,7 +505,11 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )!
       expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
-      expect(fake.posted.filter((p) => p.card)).toEqual([])
+      const room = fake.threads.find((t) => t.parent_id === CHANNEL)!
+      await expect
+        .poll(() => questionCards(fake, room.id).map((p) => p.buttons?.map((b) => b.label)))
+        .toEqual([['1. Red', '2. Green', '3. Blue']])
+      expect(questionCards(fake, CHANNEL)).toEqual([])
 
       fake.say(
         OWNER,
