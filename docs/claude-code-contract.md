@@ -2794,7 +2794,10 @@ below was one run.
     field is no longer ticked. Down to the bottom, Up onto the field, Ctrl+U, then Up N
     times: after a paste of `hello`, `3` `Purple` CR sent `Purple`; after Down Down and
     a typed `hello world`, the same; on an empty field, the same; on a many-pick
-    question after a paste, `1` Tab `1` sent `Apple` (1 run each).
+    question after a paste, `1` Tab `1` sent `Apple` (1 run each). With `hello world`
+    typed and the cursor moved 5 places left before the highlight left the field,
+    Ctrl+U alone still emptied it (`Purple` sent; Ctrl+E then Ctrl+U the same), so the
+    cursor is back at the end once the highlight returns.
   - A `Bash` dialog (`--permission-mode default`; `1. Yes` … `4. No`, every row
     numbered) took `1` with the highlight moved down to row 3: the command ran. A plan
     dialog was not run.

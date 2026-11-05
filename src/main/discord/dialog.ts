@@ -235,20 +235,20 @@ function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
 const NEXT_QUESTION_AFTER_TICKS = '\t'
 const SUBMIT_ON_THE_REVIEW_PAGE = '1'
 
+const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
+
 // CC§14
 function questionKeys(q: Question, line: string): string[] {
   const picks = picksFor(q, line)
   if (!q.multiSelect) return picks ? picks.map(String) : ownWordsAfterTheLastOption(q, line)
   if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
   return [
-    ...keysFor(q.options.map(() => 'Down')),
+    ...presses('Down', q.options.length),
     ...typedPieces(line),
     NEXT_QUESTION_AFTER_TICKS,
     '\r'
   ]
 }
-
-const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
 
 // CC§14
 function emptyFieldAndHighlightTheFirstOption(q: Question): string[] {

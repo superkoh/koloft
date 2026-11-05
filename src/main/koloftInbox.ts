@@ -431,7 +431,10 @@ export class KoloftInbox {
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
       if (live.backend === 'claude') taken = this.answerTaken(live.tabId)
     }
-    const error = await this.d.answer(live.tabId, reply)
+    const error = await this.d.answer(live.tabId, reply).catch((e: unknown) => {
+      this.answering.get(live.tabId)?.(false)
+      throw e
+    })
     if (error !== undefined) this.answering.get(live.tabId)?.(false)
     if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (error !== undefined) return { ok: false, why: error }
@@ -456,7 +459,8 @@ export class KoloftInbox {
     }
     this.answering.set(tabId, settle)
     const typed = (): void => {
-      timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+      if (this.answering.get(tabId) === settle)
+        timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
     }
     return { took, typed }
   }
