@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AttentionEvent } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
 import {
+  A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS,
+  ANSWER_NOT_TAKEN,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -52,6 +54,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     askOf: async () => twoQuestions,
     answer: async (tabId, reply) => {
       answered.push([tabId, reply])
+      queueMicrotask(() => koloft.questionAnswered(tabId))
       return undefined
     },
     butlerSide: () => false,
@@ -194,6 +197,34 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     w.mark([asking])
     await w.koloft.answer('s-t1', { answers: { q0: ['o1'], q1: ['o2'] } })
     expect(w.answered).toEqual([['t1', '2\n3']])
+  })
+
+  describe('a Claude question answered from a card counts only once its answer is in the transcript', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    const pressRed = { answers: { q0: ['o0'], q1: ['o1'] } }
+
+    it('keys the session ignores end as not taken, and the card sends the owner to the session instead of offering a retry', async () => {
+      const w = world({ answer: async () => undefined })
+      w.mark([asking])
+      const result = w.koloft.answer('s-t1', pressRed)
+      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+      expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false })
+    })
+
+    it('an answer that shows up late, but in time, counts as answered', async () => {
+      const w = world({
+        answer: async (tabId) => {
+          setTimeout(() => w.koloft.questionAnswered(tabId), 10_000)
+          return undefined
+        }
+      })
+      w.mark([asking])
+      const result = w.koloft.answer('s-t1', pressRed)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await result).toEqual({ ok: true })
+    })
   })
 })
 

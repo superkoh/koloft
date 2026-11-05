@@ -24,7 +24,6 @@ import {
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
-const FAKE_REMOTE_DIALOG_GOT_KEY_2 = /dialog on screen: press a key\s+2/
 
 function inboxCard(page: Page, title: string | RegExp) {
   return page.locator('.inbox-page .ibx-item', {
@@ -104,7 +103,7 @@ for (const remote of [false, true]) {
       await expect(card.locator('.ibx-undo')).toBeVisible()
       await expect
         .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
-        .toMatch(remote ? FAKE_REMOTE_DIALOG_GOT_KEY_2 : /Picked: Green/)
+        .toMatch(/Picked: Green/)
       await expect(await doneStatus(page, 'asks a question')).toContainText('Answered')
     } finally {
       await quitAndClose(app)
