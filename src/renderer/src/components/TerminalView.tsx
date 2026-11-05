@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
 import { activateTerminalLink } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
+import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
@@ -148,6 +149,7 @@ export function TerminalView({
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
     // CC§12
     suppressXtversionReply(term)
+    copyOsc52ToClipboard(term, window.api.terminal.copy)
     term.open(ref.current!)
     termRef.current = term
     fitRef.current = fit

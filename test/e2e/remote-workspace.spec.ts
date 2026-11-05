@@ -298,6 +298,39 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-59: text an agent on the machine copies, sent as OSC 52 through ssh and tmux, lands on this Mac’s clipboard, and a request to read the clipboard copies nothing', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await app.evaluate(({ clipboard }) => {
+        const g = globalThis as unknown as { __koloftCopied?: string[] }
+        g.__koloftCopied = []
+        clipboard.writeText = ((text: string): void => {
+          g.__koloftCopied?.push(text)
+        }) as typeof clipboard.writeText
+      })
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await waitForCalls(env, 1)
+      const tabId = await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id')
+      const copied = '远程复制 copy ok'
+      const run = agentShell(page, tabId!, 60_000)
+      await run(`printf '\\033]52;c;?\\007'`)
+      await run(`printf '\\033]52;;%s\\007' ${Buffer.from(copied, 'utf8').toString('base64')}`)
+      await expect
+        .poll(() =>
+          app.evaluate(
+            () => (globalThis as unknown as { __koloftCopied?: string[] }).__koloftCopied
+          )
+        )
+        .toEqual([copied])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-02: a remote session has a Workbench on the machine — Files lists its folder, Changes shows its edits, and a terminal opens there that refuses an interactive claude', async ({
     env
   }) => {
