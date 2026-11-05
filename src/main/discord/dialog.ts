@@ -3,7 +3,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
-import { keysFor, typedPieces } from '../typeKeys'
+import { CLEAR_TO_LINE_START, keysFor, typedPieces } from '../typeKeys'
 import type { CardButton } from './cards'
 
 interface Option {
@@ -248,13 +248,17 @@ function questionKeys(q: Question, line: string): string[] {
   ]
 }
 
+const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
+
 // CC§14
-function highlightToTheFirstOption(q: Question): string[] {
+function emptyFieldAndHighlightTheFirstOption(q: Question): string[] {
   const rowsUnderTheOptions = q.multiSelect ? 3 : 2
-  return keysFor([
-    ...Array<string>(q.options.length + rowsUnderTheOptions).fill('Down'),
-    ...Array<string>(q.options.length - 1 + rowsUnderTheOptions).fill('Up')
-  ])
+  return [
+    ...presses('Down', q.options.length + rowsUnderTheOptions),
+    ...presses('Up', rowsUnderTheOptions - 1),
+    CLEAR_TO_LINE_START,
+    ...presses('Up', q.options.length)
+  ]
 }
 
 // CC§14
@@ -265,7 +269,7 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
     const keys = [
-      ...qs.slice(0, 1).flatMap(highlightToTheFirstOption),
+      ...qs.slice(0, 1).flatMap(emptyFieldAndHighlightTheFirstOption),
       ...qs.flatMap((q, i) => questionKeys(q, lines[i]!))
     ]
     return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }

@@ -162,18 +162,16 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   const UP = '\x1b[A'
   const downs = (n: number): string[] => Array<string>(n).fill(DOWN)
   const ups = (n: number): string[] => Array<string>(n).fill(UP)
+  const CTRL_U = '\x15'
+  const toOption1 = [...downs(3 + 2), ...ups(1), CTRL_U, ...ups(3)]
 
   // CC§14
-  it('before any answer the highlight goes to the bottom row and back up to option 1, so a highlight the owner moved to the own-words or chat row does not eat the digit', () => {
-    expect(claudeKeysFor(colour, '2')).toEqual({
-      ok: true,
-      value: [...downs(3 + 2), ...ups(3 - 1 + 2), '2']
-    })
+  it('before any answer the highlight goes to the bottom row, up to the own-words field to empty it, and up to option 1, so a highlight or text the owner left there does not eat or spoil the answer', () => {
+    expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: [...toOption1, '2'] })
   })
 
   // CC§14
   it('a number or a label presses that option, own words press the option after the last, then type and Enter', () => {
-    const toOption1 = [...downs(5), ...ups(4)]
     expect(claudeKeysFor(colour, 'green')).toEqual({ ok: true, value: [...toOption1, '2'] })
     expect(claudeKeysFor(colour, 'Purple')).toEqual({
       ok: true,
@@ -192,8 +190,7 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     }
     const ask = (...questions: object[]): typeof colour =>
       ({ ...colour, tool_input: { questions } }) as typeof colour
-    const toOption1 = [...downs(5), ...ups(4)]
-    const toOption1OfManyPicks = [...downs(3 + 3), ...ups(3 - 1 + 3)]
+    const toOption1OfManyPicks = [...downs(3 + 3), ...ups(2), CTRL_U, ...ups(3)]
     expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
       ok: true,
       value: [...toOption1, '2', '1', '3', '\t', '1']

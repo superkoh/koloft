@@ -2790,6 +2790,14 @@ below was one run.
     such room.
   - A many-pick question whose field holds pasted text keeps it ticked: after the keys
     above, `1`, Tab, `1` sent `"Apple, hello"`.
+  - Ctrl+U (0x15) with the highlight on the field empties it, and an emptied many-pick
+    field is no longer ticked. Down to the bottom, Up onto the field, Ctrl+U, then Up N
+    times: after a paste of `hello`, `3` `Purple` CR sent `Purple`; after Down Down and
+    a typed `hello world`, the same; on an empty field, the same; on a many-pick
+    question after a paste, `1` Tab `1` sent `Apple` (1 run each).
+  - A `Bash` dialog (`--permission-mode default`; `1. Yes` … `4. No`, every row
+    numbered) took `1` with the highlight moved down to row 3: the command ran. A plan
+    dialog was not run.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 

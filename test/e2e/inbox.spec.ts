@@ -98,8 +98,8 @@ for (const remote of [false, true]) {
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 15_000 })
         .toContain('dialog on screen')
-      for (const down of ['\x1b[B', '\x1b[B']) {
-        await page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, down])
+      for (let i = 0; i < 2; i++) {
+        await page.evaluate((id) => window.api.terminal.write(id, '\x1b[B'), tabId)
         await page.waitForTimeout(KEYS_READ_APART_MS)
       }
       await openInbox(page)

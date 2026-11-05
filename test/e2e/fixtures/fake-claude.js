@@ -827,14 +827,19 @@ function questionDialogKeys(questions) {
     const options = q.labels.length
     const chatRow = q.multiSelect ? options + 2 : options + 1
     const tick = (n) => (s.ticked.has(n) ? s.ticked.delete(n) : s.ticked.add(n))
-    if (DOWN_KEYS.includes(key) || UP_KEYS.includes(key)) {
-      if (DOWN_KEYS.includes(key)) row = Math.min(row + 1, chatRow)
-      else row = row === 0 ? options : row - 1
+    const moved = DOWN_KEYS.includes(key)
+      ? Math.min(row + 1, chatRow)
+      : UP_KEYS.includes(key)
+        ? (row || options + 1) - 1
+        : undefined
+    if (moved !== undefined) {
+      row = moved
       typing = row === options
       return
     }
     if (typing) {
-      if (q.multiSelect && key === '\t') {
+      if (key === '\x15') s.words = ''
+      else if (q.multiSelect && key === '\t') {
         typing = false
         row = options + 1
       } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
@@ -847,6 +852,7 @@ function questionDialogKeys(questions) {
       if (q.multiSelect) tick(Number(key))
       else {
         s.pick = Number(key)
+        s.words = ''
         next()
       }
     } else if (!q.multiSelect && key === String(options + 1)) {
@@ -860,11 +866,7 @@ function questionDialogKeys(questions) {
   }
   return (key) => {
     if (at === questions.length) return reviewPage && key === '1' ? answers() : undefined
-    if (key.startsWith('\x1b[200~')) {
-      row = questions[at].labels.length
-      typing = true
-      state[at].words += key.replace('\x1b[200~', '').replace('\x1b[201~', '')
-    } else press(key)
+    press(key)
     return at === questions.length && !reviewPage ? answers() : undefined
   }
 }

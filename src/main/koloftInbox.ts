@@ -423,7 +423,7 @@ export class KoloftInbox {
     if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
       return ANSWERED_ELSEWHERE
     let reply = given.pick
-    let taken: Promise<boolean> | undefined
+    let taken: { took: Promise<boolean>; typed(): void } | undefined
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
       if (ask?.kind !== 'question') return ANSWERED_ELSEWHERE
@@ -435,7 +435,8 @@ export class KoloftInbox {
     if (error !== undefined) this.answering.get(live.tabId)?.(false)
     if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (error !== undefined) return { ok: false, why: error }
-    if (taken && !(await taken)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
+    taken?.typed()
+    if (taken && !(await taken.took)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
@@ -444,16 +445,20 @@ export class KoloftInbox {
   }
 
   // CC§14
-  private answerTaken(tabId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const settle = (took: boolean): void => {
-        clearTimeout(timer)
-        if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
-        resolve(took)
-      }
-      const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
-      this.answering.set(tabId, settle)
-    })
+  private answerTaken(tabId: string): { took: Promise<boolean>; typed(): void } {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let resolve!: (answered: boolean) => void
+    const took = new Promise<boolean>((r) => (resolve = r))
+    const settle = (answered: boolean): void => {
+      clearTimeout(timer)
+      if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
+      resolve(answered)
+    }
+    this.answering.set(tabId, settle)
+    const typed = (): void => {
+      timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+    }
+    return { took, typed }
   }
 
   rebound(oldRef: string, newKey: string): void {
