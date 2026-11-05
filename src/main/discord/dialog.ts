@@ -263,6 +263,13 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   return fail(YES_OR_NO_BY_KEYS)
 }
 
+const ANSWERED_WITHOUT_RUNNING = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+// CC§14
+export function claudeResultComesAtOnce(p: AskPayload, keys: string[]): boolean {
+  return ANSWERED_WITHOUT_RUNNING.has(p.tool_name ?? '') || keys[0] === ESC
+}
+
 export function approvalDetail(a: CodexApproval): string | undefined {
   if (!a.command) return a.reason
   return a.reason ? `${a.command} (${a.reason})` : a.command

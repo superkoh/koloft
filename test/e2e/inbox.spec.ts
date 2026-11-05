@@ -188,6 +188,39 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
+// CC§12
+test('a command a Claude Code session wants to run is a card; Allow there moves it to Done as Answered once the dialog closes, while the command still runs', async ({
+  env
+}) => {
+  env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const row = wsRows(page, 'ws-a').first()
+    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    const tabId = (await row.getAttribute('data-tab-id')) as string
+
+    await runIn(page, centerTerm(page), '/bash slow make test')
+    await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await inboxCard(page, 'wants to run a command')
+      .locator('.ibx-btn', { hasText: 'Allow' })
+      .click()
+    await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered', {
+      timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+    })
+    expect(await terminalText(page, tabId)).not.toContain('Ran: slow make test')
+    fs.writeFileSync(path.join(env.home, 'go-run'), '')
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+      .toContain('Ran: slow make test')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
 test('a command a Codex session wants to run is a card in the Inbox, and Allow there approves it', async ({
   env
 }) => {
@@ -216,7 +249,7 @@ test('a command a Codex session wants to run is a card in the Inbox, and Allow t
 })
 
 // MUSE§5
-test('a command a Muse session wants to run is a card in the Inbox, and Allow there runs it', async ({
+test('a command a Muse session wants to run is a card in the Inbox; Allow there runs it and moves the card to Done as Answered', async ({
   env
 }) => {
   installMuse(env)
@@ -240,6 +273,7 @@ test('a command a Muse session wants to run is a card in the Inbox, and Allow th
     await expect
       .poll(() => museSaid(env, museId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
       .toContain('Ran: ls -la')
+    await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered')
   } finally {
     await quitAndClose(app)
   }

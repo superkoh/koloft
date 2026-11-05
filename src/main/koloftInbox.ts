@@ -16,14 +16,13 @@ import {
   type CodexQuestion,
   type Question
 } from './discord/dialog'
-import { SHOWS_NO_DIALOG } from './discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, SHOWS_NO_DIALOG, type SentAnswer } from './discord/relay'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
 const DETAILS_RETRY_MS = 1500
-export const A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS = 15_000
 export const ANSWER_NOT_TAKEN =
-  'Koloft sent your answer, but the session still shows the question. Open the session and answer it there.'
+  'Koloft sent your answer, but the session still waits for it. Open the session and answer it there.'
 
 export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
@@ -48,7 +47,7 @@ export interface KoloftInboxDeps {
   sessionOfTab(tabId: string): AskedSession | undefined
   liveTabOf(ref: string): { tabId: string; backend: BackendId } | undefined
   askOf(tabId: string): Promise<KoloftAsk | undefined>
-  answer(tabId: string, reply: string): Promise<string | undefined>
+  answer(tabId: string, reply: string): Promise<SentAnswer>
   butlerSide(tabId: string): boolean
   watching(): string | null
 }
@@ -423,27 +422,26 @@ export class KoloftInbox {
     if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
       return ANSWERED_ELSEWHERE
     let reply = given.pick
-    let taken: Promise<boolean> | undefined
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
       if (ask?.kind !== 'question') return ANSWERED_ELSEWHERE
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
-      if (live.backend === 'claude') taken = this.answerTaken(live.tabId)
     }
-    const error = await this.d.answer(live.tabId, reply)
-    if (error !== undefined) this.answering.get(live.tabId)?.(false)
-    if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
-    if (error !== undefined) return { ok: false, why: error }
-    if (taken && !(await taken)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
+    const taken = this.answerTaken(live.tabId)
+    const sent = await this.d.answer(live.tabId, reply)
+    if (!sent.watch) this.answering.get(live.tabId)?.(sent.error === undefined)
+    if (sent.error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
+    if (sent.error !== undefined) return { ok: false, why: sent.error }
+    if (!(await taken)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
-  questionAnswered(tabId: string): void {
+  askEnded(tabId: string): void {
     this.answering.get(tabId)?.(true)
   }
 
-  // CC§14
+  // CC§14 CODEX§3 MUSE§11 AGY§14
   private answerTaken(tabId: string): Promise<boolean> {
     return new Promise((resolve) => {
       const settle = (took: boolean): void => {
@@ -451,7 +449,7 @@ export class KoloftInbox {
         if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
         resolve(took)
       }
-      const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+      const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
       this.answering.set(tabId, settle)
     })
   }

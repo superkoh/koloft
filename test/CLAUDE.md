@@ -82,6 +82,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
     does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
+  - env: `KOLOFT_FAKE_PROGRAM_STATUS=1` makes it ask its terminal for OSC 7501 at start,
+    as the real one does (CC§12), and, once answered, report `blocked` while a dialog
+    waits on a key and `working` after it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
@@ -102,7 +105,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
-    digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
+    digit picks that option and `1` runs the command; a command starting `slow ` runs on
+    only once `<home>/go-run` exists), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
     exists, then deletes that file — for a line the owner must not type, since a typed
     Enter is the owner back from asleep), `/move-to-background` (a start for a session that never writes a

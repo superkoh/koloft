@@ -567,6 +567,7 @@ import {
   type AskedSession,
   type KoloftAsk
 } from './koloftInbox'
+import { ClaudeDialogWatch } from './claudeDialogWatch'
 import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -1988,10 +1989,25 @@ const koloftInbox = new KoloftInbox({
     return s && { tabId: s.tabId, backend: s.backendId }
   },
   askOf: inboxAskOf,
-  answer: sessionDeps.answer,
+  answer: async (tabId, reply) =>
+    discordRelay ? discordRelay.answerWatched(tabId, reply) : { error: STILL_STARTING },
   butlerSide,
   watching: () => attention.watching()
 })
+
+const claudeDialogs = new ClaudeDialogWatch({
+  watches: (tabId) =>
+    backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude' && hostOfTab(tabId) === 'local',
+  reply: (tabId, text) => ptyMgr.write(tabId, text),
+  closed: askEnded
+})
+
+function askEnded(tabId: string): void {
+  claudeAsks.delete(tabId)
+  koloftInbox.askEnded(tabId)
+  discordRelay?.dialogGone(tabId)
+  void askButtons?.check(tabId)
+}
 
 const agentRequests = new AgentRequests({
   verbs: {
@@ -3273,6 +3289,7 @@ app.whenReady().then(() => {
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     // CC§12
     if (sleepers.has(d.id)) return
+    claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
@@ -3301,6 +3318,7 @@ app.whenReady().then(() => {
     butler: () => butler
   })
   ptyMgr.on('exit', (e) => {
+    claudeDialogs.forget(e.id)
     const exited = ptyMgr.get(e.id)
     // CC§12 CODEX§5 MUSE§1 AGY§1
     const unexpected =
@@ -3401,7 +3419,7 @@ app.whenReady().then(() => {
     const ask = claudeAsks.get(tabId)
     if (ask && isAskedCall(ask, call)) {
       claudeAsks.delete(tabId)
-      koloftInbox.questionAnswered(tabId)
+      koloftInbox.askEnded(tabId)
     }
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
@@ -3417,10 +3435,7 @@ app.whenReady().then(() => {
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
-    if (t.prev === 'approval') {
-      claudeAsks.delete(t.tabId)
-      koloftInbox.questionAnswered(t.tabId)
-    }
+    if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
@@ -3942,6 +3957,7 @@ app.whenReady().then(() => {
     answerInPlace: async (tabId, reply) => {
       return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
     },
+    showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir,
     attachmentsDir
   })
