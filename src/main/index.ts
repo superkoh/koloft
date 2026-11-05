@@ -1996,17 +1996,21 @@ const koloftInbox = new KoloftInbox({
 })
 
 const claudeDialogs = new ClaudeDialogWatch({
-  watches: (tabId) =>
-    backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude' && hostOfTab(tabId) === 'local',
+  watchedProcess: (tabId) => {
+    const pty = ptyMgr.get(tabId)
+    return backendIdOf(pty?.kind) === 'claude' && hostOfTab(tabId) === 'local' ? pty : undefined
+  },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  closed: askEnded
+  closed: (tabId) => {
+    askEnded(tabId, true)
+    void askButtons?.check(tabId)
+  }
 })
 
-function askEnded(tabId: string): void {
+function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
   koloftInbox.askEnded(tabId)
-  discordRelay?.dialogGone(tabId)
-  void askButtons?.check(tabId)
+  discordRelay?.dialogGone(tabId, dialogClosed)
 }
 
 const agentRequests = new AgentRequests({

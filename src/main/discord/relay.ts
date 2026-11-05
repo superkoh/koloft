@@ -607,7 +607,7 @@ export class DiscordRelay {
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
     const raw = JSON.stringify(payload)
     const before = this.asks.get(tab)
-    if (before && before.hook === hook && before.raw === raw) return
+    if (before && before.hook === hook && before.raw === raw && before.typedAt === undefined) return
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
@@ -715,12 +715,16 @@ export class DiscordRelay {
     if (!keys.ok) return { error: keys.error }
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
-    await this.d.type(tab, keys.value)
+    await this.d.type(tab, keys.value).catch((error: unknown) => {
+      ask.typedAt = undefined
+      throw error
+    })
     return { watch }
   }
 
-  dialogGone(tab: string): void {
-    if (this.asks.get(tab)?.typedAt !== undefined) this.asks.delete(tab)
+  dialogGone(tab: string, closed: boolean): void {
+    const ask = this.asks.get(tab)
+    if (ask && !ask.hook && (closed || ask.typedAt !== undefined)) this.asks.delete(tab)
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {

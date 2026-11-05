@@ -582,7 +582,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§14
-  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over', async () => {
+  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over; the same question asked again takes an answer at once', async () => {
     let status: SessionStatus = 'working'
     const { relay, writes, asksChanged } = setup({}, [], { status: () => status })
     const one = {
@@ -598,7 +598,6 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(writes[2].at - writes[1].at).toBeGreaterThanOrEqual(290)
     expect(await relay.answerSession(MANAGED, '1')).toBe(ANSWER_ON_ITS_WAY)
 
-    relay.dialogGone(MANAGED)
     relay.onAsk(MANAGED, one)
     status = 'approval'
     expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
@@ -632,7 +631,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
 
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
       expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
-      relay.dialogGone(MANAGED)
+      relay.dialogGone(MANAGED, false)
       expect(relay.dialog(MANAGED)).toBeUndefined()
 
       closingShows = false

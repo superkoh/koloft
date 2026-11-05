@@ -1,44 +1,54 @@
 import { PROGRAM_STATUS_REPLY, ProgramStatusParser } from './programStatus'
 
 export interface ClaudeDialogWatchDeps {
-  watches(tabId: string): boolean
+  watchedProcess(tabId: string): object | undefined
   reply(tabId: string, text: string): void
   closed(tabId: string): void
 }
 
+interface Watched {
+  process: object
+  parser: ProgramStatusParser
+  reporting: boolean
+  blocked?: string
+}
+
+const STATES_AFTER_A_DIALOG = new Set(['working', 'idle', 'done'])
+
 // CC§12 CC§14
 export class ClaudeDialogWatch {
-  private parsers = new Map<string, ProgramStatusParser | null>()
-  private reporting = new Set<string>()
-  private blocked = new Set<string>()
+  private tabs = new Map<string, Watched>()
 
   constructor(private d: ClaudeDialogWatchDeps) {}
 
   data(tabId: string, chunk: string): void {
-    let parser = this.parsers.get(tabId)
-    if (parser === undefined) {
-      parser = this.d.watches(tabId) ? new ProgramStatusParser() : null
-      this.parsers.set(tabId, parser)
+    const process = this.d.watchedProcess(tabId)
+    if (!process) return
+    let w = this.tabs.get(tabId)
+    if (w?.process !== process) {
+      w = { process, parser: new ProgramStatusParser(), reporting: false }
+      this.tabs.set(tabId, w)
     }
-    if (!parser) return
-    const { asked, states } = parser.push(chunk)
-    if (asked) {
-      this.reporting.add(tabId)
-      this.d.reply(tabId, PROGRAM_STATUS_REPLY)
-    }
-    for (const { state } of states) {
-      if (state === 'blocked') this.blocked.add(tabId)
-      else if (this.blocked.delete(tabId)) this.d.closed(tabId)
+    const { asked, states } = w.parser.push(chunk)
+    if (asked) this.d.reply(tabId, PROGRAM_STATUS_REPLY)
+    for (const { state, msg } of states) {
+      w.reporting = true
+      const next = state === 'blocked' ? (msg ?? '') : undefined
+      const left =
+        w.blocked !== undefined &&
+        next !== w.blocked &&
+        (next !== undefined || STATES_AFTER_A_DIALOG.has(state))
+      w.blocked = next
+      if (left) this.d.closed(tabId)
     }
   }
 
   showsDialogsClosing(tabId: string): boolean {
-    return this.reporting.has(tabId)
+    const w = this.tabs.get(tabId)
+    return !!w?.reporting && w.process === this.d.watchedProcess(tabId)
   }
 
   forget(tabId: string): void {
-    this.parsers.delete(tabId)
-    this.reporting.delete(tabId)
-    this.blocked.delete(tabId)
+    this.tabs.delete(tabId)
   }
 }
