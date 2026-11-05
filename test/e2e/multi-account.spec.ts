@@ -208,7 +208,7 @@ function claudeAccounts(page: Page): Locator {
   return page.locator('.acct-section').first()
 }
 
-test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
+test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), Paste token replacing the Sign in form inside the Claude section, an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -241,7 +241,10 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
 
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Paste token' }).click()
+    await expect(page.locator('.acct-add')).toHaveCount(1)
+    await expect(claudeAccounts(page).locator('.acct-add-title')).toHaveText('Paste token')
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
