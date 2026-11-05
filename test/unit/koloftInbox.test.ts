@@ -54,7 +54,8 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
       answered.push([tabId, reply])
       return undefined
     },
-    butlerSide: () => false,
+    judging: () => false,
+    lastReply: async () => 'Done. Shall I merge it?',
     ...over
   }
   const koloft = new KoloftInbox(deps)
@@ -89,9 +90,25 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
   })
 
-  it('the butler’s own questions get no card', async () => {
-    const w = world({ butlerSide: () => true })
-    w.mark([asking])
+  it('a session that finished its turn and waits on the owner gets a card with its last words and a reply box', async () => {
+    const w = world()
+    w.mark([{ tabId: 't1', kind: 'turn-done', at: 7, sessionId: 's-t1' }])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    expect(w.inbox.all()[0]).toMatchObject({
+      title: '“Fix login” finished and waits for you',
+      blocks: [
+        { type: 'quote', text: 'Done. Shall I merge it?' },
+        { type: 'input', id: 'reply' }
+      ]
+    })
+  })
+
+  it('a finished turn that is only news, or still being judged, gets no card', async () => {
+    const w = world({ judging: (tabId) => tabId === 't2' })
+    w.mark([
+      { tabId: 't1', kind: 'turn-done', at: 7, sessionId: 's-t1', fyi: true },
+      { tabId: 't2', kind: 'turn-done', at: 8, sessionId: 's-t2' }
+    ])
     await new Promise((r) => setTimeout(r, 20))
     expect(w.inbox.all()).toEqual([])
   })
@@ -168,7 +185,8 @@ describe('koloft inbox — a session posts and moves its own cards', () => {
       liveTabOf: () => undefined,
       askOf: async () => undefined,
       answer: async () => undefined,
-      butlerSide: () => false
+      judging: () => false,
+      lastReply: async () => undefined
     })
     const run = inboxVerb({ inbox: () => inbox, whereOf: () => ({ workspace: 'koloft' }) })
     return { inbox, koloft, run }

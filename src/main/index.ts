@@ -727,7 +727,8 @@ function allSessions(): SessionInfo[] {
 const newsJudge = new NewsJudge({
   isNews: (turn) => onlyNews(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId)
+  markFyi: (tabId) => attention.markFyi(tabId),
+  judged: () => koloftInbox.sync()
 })
 
 // CC§14
@@ -1987,7 +1988,9 @@ const koloftInbox = new KoloftInbox({
   },
   askOf: inboxAskOf,
   answer: sessionDeps.answer,
-  butlerSide
+  judging: (tabId) => newsJudge.judging(tabId),
+  lastReply: async (sessionId) =>
+    (await sessionBackends.turns(sessionId, 1).catch(() => []))[0]?.reply
 })
 
 const agentRequests = new AgentRequests({

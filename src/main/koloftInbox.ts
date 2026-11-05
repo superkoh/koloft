@@ -46,7 +46,8 @@ export interface KoloftInboxDeps {
   liveTabOf(ref: string): { tabId: string; backend: BackendId } | undefined
   askOf(tabId: string): Promise<KoloftAsk | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
-  butlerSide(tabId: string): boolean
+  judging(tabId: string): boolean
+  lastReply(sessionId: string): Promise<string | undefined>
 }
 
 export function askFromClaude(p: AskPayload): KoloftAsk {
@@ -71,12 +72,23 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
+const SIGNAL_OF: Record<AttentionEvent['kind'], string> = {
+  approval: 'ask',
+  exited: 'exit',
+  'turn-done': 'done'
+}
+
 function signalKey(m: AttentionEvent): string {
-  return `${m.kind === 'exited' ? 'exit' : 'ask'}:${m.sessionId}:${m.at}`
+  return `${SIGNAL_OF[m.kind]}:${m.sessionId}:${m.at}`
 }
 
 function isSignal(c: InboxCard): boolean {
-  return c.source === KOLOFT_SOURCE.id && !c.postedBy && /^(ask|exit):/.test(c.key)
+  return c.source === KOLOFT_SOURCE.id && !c.postedBy && /^(ask|exit|done):/.test(c.key)
+}
+
+function waitsOnTheOwner(m: AttentionEvent, judging: (tabId: string) => boolean): boolean {
+  if (m.kind !== 'turn-done') return true
+  return !m.fyi && !judging(m.tabId)
 }
 
 export function where(s: AskedSession): Record<string, string> {
@@ -186,6 +198,48 @@ export function askCard(
   }
 }
 
+const LAST_WORDS_SHOWN = 900
+
+export function doneCard(
+  m: AttentionEvent,
+  s: AskedSession,
+  reply: string | undefined
+): InboxCardInput {
+  const said = reply?.trim()
+  return {
+    key: signalKey(m),
+    level: 'normal',
+    session: s.sessionId,
+    where: where(s),
+    happenedAt: m.at,
+    title: `“${s.title}” finished and waits for you`,
+    blocks: [
+      ...(said
+        ? [
+            {
+              type: 'quote' as const,
+              who: 'It said',
+              text: said.length > LAST_WORDS_SHOWN ? `…${said.slice(-LAST_WORDS_SHOWN)}` : said
+            }
+          ]
+        : []),
+      { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+    ],
+    actions: [
+      {
+        id: 'reply',
+        label: 'Send',
+        style: 'main',
+        takes: ['reply'],
+        busyText: 'Sending…',
+        run: { type: 'session', session: CARD_SESSION, message: '{answer:reply}' },
+        then: { done: { state: 'closed', status: 'Replied' } }
+      }
+    ],
+    links: [{ label: 'Open session', to: { type: 'session', session: s.sessionId } }]
+  }
+}
+
 export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
   const remote = !!s.machine
   return {
@@ -260,12 +314,7 @@ export class KoloftInbox {
   sync(): void {
     const wanted = new Map<string, AttentionEvent>()
     for (const m of this.d.marks())
-      if (
-        (m.kind === 'approval' || m.kind === 'exited') &&
-        m.sessionId &&
-        !this.d.butlerSide(m.tabId)
-      )
-        wanted.set(signalKey(m), m)
+      if (m.sessionId && waitsOnTheOwner(m, this.d.judging)) wanted.set(signalKey(m), m)
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
@@ -294,10 +343,17 @@ export class KoloftInbox {
       const s = this.d.sessionOfTab(m.tabId)
       if (!s) return
       const ask = m.kind === 'approval' ? await this.d.askOf(m.tabId) : undefined
-      if (!this.d.marks().some((x) => signalKey(x) === key)) return
+      const reply = m.kind === 'turn-done' ? await this.d.lastReply(s.sessionId) : undefined
+      const current = this.d.marks().find((x) => signalKey(x) === key)
+      if (!current || !waitsOnTheOwner(current, this.d.judging)) return
       const existing = this.d.inbox.find(KOLOFT, key)
       if (existing?.state === 'closed') return
-      const card = m.kind === 'exited' ? exitCard(m, s) : askCard(m, s, ask)
+      const card =
+        m.kind === 'exited'
+          ? exitCard(m, s)
+          : m.kind === 'turn-done'
+            ? doneCard(m, s, reply)
+            : askCard(m, s, ask)
       if (
         existing &&
         JSON.stringify([existing.title, existing.blocks, existing.actions]) ===

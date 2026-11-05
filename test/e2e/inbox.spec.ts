@@ -26,8 +26,16 @@ import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const FAKE_REMOTE_DIALOG_GOT_KEY_2 = /dialog on screen: press a key\s+2/
 
-function inboxCard(page: Page, text: string | RegExp) {
-  return page.locator('.inbox-page .ibx-item', { hasText: text })
+function inboxCard(page: Page, title: string | RegExp) {
+  return page.locator('.inbox-page .ibx-item', {
+    has: page.locator('.ibx-what', { hasText: title })
+  })
+}
+
+function cardQuoting(page: Page, words: RegExp) {
+  return page.locator('.inbox-page .ibx-item', {
+    has: page.locator('.ibx-quote', { hasText: words })
+  })
 }
 
 async function openInbox(page: Page): Promise<void> {
@@ -158,11 +166,12 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
     ]
   })
 
+  await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1', { timeout: 15_000 })
   await runIn(page, centerTerm(page), `/koloft inbox add pr-8 -- '${card}'`)
   await expect
     .poll(() => terminalText(page, tabId), { timeout: 15_000 })
     .toContain('Added card pr-8.')
-  await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
+  await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('2')
   await openInbox(page)
   const shown = inboxCard(page, 'Pull request 8 is ready to merge')
   await expect(shown.locator('.ibx-lvp')).toHaveText('High')
@@ -250,13 +259,14 @@ test('a session on another machine posts a card with koloft inbox, tagged with t
     await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
     const row = wsRows(page, REMOTE_WS_NAME).first()
     await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1', { timeout: 30_000 })
     const card = JSON.stringify({ title: 'Built on the machine', level: 'low' })
     await runIn(page, centerTerm(page), `/koloft inbox add built -- '${card}'`)
     await openInbox(page)
     const shown = inboxCard(page, 'Built on the machine')
     await expect(shown.locator('.ibx-lvp')).toHaveText('Low', { timeout: 30_000 })
     await expect(shown.locator('.ibx-tag')).toContainText(/Koloft · \S+ · \S+/)
-    await expect(page.locator('.ibx-entry .ibx-count')).toHaveCount(0)
+    await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
   } finally {
     await quitAndClose(app)
   }
@@ -298,5 +308,38 @@ test('a session that stopped unexpectedly is a card; Start it again resumes it i
   expect(calls[2].firstPrompt ?? calls[2].argv.join(' ')).toContain('«finish the docs»')
   await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText(
     'Handed to a new session'
+  )
+})
+
+test('a session that ends its turn waiting on the owner is a card with its last words; a reply typed on the card reaches it, and one typed in its tab closes the card', async ({
+  page,
+  env
+}) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const tabId = (await row.getAttribute('data-tab-id')) as string
+
+  await runIn(page, centerTerm(page), '/answer Shall I merge it?')
+  await openInbox(page)
+  const card = cardQuoting(page, /Answer to: Shall I merge it\?/)
+  await expect(card.locator('.ibx-what')).toContainText('finished and waits for you', {
+    timeout: 15_000
+  })
+  await card.locator('.ibx-input').fill('yes, squash it')
+  await card.locator('.ibx-btn', { hasText: 'Send' }).click()
+  await expect
+    .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+    .toContain('«yes, squash it»')
+  await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+
+  await typeInto(page, tabId, '/answer Which branch?')
+  await page.locator('.ibx-seg button[data-tab="needs-you"]').click()
+  await expect(cardQuoting(page, /Answer to: Which branch\?/)).toBeVisible({ timeout: 15_000 })
+  await typeInto(page, tabId, 'main')
+  await expect(await doneStatus(page, 'finished and waits for you')).toContainText(
+    'Handled in its tab',
+    { timeout: 15_000 }
   )
 })

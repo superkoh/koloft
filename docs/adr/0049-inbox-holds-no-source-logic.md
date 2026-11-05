@@ -12,9 +12,12 @@ A button can do only two things: write into an existing session (a message, or t
 answer to what it is asking), or start a new session with a first prompt. The Inbox
 owns only what is the owner's: the 5-second undo, a confirm for a danger button,
 Dismiss, the owner's own level, move to top. The filter pills come from the keys of each
-card's `where`, never from a list the Inbox knows. Koloft's own signals (a question, an
-approval, an unexpected stop) reach the Inbox as cards its Koloft source
-(`src/main/koloftInbox.ts`) posts and closes, like any other source.
+card's `where`, never from a list the Inbox knows. Koloft's own signals — every session that
+waits on the owner, the butler and its helpers too: a question, an approval, an unexpected
+stop, a finished turn that needs the owner — reach the Inbox as cards its Koloft source
+(`src/main/koloftInbox.ts`) posts and closes, like any other source. Those cards come from
+Koloft's own marks, never from an agent remembering to post one: the guide's rule that
+agents post their finished work drew no card in real use.
 **Rejected**: a stage table and a card kind per source (asked, answered, merged…) that the
 Inbox would know — each new source would change the Inbox, and the three states already
 carry what the owner acts on. Buttons that run a source's own function in Koloft's

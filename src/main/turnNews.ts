@@ -56,6 +56,7 @@ export interface NewsJudgeDeps {
   isNews(turn: Turn): Promise<boolean>
   awaitingVerdict(tabId: string): boolean
   markFyi(tabId: string): void
+  judged?(tabId: string): void
 }
 
 export class NewsJudge {
@@ -94,7 +95,9 @@ export class NewsJudge {
       })
       .catch(() => undefined)
       .finally(() => {
-        if (this.beingJudged.get(tabId) === round) this.beingJudged.delete(tabId)
+        if (this.beingJudged.get(tabId) !== round) return
+        this.beingJudged.delete(tabId)
+        this.d.judged?.(tabId)
       })
   }
 
