@@ -46,8 +46,8 @@ export interface KoloftInboxDeps {
   liveTabOf(ref: string): { tabId: string; backend: BackendId } | undefined
   askOf(tabId: string): Promise<KoloftAsk | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
-  judging(tabId: string): boolean
-  lastReply(sessionId: string): Promise<string | undefined>
+  butlerSide(tabId: string): boolean
+  watching(): string | null
 }
 
 export function askFromClaude(p: AskPayload): KoloftAsk {
@@ -83,12 +83,16 @@ function signalKey(m: AttentionEvent): string {
 }
 
 function isSignal(c: InboxCard): boolean {
-  return c.source === KOLOFT_SOURCE.id && !c.postedBy && /^(ask|exit|done):/.test(c.key)
+  return (
+    c.source === KOLOFT_SOURCE.id &&
+    !c.postedBy &&
+    Object.values(SIGNAL_OF).includes(c.key.split(':')[0])
+  )
 }
 
-function waitsOnTheOwner(m: AttentionEvent, judging: (tabId: string) => boolean): boolean {
-  if (m.kind !== 'turn-done') return true
-  return !m.fyi && !judging(m.tabId)
+const GONE_STATUS: Record<string, string> = {
+  exit: 'Started again',
+  done: 'It went on'
 }
 
 export function where(s: AskedSession): Record<string, string> {
@@ -200,6 +204,11 @@ export function askCard(
 
 const LAST_WORDS_SHOWN = 900
 
+function lastWords(said: string): string {
+  const chars = Array.from(said)
+  return chars.length > LAST_WORDS_SHOWN ? `…${chars.slice(-LAST_WORDS_SHOWN).join('')}` : said
+}
+
 export function doneCard(
   m: AttentionEvent,
   s: AskedSession,
@@ -219,7 +228,7 @@ export function doneCard(
             {
               type: 'quote' as const,
               who: 'It said',
-              text: said.length > LAST_WORDS_SHOWN ? `…${said.slice(-LAST_WORDS_SHOWN)}` : said
+              text: lastWords(said)
             }
           ]
         : []),
@@ -306,20 +315,20 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 // ADR-0049
 export class KoloftInbox {
   private building = new Set<string>()
+  private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
   }
 
   sync(): void {
-    const wanted = new Map<string, AttentionEvent>()
-    for (const m of this.d.marks())
-      if (m.sessionId && waitsOnTheOwner(m, this.d.judging)) wanted.set(signalKey(m), m)
+    const marks = this.d.marks().filter((m) => m.sessionId)
+    const standing = new Set(marks.map(signalKey))
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
         c.state !== 'needs-you' ||
-        wanted.has(c.key) ||
+        standing.has(c.key) ||
         c.press?.step === 'working'
       )
         continue
@@ -327,12 +336,30 @@ export class KoloftInbox {
         this.d.inbox.move(
           KOLOFT,
           c.key,
-          c.key.startsWith('exit:') ? { state: 'closed', status: 'Started again' } : HANDLED,
+          { state: 'closed', status: GONE_STATUS[c.key.split(':')[0]] ?? HANDLED.status },
           'it no longer waits for you'
         )
       } catch {}
     }
-    for (const [key, m] of wanted) if (!this.d.inbox.find(KOLOFT, key)) void this.post(m, true)
+    for (const m of marks)
+      if (m.kind !== 'turn-done' && !this.d.inbox.find(KOLOFT, signalKey(m)))
+        void this.post(m, true)
+  }
+
+  turnEnded(tabId: string, reply: string, handedOff: boolean): void {
+    this.finished.set(tabId, { reply, forTheOwner: !handedOff && !this.d.butlerSide(tabId) })
+  }
+
+  judged(tabId: string, news: boolean): void {
+    const turn = this.finished.get(tabId)
+    this.finished.delete(tabId)
+    if (news || !turn?.forTheOwner || this.d.watching() === tabId) return
+    const m = this.d.marks().find((x) => x.tabId === tabId && x.kind === 'turn-done' && !x.fyi)
+    const s = this.d.sessionOfTab(tabId)
+    if (!m?.sessionId || !s || this.d.inbox.find(KOLOFT, signalKey(m))) return
+    try {
+      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply))
+    } catch {}
   }
 
   private async post(m: AttentionEvent, retry: boolean): Promise<void> {
@@ -343,17 +370,10 @@ export class KoloftInbox {
       const s = this.d.sessionOfTab(m.tabId)
       if (!s) return
       const ask = m.kind === 'approval' ? await this.d.askOf(m.tabId) : undefined
-      const reply = m.kind === 'turn-done' ? await this.d.lastReply(s.sessionId) : undefined
-      const current = this.d.marks().find((x) => signalKey(x) === key)
-      if (!current || !waitsOnTheOwner(current, this.d.judging)) return
+      if (!this.d.marks().some((x) => signalKey(x) === key)) return
       const existing = this.d.inbox.find(KOLOFT, key)
       if (existing?.state === 'closed') return
-      const card =
-        m.kind === 'exited'
-          ? exitCard(m, s)
-          : m.kind === 'turn-done'
-            ? doneCard(m, s, reply)
-            : askCard(m, s, ask)
+      const card = m.kind === 'exited' ? exitCard(m, s) : askCard(m, s, ask)
       if (
         existing &&
         JSON.stringify([existing.title, existing.blocks, existing.actions]) ===

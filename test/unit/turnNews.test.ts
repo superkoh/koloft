@@ -42,7 +42,8 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     const j = new NewsJudge({
       isNews: () => new Promise((resolve) => verdicts.push(resolve)),
       awaitingVerdict: (tabId) => marked.has(tabId),
-      markFyi: (tabId) => fyi.push(tabId)
+      markFyi: (tabId) => fyi.push(tabId),
+      judged: () => {}
     })
     const settle = async (news: boolean): Promise<void> => {
       verdicts.shift()?.(news)
