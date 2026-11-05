@@ -1,20 +1,18 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Helper count on a session row</title>
+<title>#516 - a helper count on the session row</title>
 <link rel="stylesheet" href="css/workbench.css">
 <link rel="stylesheet" href="css/app.css">
 <style>
   html, body { height: auto; overflow: auto; user-select: text; }
   body { padding: 28px 32px 60px; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
-  h1 { font-size: 22px; margin: 0 0 6px; }
-  h2 { font-size: 17px; margin: 36px 0 8px; border-top: 1px solid var(--line); padding-top: 18px; }
-  p, li { color: var(--fg); }
-  .dim { color: var(--fg-dim, #9a9a9a); }
-  code { font-family: var(--mono, monospace); font-size: 12.5px; background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; }
-  .lead { font-size: 15.5px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 34px 0 8px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .dim { color: var(--fg-dim); }
+  code { font-family: var(--mono); font-size: 12.5px; background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; }
   .grid { display: flex; flex-wrap: wrap; gap: 22px; margin: 12px 0; }
   .card { flex: 1 1 320px; min-width: 300px; }
   .card h3 { font-size: 14px; margin: 0 0 6px; }
@@ -22,90 +20,99 @@
   .sample.app { height: auto; width: 300px; border: 1px solid var(--line); border-radius: 8px; overflow: visible; }
   .sample .side { width: 300px; padding: 8px 6px; border-right: 0; border-radius: 8px; }
   .sample .tbu-pop { position: relative !important; left: 8px !important; top: 6px !important; margin-bottom: 10px; display: block; width: max-content; max-width: 280px; }
-  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
   th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
   th { background: rgba(255,255,255,.04); }
-  .pick { border: 1px solid var(--accent, #d98b5f); border-radius: 8px; padding: 2px 14px 10px; }
-  .tag { display: inline-block; font-size: 11.5px; padding: 0 7px; border-radius: 10px; background: rgba(255,255,255,.08); margin-left: 6px; }
+  .pick { border: 1px solid var(--accent); border-radius: 8px; padding: 2px 14px 10px; }
+  .tag { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 10px; background: var(--accent); color: #1a1a1a; font-weight: 700; margin-left: 6px; }
 </style>
 </head>
 <body>
 
-<h1>会话行上的“帮手数”（issue #516）</h1>
-<p class="lead">一句话：<b>会话行今天已经有一个“后台还在跑”的小角标 <code>↻ N</code></b>，帮手（子 agent、workflow）就算在里面。要你定的是：够了就关掉这个 issue，还是再往前做一步。</p>
-<p class="dim">下面的会话行都是从真的 app 里抓下来的界面（DOM），用的是 app 编译好的样式。英文字是 app 里原样的字。</p>
+<h1>#516 - how many helpers run inside a session, on its row</h1>
+<p>In short: <b>the session row already has a "still running in the background" badge, <code>↻ N</code></b>, and background helpers (subagents, workflows, Codex sub-agents) are counted in it. The choice is whether that is enough (close the issue) or whether to go one step further.</p>
+<p class="dim">Rows and the card below are the real app's DOM, captured from a built app driven by the e2e fake <code>claude</code>, and drawn with the app's compiled CSS. Only the rows marked "option" are made up.</p>
 
-<h2>1. 今天的样子</h2>
+<h2>1. What a user sees today</h2>
 <div class="grid">
   <div class="card">
-    <h3>回合结束了，帮手还在跑</h3>
+    <h3>The turn is over, a helper still runs</h3>
     <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
       <div class="ws-tab st-waiting st-bg-run active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span><button class="ws-tab-parked bg-run" title="agent · subagent · working" aria-label="Turn done · still running">↻ 1</button></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Last: Started a helper: helper</div></div>
     </div></div></div></div></div></div></div>
     <div class="app sample" style="margin-top:8px"><div class="side">
       <div class="tbu-pop parked"><div class="tbu-pop-head"><span>Turn done · still running</span></div><div class="tbu-row"><div class="parked-line">agent · subagent · working</div></div><div class="tbu-sep"></div><div class="tbu-row parked-hint">This turn is over and you can type. The work above keeps going.</div></div>
     </div></div>
-    <p class="note">绿点在“呼吸”，右边 <code>↻ 1</code> = 有 1 件事还在后台跑。点它弹出小卡片，一行一件：<code>agent · …</code> 是帮手，<code>command · …</code> 是后台命令。<b>这就是 issue 想要的“忙着帮手”和“真闲着”的区别。</b></p>
+    <p class="note">The dot breathes green and <code>↻ 1</code> says one thing still runs. A click opens the card: one line each, <code>agent · …</code> for a helper, <code>command · …</code> for a background command. <b>This is the "busy with helpers" vs "really idle" the issue asks for.</b></p>
   </div>
   <div class="card">
-    <h3>Claude Code：回合还在进行，这一回合刚开了帮手</h3>
+    <h3>Claude Code: the turn still runs and has started helpers</h3>
     <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
-      <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Last: Started a helper: Explore the repo</div></div>
+      <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Started a helper: Explore the repo</div></div>
     </div></div></div></div></div></div></div>
-    <p class="note">行是“正在干活”的颜色，但<b>没有数字</b>：Claude Code 这一回合新开的帮手，要等回合结束才算进 <code>↻ N</code>。（上一回合留下、还在跑的帮手，这时照样显示 <code>↻ N</code>。）Codex 和 Muse Code 不一样：帮手一开就出现在 <code>↻ N</code> 里。</p>
+    <p class="note">The row has the "working" colour but <b>no number</b>. A background helper started in this turn joins <code>↻ N</code> only when the turn ends. A foreground helper (the session waits for it) is never counted, not even after the turn. A helper left over from an earlier turn keeps its <code>↻ N</code> while the next turn works (the card heading then reads <code>"Background activity"</code>), and if it finishes mid-turn the badge only drops at the turn's end. Codex and Muse Code differ: a helper shows the moment it starts.</p>
   </div>
   <div class="card">
-    <h3>Antigravity：开了 3 个帮手，回合结束</h3>
+    <h3>Antigravity: three helpers, the turn is over</h3>
     <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
       <div class="ws-tab st-waiting st-bg-run active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Docs cleanup</i></span><button class="ws-tab-parked bg-run" title="agent · Background work · working" aria-label="Turn done · still running">↻ 1</button></div><div class="ws-tab-sub"><span>main</span></div></div>
     </div></div></div></div></div></div></div>
-    <p class="note">Antigravity 只告诉 Koloft “还没全闲下来”，不说几个，所以永远是 <code>↻ 1</code>，卡片里写 <code>Background work</code>。</p>
+    <p class="note">Antigravity's Stop hook only says "not fully idle", not how many, so it is always <code>↻ 1</code> labelled <code>Background work</code>. While a named background command also runs, that line is left out, so the helpers vanish from the badge.</p>
   </div>
 </div>
 
-<h2>2. 八种标签页今天各是什么样</h2>
+<h2>2. The eight tab kinds today</h2>
 <table>
-  <tr><th>标签页</th><th>帮手怎么算进 <code>↻ N</code></th><th>从哪读（都不用新加轮询）</th><th>证据</th></tr>
-  <tr><td>Claude Code · 本机</td><td>回合结束时算；这一回合中新开的要等回合结束</td><td>Stop 钩子带的后台任务清单（subagent、workflow、MCP task、cloud session）</td><td>e2e <code>backgroundStatus.spec.ts</code></td></tr>
-  <tr><td>Claude Code · 远程</td><td>同上</td><td>同上，钩子经 SSH 传回</td><td>e2e <code>remote-workspace.spec.ts</code>（测的是后台任务）</td></tr>
-  <tr><td>Codex · 本机</td><td>子 agent 一开就算，回合中、回合后都在</td><td>app-server 的子 agent 事件</td><td>e2e <code>codex-session.spec.ts</code></td></tr>
-  <tr><td>Codex · 远程</td><td>同上</td><td>同一段代码</td><td>看代码推断，没跑过</td></tr>
-  <tr><td>Muse Code · 本机</td><td>帮手一开就算</td><td><code>SubagentStart</code> / <code>SubagentStop</code> 钩子</td><td>e2e <code>muse-session.spec.ts</code></td></tr>
-  <tr><td>Muse Code · 远程</td><td>同上</td><td>同一套钩子，远程版</td><td>看代码推断，没跑过</td></tr>
-  <tr><td>Antigravity · 本机</td><td>回合结束时“没全闲” → 固定 <code>↻ 1</code>，不分几个</td><td>Stop 钩子的 <code>fullyIdle</code></td><td>e2e <code>agy-session.spec.ts</code></td></tr>
-  <tr><td>Antigravity · 远程</td><td>同上</td><td>同上</td><td>e2e <code>agy-remote.spec.ts</code>（测的是后台命令）</td></tr>
+  <tr><th>Tab</th><th>When a helper shows in <code>↻ N</code></th><th>Read from (no new polling)</th><th>Proof</th></tr>
+  <tr><td>Claude Code · local</td><td>Background helpers: at turn end. Foreground helpers: never.</td><td>The Stop hook's task list (subagent, workflow, MCP task, cloud session), checked against the processes</td><td>e2e <code>backgroundStatus.spec.ts</code></td></tr>
+  <tr><td>Claude Code · SSH</td><td>Same, but no process check on the machine: a helper counts while it wrote in the last 10 minutes, so one that died quietly can stay up to 10 minutes</td><td>Same hook, sent back over SSH</td><td>e2e <code>remote-workspace.spec.ts</code> (a reported subagent)</td></tr>
+  <tr><td>Codex · local</td><td>The moment a sub-agent starts, during and after the turn</td><td>The app-server's sub-agent events</td><td>e2e <code>codex-session.spec.ts</code> (after the turn); during the turn read from code, not run</td></tr>
+  <tr><td>Codex · SSH</td><td>Same</td><td>The same observer and event stream</td><td>Read from code, not run</td></tr>
+  <tr><td>Muse Code · local</td><td>The moment a helper starts</td><td><code>SubagentStart</code> / <code>SubagentStop</code> hooks</td><td>e2e <code>muse-session.spec.ts</code></td></tr>
+  <tr><td>Muse Code · SSH</td><td>Same</td><td>The same hooks, remote form</td><td>Read from code, not run</td></tr>
+  <tr><td>Antigravity · local</td><td>At turn end, always <code>↻ 1</code>, no count</td><td>The Stop hook's <code>fullyIdle</code></td><td>Read from code, not run (the specs cover background commands only)</td></tr>
+  <tr><td>Antigravity · SSH</td><td>Same</td><td>Same</td><td>Read from code, not run</td></tr>
 </table>
+<p class="dim" style="font-size:13px">One more thing <code>↻ N</code> mixes in: a teammate that is working counts as an agent; an idle one goes to the <code>⏸</code> badge.</p>
 
-<h2>3. 三个选择</h2>
+<h2>3. The options</h2>
 <div class="grid">
   <div class="card pick">
-    <h3>A. 保持现在这样，关掉 issue <span class="tag">推荐</span></h3>
-    <p>不改代码。issue 要的“看得出是在忙帮手还是真闲”，回合一结束，八种标签页都已经靠 <code>↻ N</code> 做到了；回合进行中，行本来就是“正在干活”的颜色。</p>
-    <p class="note"><b>代价：</b>Claude Code 回合中新开的帮手看不到数字；Antigravity 看不出几个；<code>↻ N</code> 把帮手和后台命令加在一起数。</p>
+    <h3>A. Keep it as it is, close the issue <span class="tag">pick</span></h3>
+    <p>No code. The issue's goal, telling a session busy with helpers from an idle one, is met at turn end for all eight tab kinds by <code>↻ N</code>; while a turn runs, the row already has the "working" colour.</p>
+    <p class="note"><b>Cost:</b> no number while a Claude Code turn runs; Claude Code foreground helpers are never counted; Antigravity shows no count (and none at all next to a named background command); <code>↻ N</code> adds helpers, commands and working teammates together.</p>
   </div>
   <div class="card">
-    <h3>B. Claude Code 回合进行中也显示帮手数</h3>
+    <h3>B. Claude Code: background helpers show as soon as they start</h3>
     <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
-      <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span><button class="ws-tab-parked bg-run" title="agent · Explore the repo · working&#10;agent · Review the tests · working" aria-label="Background activity">↻ 2</button></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Last: Started a helper: Review the tests</div></div>
+      <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span><button class="ws-tab-parked bg-run" title="agent · Explore the repo · working&#10;agent · Review the tests · working" aria-label="Background activity">↻ 2</button></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Started a helper: Review the tests</div></div>
     </div></div></div></div></div></div></div>
-    <p class="note">后台帮手一开就进 <code>↻ N</code>，和 Codex、Muse Code 一样。数据已经在读（会话记录里“后台帮手已启动”那一行），只是现在回合中不拿出来用。</p>
-    <p class="note"><b>代价：</b>只管<b>后台</b>帮手：前台帮手（主会话等着它干完）本来就让行在“正在干活”，不算进去。Workflow 在回合中启动时记录里长什么样还没探过，可能要等回合结束才算。Antigravity 不变。要改 Claude 的后台判断和几个 e2e 用例。</p>
+    <p class="note">Option. Like Codex and Muse Code today. Koloft already reads the "spawned in the background" line from the transcript mid-turn; it just does not put it on the row until Stop. A helper that finishes mid-turn would also drop at once.</p>
+    <p class="note"><b>Cost:</b> background helpers only; foreground ones still never show. A Workflow joins mid-turn only if its spawn line carries an agent id (its shape is in the ledger, the id is not probed). Antigravity unchanged. The badge text does not change, so few e2e cases move.</p>
   </div>
   <div class="card">
-    <h3>C. B 再加：帮手和后台命令分开数</h3>
+    <h3>C. Claude Code: every helper that is writing, foreground too</h3>
+    <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
+      <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span><button class="ws-tab-parked bg-run" title="agent · Explore the repo · working&#10;agent · Review the tests · working&#10;agent · Fix the parser · working" aria-label="Background activity">↻ 3</button></div><div class="ws-tab-sub"><span>main</span></div><div class="ws-tab-act">Started a helper: Fix the parser</div></div>
+    </div></div></div></div></div></div></div>
+    <p class="note">Option. Count each helper whose own transcript file grew in the last few seconds. Koloft already reads those files every 5 seconds (for usage), so no new polling.</p>
+    <p class="note"><b>Cost:</b> "running" means "wrote lately": a helper waiting on one long command writes nothing and drops out of the count until it writes again. A cloud helper has no local file and is not seen. Antigravity unchanged.</p>
+  </div>
+  <div class="card">
+    <h3>D. Add-on to B or C: say "helpers" apart from commands</h3>
     <div class="app sample"><div class="side"><div class="dock-left"><div class="island flat isl-sessions"><div class="ws-list"><div class="ws"><div class="ws-tabs">
       <div class="ws-tab st-waiting st-bg-run active"><div class="ws-tab-main"><span class="ws-tab-title"><i>Fake session: project notes</i></span><button class="ws-tab-parked bg-run" title="agent · Explore the repo · working&#10;agent · Review the tests · working&#10;command · npm test · working" aria-label="Turn done · still running">↻ 3 · 2 helpers</button></div><div class="ws-tab-sub"><span>main</span></div></div>
     </div></div></div></div></div></div></div>
-    <p class="note">角标里直接写出几个是帮手。</p>
-    <p class="note"><b>代价：</b>角标变长，窄侧栏里标题被挤得更短；四种 agent 的角标字都要改，相关 e2e 一起改。Antigravity 仍然数不出几个（要再探它的子会话记录才行）。</p>
+    <p class="note">Option. The badge says how many of the running things are helpers.</p>
+    <p class="note"><b>Cost:</b> a longer badge leaves less room for the title in a narrow sidebar. The text is built in one place for all four agents, but the e2e helper that looks for exactly <code>↻ 1</code> and the specs using it change.</p>
   </div>
 </div>
 
-<h2>4. 还没探的</h2>
+<h2>4. Not probed yet</h2>
 <ul>
-  <li>Codex 远程、Muse Code 远程：看代码和本机走同一段，没有单独跑过 e2e。</li>
-  <li>Antigravity 怎么数出几个帮手：它的子会话在自己的会话库里有一行（带父会话 id），Koloft 现在只读不带父 id 的那些；帮手开始、结束时它的钩子什么样，台账写着“没探过”。</li>
-  <li>Claude Code 的 Workflow 在回合中启动时，会话记录里那一行长什么样（只影响 B、C）。</li>
+  <li>Codex and Muse Code over SSH: the code is the same as local; no e2e case runs a helper there.</li>
+  <li>Antigravity, a count: each helper is a child row (with a parent id) in its conversation database, which Koloft reads today only for rows without a parent; a <code>SessionStart</code> hook fires for each helper (ledger), but its other hooks for helpers are not probed.</li>
+  <li>Claude Code: whether a Workflow's spawn line carries an agent id (matters for B only).</li>
 </ul>
 
 </body>
