@@ -8,6 +8,7 @@ import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
+import { runsPlaywrightMcp } from './browserControlEnv'
 
 const AGY_HOMES = 'agy-homes'
 
@@ -111,6 +112,8 @@ export interface KoloftSettings {
   statusLine?: string
   apiKey: boolean
   allowKoloft: boolean
+  playwrightServers: string[]
+  workbenchBrowser: boolean
 }
 
 const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
@@ -120,6 +123,20 @@ const AGY_KOLOFT_ALLOW_RULE = 'command(koloft)'
 
 const strings = (list: unknown): string[] =>
   Array.isArray(list) ? list.filter((s): s is string => typeof s === 'string') : []
+
+// ADR-0048 AGY§26
+const allowEveryToolOf = (server: string): string => `mcp(${server}/*)`
+const namesServer = (rule: string, server: string): boolean =>
+  rule === `mcp(${server})` || rule.startsWith(`mcp(${server}/`)
+
+// AGY§30
+export function ownersPlaywrightMcp(ownersGemini: string): string[] {
+  const servers = record(readJson(path.join(ownersGemini, 'config', 'mcp_config.json')).mcpServers)
+  return Object.keys(servers).filter((name) => {
+    const entry = record(servers[name])
+    return entry.disabled !== true && runsPlaywrightMcp(entry.command, entry.args)
+  })
+}
 
 // AGY§27
 const NO_FLICKERING_RENDERING = { altScreenMode: 'always' }
@@ -132,7 +149,7 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
   )
 }
 
-// AGY§4 AGY§5 AGY§11 AGY§26 AGY§27
+// AGY§4 AGY§5 AGY§11 AGY§26 AGY§27 ADR-0048
 export function mergedAgySettings(
   own: Record<string, unknown>,
   owners: Record<string, unknown>,
@@ -154,10 +171,20 @@ export function mergedAgySettings(
   if (k.apiKey) merged.modelProvider = 'gemini'
   const permissions = { ...record(merged.permissions) }
   const ownerSetsPermissions = 'permissions' in owners
+  const koloftWholeServer = k.playwrightServers.map(allowEveryToolOf)
   const allow = strings(permissions.allow).filter(
-    (r) => ownerSetsPermissions || r !== AGY_KOLOFT_ALLOW_RULE
+    (r) => ownerSetsPermissions || (r !== AGY_KOLOFT_ALLOW_RULE && !koloftWholeServer.includes(r))
   )
-  if (k.allowKoloft && !allow.includes(AGY_KOLOFT_ALLOW_RULE)) allow.push(AGY_KOLOFT_ALLOW_RULE)
+  const usersRules = Object.entries(permissions)
+    .filter(([list]) => ownerSetsPermissions || list !== 'allow')
+    .flatMap(([, rules]) => strings(rules))
+  const ours = [
+    ...(k.allowKoloft ? [AGY_KOLOFT_ALLOW_RULE] : []),
+    ...(k.workbenchBrowser ? k.playwrightServers : [])
+      .filter((s) => !usersRules.some((r) => namesServer(r, s)))
+      .map(allowEveryToolOf)
+  ]
+  for (const rule of ours) if (!allow.includes(rule)) allow.push(rule)
   if (allow.length) permissions.allow = allow
   else delete permissions.allow
   if (Object.keys(permissions).length) merged.permissions = permissions

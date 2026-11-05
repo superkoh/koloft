@@ -63,6 +63,7 @@ import {
   mergeAgySettings,
   mergedAgyHooks,
   mergedAgySettings,
+  ownersPlaywrightMcp,
   ownersTitleCommand,
   prepareAgyHome,
   titleCommandIn,
@@ -626,7 +627,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
-      allowKoloft: !!agent
+      allowKoloft: !!agent,
+      playwrightServers: ownersPlaywrightMcp(gemini),
+      workbenchBrowser: !!endpoint
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -679,6 +682,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ANT_ACCOUNT: pick.account,
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
+          // AGY§30
           ...browserControlEnv(tabId, endpoint),
           ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
         },
@@ -757,7 +761,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
       apiKey: !!apiKey,
-      allowKoloft: agentTools
+      allowKoloft: agentTools,
+      playwrightServers: [],
+      workbenchBrowser: false
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
