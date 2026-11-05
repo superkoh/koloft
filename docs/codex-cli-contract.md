@@ -2188,7 +2188,9 @@ message" (3 runs).
   established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
-- The paste over ssh and tmux is not probed for Codex.
+- Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
+  ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
+  sends the app-server on the machine does.
 - **A picture path in the message is opened when the question needs it.** Measured
   2026-10-28, Codex CLI 0.162.0, `codex exec -s read-only` with Koloft's element-pick
   text (its `Picture:` line names a PNG of a canvas with the word ZEBRA drawn on it; the
