@@ -4,13 +4,11 @@ import path from 'path'
 export const SECRET_VERB = 'secret'
 export const ASKPASS_NAME = 'koloft-askpass'
 
-const A_TERMINAL_OF_ITS_OWN = '(exec </dev/tty) 2>/dev/null'
+const A_TERMINAL_OPENS = '(exec </dev/tty) 2>/dev/null'
+const A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB = `{ [ "$KOLOFT_UTIL" = 1 ] && ${A_TERMINAL_OPENS}; }`
 
 // PLATFORM§58
-function sudoWrapper(aTerminalOfItsOwnAsksInIt: boolean): string {
-  const leaveAlone = aTerminalOfItsOwnAsksInIt
-    ? `[ -n "$SUDO_ASKPASS" ] || ${A_TERMINAL_OF_ITS_OWN}`
-    : '[ -n "$SUDO_ASKPASS" ]'
+function sudoWrapper(theOwnersTerminal: string): string {
   return `#!/bin/sh
 : koloft sudo wrapper
 self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -30,7 +28,7 @@ if [ -z "$real" ]; then
   echo "sudo: not found" >&2
   exit 127
 fi
-if ${leaveAlone}; then exec "$real" "$@"; fi
+if [ -n "$SUDO_ASKPASS" ] || ${theOwnersTerminal}; then exec "$real" "$@"; fi
 for a in "$@"; do
   case "$a" in
     -S|--stdin|-n|--non-interactive) exec "$real" "$@" ;;
@@ -49,14 +47,14 @@ export const ASKPASS = `#!/bin/sh
 exec "$(dirname "$0")/koloft" ${SECRET_VERB} sudo "$1" "$(ps -o args= -p "$PPID" 2>/dev/null)"
 `
 
-export const SUDO_FILES_SHARED_WITH_SHELL_TABS: Record<string, string> = {
-  sudo: sudoWrapper(true),
+export const SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS: Record<string, string> = {
+  sudo: sudoWrapper(A_TERMINAL_OPENS),
   [ASKPASS_NAME]: ASKPASS
 }
 
 // CODEX§12 MUSE§8 AGY§25
 export const SUDO_SHIM_FILES: Record<string, string> = {
-  sudo: sudoWrapper(false),
+  sudo: sudoWrapper(A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB),
   [ASKPASS_NAME]: ASKPASS
 }
 
