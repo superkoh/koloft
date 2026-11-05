@@ -244,7 +244,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
   }) => {
     const { page, close } = await launched(env)
     try {
-      await expect(page.locator('.isl-sessions .ws-list > :first-child')).toHaveClass(
+      await expect(page.locator('.isl-sessions .ws-list > .ws-tabs').first()).toHaveClass(
         /\bisl-butler\b/
       )
       await expect(butlerRow(page).locator('.ws-tab-title')).toHaveText('Alfred · Butler')

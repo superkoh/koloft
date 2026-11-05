@@ -555,6 +555,19 @@ import {
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { inboxVerb } from './agentInbox'
+import { Inbox } from './inbox'
+import { flushInbox, loadInbox, saveInbox } from './inboxFile'
+import {
+  askFromClaude,
+  askFromCodex,
+  inboxFooter,
+  where,
+  KoloftInbox,
+  type AskedSession,
+  type KoloftAsk
+} from './koloftInbox'
+import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
@@ -672,12 +685,14 @@ const sessionBackends = new SessionBackends({
       async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
     )
     startedSessions.bound(tabId, key)
+    koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
+    koloftInbox.asked(tabId)
     if (discordRelay) discordRelay.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
@@ -876,6 +891,7 @@ const attention = new AttentionTracker((pending, event) => {
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
   awayDigest?.marked()
+  koloftInbox.sync()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -1906,6 +1922,74 @@ const sessionDeps: SessionVerbDeps = {
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
+const inbox = new Inbox(
+  {
+    now: () => Date.now(),
+    sendToSession: (ref, text) => sessionCommand.sendFromInbox(ref, text),
+    answerSession: (ref, given) => koloftInbox.answer(ref, given),
+    startSession: async (spec, card, onReply) => {
+      const started = await sessionCommand.startFromInbox(
+        card.session ?? undefined,
+        spec,
+        ownersPermission(),
+        onReply
+      )
+      const bound = started.session && sessionOfTab(started.session)?.sessionId
+      return bound ? { ...started, session: bound } : started
+    },
+    footer: (card, action) => inboxFooter(card, action.lets),
+    changed: () => {
+      if (inboxPushQueued) return
+      inboxPushQueued = true
+      queueMicrotask(() => {
+        inboxPushQueued = false
+        const now = inbox.snapshot()
+        saveInbox(now)
+        sendToRenderer(CH.inbox.changed, now)
+      })
+    }
+  },
+  loadInbox()
+)
+let inboxPushQueued = false
+
+function liveSessionOf(ref: string): SessionInfo | undefined {
+  return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
+}
+
+function inboxSessionOfTab(tabId: string): AskedSession | undefined {
+  const s = sessionOfTab(tabId)
+  if (!s?.sessionId) return undefined
+  const ws = sessionBackends.workspaceOfTab(tabId)
+  return {
+    sessionId: s.sessionId,
+    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
+    backend: s.backendId,
+    workspace: ws ? scopeName(ws) : undefined,
+    machine: ws ? parseRemoteKey(ws)?.host : undefined
+  }
+}
+
+async function inboxAskOf(tabId: string): Promise<KoloftAsk | undefined> {
+  const claude = claudeAsks.get(tabId)
+  if (claude) return askFromClaude(claude)
+  const other = await pendingAskOf(tabId)
+  return other && askFromCodex(other)
+}
+
+const koloftInbox = new KoloftInbox({
+  inbox,
+  marks: () => attention.list(),
+  sessionOfTab: inboxSessionOfTab,
+  liveTabOf: (ref) => {
+    const s = liveSessionOf(ref)
+    return s && { tabId: s.tabId, backend: s.backendId }
+  },
+  askOf: inboxAskOf,
+  answer: sessionDeps.answer,
+  butlerSide
+})
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
@@ -1921,6 +2005,13 @@ const agentRequests = new AgentRequests({
     }),
     ...notesAndWorkbenchVerbs,
     session: sessionCommand.verb,
+    inbox: inboxVerb({
+      inbox: () => inbox,
+      whereOf: (caller) => {
+        const s = inboxSessionOfTab(caller.tabId)
+        return s ? where(s) : {}
+      }
+    }),
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
@@ -4207,6 +4298,7 @@ app.on('before-quit', (e) => {
   sessionAccounts?.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
+  flushInbox()
   freshness?.stop()
   remoteSync?.stop()
   gitAccounts?.stop()
@@ -5218,6 +5310,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
   if (archived) {
+    koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
     readerDocs.forget(id)
@@ -6255,6 +6348,7 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     sessionCommand.tabMoved(oldTabId, newTabId)
+    koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
@@ -6271,6 +6365,55 @@ function registerIpc(): void {
     return id ? installTool(id) : null
   })
   ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.inbox.list, () => {
+    koloftInbox.sync()
+    return inbox.snapshot()
+  })
+  const onCard =
+    (act: (cardId: string, ...rest: unknown[]) => void) =>
+    (_e: unknown, cardId: unknown, ...rest: unknown[]): void => {
+      if (typeof cardId !== 'string') return
+      try {
+        act(cardId, ...rest)
+      } catch (error) {
+        sendToRenderer(CH.cron.toast, errorText(error))
+      }
+    }
+  ipcMain.on(
+    CH.inbox.press,
+    onCard((id, action, answers) => {
+      if (typeof action === 'string' && answers && typeof answers === 'object')
+        inbox.press(id, action, answers as InboxAnswers)
+    })
+  )
+  ipcMain.on(
+    CH.inbox.confirm,
+    onCard((id) => inbox.confirm(id))
+  )
+  ipcMain.on(
+    CH.inbox.undo,
+    onCard((id) => inbox.undo(id))
+  )
+  ipcMain.on(
+    CH.inbox.retry,
+    onCard((id) => inbox.retry(id))
+  )
+  ipcMain.on(
+    CH.inbox.dismiss,
+    onCard((id) => inbox.dismiss(id))
+  )
+  ipcMain.on(
+    CH.inbox.top,
+    onCard((id) => inbox.moveToTop(id))
+  )
+  ipcMain.on(
+    CH.inbox.level,
+    onCard((id, level) => {
+      if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
+        inbox.setYourLevel(id, level as InboxLevel | null)
+    })
+  )
+  ipcMain.on(CH.inbox.clearNotes, () => inbox.clearNotes())
   ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
   ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
     if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)

@@ -110,6 +110,7 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
+import { InboxPage } from './components/Inbox'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -296,6 +297,7 @@ export default function App(): JSX.Element {
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
   const secretAsks = useStore((s) => s.secretAsks)
+  const inboxOpen = useStore((s) => s.inboxOpen)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -992,8 +994,15 @@ export default function App(): JSX.Element {
   }, [activeTabId])
 
   useEffect(() => {
-    window.api.attention.activeTab(activeTabId)
-  }, [activeTabId])
+    window.api.attention.activeTab(inboxOpen ? null : activeTabId)
+  }, [activeTabId, inboxOpen])
+
+  useEffect(() => {
+    const set = useStore.getState().setInbox
+    const off = window.api.inbox.onChanged(set)
+    void window.api.inbox.list().then(set)
+    return off
+  }, [])
 
   useEffect(() => {
     return window.api.attention.onActivateTab(visitAndReveal)
@@ -1697,6 +1706,7 @@ export default function App(): JSX.Element {
       {/* PLATFORM§10 */}
       {(sbDragging || nbDragging || vDragging) && <div className="drag-overlay" />}
       <div className="center" ref={centerRef}>
+        {inboxOpen && <InboxPage />}
         <div className="center-row">
           {sidebarHidden && panelFull && <div className="wb-full-drag" />}
           <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
