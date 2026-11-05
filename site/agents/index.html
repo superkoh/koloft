@@ -149,7 +149,7 @@
           you are away from the Mac, or talking to that session from Discord, a card comes to
           Discord too (see <a href="../discord/#secrets">passwords and codes on Discord</a>), and
           the first answer wins: the other one closes. With no Discord set up, the box and the bar
-          still work. This is the same for every agent, on this Mac and in a
+          still work. Koloft does this the same way for every agent, on this Mac and in a
           <a href="../remote/">remote folder</a>. While you
           <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all three are
           refused at once:
@@ -377,22 +377,24 @@
         </p>
         <h3>Antigravity</h3>
         <p>
-          A Playwright MCP entry in your Antigravity MCP settings
-          (<code>~/.gemini/config/mcp_config.json</code>) gets the session's address, so its tools
-          open tabs in Koloft. In a session on this Mac they also run without asking first; your
-          other MCP servers still ask. If your own Antigravity permissions name that server, Koloft
-          adds nothing and your rules decide.
+          In an Antigravity session on this Mac, a Playwright MCP entry in your Antigravity MCP
+          settings (<code>~/.gemini/config/mcp_config.json</code>) gets the session's address, so
+          its tools open tabs in Koloft, and they run without asking first; your other MCP servers
+          still ask. If your own Antigravity permissions name that server, Koloft adds nothing and
+          your rules decide. In a remote folder, Koloft adds none of this.
         </p>
         <h3>Muse</h3>
         <p>
-          A Playwright MCP entry in your Muse settings (<code>~/.config/muse/settings.json</code>)
-          gets the session's address too, so its tools open tabs in Koloft. In a session on this Mac
-          its tools that change a page run without asking first; your other MCP servers still ask,
-          and an "Always allow" or a refusal you saved for one of its tools stays. To do this,
-          Koloft starts Muse on a copy of your settings file, one per account. A setting you change
-          inside such a session (with <code>/theme</code> or <code>/permissions</code>, say) is
-          copied back into your file the next time Muse starts on that account, and a change you
-          make to your file by hand reaches those sessions the next time they start.
+          In a Muse session on this Mac, a Playwright MCP entry in your Muse settings
+          (<code>~/.config/muse/settings.json</code>) gets the session's address too, so its tools
+          open tabs in Koloft, and its tools that change a page run without asking first; your other
+          MCP servers still ask, and an "Always allow" or a refusal you saved for one of its tools
+          stays. To do this, Koloft starts Muse on this Mac on a copy of your settings file, one per
+          account. A setting you change inside such a session (with <code>/theme</code> or
+          <code>/permissions</code>, say) is copied back into your file the next time Muse starts on
+          that account, and a change you make to your file by hand reaches those sessions the next
+          time they start. In a remote folder, Koloft adds none of this, and Muse uses your settings
+          file there as it is.
         </p>
 
         <h3>What to expect</h3>
