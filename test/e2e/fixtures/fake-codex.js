@@ -820,6 +820,9 @@ async function startTui() {
     console.error('Codex fixture startup failure')
     process.exit(Number(read('fake-codex-exit')) || 1)
   }
+  // PLATFORM§35
+  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
+    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
   const resume = argv.indexOf('resume')
   if (resume >= 0 && flag('fake-codex-confirm-resume')) {
     process.stdin.setRawMode?.(true)
@@ -1040,11 +1043,15 @@ async function startTui() {
             else void exit()
             return 'stop'
           }
-          if (ch === '\r' || ch === '\n') {
+          // CODEX§2
+          if (ch === '\r') {
             const line = typed
             typed = ''
             process.stdout.write('\r\n')
             void input(line).catch((error) => process.stdout.write(error.message + '\r\n'))
+          } else if (ch === '\n') {
+            typed += ch
+            process.stdout.write('\r\n')
           } else if (ch === '\u007f') typed = typed.slice(0, -1)
           // CODEX§21
           else if (ch === '\u0015') typed = ''

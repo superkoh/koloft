@@ -9,6 +9,7 @@ import {
   installCodex,
   installMuse,
   museCalls,
+  museSaid,
   seedSettings,
   trustInMuse,
   type E2EEnv,
@@ -31,7 +32,9 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   staysOnTheFolderPageNotTheButler,
+  TWO_LINE_PROMPT,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -127,6 +130,25 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await page.keyboard.press('Enter')
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(line).toHaveText('Last: Wrote muse-notes.txt')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§7
+  test('⇧⏎ in a Muse tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const call = await startMuse(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      await expect.poll(() => museSaid(env, call.sessionId)).toContain(`echo: ${TWO_LINE_PROMPT}`)
     } finally {
       await quitAndClose(app)
     }

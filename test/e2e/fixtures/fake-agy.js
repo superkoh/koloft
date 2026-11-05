@@ -2078,7 +2078,8 @@ function onKey(key) {
     return submit(line)
   }
   if (key === BACKSPACE) typed = typed.slice(0, -1)
-  else if (key.length === 1 && key >= ' ') typed += key
+  // AGY§15
+  else if (key === '\n' || (key.length === 1 && key >= ' ')) typed += key
 }
 function feed(chunk) {
   let text = chunk
@@ -2115,7 +2116,7 @@ function feed(chunk) {
       }
     }
     const ch = text[i++]
-    onKey(ch === '\n' ? ENTER : ch === '\b' ? BACKSPACE : ch === '\x03' ? ESC : ch)
+    onKey(ch === '\b' ? BACKSPACE : ch === '\x03' ? ESC : ch)
   }
 }
 

@@ -1,7 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { E2E_AGY_ACCOUNT, installAgy, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  E2E_AGY_ACCOUNT,
+  agyTranscriptOf,
+  installAgy,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
   chooseBackend,
@@ -13,8 +19,10 @@ import {
   openWorktreeSession,
   runIn,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   terminalText,
+  TWO_LINE_PROMPT,
   waitBooted,
   worktreeDialog,
   wsMenuTexts,
@@ -99,6 +107,27 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row.locator('.ws-tab-act')).toHaveText('Last: Wrote remote-notes.txt', {
         timeout: 60_000
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§15 PLATFORM§35
+  test('⇧⏎ in a remote Antigravity tab reaches agy through ssh and tmux as a new line in the prompt, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      const { id } = await boundRemoteSession(page, 'agy')
+      await expect
+        .poll(() => agyTranscriptOf(env, id, machineHome(env)), { timeout: 60_000 })
+        .toContain(JSON.stringify(`Answer to: ${TWO_LINE_PROMPT}`).slice(1, -1))
     } finally {
       await quitAndClose(app)
     }
