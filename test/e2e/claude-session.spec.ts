@@ -129,7 +129,7 @@ for (const browserControl of [true, false]) {
         fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8')
       ) as { permissions?: { allow: string[] } }
       expect((settings.permissions?.allow ?? []).filter((r) => r.startsWith('mcp__'))).toEqual(
-        browserControl ? ['mcp__playwright', 'mcp__browser', 'mcp__team'] : []
+        browserControl ? ['mcp__playwright', 'mcp__team', 'mcp__browser'] : []
       )
     } finally {
       await quitAndClose(app)
