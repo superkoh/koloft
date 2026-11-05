@@ -667,8 +667,10 @@ function Block({
                   disabled={busy}
                   onClick={() => onPick(b.id, q.id, o.id, q.multi)}
                 >
-                  {o.label}
-                  {o.detail && <i>{o.detail}</i>}
+                  <span className="ibx-choice-text">
+                    {o.label}
+                    {o.detail && <i>{o.detail}</i>}
+                  </span>
                   {q.recommended === o.id && <span className="rec">recommended</span>}
                 </button>
               ))}

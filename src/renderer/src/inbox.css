@@ -588,10 +588,19 @@
   cursor: default;
 }
 
+.ibx-choice-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
 .ibx-choice i {
   font-size: 12.5px;
   font-weight: 400;
   font-style: normal;
+  line-height: 1.5;
   color: var(--fg-faint);
 }
 
