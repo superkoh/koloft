@@ -6374,29 +6374,50 @@ function registerIpc(): void {
     koloftInbox.sync()
     return inbox.snapshot()
   })
-  const onCard = (channel: string, act: (cardId: string, ...rest: unknown[]) => void): void => {
-    ipcMain.on(channel, (_e, cardId: unknown, ...rest: unknown[]) => {
+  const onCard =
+    (act: (cardId: string, ...rest: unknown[]) => void) =>
+    (_e: unknown, cardId: unknown, ...rest: unknown[]): void => {
       if (typeof cardId !== 'string') return
       try {
         act(cardId, ...rest)
       } catch (error) {
         sendToRenderer(CH.cron.toast, errorText(error))
       }
+    }
+  ipcMain.on(
+    CH.inbox.press,
+    onCard((id, action, answers) => {
+      if (typeof action === 'string' && answers && typeof answers === 'object')
+        inbox.press(id, action, answers as InboxAnswers)
     })
-  }
-  onCard(CH.inbox.press, (id, action, answers) => {
-    if (typeof action === 'string' && answers && typeof answers === 'object')
-      inbox.press(id, action, answers as InboxAnswers)
-  })
-  onCard(CH.inbox.confirm, (id) => inbox.confirm(id))
-  onCard(CH.inbox.undo, (id) => inbox.undo(id))
-  onCard(CH.inbox.retry, (id) => inbox.retry(id))
-  onCard(CH.inbox.dismiss, (id) => inbox.dismiss(id))
-  onCard(CH.inbox.top, (id) => inbox.moveToTop(id))
-  onCard(CH.inbox.level, (id, level) => {
-    if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
-      inbox.setYourLevel(id, level as InboxLevel | null)
-  })
+  )
+  ipcMain.on(
+    CH.inbox.confirm,
+    onCard((id) => inbox.confirm(id))
+  )
+  ipcMain.on(
+    CH.inbox.undo,
+    onCard((id) => inbox.undo(id))
+  )
+  ipcMain.on(
+    CH.inbox.retry,
+    onCard((id) => inbox.retry(id))
+  )
+  ipcMain.on(
+    CH.inbox.dismiss,
+    onCard((id) => inbox.dismiss(id))
+  )
+  ipcMain.on(
+    CH.inbox.top,
+    onCard((id) => inbox.moveToTop(id))
+  )
+  ipcMain.on(
+    CH.inbox.level,
+    onCard((id, level) => {
+      if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
+        inbox.setYourLevel(id, level as InboxLevel | null)
+    })
+  )
   ipcMain.on(CH.inbox.clearNotes, () => inbox.clearNotes())
   ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
   ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {

@@ -1,6 +1,7 @@
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
+import type { InboxSnapshot } from '@shared/inbox'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
@@ -117,6 +118,8 @@ interface AppState {
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
   secretAsks: SecretAskView[]
+  inbox: InboxSnapshot
+  inboxOpen: boolean
   revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
@@ -206,6 +209,8 @@ interface AppState {
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
   setSecretAsks: (asks: SecretAskView[]) => void
+  setInbox: (inbox: InboxSnapshot) => void
+  setInboxOpen: (open: boolean) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
@@ -646,6 +651,8 @@ export const useStore = create<AppState>((set, get) => ({
   leftovers: {},
   attention: [],
   secretAsks: [],
+  inbox: { cards: [], ready: [] },
+  inboxOpen: false,
   revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
@@ -850,7 +857,7 @@ export const useStore = create<AppState>((set, get) => ({
   activateTab: (id) => {
     activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
     if (activateOnceSpawned) return
-    set({ activeTabId: id, resumeLaunch: null })
+    set({ activeTabId: id, resumeLaunch: null, inboxOpen: false })
   },
   revealTab: (id) => set({ revealRow: { tabId: id } }),
 
@@ -1041,6 +1048,8 @@ export const useStore = create<AppState>((set, get) => ({
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
   setSecretAsks: (secretAsks) => set({ secretAsks }),
+  setInbox: (inbox) => set({ inbox }),
+  setInboxOpen: (inboxOpen) => set({ inboxOpen }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),

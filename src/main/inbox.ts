@@ -341,7 +341,8 @@ export class Inbox {
   }
 
   clearNotes(): void {
-    for (const c of this.cards.values()) c.note = null
+    for (const c of this.cards.values())
+      if (c.note?.kind === 'changed' || (c.note?.kind === 'result' && !c.note.retry)) c.note = null
     this.host.changed()
   }
 

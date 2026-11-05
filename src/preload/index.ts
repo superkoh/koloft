@@ -46,6 +46,7 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
+import type { InboxSnapshot } from '@shared/inbox'
 
 const terminalDataSinks = new Map<string, (data: string) => void>()
 ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.get(d.id)?.(d.data))
@@ -218,6 +219,23 @@ const api: KoloftApi = {
     pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
     channels: () => ipcRenderer.invoke(CH.discord.channels),
     setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
+  },
+  inbox: {
+    list: () => ipcRenderer.invoke(CH.inbox.list),
+    onChanged: (cb) => {
+      const handler = (_e: unknown, snapshot: InboxSnapshot): void => cb(snapshot)
+      ipcRenderer.on(CH.inbox.changed, handler)
+      return () => ipcRenderer.removeListener(CH.inbox.changed, handler)
+    },
+    press: (cardId, actionId, answers) =>
+      ipcRenderer.send(CH.inbox.press, cardId, actionId, answers),
+    confirm: (cardId) => ipcRenderer.send(CH.inbox.confirm, cardId),
+    undo: (cardId) => ipcRenderer.send(CH.inbox.undo, cardId),
+    retry: (cardId) => ipcRenderer.send(CH.inbox.retry, cardId),
+    dismiss: (cardId) => ipcRenderer.send(CH.inbox.dismiss, cardId),
+    level: (cardId, level) => ipcRenderer.send(CH.inbox.level, cardId, level),
+    top: (cardId) => ipcRenderer.send(CH.inbox.top, cardId),
+    clearNotes: () => ipcRenderer.send(CH.inbox.clearNotes)
   },
   secret: {
     list: () => ipcRenderer.invoke(CH.secret.list),

@@ -13,7 +13,10 @@ export function loadInbox(): InboxSnapshot | null {
     const raw = JSON.parse(fs.readFileSync(inboxFile(), 'utf8')) as Partial<InboxSnapshot>
     if (!Array.isArray(raw.cards)) return null
     return {
-      cards: raw.cards.filter((c) => typeof c?.id === 'string' && typeof c.source === 'string' && typeof c.key === 'string'),
+      cards: raw.cards.filter(
+        (c) =>
+          typeof c?.id === 'string' && typeof c.source === 'string' && typeof c.key === 'string'
+      ),
       ready: []
     }
   } catch {
