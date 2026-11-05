@@ -40,8 +40,13 @@ interface Shot {
 }
 
 let partitionReady = false
+const machineOfPage = new Map<number, string>()
 
-function shotSession(): Electron.Session {
+export function machineOfShotPage(page: number | undefined): string | undefined {
+  return page === undefined ? undefined : machineOfPage.get(page)
+}
+
+export function shotSession(): Electron.Session {
   const ses = session.fromPartition(SHOT_PARTITION)
   if (partitionReady) return ses
   partitionReady = true
@@ -118,7 +123,7 @@ export async function shootHtml(
   const file = path.join(dir, 'page.html')
   try {
     await fs.promises.writeFile(file, html)
-    return await shootPage(pathToFileURL(file).href, look, shownAs)
+    return await shootPage(pathToFileURL(file).href, undefined, look, shownAs)
   } finally {
     await fs.promises.rm(dir, { recursive: true, force: true })
   }
@@ -127,6 +132,7 @@ export async function shootHtml(
 // PLATFORM§16
 export async function shootPage(
   url: string,
+  machine?: string,
   look = PAGE_LOOK,
   shownAs = url
 ): Promise<PagePictures> {
@@ -134,6 +140,7 @@ export async function shootPage(
     webPreferences: { session: shotSession(), sandbox: true, contextIsolation: true }
   })
   const wc = view.webContents
+  if (machine) machineOfPage.set(wc.id, machine)
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   view.setBounds({ x: 0, y: 0, width: look.width, height: look.height })
   try {
@@ -171,6 +178,7 @@ export async function shootPage(
       page: size
     }
   } finally {
+    machineOfPage.delete(wc.id)
     wc.close()
   }
 }
