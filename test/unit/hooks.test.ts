@@ -1037,6 +1037,29 @@ describe('injected hook script', () => {
     )
   })
 
+  // ADR-0048 CC§24
+  it('lets every tool of each Playwright MCP server it is given run without asking, next to the koloft rule, writing a dot in the server name as Claude Code does in tool names', () => {
+    const permissionsOf = (allowKoloft: boolean, servers: string[]): unknown =>
+      JSON.parse(
+        fs.readFileSync(
+          writeTabHookSettings(
+            setupHooks(noPeerInstance),
+            'tabMCP',
+            undefined,
+            allowKoloft,
+            false,
+            false,
+            servers
+          ),
+          'utf8'
+        )
+      ).permissions
+    expect(permissionsOf(true, ['playwright', 'my.browser'])).toEqual({
+      allow: ['Bash(koloft *)', 'mcp__playwright', 'mcp__my_browser']
+    })
+    expect(permissionsOf(false, ['play-wright'])).toEqual({ allow: ['mcp__play-wright'] })
+  })
+
   // CC§6
   it("turns Claude Code's agent teams off in every tab, on this Mac and on a remote machine, so a named subagent never becomes a teammate", () => {
     const off = { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' }

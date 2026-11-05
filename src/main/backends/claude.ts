@@ -99,7 +99,12 @@ export interface ClaudeBackendDeps {
   remoteSync(): RemoteSync | null
   userData(): string
   setupLine(): string | undefined
-  hookSettings(tabId: string, allowKoloft: boolean, conductor: boolean): string | undefined
+  hookSettings(
+    tabId: string,
+    allowKoloft: boolean,
+    conductor: boolean,
+    localCwd?: string
+  ): string | undefined
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
@@ -1070,7 +1075,8 @@ export class ClaudeBackend implements SessionBackend {
           this.d.hookSettings(
             tabId,
             plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            plan.conductor === true
+            plan.conductor === true,
+            machine ? undefined : plan.spawnCwd
           )
       },
       cwd: plan.spawnCwd,

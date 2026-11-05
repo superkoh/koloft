@@ -6,7 +6,8 @@ and "Always allow" is saved one tool at a time per Codex account (CODEX§26). An
 asks before every MCP tool call, read-only ones too, and its "always allow" is saved one
 tool at a time too (AGY§26). Muse asks before every call of a tool not marked read-only,
 saves "always allow" one tool at a time, and has no rule that covers a whole server
-(MUSE§21). A tab that drives its own Workbench browser stops again and
+(MUSE§21). Claude Code asks before every MCP tool call, read-only ones too, and its
+"don't ask again" is saved one tool at a time per folder (CC§24). A tab that drives its own Workbench browser stops again and
 again for questions the owner always answers yes to.
 **Decision**: the owner chose that a Codex tab with the Workbench browser gives each
 Playwright MCP entry in the owner's Codex config
@@ -30,7 +31,11 @@ into the owner's file, without Koloft's lines, at the next launch, against the c
 Koloft last wrote; settings the owner changed meanwhile are kept. The butler and
 scheduled runs get it too, so
 there such a call, `browser_run_code_unsafe` included, runs with nobody watching instead
-of waiting on a question. An entry where the owner set a server-wide mode of
+of waiting on a question. A local Claude tab with the Workbench browser gets the allow
+rule `mcp__<server>` in Koloft's own `--settings` file, for each Playwright entry its
+folder reaches (`~/.claude.json`, that folder's project there, `.mcp.json` above it);
+nothing is written into the owner's files, and an owner's own `deny` or `ask` rule for
+the server or a tool still wins (CC§24), so Koloft does not look for one. An entry where the owner set a server-wide mode of
 their own keeps it, and a tool's own `approval_mode` still wins over the server's
 (CODEX§26); an Antigravity entry the owner's own `permissions` name in any rule gets no
 rule from Koloft. A remote tab's MCP entries are not touched; the machine's own config

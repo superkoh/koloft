@@ -3275,3 +3275,42 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
 conversation (`src/main/discord/butler.ts`).
+
+## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
+
+2026-11-05, CC 2.1.318 on this Mac, the real binary run through Koloft's shim for the
+sign-in (`KOLOFT_UTIL=1`, `KOLOFT_HOOK_SETTINGS` and every `CLAUDE_CODE_*` removed), a
+scratch `CLAUDE_CONFIG_DIR`, model haiku, `--strict-mcp-config --mcp-config <file>` with
+two fake stdio servers, `playwright` and `other`, each offering `browser_navigate`
+(`destructiveHint`) and `browser_snapshot` (`readOnlyHint`). Most runs were `claude -p
+--output-format stream-json`, asked to call the three tools once each; a denied call
+reads "Claude requested permissions to use …, but you haven't granted it yet" and is
+listed in the result's `permission_denials`. One interactive claude in a pty (python
+`pty.fork` + `pyte`) was read off its screen.
+
+- **In `--permission-mode default` and `acceptEdits` every MCP tool asks, the read-only
+  one too.** On screen: `Do you want to proceed?` with `1. Yes`, `2. Yes, and don't ask
+  again for playwright — Browser Navigate commands in <cwd>`, `3. No`. Answered `1`, the
+  same call in the same session asked again. Answered `2`, it wrote
+  `{"permissions":{"allow":["mcp__playwright__browser_navigate"]}}` to
+  `<cwd>/.claude/settings.local.json` — one tool, one folder — and the next call and a
+  call after `/clear` ran without asking. A new session with that file moved away asked
+  again.
+- **`--dangerously-skip-permissions` asks for nothing**: all three tools ran.
+- **`permissions.allow: ["mcp__playwright"]` in a `--settings` file lets every tool of
+  that server run without asking**, in `default` and in `acceptEdits`, the first call and
+  the next, while the `other` server's tool still asks. `mcp__playwright__*` did the same.
+- **The owner's own rules still win over that allow.** With `mcp__playwright` allowed in
+  `--settings`: a `deny: ["mcp__playwright"]` in the user `settings.json` took the
+  server's tools away (`No such tool available`); `ask: ["mcp__playwright"]` there made
+  both tools ask; `ask: ["mcp__playwright__browser_navigate"]` made that one tool ask
+  and left `browser_snapshot` allowed. Project and local settings tiers were not tried.
+- **`permissions.allow` from `--settings` is added to the user's own, not swapped in**:
+  user `allow: ["mcp__other"]` plus `--settings` `allow: ["mcp__playwright"]` ran all
+  three tools.
+- **The server name in a tool's name**: a `.` becomes `_` (`play.wright` →
+  `mcp__play_wright__…`, which `mcp__play_wright` allows), while `-` and upper case stay
+  (`mcp__play-wright__…`, `mcp__Play_W__…`). Other characters were not tried.
+
+Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
+`writeTabHookSettings` in `src/main/hooks.ts`.

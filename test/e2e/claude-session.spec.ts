@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
+import { codexMissingWhoseCheckAnswersOnlyWhenLetGo, seedSettings } from './helpers/env'
 import {
   boundSessionId,
   centerTerm,
@@ -11,6 +11,7 @@ import {
   layoutOnDisk,
   openMenu,
   openPicker,
+  readCalls,
   runIn,
   startSessionIn,
   terminalText,
@@ -99,6 +100,42 @@ test('starting a session in a workspace surfaces it, its file, and a preview thr
   await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
   await expect(page.locator(WORKBENCH.readingBody)).toContainText('Written by the fake claude')
 })
+
+for (const browserControl of [true, false]) {
+  // ADR-0048 CC§24
+  test(`a local Claude Code tab ${browserControl ? 'lets every tool of each Playwright MCP server its folder reaches run without asking' : 'leaves the owner’s Playwright MCP servers to ask as before once browser control is off'}, and never another server`, async ({
+    env
+  }) => {
+    const playwright = { command: 'npx', args: ['@playwright/mcp@latest'] }
+    fs.writeFileSync(
+      path.join(env.home, '.claude.json'),
+      JSON.stringify({
+        mcpServers: { playwright, linear: { command: 'linear-mcp' } },
+        projects: { [fs.realpathSync(env.workspaces.a)]: { mcpServers: { browser: playwright } } }
+      })
+    )
+    fs.writeFileSync(
+      path.join(env.workspaces.a, '.mcp.json'),
+      JSON.stringify({ mcpServers: { team: playwright } })
+    )
+    seedSettings(env, { browserControl })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const call = readCalls(env).at(-1)!
+      const settings = JSON.parse(
+        fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8')
+      ) as { permissions?: { allow: string[] } }
+      expect((settings.permissions?.allow ?? []).filter((r) => r.startsWith('mcp__'))).toEqual(
+        browserControl ? ['mcp__playwright', 'mcp__browser', 'mcp__team'] : []
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
 
 test('C2: a live Claude Code row says under its branch what it did, while it works and as Last: once the turn is over, and in amber what it asks or wants to run while it waits on you', async ({
   page

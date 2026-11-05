@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  claudePlaywrightServers,
   claudeServers,
   codexServers,
   foldersUpToRepoTop,
@@ -50,6 +51,31 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     expect(
       claudeServers(claudeJson, [], [{ folder: '/work/mono/app', projectKey: '/work/mono' }])
     ).toEqual([{ name: 'jira', backend: 'claude', onlyIn: '/work/mono/app' }])
+  })
+
+  // ADR-0048 CC§22 CC§24
+  it('Claude: the Playwright MCP servers a folder reaches are those in ~/.claude.json’s own list, under its project key there and in the .mcp.json files given, each once, never one turned off, one that runs something else, or one under another project', () => {
+    const playwright = { command: 'npx', args: ['@playwright/mcp@latest'] }
+    const claudeJson = JSON.stringify({
+      mcpServers: { playwright, linear: { command: 'linear-mcp' } },
+      projects: {
+        '/work/shop': {
+          mcpServers: {
+            browser: { command: '/opt/bin/playwright-mcp' },
+            off: { ...playwright, disabled: true }
+          }
+        },
+        '/work/blog': { mcpServers: { elsewhere: playwright } }
+      }
+    })
+    expect(
+      claudePlaywrightServers(
+        claudeJson,
+        [JSON.stringify({ mcpServers: { team: playwright, playwright } }), null, 'not json'],
+        '/work/shop'
+      )
+    ).toEqual(['playwright', 'browser', 'team'])
+    expect(claudePlaywrightServers(null, [], '/work/shop')).toEqual([])
   })
 
   // MUSE§18 AGY§30

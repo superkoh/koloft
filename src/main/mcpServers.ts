@@ -1,6 +1,9 @@
+import fs from 'fs'
 import path from 'path'
 import type { BackendId } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { runsPlaywrightMcp } from './browserControlEnv'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 
 export interface McpServer {
   name: string
@@ -77,6 +80,45 @@ export function claudeServers(
     ...jsonServers('claude', projectFiles)
   ]
 }
+
+// ADR-0048 CC§22 CC§24
+export function claudePlaywrightServers(
+  claudeJson: string | null,
+  projectFiles: (string | null)[],
+  projectKey: string
+): string[] {
+  const doc = parsed(claudeJson)
+  const lists = [
+    doc.mcpServers,
+    asRecord(asRecord(doc.projects)[projectKey]).mcpServers,
+    ...projectFiles.map((text) => parsed(text).mcpServers)
+  ]
+  const names = lists.flatMap((list) =>
+    Object.entries(asRecord(list))
+      .filter(([, raw]) => {
+        const entry = asRecord(raw)
+        return entry.disabled !== true && runsPlaywrightMcp(entry.command, entry.args)
+      })
+      .map(([name]) => name)
+  )
+  return [...new Set(names)]
+}
+
+const textOrNull = (file: string): string | null => {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// ADR-0048 CC§22 CC§24
+export const ownersClaudePlaywrightMcp = (cwd: string): string[] =>
+  claudePlaywrightServers(
+    textOrNull(claudeJsonPath()),
+    foldersUpToRoot(cwd).map((folder) => textOrNull(path.join(folder, PROJECT_MCP_FILE))),
+    claudeProjectKey(cwd)
+  )
 
 const CODEX_TABLE = /^[ \t]*\[[ \t]*(?:"[^"\n]*"|[^\]\s"])+[ \t]*\]/gm
 const CODEX_SERVER_TABLE = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/
