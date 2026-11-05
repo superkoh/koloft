@@ -313,6 +313,11 @@
   background: var(--red);
   cursor: inherit;
 }
+.ws-tab > .field-hint {
+  position: relative;
+  z-index: 1;
+  margin: 2px 0 0;
+}
 .ws-tab-sub {
   display: flex;
   align-items: center;

@@ -10,6 +10,7 @@ import {
   quitAndClose
 } from './helpers/app'
 import {
+  E2E_CLAUDE_ACCOUNT,
   installAgy,
   installCodex,
   installMuse,
@@ -931,6 +932,45 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
       expect(butlerSettingsOf(resumed).crossSessionInbound).toBe('accept')
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  test('when no agent can run, the butler row says why under it in the line its click toast says, hovering gives every agent’s reason, its link opens Settings ▸ Accounts without starting it, and the line goes once an account can be used', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env, {
+      assist: { on: true, backend: 'claude' },
+      sessionMethods: {
+        defaultBackend: 'claude',
+        enabled: { claude: true, codex: true, muse: true, agy: true }
+      }
+    })
+    const toggleClaudeAccount = (on: boolean): Promise<unknown> =>
+      page.evaluate(([name, on]) => window.api.accounts.toggle(name, 'apikey', on), [
+        E2E_CLAUDE_ACCOUNT,
+        on
+      ] as const)
+    try {
+      const why = butlerRow(page).locator('.field-hint.bad')
+      await toggleClaudeAccount(false)
+      await expect(why).toContainText('Claude')
+      const line = (await why.textContent()) ?? ''
+      const inFull = (await why.getAttribute('title')) ?? ''
+      expect(inFull).toContain(line)
+      for (const other of ['Codex', 'Muse', 'Antigravity']) expect(inFull).toContain(other)
+
+      await butlerRow(page).locator('.ws-tab-main').click()
+      await expect(page.locator('.toast-msg')).toContainText(line)
+
+      await why.getByRole('button', { name: 'Settings ▸ Accounts' }).click()
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await expect(settings.getByRole('tab', { selected: true })).toHaveText('Accounts')
+      expect(readAllCalls(env)).toEqual([])
+
+      await toggleClaudeAccount(true)
+      await expect(why).toHaveCount(0)
     } finally {
       await close()
     }

@@ -87,7 +87,6 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  backendsFrom,
   messagingOf,
   reachedBySendMessage,
   preferredAssistBackend,
@@ -95,6 +94,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
+import { butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -459,7 +459,7 @@ import type {
   ResumePlan,
   ProjectInfo,
   SessionInfo,
-  SessionMethods,
+  BackendAvailability,
   AttentionEvent,
   OsOutletsSeenByTests,
   AttentionSubject,
@@ -1709,64 +1709,29 @@ const assist = koloftAssist({
 })
 const assistRuns = new Map<number, AbortController>()
 
-async function whyAssistCannotRunOn(
-  backend: BackendId,
-  enabled: SessionMethods['enabled']
-): Promise<string | undefined> {
-  if (!enabled[backend]) return turnedOffLine(backend)
-  return whyAssistCannotRun[backend]()
-}
-
 function turnedOffNow(backend: BackendId): string | null {
   return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
 }
 
-const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
-  claude: async () => {
-    const { res } = await pickForLaunch()
-    if (res.account !== null) return undefined
-    return res.reason === 'no-accounts'
-      ? 'there is no Claude account'
-      : 'every Claude account is at its limit'
-  },
-  codex: async () => {
-    if (!codexSessions || !(await codexSessions.availability()).available)
-      return 'Codex is not available on this Mac'
-    return codexPicker.peek(accountViews()) ? undefined : 'every Codex account is at its limit'
-  },
-  muse: async () => {
-    if (!museSessions || !(await museSessions.availability()).available)
-      return 'Muse is not available on this Mac'
-    return musePicker.peek(accountViews()) ? undefined : 'there is no usable Muse account'
-  },
-  agy: async () => {
-    if (!agySessions || !(await agySessions.availability()).available)
-      return 'Antigravity is not available on this Mac'
-    return agyPicker.peek(accountViews()) ? undefined : 'there is no usable Antigravity account'
-  }
+function installedBackends(): Promise<BackendAvailability[]> {
+  return sessionBackends.availability((id) => ({
+    id,
+    available: false,
+    reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
+  }))
 }
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const [preferred, ...others] = backendsFrom(preferredAssistBackend(settings))
-  const { enabled } = settings.sessionMethods
-  const whyNot = (backend: BackendId): Promise<string | undefined> =>
-    whyAssistCannotRunOn(backend, enabled)
-  const why = await whyNot(preferred)
-  if (!why) return { backend: preferred }
-  const whys = [why]
-  for (const other of others) {
-    const otherWhy = await whyNot(other)
-    if (!otherWhy)
-      return {
-        backend: other,
-        because: `${butlerNameNow()} runs on ${BACKEND_LABEL[other]} this time: ${why}.`
-      }
-    whys.push(otherWhy)
-  }
-  return {
-    error: `${butlerNameNow()} cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
-  }
+  return butlerStart(
+    preferredAssistBackend(settings),
+    {
+      enabled: settings.sessionMethods.enabled,
+      installed: await installedBackends(),
+      accounts: listAccounts()
+    },
+    butlerNameNow()
+  )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
   'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
@@ -6299,11 +6264,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.sessions.list, () => allSessions())
   ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
     if (recheck === true) sessionBackends.forgetAvailability()
-    return sessionBackends.availability((id) => ({
-      id,
-      available: false,
-      reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
-    }))
+    return installedBackends()
   })
   ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
     const id = backendIdOf(backend)
