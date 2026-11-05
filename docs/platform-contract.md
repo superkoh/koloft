@@ -2984,3 +2984,27 @@ Antigravity sign-in into the user's login shell with an account's environment, a
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
 `diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+
+## §65 The `electron` npm package loaded by plain Node
+
+- **Loading it downloads the Electron binary when the binary is not there.** Under plain
+  Node, `require('electron')` runs `node_modules/electron/index.js`, which exports the
+  binary's path. When `path.txt` or the binary under `dist/` is missing, it first runs
+  `install.js` (a download from GitHub's releases) with `spawnSync`, and throws `Electron
+  failed to install correctly` if that fails. `npm ci` does not fetch the binary, so a
+  fresh CI runner downloads it again in every vitest worker that loads the package; a
+  GitHub 504 there failed whole unit test files (issue #1496).
+- **`ELECTRON_OVERRIDE_DIST_PATH` skips it.** With the variable set, `index.js` returns
+  that folder joined with `path.txt`'s text (or `electron`) without looking for the
+  binary or downloading it.
+- **A `resolve.alias` cannot do the same.** Vitest leaves `node_modules` packages to
+  plain Node, so a package such as `electron-chrome-extensions` reaches the real
+  `electron` through its own `require`, past any alias.
+- Measured 2026-11-05, electron 43.8.6, vitest 5.0.5, macOS: with `path.txt` moved
+  aside and `ELECTRON_MIRROR` pointing at a closed port, the whole unit suite failed 21
+  files on `Downloading Electron binary...`; with the variable set in `test.env`, all of
+  it passed and nothing downloaded. The third point is read from `index.js` and vitest's
+  defaults, not checked.
+
+Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
+`electronPackage.test.ts` fails if that setting goes.
