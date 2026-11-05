@@ -248,21 +248,29 @@ describe('claude shim (registration — unchanged behavior)', () => {
   })
 
   // CC§13
-  it("hands claude Koloft's skill plugin and Koloft's prompt on the tab's own launches, but not on -p or a claude started by the tab's claude", () => {
+  it("hands claude Koloft's two skill plugins and Koloft's prompt on the tab's own launches, only the koloft-docs plugin with agent tools off, and none on -p or a claude started by the tab's claude", () => {
     const plugin = {
+      KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin',
       KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
       KOLOFT_AGENT_PROMPT: '/koloft/agent-plugin/koloft-prompt.md'
     }
+    const pluginDirs = (realArgs: string[]): string[] =>
+      realArgs.flatMap((a, i) => (realArgs[i - 1] === '--plugin-dir' ? [a] : []))
     for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678'], ['--resume']]) {
       const { realArgs } = runShim(args, plugin)
-      const at = realArgs!.indexOf('--plugin-dir')
-      expect(realArgs![at + 1], args.join(' ')).toBe('/koloft/agent-plugin')
+      expect(pluginDirs(realArgs!), args.join(' ')).toEqual([
+        '/koloft/docs-plugin',
+        '/koloft/agent-plugin'
+      ])
       const prompt = realArgs!.indexOf('--append-system-prompt-file')
       expect(realArgs![prompt + 1], args.join(' ')).toBe('/koloft/agent-plugin/koloft-prompt.md')
     }
     expect(runShim([], { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }).realArgs).not.toContain(
       '--append-system-prompt-file'
     )
+    const agentToolsOff = runShim([], { KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin' }).realArgs!
+    expect(pluginDirs(agentToolsOff)).toEqual(['/koloft/docs-plugin'])
+    expect(agentToolsOff).not.toContain('--append-system-prompt-file')
     expect(runShim(['-p', 'hello'], plugin).realArgs).toEqual(['-p', 'hello'])
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })

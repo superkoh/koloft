@@ -89,7 +89,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
-import { keepKoloftSkillIn } from './agentPlugin'
+import { keepSkillsIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -610,7 +610,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // AGY§4
     prepareAgyHome(pick.home, gemini)
     // AGY§31
-    keepKoloftSkillIn(path.join(pick.home, AGY_SKILLS), !!agent)
+    keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
@@ -786,7 +786,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         onboarding: readText(agyOnboardingFile(pick.home)),
         token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
         start: instructions ? sessionStartOutput(instructions) : undefined,
-        skillFromMachine: agentTools ? m : undefined
+        koloftSkill: agentTools
       }),
       portOffset: resource ? portOffset(resource.worktreeName) : undefined
     })

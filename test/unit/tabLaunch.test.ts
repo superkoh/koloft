@@ -121,6 +121,7 @@ async function claudeTab(
       localHost(new GithubLookup(), {
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
+        docsPlugin: () => '/koloft/docs-plugin',
         assistOf: () => undefined
       }),
       (machine) =>
@@ -212,6 +213,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     browserEndpoint: () => '',
     openShimRoot: path.join(home, 'codex-open'),
     playwrightBin: path.join(home, 'commands', 'bin'),
+    docsSkillsFolder: () => '/koloft/docs-plugin/skills',
     agent: { enabled: () => true, answer: () => {}, skillsFolder: () => undefined },
     gitAccounts: {
       configEnv: (env) => env,
@@ -390,4 +392,12 @@ describe('what each of the four kinds of session tab is handed for each launch f
 it("lets a Claude Code tab on this Mac run koloft without asking only when it brings Koloft's plugin", async () => {
   expect(await claudeTab(repo, {})).toContain('"allowKoloft":true')
   expect(await claudeTab(repo, {}, false)).toContain('"allowKoloft":false')
+})
+
+it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools on and off, and Koloft's plugin only with them on", async () => {
+  const docs = '"KOLOFT_DOCS_PLUGIN":"/koloft/docs-plugin"'
+  expect(await claudeTab(repo, {})).toContain(docs)
+  const off = await claudeTab(repo, {}, false)
+  expect(off).toContain(docs)
+  expect(off).not.toContain('KOLOFT_AGENT_PLUGIN')
 })

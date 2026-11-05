@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { placeKoloftSkill, prepareMuseHome } from '../../src/main/museAccounts'
+import { placeKoloftSkills, prepareMuseHome } from '../../src/main/museAccounts'
 import { HomeAccountPicker } from '../../src/main/codexAccounts'
 import type { AccountView } from '../../src/shared/types'
 
@@ -71,20 +71,30 @@ describe("a Muse account's own settings folder", () => {
   })
 
   // MUSE§16
-  it("links in each of the owner's own skills, keeps Koloft's skill its own, and takes it away again when asked", () => {
-    fs.mkdirSync(path.join(owner, 'muse', 'skills', 'review'), { recursive: true })
-    fs.mkdirSync(path.join(owner, 'muse', 'skills', 'koloft'), { recursive: true })
+  it("links in each of the owner's own skills, keeps Koloft's two skills its own, takes the koloft skill away again when asked, and keeps koloft-docs whole with nothing left over from an older copy", () => {
+    for (const skill of ['review', 'koloft', 'koloft-docs'])
+      fs.mkdirSync(path.join(owner, 'muse', 'skills', skill), { recursive: true })
     prepareMuseHome(home, owner)
     const skills = path.join(home, 'muse', 'skills')
     expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(
       path.join(owner, 'muse', 'skills', 'review')
     )
-    placeKoloftSkill(home, true)
-    expect(fs.lstatSync(path.join(skills, 'koloft')).isSymbolicLink()).toBe(false)
+    for (const skill of ['koloft', 'koloft-docs'])
+      expect(fs.lstatSync(path.join(skills, skill), { throwIfNoEntry: false })).toBeUndefined()
+    placeKoloftSkills(home, true)
+    for (const skill of ['koloft', 'koloft-docs'])
+      expect(fs.lstatSync(path.join(skills, skill)).isSymbolicLink()).toBe(false)
     expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toContain('koloft')
-    placeKoloftSkill(home, false)
+    const leftOver = path.join(skills, 'koloft-docs', 'references', 'old.md')
+    fs.writeFileSync(leftOver, 'old')
+    placeKoloftSkills(home, false)
     expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
     expect(fs.existsSync(path.join(owner, 'muse', 'skills', 'koloft'))).toBe(true)
+    expect(fs.readFileSync(path.join(skills, 'koloft-docs', 'SKILL.md'), 'utf8')).toMatch(
+      /^---\nname: koloft-docs\n/
+    )
+    expect(fs.existsSync(path.join(skills, 'koloft-docs', 'references', 'core.md'))).toBe(true)
+    expect(fs.existsSync(leftOver)).toBe(false)
   })
 })
 

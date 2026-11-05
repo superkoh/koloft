@@ -6,7 +6,7 @@ import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteShCommand } from './install'
-import { koloftSkillLine, machineToolProgram, type TabProgram } from './launch'
+import { machineToolProgram, skillsFromMachineLine, type TabProgram } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
@@ -81,7 +81,7 @@ export interface AgyTabSpec {
   onboarding?: string
   token?: string
   start?: string
-  skillFromMachine?: string
+  koloftSkill?: boolean
 }
 
 // AGY§31
@@ -105,7 +105,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
     seed('auth.json', `${own}/antigravity-oauth-token`),
-    koloftSkillLine(`$A/${AGY_SKILLS}`, s.skillFromMachine && remoteMachineDir(s.skillFromMachine)),
+    skillsFromMachineLine(`$A/${AGY_SKILLS}`, '$M', !!s.koloftSkill),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,

@@ -92,6 +92,7 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
+  docsPlugin(): string
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
 }
 
@@ -134,6 +135,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
         ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
+      KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,

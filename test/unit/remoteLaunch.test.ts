@@ -10,8 +10,8 @@ import {
   buildMachinePackage,
   claudeTabSpec,
   killSessionCmd,
-  koloftSkillLine,
   launchLine,
+  skillsFromMachineLine,
   machineToolProgram,
   tabScript,
   writeTabPackage,
@@ -414,24 +414,43 @@ function claudeEnvOf(s: TabSpec): Record<string, string> {
   return b.env()
 }
 
-describe('the koloft skill a Codex or Antigravity tab keeps in its home on the machine', () => {
-  it('is copied whole from the machine package while agent tools are on, replacing an older copy, and removed once they are off', () => {
+const SKILLS_IN_A_MACHINE_PACKAGE = {
+  'agent-plugin/skills/koloft/SKILL.md': 'NEW',
+  'docs-plugin/skills/koloft-docs/SKILL.md': 'NEW DOCS',
+  'docs-plugin/skills/koloft-docs/references/core.md': 'NEW CORE'
+}
+
+function putSkillsInMachinePackage(machineDir: string): void {
+  for (const [rel, text] of Object.entries(SKILLS_IN_A_MACHINE_PACKAGE)) {
+    fs.mkdirSync(path.dirname(path.join(machineDir, rel)), { recursive: true })
+    fs.writeFileSync(path.join(machineDir, rel), text)
+  }
+}
+
+describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on the machine", () => {
+  it('copies the koloft-docs skill folder whole from the machine package every time, and the koloft skill only while agent tools are on, each replacing an older copy and removed from it what the package no longer holds', () => {
     const root = mkroot('skill')
     const machineDir = path.join(root, 'm-1')
     const skills = path.join(root, 'home', 'skills')
-    const installed = path.join(skills, 'koloft', 'SKILL.md')
-    buildMachinePackage(root, { 'agent-plugin/skills/koloft/SKILL.md': 'NEW' })
+    buildMachinePackage(root, SKILLS_IN_A_MACHINE_PACKAGE)
     const pkg = fs.readdirSync(root).find((n) => n.startsWith('m-'))!
     fs.renameSync(path.join(root, pkg), machineDir)
-    fs.mkdirSync(path.dirname(installed), { recursive: true })
-    fs.writeFileSync(installed, 'OLD')
+    for (const old of ['koloft/SKILL.md', 'koloft/old.md', 'koloft-docs/references/old.md']) {
+      fs.mkdirSync(path.dirname(path.join(skills, old)), { recursive: true })
+      fs.writeFileSync(path.join(skills, old), 'OLD')
+    }
     const run = (line: string): number | null =>
       spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
-    expect(run(koloftSkillLine(skills, machineDir))).toBe(0)
-    expect(fs.readFileSync(installed, 'utf8')).toBe('NEW')
-    expect(fs.readdirSync(path.dirname(installed))).toEqual(['SKILL.md'])
-    expect(run(koloftSkillLine(skills, undefined))).toBe(0)
+    const read = (rel: string): string => fs.readFileSync(path.join(skills, rel), 'utf8')
+    expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    expect(read('koloft/SKILL.md')).toBe('NEW')
+    expect(fs.readdirSync(path.join(skills, 'koloft'))).toEqual(['SKILL.md'])
+    expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
+    expect(fs.readdirSync(path.join(skills, 'koloft-docs', 'references'))).toEqual(['core.md'])
+    expect(run(skillsFromMachineLine(skills, machineDir, false))).toBe(0)
     expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+    expect(read('koloft-docs/SKILL.md')).toBe('NEW DOCS')
+    expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
   })
 })
 
@@ -444,7 +463,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().PWD).toBe(root)
   })
 
-  it('starts claude inside tmux with the picked account, and eats the credential file', () => {
+  it('starts claude inside tmux with the picked account and, with agent tools off, only the koloft-docs skill from the machine package, and eats the credential file', () => {
     const cwd = path.join(mkroot('cwd'), "it's here")
     fs.mkdirSync(cwd, { recursive: true })
     const s = spec({
@@ -464,6 +483,8 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.argv()).toEqual([
       '--settings',
       `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${b.home}/.koloft/m-0000000000000000/docs-plugin/`,
       '--session-id',
       'sess1'
     ])
@@ -481,13 +502,15 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
-  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
+  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
     const b = box(spec({ agentPlugin: true }))
     expect(b.run().status).toBe(0)
     const m = `${b.home}/.koloft/m-0000000000000000`
-    expect(b.argv().slice(0, 6)).toEqual([
+    expect(b.argv().slice(0, 8)).toEqual([
       '--settings',
       `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${m}/docs-plugin/`,
       '--plugin-dir',
       `${m}/agent-plugin/`,
       '--append-system-prompt-file',
@@ -506,7 +529,8 @@ describe('U-TAB-*: the tab script on the machine', () => {
           tabId: 'T',
           account: "o'brien",
           args: ['--approval-judge', 'off', 'say hi'],
-          trust: []
+          trust: [],
+          koloftSkill: false
         }),
         { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
       )
@@ -560,6 +584,36 @@ describe('U-TAB-*: the tab script on the machine', () => {
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
     expect(b.tmux().slice(-7)).toEqual(['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess9'])
+  })
+
+  // MUSE§16
+  it("a Muse tab copies Koloft's skills from the machine package into its account's own skills folder, where a same-named skill of the machine user's never takes their place while the user's other skills are still linked in: koloft-docs every time, koloft only while agent tools are on", () => {
+    const muse = (koloftSkill: boolean): TabSpec =>
+      spec({
+        tmuxName: 'm-T',
+        program: machineToolProgram(
+          'muse',
+          museRunLines({ tabId: 'T', account: 'a', args: [], trust: [], koloftSkill }),
+          { 'T.hooks.json': '{"hooks":{}}' }
+        )
+      })
+    const b = box(muse(true))
+    putSkillsInMachinePackage(path.join(b.home, '.koloft', 'm-0000000000000000'))
+    const owners = path.join(b.home, '.config', 'muse', 'skills')
+    for (const skill of ['review', 'koloft-docs'])
+      fs.mkdirSync(path.join(owners, skill), { recursive: true })
+    fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\n', { mode: 0o755 })
+    const skills = path.join(b.home, '.koloft', 'muse-homes', 'a', 'muse', 'skills')
+    expect(b.run().status).toBe(0)
+    expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toBe('NEW')
+    writeTabPackage(b.tabs, muse(false))
+    expect(b.run().status).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+    expect(fs.lstatSync(path.join(skills, 'koloft-docs')).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(path.join(skills, 'koloft-docs', 'references', 'core.md'), 'utf8')).toBe(
+      'NEW CORE'
+    )
+    expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(path.join(owners, 'review'))
   })
 
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
@@ -773,7 +827,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ]
     const b = box(spec({ claudeArgs: args }))
     expect(b.run().status).toBe(0)
-    expect(b.argv().slice(2)).toEqual(args)
+    expect(b.argv().slice(-args.length)).toEqual(args)
     expect(() => tabScript(spec({ tmuxName: "k-'; id #" }))).toThrow()
   })
 })

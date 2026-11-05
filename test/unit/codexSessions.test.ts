@@ -222,6 +222,7 @@ beforeEach(() => {
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
+    docsSkillsFolder: () => '/koloft/docs-plugin/skills',
     agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
@@ -1054,7 +1055,10 @@ describe('CodexSessions', () => {
     )
     expect(hint).toContain('koloft help')
     expect(hint).toContain('koloft session new -w')
-    expect(transports[0].options.skillRoots).toEqual(['/koloft/plugin/skills'])
+    expect(transports[0].options.skillRoots).toEqual([
+      '/koloft/plugin/skills',
+      '/koloft/docs-plugin/skills'
+    ])
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     const requestDir = /\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
@@ -1114,12 +1118,12 @@ describe('CodexSessions', () => {
     expect(fs.readFileSync(said, 'utf8')).toBe('把侧栏修好')
   })
 
-  it('with agent tools off, a Codex tab gets neither the koloft command, the Koloft hint nor the koloft skill', async () => {
+  it('with agent tools off, a Codex tab gets neither the koloft command, the Koloft hint nor the koloft skill, but still gets the koloft-docs skill', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(
       transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))
     ).toBe(false)
-    expect(transports[0].options.skillRoots).toBeUndefined()
+    expect(transports[0].options.skillRoots).toEqual(['/koloft/docs-plugin/skills'])
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     expect(fs.existsSync(path.join(shimDir, 'koloft'))).toBe(false)
   })
