@@ -1,28 +1,39 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
+import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  agyReady,
+  boundRemoteSession,
   breakConnection,
   dropTabLinkWhileItsSessionLives,
   healConnection,
   killFakeRemote,
   launchWithRemote,
   liveTmuxSessions,
+  machineAgyCalls,
+  machineCodexLog,
   machineHome,
+  machineMuseCalls,
+  OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   remoteDir,
   sshCommands,
   tmuxClientsOf
 } from './helpers/remote'
 import {
+  type AgentName,
   type ClaudeCall,
   boundSessionId,
   centerTerm,
   continuedInOf,
+  newSessionInWith,
   processAlive,
   readCalls,
   runIn,
+  sessionInRow,
   startSessionIn,
   switchToRow,
   transcriptFile,
@@ -30,7 +41,8 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
+import type { BackendId } from '../../src/shared/types'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
@@ -44,6 +56,127 @@ function layoutMembers(env: E2EEnv): string[] {
   const file = path.join(env.userData, 'layout.json')
   const layout = JSON.parse(fs.readFileSync(file, 'utf8')) as { members: string[] }
   return layout.members
+}
+
+const A_TURN_OUTLASTING_SEVERAL_MIRROR_PULLS_MS = '15000'
+
+function codexScreensOnThisMac(env: E2EEnv): unknown[] {
+  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+}
+
+function codexServersAliveThere(env: E2EEnv): string[] {
+  const processes = execFileSync('ps', ['-eo', 'command='], { encoding: 'utf8' }).split('\n')
+  return machineCodexLog<{ argv: string[]; tabId: string | null }>(
+    env,
+    'fake-codex-server-calls.jsonl'
+  )
+    .filter((c) => c.argv.includes('--listen') && c.tabId)
+    .map((c) => c.tabId!)
+    .filter((tabId) =>
+      processes.some(
+        (line) =>
+          line.includes('--listen') && line.includes(machineHome(env)) && line.includes(tabId)
+      )
+    )
+}
+
+async function promptWithAReplyDelayedThere(
+  env: E2EEnv,
+  page: Page,
+  delayFile: string
+): Promise<void> {
+  fs.writeFileSync(
+    path.join(machineHome(env), delayFile),
+    A_TURN_OUTLASTING_SEVERAL_MIRROR_PULLS_MS
+  )
+  await runIn(page, centerTerm(page), 'a longer turn')
+}
+
+async function claudeBoundInTheRemoteRow(page: Page): Promise<string> {
+  let id: string | undefined
+  await expect
+    .poll(async () => (id = await sessionInRow(page, wsRows(page, REMOTE_WS_NAME).first())), {
+      timeout: 60_000
+    })
+    .toBeTruthy()
+  return id!
+}
+
+const nativeIdOf =
+  (backend: BackendId) =>
+  async (page: Page): Promise<string> =>
+    (await boundRemoteSession(page, backend)).id
+
+const ON_THE_MACHINE: Record<
+  AgentName,
+  {
+    boundId: (page: Page) => Promise<string>
+    longTurn: (env: E2EEnv, page: Page) => Promise<void>
+    launches: (env: E2EEnv) => number
+    launchesARestartAdds: number
+    runningThere: (env: E2EEnv) => string[]
+    afterARestart: string
+  }
+> = {
+  Claude: {
+    boundId: claudeBoundInTheRemoteRow,
+    longTurn: (_env, page) => runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL),
+    launches: (env) => readCalls(env).length,
+    launchesARestartAdds: 0,
+    runningThere: liveTmuxSessions,
+    afterARestart: 'attached to the same claude there, never a second one'
+  },
+  Codex: {
+    boundId: nativeIdOf('codex'),
+    longTurn: (_env, page) => runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL),
+    launches: (env) => codexScreensOnThisMac(env).length,
+    launchesARestartAdds: 1,
+    runningThere: codexServersAliveThere,
+    afterARestart: 'its thread resumed on one new app-server there, as the idle one ended at quit'
+  },
+  Muse: {
+    boundId: nativeIdOf('muse'),
+    longTurn: (env, page) => promptWithAReplyDelayedThere(env, page, 'fake-muse-delay'),
+    launches: (env) => machineMuseCalls(env).length,
+    launchesARestartAdds: 0,
+    runningThere: liveTmuxSessions,
+    afterARestart: 'attached to the same muse there, never a second one'
+  },
+  Antigravity: {
+    boundId: nativeIdOf('agy'),
+    longTurn: async (env, page) => {
+      await agyReady(page)
+      await promptWithAReplyDelayedThere(env, page, 'fake-agy-delay')
+    },
+    launches: (env) => machineAgyCalls(env).length,
+    launchesARestartAdds: 0,
+    runningThere: liveTmuxSessions,
+    afterARestart: 'attached to the same agy there, never a second one'
+  }
+}
+
+const EVERY_AGENT_ON_THE_MACHINE: {
+  label: AgentName
+  install?: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}[] = [{ label: 'Claude' }, ...OTHER_AGENTS_ON_THE_MACHINE]
+
+async function startOnTheMachine(
+  page: Page,
+  agent: (typeof EVERY_AGENT_ON_THE_MACHINE)[number]
+): Promise<string> {
+  if (agent.label === 'Claude') {
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  } else {
+    await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+    await agent.bound?.(page)
+  }
+  await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
+    timeout: 60_000
+  })
+  return ON_THE_MACHINE[agent.label].boundId(page)
 }
 
 test.describe('losing and regaining the machine: Koloft never invents an ending for a remote session', () => {
@@ -216,91 +349,95 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     }
   })
 
-  test('a remote session’s unread red dot survives a Koloft restart, stays when the row is clicked in a focused window, and goes once the session works again', async ({
-    env
-  }) => {
-    test.setTimeout(300_000)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const row = wsRows(page, REMOTE_WS_NAME).first()
-      const unread = row.locator('.ws-tab-unread')
-      await expect(unread, 'the startup turn is over').toHaveCount(1, { timeout: 90_000 })
-      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
-      await expect(unread, 'the /busy turn is working').toHaveCount(0, { timeout: 60_000 })
-      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
-      await expect(unread).toHaveCount(1)
-    } finally {
-      await quitAndClose(app)
-    }
+  for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
+    const there = ON_THE_MACHINE[agent.label]
 
-    const app2 = await launchApp(env)
-    try {
-      const page2 = await app2.firstWindow()
-      await page2.waitForLoadState('domcontentloaded')
-      await waitBooted(page2)
-      const row = wsRows(page2, REMOTE_WS_NAME).first()
-      await expect(row).not.toHaveClass(/\bcold\b/, {
-        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
-      })
-      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+    test(`a remote ${agent.label} session’s unread red dot survives a Koloft restart, stays when the row is clicked in a focused window, and goes once the session works again`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      let id = ''
+      try {
+        await addRemoteWorkspace(page, env)
+        id = await startOnTheMachine(page, agent)
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        const unread = row.locator('.ws-tab-unread')
+        await there.longTurn(env, page)
+        await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+        await expect(unread, 'the long turn is working').toHaveCount(0)
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+        await expect(unread).toHaveCount(1)
+      } finally {
+        await quitAndClose(app)
+      }
 
-      await pretendWindowFocused(app2)
-      await switchToRow(page2, row)
-      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
-      await runIn(page2, centerTerm(page2), '/busy')
-      await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 60_000 })
-    } finally {
-      await quitAndClose(app2)
-    }
-  })
-
-  test('a remote session marked Keep running is attached by itself after a Koloft restart — the same claude, never a second one', async ({
-    env
-  }) => {
-    test.setTimeout(300_000)
-    const { app, page } = await launchWithRemote(env)
-    let first!: ClaudeCall
-    try {
-      await addRemoteWorkspace(page, env)
-      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      ;[first] = await waitForCalls(env, 1)
-      const row = wsRows(page, REMOTE_WS_NAME).first()
-      await row.click({ button: 'right' })
-      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
-      await expect(row.locator('.ws-tab-resident')).toBeVisible()
-      await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
-    } finally {
-      await quitAndClose(app)
-    }
-    expect(processAlive(first.pid)).toBe(true)
-
-    const app2 = await launchApp(env)
-    try {
-      const page2 = await app2.firstWindow()
-      await page2.waitForLoadState('domcontentloaded')
-      await waitBooted(page2)
-
-      const row = wsRows(page2, REMOTE_WS_NAME).first()
-      await expect
-        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
-          timeout: 60_000
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await page2.waitForLoadState('domcontentloaded')
+        await waitBooted(page2)
+        const row = wsRows(page2, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
+          timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
         })
-        .toBeGreaterThanOrEqual(1)
-      await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, {
-        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
-      })
-      await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
-      expect(processAlive(first.pid)).toBe(true)
-      expect(readCalls(env)).toHaveLength(1)
-      const starts = sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))
-      expect(starts).toHaveLength(1)
-    } finally {
-      await quitAndClose(app2)
-    }
-  })
+        expect(await there.boundId(page2)).toBe(id)
+        await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+
+        await pretendWindowFocused(app2)
+        await switchToRow(page2, row)
+        await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+        await there.longTurn(env, page2)
+        await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 60_000 })
+      } finally {
+        await quitAndClose(app2)
+      }
+    })
+
+    test(`a remote ${agent.label} session marked Keep running comes back by itself after a Koloft restart on the same conversation, ${there.afterARestart}`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      let id = ''
+      let launches = 0
+      try {
+        await addRemoteWorkspace(page, env)
+        id = await startOnTheMachine(page, agent)
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await row.click({ button: 'right' })
+        await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+        await expect(row.locator('.ws-tab-resident')).toBeVisible()
+        launches = there.launches(env)
+        await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await page2.waitForLoadState('domcontentloaded')
+        await waitBooted(page2)
+
+        const row = wsRows(page2, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, {
+          timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+        })
+        await expect(row.locator('.ws-tab-resident')).toBeVisible()
+        expect(await there.boundId(page2)).toBe(id)
+        await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
+        expect(there.launches(env)).toBe(launches + there.launchesARestartAdds)
+        expect(there.runningThere(env)).toHaveLength(1)
+      } finally {
+        await quitAndClose(app2)
+      }
+    })
+  }
 
   test('E-RW-16: /exit after an attach drops the row from the working set', async ({ env }) => {
     test.setTimeout(300_000)
