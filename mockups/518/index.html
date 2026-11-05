@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Issue 518 mockup: Settings ▸ Sessions ▸ Network</title>
+    <title>Issue 518 mockup: Settings ▸ Accounts, next to Skip permission prompts</title>
     <link rel="stylesheet" href="../../src/renderer/src/styles.css" />
     <link rel="stylesheet" href="../../src/renderer/src/settings.css" />
     <style>
@@ -40,69 +40,62 @@
         <nav class="set-nav">
           <div class="set-brand">Settings</div>
           <div class="set-ni">Welcome</div>
-          <div class="set-ni on">Sessions</div>
-          <div class="set-ni">Accounts</div>
+          <div class="set-ni">Sessions</div>
+          <div class="set-ni on">Accounts</div>
           <div class="set-ni">Usage</div>
           <div class="set-ni">Appearance</div>
           <div class="set-ni">Shortcuts</div>
-          <div class="set-ni">Notifications</div>
           <div class="set-ni">Assist</div>
           <div class="set-ni">Discord</div>
+          <div class="set-ni">Notifications</div>
           <div class="set-ni">Extensions</div>
           <div class="set-ni">About</div>
         </nav>
         <div class="set-main">
           <div class="set-ph">
-            <h3>Sessions</h3>
-            <p>Pick the tool a new session runs, and see what Koloft found on this Mac.</p>
+            <h3>Accounts</h3>
+            <p>
+              Every session in Koloft runs on an account from its agent’s section below, never on
+              the login already on this Mac. Each new session picks its agent’s least-used sign-in,
+              and an API key only when every sign-in is at its limit.
+            </p>
           </div>
 
-          <div class="set-grp">Session methods</div>
           <div class="set-row">
             <div class="set-lab">
-              <b>Default method</b>
-              <small>New session starts with this method. ⏎ starts it; ⇧⏎ picks another.</small>
-            </div>
-            <span>Claude Code ▾</span>
-          </div>
-          <div class="set-row">
-            <div class="set-lab">
-              <b>Claude Code</b>
-              <small>Found on this Mac.</small>
-            </div>
-            <input type="checkbox" role="switch" class="switch" checked />
-          </div>
-          <div class="set-row">
-            <div class="set-lab">
-              <b>Codex</b>
-              <small>Found on this Mac.</small>
+              <b>Skip permission prompts</b>
+              <small>
+                Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when
+                Koloft injects an account, starts Muse with <code>:unrestricted</code>, and starts
+                new Codex sessions with <code>-a never -s danger-full-access</code> — never
+                overrides permission flags you pass yourself.
+              </small>
             </div>
             <input type="checkbox" role="switch" class="switch" checked />
           </div>
 
           <div class="mock-new">
-            <div class="set-grp">Network</div>
             <div class="set-row">
               <div class="set-lab">
-                <b>Only the hosts below</b>
+                <b>Only this Mac and the hosts below</b>
                 <small>
-                  Commands a Claude Code or Codex session on this Mac runs can reach this Mac (the
+                  Commands a Claude Code or Codex session on this Mac runs reach this Mac (the
                   Workbench browser, a dev server) and the hosts below, and nothing else on the
-                  internet. Applies to sessions started after a change.
+                  internet. Those sessions then run in their own sandbox instead of skipping
+                  permission prompts, and ask before anything outside it. Applies to sessions
+                  started after a change.
                 </small>
-                <small>
-                  Muse Code, Antigravity and sessions on another machine are not limited yet.
-                </small>
+                <small>Muse, Antigravity and sessions on another machine are not limited.</small>
               </div>
               <input
                 type="checkbox"
                 role="switch"
                 class="switch"
-                aria-label="Only the hosts below"
+                aria-label="Only this Mac and the hosts below"
                 checked
               />
             </div>
-            <div class="set-row stack child">
+            <div class="set-row stack">
               <div class="set-lab">
                 <b>Allowed hosts</b>
                 <small>
@@ -118,13 +111,34 @@
               />
             </div>
           </div>
+
+          <div class="set-row">
+            <div class="set-lab">
+              <b>Account usage</b>
+              <small>
+                Reads again, right now, how much every enabled account of every agent has used.
+              </small>
+            </div>
+            <button class="mini">Refresh usage</button>
+          </div>
+
+          <div class="set-grp">Claude</div>
+          <div class="set-row">
+            <div class="set-lab">
+              <b>Prefer accounts with fable allowance</b>
+              <small>
+                Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit.
+              </small>
+            </div>
+            <input type="checkbox" role="switch" class="switch" checked />
+          </div>
         </div>
       </div>
     </div>
     <div class="mock-note">
-      Mockup for issue 518. The dashed box is new; everything else is today's Settings ▸ Sessions,
-      built from the app's own CSS (open this file from the repository so the two stylesheet links
-      resolve).
+      Mockup for issue 518. The dashed box is new; everything else is today's Settings ▸ Accounts
+      (the account lists below are cut), built from the app's own CSS. Open this file from the
+      repository so the two stylesheet links resolve.
     </div>
   </body>
 </html>
