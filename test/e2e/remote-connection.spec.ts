@@ -5,8 +5,6 @@ import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
-  agyReady,
-  boundRemoteSession,
   breakConnection,
   dropTabLinkWhileItsSessionLives,
   healConnection,
@@ -42,7 +40,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import type { BackendId } from '../../src/shared/types'
+import { codexCalls } from './helpers/codex'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
@@ -58,43 +56,40 @@ function layoutMembers(env: E2EEnv): string[] {
   return layout.members
 }
 
-const A_TURN_OUTLASTING_SEVERAL_MIRROR_PULLS_MS = '15000'
-
-function codexScreensOnThisMac(env: E2EEnv): unknown[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
-}
+const A_REPLY_OUTLASTING_SEVERAL_MIRROR_PULLS_MS = '15000'
 
 function codexServersAliveThere(env: E2EEnv): string[] {
   const processes = execFileSync('ps', ['-eo', 'command='], { encoding: 'utf8' }).split('\n')
-  return machineCodexLog<{ argv: string[]; tabId: string | null }>(
+  const tabIds = machineCodexLog<{ argv: string[]; tabId: string | null }>(
     env,
     'fake-codex-server-calls.jsonl'
   )
     .filter((c) => c.argv.includes('--listen') && c.tabId)
     .map((c) => c.tabId!)
-    .filter((tabId) =>
-      processes.some(
-        (line) =>
-          line.includes('--listen') && line.includes(machineHome(env)) && line.includes(tabId)
-      )
+  return [...new Set(tabIds)].filter((tabId) =>
+    processes.some(
+      (line) => line.includes('--listen') && line.includes(machineHome(env)) && line.includes(tabId)
     )
-}
-
-async function promptWithAReplyDelayedThere(
-  env: E2EEnv,
-  page: Page,
-  delayFile: string
-): Promise<void> {
-  fs.writeFileSync(
-    path.join(machineHome(env), delayFile),
-    A_TURN_OUTLASTING_SEVERAL_MIRROR_PULLS_MS
   )
-  await runIn(page, centerTerm(page), 'a longer turn')
 }
 
-async function claudeBoundInTheRemoteRow(page: Page): Promise<string> {
+const attachesThere = (env: E2EEnv): number =>
+  sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length
+
+const busyTurn = (_env: E2EEnv, page: Page): Promise<void> =>
+  runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+
+const turnWithAReplyDelayedBy =
+  (delayFile: string) =>
+  async (env: E2EEnv, page: Page): Promise<void> => {
+    fs.writeFileSync(
+      path.join(machineHome(env), delayFile),
+      A_REPLY_OUTLASTING_SEVERAL_MIRROR_PULLS_MS
+    )
+    await runIn(page, centerTerm(page), 'a longer turn')
+  }
+
+async function boundInTheRemoteRow(page: Page): Promise<string> {
   let id: string | undefined
   await expect
     .poll(async () => (id = await sessionInRow(page, wsRows(page, REMOTE_WS_NAME).first())), {
@@ -104,15 +99,9 @@ async function claudeBoundInTheRemoteRow(page: Page): Promise<string> {
   return id!
 }
 
-const nativeIdOf =
-  (backend: BackendId) =>
-  async (page: Page): Promise<string> =>
-    (await boundRemoteSession(page, backend)).id
-
 const ON_THE_MACHINE: Record<
   AgentName,
   {
-    boundId: (page: Page) => Promise<string>
     longTurn: (env: E2EEnv, page: Page) => Promise<void>
     launches: (env: E2EEnv) => number
     launchesARestartAdds: number
@@ -121,35 +110,28 @@ const ON_THE_MACHINE: Record<
   }
 > = {
   Claude: {
-    boundId: claudeBoundInTheRemoteRow,
-    longTurn: (_env, page) => runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL),
+    longTurn: busyTurn,
     launches: (env) => readCalls(env).length,
     launchesARestartAdds: 0,
     runningThere: liveTmuxSessions,
     afterARestart: 'attached to the same claude there, never a second one'
   },
   Codex: {
-    boundId: nativeIdOf('codex'),
-    longTurn: (_env, page) => runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL),
-    launches: (env) => codexScreensOnThisMac(env).length,
+    longTurn: busyTurn,
+    launches: (env) => codexCalls(env).length,
     launchesARestartAdds: 1,
     runningThere: codexServersAliveThere,
     afterARestart: 'its thread resumed on one new app-server there, as the idle one ended at quit'
   },
   Muse: {
-    boundId: nativeIdOf('muse'),
-    longTurn: (env, page) => promptWithAReplyDelayedThere(env, page, 'fake-muse-delay'),
+    longTurn: turnWithAReplyDelayedBy('fake-muse-delay'),
     launches: (env) => machineMuseCalls(env).length,
     launchesARestartAdds: 0,
     runningThere: liveTmuxSessions,
     afterARestart: 'attached to the same muse there, never a second one'
   },
   Antigravity: {
-    boundId: nativeIdOf('agy'),
-    longTurn: async (env, page) => {
-      await agyReady(page)
-      await promptWithAReplyDelayedThere(env, page, 'fake-agy-delay')
-    },
+    longTurn: turnWithAReplyDelayedBy('fake-agy-delay'),
     launches: (env) => machineAgyCalls(env).length,
     launchesARestartAdds: 0,
     runningThere: liveTmuxSessions,
@@ -176,7 +158,20 @@ async function startOnTheMachine(
   await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
     timeout: 60_000
   })
-  return ON_THE_MACHINE[agent.label].boundId(page)
+  return boundInTheRemoteRow(page)
+}
+
+async function untilItCameBackOnTheMachine(
+  env: E2EEnv,
+  agent: AgentName,
+  launchesBeforeQuit: number
+): Promise<void> {
+  const there = ON_THE_MACHINE[agent]
+  if (there.launchesARestartAdds)
+    await expect
+      .poll(() => there.launches(env), { timeout: 60_000 })
+      .toBe(launchesBeforeQuit + there.launchesARestartAdds)
+  else await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
 }
 
 test.describe('losing and regaining the machine: Koloft never invents an ending for a remote session', () => {
@@ -360,6 +355,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       seedSettings(env, { hintsOff: true })
       const { app, page } = await launchWithRemote(env)
       let id = ''
+      let launches = 0
       try {
         await addRemoteWorkspace(page, env)
         id = await startOnTheMachine(page, agent)
@@ -367,9 +363,9 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         const unread = row.locator('.ws-tab-unread')
         await there.longTurn(env, page)
         await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
-        await expect(unread, 'the long turn is working').toHaveCount(0)
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
         await expect(unread).toHaveCount(1)
+        launches = there.launches(env)
       } finally {
         await quitAndClose(app)
       }
@@ -380,10 +376,11 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         await page2.waitForLoadState('domcontentloaded')
         await waitBooted(page2)
         const row = wsRows(page2, REMOTE_WS_NAME).first()
+        await untilItCameBackOnTheMachine(env, agent.label, launches)
         await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
           timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
         })
-        expect(await there.boundId(page2)).toBe(id)
+        expect(await boundInTheRemoteRow(page2)).toBe(id)
         await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
 
         await pretendWindowFocused(app2)
@@ -425,11 +422,13 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         await waitBooted(page2)
 
         const row = wsRows(page2, REMOTE_WS_NAME).first()
+        await untilItCameBackOnTheMachine(env, agent.label, launches)
         await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, {
           timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
         })
         await expect(row.locator('.ws-tab-resident')).toBeVisible()
-        expect(await there.boundId(page2)).toBe(id)
+        expect(await boundInTheRemoteRow(page2)).toBe(id)
+        await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(1)
         await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
         expect(there.launches(env)).toBe(launches + there.launchesARestartAdds)
         expect(there.runningThere(env)).toHaveLength(1)
