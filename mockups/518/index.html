@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Issue 518 mockup: Settings ▸ Sessions ▸ Network</title>
+    <link rel="stylesheet" href="../../src/renderer/src/styles.css" />
+    <link rel="stylesheet" href="../../src/renderer/src/settings.css" />
+    <style>
+      body {
+        margin: 0;
+      }
+      .modal-backdrop,
+      .modal {
+        animation: none;
+      }
+      .mock-note {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        max-width: 360px;
+        font:
+          12px/1.5 -apple-system,
+          sans-serif;
+        color: #ddd;
+        background: #222;
+        padding: 8px 10px;
+        border-radius: 6px;
+        z-index: 200;
+      }
+      .mock-new {
+        outline: 2px dashed #e0a030;
+        outline-offset: 4px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="modal-backdrop">
+      <div class="modal settings-modal" role="dialog" aria-label="Settings">
+        <nav class="set-nav">
+          <div class="set-brand">Settings</div>
+          <div class="set-ni">Welcome</div>
+          <div class="set-ni on">Sessions</div>
+          <div class="set-ni">Accounts</div>
+          <div class="set-ni">Usage</div>
+          <div class="set-ni">Appearance</div>
+          <div class="set-ni">Shortcuts</div>
+          <div class="set-ni">Notifications</div>
+          <div class="set-ni">Assist</div>
+          <div class="set-ni">Discord</div>
+          <div class="set-ni">Extensions</div>
+          <div class="set-ni">About</div>
+        </nav>
+        <div class="set-main">
+          <div class="set-ph">
+            <h3>Sessions</h3>
+            <p>Pick the tool a new session runs, and see what Koloft found on this Mac.</p>
+          </div>
+
+          <div class="set-grp">Session methods</div>
+          <div class="set-row">
+            <div class="set-lab">
+              <b>Default method</b>
+              <small>New session starts with this method. ⏎ starts it; ⇧⏎ picks another.</small>
+            </div>
+            <span>Claude Code ▾</span>
+          </div>
+          <div class="set-row">
+            <div class="set-lab">
+              <b>Claude Code</b>
+              <small>Found on this Mac.</small>
+            </div>
+            <input type="checkbox" role="switch" class="switch" checked />
+          </div>
+          <div class="set-row">
+            <div class="set-lab">
+              <b>Codex</b>
+              <small>Found on this Mac.</small>
+            </div>
+            <input type="checkbox" role="switch" class="switch" checked />
+          </div>
+
+          <div class="mock-new">
+            <div class="set-grp">Network</div>
+            <div class="set-row">
+              <div class="set-lab">
+                <b>Only the hosts below</b>
+                <small>
+                  Commands a Claude Code or Codex session on this Mac runs can reach this Mac (the
+                  Workbench browser, a dev server) and the hosts below, and nothing else on the
+                  internet. Applies to sessions started after a change.
+                </small>
+                <small>
+                  Muse Code, Antigravity and sessions on another machine are not limited yet.
+                </small>
+              </div>
+              <input
+                type="checkbox"
+                role="switch"
+                class="switch"
+                aria-label="Only the hosts below"
+                checked
+              />
+            </div>
+            <div class="set-row stack child">
+              <div class="set-lab">
+                <b>Allowed hosts</b>
+                <small>
+                  Separate them with commas. <code>*.example.com</code> takes every name under it.
+                </small>
+              </div>
+              <input
+                class="set-input"
+                type="text"
+                aria-label="Allowed hosts"
+                spellcheck="false"
+                value="github.com, *.github.com, *.githubusercontent.com, registry.npmjs.org, pypi.org, files.pythonhosted.org"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mock-note">
+      Mockup for issue 518. The dashed box is new; everything else is today's Settings ▸ Sessions,
+      built from the app's own CSS (open this file from the repository so the two stylesheet links
+      resolve).
+    </div>
+  </body>
+</html>

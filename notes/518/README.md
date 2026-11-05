@@ -36,6 +36,14 @@ Run one with `node notes/518/<script> [variant,variant]`.
 | C1 | `sandbox.enabled` | EPERM | fail | fail |
 | C2 | + `allowedDomains: [github.com]`, `allowLocalBinding` | 200 | 200 | fail |
 | C6 | C2 + `filesystem.allowWrite: ~/Library/Caches/ms-playwright`, `allowUnixSockets: /private/tmp/claude-<uid>` | `playwright-cli open/eval/close` work | | fail |
+| C10 | C2, `--dangerously-skip-permissions`, the call asks `dangerouslyDisableSandbox` | 200 (ran outside) | 200 | 200 |
+| C11 | C2, `--dangerously-skip-permissions`, plain call | 200 | 200 | **200 through the proxy** |
+| C12 | C10 + `allowUnsandboxedCommands: false` | 200 (ran inside) | 200 | 200 through the proxy |
+
+C7/C8: inside the sandbox `kill -0` on an outside process is refused; Koloft's `agent`
+folder and a `/tmp/koloft-git-…` folder are writable only once listed in
+`filesystem.allowWrite`. C13: `allowManagedDomainsOnly` through `--settings` changed
+nothing.
 
 The measured facts are in `docs/codex-cli-contract.md` §26 and
 `docs/claude-code-contract.md` §24.

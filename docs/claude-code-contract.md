@@ -3311,7 +3311,31 @@ relay. Scripts: `notes/518/` on the branch `feat/518-sandbox-probe`.
   - plus `network.allowUnixSockets: ["/private/tmp/claude-<uid>"]`: `open` printed
     `Page Title: K518`, `eval` and `close` worked, and example.com still failed in the
     same command.
+- **What Koloft's own helpers need** (the same network settings): `kill -0` on a process
+  outside the sandbox failed, also once the folders below were writable. Writing a file
+  into `<home>/Library/Application Support/koloft/agent` and into a `/tmp/koloft-git-…`
+  folder made beforehand failed (`Operation not permitted`) until both were in
+  `sandbox.filesystem.allowWrite`; then both writes worked.
+- **Running outside the sandbox, and skipping permissions** (the same network settings,
+  `autoAllowBashIfSandboxed` and `allowUnsandboxedCommands` left at their defaults
+  unless named; the fake model's `Bash` call carried `dangerouslyDisableSandbox: true`
+  where it says so):
+  - default permission mode, the call asking to leave the sandbox: the tool result was
+    only "Run outside of the sandbox" and nothing ran (`-p` cannot ask anyone);
+  - `--dangerously-skip-permissions`, the same call: it ran outside the sandbox with no
+    question; example.com answered 200 and there was no proxy variable;
+  - `--dangerously-skip-permissions` and `allowUnsandboxedCommands: false`, the same
+    call: it ran inside the sandbox;
+  - `--dangerously-skip-permissions`, a plain call: inside the sandbox, **and
+    example.com, not in `allowedDomains`, answered 200 through the proxy**; only curl
+    with `--noproxy '*'` failed. So under skipped permissions the host list does not
+    hold, only the rule that traffic goes through the proxy. In the default mode the
+    same host was refused with `(user denied)` (above); that an interactive session asks
+    the owner there instead is **inferred, not checked**;
+  - `network.allowManagedDomainsOnly: true` given through `--settings` changed nothing
+    (example.com still 200 under skipped permissions). The key is in the binary's
+    strings next to `allowedDomains`; that it is read only from managed settings is
+    **inferred, not checked**.
 - Not probed yet: the settings in an interactive session, the owner's own
-  `HTTPS_PROXY`, a Bash command that asks to run outside the sandbox with
-  `allowUnsandboxedCommands` left at its default, the Linux sandbox (a remote tab), and
-  what MCP servers reach (they run outside the Bash sandbox, inferred, not checked).
+  `HTTPS_PROXY`, the Linux sandbox (a remote tab), and what MCP servers reach (they run
+  outside the Bash sandbox, inferred, not checked).

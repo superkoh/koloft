@@ -46,7 +46,10 @@ async function startChrome() {
 const netCmd = `/bin/sh ${path.join(here, 'probe.sh')} ${relayPort} __SOCKDIR__ ${process.execPath} ${path.join(here, 'client.mjs')}; echo "TMPDIR=$TMPDIR"`
 const pwCmd = `PLAYWRIGHT_MCP_CDP_ENDPOINT=__ENDPOINT__ PLAYWRIGHT_CLI_SESSION=k518c-$$ /bin/sh ${path.join(here, 'pw.sh')} ${process.execPath} ${cli}`
 
+const dirsCmd = `/bin/sh ${path.join(here, 'koloft-dirs.sh')} ${process.pid} '__AGENTDIR__' __REQDIR__`
+
 let toolCommand = ''
+let escapeSandbox = false
 let lastToolResult = ''
 let modelCalls = 0
 const model = http.createServer((req, res) => {
@@ -79,7 +82,11 @@ const model = http.createServer((req, res) => {
           type: 'tool_use',
           id: 'toolu_' + modelCalls,
           name: 'Bash',
-          input: { command: toolCommand, description: 'probe' }
+          input: {
+            command: toolCommand,
+            description: 'probe',
+            ...(escapeSandbox && { dangerouslyDisableSandbox: true })
+          }
         }
       ]
     } else {
@@ -175,6 +182,67 @@ const variants = {
       },
       filesystem: { allowWrite: ['__CACHE__'] }
     }
+  },
+  C7: {
+    label: "Koloft's own helpers: kill -0 on Koloft, the agent folder, a /tmp/koloft-git-* folder",
+    cmd: 'dirs',
+    sandbox: { network: { allowedDomains: ['github.com'], allowLocalBinding: true } }
+  },
+  C8: {
+    label: 'C7 plus those two folders in filesystem.allowWrite',
+    cmd: 'dirs',
+    sandbox: {
+      network: { allowedDomains: ['github.com'], allowLocalBinding: true },
+      filesystem: { allowWrite: ['__AGENTDIR__', '__REQDIR__'] }
+    }
+  },
+  C9: {
+    label:
+      'C2 with allowUnsandboxedCommands left at its default, the call asks dangerouslyDisableSandbox, default permission mode',
+    cmd: 'net',
+    escape: true,
+    defaults: true,
+    sandbox: { network: { allowedDomains: ['github.com'], allowLocalBinding: true } }
+  },
+  C10: {
+    label: 'C9 under --dangerously-skip-permissions',
+    cmd: 'net',
+    escape: true,
+    defaults: true,
+    bypass: true,
+    sandbox: { network: { allowedDomains: ['github.com'], allowLocalBinding: true } }
+  },
+  C12: {
+    label: 'C10 with allowUnsandboxedCommands: false',
+    cmd: 'net',
+    escape: true,
+    defaults: true,
+    bypass: true,
+    sandbox: {
+      allowUnsandboxedCommands: false,
+      network: { allowedDomains: ['github.com'], allowLocalBinding: true }
+    }
+  },
+  C13: {
+    label: 'C11 with network.allowManagedDomainsOnly: true given through --settings',
+    cmd: 'net',
+    defaults: true,
+    bypass: true,
+    sandbox: {
+      allowUnsandboxedCommands: false,
+      network: {
+        allowedDomains: ['github.com'],
+        allowLocalBinding: true,
+        allowManagedDomainsOnly: true
+      }
+    }
+  },
+  C11: {
+    label: 'C10 without dangerouslyDisableSandbox: does the sandbox hold under bypass?',
+    cmd: 'net',
+    defaults: true,
+    bypass: true,
+    sandbox: { network: { allowedDomains: ['github.com'], allowLocalBinding: true } }
   }
 }
 
@@ -188,8 +256,13 @@ for (const [key, v] of Object.entries(variants)) {
   fs.mkdirSync(configDir, { recursive: true })
   fs.mkdirSync(cache, { recursive: true })
   const sockRoot = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'k5s-'))
+  const agentDir = path.join(home, 'Library', 'Application Support', 'koloft', 'agent')
+  fs.mkdirSync(agentDir, { recursive: true })
+  const reqDir = fs.mkdtempSync('/tmp/koloft-git-probe-')
   const fill = (s) =>
     s
+      .replaceAll('__AGENTDIR__', agentDir)
+      .replaceAll('__REQDIR__', reqDir)
       .replaceAll('__SOCKROOT__', sockRoot)
       .replaceAll('__CACHE__', cache)
       .replaceAll('__ENDPOINT__', endpoint)
@@ -202,8 +275,10 @@ for (const [key, v] of Object.entries(variants)) {
             fill(
               JSON.stringify({
                 enabled: true,
-                autoAllowBashIfSandboxed: true,
-                allowUnsandboxedCommands: false,
+                ...(!v.defaults && {
+                  autoAllowBashIfSandboxed: true,
+                  allowUnsandboxedCommands: false
+                }),
                 ...v.sandbox
               })
             )
@@ -213,11 +288,14 @@ for (const [key, v] of Object.entries(variants)) {
   }
   const settingsFile = path.join(home, 'settings.json')
   fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2))
-  toolCommand = fill(v.cmd === 'net' ? netCmd : pwCmd)
+  toolCommand = fill(v.cmd === 'net' ? netCmd : v.cmd === 'dirs' ? dirsCmd : pwCmd)
   lastToolResult = ''
   modelCalls = 0
   relayHits = 0
-  const out = await runClaude(home, configDir, settingsFile)
+  escapeSandbox = !!v.escape
+  const out = await runClaude(home, configDir, settingsFile, !!v.bypass)
+  fs.rmSync(reqDir, { recursive: true, force: true })
+  fs.rmSync(sockRoot, { recursive: true, force: true })
   console.log(
     `\n=== ${key}: ${v.label}\nsettings: ${JSON.stringify(settings)}\n${out}\nmodel calls: ${modelCalls}, relay hits: ${relayHits}\ntool result:\n${lastToolResult.slice(0, 3000)}`
   )
@@ -227,7 +305,7 @@ model.close()
 chrome?.kill()
 fs.rmSync(homeBase, { recursive: true, force: true })
 
-function runClaude(home, configDir, settingsFile) {
+function runClaude(home, configDir, settingsFile, bypass) {
   return new Promise((resolve) => {
     const env = {
       ...process.env,
@@ -254,6 +332,7 @@ function runClaude(home, configDir, settingsFile) {
       claudeBin,
       [
         '-p',
+        ...(bypass ? ['--dangerously-skip-permissions'] : []),
         '--settings',
         settingsFile,
         '--strict-mcp-config',
