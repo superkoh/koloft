@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type JSX,
@@ -107,7 +108,8 @@ export function TopbarUsage(): JSX.Element | null {
     if (autoProbeDue(accountsRef.current, lastAutoProbe.current, Date.now())) void probe()
   }, [pop, probe])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!pop) return
     const close = (): void => setPop(null)
     const onKey = (e: KeyboardEvent): void => {
