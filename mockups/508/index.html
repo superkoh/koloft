@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>#508 Changes 里直接提交</title>
+<title>#508 Commit from Changes</title>
 <style>
   :root { --bg:#111; --fg:#e8e6e3; --mut:#9a968f; --line:#2a2826; --acc:#e5a50a; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.65 -apple-system, "PingFang SC", sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.65 -apple-system, sans-serif; }
   main { max-width:960px; margin:0 auto; padding:28px 20px 80px; }
   h1 { font-size:24px; margin:0 0 6px; }
   h2 { font-size:18px; margin:36px 0 8px; border-top:1px solid var(--line); padding-top:22px; }
@@ -26,72 +26,90 @@
 </head>
 <body>
 <main>
-<h1>Changes 里直接提交（issue #508）</h1>
-<p class="mut">issue #508 = 「仓库没有 GitHub 远端时，Changes 视图没法提交」。</p>
+<h1>Commit from the Changes view (issue #508)</h1>
+<p class="mut">Issue #508: "Changes view has no way to commit when the repository has no GitHub remote".</p>
 
-<p class="lead">一句话：在 Workbench 的 Changes 栏里加一个 <span class="new">"Commit…"</span> 按钮，点它就打开今天 GitHub 菜单里的那个提交框。仓库在不在 GitHub 上都能用。</p>
+<p class="lead">In one line: add a <span class="new">"Commit…"</span> button to the Workbench's Changes bar. It opens the same commit box the GitHub menu opens today, and it works whether or not the repository is on GitHub.</p>
 
 <pre>
-你改了代码 ──▶ Changes 里看到 diff ──▶ 点 "Commit…" ──▶ 写一句话 ──▶ "Commit"
-                                         │
-今天：这个按钮不存在。只有右键 GitHub 按钮才有 "Commit…"，
-      而 GitHub 按钮只在 github.com 仓库里出现。
+you change code ──▶ see the diff in Changes ──▶ click "Commit…" ──▶ type one line ──▶ "Commit"
+                                                  │
+today: this button does not exist. "Commit…" is only in the GitHub button's
+       right-click menu, and that button only shows for a github.com repository.
 </pre>
 
-<h2>1. 今天：没有 GitHub 的仓库，找不到提交</h2>
+<h2>1. Today: a repository without GitHub has no way to commit</h2>
 <div class="frame"><iframe src="today.html" title="today"></iframe></div>
-<div class="cap">真 app 截下来的界面：本机 git 仓库，没有远端，改了 2 个文件。Workbench 顶上没有 GitHub 按钮，Changes 栏只有 "base ▾"、"Filter ▾"、刷新、放大。</div>
+<div class="cap">Taken from the real app: a local git repository with no remote, two files changed. No GitHub button on the Workbench tab strip; the Changes bar has only "base ▾", "Filter ▾", reload and full width.</div>
 
-<h2>2. 以后（推荐 A）：Changes 栏多一个 "Commit…"</h2>
+<h2>2. After: one more "Commit…" in the Changes bar — two looks</h2>
+<p><b>B (recommended): an icon button</b>, left of reload, with the icon the GitHub menu's "Commit…" already uses; hovering shows "Commit…".</p>
+<div class="frame"><iframe src="option-b.html" title="option B"></iframe></div>
+<div class="cap">The yellow dashed box is the new button (the dashes only mark it here). Same <code>.icobtn</code> style as reload and full width next to it.</div>
+<p><b>A: a text button "Commit…"</b>, right of "Filter ▾", the same <code>.seg</code> style as "base ▾" and "Filter ▾".</p>
 <div class="frame"><iframe src="option-a.html" title="option A"></iframe></div>
-<div class="cap">黄色虚线框是新加的按钮（虚线只是标注，真做时没有）。样子和旁边的 "base ▾"、"Filter ▾" 完全一样，用同一个 <code>.seg</code> 样式。</div>
+<div class="cap">Readable at a glance, but about 70 px wide — see section 4b for what that does in a narrow Workbench.</div>
 
-<h2>3. 点下去：还是那个提交框</h2>
+<h2>3. Clicking it: the same commit box</h2>
 <div class="frame"><iframe src="dialog.html" title="commit dialog"></iframe></div>
-<div class="cap">和 GitHub 菜单里打开的是同一个对话框，不新做。按回车或点 "Commit" 就把这个文件夹里所有改动（新文件也算，<code>git add -A</code>）提交；成功后弹 "Committed."，Changes 跟着刷新。</div>
-<p>一个小差别：GitHub 仓库里提示写 "… on <code>分支名</code> …"；没有 GitHub 的仓库里，今天的代码拿不到分支名，所以这句里不写分支（图里就是这样）。要也写上分支名，得多加一次读分支的调用——见第 6 节的第二个问题。</p>
+<div class="cap">The same dialog the GitHub menu opens; nothing new is built. Enter or "Commit" commits every change in this folder (new files too, <code>git add -A</code>). On success the toast says "Committed." and Changes reloads. Closing the box leaves the keyboard where it was, as the GitHub menu's path does today (it does not jump back to the terminal).</div>
+<p>One small difference: in a GitHub repository the hint says "… on <code>branch</code> …". In a repository without GitHub today's code has no branch name to give, so the hint leaves it out (as the picture shows). Showing the branch there too needs one more branch read — see the second question in section 6.</p>
 
-<h2>4. 按钮什么时候能点</h2>
+<h2>4. When the button can be clicked</h2>
 <table>
-<tr><th>情况</th><th>按钮</th></tr>
-<tr><td>Changes 里有改动</td><td>能点</td></tr>
-<tr><td>Changes 里 0 个文件（干净的仓库，或者这个文件夹根本不是 git 仓库）</td><td>灰掉，点不了</td></tr>
-<tr><td>切到 "Browse"</td><td>不显示（和 "base ▾"、"Filter ▾" 一样只在 Changes 里出现）</td></tr>
-<tr><td>改动都已经提交了，但 "base ▾" 选的是对比分叉点，所以 Changes 里还列着文件</td><td>能点；点了提交会失败，弹 git 自己的话（应该是 "nothing to commit, working tree clean"，推测，没实测）</td></tr>
+<tr><th>Case</th><th>Button</th></tr>
+<tr><td>Changes lists changes</td><td>Enabled</td></tr>
+<tr><td>Changes lists 0 files (a clean repository, or a folder that is not a git repository)</td><td>Greyed out</td></tr>
+<tr><td>"Browse" is picked</td><td>Not shown (only in Changes, like "base ▾" and "Filter ▾")</td></tr>
+<tr><td>Everything is committed, but "base ▾" compares with the merge base, so Changes still lists files</td><td>Enabled; the commit fails and the toast shows git's own line, "nothing to commit, working tree clean" (checked with local git; on a remote machine the same code path picks the line, not run there)</td></tr>
+<tr><td>A session tab whose agent is not running (a cold row)</td><td>Same as above: the Changes bar and the commit do not need the agent</td></tr>
+</table>
+<p class="mut">A folder that is not a git repository gives 0 files locally (<code>statusOf</code> returns nothing). On a remote machine it is 0 too, either as an empty answer or as a failed read — which of the two is not checked.</p>
+
+<h2>4b. The narrowest Workbench (440 px)</h2>
+<p>Measured on the app's own CSS. Today the Changes bar is already full at 440 px: the empty gap between "Browse" and "base ▾" keeps a 10-character minimum. With "vs HEAD" picked and 10+ changed files, today's bar already needs 465 px: full width is cut off and reload sits on the very edge (filed as #1485):</p>
+<p><img src="narrow-today.png" alt="today at 440 px" width="440"></p>
+<p>So both looks also let that empty gap shrink to nothing (one CSS rule for the Changes bar). With that:</p>
+<table>
+<tr><th>At 440 px</th><th>"base", 1-digit count</th><th>"vs HEAD", 2-digit count</th></tr>
+<tr><td>B icon</td><td>fits</td><td>fits (440 of 440 px)</td></tr>
+<tr><td>A text</td><td>fits (440 of 440 px)</td><td>24 px too wide: reload is half cut off, full width is gone</td></tr>
+</table>
+<p>B at 440 px, worst case: <br><img src="narrow-b.png" alt="option B at 440 px" width="440"></p>
+<p>A at 440 px, worst case: <br><img src="narrow-a.png" alt="option A at 440 px" width="440"></p>
+
+<h2>5. Every kind of tab works the same</h2>
+<p>The button lives in the Workbench's Changes bar, and the commit goes through main's existing <code>commitAll</code>: local git for a local folder, git on the other machine over SSH for a remote workspace (the GitHub menu's "Commit…" already works this way; e2e cases E-RW-29 and E-SSH-12 cover it). None of that code looks at which agent runs in the tab, so:</p>
+<table>
+<tr><th>Tab</th><th>Local</th><th>Remote (SSH)</th></tr>
+<tr><td>Claude Code</td><td>Button shown, commits on this Mac</td><td>Button shown, commits on that machine</td></tr>
+<tr><td>Codex</td><td>Same</td><td>Same</td></tr>
+<tr><td>Muse Code</td><td>Same</td><td>Same</td></tr>
+<tr><td>Antigravity</td><td>Same</td><td>Same</td></tr>
+<tr><td>A workspace row's Workbench (no session; files and web pages only)</td><td>Button shown, commits the workspace folder</td><td>Same, on that machine</td></tr>
+</table>
+<p class="mut">The issue text says remote Codex is not available (#99). #99 is closed and remote Codex tabs exist now (<code>remote-codex.spec.ts</code>), so that line is out of date. E-RW-29 and E-SSH-12 commit from a remote Claude Code tab only; the new tests add the button in <code>workbench-changes.spec.ts</code> (local repository without GitHub: button shown, commit, toast, Changes empties; clean repository: greyed out) and one remote tab of another agent (e.g. <code>remote-codex.spec.ts</code>).</p>
+
+<h2>6. For the owner to decide</h2>
+<p><b>Question 1: what does the button look like?</b></p>
+<table>
+<tr><th>Option</th><th>Look</th><th>Cost</th></tr>
+<tr><td class="pick">B. Icon only (recommended)</td><td>Left of reload, with the existing icon of the GitHub menu's "Commit…"; "Commit…" shows on hover</td><td>Fits every measured case at 440 px; someone who does not know the icon has to hover once to learn it</td></tr>
+<tr><td>A. Text button "Commit…"</td><td>Right of "Filter ▾", same style as it</td><td>Readable at a glance; at 440 px with "vs HEAD" and 10+ files it is 24 px too wide, so reload and full width get cut off</td></tr>
 </table>
 
-<h2>5. 每种标签页都一样</h2>
-<p>按钮放在 Workbench 的 Changes 栏里，提交走的是主进程现成的 <code>commitAll</code>：本机用本机 git，远程工作区通过 SSH 在那台机器上跑 git（GitHub 菜单的 "Commit…" 今天就这样走，e2e 用例 E-RW-29、E-SSH-12 测过）。这些代码都不看是哪个 agent，所以：</p>
+<p><b>Question 2: in a repository without GitHub, does the commit box name the branch?</b></p>
 <table>
-<tr><th>标签页</th><th>本机</th><th>远程（SSH）</th></tr>
-<tr><td>Claude Code</td><td>有按钮，本机提交</td><td>有按钮，在那台机器上提交</td></tr>
-<tr><td>Codex</td><td>同上</td><td>同上</td></tr>
-<tr><td>Muse Code</td><td>同上</td><td>同上</td></tr>
-<tr><td>Antigravity</td><td>同上</td><td>同上</td></tr>
-<tr><td>工作区行的 Workbench（没有会话，只有文件和网页）</td><td>也有按钮，提交工作区文件夹</td><td>也有，在那台机器上提交</td></tr>
-</table>
-<p class="mut">issue 原文说「远程 Codex 不能用（#99）」——现在远程 Codex 标签页已经有了，这句过时了。</p>
-
-<h2>6. 要你定的</h2>
-<p><b>问题一：按钮长什么样？</b></p>
-<table>
-<tr><th>选项</th><th>样子</th><th>代价</th></tr>
-<tr><td class="pick">A. 文字按钮 "Commit…"（推荐）</td><td>放在 "Filter ▾" 右边，和它一样的样式（见第 2 张图）</td><td>Workbench 窄的时候多占约 70 像素宽；一眼就能看懂</td></tr>
-<tr><td>B. 只放图标</td><td>放在刷新按钮左边，用 GitHub 菜单里 "Commit…" 那个现成的图标，鼠标停上去才显示 "Commit…"（<a href="option-b.html">看图</a>）</td><td>省地方；但图标不认识的人要停一下才知道是什么</td></tr>
+<tr><th>Option</th><th>Cost</th></tr>
+<tr><td class="pick">No (recommended)</td><td>No new code; the hint lacks "on branch"</td></tr>
+<tr><td>Yes</td><td>One more git call to read the branch each time the box opens; a little more code and a test</td></tr>
 </table>
 
-<p><b>问题二：没有 GitHub 的仓库，提交框里写不写分支名？</b></p>
-<table>
-<tr><th>选项</th><th>代价</th></tr>
-<tr><td class="pick">不写（推荐）</td><td>零新代码；提示少半句 "on 分支名"</td></tr>
-<tr><td>写</td><td>每次打开提交框多跑一次读分支的 git 命令，多一点代码和测试</td></tr>
-</table>
-
-<h2>7. 不变的、不做的</h2>
+<h2>7. What stays and what is left out</h2>
 <ul>
-<li>GitHub 菜单里的 "Commit…" 照旧保留。GitHub 仓库里就有两个入口打开同一个框。</li>
-<li>"Push" 不加到 Changes 栏：issue 只要提交。没有 GitHub 的仓库要推送，今天还是只能在终端里推。</li>
-<li>不新做对话框、不新做图标、不改提交逻辑。</li>
+<li>The GitHub menu keeps its "Commit…". A GitHub repository then has two ways into the same box.</li>
+<li>No "Push" in the Changes bar: the issue asks only for commit. A repository without GitHub is still pushed from the terminal.</li>
+<li>No new dialog, no new icon, no change to how the commit runs. The only CSS change is letting the Changes bar's empty gap shrink, which also fixes #1485.</li>
 </ul>
 </main>
 </body>
