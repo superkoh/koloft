@@ -29,6 +29,7 @@ import {
   type InboxState
 } from '@shared/inbox'
 import { useStore } from '../store'
+import { isComposing } from '../keys'
 import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
 import { relTime } from '../sessionRows'
@@ -687,7 +688,7 @@ function Block({
                     })
                   }
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && own.trim()) onEnter()
+                    if (e.key === 'Enter' && !isComposing(e) && own.trim()) onEnter()
                   }}
                 />
               )}
