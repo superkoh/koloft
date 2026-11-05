@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AttentionEvent } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
 import {
+  ANSWER_NOT_TAKEN,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -52,6 +53,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     askOf: async () => twoQuestions,
     answer: async (tabId, reply) => {
       answered.push([tabId, reply])
+      marks = marks.filter((m) => m.tabId !== tabId)
       return undefined
     },
     butlerSide: () => false,
@@ -194,6 +196,32 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     w.mark([asking])
     await w.koloft.answer('s-t1', { answers: { q0: ['o1'], q1: ['o2'] } })
     expect(w.answered).toEqual([['t1', '2\n3']])
+  })
+
+  describe('an answer counts only once the session stops asking', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('keys the session ignores end as not taken, so the card stays to try again', async () => {
+      const w = world({ answer: async () => undefined })
+      w.mark([asking])
+      const result = w.koloft.answer('s-t1', { pick: 'yes' })
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN })
+    })
+
+    it('a session that takes the answer and asks something new counts as answered', async () => {
+      const w = world({
+        answer: async () => {
+          setTimeout(() => w.mark([{ ...asking, at: 200 }]), 3_000)
+          return undefined
+        }
+      })
+      w.mark([asking])
+      const result = w.koloft.answer('s-t1', { pick: 'yes' })
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(await result).toEqual({ ok: true })
+    })
   })
 })
 

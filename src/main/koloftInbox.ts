@@ -17,10 +17,15 @@ import {
   type Question
 } from './discord/dialog'
 import { SHOWS_NO_DIALOG } from './discord/relay'
+import { sleep } from './codexTransport'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
 const DETAILS_RETRY_MS = 1500
+const AN_ANSWER_THE_SESSION_TOOK_SHOWS_WITHIN_MS = 15_000
+const LOOK_FOR_THE_ANSWER_EVERY_MS = 250
+export const ANSWER_NOT_TAKEN =
+  'Koloft pressed your answer, but the session still shows the question. Try again, or open the session and answer it there.'
 
 export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
@@ -416,8 +421,9 @@ export class KoloftInbox {
     given: { answers?: InboxAnswers[string]; pick?: string }
   ): Promise<AnswerResult> {
     const live = this.d.liveTabOf(ref)
-    if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
-      return ANSWERED_ELSEWHERE
+    const asking =
+      live && this.d.marks().find((m) => m.tabId === live.tabId && m.kind === 'approval')
+    if (!live || !asking) return ANSWERED_ELSEWHERE
     let reply = given.pick
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
@@ -427,7 +433,21 @@ export class KoloftInbox {
     }
     const error = await this.d.answer(live.tabId, reply)
     if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
-    return error === undefined ? { ok: true } : { ok: false, why: error }
+    if (error !== undefined) return { ok: false, why: error }
+    return (await this.stopsAsking(asking)) ? { ok: true } : { ok: false, why: ANSWER_NOT_TAKEN }
+  }
+
+  private async stopsAsking(asking: AttentionEvent): Promise<boolean> {
+    for (let waited = 0; ; waited += LOOK_FOR_THE_ANSWER_EVERY_MS) {
+      if (
+        !this.d
+          .marks()
+          .some((m) => m.tabId === asking.tabId && m.kind === 'approval' && m.at === asking.at)
+      )
+        return true
+      if (waited >= AN_ANSWER_THE_SESSION_TOOK_SHOWS_WITHIN_MS) return false
+      await sleep(LOOK_FOR_THE_ANSWER_EVERY_MS)
+    }
   }
 
   rebound(oldRef: string, newKey: string): void {
