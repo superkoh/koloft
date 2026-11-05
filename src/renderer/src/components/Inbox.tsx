@@ -32,7 +32,6 @@ import { useStore } from '../store'
 import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
 import { relTime } from '../sessionRows'
-import { IconNotifications } from '../icons'
 import '../inbox.css'
 
 const TAB_NAME: Record<InboxState, string> = {
@@ -145,13 +144,10 @@ export function InboxRow(): JSX.Element {
   return (
     <div className="ibx-entry-wrap">
       <div
-        className={'recent-row ibx-entry' + (open ? ' on' : '')}
+        className={'ibx-entry' + (open ? ' on' : '')}
         onClick={() => useStore.getState().setInboxOpen(true)}
       >
-        <span className="ws-tab-cron">
-          <IconNotifications size={14} />
-        </span>
-        <span className="ws-tab-title">Inbox</span>
+        <span className="ibx-entry-name">Inbox</span>
         {c.badge > 0 && <span className={'ibx-count' + (c.high ? ' high' : '')}>{c.badge}</span>}
       </div>
     </div>

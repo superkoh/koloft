@@ -922,18 +922,31 @@
 }
 
 .ibx-entry-wrap {
-  margin: 1px 0 4px;
-  padding-left: 14px;
+  margin: 1px 0 15px;
+  padding: 2px 0 6px;
 }
 
-.recent-row.ibx-entry {
-  flex-direction: row;
+.ibx-entry {
+  -webkit-app-region: no-drag;
+  display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+  gap: 10px;
+  margin: 0 8px;
+  padding: 9px 12px;
+  border-radius: var(--r);
+  color: var(--fg);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
 }
 
-.ibx-entry .ws-tab-title {
+.ibx-entry:hover {
+  background: var(--bg-3);
+}
+
+.ibx-entry-name {
   flex: 1;
 }
 
