@@ -2171,6 +2171,17 @@ Gateway (the live connection that pushes events):
   - Archiving and opening one thread back and forth within a second answered 429
     (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
     15 s) still had calls left.
+- **Reading a thread's messages back** — measured 2026-11-04 with the test bot on the test
+  server, REST only, in a thread made on a message (`auto_archive_duration: 1440`) with
+  four bot posts in it:
+  - `GET /channels/{thread}/messages?after={id}&limit=100` answered 200 with every message
+    after that id, newest first, like a text channel. `after=` the opener's id also
+    returned the thread's own first message, `type` 21 (the copy of the opener).
+  - Once the thread was archived (`PATCH {archived: true}`, 200), the same `GET` answered
+    200 with the same messages, and `GET /channels/{thread}` afterwards still read
+    `archived: true`: reading does not open it.
+  - `GET /channels/{parent}/messages?after={opener}` listed none of the thread's
+    messages: a thread keeps its own history.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:

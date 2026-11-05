@@ -393,6 +393,15 @@ export interface DiscordSettings {
   lastMessageId?: string
   category?: DiscordChannel
   oldThreadsArchived?: true
+  rooms?: SessionRoom[]
+}
+
+export interface SessionRoom {
+  threadId: string
+  keys: string[]
+  name: string
+  lastMessageId?: string
+  putDown?: true
 }
 
 export type DiscordPhase =

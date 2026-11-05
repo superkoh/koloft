@@ -64,6 +64,8 @@ export const COMPONENT_INTERACTION = 3
 export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
 const ONLY_THE_SENDER_SEES_IT = 64
+const THREAD_FOLDS_AFTER_A_DAY_MINUTES = 1440
+const THREAD_NAME_LIMIT = 100
 
 export function privately(content: string): unknown {
   return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
@@ -466,6 +468,24 @@ export class DiscordLink {
 
   archiveThread(threadId: string): Promise<unknown> {
     return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
+  }
+
+  // PLATFORM§39
+  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
+    const thread = await this.api().request<{ id: string }>(
+      'POST',
+      `/channels/${channelId}/messages/${messageId}/threads`,
+      {
+        name: name.slice(0, THREAD_NAME_LIMIT),
+        auto_archive_duration: THREAD_FOLDS_AFTER_A_DAY_MINUTES
+      }
+    )
+    return thread.id
+  }
+
+  // PLATFORM§39
+  addToThread(threadId: string, userId: string): Promise<unknown> {
+    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {

@@ -22,6 +22,8 @@ export interface AwayDigestDeps {
   reachable(): boolean
   marks(): AttentionEvent[]
   butlerSide(tabId: string): boolean
+  inRoom(tabId: string): boolean
+  touchedBeforeLeaving(): string[]
   judging(tabId: string): boolean
   sessionOf(mark: AttentionEvent): Omit<DigestItem, 'kind' | 'reply'>
   butlerBusy(): boolean
@@ -51,11 +53,17 @@ export function digestLine(item: DigestItem, n: number): string {
   return `${n}. "${item.title ?? 'A session'}"${where.length ? ` (${where.join(', ')})` : ''} ${HAPPENED[item.kind]}${quoted}.`
 }
 
-export function digestText(items: DigestItem[]): string {
+function touchedLine(titles: string[]): string {
+  return titles.length
+    ? ` Before leaving, the owner worked at the Mac with ${titles.map((t) => `"${t}"`).join(', ')}.`
+    : ''
+}
+
+export function digestText(items: DigestItem[], touched: string[] = []): string {
   const shown = items.slice(0, ITEMS_PER_DIGEST)
   const more = items.length - shown.length
   const rest = more > 0 ? ` And ${more} more; koloft todo lists them all.` : ''
-  return `${FROM_KOLOFT}The owner is away from Koloft, and these sessions changed since they last used it: ${shown.map((item, i) => digestLine(item, i + 1)).join(' ')}${rest} What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.`
+  return `${FROM_KOLOFT}The owner is away from Koloft, and these sessions changed since they last used it: ${shown.map((item, i) => digestLine(item, i + 1)).join(' ')}${rest}${touchedLine(touched)} What you reply to this goes nowhere. If any of it needs the owner, tell them on Discord with koloft discord send -- "<what to say>"; if none of it does, do nothing.`
 }
 
 export class AwayDigest {
@@ -116,7 +124,8 @@ export class AwayDigest {
           m.at > since &&
           !m.fyi &&
           !this.d.butlerSide(m.tabId) &&
-          !(m.kind === 'turn-done' && this.handedOff.has(m.tabId))
+          !(m.kind === 'turn-done' && this.handedOff.has(m.tabId)) &&
+          !(m.kind !== 'exited' && this.d.inRoom(m.tabId))
       )
     if (!fresh.length || !this.d.away() || !this.d.reachable()) {
       this.waitingSince = undefined
@@ -135,7 +144,8 @@ export class AwayDigest {
     const before = this.handedUpTo
     this.handedUpTo = Math.max(...fresh.map((m) => m.at))
     this.telling = true
-    void this.d.tell(digestText(fresh.map((m) => this.itemOf(m)))).then((told) => {
+    const items = fresh.map((m) => this.itemOf(m))
+    void this.d.tell(digestText(items, this.d.touchedBeforeLeaving())).then((told) => {
       this.telling = false
       if (!told) this.handedUpTo = before
     })

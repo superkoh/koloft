@@ -28,7 +28,6 @@ import {
   crossSessionLine,
   type ModeClass
 } from '../crossSessionMessage'
-import { discordIdsFile, noteDiscordSaid } from '../hooks'
 import {
   answerKeys,
   ANSWER_KEYS,
@@ -58,6 +57,8 @@ export const inputNotProbed = (label: string): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
 const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
+export const unreadableInRoom = (butler: string, lobby: string | undefined): string =>
+  `Koloft cannot read this question from here. Ask ${butler}${lobby ? ` in ${lobby}` : ''} to press its keys for you.`
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
@@ -86,17 +87,21 @@ const FIRST_PROMPT_BINDS_WITHIN_MS = 10_000
 export const HELD_ASKS_CHECKED_EVERY_MS = 30_000
 
 export interface Destination {
+  channelId: string
   name: string
   liveTab(): string | undefined
   open(): Promise<string>
   typeCommand(tab: string, command: string): Promise<void>
   seen(messageId: string): void
+  ownerIsWhere?(): string
+  ownerSpoke?(): void
 }
 
 export interface CaughtUpChannel {
   channelId: string
   lastMessageId?: string
   seen(messageId: string): void
+  handsOverTo?: Destination
 }
 
 export interface RelayDeps {
@@ -108,9 +113,13 @@ export interface RelayDeps {
   butlerName(): string
   destinationOf(channelId: string): Destination | undefined
   channels(): CaughtUpChannel[]
-  butlerChannelOf(tabId: string): string | undefined
+  replyChannelOf(tabId: string): string | undefined
   askChannelOf(tabId: string): string | undefined
+  lobbyLink(): string | undefined
+  noteDiscordId(tabId: string, id: string): Promise<void>
+  noteDiscordSaid(tabId: string, text: string): Promise<void>
   helperTitle(tabId: string): string | undefined
+  inRoom(tabId: string): boolean
   withButtons(tabId: string, view: DialogView, card: Card): Card
   askPlaced(card: Card, at: PlacedAsk | undefined): void
   answered(tabId: string, reply: string): void
@@ -153,21 +162,24 @@ function slashTextOf(content: string): string | undefined {
 }
 
 export class DiscordRelay {
-  private inbox: Inbound[] = []
+  private queues = new Map<string, Inbound[]>()
   private told = 0
-  private pumping = false
   private seenLive = new Set<string>()
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
-  private cardOrder = new Set<string>()
   private quietReplies = new Set<string>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
   private held = new Set<string>()
+  private unreadable = new Set<string>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
 
   constructor(private d: RelayDeps) {}
+
+  answeringDiscord(tab: string): boolean {
+    return this.answering.has(tab)
+  }
 
   reaches(tab: string): boolean {
     return this.answering.has(tab) || this.d.ownerAway()
@@ -183,7 +195,6 @@ export class DiscordRelay {
       return false
     }
     this.held.add(tab)
-    this.cardOrder.delete(tab)
     this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
     return true
   }
@@ -200,11 +211,18 @@ export class DiscordRelay {
     this.heldCheck = undefined
   }
 
+  roomOpened(tab: string): void {
+    this.answersDiscord(tab, 'turn')
+    this.held.delete(tab)
+    this.postOpenAsk(tab)
+  }
+
   private postOpenAsk(tab: string): void {
     const ask = this.openAsk(tab)
     if (ask) return this.postClaudeAsk(tab, ask.payload)
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
-    if (open) this.codexAsked(tab, open)
+    if (open) return this.codexAsked(tab, open)
+    if (this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)) this.asksUnreadably(tab)
   }
 
   say(channelId: string, text: string, replyTo?: string): void {
@@ -237,18 +255,21 @@ export class DiscordRelay {
     if (!dest) return
     this.d.ownerWrote()
     this.seenLive.add(m.id)
-    const butlerTab = dest.liveTab()
-    if (butlerTab && this.held.delete(butlerTab) && this.dialogOpen(butlerTab)) {
-      this.answersDiscord(butlerTab, 'turn')
-      this.postOpenAsk(butlerTab)
+    this.take(dest, m)
+  }
+
+  private take(dest: Destination, m: DiscordMessage): void {
+    dest.ownerSpoke?.()
+    const tab = dest.liveTab()
+    if (tab && this.held.delete(tab) && this.dialogOpen(tab)) {
+      this.answersDiscord(tab, 'turn')
+      this.postOpenAsk(tab)
       this.say(m.channelId, answerItFirst(dest.name), m.id)
       dest.seen(m.id)
       return
     }
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
-    const tab = command === undefined ? (this.newestCardWaiting() ?? butlerTab) : butlerTab
-    const refusal =
-      command === undefined ? undefined : this.commandRefusal(butlerTab, command, dest.name)
+    const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
     if (
       !refusal &&
       command === undefined &&
@@ -274,9 +295,8 @@ export class DiscordRelay {
       dest.seen(m.id)
       return
     }
-    const takes =
-      command === undefined ? this.typable(butlerTab ?? '') : this.takesCommand(butlerTab ?? '')
-    const waits = !butlerTab || this.pumping || !takes
+    const takes = command === undefined ? this.typable(tab ?? '') : this.takesCommand(tab ?? '')
+    const waits = !tab || this.delivering(dest.channelId) || !takes
     if (waits) this.react(m, QUEUED, true)
     this.enqueue(dest, {
       clientId: `koloft-discord-${m.id}`,
@@ -295,10 +315,6 @@ export class DiscordRelay {
         dest.seen(m.id)
       }
     })
-  }
-
-  private newestCardWaiting(): string | undefined {
-    return [...this.cardOrder].reverse().find((tab) => this.dialogOpen(tab))
   }
 
   private commandRefusal(
@@ -335,31 +351,34 @@ export class DiscordRelay {
   }
 
   private enqueue(dest: Destination, item: Inbound): void {
-    this.inbox.push(item)
-    void this.pump(dest)
+    const waiting = this.queues.get(dest.channelId)
+    if (waiting) return void waiting.push(item)
+    const items = [item]
+    this.queues.set(dest.channelId, items)
+    void this.pump(dest, items)
   }
 
-  private async pump(dest: Destination): Promise<void> {
-    if (this.pumping) return
-    this.pumping = true
+  private async pump(dest: Destination, items: Inbound[]): Promise<void> {
     try {
-      while (this.inbox.length) {
-        const item = this.inbox[0]
+      while (items.length) {
+        const item = items[0]
         const failed = await this.deliver(dest, item)
           .then(() => undefined)
           .catch(errorText)
-        this.inbox.shift()
+        items.shift()
         item.settle(failed)
       }
     } finally {
-      this.pumping = false
+      this.queues.delete(dest.channelId)
     }
   }
 
   private async deliver(dest: Destination, item: Inbound): Promise<void> {
     const tab = await this.readyTab(dest)
     const first = !this.d.boundKey(tab)
-    const text = await item.text()
+    const said = await item.text()
+    const fromKoloft = !item.command && !item.fromDiscord
+    const text = fromKoloft && dest.ownerIsWhere ? `${said} ${dest.ownerIsWhere()}` : said
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
     if (item.quiet) this.quietTurns.add(tab)
@@ -378,8 +397,8 @@ export class DiscordRelay {
     return this.quietTurns.has(tab)
   }
 
-  delivering(): boolean {
-    return this.pumping || this.inbox.length > 0
+  delivering(channelId: string): boolean {
+    return this.queues.has(channelId)
   }
 
   private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
@@ -389,7 +408,7 @@ export class DiscordRelay {
     if (route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
     // ADR-0028 AGY§16
     if (backend !== 'agy' && text.startsWith(DISCORD_PREFIX))
-      noteDiscordSaid(this.d.regDir, tab, text)
+      await this.d.noteDiscordSaid(tab, text)
     if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
@@ -398,9 +417,8 @@ export class DiscordRelay {
   private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
     const line = crossSessionLine(this.d.modeOf(tab), text, id)
     if (line === null)
-      throw new Error('The butler cannot take a message holding </cross-session-message>.')
-    if (text.startsWith(DISCORD_PREFIX))
-      fs.appendFileSync(discordIdsFile(this.d.regDir, tab), `${id}\n`)
+      throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
+    if (text.startsWith(DISCORD_PREFIX)) await this.d.noteDiscordId(tab, id)
     await this.d.sendLine(tab, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
   }
 
@@ -495,7 +513,7 @@ export class DiscordRelay {
       this.quietReplies.delete(quiet)
       return
     }
-    const channelId = this.d.butlerChannelOf(tabId)
+    const channelId = this.d.replyChannelOf(tabId)
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
@@ -522,21 +540,41 @@ export class DiscordRelay {
     })
   }
 
-  private askCard(tab: string, view: DialogView, how: string, shown = view.text): Card {
+  private askerName(tab: string): string {
     const helper = this.d.helperTitle(tab)
     const butler = this.d.butlerName()
+    return helper === undefined ? butler : this.d.inRoom(tab) ? helper : helperOf(helper, butler)
+  }
+
+  private askCard(tab: string, view: DialogView, how: string, shown = view.text): Card {
     const card: Card = {
       accent: CONDUCTOR_ACCENT,
-      header: butlerAsks(helper === undefined ? butler : helperOf(helper, butler)),
+      header: butlerAsks(this.askerName(tab)),
       body: shown,
       footer: `-# ${how}`
     }
     return view.choices.length ? this.d.withButtons(tab, view, card) : card
   }
 
+  asksUnreadably(tab: string): void {
+    const channelId = this.d.askChannelOf(tab)
+    if (!channelId || !this.d.inRoom(tab) || this.unreadable.has(tab) || this.dialogOpen(tab))
+      return
+    if (this.holds(tab)) return
+    this.unreadable.add(tab)
+    const lobby = this.d.lobbyLink()
+    void this.card(channelId, {
+      accent: CONDUCTOR_ACCENT,
+      header: butlerAsks(this.askerName(tab)),
+      body: unreadableInRoom(this.d.butlerName(), lobby)
+    })
+  }
+
+  stoppedAsking(tab: string): void {
+    this.unreadable.delete(tab)
+  }
+
   private postAsk(tab: string, channelId: string, card: Card): void {
-    this.cardOrder.delete(tab)
-    this.cardOrder.add(tab)
     void this.d.link
       .card(channelId, card)
       .then(
@@ -718,34 +756,45 @@ export class DiscordRelay {
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.askHooks.delete(tab)
-    this.cardOrder.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)
+    this.unreadable.delete(tab)
     this.quietTurns.delete(tab)
+  }
+
+  // PLATFORM§39
+  private missed(c: CaughtUpChannel, m: DiscordMessage): boolean {
+    if (!c.handsOverTo) {
+      this.say(c.channelId, OFFLINE_REPLY, m.id)
+      return false
+    }
+    this.seenLive.add(m.id)
+    this.take(c.handsOverTo, m)
+    return true
+  }
+
+  private async catchUpOn(c: CaughtUpChannel, owner: string | undefined): Promise<void> {
+    if (!c.lastMessageId) {
+      const [latest] = await this.d.link.messages(c.channelId, undefined, 1)
+      if (latest) c.seen(latest.id)
+      return
+    }
+    let after = c.lastMessageId
+    let handedOver = false
+    for (;;) {
+      const page = await this.d.link.messages(c.channelId, after, PAGE)
+      for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
+        if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
+          handedOver = this.missed(c, m) || handedOver
+        after = m.id
+      }
+      if (page.length < PAGE) break
+    }
+    if (!handedOver) c.seen(after)
   }
 
   async catchUp(): Promise<void> {
     const owner = this.d.owner()
-    for (const c of this.d.channels()) {
-      const channelId = c.channelId
-      try {
-        if (!c.lastMessageId) {
-          const [latest] = await this.d.link.messages(channelId, undefined, 1)
-          if (latest) c.seen(latest.id)
-          continue
-        }
-        let after = c.lastMessageId
-        for (;;) {
-          const page = await this.d.link.messages(channelId, after, PAGE)
-          for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
-            if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
-              this.say(channelId, OFFLINE_REPLY, m.id)
-            after = m.id
-          }
-          if (page.length < PAGE) break
-        }
-        c.seen(after)
-      } catch {}
-    }
+    await Promise.allSettled(this.d.channels().map((c) => this.catchUpOn(c, owner)))
   }
 }

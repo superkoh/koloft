@@ -17,7 +17,7 @@ const REPLY = 4
 export const SLASH_COMMANDS: SlashCommandSpec[] = [
   {
     name: 'run',
-    description: 'Type a slash command into your butler',
+    description: 'Type a slash command into this room’s session, or into your butler',
     options: [
       {
         type: STRING_OPTION,
@@ -29,11 +29,11 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
   },
   {
     name: 'clear',
-    description: 'Start a new conversation with your butler (/clear)'
+    description: 'Start a new conversation with this room’s session, or your butler (/clear)'
   },
   {
     name: 'compact',
-    description: 'Compact your butler’s conversation (/compact)',
+    description: 'Compact the conversation of this room’s session, or your butler (/compact)',
     options: [{ type: STRING_OPTION, name: 'focus', description: 'What the summary should keep' }]
   }
 ]
@@ -52,7 +52,7 @@ function commandTextOf(i: DiscordInteraction): string {
 export interface InteractionDeps {
   owner(): string | undefined
   ownerWrote(): void
-  run(text: string): Promise<string>
+  run(text: string, channelId: string): Promise<string>
   press(i: DiscordInteraction): Promise<void>
   submit(i: DiscordInteraction): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
@@ -80,7 +80,7 @@ export class Interactions {
     if (problem) return this.reply(i, privately(didNotRun(problem)))
     let content: string
     try {
-      content = await this.d.run(text)
+      content = await this.d.run(text, i.channelId)
     } catch (error) {
       content = `⚠ ${errorText(error)}`
     }

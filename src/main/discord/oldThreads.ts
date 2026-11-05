@@ -13,6 +13,7 @@ export interface OldThreadDeps {
   channel(): DiscordChannel | undefined
   archived(): boolean
   markArchived(): void
+  isRoom(threadId: string): boolean
   now(): number
 }
 
@@ -29,7 +30,8 @@ export class OldThreads {
       .botThreadsUnder(channel.guildId, channel.channelId)
       .catch(() => undefined)
     if (!threads) return
-    const archived = await Promise.allSettled(threads.map((id) => this.d.link.archiveThread(id)))
+    const old = threads.filter((id) => !this.d.isRoom(id))
+    const archived = await Promise.allSettled(old.map((id) => this.d.link.archiveThread(id)))
     if (archived.every((r) => r.status === 'fulfilled')) this.d.markArchived()
   }
 
