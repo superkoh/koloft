@@ -100,6 +100,7 @@ import {
   codexKeyFor,
   labelsOf,
   questionAnswers,
+  TYPED_AS_KEYS,
   type CodexApproval,
   type CodexQuestion,
   type Question
@@ -1398,7 +1399,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§14 AGY§16 AGY§19
-  async answer(tabId: string, reply: string): Promise<string | undefined | false> {
+  async answer(
+    tabId: string,
+    reply: string
+  ): Promise<string | undefined | false | typeof TYPED_AS_KEYS> {
     const run = this.runs.get(tabId)
     const ask = run?.waiting
     const id = run?.info?.nativeSessionId
@@ -1431,11 +1435,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           () => false
         )
       : false
-    if (!viaApi) {
-      const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
-      this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
-    }
-    return undefined
+    if (viaApi) return undefined
+    const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
+    this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
+    return TYPED_AS_KEYS
   }
 
   // AGY§15 AGY§16

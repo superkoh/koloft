@@ -18,7 +18,7 @@ import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
 import type { TranscriptPlaces } from './sessionBackends'
 import type { SessionPlace } from './usageCache'
-import type { CodexApproval, CodexQuestion } from './discord/dialog'
+import type { CodexApproval, CodexQuestion, TYPED_AS_KEYS } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -150,7 +150,7 @@ export interface SessionsWithStore {
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
-  answer?(tabId: string, reply: string): Promise<string | undefined | false>
+  answer?(tabId: string, reply: string): Promise<string | undefined | false | typeof TYPED_AS_KEYS>
   deliver?(tabId: string, text: string): Promise<boolean>
   showsPromptBeforeBind?(tabId: string): boolean
   noticeRemoteExits?(host: string, sessionIds: string[]): void

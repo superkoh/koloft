@@ -806,7 +806,9 @@ function keysOnTheDialog(answerOnceDone) {
     // PLATFORM§35
     if (paneRaw) fs.writeFileSync(paneRaw, '')
     reportState('state=blocked:kind=permission')
+    const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
+      if (fs.existsSync(dropKey)) return void fs.rmSync(dropKey, { force: true })
       const answer = answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null

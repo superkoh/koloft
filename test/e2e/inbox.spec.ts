@@ -22,6 +22,8 @@ import {
   wsRows
 } from './helpers/p1'
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
+import { ANSWER_NOT_TAKEN } from '../../src/main/koloftInbox'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 
@@ -188,6 +190,20 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
+async function allowFromItsCard(page: Page, command: string) {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+  const tabId = (await row.getAttribute('data-tab-id')) as string
+  await runIn(page, centerTerm(page), `/bash ${command}`)
+  await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+  await openInbox(page)
+  const card = inboxCard(page, 'wants to run a command')
+  await card.locator('.ibx-btn', { hasText: 'Allow' }).click()
+  return { tabId, card }
+}
+
 // CC§12
 test('a command a Claude Code session wants to run is a card; Allow there moves it to Done as Answered once the dialog closes, while the command still runs', async ({
   env
@@ -196,18 +212,7 @@ test('a command a Claude Code session wants to run is a card; Allow there moves 
   const app = await launchApp(env)
   try {
     const page = await app.firstWindow()
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
-    const row = wsRows(page, 'ws-a').first()
-    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
-    const tabId = (await row.getAttribute('data-tab-id')) as string
-
-    await runIn(page, centerTerm(page), '/bash slow make test')
-    await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
-    await openInbox(page)
-    await inboxCard(page, 'wants to run a command')
-      .locator('.ibx-btn', { hasText: 'Allow' })
-      .click()
+    const { tabId } = await allowFromItsCard(page, 'slow make test')
     await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered', {
       timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
     })
@@ -216,6 +221,23 @@ test('a command a Claude Code session wants to run is a card; Allow there moves 
     await expect
       .poll(() => terminalText(page, tabId), { timeout: 15_000 })
       .toContain('Ran: slow make test')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+// CC§12
+test('an Allow pressed on a card that the Claude Code session ignores stays in Needs you and sends the owner to the session', async ({
+  env
+}) => {
+  env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
+  fs.writeFileSync(path.join(env.home, 'fake-claude-drop-key'), '')
+  const app = await launchApp(env)
+  try {
+    const { card } = await allowFromItsCard(await app.firstWindow(), 'make test')
+    await expect(card).toContainText(ANSWER_NOT_TAKEN, {
+      timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
+    })
   } finally {
     await quitAndClose(app)
   }

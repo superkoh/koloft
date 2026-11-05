@@ -166,6 +166,32 @@ The approval dialog takes single keys, with no Enter after them: `y`, `1` or Ent
 approve; `3` or Esc decline. Recorded from the Discord design round's probe notes
 (2026-10-02, Codex 0.159.3, a real TUI); the setup was not re-run here.
 
+**A key answers a dialog only once the TUI has had it for about 20 ms; earlier, it is
+dropped.** 2026-11-05, codex-cli 0.166.0, `gpt-6-astra` at `low`, a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards; `features.apps=false`,
+`features.plugins=false`, `check_for_update_on_startup=false`, the folder trusted,
+`approval_policy = "on-request"`, `sandbox_mode = "read-only"`), a Node WebSocket relay in
+front of one `codex app-server --stdio` (`-c features.default_mode_request_user_input=true`
+for the questions) logging every frame, the real TUI in a python pty (120×40) as `codex
+--remote ws://127.0.0.1:<port> -a on-request -s read-only "<prompt>"`, a fresh TUI and
+app-server per run, the key written alone at a set delay after the request frame passed
+the relay; 33 runs.
+- A `touch approved.txt` approval offered `availableDecisions: ["accept",
+  {acceptWithExecpolicyAmendment: …}, "cancel"]`, drawn as "1. Yes, proceed (y) / 2. Yes,
+  and don't ask again … (p) / 3. No, and tell Codex what to do differently (esc)". `y` 2 s
+  after the request sent `{decision: "accept"}` 1–3 ms after the key (2 runs). Esc sent
+  `{decision: "cancel"}` at once, and the turn then ended `turn/completed` `status:
+  "interrupted"` 6 ms later (2 runs). A `requestUserInput` answered `2` 2 s after sent
+  `{answers: {colour: {answers: ["Green"]}}}` 1 ms after the key (2 runs). Each taken
+  answer was followed within 2 ms by `serverRequest/resolved` and `thread/status/changed`
+  with `activeFlags: []`.
+- The dialog was on screen 3–14 ms after the request. `y`, Esc or `2` written 2–13 ms
+  after the request (12 runs, some after the dialog was drawn) was dropped: no reply,
+  nothing in the composer, the dialog stayed for 15 s; the same key written again then
+  was taken within 2 ms (12 of 12). From 22 ms on (and `2` once at 13 ms), every key was
+  taken within 1 ms (17 runs). So a key from a person seconds later is taken at once; a
+  dropped one never answers late.
+
 Not probed yet: `…/requestApproval` for other item kinds. `item/tool/requestUserInput`
 and `mcpServer/elicitation/request` were seen on the wire later (section 20).
 

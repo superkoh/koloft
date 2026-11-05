@@ -94,7 +94,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     the file and starts, Enter alone exits 1), `-bg-ms` (how long `/bg-reported`'s background work runs,
     5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
     SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
-    failure line and leaves the worktree).
+    failure line and leaves the worktree), `-drop-key` (a dialog drops the next key it
+    gets, then deletes the file).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the

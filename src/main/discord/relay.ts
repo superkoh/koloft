@@ -42,6 +42,7 @@ import {
   howToAnswer,
   isAskedCall,
   questionAnswers,
+  type TYPED_AS_KEYS,
   type AnswerKeys,
   type CodexApproval,
   type CodexQuestion,
@@ -142,7 +143,10 @@ export interface RelayDeps {
   pendingApproval(tabId: string): CodexApproval | undefined
   pendingQuestion(tabId: string): CodexQuestion | undefined
   answerable(tabId: string): Promise<void>
-  answerInPlace(tabId: string, reply: string): Promise<string | undefined | false>
+  answerInPlace(
+    tabId: string,
+    reply: string
+  ): Promise<string | undefined | false | typeof TYPED_AS_KEYS>
   showsDialogsClosing(tabId: string): boolean
   regDir: string
   attachmentsDir: string
@@ -675,7 +679,7 @@ export class DiscordRelay {
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
         this.codexAsks.delete(tab)
-        return { error: inPlace }
+        return typeof inPlace === 'object' ? { watch: true } : { error: inPlace }
       }
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
@@ -760,7 +764,7 @@ export class DiscordRelay {
     void this.d.answerInPlace(tab, m.content).then((inPlace) => {
       if (inPlace === false) return this.answerOpenByKeys(tab, m, open, keys)
       this.codexAsks.delete(tab)
-      if (inPlace) this.say(m.channelId, inPlace, m.id)
+      if (typeof inPlace === 'string') this.say(m.channelId, inPlace, m.id)
       else this.d.answered(tab, m.content)
     })
     return true
