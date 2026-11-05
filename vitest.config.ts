@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
+      electron: resolve(__dirname, 'test/unit/helpers/electronWithoutItsBinary.ts'),
       // PLATFORM§21
       '@xterm/headless': resolve(
         __dirname,
