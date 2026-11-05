@@ -47,6 +47,7 @@ export interface KoloftInboxDeps {
   askOf(tabId: string): Promise<KoloftAsk | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
   butlerSide(tabId: string): boolean
+  watching(): string | null
 }
 
 export function askFromClaude(p: AskPayload): KoloftAsk {
@@ -71,12 +72,27 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
+const SIGNAL_OF: Record<AttentionEvent['kind'], string> = {
+  approval: 'ask',
+  exited: 'exit',
+  'turn-done': 'done'
+}
+
 function signalKey(m: AttentionEvent): string {
-  return `${m.kind === 'exited' ? 'exit' : 'ask'}:${m.sessionId}:${m.at}`
+  return `${SIGNAL_OF[m.kind]}:${m.sessionId}:${m.at}`
 }
 
 function isSignal(c: InboxCard): boolean {
-  return c.source === KOLOFT_SOURCE.id && !c.postedBy && /^(ask|exit):/.test(c.key)
+  return (
+    c.source === KOLOFT_SOURCE.id &&
+    !c.postedBy &&
+    Object.values(SIGNAL_OF).includes(c.key.split(':')[0])
+  )
+}
+
+const GONE_STATUS: Record<string, string> = {
+  exit: 'Started again',
+  done: 'It went on'
 }
 
 export function where(s: AskedSession): Record<string, string> {
@@ -186,6 +202,53 @@ export function askCard(
   }
 }
 
+const LAST_WORDS_SHOWN = 900
+
+function lastWords(said: string): string {
+  const chars = Array.from(said)
+  return chars.length > LAST_WORDS_SHOWN ? `…${chars.slice(-LAST_WORDS_SHOWN).join('')}` : said
+}
+
+export function doneCard(
+  m: AttentionEvent,
+  s: AskedSession,
+  reply: string | undefined
+): InboxCardInput {
+  const said = reply?.trim()
+  return {
+    key: signalKey(m),
+    level: 'normal',
+    session: s.sessionId,
+    where: where(s),
+    happenedAt: m.at,
+    title: `“${s.title}” finished and waits for you`,
+    blocks: [
+      ...(said
+        ? [
+            {
+              type: 'quote' as const,
+              who: 'It said',
+              text: lastWords(said)
+            }
+          ]
+        : []),
+      { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+    ],
+    actions: [
+      {
+        id: 'reply',
+        label: 'Send',
+        style: 'main',
+        takes: ['reply'],
+        busyText: 'Sending…',
+        run: { type: 'session', session: CARD_SESSION, message: '{answer:reply}' },
+        then: { done: { state: 'closed', status: 'Replied' } }
+      }
+    ],
+    links: [{ label: 'Open session', to: { type: 'session', session: s.sessionId } }]
+  }
+}
+
 export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
   const remote = !!s.machine
   return {
@@ -252,25 +315,20 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 // ADR-0049
 export class KoloftInbox {
   private building = new Set<string>()
+  private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
   }
 
   sync(): void {
-    const wanted = new Map<string, AttentionEvent>()
-    for (const m of this.d.marks())
-      if (
-        (m.kind === 'approval' || m.kind === 'exited') &&
-        m.sessionId &&
-        !this.d.butlerSide(m.tabId)
-      )
-        wanted.set(signalKey(m), m)
+    const marks = this.d.marks().filter((m) => m.sessionId)
+    const standing = new Set(marks.map(signalKey))
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
         c.state !== 'needs-you' ||
-        wanted.has(c.key) ||
+        standing.has(c.key) ||
         c.press?.step === 'working'
       )
         continue
@@ -278,12 +336,30 @@ export class KoloftInbox {
         this.d.inbox.move(
           KOLOFT,
           c.key,
-          c.key.startsWith('exit:') ? { state: 'closed', status: 'Started again' } : HANDLED,
+          { state: 'closed', status: GONE_STATUS[c.key.split(':')[0]] ?? HANDLED.status },
           'it no longer waits for you'
         )
       } catch {}
     }
-    for (const [key, m] of wanted) if (!this.d.inbox.find(KOLOFT, key)) void this.post(m, true)
+    for (const m of marks)
+      if (m.kind !== 'turn-done' && !this.d.inbox.find(KOLOFT, signalKey(m)))
+        void this.post(m, true)
+  }
+
+  turnEnded(tabId: string, reply: string, handedOff: boolean): void {
+    this.finished.set(tabId, { reply, forTheOwner: !handedOff && !this.d.butlerSide(tabId) })
+  }
+
+  judged(tabId: string, news: boolean): void {
+    const turn = this.finished.get(tabId)
+    this.finished.delete(tabId)
+    if (news || !turn?.forTheOwner || this.d.watching() === tabId) return
+    const m = this.d.marks().find((x) => x.tabId === tabId && x.kind === 'turn-done' && !x.fyi)
+    const s = this.d.sessionOfTab(tabId)
+    if (!m?.sessionId || !s || this.d.inbox.find(KOLOFT, signalKey(m))) return
+    try {
+      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply))
+    } catch {}
   }
 
   private async post(m: AttentionEvent, retry: boolean): Promise<void> {

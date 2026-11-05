@@ -661,6 +661,7 @@ const sessionBackends = new SessionBackends({
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     const handedOff = sessionCommand.turnEnded(tabId, turn)
+    koloftInbox.turnEnded(tabId, turn.reply, handedOff)
     awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
   prompted: (tabId) => {
@@ -727,7 +728,8 @@ function allSessions(): SessionInfo[] {
 const newsJudge = new NewsJudge({
   isNews: (turn) => onlyNews(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId)
+  markFyi: (tabId) => attention.markFyi(tabId),
+  judged: (tabId, news) => koloftInbox.judged(tabId, news)
 })
 
 // CC§14
@@ -1987,7 +1989,8 @@ const koloftInbox = new KoloftInbox({
   },
   askOf: inboxAskOf,
   answer: sessionDeps.answer,
-  butlerSide
+  butlerSide,
+  watching: () => attention.watching()
 })
 
 const agentRequests = new AgentRequests({

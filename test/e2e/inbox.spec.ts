@@ -26,8 +26,16 @@ import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const FAKE_REMOTE_DIALOG_GOT_KEY_2 = /dialog on screen: press a key\s+2/
 
-function inboxCard(page: Page, text: string | RegExp) {
-  return page.locator('.inbox-page .ibx-item', { hasText: text })
+function inboxCard(page: Page, title: string | RegExp) {
+  return page.locator('.inbox-page .ibx-item', {
+    has: page.locator('.ibx-what', { hasText: title })
+  })
+}
+
+function cardQuoting(page: Page, words: RegExp) {
+  return page.locator('.inbox-page .ibx-item', {
+    has: page.locator('.ibx-quote', { hasText: words })
+  })
 }
 
 async function openInbox(page: Page): Promise<void> {
@@ -299,4 +307,36 @@ test('a session that stopped unexpectedly is a card; Start it again resumes it i
   await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText(
     'Handed to a new session'
   )
+})
+
+test('a session that ends its turn waiting on the owner is a card with its last words; a reply typed on the card reaches it, and one typed in its tab closes the card', async ({
+  page,
+  env
+}) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const tabId = (await row.getAttribute('data-tab-id')) as string
+
+  await runIn(page, centerTerm(page), '/answer Shall I merge it?')
+  await openInbox(page)
+  const card = cardQuoting(page, /Answer to: Shall I merge it\?/)
+  await expect(card.locator('.ibx-what')).toContainText('finished and waits for you', {
+    timeout: 15_000
+  })
+  await card.locator('.ibx-input').fill('yes, squash it')
+  await card.locator('.ibx-btn', { hasText: 'Send' }).click()
+  await expect
+    .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+    .toContain('«yes, squash it»')
+  await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+
+  await typeInto(page, tabId, '/answer Which branch?')
+  await page.locator('.ibx-seg button[data-tab="needs-you"]').click()
+  await expect(cardQuoting(page, /Answer to: Which branch\?/)).toBeVisible({ timeout: 15_000 })
+  await typeInto(page, tabId, 'main')
+  await expect(await doneStatus(page, 'finished and waits for you')).toContainText('It went on', {
+    timeout: 15_000
+  })
 })
