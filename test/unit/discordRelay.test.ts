@@ -428,7 +428,7 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   })
 
   // CC§14
-  it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys; once that turn is over, the next message goes to it as usual', async () => {
+  it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys, its answer known before the first key so the card never reads the closing dialog as answered at the Mac; once that turn is over, the next message goes to it as usual', async () => {
     let status: SessionStatus = 'approval'
     const { relay, posts, writes, reactions, bodies, answered } = setup({}, [], {
       status: () => status
@@ -436,6 +436,8 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     relay.onAsk(TAB, QUESTION)
     await vi.waitFor(() => expect(posts.map((p) => p.text)[0]).toContain('Which?'))
     relay.onMessage(message('701', OWNER, '2'))
+    await vi.waitFor(() => expect(writes).toHaveLength(1))
+    expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     await vi.waitFor(() => expect(reactions).toContain('701 +✅'), { timeout: 8000 })
     expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '2'])
     expect(answered).toEqual([{ tab: TAB, reply: '2' }])
