@@ -142,7 +142,7 @@ export function AssistSetup({
           </div>
         </>
       )}
-      {login && <LoginDialog />}
+      {login && <LoginDialog key={login.reauthName ?? ''} />}
       {signIn ? (
         <SignInDialog
           backend={signIn.backend}
