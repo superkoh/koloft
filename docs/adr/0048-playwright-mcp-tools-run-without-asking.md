@@ -33,9 +33,10 @@ scheduled runs get it too, so
 there such a call, `browser_run_code_unsafe` included, runs with nobody watching instead
 of waiting on a question. A local Claude tab with the Workbench browser gets the allow
 rule `mcp__<server>` in Koloft's own `--settings` file, for each Playwright entry its
-folder reaches (`~/.claude.json`, that folder's project there, `.mcp.json` above it);
-nothing is written into the owner's files, and an owner's own `deny` or `ask` rule for
-the server or a tool still wins (CC§24), so Koloft does not look for one. An entry where the owner set a server-wide mode of
+folder reaches (`~/.claude.json`, that folder's project there, `.mcp.json` above it),
+judged by the entry Claude Code runs under that name; nothing is written into the
+owner's files, and an owner's own `deny` or `ask` rule for the server or a tool, in user,
+project or local settings, still wins (CC§24), so Koloft does not look for one. An entry where the owner set a server-wide mode of
 their own keeps it, and a tool's own `approval_mode` still wins over the server's
 (CODEX§26); an Antigravity entry the owner's own `permissions` name in any rule gets no
 rule from Koloft. A remote tab's MCP entries are not touched; the machine's own config

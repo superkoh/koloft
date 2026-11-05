@@ -74,8 +74,27 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
         [JSON.stringify({ mcpServers: { team: playwright, playwright } }), null, 'not json'],
         '/work/shop'
       )
-    ).toEqual(['playwright', 'browser', 'team'])
+    ).toEqual(['playwright', 'team', 'browser'])
     expect(claudePlaywrightServers(null, [], '/work/shop')).toEqual([])
+  })
+
+  // CC§24
+  it('Claude: when two places name a server alike, the one Claude Code loads decides — the project entry in ~/.claude.json over a .mcp.json, the nearer .mcp.json over one further up, any .mcp.json over ~/.claude.json’s own list', () => {
+    const playwright = { command: 'npx', args: ['@playwright/mcp'] }
+    const other = { command: 'deploy-mcp' }
+    const mcp = (servers: Record<string, unknown>): string =>
+      JSON.stringify({ mcpServers: servers })
+    const claudeJson = JSON.stringify({
+      mcpServers: { a: playwright, b: other, c: playwright },
+      projects: { '/w': { mcpServers: { a: other } } }
+    })
+    expect(
+      claudePlaywrightServers(
+        claudeJson,
+        [mcp({ b: other, c: other, d: playwright }), mcp({ b: playwright })],
+        '/w'
+      )
+    ).toEqual(['b', 'd'])
   })
 
   // MUSE§18 AGY§30

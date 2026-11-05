@@ -3304,13 +3304,20 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   `--settings`: a `deny: ["mcp__playwright"]` in the user `settings.json` took the
   server's tools away (`No such tool available`); `ask: ["mcp__playwright"]` there made
   both tools ask; `ask: ["mcp__playwright__browser_navigate"]` made that one tool ask
-  and left `browser_snapshot` allowed. Project and local settings tiers were not tried.
+  and left `browser_snapshot` allowed. An `ask: ["mcp__playwright"]` in the folder's
+  `.claude/settings.json` or `.claude/settings.local.json` made the tool ask too.
 - **`permissions.allow` from `--settings` is added to the user's own, not swapped in**:
   user `allow: ["mcp__other"]` plus `--settings` `allow: ["mcp__playwright"]` ran all
   three tools.
-- **The server name in a tool's name**: a `.` becomes `_` (`play.wright` →
-  `mcp__play_wright__…`, which `mcp__play_wright` allows), while `-` and upper case stay
-  (`mcp__play-wright__…`, `mcp__Play_W__…`). Other characters were not tried.
+- **The server name in a tool's name**: every character outside `A-Za-z0-9_-` becomes
+  `_` — tried `.`, a space, `:`, `@`, `/` and `é` (`play.wright` → `mcp__play_wright__…`,
+  which `mcp__play_wright` allows; `pwé` → `mcp__pw___…`) — while `-` and upper case
+  stay (`mcp__play-wright__…`, `mcp__Play_W__…`). Read off the `system/init` `tools` list.
+- **When several places name a server alike, one entry runs**, read off which fake
+  server got the call (the `.mcp.json` servers allowed with `enableAllProjectMcpServers`):
+  the folder's project entry in `~/.claude.json` over the folder's `.mcp.json`, that over
+  the top-level `mcpServers`, and the folder's own `.mcp.json` over one in the folder
+  above it.
 
 Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
 `writeTabHookSettings` in `src/main/hooks.ts`.

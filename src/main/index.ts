@@ -536,6 +536,7 @@ import {
   foldersUpToRoot,
   jsonServers,
   ownersClaudePlaywrightMcp,
+  textOrNull,
   type ConfigText,
   type McpServer
 } from './mcpServers'
@@ -1391,7 +1392,12 @@ const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
-  | ((tabId: string, allowKoloft: boolean, conductor: boolean, localCwd?: string) => string)
+  | ((
+      tabId: string,
+      allowKoloft: boolean,
+      conductor: boolean,
+      playwrightServers?: string[]
+    ) => string)
   | undefined
 const PLAIN_KOLOFT_SHIM = {
   hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
@@ -1602,10 +1608,6 @@ function butlerSide(tabId: string): boolean {
     !!butler?.isButlerTab(tabId) ||
     sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
   )
-}
-
-function textOrNull(file: string): Promise<string | null> {
-  return fs.promises.readFile(file, 'utf8').catch(() => null)
 }
 
 async function mcpServersNow(): Promise<McpServer[]> {
@@ -3123,7 +3125,7 @@ app.whenReady().then(() => {
   // ADR-0033
   Object.assign(process.env, gitAccounts.configEnv(process.env))
   gitAccounts.start()
-  writeHookSettings = (tabId, allowKoloft, conductor, localCwd) =>
+  writeHookSettings = (tabId, allowKoloft, conductor, playwrightServers) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
@@ -3131,7 +3133,7 @@ app.whenReady().then(() => {
       allowKoloft,
       conductor,
       !!guard?.isBackground(tabId),
-      localCwd && relayEndpoint(tabId) ? ownersClaudePlaywrightMcp(localCwd) : []
+      playwrightServers
     )
   hookRegDir = hookPaths.regDir
   guard = new ResourceGuard({
@@ -6158,8 +6160,10 @@ const claudeBackend = new ClaudeBackend({
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
-  hookSettings: (tabId, allowKoloft, conductor, localCwd) =>
-    writeHookSettings?.(tabId, allowKoloft, conductor, localCwd),
+  hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor, playwrightServers),
+  playwrightMcp: async (cwd) =>
+    loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),

@@ -103,8 +103,9 @@ export interface ClaudeBackendDeps {
     tabId: string,
     allowKoloft: boolean,
     conductor: boolean,
-    localCwd?: string
+    playwrightServers: string[]
   ): string | undefined
+  playwrightMcp(cwd: string): Promise<string[]>
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
@@ -1067,6 +1068,7 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
+    const playwrightServers = machine ? [] : await this.d.playwrightMcp(plan.spawnCwd)
     const handle = this.d.pty.create({
       id: spec.tabId,
       kind: 'claude',
@@ -1076,7 +1078,7 @@ export class ClaudeBackend implements SessionBackend {
             tabId,
             plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
             plan.conductor === true,
-            machine ? undefined : plan.spawnCwd
+            playwrightServers
           )
       },
       cwd: plan.spawnCwd,

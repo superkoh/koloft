@@ -1038,7 +1038,7 @@ describe('injected hook script', () => {
   })
 
   // ADR-0048 CC§24
-  it('lets every tool of each Playwright MCP server it is given run without asking, next to the koloft rule, writing a dot in the server name as Claude Code does in tool names', () => {
+  it('lets every tool of each Playwright MCP server it is given run without asking, next to the koloft rule, writing each character of the server name Claude Code drops from tool names as _', () => {
     const permissionsOf = (allowKoloft: boolean, servers: string[]): unknown =>
       JSON.parse(
         fs.readFileSync(
@@ -1054,8 +1054,8 @@ describe('injected hook script', () => {
           'utf8'
         )
       ).permissions
-    expect(permissionsOf(true, ['playwright', 'my.browser'])).toEqual({
-      allow: ['Bash(koloft *)', 'mcp__playwright', 'mcp__my_browser']
+    expect(permissionsOf(true, ['playwright', 'my.browser', 'pw é'])).toEqual({
+      allow: ['Bash(koloft *)', 'mcp__playwright', 'mcp__my_browser', 'mcp__pw__']
     })
     expect(permissionsOf(false, ['play-wright'])).toEqual({ allow: ['mcp__play-wright'] })
   })

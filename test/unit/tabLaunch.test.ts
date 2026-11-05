@@ -154,6 +154,7 @@ async function claudeTab(
       conductor = isConductor
       return undefined
     },
+    playwrightMcp: async () => [],
     ptysChanged: () => {}
   } as unknown as ClaudeBackendDeps)
   const r = await backend.create({ kind: 'claude', cwd, ...spec })
