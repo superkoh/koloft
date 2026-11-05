@@ -329,6 +329,46 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(blockOf(page, 'src/change-2.ts').locator(CV.diffRow).first()).toBeVisible()
   })
 
+  test('at the narrowest Workbench, vs HEAD with 10+ changes, the Changes bar keeps Reload and full width inside it, and full width still clicks', async ({
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(7)
+    fx.modifyMarkdown()
+    fx.modifyHtml()
+    fx.addUntracked('src/new-1.ts')
+    fx.addUntracked('src/new-2.ts')
+    fx.addUntracked('src/new-3.ts')
+
+    await openChanges(page)
+    const gutter = page.locator('.center-row .gutter-v').last()
+    const grip = (await gutter.boundingBox())!
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(grip.x + 4000, grip.y + grip.height / 2, { steps: 12 })
+    await page.mouse.up()
+    expect((await workbenchPanel(page).boundingBox())!.width).toBeLessThan(470)
+
+    await baseBtn(page).click()
+    await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
+    await expect(baseBtn(page)).toHaveText(/^vs HEAD ▾$/)
+    await waitStream(page, 12)
+
+    const bar = page
+      .locator(WORKBENCH.kindBar)
+      .filter({ has: page.locator('.seg[aria-label="Files view"]') })
+    expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    const barBox = (await bar.boundingBox())!
+    for (const button of [reloadBtn(page), page.locator(WORKBENCH.fullWidth)]) {
+      const box = (await button.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(barBox.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(barBox.x + barBox.width)
+    }
+    await page.locator(WORKBENCH.fullWidth).click()
+    await expect.poll(() => layoutState(page)).toBe('T3')
+  })
+
   test('WB-C06: the three filter groups AND together, and Docs is markdown + html', async ({
     page,
     env
