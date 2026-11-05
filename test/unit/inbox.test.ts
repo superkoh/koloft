@@ -349,7 +349,7 @@ describe('inbox — the owner’s own controls', () => {
     inbox.register({ id: 'koloft', name: 'Koloft' })
     inbox.add({ source: 'koloft' }, question)
     inbox.add({ source: 'koloft' }, { ...question, key: 'fyi', level: 'low' })
-    expect(inboxCounts(inbox.all(), Date.now())).toMatchObject({ badge: 1, high: true })
+    expect(inboxCounts(inbox.all(), Date.now())).toMatchObject({ badge: 1, high: 1 })
   })
 
   it('priority order puts high first, then the oldest', () => {

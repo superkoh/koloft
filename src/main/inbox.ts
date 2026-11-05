@@ -2,13 +2,12 @@ import {
   CARD_SESSION,
   DONE_KEPT_MS,
   INBOX_LIMIT,
-  INBOX_OUTCOMES,
-  InboxError,
   UNDO_MS,
   answersComplete,
   checkCardBody,
   checkTargetInput,
   envelopeHead,
+  fail,
   fillTemplate,
   visibleActions,
   type InboxAction,
@@ -19,6 +18,7 @@ import {
   type InboxLevel,
   type InboxLink,
   type InboxOutcome,
+  type InboxRun,
   type InboxSnapshot,
   type InboxState,
   type InboxTarget
@@ -32,15 +32,13 @@ export interface InboxCaller {
 export interface SendResult {
   ok: boolean
   session?: string
-  woke?: boolean
-  queued?: boolean
+  text?: string
   why?: string
 }
 
 export interface AnswerResult {
   ok: boolean
   elsewhere?: boolean
-  text?: string
   why?: string
 }
 
@@ -51,14 +49,7 @@ export interface StartResult {
   why?: string
 }
 
-export interface StartSpec {
-  task: string
-  workspace?: string
-  backend?: string
-  model?: string
-  name?: string
-  worktree?: string
-}
+export type StartSpec = Omit<Extract<InboxRun, { type: 'new-session' }>, 'type'>
 
 export interface InboxHost {
   now(): number
@@ -76,24 +67,14 @@ export interface InboxHost {
   changed(): void
 }
 
-interface Source {
-  id: string
-  name: string
-  ready: boolean
-}
-
 interface Result {
   outcome: InboxOutcome
   text: string
 }
 
-function fail(message: string): never {
-  throw new InboxError(message)
-}
-
 // ADR-0049
 export class Inbox {
-  private sources = new Map<string, Source>()
+  private sources = new Map<string, string>()
   private cards = new Map<string, InboxCard>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private seq = 0
@@ -107,22 +88,18 @@ export class Inbox {
 
   private restore(saved: InboxSnapshot): void {
     for (const c of saved.cards) {
-      if (c.press?.step === 'working')
+      if (c.press) {
         c.note = {
           kind: 'result',
           outcome: 'failed',
-          text: 'Koloft restarted, so it does not know whether this finished — have a look',
-          retry: true
+          retry: true,
+          text:
+            c.press.step === 'working'
+              ? 'Koloft restarted, so it does not know whether this finished — have a look'
+              : 'Koloft quit before this was sent, so nothing was sent'
         }
-      else if (c.press)
-        c.note = {
-          kind: 'result',
-          outcome: 'failed',
-          text: 'Koloft quit before this was sent, so nothing was sent',
-          retry: true
-        }
-      if (c.press)
         c.lastPress = { action: c.press.action, answers: c.press.answers, try: c.press.try }
+      }
       c.press = null
       this.cards.set(c.id, c)
       this.seq = Math.max(this.seq, Number(c.id.slice(1)) || 0)
@@ -139,13 +116,13 @@ export class Inbox {
   }
 
   isReady(sourceId: string): boolean {
-    return !!this.sources.get(sourceId)?.ready
+    return this.sources.has(sourceId)
   }
 
   register(def: { id: string; name: string }): void {
     if (!def.id || !def.name) fail('a source needs an id and a name')
     const name = def.name.slice(0, INBOX_LIMIT.name)
-    this.sources.set(def.id, { id: def.id, name, ready: true })
+    this.sources.set(def.id, name)
     for (const c of this.cards.values()) if (c.source === def.id) c.sourceName = name
     this.host.changed()
   }
@@ -165,10 +142,10 @@ export class Inbox {
     this.host.changed()
   }
 
-  private source(caller: InboxCaller): Source {
-    const s = this.sources.get(caller.source)
-    if (!s) fail(`source ${caller.source} is not registered with the Inbox`)
-    return s
+  private source(caller: InboxCaller): { id: string; name: string } {
+    const name = this.sources.get(caller.source)
+    if (name === undefined) fail(`source ${caller.source} is not registered with the Inbox`)
+    return { id: caller.source, name }
   }
 
   find(caller: InboxCaller, key: string): InboxCard | undefined {
@@ -215,8 +192,6 @@ export class Inbox {
         key: input.key,
         postedBy: caller.as ?? null,
         createdAt: now,
-        updatedAt: now,
-        version: 1,
         state,
         stateSince: now,
         closedAt: null,
@@ -312,8 +287,6 @@ export class Inbox {
   }
 
   private touch(card: InboxCard): void {
-    card.version++
-    card.updatedAt = this.host.now()
     if (card.press && card.press.step !== 'working')
       this.cancelPress(card, {
         kind: 'changed',
@@ -342,7 +315,6 @@ export class Inbox {
   dismiss(cardId: string): void {
     const card = this.cards.get(cardId)
     if (!card || card.state === 'closed' || card.press) return
-    card.version++
     this.setState(card, { state: 'closed', status: 'Dismissed' }, 'you', null)
     this.host.changed()
   }
@@ -457,6 +429,8 @@ export class Inbox {
     answers: InboxAnswers
   ): Promise<Result> {
     const run = action.run
+    const wrap = (body: string): string =>
+      `${envelopeHead(card, action)}\n${fillTemplate(body, card, answers)}\n${this.host.footer(card, action)}`
     if (run.type === 'session') {
       const to = run.session === CARD_SESSION ? card.session : run.session
       if (!to) return { outcome: 'failed', text: 'This card names no session' }
@@ -469,28 +443,25 @@ export class Inbox {
         if (r.elsewhere)
           return { outcome: 'elsewhere', text: r.why ?? 'It was already answered somewhere else' }
         if (!r.ok) return { outcome: 'failed', text: r.why ?? 'Koloft could not answer it' }
-        return { outcome: 'done', text: r.text ?? 'Answered — it is working again' }
+        return { outcome: 'done', text: 'Answered — it is working again' }
       }
-      const text = `${envelopeHead(card, action)}\n${fillTemplate(run.message ?? '', card, answers)}\n${this.host.footer(card, action)}`
-      const sent = await this.host.sendToSession(to, text)
+      const sent = await this.host.sendToSession(to, wrap(run.message ?? ''))
       if (!sent.ok)
         return { outcome: 'failed', text: sent.why ?? 'Koloft could not reach the session' }
       this.grant(card, action, sent.session ?? to)
-      return {
-        outcome: 'done',
-        text: sent.woke
-          ? 'Sent — the session was asleep, so Koloft woke it first'
-          : sent.queued
-            ? 'Sent — it reaches the session once its turn ends'
-            : 'Sent to the session'
-      }
+      return { outcome: 'done', text: sent.text ?? 'Sent to the session' }
     }
-    const task = `${envelopeHead(card, action)}\n${fillTemplate(run.task, card, answers)}\n${this.host.footer(card, action)}`
-    const started = await this.host.startSession({ ...run, task }, card, (reply) => {
-      if (this.cards.get(card.id) !== card) return
-      card.note = { kind: 'reply', text: reply }
-      this.host.changed()
-    })
+    const cardId = card.id
+    const started = await this.host.startSession(
+      { ...run, task: wrap(run.task) },
+      card,
+      (reply) => {
+        const replied = this.cards.get(cardId)
+        if (!replied) return
+        replied.note = { kind: 'reply', text: reply }
+        this.host.changed()
+      }
+    )
     if (!started.ok || !started.session)
       return { outcome: 'failed', text: started.why ?? 'Koloft could not start a session' }
     this.grant(card, action, started.session)
@@ -512,14 +483,12 @@ export class Inbox {
   }
 
   private finish(card: InboxCard, action: InboxAction, result: Result): void {
-    const outcome = INBOX_OUTCOMES.includes(result.outcome) ? result.outcome : 'failed'
+    const { outcome } = result
     card.press = null
     card.note = { kind: 'result', outcome, text: result.text, retry: outcome === 'failed' }
     const t = action.then?.[outcome]
-    if (t && card.state !== 'closed' && (t.state !== card.state || t.status)) {
-      card.version++
+    if (t && card.state !== 'closed' && (t.state !== card.state || t.status))
       this.setState(card, t, action.id, null)
-    }
     this.host.changed()
   }
 

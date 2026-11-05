@@ -562,6 +562,7 @@ import {
   askFromClaude,
   askFromCodex,
   inboxFooter,
+  where,
   KoloftInbox,
   type AskedSession,
   type KoloftAsk
@@ -1929,7 +1930,7 @@ const inbox = new Inbox(
     startSession: async (spec, card, onReply) => {
       const started = await sessionCommand.startFromInbox(
         card.session ?? undefined,
-        { ...spec, backend: SESSION_BACKENDS.find((b) => b === spec.backend) },
+        spec,
         ownersPermission(),
         onReply
       )
@@ -1938,13 +1939,19 @@ const inbox = new Inbox(
     },
     footer: (card, action) => inboxFooter(card, action.lets),
     changed: () => {
-      const now = inbox.snapshot()
-      saveInbox(now)
-      sendToRenderer(CH.inbox.changed, now)
+      if (inboxPushQueued) return
+      inboxPushQueued = true
+      queueMicrotask(() => {
+        inboxPushQueued = false
+        const now = inbox.snapshot()
+        saveInbox(now)
+        sendToRenderer(CH.inbox.changed, now)
+      })
     }
   },
   loadInbox()
 )
+let inboxPushQueued = false
 
 function liveSessionOf(ref: string): SessionInfo | undefined {
   return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
@@ -1956,10 +1963,9 @@ function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   const ws = sessionBackends.workspaceOfTab(tabId)
   return {
     sessionId: s.sessionId,
-    tabId,
     title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
     backend: s.backendId,
-    workspace: ws ? path.basename(parseRemoteKey(ws)?.path ?? ws) : undefined,
+    workspace: ws ? scopeName(ws) : undefined,
     machine: ws ? parseRemoteKey(ws)?.host : undefined
   }
 }
@@ -1980,8 +1986,7 @@ const koloftInbox = new KoloftInbox({
     return s && { tabId: s.tabId, backend: s.backendId }
   },
   askOf: inboxAskOf,
-  answer: async (tabId, reply) =>
-    discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING,
+  answer: sessionDeps.answer,
   butlerSide
 })
 
@@ -2004,10 +2009,7 @@ const agentRequests = new AgentRequests({
       inbox: () => inbox,
       whereOf: (caller) => {
         const s = inboxSessionOfTab(caller.tabId)
-        return {
-          ...(s?.workspace && { workspace: s.workspace }),
-          ...(s?.machine && { machine: s.machine })
-        }
+        return s ? where(s) : {}
       }
     }),
     workspace: workspaceVerb({ sidebar: projectRows }),

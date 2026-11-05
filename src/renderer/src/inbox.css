@@ -29,12 +29,6 @@
   initial-value: 0deg;
 }
 
-@keyframes ibx-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes ibx-turn {
   to {
     --ibx-a: 360deg;
@@ -48,7 +42,7 @@
   height: 72px;
   border-radius: 50%;
   background: conic-gradient(from 0deg, var(--accent), var(--fable), #6fb6a6, var(--accent));
-  animation: ibx-spin 9s linear infinite;
+  animation: lspin 9s linear infinite;
   box-shadow:
     0 0 60px rgba(169, 154, 216, 0.45),
     0 0 120px rgba(236, 150, 112, 0.18);
@@ -751,7 +745,7 @@
   border-radius: 50%;
   border: 2px solid var(--line-2);
   border-top-color: var(--fg-dim);
-  animation: ibx-spin 0.9s linear infinite;
+  animation: lspin 0.9s linear infinite;
 }
 
 .ibx-confirm {

@@ -1,4 +1,4 @@
-import { INBOX_STATES, InboxError, type InboxCardInput, type InboxState } from '@shared/inbox'
+import { InboxError, isState, type InboxCardInput } from '@shared/inbox'
 import {
   answered,
   EXIT_USAGE,
@@ -54,8 +54,9 @@ export function inboxVerb(d: InboxVerbDeps): AgentVerb {
         const out = inbox.update(me, key, parseJson(after, 'update'))
         return warned(`Updated card ${key}.`, out.warnings)
       }
-      if (sub === 'move' && key && INBOX_STATES.includes(before[0] as InboxState)) {
-        inbox.move(me, key, { state: before[0] as InboxState, ...(after && { status: after }) })
+      const [to] = before
+      if (sub === 'move' && key && isState(to)) {
+        inbox.move(me, key, { state: to, ...(after && { status: after }) })
         return answered(`Moved card ${key} to ${before[0]}.`)
       }
       if (sub === 'delete' && key) {
@@ -63,9 +64,7 @@ export function inboxVerb(d: InboxVerbDeps): AgentVerb {
         return answered(`Deleted card ${key}.`)
       }
       if (sub === 'list') {
-        const state =
-          key && INBOX_STATES.includes(key as InboxState) ? (key as InboxState) : undefined
-        const mine = inbox.list(me, state)
+        const mine = inbox.list(me, isState(key) ? key : undefined)
         return answered(
           mine.length
             ? mine

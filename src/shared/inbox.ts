@@ -154,8 +154,6 @@ export interface InboxCard extends InboxCardBody {
   key: string
   postedBy: string | null
   createdAt: number
-  updatedAt: number
-  version: number
   state: InboxState
   stateSince: number
   closedAt: number | null
@@ -176,7 +174,7 @@ export interface InboxSnapshot {
 
 export class InboxError extends Error {}
 
-function fail(message: string): never {
+export function fail(message: string): never {
   throw new InboxError(message)
 }
 
@@ -186,7 +184,7 @@ function cut(text: string, max: number, warn: string[], what: string): string {
   return `${text.slice(0, max - 1)}…`
 }
 
-function isState(s: unknown): s is InboxState {
+export function isState(s: unknown): s is InboxState {
   return INBOX_STATES.includes(s as InboxState)
 }
 
@@ -466,20 +464,27 @@ export function facetsOf(
 
 export interface InboxCounts {
   badge: number
-  high: boolean
+  high: number
   byState: Record<InboxState, number>
 }
 
 export function inboxCounts(cards: InboxCard[], now: number): InboxCounts {
-  const shown = cards.filter((c) => stillShown(c, now))
-  const waiting = shown.filter((c) => c.state === 'needs-you' && levelOf(c) !== 'low')
-  return {
-    badge: waiting.length,
-    high: waiting.some((c) => levelOf(c) === 'high'),
-    byState: {
-      'needs-you': shown.filter((c) => c.state === 'needs-you').length,
-      'in-progress': shown.filter((c) => c.state === 'in-progress').length,
-      closed: shown.filter((c) => c.state === 'closed').length
-    }
+  const out: InboxCounts = {
+    badge: 0,
+    high: 0,
+    byState: { 'needs-you': 0, 'in-progress': 0, closed: 0 }
   }
+  for (const c of cards) {
+    if (!stillShown(c, now)) continue
+    out.byState[c.state]++
+    if (c.state !== 'needs-you') continue
+    const level = levelOf(c)
+    if (level !== 'low') out.badge++
+    if (level === 'high') out.high++
+  }
+  return out
+}
+
+export function whereKeys(cards: InboxCard[]): string[] {
+  return [...new Set(cards.flatMap((c) => Object.keys(c.where)))]
 }

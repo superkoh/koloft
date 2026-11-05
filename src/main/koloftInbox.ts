@@ -1,6 +1,12 @@
 import type { AttentionEvent, BackendId } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import type { InboxAnswers, InboxCard, InboxCardInput, InboxQuestion } from '@shared/inbox'
+import {
+  CARD_SESSION,
+  type InboxAnswers,
+  type InboxCard,
+  type InboxCardInput,
+  type InboxQuestion
+} from '@shared/inbox'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
@@ -27,7 +33,6 @@ export type KoloftAsk =
 
 export interface AskedSession {
   sessionId: string
-  tabId: string
   title: string
   backend: BackendId
   workspace?: string
@@ -74,7 +79,7 @@ function isSignal(c: InboxCard): boolean {
   return c.source === KOLOFT_SOURCE.id && !c.postedBy && /^(ask|exit):/.test(c.key)
 }
 
-function where(s: AskedSession): Record<string, string> {
+export function where(s: AskedSession): Record<string, string> {
   return {
     ...(s.workspace && { workspace: s.workspace }),
     ...(s.machine && { machine: s.machine })
@@ -139,7 +144,7 @@ export function askCard(
           style: 'main',
           takes: ['q'],
           busyText: 'Sending your answer…',
-          run: { type: 'session', session: 'card', answer: 'q' },
+          run: { type: 'session', session: CARD_SESSION, answer: 'q' },
           then: { done: ANSWERED, elsewhere: HANDLED }
         }
       ]
@@ -159,14 +164,14 @@ export function askCard(
           label: ask.plan ? 'Approve' : 'Allow',
           style: 'main',
           busyText: 'Telling it yes…',
-          run: { type: 'session', session: 'card', answer: 'yes' },
+          run: { type: 'session', session: CARD_SESSION, answer: 'yes' },
           then: { done: ANSWERED, elsewhere: HANDLED }
         },
         {
           id: 'deny',
           label: ask.plan ? 'Reject' : 'Deny',
           busyText: 'Telling it no…',
-          run: { type: 'session', session: 'card', answer: 'no' },
+          run: { type: 'session', session: CARD_SESSION, answer: 'no' },
           then: { done: ANSWERED, elsewhere: HANDLED }
         }
       ]
@@ -210,7 +215,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
         label: 'Start it again',
         style: 'main',
         busyText: 'Starting it again…',
-        run: { type: 'session', session: 'card', message: CARRY_ON },
+        run: { type: 'session', session: CARD_SESSION, message: CARRY_ON },
         then: { done: { state: 'closed', status: 'Restarted' } }
       },
       {
@@ -235,7 +240,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
               confirm:
                 'It starts once more only to wrap up, then closes its tab and deletes its worktree and branch.',
               busyText: 'Telling it to wrap up…',
-              run: { type: 'session' as const, session: 'card', message: CLOSE_YOURSELF },
+              run: { type: 'session' as const, session: CARD_SESSION, message: CLOSE_YOURSELF },
               then: { done: { state: 'in-progress' as const, status: 'Closing it' } }
             }
           ])
@@ -278,10 +283,11 @@ export class KoloftInbox {
         )
       } catch {}
     }
-    for (const [key, m] of wanted) if (!this.d.inbox.find(KOLOFT, key)) void this.post(key, m, true)
+    for (const [key, m] of wanted) if (!this.d.inbox.find(KOLOFT, key)) void this.post(m, true)
   }
 
-  private async post(key: string, m: AttentionEvent, retry: boolean): Promise<void> {
+  private async post(m: AttentionEvent, retry: boolean): Promise<void> {
+    const key = signalKey(m)
     if (this.building.has(key)) return
     this.building.add(key)
     try {
@@ -300,7 +306,7 @@ export class KoloftInbox {
         return
       this.d.inbox.add(KOLOFT, card)
       if (m.kind === 'approval' && !ask && retry)
-        setTimeout(() => void this.post(key, m, false), DETAILS_RETRY_MS)
+        setTimeout(() => void this.post(m, false), DETAILS_RETRY_MS)
     } catch {
       return
     } finally {
@@ -310,7 +316,7 @@ export class KoloftInbox {
 
   asked(tabId: string): void {
     for (const m of this.d.marks())
-      if (m.tabId === tabId && m.kind === 'approval') void this.post(signalKey(m), m, false)
+      if (m.tabId === tabId && m.kind === 'approval') void this.post(m, false)
   }
 
   sessionGone(sessionId: string, why: string): void {

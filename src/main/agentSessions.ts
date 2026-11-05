@@ -40,6 +40,7 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
+import type { SendResult, StartResult, StartSpec } from './inbox'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -1010,43 +1011,19 @@ interface OwedReply {
 
 const INBOX_SENDER = 'inbox'
 
-export interface InboxSend {
-  ok: boolean
-  session?: string
-  woke?: boolean
-  queued?: boolean
-  why?: string
-}
-
-export interface InboxStartSpec {
-  task: string
-  workspace?: string
-  backend?: BackendId
-  model?: string
-  name?: string
-  worktree?: string
-}
-
-export interface InboxStart {
-  ok: boolean
-  session?: string
-  name?: string
-  why?: string
-}
-
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
-  sendFromInbox(ref: string, text: string): Promise<InboxSend>
+  sendFromInbox(ref: string, text: string): Promise<SendResult>
   startFromInbox(
     aboutRef: string | undefined,
-    spec: InboxStartSpec,
+    spec: StartSpec,
     permission: 'bypass' | 'default',
     onReply: (reply: string) => void
-  ): Promise<InboxStart>
+  ): Promise<StartResult>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
@@ -1518,7 +1495,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     return sessionTarget(d, open?.sessionId ?? ref)
   }
 
-  const sendFromInbox = async (ref: string, text: string): Promise<InboxSend> => {
+  const sendFromInbox = async (ref: string, text: string): Promise<SendResult> => {
     const t = targetOf(ref)
     if (!t) return { ok: false, why: `There is no session ${ref} any more` }
     const route = messagingOf(t.backend, !!t.remote)
@@ -1534,7 +1511,15 @@ export function sessionVerb(d: SessionVerbDeps): {
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
     try {
       await sendNow(t, text, line, until, INBOX_SENDER)
-      return { ok: true, woke, queued: busy, session: t.key }
+      return {
+        ok: true,
+        session: t.key,
+        text: woke
+          ? 'Sent — the session was asleep, so Koloft woke it first'
+          : busy
+            ? 'Sent — it reached the session once its turn ended'
+            : 'Sent to the session'
+      }
     } catch (error) {
       return { ok: false, why: errorText(error) }
     }
@@ -1542,10 +1527,10 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const startFromInbox = async (
     aboutRef: string | undefined,
-    spec: InboxStartSpec,
+    spec: StartSpec,
     permission: 'bypass' | 'default',
     onReply: (reply: string) => void
-  ): Promise<InboxStart> => {
+  ): Promise<StartResult> => {
     const about = aboutRef
       ? d.allSessions().find((s) => s.tabId === aboutRef || s.sessionId === aboutRef)
       : undefined
@@ -1556,7 +1541,7 @@ export function sessionVerb(d: SessionVerbDeps): {
           ?.workspace)
     if (!workspace)
       return { ok: false, why: 'Koloft could not tell which workspace to start it in' }
-    const backend = spec.backend ?? about?.backendId ?? 'claude'
+    const backend = backendIdOf(spec.backend) ?? about?.backendId ?? 'claude'
     const held =
       spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
     let tabId: string | null = null

@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type JSX,
@@ -16,6 +17,7 @@ import {
   levelOf,
   pickToPress,
   visibleActions,
+  whereKeys,
   type ChoiceAnswer,
   type InboxAction,
   type InboxAnswers,
@@ -120,17 +122,20 @@ function openLink(l: InboxLink): void {
 function byText(card: InboxCard): string {
   const h = card.history[0]
   if (!h) return ''
+  const pressed = card.actions.find((a) => a.id === h.by)
   const who =
     h.by === 'inbox'
       ? 'by the Inbox'
       : h.by === 'you'
         ? 'you dismissed it'
-        : h.by === 'source'
-          ? `by ${card.sourceName}`
-          : card.actions.find((a) => a.id === h.by)
-            ? `you pressed “${card.actions.find((a) => a.id === h.by)?.label}”`
-            : `by ${card.sourceName}`
+        : pressed
+          ? `you pressed “${pressed.label}”`
+          : `by ${card.sourceName}`
   return h.why ? `${who} · ${h.why}` : who
+}
+
+function tagOf(card: InboxCard): string {
+  return [card.sourceName, ...Object.values(card.where)].join(' · ')
 }
 
 export function InboxRow(): JSX.Element {
@@ -180,10 +185,17 @@ export function InboxPage(): JSX.Element {
     return () => window.removeEventListener('mousedown', close)
   }, [menu])
 
-  const counts = inboxCounts(snapshot.cards, now)
-  const facets = facetsOf(snapshot.cards, tab, now)
-  const { source, ...where } = filters
-  const list = cardsIn(snapshot.cards, tab, { source, where, sort }, now)
+  const minute = Math.floor(now / CLOCK_TICK_MS)
+  const { counts, facets, list, keys } = useMemo(() => {
+    const at = minute * CLOCK_TICK_MS
+    const { source, ...where } = filters
+    return {
+      counts: inboxCounts(snapshot.cards, at),
+      facets: facetsOf(snapshot.cards, tab, at),
+      list: cardsIn(snapshot.cards, tab, { source, where, sort }, at),
+      keys: whereKeys(snapshot.cards)
+    }
+  }, [snapshot.cards, tab, filters, sort, minute])
   const picked = list.find((c) => c.id === openId[tab]) ?? list[0]
 
   useLayoutEffect(() => {
@@ -267,9 +279,6 @@ export function InboxPage(): JSX.Element {
   }
 
   const working = sessions.filter((s) => s.alive && s.status === 'working').length
-  const high = cardsIn(snapshot.cards, 'needs-you', {}, now).filter(
-    (c) => levelOf(c) === 'high'
-  ).length
 
   const filterPill = (name: string, label: string): JSX.Element => {
     const opts = facets[name] ?? []
@@ -337,7 +346,7 @@ export function InboxPage(): JSX.Element {
           </span>
           <div>
             <div className="ibx-hello">{greeting(new Date(now).getHours())}</div>
-            <p className="ibx-lede">{lede(counts.byState['needs-you'], high, working)}</p>
+            <p className="ibx-lede">{lede(counts.byState['needs-you'], counts.high, working)}</p>
           </div>
         </div>
         <div className="ibx-tools">
@@ -401,9 +410,7 @@ export function InboxPage(): JSX.Element {
             </span>
             {filterPill('source', 'Source')}
             {/* ADR-0049 */}
-            {[...new Set(snapshot.cards.flatMap((c) => Object.keys(c.where)))].map((key) =>
-              filterPill(key, key[0].toUpperCase() + key.slice(1))
-            )}
+            {keys.map((key) => filterPill(key, key[0].toUpperCase() + key.slice(1)))}
           </div>
         </div>
         <div className="ibx-list">
@@ -490,7 +497,7 @@ function Head({
   setMenu: (m: Menu) => void
 }): JSX.Element {
   const lvl = levelOf(card)
-  const where = [card.sourceName, ...Object.values(card.where)].join(' · ')
+  const where = tagOf(card)
   const open = menu?.kind === 'level' && menu.card === card.id
   return (
     <div className="ibx-head">
@@ -901,9 +908,7 @@ function DoneRow({ card, now }: { card: InboxCard; now: number }): JSX.Element {
     <div className="ibx-item done" data-cid={card.id}>
       <div className="ibx-head">
         <div className="ibx-hl">
-          <span className="ibx-tag">
-            {[card.sourceName, ...Object.values(card.where)].join(' · ')}
-          </span>
+          <span className="ibx-tag">{tagOf(card)}</span>
         </div>
         <span className={'ibx-dstat' + (bad ? ' bad' : '')}>
           {bad ? '×' : '✓'} {card.status || 'Done'}

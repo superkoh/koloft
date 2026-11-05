@@ -460,13 +460,18 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
+function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxOpen: false } {
+  return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
+}
+
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
   useStore.setState((s) => ({
     tabs: s.tabs.map((x) =>
       x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
     ),
-    activeTabId: select || s.activeTabId === asleep.id ? t.id : s.activeTabId,
-    resumeLaunch: select ? null : s.resumeLaunch,
+    ...(select
+      ? shownTab(t.id)
+      : { activeTabId: s.activeTabId === asleep.id ? t.id : s.activeTabId }),
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
@@ -708,7 +713,7 @@ export const useStore = create<AppState>((set, get) => ({
     activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
-    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null, inboxOpen: false }))
+    set((s) => ({ tabs: [...s.tabs, t], ...shownTab(t.id) }))
   },
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
@@ -720,7 +725,7 @@ export const useStore = create<AppState>((set, get) => ({
         ? s
         : {
             tabs: [...s.tabs, t],
-            ...(awaited && { activeTabId: t.id, resumeLaunch: null, inboxOpen: false })
+            ...(awaited && shownTab(t.id))
           }
     )
   },
@@ -857,7 +862,7 @@ export const useStore = create<AppState>((set, get) => ({
   activateTab: (id) => {
     activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
     if (activateOnceSpawned) return
-    set({ activeTabId: id, resumeLaunch: null, inboxOpen: false })
+    set(shownTab(id))
   },
   revealTab: (id) => set({ revealRow: { tabId: id } }),
 
