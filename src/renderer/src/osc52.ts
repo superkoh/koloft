@@ -2,17 +2,20 @@ import type { Terminal } from '@xterm/xterm'
 
 const OSC_SET_CLIPBOARD = 52
 const CLIPBOARD_READ_REQUEST = '?'
+const CLIPBOARD_TARGET = 'c'
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true })
 
-function clipboardTextOfOsc52(data: string): string | null {
+function clipboardTextOfOsc52(data: string): string {
   const split = data.indexOf(';')
-  if (split < 0) return null
+  if (split < 0) return ''
+  const targets = data.slice(0, split)
+  if (targets && !targets.includes(CLIPBOARD_TARGET)) return ''
   const payload = data.slice(split + 1)
-  if (!payload || payload === CLIPBOARD_READ_REQUEST) return null
+  if (payload === CLIPBOARD_READ_REQUEST) return ''
   try {
-    const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))
-    return new TextDecoder().decode(bytes) || null
+    return STRICT_UTF8.decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0)))
   } catch {
-    return null
+    return ''
   }
 }
 

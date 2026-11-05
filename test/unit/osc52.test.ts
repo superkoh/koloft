@@ -33,8 +33,18 @@ describe('a program in the terminal sets the clipboard with OSC 52', () => {
     expect(replied).toBe('')
   })
 
-  it('ignores an empty or broken payload', async () => {
-    const { copied } = await copiedBy('\x1b]52;c;\x07\x1b]52;c;@@@\x07\x1b]52\x07')
+  it('leaves the clipboard alone for a write aimed only at the primary selection or a cut buffer', async () => {
+    const { copied } = await copiedBy(
+      `\x1b]52;p;${b64('selected')}\x07\x1b]52;s0;${b64('cut')}\x07\x1b]52;pc;${b64('both')}\x07`
+    )
+    expect(copied).toEqual(['both'])
+  })
+
+  it('ignores an empty, broken or non-UTF-8 payload', async () => {
+    const notUtf8 = Buffer.from([0xff, 0xfe]).toString('base64')
+    const { copied } = await copiedBy(
+      `\x1b]52;c;\x07\x1b]52;c;@@@\x07\x1b]52\x07\x1b]52;c;${notUtf8}\x07`
+    )
     expect(copied).toEqual([])
   })
 })

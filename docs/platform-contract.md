@@ -1877,8 +1877,10 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   and an outer `TERM=xterm-256color`: a bare `ESC]52;c;<base64>BEL` from the pane is
   dropped; the same wrapped for passthrough (`ESC Ptmux; ESC ESC]52;c;… BEL ESC \`) comes
   out unchanged; `tmux load-buffer -w -` comes out as `ESC]52;;<base64>BEL` — an empty
-  first field, not `c` (2026-11-05, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the
-  client run under `script` with each kind printed in turn, the outer bytes decoded).
+  first field, not `c`. With `set -g set-clipboard on` added, the bare one comes out too,
+  as `ESC]52;;<base64>BEL`, and the other two come out once each as before (2026-11-05,
+  tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run under `script` with
+  each kind printed in turn, the outer bytes decoded).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
 - **A tmux client whose login names no UTF-8 locale draws `_` for every character

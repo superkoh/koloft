@@ -30,7 +30,8 @@ export function TerminalView({
   focusSignal,
   onRepainted,
   onOutput,
-  maxCols
+  maxCols,
+  copiesToClipboard = false
 }: {
   id: string
   active: boolean
@@ -41,6 +42,7 @@ export function TerminalView({
   onRepainted?: () => void
   onOutput?: () => void
   maxCols?: number
+  copiesToClipboard?: boolean
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
@@ -149,7 +151,7 @@ export function TerminalView({
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
     // CC§12
     suppressXtversionReply(term)
-    copyOsc52ToClipboard(term, window.api.terminal.copy)
+    if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)
     term.open(ref.current!)
     termRef.current = term
     fitRef.current = fit
@@ -394,7 +396,7 @@ export function TerminalView({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint])
+  }, [id, safeFit, forceRepaint, copiesToClipboard])
 
   useEffect(() => {
     const term = termRef.current

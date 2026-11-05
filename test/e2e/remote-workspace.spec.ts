@@ -298,11 +298,12 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-59: text an agent on the machine copies, sent as OSC 52 through ssh and tmux, lands on this Mac’s clipboard, and a request to read the clipboard copies nothing', async ({
+  test('E-RW-59: text an agent on the machine copies, sent as OSC 52 through ssh and tmux, lands on this Mac’s clipboard, while a request to read the clipboard, or the same code printed in a local session, copies nothing', async ({
     env
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(240_000)
     const { app, page } = await launchWithRemote(env)
+    const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
     try {
       await app.evaluate(({ clipboard }) => {
         const g = globalThis as unknown as { __koloftCopied?: string[] }
@@ -311,14 +312,17 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           g.__koloftCopied?.push(text)
         }) as typeof clipboard.writeText
       })
+      await startSessionIn(page, 'ws-a')
+      const localTab = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
+      await agentShell(page, localTab!, 60_000)(`printf '\\033]52;c;%s\\007' ${b64('local')}`)
+
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      await waitForCalls(env, 1)
       const tabId = await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id')
       const copied = '远程复制 copy ok'
       const run = agentShell(page, tabId!, 60_000)
       await run(`printf '\\033]52;c;?\\007'`)
-      await run(`printf '\\033]52;;%s\\007' ${Buffer.from(copied, 'utf8').toString('base64')}`)
+      await run(`printf '\\033Ptmux;\\033\\033]52;c;%s\\007\\033\\\\' ${b64(copied)}`)
       await expect
         .poll(() =>
           app.evaluate(
