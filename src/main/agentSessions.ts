@@ -1008,18 +1008,52 @@ interface OwedReply {
   asked?: string
 }
 
+const INBOX_SENDER = 'inbox'
+
+export interface InboxSend {
+  ok: boolean
+  session?: string
+  woke?: boolean
+  queued?: boolean
+  why?: string
+}
+
+export interface InboxStartSpec {
+  task: string
+  workspace?: string
+  backend?: BackendId
+  model?: string
+  name?: string
+  worktree?: string
+}
+
+export interface InboxStart {
+  ok: boolean
+  session?: string
+  name?: string
+  why?: string
+}
+
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
+  sendFromInbox(ref: string, text: string): Promise<InboxSend>
+  startFromInbox(
+    aboutRef: string | undefined,
+    spec: InboxStartSpec,
+    permission: 'bypass' | 'default',
+    onReply: (reply: string) => void
+  ): Promise<InboxStart>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
+  const inboxOwed = new Map<string, (reply: string) => void>()
   const messagedBy = new Map<string, Set<string>>()
 
   // ADR-0031
@@ -1182,6 +1216,12 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const turnEnded = (tabId: string, turn: Turn): boolean => {
     messagedBy.delete(tabId)
+    const toInbox = inboxOwed.get(tabId)
+    if (toInbox && turn.reply.trim()) {
+      inboxOwed.delete(tabId)
+      toInbox(turn.reply.trim())
+      return true
+    }
     const owed = replyOwed.get(tabId)
     if (!owed) return false
     const { owner, asked } = owed
@@ -1461,12 +1501,105 @@ export function sessionVerb(d: SessionVerbDeps): {
   const tabMoved = (oldTabId: string, newTabId: string): void => {
     names.moved(oldTabId, newTabId)
     const owed = replyOwed.get(oldTabId)
-    if (owed === undefined) return
-    replyOwed.delete(oldTabId)
-    replyOwed.set(newTabId, owed)
+    if (owed !== undefined) {
+      replyOwed.delete(oldTabId)
+      replyOwed.set(newTabId, owed)
+    }
+    const inbox = inboxOwed.get(oldTabId)
+    if (inbox) {
+      inboxOwed.delete(oldTabId)
+      inboxOwed.set(newTabId, inbox)
+    }
   }
 
-  return { verb, turnEnded, waitsOnAnother, startButlerHelper, tabMoved }
+  const targetOf = (ref: string): Target | undefined => {
+    const open = d.allSessions().find((s) => s.tabId === ref || s.sessionId === ref)
+    if (open?.tabId && open.alive) return openTarget({ ...open, tabId: open.tabId })
+    return sessionTarget(d, open?.sessionId ?? ref)
+  }
+
+  const sendFromInbox = async (ref: string, text: string): Promise<InboxSend> => {
+    const t = targetOf(ref)
+    if (!t) return { ok: false, why: `There is no session ${ref} any more` }
+    const route = messagingOf(t.backend, !!t.remote)
+    const line =
+      route === 'peerLine'
+        ? crossSessionLine('prompting', text, `koloft-inbox-${++lined}`)
+        : undefined
+    if (line === null) return { ok: false, why: 'The message holds text the session cannot take' }
+    const woke = !t.tabId
+    const busy = route === 'typed' && !!t.tabId && !(await d.ready(t.tabId, 0, true))
+    const until =
+      Date.now() +
+      (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
+    if (busy) {
+      void sendNow(t, text, line, until, INBOX_SENDER).catch(() => {})
+      return { ok: true, queued: true, session: t.key }
+    }
+    try {
+      await sendNow(t, text, line, until, INBOX_SENDER)
+      return { ok: true, woke, session: t.key }
+    } catch (error) {
+      return { ok: false, why: errorText(error) }
+    }
+  }
+
+  const startFromInbox = async (
+    aboutRef: string | undefined,
+    spec: InboxStartSpec,
+    permission: 'bypass' | 'default',
+    onReply: (reply: string) => void
+  ): Promise<InboxStart> => {
+    const about = aboutRef
+      ? d.allSessions().find((s) => s.tabId === aboutRef || s.sessionId === aboutRef)
+      : undefined
+    const workspace =
+      spec.workspace ??
+      (about &&
+        placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === about.sessionId)
+          ?.workspace)
+    if (!workspace)
+      return { ok: false, why: 'Koloft could not tell which workspace to start it in' }
+    const backend = spec.backend ?? about?.backendId ?? 'claude'
+    const held =
+      spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
+    let tabId: string | null = null
+    try {
+      const gitWorkspace = d
+        .sidebar()
+        .some((w) => w.workspace.path === workspace && w.workspace.isGit)
+      const worktree =
+        gitWorkspace && spec.worktree
+          ? freshWorktreeName(await d.worktrees(workspace), Date.now(), spec.worktree)
+          : undefined
+      tabId = await d
+        .launch({
+          kind: backend,
+          cwd: workspace,
+          name: held?.name,
+          worktree,
+          model: spec.model,
+          permission,
+          firstPrompt: spec.task
+        })
+        .catch(() => null)
+    } finally {
+      if (held) names.launched(held, tabId)
+    }
+    if (!tabId) return { ok: false, why: 'Koloft could not start the session' }
+    inboxOwed.set(tabId, onReply)
+    return { ok: true, session: tabId, name: held?.name }
+  }
+
+  return {
+    verb,
+    turnEnded,
+    waitsOnAnother,
+    startButlerHelper,
+    tabMoved,
+    sendFromInbox,
+    startFromInbox
+  }
 }
 
 export interface WorkspaceVerbDeps {

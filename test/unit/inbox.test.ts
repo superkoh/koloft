@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
-import { UNDO_MS, cardsIn, inboxCounts, pickToPress, type InboxCardInput } from '../../src/shared/inbox'
+import {
+  UNDO_MS,
+  cardsIn,
+  inboxCounts,
+  pickToPress,
+  type InboxCardInput
+} from '../../src/shared/inbox'
 
-function makeHost(over: Partial<InboxHost> = {}): InboxHost & { sent: [string, string][]; answered: [string, unknown][] } {
+function makeHost(
+  over: Partial<InboxHost> = {}
+): InboxHost & { sent: [string, string][]; answered: [string, unknown][] } {
   const sent: [string, string][] = []
   const answered: [string, unknown][] = []
   return {
@@ -29,8 +37,36 @@ const question: InboxCardInput = {
   title: 'It asks',
   level: 'high',
   session: 's1',
-  blocks: [{ type: 'choice', id: 'q', questions: [{ id: 'fmt', text: 'Which?', multi: false, ownAnswer: true, options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }] }],
-  actions: [{ id: 'answer', label: 'Answer', takes: ['q'], run: { type: 'session', session: 'card', answer: 'q' }, then: { done: { state: 'closed', status: 'Answered' }, elsewhere: { state: 'closed', status: 'Handled in its tab' } } }]
+  blocks: [
+    {
+      type: 'choice',
+      id: 'q',
+      questions: [
+        {
+          id: 'fmt',
+          text: 'Which?',
+          multi: false,
+          ownAnswer: true,
+          options: [
+            { id: 'a', label: 'A' },
+            { id: 'b', label: 'B' }
+          ]
+        }
+      ]
+    }
+  ],
+  actions: [
+    {
+      id: 'answer',
+      label: 'Answer',
+      takes: ['q'],
+      run: { type: 'session', session: 'card', answer: 'q' },
+      then: {
+        done: { state: 'closed', status: 'Answered' },
+        elsewhere: { state: 'closed', status: 'Handled in its tab' }
+      }
+    }
+  ]
 }
 
 const done: InboxCardInput = {
@@ -40,8 +76,22 @@ const done: InboxCardInput = {
   session: 's1',
   blocks: [{ type: 'input', id: 'next', required: true }],
   actions: [
-    { id: 'close', label: 'Close', style: 'danger', confirm: 'Closes it', run: { type: 'session', session: 'card', message: 'close yourself' }, then: { done: { state: 'in-progress', status: 'Closing it' } } },
-    { id: 'next', label: 'Send', takes: ['next'], run: { type: 'session', session: 'card', message: '{answer:next}' }, then: { done: { state: 'in-progress' } }, lets: ['needs-you', 'closed'] }
+    {
+      id: 'close',
+      label: 'Close',
+      style: 'danger',
+      confirm: 'Closes it',
+      run: { type: 'session', session: 'card', message: 'close yourself' },
+      then: { done: { state: 'in-progress', status: 'Closing it' } }
+    },
+    {
+      id: 'next',
+      label: 'Send',
+      takes: ['next'],
+      run: { type: 'session', session: 'card', message: '{answer:next}' },
+      then: { done: { state: 'in-progress' } },
+      lets: ['needs-you', 'closed']
+    }
   ]
 }
 
@@ -59,8 +109,12 @@ describe('inbox — cards belong to the source that posted them', () => {
     const inbox = new Inbox(makeHost())
     inbox.register({ id: 'koloft', name: 'Koloft' })
     inbox.add({ source: 'koloft', as: 's1' }, done)
-    expect(() => inbox.update({ source: 'koloft', as: 's2' }, 'done-1', { title: 'mine now' })).toThrow(/not yours/)
-    expect(() => inbox.move({ source: 'koloft', as: 's2' }, 'done-1', 'closed')).toThrow(/not yours/)
+    expect(() =>
+      inbox.update({ source: 'koloft', as: 's2' }, 'done-1', { title: 'mine now' })
+    ).toThrow(/not yours/)
+    expect(() => inbox.move({ source: 'koloft', as: 's2' }, 'done-1', 'closed')).toThrow(
+      /not yours/
+    )
   })
 
   it('a card from an unregistered source is refused', () => {
@@ -71,7 +125,10 @@ describe('inbox — cards belong to the source that posted them', () => {
   it('a button that answers a question must say where the card goes when it was answered elsewhere', () => {
     const inbox = new Inbox(makeHost())
     inbox.register({ id: 'koloft', name: 'Koloft' })
-    const bad = { ...question, actions: [{ ...question.actions![0], then: { done: { state: 'closed' as const } } }] }
+    const bad = {
+      ...question,
+      actions: [{ ...question.actions![0], then: { done: { state: 'closed' as const } } }]
+    }
     expect(() => inbox.add({ source: 'koloft' }, bad)).toThrow(/then.elsewhere/)
   })
 
@@ -80,7 +137,11 @@ describe('inbox — cards belong to the source that posted them', () => {
     inbox.register({ id: 'koloft', name: 'Koloft' })
     inbox.add({ source: 'koloft' }, question)
     inbox.unregister('koloft')
-    expect(inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Source is gone', closedBy: 'inbox' })
+    expect(inbox.all()[0]).toMatchObject({
+      state: 'closed',
+      status: 'Source is gone',
+      closedBy: 'inbox'
+    })
   })
 })
 
@@ -112,7 +173,9 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
   })
 
   it('a question already answered in its tab ends as done elsewhere', async () => {
-    const inbox = new Inbox(makeHost({ answerSession: async () => ({ ok: false, elsewhere: true }) }))
+    const inbox = new Inbox(
+      makeHost({ answerSession: async () => ({ ok: false, elsewhere: true }) })
+    )
     inbox.register({ id: 'koloft', name: 'Koloft' })
     const { id } = inbox.add({ source: 'koloft' }, question)
     inbox.press(id, 'answer', { q: { fmt: ['a'] } })
@@ -155,7 +218,11 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
     const { id } = inbox.add({ source: 'koloft', as: 's1' }, done)
     inbox.press(id, 'next', { next: 'commit it' })
     await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
-    expect(host.sent[0][1].split('\n')).toEqual(['(From Inbox: the owner pressed “Send” on card done-1 of Koloft:)', '«commit it»', 'footer'])
+    expect(host.sent[0][1].split('\n')).toEqual([
+      '(From Inbox: the owner pressed “Send” on card done-1 of Koloft:)',
+      '«commit it»',
+      'footer'
+    ])
   })
 
   it('a session a button hands the card to may then move it, only to the states the button lets', async () => {
@@ -213,7 +280,11 @@ describe('inbox — the owner’s own controls', () => {
     inbox.add({ source: 'koloft' }, { ...question, key: 'n', level: 'normal', happenedAt: 1 })
     inbox.add({ source: 'koloft' }, { ...question, key: 'h', level: 'high', happenedAt: 5 })
     inbox.add({ source: 'koloft' }, { ...question, key: 'h0', level: 'high', happenedAt: 2 })
-    expect(cardsIn(inbox.all(), 'needs-you', {}, Date.now()).map((c) => c.key)).toEqual(['h0', 'h', 'n'])
+    expect(cardsIn(inbox.all(), 'needs-you', {}, Date.now()).map((c) => c.key)).toEqual([
+      'h0',
+      'h',
+      'n'
+    ])
   })
 
   it('the only button of a card, taking one pick-one question, is pressed by picking an option', () => {

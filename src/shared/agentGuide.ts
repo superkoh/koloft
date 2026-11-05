@@ -278,6 +278,27 @@ koloft session close [<id or name>]
     Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other session on this computer, open or ended (an open one is ended first, so do not stop it yourself): one on another machine is refused. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused (Claude Code refuses it, and a ! command too): then start a session in the main checkout with koloft session new -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
     Example: koloft session close "Fix docs links"
 
+INBOX
+
+The Inbox is the owner's list of things to look at, a page in Koloft. Koloft itself puts a card there when a session asks the owner something or stops unexpectedly; you do not. Post a card when you finish work that waits on the owner: a decision, a pull request to review, a result to check. Do not post one for a reply the owner reads anyway, or while you still work. A card stays until you or the owner moves it; when the owner presses a button on it, a message reaches you starting "(From Inbox:", with the owner's own words between ${OWNER_QUOTE_MARKS}, and its last line says whether to move the card yourself.
+
+koloft inbox add <key> -- '<card JSON>'
+    Post a card, or replace your card with that key. Fields: title (one line, required); level (high, normal or low: high only when something is blocked until the owner acts, low for news); status (a few words); blocks, a list of: {"type":"text","text":"…"}, {"type":"quote","who":"…","text":"…"}, {"type":"facts","items":[{"text":"…","tone":"good|bad|warn"}]}, {"type":"choice","id":"…","questions":[{"id":"…","text":"…","multi":false,"ownAnswer":true,"options":[{"id":"…","label":"…"}]}]}, {"type":"input","id":"…","placeholder":"…","required":false}; actions, buttons, each {"id":"…","label":"…","style":"main|normal|danger","confirm":"<for danger: what it does>","takes":["<block id>"],"run":{"type":"session","session":"card","message":"<what you are told; {answer:<block id>} puts in what the owner picked or wrote>"},"then":{"done":{"state":"in-progress","status":"…"}},"lets":["closed","needs-you"]}; a "run" of {"type":"new-session","task":"…"} starts a new session in your workspace instead. links: {"label":"…","to":{"type":"browser","url":"…"}}. Text is the owner's language.
+    Example: koloft inbox add pr-812 -- '{"title":"Pull request 812 is ready to merge","level":"normal","blocks":[{"type":"facts","items":[{"text":"checks pass","tone":"good"}]}],"actions":[{"id":"merge","label":"Merge it","style":"main","run":{"type":"session","session":"card","message":"Merge pull request 812."},"then":{"done":{"state":"in-progress","status":"Merging"}},"lets":["closed","needs-you"]}],"links":[{"label":"Pull request","to":{"type":"browser","url":"https://github.com/o/r/pull/812"}}]}'
+
+koloft inbox update <key> -- '<fields JSON>'
+    Change some fields of your card.
+
+koloft inbox move <key> <needs-you|in-progress|closed> [-- "<status>"]
+    Move your card: needs-you when the owner must act, in-progress while you work on it, closed when it is done (the status says how it ended).
+    Example: koloft inbox move pr-812 closed -- "Merged"
+
+koloft inbox delete <key>
+    Take your card away, when it was posted by mistake.
+
+koloft inbox list [<state>]
+    List your cards.
+
 TO-DOS
 
 Only for the butler and the helpers it starts in its own folder.

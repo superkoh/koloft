@@ -205,14 +205,16 @@ export function checkTargetInput(t: unknown): InboxTarget {
 }
 
 function checkBlocks(blocks: InboxBlock[], warn: string[]): Set<string> {
-  if (blocks.length > INBOX_LIMIT.blocks) fail(`at most ${INBOX_LIMIT.blocks} blocks, this card has ${blocks.length}`)
+  if (blocks.length > INBOX_LIMIT.blocks)
+    fail(`at most ${INBOX_LIMIT.blocks} blocks, this card has ${blocks.length}`)
   const answerable = new Set<string>()
   for (const b of blocks) {
     if (b.type === 'text' || b.type === 'quote') {
       if (typeof b.text !== 'string') fail(`a ${b.type} block needs text`)
       b.text = cut(b.text, INBOX_LIMIT.text, warn, `${b.type} text`)
     } else if (b.type === 'facts') {
-      if (!b.items?.length || b.items.length > INBOX_LIMIT.facts) fail(`facts take 1–${INBOX_LIMIT.facts} items`)
+      if (!b.items?.length || b.items.length > INBOX_LIMIT.facts)
+        fail(`facts take 1–${INBOX_LIMIT.facts} items`)
     } else if (b.type === 'chain') {
       if (!b.steps || b.steps.length < 2 || b.steps.length > INBOX_LIMIT.chain)
         fail(`a chain has 2–${INBOX_LIMIT.chain} steps`)
@@ -236,8 +238,14 @@ function checkBlocks(blocks: InboxBlock[], warn: string[]): Set<string> {
   return answerable
 }
 
-function checkActions(actions: InboxAction[], answerable: Set<string>, session: string | null, warn: string[]): InboxAction[] {
-  if (actions.length > INBOX_LIMIT.actions) fail(`at most ${INBOX_LIMIT.actions} buttons, this card has ${actions.length}`)
+function checkActions(
+  actions: InboxAction[],
+  answerable: Set<string>,
+  session: string | null,
+  warn: string[]
+): InboxAction[] {
+  if (actions.length > INBOX_LIMIT.actions)
+    fail(`at most ${INBOX_LIMIT.actions} buttons, this card has ${actions.length}`)
   if (actions.filter((a) => a.style === 'main').length > 1) fail('only one main button')
   const ids = new Set<string>()
   return actions.map((a) => {
@@ -245,20 +253,27 @@ function checkActions(actions: InboxAction[], answerable: Set<string>, session: 
     ids.add(a.id)
     if (!a.label) fail(`button ${a.id} needs a label`)
     if (a.style === 'danger' && !a.confirm) fail(`danger button ${a.id} needs a confirm sentence`)
-    for (const t of a.takes ?? []) if (!answerable.has(t)) fail(`button ${a.id} takes ${t}, which is no choice or input block on this card`)
-    for (const s of a.in ?? []) if (!OPEN_STATES.includes(s)) fail(`button ${a.id}: closed cards have no buttons`)
+    for (const t of a.takes ?? [])
+      if (!answerable.has(t))
+        fail(`button ${a.id} takes ${t}, which is no choice or input block on this card`)
+    for (const s of a.in ?? [])
+      if (!OPEN_STATES.includes(s)) fail(`button ${a.id}: closed cards have no buttons`)
     const run = a.run
     if (run?.type === 'session') {
       if (!run.session) fail(`button ${a.id} names no session`)
-      if (!run.message && !run.answer) fail(`button ${a.id} sends to a session, so it needs a message or an answer`)
-      if (run.answer && !a.then?.elsewhere) fail(`button ${a.id} answers a question, so then.elsewhere is needed`)
-      if (run.session === CARD_SESSION && !session) fail(`button ${a.id} goes to the card's session, but the card names none`)
+      if (!run.message && !run.answer)
+        fail(`button ${a.id} sends to a session, so it needs a message or an answer`)
+      if (run.answer && !a.then?.elsewhere)
+        fail(`button ${a.id} answers a question, so then.elsewhere is needed`)
+      if (run.session === CARD_SESSION && !session)
+        fail(`button ${a.id} goes to the card's session, but the card names none`)
     } else if (run?.type === 'new-session') {
       if (!run.task) fail(`button ${a.id} starts a session, so it needs a task`)
     } else fail(`button ${a.id} needs run.type session or new-session`)
     const then: Partial<Record<InboxOutcome, InboxTarget>> = {}
     for (const [k, v] of Object.entries(a.then ?? {})) {
-      if (!INBOX_OUTCOMES.includes(k as InboxOutcome)) fail(`then.${k} is not a result the Inbox knows`)
+      if (!INBOX_OUTCOMES.includes(k as InboxOutcome))
+        fail(`then.${k} is not a result the Inbox knows`)
       then[k as InboxOutcome] = checkTarget(v, `button ${a.id} then.${k}`)
     }
     for (const s of a.lets ?? []) if (!isState(s)) fail(`button ${a.id}: lets ${s} is not a state`)
@@ -275,7 +290,8 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
   if (!input.title) fail('missing title')
   if (!INBOX_LEVELS.includes(input.level)) fail(`level must be ${INBOX_LEVELS.join(', ')}`)
   const where: Record<string, string> = {}
-  for (const [k, v] of Object.entries(input.where ?? {})) if (v) where[k] = cut(String(v), INBOX_LIMIT.whereValue, warn, `where.${k}`)
+  for (const [k, v] of Object.entries(input.where ?? {}))
+    if (v) where[k] = cut(String(v), INBOX_LIMIT.whereValue, warn, `where.${k}`)
   const session = input.session ?? null
   const blocks = structuredClone(input.blocks ?? [])
   const answerable = checkBlocks(blocks, warn)
@@ -284,7 +300,9 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
     fail(`suggestion.action ${input.suggestion.action} is not a button on this card`)
   const links = input.links ?? []
   if (links.length > INBOX_LIMIT.links) fail(`at most ${INBOX_LIMIT.links} links`)
-  for (const l of links) if (!['session', 'changes', 'page', 'browser'].includes(l.to?.type)) fail(`link type ${l.to?.type} is not one the Inbox knows`)
+  for (const l of links)
+    if (!['session', 'changes', 'page', 'browser'].includes(l.to?.type))
+      fail(`link type ${l.to?.type} is not one the Inbox knows`)
   return {
     title: cut(input.title, INBOX_LIMIT.title, warn, 'title'),
     status: cut(input.status ?? '', INBOX_LIMIT.status, warn, 'status'),
@@ -293,7 +311,12 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
     session,
     happenedAt: input.happenedAt ?? null,
     blocks,
-    suggestion: input.suggestion ? { ...input.suggestion, text: cut(input.suggestion.text, INBOX_LIMIT.line, warn, 'suggestion') } : null,
+    suggestion: input.suggestion
+      ? {
+          ...input.suggestion,
+          text: cut(input.suggestion.text, INBOX_LIMIT.line, warn, 'suggestion')
+        }
+      : null,
     actions,
     links: links.map((l) => ({ ...l, label: cut(l.label, INBOX_LIMIT.label, warn, 'link label') }))
   }
@@ -308,7 +331,11 @@ export function visibleActions(card: InboxCard): InboxAction[] {
   return card.actions.filter((a) => (a.in ?? OPEN_STATES).includes(card.state))
 }
 
-export function answersComplete(card: InboxCard, action: InboxAction, answers: InboxAnswers): boolean {
+export function answersComplete(
+  card: InboxCard,
+  action: InboxAction,
+  answers: InboxAnswers
+): boolean {
   for (const id of action.takes ?? []) {
     const block = card.blocks.find((b) => 'id' in b && b.id === id)
     if (block?.type === 'input') {
@@ -320,17 +347,21 @@ export function answersComplete(card: InboxCard, action: InboxAction, answers: I
     if (!given || typeof given === 'string') return false
     for (const q of block.questions) {
       const a = given[q.id]
-      if (!a || (Array.isArray(a) && !a.length) || (!Array.isArray(a) && !a.own.trim())) return false
+      if (!a || (Array.isArray(a) && !a.length) || (!Array.isArray(a) && !a.own.trim()))
+        return false
     }
   }
   return true
 }
 
-export function pickToPress(card: InboxCard): { action: InboxAction; block: string; question: InboxQuestion } | null {
+export function pickToPress(
+  card: InboxCard
+): { action: InboxAction; block: string; question: InboxQuestion } | null {
   const acts = visibleActions(card)
   if (acts.length !== 1 || acts[0].takes?.length !== 1) return null
   const block = card.blocks.find((b) => b.type === 'choice' && b.id === acts[0].takes?.[0])
-  if (block?.type !== 'choice' || block.questions.length !== 1 || block.questions[0].multi) return null
+  if (block?.type !== 'choice' || block.questions.length !== 1 || block.questions[0].multi)
+    return null
   return { action: acts[0], block: block.id, question: block.questions[0] }
 }
 
@@ -356,7 +387,12 @@ export function fillTemplate(template: string, card: InboxCard, answers: InboxAn
     .replaceAll('{key}', card.key)
     .replaceAll('{status}', card.status)
     .replace(/\{answer:([^}]+)\}/g, (_, id: string) => answerText(card, id, answers))
-    .replaceAll('{answers}', Object.keys(answers).map((id) => answerText(card, id, answers)).join('; ') || '(nothing)')
+    .replaceAll(
+      '{answers}',
+      Object.keys(answers)
+        .map((id) => answerText(card, id, answers))
+        .join('; ') || '(nothing)'
+    )
 }
 
 export function envelopeHead(card: InboxCard, action: InboxAction): string {
@@ -379,13 +415,25 @@ function stillShown(card: InboxCard, now: number): boolean {
   return card.state !== 'closed' || now - (card.closedAt ?? now) <= DONE_KEPT_MS
 }
 
-export function cardsIn(cards: InboxCard[], state: InboxState, f: InboxFilters, now: number): InboxCard[] {
+export function cardsIn(
+  cards: InboxCard[],
+  state: InboxState,
+  f: InboxFilters,
+  now: number
+): InboxCard[] {
   const here = cards.filter((c) => c.state === state && stillShown(c, now) && matches(c, f))
   const when = (c: InboxCard): number => c.happenedAt ?? c.createdAt
   if (state === 'closed') return here.sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
-  if (f.sort === 'newest') return here.sort((a, b) => when(b) - when(a) || b.createdAt - a.createdAt)
-  if (f.sort === 'oldest') return here.sort((a, b) => when(a) - when(b) || a.createdAt - b.createdAt)
-  const key = (c: InboxCard): number[] => [INBOX_LEVELS.indexOf(levelOf(c)), -(c.movedToTopAt ?? 0), when(c), c.createdAt]
+  if (f.sort === 'newest')
+    return here.sort((a, b) => when(b) - when(a) || b.createdAt - a.createdAt)
+  if (f.sort === 'oldest')
+    return here.sort((a, b) => when(a) - when(b) || a.createdAt - b.createdAt)
+  const key = (c: InboxCard): number[] => [
+    INBOX_LEVELS.indexOf(levelOf(c)),
+    -(c.movedToTopAt ?? 0),
+    when(c),
+    c.createdAt
+  ]
   return here.sort((a, b) => {
     const x = key(a)
     const y = key(b)
@@ -400,7 +448,11 @@ export interface InboxFacet {
   n: number
 }
 
-export function facetsOf(cards: InboxCard[], state: InboxState, now: number): Record<string, InboxFacet[]> {
+export function facetsOf(
+  cards: InboxCard[],
+  state: InboxState,
+  now: number
+): Record<string, InboxFacet[]> {
   const out: Record<string, Map<string, InboxFacet>> = { source: new Map() }
   for (const c of cards) {
     if (c.state !== state || !stillShown(c, now)) continue

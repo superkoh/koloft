@@ -62,8 +62,15 @@ export interface StartSpec {
 export interface InboxHost {
   now(): number
   sendToSession(session: string, text: string): Promise<SendResult>
-  answerSession(session: string, answer: { answers?: InboxAnswers[string]; pick?: string }): Promise<AnswerResult>
-  startSession(spec: StartSpec, onReply: (reply: string) => void): Promise<StartResult>
+  answerSession(
+    session: string,
+    answer: { answers?: InboxAnswers[string]; pick?: string }
+  ): Promise<AnswerResult>
+  startSession(
+    spec: StartSpec,
+    card: InboxCard,
+    onReply: (reply: string) => void
+  ): Promise<StartResult>
   footer(card: InboxCard, action: InboxAction): string
   changed(): void
 }
@@ -99,7 +106,12 @@ export class Inbox {
   private restore(saved: InboxSnapshot): void {
     for (const c of saved.cards) {
       if (c.press?.step === 'working')
-        c.note = { kind: 'result', outcome: 'failed', text: 'Koloft restarted, so it does not know whether this finished — have a look', retry: true }
+        c.note = {
+          kind: 'result',
+          outcome: 'failed',
+          text: 'Koloft restarted, so it does not know whether this finished — have a look',
+          retry: true
+        }
       c.press = null
       this.cards.set(c.id, c)
       this.seq = Math.max(this.seq, Number(c.id.slice(1)) || 0)
@@ -131,7 +143,12 @@ export class Inbox {
     for (const c of this.cards.values()) {
       if (c.source !== id || c.state === 'closed') continue
       this.cancelPress(c, null)
-      this.setState(c, { state: 'closed', status: 'Source is gone' }, 'inbox', 'its source unregistered')
+      this.setState(
+        c,
+        { state: 'closed', status: 'Source is gone' },
+        'inbox',
+        'its source unregistered'
+      )
     }
     this.host.changed()
   }
@@ -151,9 +168,13 @@ export class Inbox {
     return !caller.as || !card.postedBy || card.postedBy === caller.as
   }
 
-  add(caller: InboxCaller, input: InboxCardInput): { id: string; created: boolean; warnings: string[] } {
+  add(
+    caller: InboxCaller,
+    input: InboxCardInput
+  ): { id: string; created: boolean; warnings: string[] } {
     const source = this.source(caller)
-    if (!input?.key || input.key.length > INBOX_LIMIT.key) fail(`a card needs a key of 1–${INBOX_LIMIT.key} characters`)
+    if (!input?.key || input.key.length > INBOX_LIMIT.key)
+      fail(`a card needs a key of 1–${INBOX_LIMIT.key} characters`)
     const existing = this.find(source.id, input.key)
     if (existing && !this.mayChange(existing, caller)) fail('this card is not yours')
     const state = input.state ?? existing?.state ?? 'needs-you'
@@ -164,7 +185,8 @@ export class Inbox {
     const now = this.host.now()
     if (!existing) {
       const open = this.all().filter((c) => c.source === source.id && c.state !== 'closed').length
-      if (open >= INBOX_LIMIT.openCardsPerSource) fail(`source ${source.id} already has ${INBOX_LIMIT.openCardsPerSource} open cards`)
+      if (open >= INBOX_LIMIT.openCardsPerSource)
+        fail(`source ${source.id} already has ${INBOX_LIMIT.openCardsPerSource} open cards`)
       const card: InboxCard = {
         ...body,
         id: `c${++this.seq}`,
@@ -194,7 +216,8 @@ export class Inbox {
     if (existing.state === 'closed') fail('the card is already closed')
     this.touch(existing)
     Object.assign(existing, body)
-    if (existing.state !== state) this.setState(existing, { state }, caller.as ?? 'source', input.why ?? null)
+    if (existing.state !== state)
+      this.setState(existing, { state }, caller.as ?? 'source', input.why ?? null)
     this.host.changed()
     return { id: existing.id, created: false, warnings }
   }
@@ -206,7 +229,18 @@ export class Inbox {
     if (!this.mayChange(card, caller)) fail('this card is not yours')
     if (card.state === 'closed') fail('the card is already closed')
     if ('state' in patch) fail('use move to change the state')
-    const keys: (keyof InboxCardBody)[] = ['title', 'status', 'level', 'where', 'session', 'happenedAt', 'blocks', 'suggestion', 'actions', 'links']
+    const keys: (keyof InboxCardBody)[] = [
+      'title',
+      'status',
+      'level',
+      'where',
+      'session',
+      'happenedAt',
+      'blocks',
+      'suggestion',
+      'actions',
+      'links'
+    ]
     const merged: InboxCardInput = { key, title: card.title, level: card.level }
     for (const k of keys) (merged as Record<string, unknown>)[k] = card[k]
     for (const [k, v] of Object.entries(patch)) {
@@ -225,7 +259,8 @@ export class Inbox {
   move(caller: InboxCaller, key: string, to: InboxTarget | string, why?: string): void {
     const t = checkTargetInput(to)
     let card = this.find(caller.source, key)
-    if (!card && caller.as) card = this.all().find((c) => c.key === key && c.grants.some((g) => g.to === caller.as))
+    if (!card && caller.as)
+      card = this.all().find((c) => c.key === key && c.grants.some((g) => g.to === caller.as))
     if (!card) fail(`no card with key ${key}`)
     const granted = card.grants.some((g) => g.to === caller.as && g.states.includes(t.state))
     if (!(card.source === caller.source && this.mayChange(card, caller)) && !granted)
@@ -248,7 +283,10 @@ export class Inbox {
   list(caller: InboxCaller, state?: InboxState): InboxCard[] {
     const source = this.source(caller)
     return this.all().filter(
-      (c) => c.source === source.id && (!state || c.state === state) && (!caller.as || !c.postedBy || c.postedBy === caller.as)
+      (c) =>
+        c.source === source.id &&
+        (!state || c.state === state) &&
+        (!caller.as || !c.postedBy || c.postedBy === caller.as)
     )
   }
 
@@ -256,12 +294,18 @@ export class Inbox {
     card.version++
     card.updatedAt = this.host.now()
     if (card.press && card.press.step !== 'working')
-      this.cancelPress(card, { kind: 'changed', text: 'This card just changed, so your press was not sent — have another look' })
+      this.cancelPress(card, {
+        kind: 'changed',
+        text: 'This card just changed, so your press was not sent — have another look'
+      })
   }
 
   private setState(card: InboxCard, t: InboxTarget, by: string, why: string | null): void {
     const now = this.host.now()
-    card.history = [{ at: now, from: card.state, to: t.state, status: t.status ?? card.status, by, why }, ...card.history].slice(0, 20)
+    card.history = [
+      { at: now, from: card.state, to: t.state, status: t.status ?? card.status, by, why },
+      ...card.history
+    ].slice(0, 20)
     if (t.status) card.status = t.status
     if (card.state !== t.state) {
       card.state = t.state
@@ -301,7 +345,12 @@ export class Inbox {
     this.host.changed()
   }
 
-  press(cardId: string, actionId: string, answers: InboxAnswers, opts: { retry?: boolean } = {}): void {
+  press(
+    cardId: string,
+    actionId: string,
+    answers: InboxAnswers,
+    opts: { retry?: boolean } = {}
+  ): void {
     const card = this.cards.get(cardId)
     if (!card) fail('no such card')
     if (!this.isReady(card.source)) fail('this source is not ready yet')
@@ -313,7 +362,12 @@ export class Inbox {
     if (!answersComplete(card, action, taken)) fail('answer every question first')
     const tries = opts.retry && card.lastPress?.action === actionId ? card.lastPress.try + 1 : 1
     card.note = null
-    card.press = { action: actionId, step: action.style === 'danger' && !opts.retry ? 'confirm' : 'waiting', answers: taken, try: tries }
+    card.press = {
+      action: actionId,
+      step: action.style === 'danger' && !opts.retry ? 'confirm' : 'waiting',
+      answers: taken,
+      try: tries
+    }
     if (card.press.step === 'waiting') this.startWait(card)
     this.host.changed()
   }
@@ -335,13 +389,17 @@ export class Inbox {
 
   retry(cardId: string): void {
     const card = this.cards.get(cardId)
-    if (card?.lastPress) this.press(cardId, card.lastPress.action, card.lastPress.answers, { retry: true })
+    if (card?.lastPress)
+      this.press(cardId, card.lastPress.action, card.lastPress.answers, { retry: true })
   }
 
   private startWait(card: InboxCard): void {
     if (!card.press) return
     card.press.until = this.host.now() + UNDO_MS
-    this.timers.set(card.id, setTimeout(() => void this.fire(card.id), UNDO_MS))
+    this.timers.set(
+      card.id,
+      setTimeout(() => void this.fire(card.id), UNDO_MS)
+    )
   }
 
   private cancelPress(card: InboxCard, note: InboxCard['note']): void {
@@ -371,42 +429,64 @@ export class Inbox {
     if (this.cards.get(cardId) === card && card.press === press) this.finish(card, action, result)
   }
 
-  private async dispatch(card: InboxCard, action: InboxAction, answers: InboxAnswers): Promise<Result> {
+  private async dispatch(
+    card: InboxCard,
+    action: InboxAction,
+    answers: InboxAnswers
+  ): Promise<Result> {
     const run = action.run
     if (run.type === 'session') {
       const to = run.session === CARD_SESSION ? card.session : run.session
       if (!to) return { outcome: 'failed', text: 'This card names no session' }
       if (run.answer) {
         const isBlock = card.blocks.some((b) => 'id' in b && b.id === run.answer)
-        const r = await this.host.answerSession(to, isBlock ? { answers: answers[run.answer] } : { pick: run.answer })
-        if (r.elsewhere) return { outcome: 'elsewhere', text: r.why ?? 'It was already answered somewhere else' }
+        const r = await this.host.answerSession(
+          to,
+          isBlock ? { answers: answers[run.answer] } : { pick: run.answer }
+        )
+        if (r.elsewhere)
+          return { outcome: 'elsewhere', text: r.why ?? 'It was already answered somewhere else' }
         if (!r.ok) return { outcome: 'failed', text: r.why ?? 'Koloft could not answer it' }
         return { outcome: 'done', text: r.text ?? 'Answered — it is working again' }
       }
       const text = `${envelopeHead(card, action)}\n${fillTemplate(run.message ?? '', card, answers)}\n${this.host.footer(card, action)}`
       const sent = await this.host.sendToSession(to, text)
-      if (!sent.ok) return { outcome: 'failed', text: sent.why ?? 'Koloft could not reach the session' }
+      if (!sent.ok)
+        return { outcome: 'failed', text: sent.why ?? 'Koloft could not reach the session' }
       this.grant(card, action, sent.session ?? to)
       return {
         outcome: 'done',
-        text: sent.woke ? 'Sent — the session was asleep, so Koloft woke it first' : sent.queued ? 'Sent — it reaches the session once its turn ends' : 'Sent to the session'
+        text: sent.woke
+          ? 'Sent — the session was asleep, so Koloft woke it first'
+          : sent.queued
+            ? 'Sent — it reaches the session once its turn ends'
+            : 'Sent to the session'
       }
     }
     const task = `${envelopeHead(card, action)}\n${fillTemplate(run.task, card, answers)}\n${this.host.footer(card, action)}`
-    const started = await this.host.startSession({ ...run, task, workspace: run.workspace ?? card.where.workspace }, (reply) => {
+    const started = await this.host.startSession({ ...run, task }, card, (reply) => {
       if (this.cards.get(card.id) !== card) return
       card.note = { kind: 'reply', text: reply }
       this.host.changed()
     })
-    if (!started.ok || !started.session) return { outcome: 'failed', text: started.why ?? 'Koloft could not start a session' }
+    if (!started.ok || !started.session)
+      return { outcome: 'failed', text: started.why ?? 'Koloft could not start a session' }
     this.grant(card, action, started.session)
-    const opened: InboxLink = { label: `Open “${started.name ?? 'new session'}”`, to: { type: 'session', session: started.session }, auto: true }
+    const opened: InboxLink = {
+      label: `Open “${started.name ?? 'new session'}”`,
+      to: { type: 'session', session: started.session },
+      auto: true
+    }
     card.links = [...card.links.filter((l) => !l.auto), opened].slice(-INBOX_LIMIT.links)
     return { outcome: 'done', text: `Started “${started.name ?? 'a new session'}”` }
   }
 
   private grant(card: InboxCard, action: InboxAction, session: string): void {
-    if (action.lets?.length) card.grants = [...card.grants.filter((g) => g.to !== session), { to: session, states: action.lets }]
+    if (action.lets?.length)
+      card.grants = [
+        ...card.grants.filter((g) => g.to !== session),
+        { to: session, states: action.lets }
+      ]
   }
 
   private finish(card: InboxCard, action: InboxAction, result: Result): void {
@@ -422,15 +502,14 @@ export class Inbox {
   }
 
   rekeySession(from: string, to: string): void {
-    let moved = false
+    let moved = 0
+    const swap = (ref: string): string => (ref === from ? (moved++, to) : ref)
     for (const c of this.cards.values()) {
-      if (c.session === from) {
-        c.session = to
-        moved = true
-      }
-      for (const l of c.links) if ('session' in l.to && l.to.session === from) l.to = { ...l.to, session: to }
-      for (const g of c.grants) if (g.to === from) g.to = to
-      if (c.postedBy === from) c.postedBy = to
+      if (c.session) c.session = swap(c.session)
+      if (c.postedBy) c.postedBy = swap(c.postedBy)
+      for (const g of c.grants) g.to = swap(g.to)
+      for (const l of c.links)
+        if ('session' in l.to) l.to = { ...l.to, session: swap(l.to.session) }
     }
     if (moved) this.host.changed()
   }
