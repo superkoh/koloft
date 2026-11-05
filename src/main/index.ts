@@ -503,7 +503,13 @@ import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
-import { machineOfShotPage, shootHtml, shootPage, shotSession } from './discord/pageShot'
+import {
+  machineOfShotPage,
+  onShotPageGone,
+  shootHtml,
+  shootPage,
+  shotSession
+} from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
@@ -4954,10 +4960,7 @@ function setupPageShotPartition(): void {
       callback({ cancel: true })
     )
   })
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.session === ses)
-      contents.once('destroyed', () => pageForwards.pageGone(contents.id))
-  })
+  onShotPageGone((page) => pageForwards.pageGone(page))
 }
 
 function setupBrowserPartition(): void {
@@ -5782,7 +5785,7 @@ async function copyToPhone(
     : "this session's room on the owner's Discord"
   return sendPhoneCopy(
     {
-      shoot: shootPage,
+      shoot: (url, machine) => shootPage(url, { machine }),
       shootHtml,
       size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
       readBytes: (file) =>

@@ -1001,7 +1001,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // ADR-0046
-  test('E-SSH-46: while the owner is away, a localhost page that a session on a machine behind the jump host opens reaches that session’s Discord room as a picture of the machine’s page, through a forward on its ssh connection that goes once the picture is taken and its web tab is closed', async ({
+  test('E-SSH-46: while the owner is away, a localhost page that a session on a machine behind the jump host opens reaches that session’s Discord room as a picture of the machine’s page, not of the Mac server on the same port, through a forward on its ssh connection that goes once the picture is taken and its web tab is closed', async ({
     env
   }) => {
     seedSettings(env, {
@@ -1014,9 +1014,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       }
     })
     const port = await portFreeOnTheMac()
+    const macServer = await serveOnTheMac(port, 'from the Mac')
     const fake = await startFakeDiscord(env)
     try {
-      await withLab(env, async ({ page, lab }) => {
+      await withLab(env, async ({ app, page, lab }) => {
         servePageOnTarget(
           lab,
           port,
@@ -1052,21 +1053,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect(png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)).toBe(true)
         expect(png.readUInt32BE(PNG_HEIGHT_AT)).toBeGreaterThanOrEqual(TALL_PAGE_PX)
         await expect
-          .poll(() => terminalText(page, tabId), {
+          .poll(async () => (await terminalText(page, tabId)).replace(/\s/g, ''), {
             timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
           })
-          .toContain('Sent a picture of the page')
+          .toContain('Sentapictureofthepage')
 
         await switchToRow(page, remoteRow)
+        const shown = await guestByUrl(app, new RegExp(`localhost:(?!${port}/)\\d+/$`), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(shown.locator('body')).toHaveText('on the machine')
+        const macPort = Number(new URL(shown.url()).port)
         const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
         while ((await webTabs.count()) > 0)
           await webTabs.first().locator(BROWSER.tabCloseIn).click()
         await expect
-          .poll(() => fetchOnTheMacOnAFreshConnection(port), { timeout: 30_000 })
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
           .toBe('refused')
+        expect(await fetchOnTheMacOnAFreshConnection(port)).toBe('from the Mac')
       })
     } finally {
       await fake.close()
+      macServer.close()
     }
   })
 

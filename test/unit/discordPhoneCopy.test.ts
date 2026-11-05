@@ -91,7 +91,7 @@ describe('what koloft open shows is sent to the phone as', () => {
     expect(shownOf('/w/app.ts', undefined, 'diff')).toEqual({ diff: '/w/app.ts' })
   })
 
-  it('in a session on another machine: its files are read there, and every page, its own HTML files and localhost included, is pictured as that machine shows it', () => {
+  it('in a session on another machine: its files are read there, and every page, its own HTML files and localhost included, is pictured as that session’s Workbench shows it', () => {
     const on = (p: string): string => formatRemoteKey('box', p)
     expect(shownOf('/w/plan.md', 'box')).toEqual({ markdown: on('/w/plan.md') })
     expect(shownOf('/w/app.ts', 'box', 'diff')).toEqual({ diff: on('/w/app.ts') })
