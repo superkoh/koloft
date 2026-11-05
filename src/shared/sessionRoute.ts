@@ -21,12 +21,11 @@ export type RouteWorktree =
 
 export interface RouteText {
   title: string
-  why: string
 }
 
 export type SessionRoute =
   | (RouteText & { kind: 'workspace'; path: string; worktree: RouteWorktree | null })
-  | (RouteText & { kind: 'project'; machine: string; folder: string | null })
+  | (RouteText & { kind: 'project'; machine: string; folder: string | null; why: string })
   | (RouteText & { kind: 'koloft' })
   | (RouteText & { kind: 'discord' })
   | (RouteText & { kind: 'assist'; path: string })
@@ -106,8 +105,8 @@ ${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace:
 
 Reply with that one JSON object and nothing else, adding to it:
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "why": <one short sentence in the language of the message, naming the rule you took>,
- "rule": <the number of the rule you named in "why">`
+ "why" (rule 7 only, leave it out for every other rule): <one short sentence in the language of the message>,
+ "rule": <the number of the rule you took>`
   return { system: ROUTE_SYSTEM, prompt }
 }
 
@@ -163,7 +162,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
   const o = reply ? jsonIn(reply) : null
   if (!o) return null
-  const said = { title: text(o.title), why: text(o.why, WHY_MAX_CHARS) }
+  const said = { title: text(o.title) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.hand === 'discord') return { ...said, kind: 'discord' }
   if (o.hand === 'feature' || o.feature !== undefined) {
@@ -181,6 +180,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
     const folder = typeof o.newFolder === 'string' ? o.newFolder.trim() : ''
     return {
       ...said,
+      why: text(o.why, WHY_MAX_CHARS),
       kind: 'project',
       machine,
       folder: isValidWorktreeName(folder) ? folder : null

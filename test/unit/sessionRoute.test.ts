@@ -59,10 +59,16 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
+
+  it('asks for a reason only when the answer is a new project, the one answer whose reason is shown', () => {
+    const { prompt } = routeJob(LIST, 'build a price crawler')
+    expect(prompt).toContain('"why" (rule 7 only, leave it out for every other rule)')
+    expect(prompt).not.toContain('naming the rule you took')
+  })
 })
 
 describe('parseRoute: an answer is checked before anything uses it', () => {
-  it('reads a workspace by its number, with title and reason', () => {
+  it('reads a workspace by its number, with its title and no reason even when one is sent', () => {
     expect(
       parseRoute(
         reply({
@@ -77,8 +83,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
       kind: 'workspace',
       path: '/Users/me/code/app',
       worktree: { kind: 'new', name: 'safari-login' },
-      title: 'Safari 登录',
-      why: 'The login bug lives in app.'
+      title: 'Safari 登录'
     })
   })
 
@@ -86,8 +91,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(parseRoute(reply({ hand: 'feature', feature: 'check-update' }), LIST)).toEqual({
       kind: 'feature',
       key: 'check-update',
-      title: '',
-      why: ''
+      title: ''
     })
     expect(parseRoute(reply({ feature: 'check-update' }), LIST)).toMatchObject({
       kind: 'feature',
@@ -125,10 +129,23 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(r).toMatchObject({ kind: 'workspace', worktree: { kind: 'main' } })
   })
 
-  it('reads a brand-new project as a machine Koloft knows and a folder name, never a path', () => {
+  it('reads a brand-new project as a machine Koloft knows and a folder name, never a path, with the reason the New Project dialog shows', () => {
     expect(
-      parseRoute(reply({ workspace: null, machine: 'devbox', newFolder: 'price-crawler' }), LIST)
-    ).toMatchObject({ kind: 'project', machine: 'devbox', folder: 'price-crawler' })
+      parseRoute(
+        reply({
+          workspace: null,
+          machine: 'devbox',
+          newFolder: 'price-crawler',
+          why: 'No workspace is a crawler.'
+        }),
+        LIST
+      )
+    ).toMatchObject({
+      kind: 'project',
+      machine: 'devbox',
+      folder: 'price-crawler',
+      why: 'No workspace is a crawler.'
+    })
     expect(
       parseRoute(reply({ workspace: null, machine: 'elsewhere', newFolder: '/tmp/x' }), LIST)
     ).toMatchObject({ kind: 'project', machine: 'local', folder: null })
@@ -137,17 +154,15 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
   it('hands a message about Koloft itself to the global Assist, and "ask <workspace> …" to that workspace’s Assist; an unknown hand is ordinary work', () => {
     expect(
       parseRoute(reply({ hand: 'koloft', title: 'Dark mode', why: 'A setting.' }), LIST)
-    ).toEqual({ kind: 'koloft', title: 'Dark mode', why: 'A setting.' })
+    ).toEqual({ kind: 'koloft', title: 'Dark mode' })
     expect(parseRoute(reply({ hand: 'discord', title: 'Discord' }), LIST)).toEqual({
       kind: 'discord',
-      title: 'Discord',
-      why: ''
+      title: 'Discord'
     })
     expect(parseRoute(reply({ hand: 'assist', workspace: 2, title: 'Ask api' }), LIST)).toEqual({
       kind: 'assist',
       path: 'devbox:/srv/api',
-      title: 'Ask api',
-      why: ''
+      title: 'Ask api'
     })
     expect(parseRoute(reply({ hand: 'assist', workspace: 9 }), LIST)).toBeNull()
     expect(
@@ -158,7 +173,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
   it('a reply that names rule 1, the check-in rule, goes to the butler for that workspace even when written in the new-session shape', () => {
     expect(
       parseRoute(reply({ rule: 1, workspace: 1, worktree: 'main', title: 'Progress' }), LIST)
-    ).toEqual({ kind: 'assist', path: '/Users/me/code/app', title: 'Progress', why: '' })
+    ).toEqual({ kind: 'assist', path: '/Users/me/code/app', title: 'Progress' })
     expect(parseRoute(reply({ rule: 6, workspace: 1, worktree: 'main' }), LIST)).toMatchObject({
       kind: 'workspace',
       path: '/Users/me/code/app'
