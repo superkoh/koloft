@@ -131,8 +131,8 @@ async function koloftExitsIn(page: Page, tabId: string): Promise<string[]> {
 test.describe('Codex on a remote workspace: its app-server runs on the machine, its screen on this Mac, signed in from this Mac', () => {
   test.afterEach(({ env }) => killFakeRemote(env))
 
-  // ADR-0039 CODEX§16
-  test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
+  // ADR-0039 ADR-0047 CODEX§16
+  test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with its sandbox open to the network and Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
     env
   }) => {
     seedSettings(env, { skipPermissions: false })
@@ -146,6 +146,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         codexHome: path.join(machineHome(env), '.koloft', 'codex-home')
       })
       expect(server.tabId).toMatch(/^pty-/)
+      expect(server.argv).toContain('sandbox_workspace_write.network_access=true')
       expect(machineCodexLog(env, 'fake-codex-logins.jsonl')).toEqual([
         { type: 'chatgptAuthTokens', accessToken: MAC_CODEX_ACCESS_TOKEN, accountId: 'mac-account' }
       ])

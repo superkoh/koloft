@@ -353,9 +353,10 @@
           asking first, unless you set <code>default_tools_approval_mode</code> on that entry
           yourself; on a remote machine, that machine's Codex settings decide. Those tools and
           <code>playwright-cli</code> reach the web tabs. To let them, the session's sandbox (the
-          box Codex runs commands in) gets the network and Playwright's cache folder, for that
-          session only. A session started with <a href="../accounts/">Skip permission prompts</a> on
-          has no sandbox, so it needs none of this.
+          box Codex runs commands in) gets Playwright's cache folder, for that session only; every
+          Codex session's sandbox already has the network. A session started with
+          <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
+          this.
         </p>
 
         <h3>What to expect</h3>

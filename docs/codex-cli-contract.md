@@ -2542,11 +2542,11 @@ so its folders were not writable by default.
     the config layer that defines the MCP entry (the `CODEX_HOME`'s `config.toml` for an
     entry there, a project's `.codex/config.toml` for one there) — that it lands in the
     tab's `CODEX_HOME` and lasts there is **inferred, not checked**.
-- **A failed `config/read` drops every browser setting at once**: Koloft builds
-  `network_access`, the Playwright cache root and the `env_vars` passthrough from one
-  `config/read`, so a read lost to section 28's race leaves a tab with no network (unless
-  a git account's pick gives it, section 29) and no CDP endpoint for the MCP server.
+- **A failed `config/read` drops every browser setting at once**: Koloft builds the
+  Playwright cache root and the `env_vars` passthrough from one `config/read`, so a read
+  lost to section 28's race leaves a tab with no CDP endpoint for the MCP server.
   Its Playwright tools then ask again too: their `approve` comes from the same read.
+  `network_access` does not hang on that read: every tab gets it (ADR-0047).
 
 ## 27. Hooks on one app-server, and their trust
 
