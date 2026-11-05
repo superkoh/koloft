@@ -13,24 +13,8 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
   SessionBackendIcon: ({ backend }: { backend: BackendId }) => <i data-backend={backend} />
 }))
 
-const REACT_TASK_LAG_MS = 40
-const realSetImmediate = globalThis.setImmediate
-let reactTasksLag = false
-let laggedTasks = 0
-Object.assign(globalThis, {
-  setImmediate: (run: (...args: unknown[]) => void, ...args: unknown[]) => {
-    if (!reactTasksLag) return realSetImmediate(run, ...args)
-    laggedTasks++
-    return setTimeout(run, REACT_TASK_LAG_MS, ...args)
-  }
-})
-const lagReactTasks = (): void => {
-  reactTasksLag = true
-  laggedTasks = 0
-}
-const expectReactTasksLagged = (): void =>
-  expect(laggedTasks, 'React’s scheduler went through the lagging setImmediate').toBeGreaterThan(0)
-
+const { lagReactTasks, stopLaggingReactTasks, expectReactTasksLagged } =
+  await import('./helpers/reactTaskLag')
 const { render, cleanup, fireEvent, screen, waitFor, act } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
 const { SessionLaunchButtons, useSessionLaunch } =
@@ -66,7 +50,7 @@ beforeAll(() => {
 })
 
 afterEach(() => {
-  reactTasksLag = false
+  stopLaggingReactTasks()
   cleanup()
   useStore.setState((s) => ({
     settings: {
