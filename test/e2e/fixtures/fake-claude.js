@@ -1435,7 +1435,8 @@ function handleLine(line) {
     const command = text.slice('/run '.length).trim()
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
     const meta = usageMeta()
-    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: meta.id, cwd }
+    const toolUseId = `toolu_run_${require('crypto').randomUUID()}`
+    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: toolUseId, cwd }
     append([
       {
         type: 'user',
@@ -1452,7 +1453,7 @@ function handleLine(line) {
           role: 'assistant',
           id: meta.id,
           model: meta.model,
-          content: [{ type: 'tool_use', id: meta.id, name: 'Bash', input: { command } }],
+          content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command } }],
           usage: meta.usage
         },
         cwd
