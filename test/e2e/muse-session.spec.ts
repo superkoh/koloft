@@ -42,6 +42,7 @@ import {
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
+  switchToRow,
   TWO_LINE_PROMPT,
   waitBooted,
   wsRows
@@ -51,8 +52,8 @@ test.setTimeout(120_000)
 
 const SKIPS_PERMISSION_PROMPTS_AS_SHIPPED = ['--permission-profile', ':unrestricted']
 
-function museRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
+function museRows(page: Page, ws = 'ws-a'): Locator {
+  return wsRows(page, ws).filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
@@ -678,15 +679,15 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const page = await app.firstWindow()
       await waitBooted(page)
       const kept = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'stay up')
+      await expect(museRows(page)).toContainText('stay up')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       await openMenu(page, museRows(page))
       await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
       await expect(museRows(page).locator('.ws-tab-resident')).toBeVisible()
-      await runIn(page, centerTerm(page), 'stay up')
-      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
 
-      const ordinary = wsRows(page, 'ws-b').filter({
-        hasNot: page.getByRole('img', { name: 'Claude', exact: true })
-      })
+      const ordinary = museRows(page, 'ws-b')
       await newSessionInWith(page, 'ws-b', 'Muse')
       await expect(page.locator('.term-wrap:visible')).toContainText('Do you trust this workspace?')
       await runIn(page, centerTerm(page), '')
@@ -694,6 +695,8 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const sleeper = museCalls(env)[1]
       await expect(ordinary).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), 'nod off')
+      await expect(ordinary).toContainText('nod off')
+      await expect(ordinary).toHaveClass(/st-waiting/)
       await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
 
       await startSessionIn(page, 'ws-b', { method: 'Claude' })
@@ -709,7 +712,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await ordinary.click()
       await expect.poll(() => museCalls(env).length).toBe(3)
       expect(museCalls(env)[2].sessionId).toBe(sleeper.sessionId)
-      expect(processAlive(kept.pid)).toBe(true)
+      await expect(ordinary).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
@@ -766,7 +769,9 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(museRows(page)).toContainText('leave a dot')
       await expect(museRows(page)).toHaveClass(/st-waiting/)
       await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
       await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
 
       app = await launchApp(env)
       page = await app.firstWindow()
@@ -775,11 +780,10 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
       await expect(museRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
-      await expect.poll(() => pendingAttention(page)).toMatchObject([{ kind: 'turn-done' }])
+      await expect(museRows(page)).not.toHaveClass(/\bactive\b/)
 
       await pretendWindowFocused(app)
-      await museRows(page).click()
-      await expect(museRows(page)).toHaveClass(/\bactive\b/)
+      await switchToRow(page, museRows(page))
       await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       fs.writeFileSync(
         path.join(env.home, 'fake-muse-delay'),

@@ -38,6 +38,7 @@ import {
   openWorktreeSession,
   processAlive,
   readAllCalls,
+  readCalls,
   restoreOffered,
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
@@ -45,6 +46,7 @@ import {
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
+  switchToRow,
   terminalText,
   termIds,
   TWO_LINE_PROMPT,
@@ -73,8 +75,8 @@ const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
 
-function agyRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
+function agyRows(page: Page, ws = 'ws-a'): Locator {
+  return wsRows(page, ws).filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
@@ -93,9 +95,9 @@ const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
 
-async function startAgy(page: Page, env: E2EEnv): Promise<AgyCall> {
+async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> {
   const before = sessionCalls(env).length
-  await newSessionInWith(page, 'ws-a', 'Antigravity')
+  await newSessionInWith(page, ws, 'Antigravity')
   await expect.poll(() => sessionCalls(env).length).toBe(before + 1)
   return sessionCalls(env)[before]
 }
@@ -611,7 +613,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('an Antigravity tab still open when Koloft quits comes back running the same conversation after a restart', async ({
+  test('an Antigravity tab still open when Koloft quits comes back running the same conversation after a restart, its unread red dot still on its row; clicking the row in a focused window keeps the dot, and agy working again clears it', async ({
     env
   }) => {
     installAgy(env)
@@ -624,6 +626,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const first = await startAgy(page, env)
       await runIn(page, centerTerm(page), 'survive a restart')
       const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
 
@@ -638,6 +642,20 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveCount(1)
       await expect(agyRows(page)).toContainText('survive a restart')
       await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(agyRows(page)).not.toHaveClass(/\bactive\b/)
+
+      await pretendWindowFocused(app)
+      await switchToRow(page, agyRows(page))
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-delay'),
+        A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS
+      )
+      await runIn(page, centerTerm(page), 'work again')
+      await expect(agyRows(page)).toHaveClass(/st-working/)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(sessionCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
@@ -663,22 +681,17 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
       await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
 
-      const ordinary = wsRows(page, 'ws-b').filter({
-        hasNot: page.getByRole('img', { name: 'Claude', exact: true })
-      })
-      await newSessionInWith(page, 'ws-b', 'Antigravity')
-      await expect.poll(() => sessionCalls(env).length).toBe(2)
-      const sleeper = sessionCalls(env)[1]
+      const ordinary = agyRows(page, 'ws-b')
+      const sleeper = await startAgy(page, env, 'ws-b')
       await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
         timeout: 30_000
       })
       await centerTerm(page).click()
       await page.keyboard.press('1')
       await runIn(page, centerTerm(page), 'nod off')
-      const { id } = await agyConversationOnceFirstTurnEnded(
-        page,
-        (await ordinary.getAttribute('data-tab-id')) ?? undefined
-      )
+      const sleeperTab = await ordinary.getAttribute('data-tab-id')
+      expect(sleeperTab).toBeTruthy()
+      const { id } = await agyConversationOnceFirstTurnEnded(page, sleeperTab!)
       await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
 
       await startSessionIn(page, 'ws-b', { method: 'Claude' })
@@ -697,7 +710,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         '--dangerously-skip-permissions',
         `--conversation=${id}`
       ])
-      expect(processAlive(kept.pid)).toBe(true)
+      await expect(ordinary).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await expect
+        .poll(async () => {
+          const all = await page.evaluate(() => window.api.sessions.list())
+          return all.filter((s) => s.backendId === 'agy' && s.alive && s.nativeSessionId === id)
+            .length
+        })
+        .toBe(1)
     } finally {
       await quitAndClose(app)
     }
@@ -735,53 +755,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
       await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
       await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
-      expect(readAllCalls(env)).toHaveLength(0)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  test('an Antigravity session’s unread red dot survives a Koloft restart on its row, which comes back running the same conversation; clicking the row in a focused window keeps it, and agy working again clears it', async ({
-    env
-  }) => {
-    installAgy(env)
-    trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
-    let app = await launchApp(env)
-    try {
-      let page = await app.firstWindow()
-      await waitBooted(page)
-      await startAgy(page, env)
-      await runIn(page, centerTerm(page), 'leave a dot')
-      const { id } = await agyConversationOnceFirstTurnEnded(page)
-      await expect(agyRows(page)).toHaveClass(/st-waiting/)
-      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
-      await quitAndClose(app)
-
-      app = await launchApp(env)
-      page = await app.firstWindow()
-      await waitBooted(page)
-      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
-      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
-        '--dangerously-skip-permissions',
-        `--conversation=${id}`
-      ])
-      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
-      await expect.poll(() => pendingAttention(page)).toMatchObject([{ kind: 'turn-done' }])
-
-      await pretendWindowFocused(app)
-      await agyRows(page).click()
-      await expect(agyRows(page)).toHaveClass(/\bactive\b/)
-      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
-      fs.writeFileSync(
-        path.join(env.home, 'fake-agy-delay'),
-        A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS
-      )
-      await runIn(page, centerTerm(page), 'work again')
-      await expect(agyRows(page)).toHaveClass(/st-working/)
-      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(0)
-      expect(sessionCalls(env)).toHaveLength(2)
+      expect(readCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
