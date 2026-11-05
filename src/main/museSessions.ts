@@ -19,7 +19,7 @@ import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
-import { placeKoloftSkill, readJson } from './museAccounts'
+import { mergeMuseSettings, placeKoloftSkill, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
@@ -720,7 +720,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    if (env.XDG_CONFIG_HOME) placeKoloftSkill(env.XDG_CONFIG_HOME, !!agent)
+    if (env.XDG_CONFIG_HOME) {
+      placeKoloftSkill(env.XDG_CONFIG_HOME, !!agent)
+      mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
+    }
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
       ...(role ? [role] : [])

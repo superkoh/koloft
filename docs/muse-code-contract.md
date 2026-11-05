@@ -805,3 +805,69 @@ It has two forms that behave differently.
   `/fork <text>` copy is **not listed at all while the TUI holds it** (15 listings over
   30 s), and is listed after `/exit` with a made-up `name` and `turnCount` counting the
   copied turns too. The source stays listed either way.
+
+## §21 An MCP server's environment, and the asks before its tools
+
+How established: 2026-11-04, `Muse Code 1.4.14 (1.4.14-R7309.1)`, the official installer
+into a scratch HOME on macOS 27, scratch `XDG_CONFIG_HOME`,
+`TBH_CREDENTIAL_BACKEND=file`; the TUI under a Python pty that answered the terminal and
+7501 queries, the fake model server of the opening note calling one MCP tool per prompt,
+and a tiny stdio MCP server with three tools: `browser_navigate` (`destructiveHint:
+true`), `browser_snapshot` (`readOnlyHint: true`), `ping` (no hints), named `playwright`
+and `probe` in `settings.json` `mcpServers`. Muse was started with Koloft's env.
+
+- **A stdio MCP server gets almost nothing of muse's environment**: only `HOME`, `LANG`,
+  `MUSE_SESSION_ID`, `PATH`, `TERM`, `TMPDIR`, `__CF_USER_TEXT_ENCODING`, in Koloft's
+  default flags and in `:unrestricted`, after `/new` and after a restart — plus its
+  entry's `env` map.
+- **`"env": {"X": "${X}"}` in a `settings.json` entry is filled from muse's own
+  environment** (the server saw the `ws://` value), although muse's bundled guide says
+  it does not expand `${VAR}`. An entry whose `env` names a `${VAR}` that is not set does
+  not start at all, with nothing on stderr (`muse exec`).
+- **`-c` cannot reach a `settings.json` entry**: `-c 'mcpServers.<name>.env.X="${X}"'` →
+  `refusing run: the server name is reserved` (exit 1); a literal value → `secret leaves
+  need exactly one whole-value ${VAR} naming a set variable` (exit 2);
+  `-c mcpServers.<new>={…}` → `unknown key: no such setting` (exit 2).
+- **Asks**: in Koloft's default flags (§15) a tool not marked `readOnlyHint` asks on every
+  call ("Would you like to allow this tool action? 1. Yes, proceed (y) / 2. Yes, don't ask
+  again this session (p) / 3. Always allow this MCP tool / 4. No … (esc)", 7501
+  `blocked:kind=permission`), again after `/new` and a restart; `browser_snapshot` did
+  not ask. `p` held for that session only. `3` wrote
+  `$XDG_CONFIG_HOME/muse/approval-policy.json` `{"schema_version":2,"rules":[{"effect":
+  "allow","durability":"local_persistent","rule":{"kind":"tool_action","tool_name":
+  "mcp__playwright__browser_navigate"}}]}`, and that tool stopped asking after `/new` and
+  a restart. The same file written before launch works the same; `mcp__playwright__*`
+  does not match. The rule kinds in the binary are `exact_raw`, `argv_prefix`,
+  `tool_action`, `filesystem`, `network`, `unix_socket` — none covers a whole server.
+  `:unrestricted` asked nothing.
+- **Rechecked and extended 2026-11-05**, the same build and rig, `settings.json` a regular
+  file (not a symlink):
+  - Two `${VAR}` lines (`PLAYWRIGHT_MCP_CDP_ENDPOINT`, `…_ALLOW_UNRESTRICTED_FILE_ACCESS`)
+    both reached the server, at start and after `/new`; a second server without them saw
+    neither. A variable set to the empty string reaches the server as `''` and the server
+    starts (TUI; `muse exec` not probed).
+  - 25 `tool_action` allow rules written before launch for server `playwright`:
+    `playwright/browser_navigate` never asked (3 calls, also after `/new`), while
+    `probe/browser_navigate` and `probe/ping` asked each time.
+  - **An unknown field in a rule stops muse from starting**: `"source":"koloft"` beside
+    `effect` → "runtime host failed to start: policy persistence failed: unknown field
+    'source', expected one of 'effect', 'durability', 'rule', 'reason'". `"reason":
+    "koloft"` is taken, the rule still works, and it is kept when muse rewrites the file.
+    From the binary: `durability` is `session` or `local_persistent`, `effect` is `allow`,
+    `deny` or `prompt`.
+  - When muse saves "Always allow" itself, it keeps the rules already there in order, adds
+    `"reason": null` to each rule without one, appends its own last, and drops an
+    `approval-policy.lock` beside the file.
+  - A server named `my-pw` becomes `mcp__my_pw__<tool>` in the ask and in the rule muse
+    writes: a dash turns into an underscore. Other characters: not probed.
+  - Muse did not rewrite `settings.json` at a TUI start and `/exit` (byte for byte).
+- **Which `@playwright/mcp` tools are not read-only** (0.0.84, `tools/list` over stdio
+  with `--caps=vision,pdf,devtools`, 2026-11-05): of 45 tools, 25 carry `readOnlyHint:
+  false` — the 18 of CODEX§26 plus `browser_resume`, `browser_mouse_move_xy`,
+  `browser_mouse_click_xy`, `browser_mouse_drag_xy`, `browser_mouse_down`,
+  `browser_mouse_up` and `browser_mouse_wheel`.
+
+Koloft dependents: the account folder's `settings.json` and `approval-policy.json`
+(`src/main/museAccounts.ts`); the Playwright variables, empty without the Workbench
+browser, in every muse Koloft starts on that folder (`museAccountEnv`) and in the shim's
+`muse exec` (`src/main/shim.ts`).
