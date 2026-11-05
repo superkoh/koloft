@@ -54,7 +54,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     askOf: async () => twoQuestions,
     answer: async (tabId, reply) => {
       answered.push([tabId, reply])
-      queueMicrotask(() => koloft.toolDone(tabId, 'AskUserQuestion'))
+      queueMicrotask(() => koloft.questionAnswered(tabId))
       return undefined
     },
     butlerSide: () => false,
@@ -205,18 +205,18 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
 
     const pressRed = { answers: { q0: ['o0'], q1: ['o1'] } }
 
-    it('keys the session ignores end as not taken, so the card stays to try again', async () => {
+    it('keys the session ignores end as not taken, and the card sends the owner to the session instead of offering a retry', async () => {
       const w = world({ answer: async () => undefined })
       w.mark([asking])
       const result = w.koloft.answer('s-t1', pressRed)
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
-      expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN })
+      expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false })
     })
 
-    it('an answer that shows up late in the transcript, but in time, counts as answered', async () => {
+    it('an answer that shows up late, but in time, counts as answered', async () => {
       const w = world({
         answer: async (tabId) => {
-          setTimeout(() => w.koloft.toolDone(tabId, 'AskUserQuestion'), 10_000)
+          setTimeout(() => w.koloft.questionAnswered(tabId), 10_000)
           return undefined
         }
       })
@@ -224,19 +224,6 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
       const result = w.koloft.answer('s-t1', pressRed)
       await vi.advanceTimersByTimeAsync(10_000)
       expect(await result).toEqual({ ok: true })
-    })
-
-    it('another tool finishing meanwhile does not count as the answer', async () => {
-      const w = world({
-        answer: async (tabId) => {
-          w.koloft.toolDone(tabId, 'Bash')
-          return undefined
-        }
-      })
-      w.mark([asking])
-      const result = w.koloft.answer('s-t1', pressRed)
-      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
-      expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN })
     })
   })
 })

@@ -233,6 +233,22 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
     expect(inbox.all()[0].note).toMatchObject({ outcome: 'elsewhere' })
   })
 
+  it('an answer that failed keeps the card waiting with try again, unless the source says trying again cannot help', async () => {
+    for (const retryHelps of [undefined, false]) {
+      const inbox = new Inbox(
+        makeHost({ answerSession: async () => ({ ok: false, why: 'not taken', retryHelps }) })
+      )
+      inbox.register({ id: 'koloft', name: 'Koloft' })
+      const { id } = inbox.add({ source: 'koloft' }, question)
+      inbox.press(id, 'answer', { q: { fmt: ['a'] } })
+      await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+      expect(inbox.all()[0]).toMatchObject({
+        state: 'needs-you',
+        note: { outcome: 'failed', text: 'not taken', retry: retryHelps !== false }
+      })
+    }
+  })
+
   it('the source changing the card during the 5 seconds drops the press', async () => {
     const host = makeHost()
     const inbox = new Inbox(host)

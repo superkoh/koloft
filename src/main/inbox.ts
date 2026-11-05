@@ -40,6 +40,7 @@ export interface AnswerResult {
   ok: boolean
   elsewhere?: boolean
   why?: string
+  retryHelps?: boolean
 }
 
 export interface StartResult {
@@ -70,6 +71,7 @@ export interface InboxHost {
 interface Result {
   outcome: InboxOutcome
   text: string
+  retryHelps?: boolean
 }
 
 // ADR-0049
@@ -442,7 +444,12 @@ export class Inbox {
         )
         if (r.elsewhere)
           return { outcome: 'elsewhere', text: r.why ?? 'It was already answered somewhere else' }
-        if (!r.ok) return { outcome: 'failed', text: r.why ?? 'Koloft could not answer it' }
+        if (!r.ok)
+          return {
+            outcome: 'failed',
+            text: r.why ?? 'Koloft could not answer it',
+            retryHelps: r.retryHelps
+          }
         return { outcome: 'done', text: 'Answered — it is working again' }
       }
       const sent = await this.host.sendToSession(to, wrap(run.message ?? ''))
@@ -485,7 +492,12 @@ export class Inbox {
   private finish(card: InboxCard, action: InboxAction, result: Result): void {
     const { outcome } = result
     card.press = null
-    card.note = { kind: 'result', outcome, text: result.text, retry: outcome === 'failed' }
+    card.note = {
+      kind: 'result',
+      outcome,
+      text: result.text,
+      retry: outcome === 'failed' && result.retryHelps !== false
+    }
     const t = action.then?.[outcome]
     if (t && card.state !== 'closed' && (t.state !== card.state || t.status))
       this.setState(card, t, action.id, null)

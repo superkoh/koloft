@@ -23,7 +23,7 @@ const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
 const DETAILS_RETRY_MS = 1500
 export const A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS = 15_000
 export const ANSWER_NOT_TAKEN =
-  'Koloft sent your answer, but the session still shows the question. Try again, or open the session and answer it there.'
+  'Koloft sent your answer, but the session still shows the question. Open the session and answer it there.'
 
 export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
@@ -71,11 +71,6 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if ('questions' in a) return { kind: 'question', questions: a.questions }
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
-}
-
-interface AnswerLanding {
-  taken: Promise<boolean>
-  forget(): void
 }
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
@@ -428,39 +423,37 @@ export class KoloftInbox {
     if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
       return ANSWERED_ELSEWHERE
     let reply = given.pick
-    let landing: AnswerLanding | undefined
+    let taken: Promise<boolean> | undefined
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
       if (ask?.kind !== 'question') return ANSWERED_ELSEWHERE
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
-      if (live.backend === 'claude') landing = this.watchForTheAnswer(live.tabId)
+      if (live.backend === 'claude') taken = this.answerTaken(live.tabId)
     }
     const error = await this.d.answer(live.tabId, reply)
-    if (error !== undefined) landing?.forget()
+    if (error !== undefined) this.answering.get(live.tabId)?.(false)
     if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (error !== undefined) return { ok: false, why: error }
-    if (landing && !(await landing.taken)) return { ok: false, why: ANSWER_NOT_TAKEN }
+    if (taken && !(await taken)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
-  // CC§14
-  toolDone(tabId: string, tool: string): void {
-    if (tool === 'AskUserQuestion') this.answering.get(tabId)?.(true)
+  questionAnswered(tabId: string): void {
+    this.answering.get(tabId)?.(true)
   }
 
-  private watchForTheAnswer(tabId: string): AnswerLanding {
-    let settle: (taken: boolean) => void = () => {}
-    const taken = new Promise<boolean>((resolve) => (settle = resolve))
-    const done = (took: boolean): void => {
-      clearTimeout(timer)
-      if (this.answering.get(tabId) === done) this.answering.delete(tabId)
-      settle(took)
-    }
-    const timer = setTimeout(() => done(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
-    this.answering.get(tabId)?.(false)
-    this.answering.set(tabId, done)
-    return { taken, forget: () => done(false) }
+  // CC§14
+  private answerTaken(tabId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const settle = (took: boolean): void => {
+        clearTimeout(timer)
+        if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
+        resolve(took)
+      }
+      const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+      this.answering.set(tabId, settle)
+    })
   }
 
   rebound(oldRef: string, newKey: string): void {
