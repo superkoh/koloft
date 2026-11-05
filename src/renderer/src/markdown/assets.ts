@@ -1,7 +1,7 @@
 import type { MarkdownIt } from 'markdown-it'
 import { previewFileUrl } from '@shared/browserRoute'
 import { resolveOnHost } from '@shared/remoteKey'
-import { escapeHtml as esc } from './escape'
+import { escapeHtml as esc } from '@shared/escapeHtml'
 
 function undoMarkdownItPercentEncoding(src: string): string {
   try {

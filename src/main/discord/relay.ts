@@ -237,8 +237,12 @@ export class DiscordRelay {
     )
   }
 
-  async send(channelId: string, files: DiscordFile[], text: string): Promise<void> {
-    const [first = '', ...more] = splitForDiscord(toDiscordMarkdown(text))
+  send(channelId: string, files: DiscordFile[], text: string): Promise<void> {
+    return this.sendParts(channelId, files, splitForDiscord(toDiscordMarkdown(text)))
+  }
+
+  async sendParts(channelId: string, files: DiscordFile[], parts: string[]): Promise<void> {
+    const [first = '', ...more] = parts
     await (files.length
       ? this.d.link.upload(channelId, files, first)
       : this.d.link.post(channelId, first))

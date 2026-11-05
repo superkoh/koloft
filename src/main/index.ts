@@ -495,6 +495,7 @@ import {
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
+import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -502,7 +503,7 @@ import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
-import { shootPage } from './discord/pageShot'
+import { shootHtml, shootPage } from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
@@ -1677,6 +1678,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
         : routed
     return openInWorkbench(tabId, decision, 'agent', target, view)
   },
+  copyToPhone,
   notesFileOf: (tabId) => {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
@@ -3770,7 +3772,7 @@ app.whenReady().then(() => {
       if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
     },
     place: async (tabId, card) => {
-      const channelId = butlerNow.channel()?.channelId
+      const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
       if (!channelId) return undefined
       const name = await secretAskerName(tabId)
       const messageId = (await link.card(channelId, card(name))).at(-1)
@@ -3830,7 +3832,7 @@ app.whenReady().then(() => {
         })
       ]
     },
-    replyChannelOf: (tabId) => butlerNow.channelOfTab(tabId) ?? roomOfTab(tabId),
+    replyChannelOf: phoneChannelOf,
     askChannelOf: askChannelOfTab,
     lobbyLink: () => {
       const lobby = butlerNow.channel()
@@ -5772,6 +5774,43 @@ function roomOfTab(tabId: string): string | undefined {
 
 function askChannelOfTab(tabId: string): string | undefined {
   return butlerSide(tabId) ? butler?.channel()?.channelId : roomOfTab(tabId)
+}
+
+function phoneChannelOf(tabId: string): string | undefined {
+  return butler?.channelOfTab(tabId) ?? roomOfTab(tabId)
+}
+
+async function copyToPhone(
+  tabId: string,
+  target: string,
+  view?: ArtifactView
+): Promise<string | undefined> {
+  const relay = discordRelay
+  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
+  const channelId = reaches ? phoneChannelOf(tabId) : undefined
+  const shown = channelId && shownOf(target, machineOfTab(tabId), view)
+  if (!relay || !channelId || !shown) return undefined
+  const where = butler?.channelOfTab(tabId)
+    ? 'the Discord channel the owner talks to you in'
+    : "this session's room on the owner's Discord"
+  return sendPhoneCopy(
+    {
+      shoot: shootPage,
+      shootHtml,
+      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+      readBytes: (file) =>
+        hosts
+          .of(file)
+          .readBytes(file)
+          .catch((error: unknown) => {
+            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+          }),
+      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
+      send: (files, parts) => relay.sendParts(channelId, files, parts)
+    },
+    shown,
+    where
+  )
 }
 
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000

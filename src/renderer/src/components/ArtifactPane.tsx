@@ -17,7 +17,7 @@ import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
-import { parseUnifiedDiff } from '../inlineDiff'
+import { parseUnifiedDiff } from '@shared/unifiedDiff'
 import { highlightCode, langForPath } from '../highlight'
 import '../artifactPane.css'
 
