@@ -262,7 +262,12 @@ export class KoloftInbox {
       )
         wanted.set(signalKey(m), m)
     for (const c of this.d.inbox.all()) {
-      if (!isSignal(c) || c.state === 'closed' || wanted.has(c.key) || c.press?.step === 'working')
+      if (
+        !isSignal(c) ||
+        c.state !== 'needs-you' ||
+        wanted.has(c.key) ||
+        c.press?.step === 'working'
+      )
         continue
       try {
         this.d.inbox.move(
@@ -273,8 +278,7 @@ export class KoloftInbox {
         )
       } catch {}
     }
-    for (const [key, m] of wanted)
-      if (!this.d.inbox.find(KOLOFT_SOURCE.id, key)) void this.post(key, m, true)
+    for (const [key, m] of wanted) if (!this.d.inbox.find(KOLOFT, key)) void this.post(key, m, true)
   }
 
   private async post(key: string, m: AttentionEvent, retry: boolean): Promise<void> {
@@ -285,9 +289,16 @@ export class KoloftInbox {
       if (!s) return
       const ask = m.kind === 'approval' ? await this.d.askOf(m.tabId) : undefined
       if (!this.d.marks().some((x) => signalKey(x) === key)) return
-      const existing = this.d.inbox.find(KOLOFT_SOURCE.id, key)
+      const existing = this.d.inbox.find(KOLOFT, key)
       if (existing?.state === 'closed') return
-      this.d.inbox.add(KOLOFT, m.kind === 'exited' ? exitCard(m, s) : askCard(m, s, ask))
+      const card = m.kind === 'exited' ? exitCard(m, s) : askCard(m, s, ask)
+      if (
+        existing &&
+        JSON.stringify([existing.title, existing.blocks, existing.actions]) ===
+          JSON.stringify([card.title, card.blocks, card.actions])
+      )
+        return
+      this.d.inbox.add(KOLOFT, card)
       if (m.kind === 'approval' && !ask && retry)
         setTimeout(() => void this.post(key, m, false), DETAILS_RETRY_MS)
     } catch {
@@ -308,7 +319,12 @@ export class KoloftInbox {
         continue
       if (c.session !== sessionId && c.postedBy !== sessionId) continue
       try {
-        this.d.inbox.move(KOLOFT, c.key, { state: 'closed', status: why }, why)
+        this.d.inbox.move(
+          { ...KOLOFT, ...(c.postedBy && { as: c.postedBy }) },
+          c.key,
+          { state: 'closed', status: why },
+          why
+        )
       } catch {}
     }
   }

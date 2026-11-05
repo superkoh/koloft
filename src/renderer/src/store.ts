@@ -708,7 +708,7 @@ export const useStore = create<AppState>((set, get) => ({
     activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
-    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
+    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null, inboxOpen: false }))
   },
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
@@ -720,7 +720,7 @@ export const useStore = create<AppState>((set, get) => ({
         ? s
         : {
             tabs: [...s.tabs, t],
-            ...(awaited && { activeTabId: t.id, resumeLaunch: null })
+            ...(awaited && { activeTabId: t.id, resumeLaunch: null, inboxOpen: false })
           }
     )
   },

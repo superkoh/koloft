@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
 import {
+  DONE_KEPT_MS,
   UNDO_MS,
   cardsIn,
+  fillTemplate,
   inboxCounts,
   pickToPress,
   type InboxCardInput
@@ -111,9 +113,56 @@ describe('inbox — cards belong to the source that posted them', () => {
     inbox.add({ source: 'koloft', as: 's1' }, done)
     expect(() =>
       inbox.update({ source: 'koloft', as: 's2' }, 'done-1', { title: 'mine now' })
-    ).toThrow(/not yours/)
-    expect(() => inbox.move({ source: 'koloft', as: 's2' }, 'done-1', 'closed')).toThrow(
-      /not yours/
+    ).toThrow(/no card/)
+    expect(() => inbox.move({ source: 'koloft', as: 's2' }, 'done-1', 'closed')).toThrow(/no card/)
+  })
+
+  it('a session cannot see, change or delete the cards the source’s own code posted', () => {
+    const inbox = new Inbox(makeHost())
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    inbox.add({ source: 'koloft' }, question)
+    expect(inbox.list({ source: 'koloft', as: 's2' })).toEqual([])
+    expect(() => inbox.delete({ source: 'koloft', as: 's2' }, 'ask-1')).toThrow(/no card/)
+    expect(inbox.all()[0].state).toBe('needs-you')
+  })
+
+  it('two sessions may use the same key, each for its own card', () => {
+    const inbox = new Inbox(makeHost())
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.add({ source: 'koloft', as: 's2' }, { ...done, title: 'Theirs' })
+    expect(inbox.all().map((c) => [c.postedBy, c.title])).toEqual([
+      ['s1', 'It is done'],
+      ['s2', 'Theirs']
+    ])
+  })
+
+  it('posting a key again after its card closed makes a fresh card', () => {
+    const inbox = new Inbox(makeHost())
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.move({ source: 'koloft', as: 's1' }, 'done-1', 'closed')
+    inbox.add({ source: 'koloft', as: 's1' }, done)
+    expect(inbox.all().map((c) => c.state)).toEqual(['needs-you'])
+  })
+
+  it('a card closed more than 7 days ago is dropped', () => {
+    let now = 1_000
+    const inbox = new Inbox(makeHost({ now: () => now }))
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.move({ source: 'koloft', as: 's1' }, 'done-1', 'closed')
+    now += DONE_KEPT_MS + 1
+    inbox.add({ source: 'koloft', as: 's1' }, { ...done, key: 'other' })
+    expect(inbox.all().map((c) => c.key)).toEqual(['other'])
+  })
+
+  it('a template puts the owner’s words in as they are, $ signs too', () => {
+    const inbox = new Inbox(makeHost())
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    inbox.add({ source: 'koloft', as: 's1' }, { ...done, title: 'costs $& {answer:next}' })
+    expect(fillTemplate('{title} / {answer:next}', inbox.all()[0], { next: "it's $' less" })).toBe(
+      "costs $& {answer:next} / «it's $' less»"
     )
   })
 
@@ -245,6 +294,35 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
     const again = new Inbox(makeHost(), structuredClone(snap))
     expect(again.all()[0]).toMatchObject({ press: null, note: { outcome: 'failed', retry: true } })
     expect(again.isReady('koloft')).toBe(false)
+  })
+
+  it('a press still inside its 5 seconds when Koloft quit comes back as not sent, with try again', () => {
+    const inbox = new Inbox(makeHost())
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    const { id } = inbox.add({ source: 'koloft' }, question)
+    inbox.press(id, 'answer', { q: { fmt: ['a'] } })
+    const again = new Inbox(makeHost(), structuredClone(inbox.snapshot()))
+    expect(again.all()[0]).toMatchObject({
+      press: null,
+      note: { outcome: 'failed', retry: true },
+      lastPress: { action: 'answer' }
+    })
+  })
+
+  it('a press that ends after the card was closed leaves it closed', async () => {
+    let release = (): void => {}
+    const host = makeHost({
+      sendToSession: (session) => new Promise((r) => (release = () => r({ ok: true, session })))
+    })
+    const inbox = new Inbox(host)
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    const { id } = inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.press(id, 'next', { next: 'go on' })
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    inbox.move({ source: 'koloft', as: 's1' }, 'done-1', { state: 'closed', status: 'Merged' })
+    release()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Merged' })
   })
 })
 

@@ -684,7 +684,7 @@ const sessionBackends = new SessionBackends({
       async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
     )
     startedSessions.bound(tabId, key)
-    inboxBound(tabId, key)
+    koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
@@ -1926,13 +1926,16 @@ const inbox = new Inbox(
     now: () => Date.now(),
     sendToSession: (ref, text) => sessionCommand.sendFromInbox(ref, text),
     answerSession: (ref, given) => koloftInbox.answer(ref, given),
-    startSession: (spec, card, onReply) =>
-      sessionCommand.startFromInbox(
+    startSession: async (spec, card, onReply) => {
+      const started = await sessionCommand.startFromInbox(
         card.session ?? undefined,
         { ...spec, backend: SESSION_BACKENDS.find((b) => b === spec.backend) },
         ownersPermission(),
         onReply
-      ),
+      )
+      const bound = started.session && sessionOfTab(started.session)?.sessionId
+      return bound ? { ...started, session: bound } : started
+    },
     footer: (card, action) => inboxFooter(card, action.lets),
     changed: () => {
       const now = inbox.snapshot()
@@ -1981,15 +1984,6 @@ const koloftInbox = new KoloftInbox({
     discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING,
   butlerSide
 })
-
-const inboxKeyOfTab = new Map<string, string>()
-
-function inboxBound(tabId: string, key: string): void {
-  const before = inboxKeyOfTab.get(tabId)
-  inboxKeyOfTab.set(tabId, key)
-  koloftInbox.rebound(tabId, key)
-  if (before) koloftInbox.rebound(before, key)
-}
 
 const agentRequests = new AgentRequests({
   verbs: {
@@ -5314,8 +5308,8 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
   if (archived) {
-    attention.clearSession(id)
     koloftInbox.sessionGone(id, 'Its session was deleted')
+    attention.clearSession(id)
     startedSessions.forget(id)
     readerDocs.forget(id)
   }

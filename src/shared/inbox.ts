@@ -91,11 +91,7 @@ export interface InboxAction {
   lets?: InboxState[]
 }
 
-export type InboxLinkTo =
-  | { type: 'session'; session: string }
-  | { type: 'changes'; session: string }
-  | { type: 'page'; session: string; url: string }
-  | { type: 'browser'; url: string }
+export type InboxLinkTo = { type: 'session'; session: string } | { type: 'browser'; url: string }
 
 export interface InboxLink {
   label: string
@@ -301,7 +297,7 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
   const links = input.links ?? []
   if (links.length > INBOX_LIMIT.links) fail(`at most ${INBOX_LIMIT.links} links`)
   for (const l of links)
-    if (!['session', 'changes', 'page', 'browser'].includes(l.to?.type))
+    if (!['session', 'browser'].includes(l.to?.type))
       fail(`link type ${l.to?.type} is not one the Inbox knows`)
   return {
     title: cut(input.title, INBOX_LIMIT.title, warn, 'title'),
@@ -382,17 +378,18 @@ function answerText(card: InboxCard, id: string, answers: InboxAnswers): string 
 }
 
 export function fillTemplate(template: string, card: InboxCard, answers: InboxAnswers): string {
-  return template
-    .replaceAll('{title}', card.title)
-    .replaceAll('{key}', card.key)
-    .replaceAll('{status}', card.status)
-    .replace(/\{answer:([^}]+)\}/g, (_, id: string) => answerText(card, id, answers))
-    .replaceAll(
-      '{answers}',
+  const fields: Record<string, () => string> = {
+    title: () => card.title,
+    key: () => card.key,
+    status: () => card.status,
+    answers: () =>
       Object.keys(answers)
         .map((id) => answerText(card, id, answers))
         .join('; ') || '(nothing)'
-    )
+  }
+  return template.replace(/\{(title|key|status|answers|answer:([^}]+))\}/g, (_, name, id) =>
+    id ? answerText(card, id, answers) : fields[name]()
+  )
 }
 
 export function envelopeHead(card: InboxCard, action: InboxAction): string {

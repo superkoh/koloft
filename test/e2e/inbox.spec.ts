@@ -135,7 +135,7 @@ test('a question answered in its own tab closes its Inbox card as handled there,
 test('a card a session posts with koloft inbox shows in the Inbox; its button sends the owner’s words to that session, and the session moves the card to Done', async ({
   page,
   env
-}) => {
+}, testInfo) => {
   await waitBooted(page)
   await startSessionIn(page, 'ws-a')
   const row = wsRows(page, 'ws-a').first()
@@ -167,6 +167,7 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   const shown = inboxCard(page, 'Pull request 8 is ready to merge')
   await expect(shown.locator('.ibx-lvp')).toHaveText('High')
   await shown.locator('.ibx-input').fill('squash please')
+  await page.screenshot({ path: testInfo.outputPath('inbox-page.png') })
   await shown.locator('.ibx-btn', { hasText: 'Merge it' }).click()
   await expect
     .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })

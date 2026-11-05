@@ -1532,13 +1532,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     const until =
       Date.now() +
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
-    if (busy) {
-      void sendNow(t, text, line, until, INBOX_SENDER).catch(() => {})
-      return { ok: true, queued: true, session: t.key }
-    }
     try {
       await sendNow(t, text, line, until, INBOX_SENDER)
-      return { ok: true, woke, session: t.key }
+      return { ok: true, woke, queued: busy, session: t.key }
     } catch (error) {
       return { ok: false, why: errorText(error) }
     }

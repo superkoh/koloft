@@ -1,5 +1,6 @@
 import {
   CARD_SESSION,
+  DONE_KEPT_MS,
   INBOX_LIMIT,
   INBOX_OUTCOMES,
   InboxError,
@@ -113,10 +114,20 @@ export class Inbox {
           text: 'Koloft restarted, so it does not know whether this finished — have a look',
           retry: true
         }
+      else if (c.press)
+        c.note = {
+          kind: 'result',
+          outcome: 'failed',
+          text: 'Koloft quit before this was sent, so nothing was sent',
+          retry: true
+        }
+      if (c.press)
+        c.lastPress = { action: c.press.action, answers: c.press.answers, try: c.press.try }
       c.press = null
       this.cards.set(c.id, c)
       this.seq = Math.max(this.seq, Number(c.id.slice(1)) || 0)
     }
+    this.prune()
   }
 
   snapshot(): InboxSnapshot {
@@ -160,13 +171,17 @@ export class Inbox {
     return s
   }
 
-  find(sourceId: string, key: string): InboxCard | undefined {
-    for (const c of this.cards.values()) if (c.source === sourceId && c.key === key) return c
+  find(caller: InboxCaller, key: string): InboxCard | undefined {
+    for (const c of this.cards.values())
+      if (c.source === caller.source && c.key === key && c.postedBy === (caller.as ?? null))
+        return c
     return undefined
   }
 
-  private mayChange(card: InboxCard, caller: InboxCaller): boolean {
-    return !caller.as || !card.postedBy || card.postedBy === caller.as
+  private prune(): void {
+    const now = this.host.now()
+    for (const c of this.cards.values())
+      if (c.state === 'closed' && now - (c.closedAt ?? now) > DONE_KEPT_MS) this.cards.delete(c.id)
   }
 
   add(
@@ -176,8 +191,12 @@ export class Inbox {
     const source = this.source(caller)
     if (!input?.key || input.key.length > INBOX_LIMIT.key)
       fail(`a card needs a key of 1–${INBOX_LIMIT.key} characters`)
-    const existing = this.find(source.id, input.key)
-    if (existing && !this.mayChange(existing, caller)) fail('this card is not yours')
+    this.prune()
+    let existing = this.find(caller, input.key)
+    if (existing?.state === 'closed') {
+      this.cards.delete(existing.id)
+      existing = undefined
+    }
     const state = input.state ?? existing?.state ?? 'needs-you'
     checkTargetInput(state)
     if (!existing && state === 'closed') fail('a new card cannot start closed')
@@ -214,7 +233,6 @@ export class Inbox {
       this.host.changed()
       return { id: card.id, created: true, warnings }
     }
-    if (existing.state === 'closed') fail('the card is already closed')
     this.touch(existing)
     Object.assign(existing, body)
     if (existing.state !== state)
@@ -224,10 +242,9 @@ export class Inbox {
   }
 
   update(caller: InboxCaller, key: string, patch: Partial<InboxCardInput>): { warnings: string[] } {
-    const source = this.source(caller)
-    const card = this.find(source.id, key)
-    if (!card) fail(`no card with key ${key}`)
-    if (!this.mayChange(card, caller)) fail('this card is not yours')
+    this.source(caller)
+    const card = this.find(caller, key)
+    if (!card) fail(`you have no card with key ${key}`)
     if (card.state === 'closed') fail('the card is already closed')
     if ('state' in patch) fail('use move to change the state')
     const keys: (keyof InboxCardBody)[] = [
@@ -259,13 +276,16 @@ export class Inbox {
 
   move(caller: InboxCaller, key: string, to: InboxTarget | string, why?: string): void {
     const t = checkTargetInput(to)
-    let card = this.find(caller.source, key)
-    if (!card && caller.as)
-      card = this.all().find((c) => c.key === key && c.grants.some((g) => g.to === caller.as))
-    if (!card) fail(`no card with key ${key}`)
+    const own = this.find(caller, key)
+    const handed = caller.as
+      ? this.all().find(
+          (c) => c.key === key && c.state !== 'closed' && c.grants.some((g) => g.to === caller.as)
+        )
+      : undefined
+    const card = own && own.state !== 'closed' ? own : (handed ?? own)
+    if (!card) fail(`you have no card with key ${key}`)
     const granted = card.grants.some((g) => g.to === caller.as && g.states.includes(t.state))
-    if (!(card.source === caller.source && this.mayChange(card, caller)) && !granted)
-      fail('this card is not yours, and nobody let you move it there')
+    if (card !== own && !granted) fail('this card is not yours, and nobody let you move it there')
     if (card.state === 'closed') fail('the card is already closed')
     this.touch(card)
     this.setState(card, t, caller.as ?? 'source', why ?? null)
@@ -273,9 +293,9 @@ export class Inbox {
   }
 
   delete(caller: InboxCaller, key: string): void {
-    const card = this.find(this.source(caller).id, key)
-    if (!card) fail(`no card with key ${key}`)
-    if (!this.mayChange(card, caller)) fail('this card is not yours')
+    this.source(caller)
+    const card = this.find(caller, key)
+    if (!card) fail(`you have no card with key ${key}`)
     this.cancelPress(card, null)
     this.cards.delete(card.id)
     this.host.changed()
@@ -287,7 +307,7 @@ export class Inbox {
       (c) =>
         c.source === source.id &&
         (!state || c.state === state) &&
-        (!caller.as || !c.postedBy || c.postedBy === caller.as)
+        c.postedBy === (caller.as ?? null)
     )
   }
 
@@ -496,7 +516,7 @@ export class Inbox {
     card.press = null
     card.note = { kind: 'result', outcome, text: result.text, retry: outcome === 'failed' }
     const t = action.then?.[outcome]
-    if (t && (t.state !== card.state || t.status)) {
+    if (t && card.state !== 'closed' && (t.state !== card.state || t.status)) {
       card.version++
       this.setState(card, t, action.id, null)
     }

@@ -50,6 +50,7 @@ const SORTS: [InboxSort, string, string][] = [
   ['oldest', 'Oldest', 'Oldest first']
 ]
 const COUNTDOWN_TICK_MS = 250
+const CLOCK_TICK_MS = 60_000
 const FLY_MS = 620
 const SLIDE_MS = 380
 const MOST_BUTTONS_IN_A_ROW = 3
@@ -137,9 +138,9 @@ export function InboxRow(): JSX.Element {
   const cards = useStore((s) => s.inbox.cards)
   const c = inboxCounts(cards, Date.now())
   return (
-    <div className="ws-tabs">
+    <div className="ibx-entry-wrap">
       <div
-        className={'ws-tab ibx-entry' + (open ? ' active on' : '')}
+        className={'recent-row ibx-entry' + (open ? ' on' : '')}
         onClick={() => useStore.getState().setInboxOpen(true)}
       >
         <span className="ws-tab-cron">
@@ -163,13 +164,12 @@ export function InboxPage(): JSX.Element {
   const [openId, setOpenId] = useState<Record<string, string | undefined>>({})
   const [now, setNow] = useState(Date.now())
   const page = useRef<HTMLDivElement>(null)
-  const seen = useRef(new Map<string, { rect: DOMRect; html: string; tab: InboxState }>())
+  const seen = useRef(new Map<string, { rect: DOMRect; el: HTMLElement; tab: InboxState }>())
 
   const ready = new Set(snapshot.ready)
   const waiting = snapshot.cards.some((c) => c.press?.step === 'waiting')
   useEffect(() => {
-    if (!waiting) return
-    const t = setInterval(() => setNow(Date.now()), COUNTDOWN_TICK_MS)
+    const t = setInterval(() => setNow(Date.now()), waiting ? COUNTDOWN_TICK_MS : CLOCK_TICK_MS)
     return () => clearInterval(t)
   }, [waiting])
 
@@ -190,11 +190,11 @@ export function InboxPage(): JSX.Element {
     const root = page.current
     if (!root) return
     const before = seen.current
-    const after = new Map<string, { rect: DOMRect; html: string; tab: InboxState }>()
+    const after = new Map<string, { rect: DOMRect; el: HTMLElement; tab: InboxState }>()
     for (const el of root.querySelectorAll<HTMLElement>('[data-cid]')) {
       const id = el.dataset.cid as string
       const rect = el.getBoundingClientRect()
-      after.set(id, { rect, html: el.outerHTML, tab })
+      after.set(id, { rect, el, tab })
       const old = before.get(id)
       const dy = old && old.tab === tab ? old.rect.top - rect.top : 0
       if (Math.abs(dy) >= 1)
@@ -208,10 +208,10 @@ export function InboxPage(): JSX.Element {
       const card = snapshot.cards.find((c) => c.id === id)
       const target = card && root.querySelector(`.ibx-seg [data-tab="${card.state}"]`)
       if (!card || card.state === tab || !target) continue
-      flyTo(old.rect, old.html, target.getBoundingClientRect())
+      flyTo(old.rect, old.el.cloneNode(true) as HTMLElement, target.getBoundingClientRect())
     }
     seen.current = after
-  })
+  }, [snapshot, tab, filters, sort, openId])
 
   const answersOf = (id: string): InboxAnswers => answers[id] ?? {}
   const setAnswer = (cardId: string, block: string, value: ChoiceAnswer | string): void =>
@@ -448,11 +448,7 @@ export function InboxPage(): JSX.Element {
   )
 }
 
-function flyTo(from: DOMRect, html: string, to: DOMRect): void {
-  const holder = document.createElement('div')
-  holder.innerHTML = html
-  const ghost = holder.firstElementChild as HTMLElement | null
-  if (!ghost) return
+function flyTo(from: DOMRect, ghost: HTMLElement, to: DOMRect): void {
   Object.assign(ghost.style, {
     position: 'fixed',
     left: `${from.left}px`,

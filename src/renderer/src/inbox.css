@@ -927,10 +927,16 @@
   font-size: 12px;
 }
 
-.ibx-entry {
-  display: flex;
+.ibx-entry-wrap {
+  margin: 1px 0 4px;
+  padding-left: 14px;
+}
+
+.recent-row.ibx-entry {
+  flex-direction: row;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 .ibx-entry .ws-tab-title {
