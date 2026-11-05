@@ -2548,6 +2548,87 @@ so its folders were not writable by default.
   Its Playwright tools then ask again too: their `approve` comes from the same read.
   `network_access` does not hang on that read: every tab gets it (ADR-0047).
 
+**A permissions profile with Codex's managed network proxy lets a command reach
+127.0.0.1 and an allowed host, and nothing else, checked 2026-11-05** with codex-cli
+0.166.0, Node 24.13.0, a fresh temporary `CODEX_HOME` and `HOME`, every `*proxy*`
+variable removed from the environment first, a small HTTP server on 127.0.0.1 standing
+in for the relay. Model turns came from a fake Responses API (`model_providers.fake`,
+`wire_api = "responses"`, `base_url` on 127.0.0.1), no login; the fake model answered
+the first request with an `exec_command` call and the second with a message. Scripts
+and the result table: `notes/518/` on the branch `feat/518-sandbox-probe`.
+
+- The profile, given as `-c` flags on `codex app-server` (nothing in `config.toml`):
+  `default_permissions="koloft"`, `features.network_proxy=true`,
+  `permissions.koloft.extends=":workspace"`, `permissions.koloft.network.enabled=true`,
+  `permissions.koloft.network.allow_local_binding=true`,
+  `permissions.koloft.network.domains={"github.com"="allow"}`,
+  `permissions.koloft.network.unix_sockets={"<realpath of $TMPDIR>"="allow"}`. The same
+  table in `config.toml` behaved the same.
+- **`network_proxy` is an `experimental` feature, off by default** (`codex features
+  list`). With the profile's network on and the feature off, the sandbox is fully open
+  (example.com 200), as with the legacy `network_access=true`. That is what the
+  2026-10-11 `codex sandbox` run on 0.162 saw.
+- With the feature on, both `command/exec` and a model turn's `exec_command` got 33
+  proxy variables (`HTTP(S)_PROXY`, `ALL_PROXY` on socks5h, `NODE_USE_ENV_PROXY=1`,
+  `CODEX_NETWORK_PROXY_ACTIVE=1`, …), all on 127.0.0.1 ports of a proxy the app-server
+  ran.
+  - No `allow_local_binding`: curl to the 127.0.0.1 server answered 403 from the proxy,
+    Node's `http.get` to it also 403, every outside host failed (curl exit 56).
+  - `allow_local_binding = true`: `NO_PROXY` became `localhost,127.0.0.1,::1,10.0.0.0/8,
+    172.16.0.0/12,192.168.0.0/16`, and curl and Node reached the 127.0.0.1 server
+    directly (200). Any port on 127.0.0.1 is open then, not only one: read from the
+    `rust-v0.166.0` source (`sandboxing/src/seatbelt.rs`
+    `dynamic_network_policy_for_network`), the Seatbelt rule is `localhost:*`.
+  - A host in `domains` (`github.com`) answered 200 through the proxy; example.com
+    failed, also with `--noproxy '*'` (Seatbelt allows only the proxy's ports and
+    loopback).
+  - Unix sockets: `listen` failed (`EPERM`) until the folder was in `unix_sockets`, and
+    only when written as its real path (`/private/var/…`, not `/var/…`).
+- **A blocked host fails the whole command in a model turn.** The turn's
+  `exec_command` whose script curled 127.0.0.1, github.com and then example.com came
+  back to the model as only `exec_command failed: ProcessFailed { message: "Network
+  access to \"example.com\" was blocked: domain is not on the allowlist for the current
+  sandbox mode." }` — none of the command's own output. `command/exec` with the same
+  script exited 0 with curl's `000`. Under `approval_policy="on-request"` no request
+  reached the client.
+- **`sandbox: "workspace-write"` on `thread/start` drops the profile.** With the profile
+  on the app-server, a `thread/start` carrying `sandbox: "workspace-write"` answered
+  `networkAccess: false`, and the turn's command had no proxy variables and could reach
+  nothing, 127.0.0.1 included (`EPERM`). The same with the profile also in `thread/start`'s
+  `config` (`default_permissions`, `features`). A `thread/start` with no `sandbox`
+  answered `workspaceWrite` / `networkAccess: true` and the profile held.
+  `-c sandbox_mode="workspace-write"` on the app-server did not drop it.
+- **A `--remote` TUI always sends that `sandbox`**, read from the `rust-v0.166.0`
+  source, not run: `tui/src/app_server_session.rs` `thread_start_params_with_reviewer`
+  sends `permissions: None` in `Remote` mode and a `sandbox` mapped from the TUI's own
+  effective profile (`workspace-write` for one that can write the folder). The TUI's
+  `-c default_permissions` / `permissions` / `features` go in `config`. The TUI has no
+  flag that selects a profile. So that a Koloft Codex tab cannot get this profile while
+  its TUI starts the thread is **inferred, not checked**; a thread started over the
+  app-server and then attached with `resume` (whose params carry no `sandbox`, same
+  file) is **not probed yet**.
+- **`[permissions.*]` in `config.toml` without `default_permissions` breaks the whole
+  file**: the app-server logged "Invalid configuration; using defaults. config defines
+  `[permissions]` profiles but does not set `default_permissions`", and `turn/start`
+  failed with the same message.
+- **The legacy keys do nothing under `-P :workspace`**: `codex sandbox -P :workspace`
+  with `sandbox_workspace_write.network_access = true` in `config.toml` could reach
+  nothing, 127.0.0.1 included.
+- **`playwright-cli` through the profile.** `command/exec` with
+  `PLAYWRIGHT_MCP_CDP_ENDPOINT` set to a headless Chrome's CDP port on 127.0.0.1 and
+  `HOME` outside `/tmp` and `$TMPDIR`, @playwright/cli from Koloft's `node_modules`:
+  - without a filesystem entry: `EPERM … mkdir '<home>/Library/Caches/ms-playwright/daemon'`;
+  - with `permissions.koloft.filesystem={"<home>/Library/Caches/ms-playwright"="write"}`
+    but no `unix_sockets`: the daemon stopped on `listen EPERM
+    <realpath of $TMPDIR>/pw-<hash>/browser/browser-<hash>.sock`;
+  - with both: `open` printed `Page Title: K518`, `eval` and `close` worked, and curl to
+    example.com in the same command failed. A `$TMPDIR` nested two folders below the
+    system one stopped the daemon first: "Socket directory path is too long (93 bytes);
+    set PWTEST_SOCKETS_DIR to a shorter location."
+- Not probed yet: the owner's own `HTTPS_PROXY` (the profile's `allow_upstream_proxy`),
+  git over ssh under the profile (only the proxy's ports and loopback are open, so it is
+  expected to fail), and a real ChatGPT-login session.
+
 ## 27. Hooks on one app-server, and their trust
 
 **Checked on 2026-10-11 with standalone Codex CLI 0.162.0.** Node scripts drove

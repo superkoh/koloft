@@ -3275,3 +3275,43 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
 conversation (`src/main/discord/butler.ts`).
+
+## §24 Claude Code's own sandbox: which network and files a Bash command reaches
+
+2026-11-05, CC 2.1.318 on macOS, `claude -p --settings <file> --strict-mcp-config
+--mcp-config '{"mcpServers":{}}'` against a fake Anthropic API on 127.0.0.1
+(`ANTHROPIC_BASE_URL`, a made-up `ANTHROPIC_API_KEY`), no login, a throwaway `HOME` and
+`CLAUDE_CONFIG_DIR`, every `*proxy*`, `CLAUDE_CODE_*`, `KOLOFT_*` and `PLAYWRIGHT_*`
+variable removed first. The fake model answered with one `Bash` call and then text. The
+settings held `permissions.allow: ["Bash"]` and, for the sandboxed runs,
+`sandbox.enabled: true`, `autoAllowBashIfSandboxed: true`,
+`allowUnsandboxedCommands: false`. A small HTTP server on 127.0.0.1 stood in for the
+relay. Scripts: `notes/518/` on the branch `feat/518-sandbox-probe`.
+
+- **No sandbox** (what Koloft launches today): 127.0.0.1, github.com and example.com all
+  answered 200; no proxy variable.
+- **`sandbox.enabled` alone**: the command got 21 proxy variables pointing at a
+  per-command proxy on 127.0.0.1 (`HTTPS_PROXY=http://srt.<id>:<secret>@127.0.0.1:<port>`,
+  `NO_PROXY` with loopback and the private ranges), and `TMPDIR=/tmp/claude-<uid>`.
+  127.0.0.1 failed (Node `EPERM`, curl exit 7), github.com and example.com failed through
+  the proxy (curl exit 56). The tool result ended with a `<sandbox_violations>` block,
+  `deny network-outbound github.com:443 (user denied)`. The rest of the command still
+  ran and its output came back.
+- **`network.allowedDomains: ["github.com"]` and `network.allowLocalBinding: true`**:
+  127.0.0.1 answered 200 directly (curl and Node), github.com 200 through the proxy,
+  example.com failed, also with `--noproxy '*'`.
+- **A unix socket** under a folder outside the sandbox's `TMPDIR` failed at `mkdir`
+  (`EPERM`) even with that folder in `network.allowUnixSockets`: writing there is a
+  file rule, not a network one.
+- **`playwright-cli`** (Koloft's `node_modules`, `PLAYWRIGHT_MCP_CDP_ENDPOINT` set to a
+  headless Chrome's CDP port on 127.0.0.1, the network settings above):
+  - nothing more: `EPERM … mkdir '<home>/Library/Caches/ms-playwright/daemon'`;
+  - plus `sandbox.filesystem.allowWrite: ["<home>/Library/Caches/ms-playwright"]`: the
+    daemon stopped on `listen EPERM /tmp/claude-<uid>/pw-<hash>/browser/browser-<hash>.sock`;
+  - plus `network.allowUnixSockets: ["/private/tmp/claude-<uid>"]`: `open` printed
+    `Page Title: K518`, `eval` and `close` worked, and example.com still failed in the
+    same command.
+- Not probed yet: the settings in an interactive session, the owner's own
+  `HTTPS_PROXY`, a Bash command that asks to run outside the sandbox with
+  `allowUnsandboxedCommands` left at its default, the Linux sandbox (a remote tab), and
+  what MCP servers reach (they run outside the Bash sandbox, inferred, not checked).
