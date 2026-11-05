@@ -2748,6 +2748,15 @@ below was one run.
     `Purple stripes` / `Apple, Cherry`; Down Down Down `Mango juice` Tab CR `2` `1` sent
     `Mango juice` / `Green`; `2` Down Down Down `Mango juice` Tab CR `1` sent `Green` /
     `Mango juice`; `2` `3` Tab `1` on one many-pick question sent `Banana, Cherry`.
+- **An answered `AskUserQuestion` reaches the transcript within about a second.**
+  2026-11-05, CC 2.1.318, the hand-test sandbox, a real local Claude tab (Sonnet 5.5),
+  no `.answerable` marker, so the dialog drew in the terminal; 4 runs, each answered from
+  its Inbox card: a one-question pick while its tab was the selected one, the same while
+  another tab was, a long Chinese question with two described options, and that one again
+  left open 20 minutes first. Each time the `tool_result` holding the pick was in the
+  transcript about 1 s after Koloft typed the digit, and the tab went on. In real use on
+  0.63.1 the same kind of digit typed from a card once drew no `tool_result` at all (the
+  owner answered in the terminal 2 min 42 s later); the cause was not reproduced.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 

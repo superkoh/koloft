@@ -3399,7 +3399,10 @@ app.whenReady().then(() => {
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
-    if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
+    if (ask && isAskedCall(ask, call)) {
+      claudeAsks.delete(tabId)
+      koloftInbox.questionAnswered(tabId)
+    }
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
@@ -3414,7 +3417,10 @@ app.whenReady().then(() => {
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
-    if (t.prev === 'approval') claudeAsks.delete(t.tabId)
+    if (t.prev === 'approval') {
+      claudeAsks.delete(t.tabId)
+      koloftInbox.questionAnswered(t.tabId)
+    }
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
