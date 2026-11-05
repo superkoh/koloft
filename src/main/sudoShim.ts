@@ -47,16 +47,15 @@ export const ASKPASS = `#!/bin/sh
 exec "$(dirname "$0")/koloft" ${SECRET_VERB} sudo "$1" "$(ps -o args= -p "$PPID" 2>/dev/null)"
 `
 
-export const SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS: Record<string, string> = {
-  sudo: sudoWrapper(A_TERMINAL_OPENS),
+const sudoFiles = (theOwnersTerminal: string): Record<string, string> => ({
+  sudo: sudoWrapper(theOwnersTerminal),
   [ASKPASS_NAME]: ASKPASS
-}
+})
+
+export const SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS = sudoFiles(A_TERMINAL_OPENS)
 
 // CODEX§12 MUSE§8 AGY§25
-export const SUDO_SHIM_FILES: Record<string, string> = {
-  sudo: sudoWrapper(A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB),
-  [ASKPASS_NAME]: ASKPASS
-}
+export const SUDO_SHIM_FILES = sudoFiles(A_TERMINAL_OPENS_IN_A_KOLOFT_SHELL_TAB)
 
 export function writeSudoShims(dir: string, files: Record<string, string>): void {
   for (const [name, text] of Object.entries(files)) {
