@@ -17,15 +17,13 @@ import {
   type Question
 } from './discord/dialog'
 import { SHOWS_NO_DIALOG } from './discord/relay'
-import { sleep } from './codexTransport'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
 const DETAILS_RETRY_MS = 1500
-const AN_ANSWER_THE_SESSION_TOOK_SHOWS_WITHIN_MS = 15_000
-const LOOK_FOR_THE_ANSWER_EVERY_MS = 250
+export const A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS = 15_000
 export const ANSWER_NOT_TAKEN =
-  'Koloft pressed your answer, but the session still shows the question. Try again, or open the session and answer it there.'
+  'Koloft sent your answer, but the session still shows the question. Try again, or open the session and answer it there.'
 
 export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
@@ -73,6 +71,11 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if ('questions' in a) return { kind: 'question', questions: a.questions }
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
+}
+
+interface AnswerLanding {
+  taken: Promise<boolean>
+  forget(): void
 }
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
@@ -321,6 +324,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 export class KoloftInbox {
   private building = new Set<string>()
   private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
+  private answering = new Map<string, (taken: boolean) => void>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
@@ -421,33 +425,42 @@ export class KoloftInbox {
     given: { answers?: InboxAnswers[string]; pick?: string }
   ): Promise<AnswerResult> {
     const live = this.d.liveTabOf(ref)
-    const asking =
-      live && this.d.marks().find((m) => m.tabId === live.tabId && m.kind === 'approval')
-    if (!live || !asking) return ANSWERED_ELSEWHERE
+    if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
+      return ANSWERED_ELSEWHERE
     let reply = given.pick
+    let landing: AnswerLanding | undefined
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
       if (ask?.kind !== 'question') return ANSWERED_ELSEWHERE
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
+      if (live.backend === 'claude') landing = this.watchForTheAnswer(live.tabId)
     }
     const error = await this.d.answer(live.tabId, reply)
+    if (error !== undefined) landing?.forget()
     if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (error !== undefined) return { ok: false, why: error }
-    return (await this.stopsAsking(asking)) ? { ok: true } : { ok: false, why: ANSWER_NOT_TAKEN }
+    if (landing && !(await landing.taken)) return { ok: false, why: ANSWER_NOT_TAKEN }
+    return { ok: true }
   }
 
-  private async stopsAsking(asking: AttentionEvent): Promise<boolean> {
-    for (let waited = 0; ; waited += LOOK_FOR_THE_ANSWER_EVERY_MS) {
-      if (
-        !this.d
-          .marks()
-          .some((m) => m.tabId === asking.tabId && m.kind === 'approval' && m.at === asking.at)
-      )
-        return true
-      if (waited >= AN_ANSWER_THE_SESSION_TOOK_SHOWS_WITHIN_MS) return false
-      await sleep(LOOK_FOR_THE_ANSWER_EVERY_MS)
+  // CC§14
+  toolDone(tabId: string, tool: string): void {
+    if (tool === 'AskUserQuestion') this.answering.get(tabId)?.(true)
+  }
+
+  private watchForTheAnswer(tabId: string): AnswerLanding {
+    let settle: (taken: boolean) => void = () => {}
+    const taken = new Promise<boolean>((resolve) => (settle = resolve))
+    const done = (took: boolean): void => {
+      clearTimeout(timer)
+      if (this.answering.get(tabId) === done) this.answering.delete(tabId)
+      settle(took)
     }
+    const timer = setTimeout(() => done(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+    this.answering.get(tabId)?.(false)
+    this.answering.set(tabId, done)
+    return { taken, forget: () => done(false) }
   }
 
   rebound(oldRef: string, newKey: string): void {

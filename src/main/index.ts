@@ -3400,6 +3400,7 @@ app.whenReady().then(() => {
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
     if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
+    koloftInbox.toolDone(tabId, call.name)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
