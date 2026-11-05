@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#508 Changes 里直接提交</title>
+<style>
+  :root { --bg:#111; --fg:#e8e6e3; --mut:#9a968f; --line:#2a2826; --acc:#e5a50a; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.65 -apple-system, "PingFang SC", sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:28px 20px 80px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  h2 { font-size:18px; margin:36px 0 8px; border-top:1px solid var(--line); padding-top:22px; }
+  .lead { font-size:17px; }
+  .mut { color:var(--mut); }
+  code { background:#1d1c1a; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .frame { width:840px; height:492px; overflow:hidden; border:1px solid var(--line); border-radius:8px; margin:8px 0 4px; }
+  .frame iframe { width:1400px; height:820px; border:0; transform:scale(0.6); transform-origin:0 0; pointer-events:none; }
+  .cap { font-size:13px; color:var(--mut); margin-bottom:18px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top; }
+  th { background:#1a1918; }
+  .pick { color:var(--acc); font-weight:600; }
+  .new { outline:2px dashed var(--acc); outline-offset:2px; border-radius:4px; padding:0 3px; }
+  pre { background:#1a1918; padding:12px; border-radius:6px; font-size:13px; line-height:1.5; overflow-x:auto; }
+</style>
+</head>
+<body>
+<main>
+<h1>Changes 里直接提交（issue #508）</h1>
+<p class="mut">issue #508 = 「仓库没有 GitHub 远端时，Changes 视图没法提交」。</p>
+
+<p class="lead">一句话：在 Workbench 的 Changes 栏里加一个 <span class="new">"Commit…"</span> 按钮，点它就打开今天 GitHub 菜单里的那个提交框。仓库在不在 GitHub 上都能用。</p>
+
+<pre>
+你改了代码 ──▶ Changes 里看到 diff ──▶ 点 "Commit…" ──▶ 写一句话 ──▶ "Commit"
+                                         │
+今天：这个按钮不存在。只有右键 GitHub 按钮才有 "Commit…"，
+      而 GitHub 按钮只在 github.com 仓库里出现。
+</pre>
+
+<h2>1. 今天：没有 GitHub 的仓库，找不到提交</h2>
+<div class="frame"><iframe src="today.html" title="today"></iframe></div>
+<div class="cap">真 app 截下来的界面：本机 git 仓库，没有远端，改了 2 个文件。Workbench 顶上没有 GitHub 按钮，Changes 栏只有 "base ▾"、"Filter ▾"、刷新、放大。</div>
+
+<h2>2. 以后（推荐 A）：Changes 栏多一个 "Commit…"</h2>
+<div class="frame"><iframe src="option-a.html" title="option A"></iframe></div>
+<div class="cap">黄色虚线框是新加的按钮（虚线只是标注，真做时没有）。样子和旁边的 "base ▾"、"Filter ▾" 完全一样，用同一个 <code>.seg</code> 样式。</div>
+
+<h2>3. 点下去：还是那个提交框</h2>
+<div class="frame"><iframe src="dialog.html" title="commit dialog"></iframe></div>
+<div class="cap">和 GitHub 菜单里打开的是同一个对话框，不新做。按回车或点 "Commit" 就把这个文件夹里所有改动（新文件也算，<code>git add -A</code>）提交；成功后弹 "Committed."，Changes 跟着刷新。</div>
+<p>一个小差别：GitHub 仓库里提示写 "… on <code>分支名</code> …"；没有 GitHub 的仓库里，今天的代码拿不到分支名，所以这句里不写分支（图里就是这样）。要也写上分支名，得多加一次读分支的调用——见第 6 节的第二个问题。</p>
+
+<h2>4. 按钮什么时候能点</h2>
+<table>
+<tr><th>情况</th><th>按钮</th></tr>
+<tr><td>Changes 里有改动</td><td>能点</td></tr>
+<tr><td>Changes 里 0 个文件（干净的仓库，或者这个文件夹根本不是 git 仓库）</td><td>灰掉，点不了</td></tr>
+<tr><td>切到 "Browse"</td><td>不显示（和 "base ▾"、"Filter ▾" 一样只在 Changes 里出现）</td></tr>
+<tr><td>改动都已经提交了，但 "base ▾" 选的是对比分叉点，所以 Changes 里还列着文件</td><td>能点；点了提交会失败，弹 git 自己的话（应该是 "nothing to commit, working tree clean"，推测，没实测）</td></tr>
+</table>
+
+<h2>5. 每种标签页都一样</h2>
+<p>按钮放在 Workbench 的 Changes 栏里，提交走的是主进程现成的 <code>commitAll</code>：本机用本机 git，远程工作区通过 SSH 在那台机器上跑 git（GitHub 菜单的 "Commit…" 今天就这样走，e2e 用例 E-RW-29、E-SSH-12 测过）。这些代码都不看是哪个 agent，所以：</p>
+<table>
+<tr><th>标签页</th><th>本机</th><th>远程（SSH）</th></tr>
+<tr><td>Claude Code</td><td>有按钮，本机提交</td><td>有按钮，在那台机器上提交</td></tr>
+<tr><td>Codex</td><td>同上</td><td>同上</td></tr>
+<tr><td>Muse Code</td><td>同上</td><td>同上</td></tr>
+<tr><td>Antigravity</td><td>同上</td><td>同上</td></tr>
+<tr><td>工作区行的 Workbench（没有会话，只有文件和网页）</td><td>也有按钮，提交工作区文件夹</td><td>也有，在那台机器上提交</td></tr>
+</table>
+<p class="mut">issue 原文说「远程 Codex 不能用（#99）」——现在远程 Codex 标签页已经有了，这句过时了。</p>
+
+<h2>6. 要你定的</h2>
+<p><b>问题一：按钮长什么样？</b></p>
+<table>
+<tr><th>选项</th><th>样子</th><th>代价</th></tr>
+<tr><td class="pick">A. 文字按钮 "Commit…"（推荐）</td><td>放在 "Filter ▾" 右边，和它一样的样式（见第 2 张图）</td><td>Workbench 窄的时候多占约 70 像素宽；一眼就能看懂</td></tr>
+<tr><td>B. 只放图标</td><td>放在刷新按钮左边，用 GitHub 菜单里 "Commit…" 那个现成的图标，鼠标停上去才显示 "Commit…"（<a href="option-b.html">看图</a>）</td><td>省地方；但图标不认识的人要停一下才知道是什么</td></tr>
+</table>
+
+<p><b>问题二：没有 GitHub 的仓库，提交框里写不写分支名？</b></p>
+<table>
+<tr><th>选项</th><th>代价</th></tr>
+<tr><td class="pick">不写（推荐）</td><td>零新代码；提示少半句 "on 分支名"</td></tr>
+<tr><td>写</td><td>每次打开提交框多跑一次读分支的 git 命令，多一点代码和测试</td></tr>
+</table>
+
+<h2>7. 不变的、不做的</h2>
+<ul>
+<li>GitHub 菜单里的 "Commit…" 照旧保留。GitHub 仓库里就有两个入口打开同一个框。</li>
+<li>"Push" 不加到 Changes 栏：issue 只要提交。没有 GitHub 的仓库要推送，今天还是只能在终端里推。</li>
+<li>不新做对话框、不新做图标、不改提交逻辑。</li>
+</ul>
+</main>
+</body>
+</html>
