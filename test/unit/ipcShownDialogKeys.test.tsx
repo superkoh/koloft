@@ -166,7 +166,7 @@ function Menu() {
 }
 
 describe('a menu or card a hover timer shows takes the Esc pressed the moment it shows, even while React’s effects still lag the screen', () => {
-  it('a sidebar row’s hover menu: Esc closes it', async () => {
+  it('a menu kept by useDismissOnOutside (the sidebar rows’ hover menu): Esc closes it', async () => {
     render(<Menu />)
     lagReactTasks()
     setTimeout(openMenu)
@@ -184,6 +184,7 @@ describe('a menu or card a hover timer shows takes the Esc pressed the moment it
     await waitFor(() => expect(document.querySelector('.tbu-pop')).not.toBeNull())
     expectReactTasksLagged()
     pressEsc()
-    await waitFor(() => expect(document.querySelector('.tbu-pop')).toBeNull())
+    await Promise.resolve()
+    expect(document.querySelector('.tbu-pop')).toBeNull()
   })
 })

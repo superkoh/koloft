@@ -1239,10 +1239,11 @@ inferred, not checked.
   (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
   lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
   `useEffect`. Checked 2026-11-05 the same jsdom way (`ipcShownDialogKeys.test.tsx`):
-  a `useState` set from a `setTimeout` callback lags like one set from a promise, and
-  a `useLayoutEffect` that sets state in the same commit (the tip card measuring its
-  target) makes React render again at once and run the waiting `useEffect`s first, so
-  that component has no gap.
+  a `useState` set from a `setTimeout` callback lags like one set from a promise. React
+  runs any waiting `useEffect`s before it starts the next render, so a
+  `useLayoutEffect` that sets state in the same commit (the tip card measuring its
+  target) closes the gap too: its `useEffect` Esc listener got the Esc with React's
+  tasks delayed.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
