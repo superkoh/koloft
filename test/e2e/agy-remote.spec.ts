@@ -318,6 +318,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect.poll(async () => (await boundRemoteSession(page, 'agy')).id).toBe(id)
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       expect(machineAgyCalls(env)).toHaveLength(1)
+      await agyReady(page)
       await runIn(page, centerTerm(page), 'after the restart')
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
