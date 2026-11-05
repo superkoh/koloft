@@ -2828,6 +2828,15 @@ lines of `test/unit/sessionRoute.real.test.ts`.
   worse.** With `"rule": <the number of the rule you took>` as the first added field,
   "koloft里…为什么session list前没有展示agent对应的icon" went to rule 8 or 5 (7 of 10)
   or rule 3 (1 of 10), where the prompt without it gave rule 6 in 10 of 10.
+- **Asked for `"why"` on the new-project rule only, with `"rule"` still last, it keeps
+  its landing.** 2026-11-05, codex-cli 0.166.0, `gpt-6-luna`: with
+  `"why" (rule 7 only, leave it out for every other rule)` and then
+  `"rule": <the number of the rule you took>`, the blog check-in line, the koloft icon
+  line, "问一下 koloft 那边测试跑完了没", "让所有正在跑的会话都提交一下代码", "fix the
+  tests" and a new-project line landed right 36 of 36 times (the prompt that asks every
+  rule for `why` also 36 of 36); every new-project answer still carried its `why` and no
+  other answer did. A run of all 24 lines had one miss, "fix the tests" as rule 6 in
+  shop-api.
 
 ## 32. No wake-up after the turn ends
 

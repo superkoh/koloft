@@ -11,6 +11,10 @@ export type SettingsPaneId =
   | 'extensions'
   | 'about'
 
+export function settingsPaneName(id: SettingsPaneId): string {
+  return `Settings ▸ ${SETTINGS_PANES.find((p) => p.id === id)!.label}`
+}
+
 export const SETTINGS_PANES: { id: SettingsPaneId; label: string; words: string[] }[] = [
   { id: 'welcome', label: 'Welcome', words: ['欢迎', '入门', 'getting started'] },
   { id: 'sessions', label: 'Sessions', words: ['会话设置'] },
