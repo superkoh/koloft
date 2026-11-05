@@ -778,13 +778,17 @@ process.stdin.on('data', (chunk) =>
 process.stdin.on('end', () => typedLines.end())
 // CC§14
 function keysOnTheDialog(answerOnceDone) {
+  const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    // PLATFORM§35
+    if (paneRaw) fs.writeFileSync(paneRaw, '')
     dialogKey = (key) => {
       const answer = answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
+      if (paneRaw) fs.rmSync(paneRaw, { force: true })
       resolve(answer)
     }
   })
