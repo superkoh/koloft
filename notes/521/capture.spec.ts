@@ -31,10 +31,10 @@ test('capture the welcome cards with no agent on this Mac', async ({ env }) => {
 })
 
 const HINT =
-  'This Mac has none of the agents Koloft runs yet. Pick one to install: a terminal opens and runs its official installer.'
+  'Koloft runs Claude Code, Codex, Muse Code or Antigravity CLI, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.'
 
 function variantA(): string {
-  const cards = ['Claude Code', 'Codex', 'Muse Code', 'Antigravity CLI']
+  const cards = ['Claude', 'Codex', 'Muse', 'Antigravity']
     .map(
       (n) =>
         `<button class="choice"><span class="choice-t">${n}</span><span class="choice-d">Not on this Mac. Click to install.</span></button>`

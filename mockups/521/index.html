@@ -29,15 +29,15 @@
 <body>
 <main>
 <h1>#521: install cards on the empty panel when this Mac has no agent</h1>
-<p class="lead">In one line: a folder with no session yet, on a Mac where none of the four agents is installed, today shows a grey button you cannot press. After: it shows four cards, one click each to install.</p>
-<p class="dim">Issue #521. All three pictures are screenshots of the built Koloft, in a test setup where this Mac has no agent. The option pictures were taken by putting the cards into the real panel, styled by the app's own compiled CSS (<code>notes/521/capture.spec.ts</code>).</p>
+<p class="lead">In one line: a folder with no running session, on a Mac where none of the four agents is installed, today shows a grey button you cannot press. After: it shows four cards, one click each to install.</p>
+<p class="dim">Issue #521. Checked against the code by an independent review. All three pictures are screenshots of the built Koloft, in a test setup where this Mac has no agent. The option pictures were taken by putting the cards into the real panel, styled by the app's own compiled CSS (<code>notes/521/capture.spec.ts</code>).</p>
 
 <pre>
 Today:                                  After (option A):
 ┌──────────── ws-a ────────────┐        ┌──────────── ws-a ────────────┐
 │     No running session       │        │     No running session       │
-│   [＋ New session]  ← grey   │        │ This Mac has none of …       │
-│   Claude: Unavailable        │  ──▶   │ [Claude Code][Codex][Muse]…  │
+│   [＋ New session]  ← grey   │        │ Koloft runs … none of them … │
+│   Claude: Unavailable        │  ──▶   │ [Claude][Codex][Muse][Antig…]│
 │  (hover shows "Not           │        │   click one → a terminal tab │
 │   installed")                │        │   installs it → cards go,    │
 └──────────────────────────────┘        │   the button lights up       │
@@ -51,7 +51,13 @@ Today:                                  After (option A):
 </figure>
 
 <h2>Who lands here</h2>
-<p>Screen 1 of the welcome steps has Install buttons. Someone who presses "Skip setup" (or esc), or who removes their agent later, lands on this panel with no way forward.</p>
+<p>Screen 1 of the welcome steps has Install buttons, but many people never reach them:</p>
+<ul>
+  <li>The welcome only opens on a first launch with an empty sidebar (<code>App.tsx:1115-1121</code>). Anyone who already had a folder in Koloft never sees it and lands straight on this panel.</li>
+  <li>Someone who presses "Skip setup" (or esc) on the welcome.</li>
+  <li>Someone who removes their agent later.</li>
+</ul>
+<p>Today their only way to the Install buttons is Settings ▸ Welcome ▸ "Show welcome again" (<code>WelcomePane.tsx:125-133</code>).</p>
 
 <h2>Three options</h2>
 
@@ -59,13 +65,13 @@ Today:                                  After (option A):
 <h3>A. Reuse the small install cards the Koloft Assist dialog already has <span class="tag">recommended</span></h3>
 <figure>
   <img src="option-a.png" alt="Option A">
-  <figcaption>The same cards the Koloft Assist dialog shows when no tool is installed (<code>InstallHint</code>, <code>AssistSetup.tsx:40</code>), with the app's existing <code>.ob-choices</code> / <code>.choice</code> styles. While the cards show, the grey button and the "Claude: Unavailable" line do not.</figcaption>
+  <figcaption>The same component the Koloft Assist dialog shows when no tool is installed (<code>InstallHint</code>, <code>AssistSetup.tsx:40</code>): the same card titles ("Claude", "Codex", "Muse", "Antigravity"), the same sentence above them (<code>AssistSetup.tsx:82</code>), and the app's existing <code>.ob-choices</code> / <code>.choice</code> styles. While the cards show, the grey button and the "Claude: Unavailable" line do not.</figcaption>
 </figure>
 <ul>
-  <li>Click a card: a terminal tab opens, titled e.g. "Install Codex" with a Cancel bar, and runs that agent's official installer (the same path the welcome steps and the Assist dialog use: <code>installTool</code> → <code>openSignInTab</code>).</li>
-  <li>Install worked: the installer exits, the tab closes, the empty panel comes back (main asks for a new check, <code>index.ts:3245</code>), the cards are gone, "＋ New session" is lit.</li>
+  <li>Click a card: a terminal tab opens, titled "Install Codex" (the Assist dialog's titles: "Install Claude", "Install Muse", …) with a Cancel bar, and runs that agent's official installer — the same path the welcome steps and the Assist dialog already use (<code>installTool</code> → <code>openSignInTab</code>).</li>
+  <li>Install worked: the installer exits, the tab closes, the empty panel comes back (main asks for a new check, <code>index.ts:3245</code>), the cards are gone, "＋ New session" is lit. The panel must read the check that stays mounted in <code>App.tsx:377-392</code>, not a fresh one, or the cards would flash back for a moment before the button lights up.</li>
   <li>Install failed: the tab stays with its error (the welcome's T-OB-14 test covers this path); once closed, the cards are still there to try again.</li>
-  <li>Cost: about +20 runtime lines and one e2e case. Small cards, in the same style as the rest of the panel.</li>
+  <li>Cost: about +20 runtime lines (a few of them one CSS rule that keeps the cards from spreading across the whole middle) and one e2e case. Small cards, in the same style as the rest of the panel.</li>
 </ul>
 </div>
 
@@ -93,7 +99,10 @@ Today:                                  After (option A):
   <li>Only when: the chosen folder is on <b>this Mac</b>, Koloft has finished checking this Mac, and <b>none of the four agents is installed</b> — the issue's own words ("no supported tool is installed").</li>
   <li>Not during the short moment the check is still running (the welcome waits for it the same way).</li>
   <li>Once any one agent is installed: the same as today, a working "New … session" button and no cards.</li>
+  <li>The check itself failed: the same as today — the button stays lit and a "Retry" button shows (<code>SessionLaunchButtons.tsx:419-423</code>). No cards, since Koloft does not know what is missing.</li>
+  <li>An agent is installed but turned off in Settings ▸ Sessions: the same as today (grey button). No cards: installing would not help, turning it on would.</li>
 </ul>
+<p class="dim">The rule is the one the Assist dialog already uses: <code>useAssistSetup().noTool</code> with <code>toolsKnown</code> (<code>useAssistSetup.ts:29-34</code>).</p>
 
 <h2>Each kind of session tab</h2>
 <p class="dim">The empty panel shows before any tab exists, so this says what a folder of each kind shows. The four agents are Claude Code, Codex, Muse Code and Antigravity CLI; each runs on this Mac or on another machine over SSH (Secure Shell).</p>
@@ -103,12 +112,12 @@ Today:                                  After (option A):
   <tr><td>Codex</td></tr>
   <tr><td>Muse Code</td></tr>
   <tr><td>Antigravity CLI</td></tr>
-  <tr><td rowspan="4">Remote (SSH)</td><td>Claude Code</td><td rowspan="4">No cards, same as today. A remote folder always offers Claude Code (it runs on that machine, whatever this Mac has: #1282, <code>checkedOnThisMac</code>, <code>sessionBackend.ts:254</code>), so its button is never all grey. Remote Codex, Muse and Antigravity tabs need this Mac's program, so with none installed the remote menu offers only Claude Code — true today, not changed here.</td></tr>
+  <tr><td rowspan="4">Remote (SSH)</td><td>Claude Code</td><td rowspan="4">No cards, same as today. A remote folder always offers Claude Code unless it is turned off in Settings ▸ Sessions (it runs on that machine, whatever this Mac has: #1282, <code>checkedOnThisMac</code>, <code>sessionBackend.ts:254</code>), so its button is not grey. Remote Codex, Muse and Antigravity are offered only when this Mac has them, so with none installed the remote menu offers only Claude Code — true today, not changed here. (For Codex this is because its remote tab runs this Mac's program, CODEX§16; for Muse and Antigravity it is the same gate in the code, not probed.)</td></tr>
   <tr><td>Codex</td></tr>
   <tr><td>Muse Code</td></tr>
   <tr><td>Antigravity CLI</td></tr>
 </table>
-<p>Also: the "No workspace yet" panel (no folder added) gets no cards — a folder comes first, and then the panel above shows. The sidebar's "＋ New session" rows, ⌘N and ⌘P stay as they are.</p>
+<p>Also: the "No workspace yet" panel (no folder added) gets no cards — its "Choose Folder…" works, and then the panel above shows. A folder whose past sessions show under "Recent" on the panel gets the cards too (resuming one would fail the same way without an agent).</p>
 
 <h2>Existing users after the update</h2>
 <p>Anyone with at least one agent installed (nearly every existing user) sees no change. Only a Mac with no agent gets the cards on the empty panel. No setting moves.</p>
@@ -117,6 +126,7 @@ Today:                                  After (option A):
 <ul>
   <li>Cards on a remote folder to install Codex, Muse or Antigravity on this Mac.</li>
   <li>Cards for the missing agents when some are installed (the issue asks only for "none installed").</li>
+  <li>The other ways to start a session — the sidebar's "＋ New session" row, ⌘N and ⌘P — are the same grey button today when nothing is installed (<code>WorkspacePicker.tsx:303-315</code>, <code>CommandPalette.tsx:459-478</code>). They stay as they are: the empty panel with the cards sits right next to them.</li>
 </ul>
 </main>
 </body>
