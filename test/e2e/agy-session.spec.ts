@@ -2,7 +2,14 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  launchApp,
+  pendingAttention,
+  pretendWindowFocused,
+  quitAndClose
+} from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
@@ -36,6 +43,7 @@ import {
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   sendTwoLinesJoinedByShiftEnter,
+  startSessionIn,
   staysOnTheFolderPageNotTheButler,
   terminalText,
   termIds,
@@ -58,6 +66,9 @@ const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const AGY_SETUP_SCREEN = { timeout: 20_000 }
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -627,6 +638,150 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveCount(1)
       await expect(agyRows(page)).toContainText('survive a restart')
       await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session marked Keep running never goes to sleep for being idle, while an ordinary one beside it does, red dot and all, and a click wakes that same conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const kept = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'stay up')
+      await agyConversationOnceFirstTurnEnded(page)
+      await openMenu(page, agyRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+
+      const ordinary = wsRows(page, 'ws-b').filter({
+        hasNot: page.getByRole('img', { name: 'Claude', exact: true })
+      })
+      await newSessionInWith(page, 'ws-b', 'Antigravity')
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      const sleeper = sessionCalls(env)[1]
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'nod off')
+      const { id } = await agyConversationOnceFirstTurnEnded(
+        page,
+        (await ordinary.getAttribute('data-tab-id')) ?? undefined
+      )
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
+
+      await expect.poll(() => processAlive(sleeper.pid), { timeout: 40_000 }).toBe(false)
+      expect(processAlive(kept.pid)).toBe(true)
+      await expect(agyRows(page)).not.toHaveClass(/\bcold\b/)
+      await expect(ordinary).toHaveClass(/\bst-idle\b/)
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+      expect(sessionCalls(env)).toHaveLength(2)
+
+      await ordinary.click()
+      await expect.poll(() => sessionCalls(env).length).toBe(3)
+      expect(sessionCalls(env)[2].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      expect(processAlive(kept.pid)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session marked Keep running starts again by itself when Koloft reopens even though its tab was closed, on the same conversation, and selects nothing', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'keep me running')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await openMenu(page, agyRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(agyRows(page)).toHaveClass(/cold/)
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect(agyRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
+      expect(readAllCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session’s unread red dot survives a Koloft restart on its row, which comes back running the same conversation; clicking the row in a focused window keeps it, and agy working again clears it', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'leave a dot')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await expect(agyRows(page)).toHaveClass(/st-waiting/)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await quitAndClose(app)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await expect.poll(() => pendingAttention(page)).toMatchObject([{ kind: 'turn-done' }])
+
+      await pretendWindowFocused(app)
+      await agyRows(page).click()
+      await expect(agyRows(page)).toHaveClass(/\bactive\b/)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-delay'),
+        A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS
+      )
+      await runIn(page, centerTerm(page), 'work again')
+      await expect(agyRows(page)).toHaveClass(/st-working/)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(sessionCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
