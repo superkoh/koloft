@@ -972,7 +972,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§6
-  test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, and a pasted Gemini API key adds an account kept in the Keychain and opens agy on it at once; once its colour and Terms screens are answered the row is ready, marked API KEY and metered', async ({
+  test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, Paste Gemini API key clicked at the bottom edge of the pane scrolls its whole form into view, and a pasted Gemini API key adds an account kept in the Keychain and opens agy on it at once; once its colour and Terms screens are answered the row is ready, marked API KEY and metered', async ({
     env
   }) => {
     installAgy(env)
@@ -995,8 +995,13 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(seeded.locator('.acct-note')).toHaveText(
         'Metered — used only when every subscription is rate-limited'
       )
-      await page.getByRole('button', { name: 'Paste Gemini API key' }).click()
+      const paste = page.getByRole('button', { name: 'Paste Gemini API key' })
+      await paste.evaluate((b) => b.scrollIntoView({ block: 'end' }))
+      await paste.dispatchEvent('click')
       await expect(page.locator('.acct-add-title')).toHaveText('Add Gemini API key')
+      const form = await page.locator('.acct-add').boundingBox()
+      const modal = await page.locator('.modal').boundingBox()
+      expect(form!.y + form!.height).toBeLessThanOrEqual(modal!.y + modal!.height)
       await page.locator('.acct-add input[type="text"]').fill('second')
       await page.locator('.acct-add input[type="password"]').fill('AIza-second-key')
       const termsBefore = await termIds(page)

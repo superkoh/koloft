@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
-import type { AccountKind, AccountView, SignInBackend, SignInFailure } from '@shared/types'
-import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
+import type {
+  AccountKind,
+  AccountView,
+  BackendId,
+  LoginProgress,
+  SignInBackend,
+  SignInFailure
+} from '@shared/types'
+import {
+  BACKEND_OF_SIGN_IN_FOLDER,
+  SIGN_IN_FOLDER_KINDS,
+  SIGN_IN_FOLDER_OF,
+  isSignInFolderKind
+} from '@shared/types'
 import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
@@ -38,20 +50,39 @@ import '../../accounts.css'
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
 
+type PaneForm = { signIn: SignInBackend; again?: string } | { paste: AccountKind }
+
+const loginRunning = (progress: LoginProgress | null): boolean =>
+  progress !== null && progress.phase !== 'failed'
+
+const scrollIntoViewOnOpen = (form: HTMLDivElement | null): void =>
+  form?.scrollIntoView({ block: 'nearest' })
+
 export function AccountsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
+  const clearLogin = useStore((s) => s.clearLogin)
+  const failed = useSignInFailure()
   const update = useSettingsUpdate()
 
   const [accounts, setAccounts] = useState<AccountView[]>([])
   // ADR-0002
-  const [adding, setAdding] = useState<AccountKind | null>(null)
+  const [form, setForm] = useState<PaneForm | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
   const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(refreshBeat.current), [])
-  const [signIn, setSignIn] = useState<{ backend: SignInBackend; again?: string } | null>(null)
+  const openForm = (next: PaneForm): void => {
+    if (login && !loginRunning(login.progress)) clearLogin()
+    setForm(next)
+  }
+  const openClaudeSignIn = (again?: string): void => {
+    setForm(null)
+    beginLogin(again)
+  }
+  const signIn = form && 'signIn' in form ? form : null
+  const adding = form && 'paste' in form ? form.paste : null
   const claudeAccounts = accounts.filter((a) => ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
   const museAccounts = accounts.filter((a) => a.kind === 'muse-home')
@@ -85,6 +116,7 @@ export function AccountsPane(): JSX.Element {
 
   const row = (a: AccountView): JSX.Element => {
     const key = `${a.kind}:${a.name}`
+    const folderBackend = isSignInFolderKind(a.kind) ? BACKEND_OF_SIGN_IN_FOLDER[a.kind] : null
     return (
       <AccountRow
         key={key}
@@ -104,20 +136,45 @@ export function AccountsPane(): JSX.Element {
         }}
         onRelogin={
           a.kind === 'oauth'
-            ? () => beginLogin(a.name)
-            : a.kind === 'codex-home'
-              ? () => setSignIn({ backend: 'codex', again: a.name })
-              : a.kind === 'muse-home'
-                ? () => setSignIn({ backend: 'muse', again: a.name })
-                : a.kind === 'agy-home'
-                  ? () => setSignIn({ backend: 'agy', again: a.name })
-                  : undefined
+            ? () => openClaudeSignIn(a.name)
+            : folderBackend
+              ? () => openForm({ signIn: folderBackend, again: a.name })
+              : undefined
         }
       />
     )
   }
 
-  const section = (list: AccountView[], empty: string, foot: JSX.Element): JSX.Element => (
+  const formsOf = (backend: BackendId): JSX.Element | null => {
+    const paste = adding && ACCOUNT_KINDS_OF[backend].includes(adding) && (
+      <AddAccountDialog key={adding} kind={adding} onClose={() => setForm(null)} />
+    )
+    if (backend === 'claude')
+      return (
+        <>
+          {login && <LoginDialog key={login.reauthName ?? ''} />}
+          {paste}
+        </>
+      )
+    if (signIn?.signIn === backend)
+      return (
+        <SignInDialog
+          key={signIn.again ?? ''}
+          backend={backend}
+          again={signIn.again}
+          onClose={() => setForm(null)}
+        />
+      )
+    if (!form && failed?.backend === backend) return <SignInFailedCard failed={failed} />
+    return paste || null
+  }
+
+  const section = (
+    backend: BackendId,
+    list: AccountView[],
+    empty: string,
+    foot: JSX.Element
+  ): JSX.Element => (
     <div className="acct-section">
       {list.length === 0 ? (
         <div className="acct-empty">{empty}</div>
@@ -125,6 +182,7 @@ export function AccountsPane(): JSX.Element {
         <div className="acct-list">{list.map(row)}</div>
       )}
       <div className="acct-foot">{foot}</div>
+      {formsOf(backend)}
     </div>
   )
 
@@ -197,17 +255,18 @@ export function AccountsPane(): JSX.Element {
       </div>
 
       {section(
+        'claude',
         claudeAccounts,
         'No accounts yet — add one below. Claude sessions start only once there is one.',
         <>
           <button
             className="mini"
-            onClick={() => beginLogin()}
+            onClick={() => openClaudeSignIn()}
             title="Runs claude setup-token in the background and stores the token for you"
           >
             <IconWebPage size={14} /> Sign in
           </button>
-          <button className="mini" onClick={() => setAdding('oauth')}>
+          <button className="mini" onClick={() => openForm({ paste: 'oauth' })}>
             <IconPlus size={14} /> Paste token
           </button>
         </>
@@ -215,66 +274,58 @@ export function AccountsPane(): JSX.Element {
 
       <div className="set-grp">Codex</div>
       {section(
+        'codex',
         codexAccounts,
         'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
-            onClick={() => setSignIn({ backend: 'codex' })}
+            onClick={() => openForm({ signIn: 'codex' })}
             title="Runs codex login in a terminal tab for a new Codex account"
           >
             <IconWebPage size={14} /> Sign in to Codex
           </button>
-          <button className="mini" onClick={() => setAdding('codex-home')}>
+          <button className="mini" onClick={() => openForm({ paste: 'codex-home' })}>
             <IconPlus size={14} /> Paste API key
           </button>
         </>
       )}
       <div className="set-grp">Muse</div>
       {section(
+        'muse',
         museAccounts,
         'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
-            onClick={() => setSignIn({ backend: 'muse' })}
+            onClick={() => openForm({ signIn: 'muse' })}
             title="Runs muse login in a terminal tab for a new Muse account"
           >
             <IconWebPage size={14} /> Sign in to Muse
           </button>
-          <button className="mini" onClick={() => setAdding('muse-home')}>
+          <button className="mini" onClick={() => openForm({ paste: 'muse-home' })}>
             <IconPlus size={14} /> Paste API key
           </button>
         </>
       )}
       <div className="set-grp">Antigravity</div>
       {section(
+        'agy',
         agyAccounts,
         'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
         <>
           <button
             className="mini"
-            onClick={() => setSignIn({ backend: 'agy' })}
+            onClick={() => openForm({ signIn: 'agy' })}
             title="Runs agy in a terminal tab for a new Antigravity account"
           >
             <IconWebPage size={14} /> Sign in with Google
           </button>
-          <button className="mini" onClick={() => setAdding('agy-home')}>
+          <button className="mini" onClick={() => openForm({ paste: 'agy-home' })}>
             <IconPlus size={14} /> Paste Gemini API key
           </button>
         </>
       )}
-      {signIn ? (
-        <SignInDialog
-          backend={signIn.backend}
-          again={signIn.again}
-          onClose={() => setSignIn(null)}
-        />
-      ) : (
-        <SignInFailedDialog />
-      )}
-      {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
-      {login && <LoginDialog />}
       <GitAccountsSection />
     </>
   )
@@ -329,10 +380,10 @@ export function LoginDialog(): JSX.Element | null {
     clearLogin()
   }
 
-  const running = progress !== null && progress.phase !== 'failed'
+  const running = loginRunning(progress)
 
   return (
-    <div className="acct-add">
+    <div className="acct-add" ref={scrollIntoViewOnOpen}>
       <div className="acct-add-title">{reauthName ? `Sign in again ${reauthName}` : 'Sign in'}</div>
       {!running && (
         <input
@@ -434,7 +485,10 @@ function useSignInFailure(): SignInFailure | null {
 
 export function SignInFailedDialog(): JSX.Element | null {
   const failed = useSignInFailure()
-  if (!failed) return null
+  return failed && <SignInFailedCard failed={failed} />
+}
+
+function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
   return (
     <SignInDialog
       key={`${failed.backend}:${failed.name}`}
@@ -489,7 +543,7 @@ export function SignInDialog({
   }
 
   return (
-    <div className="acct-add">
+    <div className="acct-add" ref={scrollIntoViewOnOpen}>
       <div className="acct-add-title">
         {again ? `Sign in again ${again}` : `Sign in to ${label}`}
       </div>
@@ -738,7 +792,7 @@ export function AddAccountDialog({
               : 'Add custom endpoint'
 
   return (
-    <div className="acct-add">
+    <div className="acct-add" ref={scrollIntoViewOnOpen}>
       <div className="acct-add-title">{title}</div>
       <input
         type="text"
@@ -746,6 +800,7 @@ export function AddAccountDialog({
         value={name}
         onChange={(e) => setName(e.target.value)}
         spellCheck={false}
+        autoFocus
       />
       {kind === 'custom' && (
         <>
