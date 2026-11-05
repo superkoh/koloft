@@ -810,7 +810,12 @@ async function findRow(d: SessionVerbDeps, verb: string, ref: string): Promise<P
 }
 
 export async function findSessionRow(d: SessionVerbDeps, ref: string): Promise<Parsed<PlacedRow>> {
-  return matchAmong(await allRows(d), ref)
+  const { all, names } = await allRows(d)
+  return matchRow(all, ref, names) ?? fail(noSuchSession(ref))
+}
+
+function noSuchSession(ref: string): string {
+  return `there is no session "${ref}". Run "koloft session list" to see them.`
 }
 
 function findAmong(rows: NamedRows, verb: string, ref: string): Parsed<PlacedRow> {
@@ -825,7 +830,7 @@ function matchAmong({ all, names }: NamedRows, ref: string): Parsed<PlacedRow> {
     const name = names[all.indexOf(hit.value)]
     return { ok: true, value: name ? { ...hit.value, title: name } : hit.value }
   }
-  return fail(`there is no session "${ref}". Run "koloft session list" to see them.`)
+  return fail(noSuchSession(ref))
 }
 
 async function readSession(d: SessionVerbDeps, rest: string[]): Promise<AgentReply> {

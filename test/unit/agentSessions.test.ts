@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  findSessionRow,
   parseNewSessionArgs,
   roomStarted,
   sessionSays,
@@ -11,6 +12,7 @@ import {
   workspaceVerb,
   type ClosableSession,
   type PinnedWorkspace,
+  type SessionVerbDeps,
   type Target
 } from '../../src/main/agentSessions'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
@@ -2308,5 +2310,20 @@ describe('a session started while the machine is busy waits in a queue', () => {
     expect(h.held).toEqual([])
     await h.verb(['close', 'tests'], from('me'))
     expect(h.waiting).toHaveLength(1)
+  })
+})
+
+describe('the session a room opens for', () => {
+  it('keeps the title the sidebar shows, even when it is reached by another name', async () => {
+    const live = session('t1', 'claude', { title: 'Sandbox greeting' })
+    const deps = {
+      sidebar: () => sidebar([[WS, [row('t1-session', { running: true })]]]),
+      allSessions: () => [live],
+      peerNames: () => async () => 'ws-a-53'
+    } as unknown as SessionVerbDeps
+    for (const ref of ['Sandbox greeting', 'ws-a-53', 't1-session']) {
+      const found = await findSessionRow(deps, ref)
+      expect(found.ok && found.value.title).toBe('Sandbox greeting')
+    }
   })
 })
