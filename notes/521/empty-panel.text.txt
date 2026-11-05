@@ -1,0 +1,7 @@
+ws-a
+No running session
+＋ New session
+
+Claude: Unavailable
+button title: Not installed
+button disabled: true

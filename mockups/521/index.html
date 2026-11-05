@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#521 空面板安装卡片</title>
+<style>
+  :root { --bg:#0e0e10; --fg:#ece9e4; --dim:#a7a29b; --line:#2a2a2e; --acc:#ff7a3d; --good:#4fbf7a; --bad:#e0605a; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.7 -apple-system, "PingFang SC", sans-serif; }
+  main { max-width:1080px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  h2 { font-size:19px; margin:40px 0 10px; border-top:1px solid var(--line); padding-top:24px; }
+  h3 { font-size:16px; margin:22px 0 6px; }
+  .lead { font-size:17px; }
+  .dim { color:var(--dim); }
+  img { width:100%; border:1px solid var(--line); border-radius:10px; display:block; }
+  figure { margin:12px 0 20px; }
+  figcaption { color:var(--dim); font-size:13px; margin-top:6px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; margin:8px 0 16px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#18181b; }
+  code { background:#1c1c20; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .pick { border:1px solid var(--acc); border-radius:10px; padding:4px 16px 12px; margin:14px 0; }
+  .opt { border:1px solid var(--line); border-radius:10px; padding:4px 16px 12px; margin:14px 0; }
+  .tag { display:inline-block; font-size:12px; padding:0 8px; border-radius:10px; background:var(--acc); color:#111; margin-left:6px; }
+  pre { background:#151518; border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body>
+<main>
+<h1>#521：Mac 上一个 agent 都没装时，空面板也给出安装卡片</h1>
+<p class="lead">一句话：一个文件夹里还没有会话、这台 Mac 上四种 agent 都没装，今天中间只有一个点不动的灰按钮；改成直接放四张「点一下就装」的卡片。</p>
+<p class="dim">issue（问题单）#521。下面三张图都是真 app 截的（构建好的 Koloft，测试环境里假装 Mac 上没装任何 agent），方案图是在真 app 的页面里换上卡片后截的，用的就是 app 自己编译后的 CSS。</p>
+
+<pre>
+今天：                                  改后（方案 A）：
+┌──────────── ws-a ────────────┐        ┌──────────── ws-a ────────────┐
+│     No running session       │        │     No running session       │
+│   [＋ New session]  ← 灰的   │        │ This Mac has none of …       │
+│   Claude: Unavailable        │  ──▶   │ [Claude Code][Codex][Muse]…  │
+│  (鼠标停上去才看到 "Not      │        │   点一张 → 开终端标签页装它  │
+│   installed")                │        │   装好 → 卡片消失，按钮亮起  │
+└──────────────────────────────┘        └──────────────────────────────┘
+</pre>
+
+<h2>今天是什么样</h2>
+<figure>
+  <img src="today.png" alt="今天的空面板">
+  <figcaption>「＋ New session」是灰的，鼠标停上去写 “Not installed”；下面一行 “Claude: Unavailable”。想装只能去 Settings ▸ Welcome 重放欢迎页。</figcaption>
+</figure>
+
+<h2>谁会碰到</h2>
+<p>欢迎页第 1 屏有 Install 按钮，但用户按了「Skip setup」（或 esc）跳过，或者以后把 agent 卸了，就落到这个空面板上，没有路可走。</p>
+
+<h2>三个选项</h2>
+
+<div class="pick">
+<h3>A. 复用 Assist 弹框里现成的小安装卡片 <span class="tag">推荐</span></h3>
+<figure>
+  <img src="option-a.png" alt="方案 A">
+  <figcaption>和 Koloft Assist 弹框在「一个工具都没装」时给的是同一组卡片（<code>InstallHint</code>，<code>AssistSetup.tsx:40</code>），样式是 app 里已有的 <code>.ob-choices</code> / <code>.choice</code>，文字也是那里现成的那句。灰按钮和 “Claude: Unavailable” 那一行在这时不显示。</figcaption>
+</figure>
+<ul>
+  <li>点一张卡：开一个终端标签页，标题 “Install Codex” 之类，上面有 Cancel，跑那个 agent 的官方安装脚本（和欢迎页、Assist 弹框走同一条路：<code>installTool</code> → <code>openSignInTab</code>）。</li>
+  <li>装好了：安装脚本跑完自己退出，标签页关掉，又回到这个空面板（主进程在 <code>index.ts:3245</code> 通知重新检查），卡片消失，「＋ New session」变亮。</li>
+  <li>没装好：标签页留着，报错看得到（欢迎页的测试 T-OB-14 已经测过这条路）；关掉后卡片还在，可以再点。</li>
+  <li>代价：运行代码大约 +20 行，加 1 条 e2e 用例。卡片小，和空面板其他元素一个风格。</li>
+</ul>
+</div>
+
+<div class="opt">
+<h3>B. 搬欢迎页第 1 屏的大卡片过来</h3>
+<figure>
+  <img src="option-b.png" alt="方案 B">
+  <figcaption>欢迎页的 <code>.wl-agent</code> 卡片（带图标、厂商名、Install 小按钮）。截图里为了放下已经缩到 78%。</figcaption>
+</figure>
+<ul>
+  <li>好处：有图标，一眼认出是哪家；和欢迎页长得一样。</li>
+  <li>代价：这些卡片的字体和颜色变量只在欢迎页的全屏层 <code>.wl</code> 里定义，搬出来要把变量和网格挪到共用的地方，还要在 Workbench 打开、中间变窄时改成两行；欢迎页那块代码要抽成共用组件。运行代码大约 +80 行，比 A 多，也是空面板上唯一一块欢迎页风格的东西。</li>
+</ul>
+</div>
+
+<div class="opt">
+<h3>C. 不改，保持灰按钮</h3>
+<ul>
+  <li>代价：跳过欢迎页的人还是没有路可走，只能自己找到 Settings ▸ Welcome。issue 关掉。</li>
+</ul>
+</div>
+
+<h2>什么时候显示卡片</h2>
+<ul>
+  <li>只在：选中的是<b>本机</b>文件夹、Koloft 已经查完这台 Mac、<b>四种 agent 一个都没装</b>。和 issue 原话一样（“no supported tool is installed”）。</li>
+  <li>还在查的那一小会儿不显示（和欢迎页一样等查完）。</li>
+  <li>只要装了任意一种：照今天一样，显示能用的「New … session」按钮，不出卡片。</li>
+</ul>
+
+<h2>八种标签页各怎么样</h2>
+<p class="dim">空面板出现在还没有任何标签页的时候，所以这里说的是「在这种文件夹里打开空面板时看到什么」。四种 agent 是 Claude Code、Codex、Muse Code、Antigravity CLI；每种分本机和远程（SSH，连到另一台机器）。</p>
+<table>
+  <tr><th>文件夹</th><th>agent</th><th>Mac 上全没装时，空面板</th></tr>
+  <tr><td rowspan="4">本机</td><td>Claude Code</td><td rowspan="4">四张卡片，各装各的；装哪个点哪个。装好后按钮按今天的规则亮起来。</td></tr>
+  <tr><td>Codex</td></tr>
+  <tr><td>Muse Code</td></tr>
+  <tr><td>Antigravity CLI</td></tr>
+  <tr><td rowspan="4">远程（SSH）</td><td>Claude Code</td><td rowspan="4">不出卡片，和今天一样。远程文件夹永远可以开 Claude Code 会话（它跑在那台机器上，不看这台 Mac 装没装，#1282，<code>checkedOnThisMac</code>，<code>sessionBackend.ts:254</code>），所以按钮不会全灰。Codex、Muse、Antigravity 的远程标签页要用这台 Mac 上的程序，Mac 没装时远程菜单里就只有 Claude Code —— 这一点今天就是这样，这个 issue 不改。</td></tr>
+  <tr><td>Codex</td></tr>
+  <tr><td>Muse Code</td></tr>
+  <tr><td>Antigravity CLI</td></tr>
+</table>
+<p>另外：还没加任何文件夹时的「No workspace yet」面板不放卡片（先要选一个文件夹，选完就到上面那个面板）。侧边栏每个文件夹下的「＋ New session」、⌘N、⌘P 不改。</p>
+
+<h2>老用户升级后</h2>
+<p>装了任意一个 agent 的人（几乎所有老用户）看不到任何变化。只有 Mac 上一个都没装的人，在空面板上多了卡片。没有设置要迁移。</p>
+
+<h2>不做的</h2>
+<ul>
+  <li>远程文件夹里给 Codex / Muse / Antigravity 出「装到这台 Mac」的卡片。</li>
+  <li>「装了一部分」时给没装的那几种出卡片（issue 只要「一个都没有」时）。</li>
+</ul>
+</main>
+</body>
+</html>
