@@ -24,9 +24,6 @@ export function ExtensionsPane(): JSX.Element {
     return window.api.extensions.onChanged(reload)
   }, [reload])
 
-  const cancelRemove = useCallback((): void => setRemoving(null), [])
-  useEscConsumer(removing !== null, cancelRemove)
-
   const [storeOpen, setStoreOpen] = useState(false)
   const closeStore = useCallback((): void => {
     setStoreOpen(false)

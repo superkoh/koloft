@@ -34,6 +34,7 @@ export function ExtensionModal({
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
+      e.stopPropagation()
       answer.current(false)
     }
     window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
