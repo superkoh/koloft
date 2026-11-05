@@ -22,6 +22,7 @@ import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
+import { museAccountEnv } from '../../src/main/museAccounts'
 
 const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
@@ -289,6 +290,32 @@ describe('MuseSessions launch', () => {
       PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     })
     expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
+  })
+
+  // ADR-0048 MUSE§21
+  it("points the owner's Playwright MCP at the Workbench browser, empty in a tab without it so the server still starts, and lets its tools run without an ask only in a tab that has that browser", async () => {
+    const acct = path.join(home, 'acct')
+    picked = { account: 'work', env: museAccountEnv(acct) }
+    fs.mkdirSync(path.join(home, '.config', 'muse'), { recursive: true })
+    fs.writeFileSync(
+      path.join(home, '.config', 'muse', 'settings.json'),
+      JSON.stringify({ schema_version: 1, mcpServers: { pw: { command: 'playwright-mcp' } } })
+    )
+    const inAccount = (name: string): Record<string, unknown> => {
+      const file = path.join(acct, 'muse', name)
+      return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
+    }
+    endpoint = 'ws://127.0.0.1:9/cdp/x'
+    await launch()
+    expect(inAccount('settings.json').mcpServers).toMatchObject({
+      pw: { env: { PLAYWRIGHT_MCP_CDP_ENDPOINT: '${PLAYWRIGHT_MCP_CDP_ENDPOINT}' } }
+    })
+    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(endpoint)
+    expect(JSON.stringify(inAccount('approval-policy.json'))).toContain('mcp__pw__browser_navigate')
+    endpoint = ''
+    await launch()
+    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
+    expect(inAccount('approval-policy.json').rules).toEqual([])
   })
 
   it("writes the folder into muse's own trust list when Koloft was told to trust it", async () => {
