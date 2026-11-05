@@ -1,0 +1,1 @@
+Error: `--worktree` is only supported for local sessions

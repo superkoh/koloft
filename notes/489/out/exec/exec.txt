@@ -1,0 +1,21 @@
+Reading additional input from stdin...
+OpenAI Codex v0.166.0
+--------
+workdir: <lab>/codex-home/worktrees/80d5/repo
+model: gpt-5.5
+provider: stand-in
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 01a1ac03-b4cb-7c92-83cf-ee7ee579b896
+--------
+user
+say hi
+codex
+fake model done 1
+tokens used
+2
+fake model done 1
+
+[exit 0]

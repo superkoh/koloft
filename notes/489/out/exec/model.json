@@ -1,0 +1,65 @@
+[
+ {
+  "url": "/v1/responses",
+  "bytes": 38772,
+  "keys": [
+   "model",
+   "stream",
+   "input",
+   "tools",
+   "tool_choice",
+   "parallel_tool_calls",
+   "reasoning",
+   "store",
+   "include",
+   "prompt_cache_key",
+   "text",
+   "client_metadata"
+  ],
+  "model": "gpt-5.5",
+  "tools": [
+   {
+    "type": "function",
+    "name": "exec_command"
+   },
+   {
+    "type": "function",
+    "name": "write_stdin"
+   },
+   {
+    "type": "function",
+    "name": "request_user_input"
+   },
+   {
+    "type": "custom",
+    "name": "apply_patch"
+   },
+   {
+    "type": "function",
+    "name": "view_image"
+   },
+   {
+    "type": "function",
+    "name": "get_goal"
+   },
+   {
+    "type": "function",
+    "name": "create_goal"
+   },
+   {
+    "type": "function",
+    "name": "update_goal"
+   },
+   {
+    "type": "tool_search",
+    "description": "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n- Multi-agent tools: Spawn and manage sub-agents.\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`."
+   },
+   {
+    "type": "web_search"
+   }
+  ],
+  "searched": [],
+  "outputs": [],
+  "calls": []
+ }
+]

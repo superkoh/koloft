@@ -1,0 +1,19 @@
+worktree <lab>/repo
+HEAD 538b711a4937b80e50c71d0885ce9f3e5d74e2f7
+branch refs/heads/feature
+
+worktree <lab>/codex-home/worktrees/0e31/repo
+HEAD 733afa1747d1109aa25d5aca9b85732630833d42
+detached
+
+worktree <lab>/codex-home/worktrees/816c/repo
+HEAD 733afa1747d1109aa25d5aca9b85732630833d42
+detached
+
+
+--- dirs under HOME with "worktree" in the path ---
+<lab>/codex-home/worktrees
+<lab>/codex-home/worktrees/0e31
+<lab>/codex-home/worktrees/0e31/repo
+<lab>/codex-home/worktrees/816c
+<lab>/codex-home/worktrees/816c/repo
