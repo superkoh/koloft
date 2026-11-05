@@ -2,6 +2,7 @@ import os from 'os'
 
 const ESC = '\x1b'
 const BEL = '\x07'
+const OSC_START = `${ESC}]`
 
 export const OSC_CARRY_MAX = 4096
 
@@ -35,6 +36,7 @@ export class OscBodies {
   constructor(private readonly keepHeadOfLongBodies = false) {}
 
   push(chunk: string): string[] {
+    if (!this.carry && !chunk.includes(OSC_START) && !chunk.endsWith(ESC)) return []
     const s = this.carry + chunk
     const headOnly = this.carryIsHeadOnly
     this.carry = ''

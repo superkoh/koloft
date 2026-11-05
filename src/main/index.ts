@@ -3318,8 +3318,8 @@ app.whenReady().then(() => {
     butler: () => butler
   })
   ptyMgr.on('exit', (e) => {
-    claudeDialogs.forget(e.id)
     const exited = ptyMgr.get(e.id)
+    if (!exited?.alive) claudeDialogs.forget(e.id)
     // CC§12 CODEX§5 MUSE§1 AGY§1
     const unexpected =
       !e.endedByKoloft &&
@@ -3417,10 +3417,7 @@ app.whenReady().then(() => {
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
-    if (ask && isAskedCall(ask, call)) {
-      claudeAsks.delete(tabId)
-      koloftInbox.askEnded(tabId)
-    }
+    if (ask && isAskedCall(ask, call)) askEnded(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })

@@ -263,13 +263,16 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   return fail(YES_OR_NO_BY_KEYS)
 }
 
-export const TYPED_AS_KEYS = { typedAsKeys: true } as const
+export interface SentAnswer {
+  error?: string
+  watch?: boolean
+}
 
 const ANSWERED_WITHOUT_RUNNING = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 // CC§14
-export function claudeResultComesAtOnce(p: AskPayload, keys: string[]): boolean {
-  return ANSWERED_WITHOUT_RUNNING.has(p.tool_name ?? '') || keys[0] === ESC
+export function claudeResultComesAtOnce(p: AskPayload, reply: string): boolean {
+  return ANSWERED_WITHOUT_RUNNING.has(p.tool_name ?? '') || !YES.test(reply.trim())
 }
 
 export function approvalDetail(a: CodexApproval): string | undefined {

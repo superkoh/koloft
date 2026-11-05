@@ -14,9 +14,10 @@ import {
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type Question
+  type Question,
+  type SentAnswer
 } from './discord/dialog'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, SHOWS_NO_DIALOG, type SentAnswer } from './discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, SHOWS_NO_DIALOG } from './discord/relay'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
@@ -318,7 +319,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 export class KoloftInbox {
   private building = new Set<string>()
   private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
-  private answering = new Map<string, (taken: boolean) => void>()
+  private answering = new Map<string, Set<(taken: boolean) => void>>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
@@ -428,29 +429,30 @@ export class KoloftInbox {
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
     }
-    const taken = this.answerTaken(live.tabId)
     const sent = await this.d.answer(live.tabId, reply)
-    if (!sent.watch) this.answering.get(live.tabId)?.(sent.error === undefined)
     if (sent.error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (sent.error !== undefined) return { ok: false, why: sent.error }
-    if (!(await taken)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
+    if (sent.watch && !(await this.answerTaken(live.tabId)))
+      return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
   askEnded(tabId: string): void {
-    this.answering.get(tabId)?.(true)
+    for (const settle of this.answering.get(tabId) ?? []) settle(true)
   }
 
   // CC§14 CODEX§3 MUSE§11 AGY§14
   private answerTaken(tabId: string): Promise<boolean> {
     return new Promise((resolve) => {
+      const waiting = this.answering.get(tabId) ?? new Set()
       const settle = (took: boolean): void => {
         clearTimeout(timer)
-        if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
+        waiting.delete(settle)
+        if (!waiting.size) this.answering.delete(tabId)
         resolve(took)
       }
       const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-      this.answering.set(tabId, settle)
+      this.answering.set(tabId, waiting.add(settle))
     })
   }
 

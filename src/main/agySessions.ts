@@ -100,10 +100,10 @@ import {
   codexKeyFor,
   labelsOf,
   questionAnswers,
-  TYPED_AS_KEYS,
   type CodexApproval,
   type CodexQuestion,
-  type Question
+  type Question,
+  type SentAnswer
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
@@ -1399,10 +1399,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§14 AGY§16 AGY§19
-  async answer(
-    tabId: string,
-    reply: string
-  ): Promise<string | undefined | false | typeof TYPED_AS_KEYS> {
+  async answer(tabId: string, reply: string): Promise<SentAnswer | false> {
     const run = this.runs.get(tabId)
     const ask = run?.waiting
     const id = run?.info?.nativeSessionId
@@ -1418,16 +1415,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           : false
       if (!viaApi) return false
       run.waiting = undefined
-      return undefined
+      return {}
     }
     if (!ask.approval) return false
     const key = codexKeyFor(reply)
-    if (!key) return 'an Antigravity approval takes yes or no.'
+    if (!key) return { error: 'an Antigravity approval takes yes or no.' }
     const yes = key === 'y'
     run.waiting = undefined
     if (ask.plan) {
       await this.deliverText(run, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
-      return undefined
+      return {}
     }
     const viaApi = ask.pending
       ? await run.api?.allow(id, ask.pending, yes).then(
@@ -1435,10 +1432,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           () => false
         )
       : false
-    if (viaApi) return undefined
+    if (viaApi) return {}
     const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
     this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
-    return TYPED_AS_KEYS
+    return { watch: true }
   }
 
   // AGY§15 AGY§16

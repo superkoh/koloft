@@ -53,7 +53,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     askOf: async () => twoQuestions,
     answer: async (tabId, reply) => {
       answered.push([tabId, reply])
-      queueMicrotask(() => koloft.askEnded(tabId))
+      setTimeout(() => koloft.askEnded(tabId), 0)
       return { watch: true }
     },
     butlerSide: () => false,
@@ -227,6 +227,17 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
       const result = w.koloft.answer('s-t1', pressRed)
       await vi.advanceTimersByTimeAsync(10_000)
       expect(await result).toEqual({ ok: true })
+    })
+
+    it('two answers waiting on one tab both count once the session shows it took them', async () => {
+      const w = world({ answer: async () => ({ watch: true }) })
+      w.mark([asking])
+      const first = w.koloft.answer('s-t1', { pick: 'yes' })
+      const second = w.koloft.answer('s-t1', pressRed)
+      await vi.advanceTimersByTimeAsync(1)
+      w.koloft.askEnded('t1')
+      expect(await first).toEqual({ ok: true })
+      expect(await second).toEqual({ ok: true })
     })
 
     it('an answer the session took in place, not as keys, counts at once', async () => {

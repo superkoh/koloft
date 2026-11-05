@@ -1523,22 +1523,17 @@ function handleLine(line) {
   if (text.startsWith('/later ')) {
     const later = text.slice('/later '.length)
     const marker = path.join(home, 'go-later')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(marker).then(() => {
       fs.rmSync(marker, { force: true })
       handleLine(later)
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
     return
   }
   if (text.startsWith('/open-later ')) {
     const target = text.slice('/open-later '.length).trim()
     if (!target) return void process.stdout.write('> ')
-    const marker = path.join(home, 'go-open')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(path.join(home, 'go-open')).then(() => {
       try {
         cp.execFileSync('open', [target], {
           cwd,
@@ -1546,7 +1541,7 @@ function handleLine(line) {
           env: openEnvRoutingPastShimToRecordingFakeOpen()
         })
       } catch {}
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed open ${target}\r\n> `)
     return
   }
