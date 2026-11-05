@@ -6323,6 +6323,9 @@ function registerIpc(): void {
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
+  ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
+    if (typeof text === 'string' && text) clipboard.writeText(text)
+  })
   // PLATFORM§21
   ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)

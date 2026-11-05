@@ -128,7 +128,7 @@ import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePi
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
-import { hostOf } from '@shared/remoteKey'
+import { hostOf, isRemoteKey } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
 import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
@@ -1746,6 +1746,7 @@ export default function App(): JSX.Element {
                           scrollbar={false}
                           focusSignal={tuiFocus}
                           maxCols={CENTER_TERMINAL_MAX_COLS}
+                          copiesToClipboard={isRemoteKey(t.cwd)}
                         />
                       </div>
                     ),
@@ -1763,6 +1764,7 @@ export default function App(): JSX.Element {
                         active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                         scrollbar={false}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
+                        copiesToClipboard={isRemoteKey(t.cwd)}
                         onUserInput={
                           isSessionKind(t.kind)
                             ? () => window.api.sessions.noteActivity(t.id)

@@ -713,6 +713,15 @@ server of the opening note and with `--provider echo`; October 2026.
   alone exits 125, "invalid private Linux invocation markers"), so neither a system
   `bwrap` nor muse's copy can be run as a check. Not probed yet: an AppArmor profile
   for muse's binary, and whether it makes muse's sandbox start.
+- **A copy reaches the Mac only as OSC 52.** The 1.4.11 Linux binary holds `pbcopy`,
+  `wl-copy`, `tmux load-buffer -w` and an OSC 52 sequence wrapped for tmux passthrough
+  (`]52;c;` next to `Ptmux;`); a machine with no display has none of the system tools,
+  so only the escape code and tmux's own `load-buffer -w` can reach the terminal
+  (read from `strings` of `muse-bin-1.4.11-R6667.1` in the `koloft-muse-probe-1411`
+  image, 2026-11-05). Run: that muse on the echo model, in a Koloft tab on the Docker lab
+  machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
+  `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
+  back; 2026-11-05).
 
 ## §18 MCP servers and a project's instruction files
 
