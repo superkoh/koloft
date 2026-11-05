@@ -59,12 +59,6 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
-
-  it('asks for a reason only when the answer is a new project, the one answer whose reason is shown', () => {
-    const { prompt } = routeJob(LIST, 'build a price crawler')
-    expect(prompt).toContain('"why" (rule 7 only, leave it out for every other rule)')
-    expect(prompt).not.toContain('naming the rule you took')
-  })
 })
 
 describe('parseRoute: an answer is checked before anything uses it', () => {

@@ -40,6 +40,8 @@ const TITLE_MAX_CHARS = 40
 const WHY_MAX_CHARS = 200
 // CODEX§31
 const CHECK_IN_RULE = 1
+// CODEX§31
+const NEW_PROJECT_RULE = 7
 
 const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person typed.'
 
@@ -96,7 +98,7 @@ ${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace:
 4. It only wants to open or go to one existing session, and one listed session title says the same thing it names (never a guess): {"hand": "session", "session": "<session ref>"}
 5. It wants something done with existing sessions (continue or resume one, stop, restart, check on or message them), even when it names one: {"hand": "koloft"}
 6. It is work to change, build, look into or explain something inside a project (also a question or bug report about how that project behaves, like "why does X in <folder> not show"), and exactly one workspace fits (by its folder name, what it is about, or one of its recent session titles): {"workspace": <id>, "worktree": <see below>}
-7. It wants something new built (a new program, tool or project) that belongs to no workspace: {"workspace": null, "machine": <"${LOCAL_MACHINE}", or the machine the person named>, "newFolder": <a short kebab-case English folder name, a name only, never a path>}
+${NEW_PROJECT_RULE}. It wants something new built (a new program, tool or project) that belongs to no workspace: {"workspace": null, "machine": <"${LOCAL_MACHINE}", or the machine the person named>, "newFolder": <a short kebab-case English folder name, a name only, never a path>}
 8. Anything else: a question not about one project, a translation, something to write that no workspace is for, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}
 
 "worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, and never in a worktree that already exists, so for one:
@@ -105,7 +107,7 @@ ${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace:
 
 Reply with that one JSON object and nothing else, adding to it:
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "why" (rule 7 only, leave it out for every other rule): <one short sentence in the language of the message>,
+ "why" (rule ${NEW_PROJECT_RULE} only, leave it out for every other rule): <one short sentence in the language of the message>,
  "rule": <the number of the rule you took>`
   return { system: ROUTE_SYSTEM, prompt }
 }
