@@ -1435,7 +1435,7 @@ function handleLine(line) {
     const command = text.slice('/run '.length).trim()
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
     const meta = usageMeta()
-    const toolUseId = `toolu_run_${process.pid}_${meta.id}`
+    const toolUseId = `toolu_run_${require('crypto').randomUUID()}`
     const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: toolUseId, cwd }
     append([
       {
