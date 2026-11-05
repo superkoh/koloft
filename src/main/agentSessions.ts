@@ -1580,6 +1580,8 @@ export function sessionVerb(d: SessionVerbDeps): {
           worktree,
           model: spec.model,
           permission,
+          // ADR-0026
+          trustFolder: !worktree && d.pinnedWorkspaces().some((w) => w.path === workspace),
           firstPrompt: spec.task
         })
         .catch(() => null)

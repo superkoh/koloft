@@ -49,10 +49,6 @@ const SORTS: [InboxSort, string, string][] = [
   ['newest', 'Newest', 'Newest first'],
   ['oldest', 'Oldest', 'Oldest first']
 ]
-const WHERE_FILTERS: [string, string][] = [
-  ['workspace', 'Workspace'],
-  ['machine', 'Machine']
-]
 const COUNTDOWN_TICK_MS = 250
 const FLY_MS = 620
 const SLIDE_MS = 380
@@ -404,7 +400,10 @@ export function InboxPage(): JSX.Element {
               )}
             </span>
             {filterPill('source', 'Source')}
-            {WHERE_FILTERS.map(([name, label]) => filterPill(name, label))}
+            {/* ADR-0049 */}
+            {[...new Set(snapshot.cards.flatMap((c) => Object.keys(c.where)))].map((key) =>
+              filterPill(key, key[0].toUpperCase() + key.slice(1))
+            )}
           </div>
         </div>
         <div className="ibx-list">

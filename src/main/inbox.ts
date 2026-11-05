@@ -90,6 +90,7 @@ function fail(message: string): never {
   throw new InboxError(message)
 }
 
+// ADR-0049
 export class Inbox {
   private sources = new Map<string, Source>()
   private cards = new Map<string, InboxCard>()

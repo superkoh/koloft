@@ -225,22 +225,26 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
         },
         then: { done: { state: 'closed', status: 'Handed to a new session' } }
       },
-      {
-        id: 'close',
-        label: remote ? 'Stop it for good' : 'Close it for good',
-        style: 'danger',
-        confirm: remote
-          ? 'It starts once more only to wrap up, then stops. It stays in the sidebar.'
-          : 'It starts once more only to wrap up, then closes its tab and deletes its worktree and branch.',
-        busyText: 'Telling it to wrap up…',
-        run: { type: 'session', session: 'card', message: CLOSE_YOURSELF },
-        then: { done: { state: 'in-progress', status: 'Closing it' } }
-      }
+      ...(remote
+        ? []
+        : [
+            {
+              id: 'close',
+              label: 'Close it for good',
+              style: 'danger' as const,
+              confirm:
+                'It starts once more only to wrap up, then closes its tab and deletes its worktree and branch.',
+              busyText: 'Telling it to wrap up…',
+              run: { type: 'session' as const, session: 'card', message: CLOSE_YOURSELF },
+              then: { done: { state: 'in-progress' as const, status: 'Closing it' } }
+            }
+          ])
     ],
     links: [{ label: 'Open session', to: { type: 'session', session: s.sessionId } }]
   }
 }
 
+// ADR-0049
 export class KoloftInbox {
   private building = new Set<string>()
 

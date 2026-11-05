@@ -2,14 +2,23 @@ import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, type E2EEnv } from './helpers/env'
+import {
+  installCodex,
+  installMuse,
+  museCalls,
+  museSaid,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
+  killSession,
   newSessionInWith,
   runIn,
   startSessionIn,
   terminalText,
   waitBooted,
+  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
@@ -28,7 +37,7 @@ async function openInbox(page: Page): Promise<void> {
 
 async function doneStatus(page: Page, text: string | RegExp) {
   await page.locator('.ibx-seg button[data-tab="closed"]').click()
-  return inboxCard(page, text).locator('.ibx-dstat')
+  return inboxCard(page, text).first().locator('.ibx-dstat')
 }
 
 function typeInto(page: Page, tabId: string, line: string): Promise<void> {
@@ -196,4 +205,97 @@ test('a command a Codex session wants to run is a card in the Inbox, and Allow t
   } finally {
     await quitAndClose(app)
   }
+})
+
+// MUSE§5
+test('a command a Muse session wants to run is a card in the Inbox, and Allow there runs it', async ({
+  env
+}) => {
+  installMuse(env)
+  trustInMuse(env, env.workspaces.a)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', 'Muse')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    const museId = museCalls(env)[0].sessionId
+    const museTab = (await page.evaluate(() => window.api.sessions.list())).find(
+      (s) => s.backendId === 'muse'
+    )!.tabId as string
+    await typeInto(page, museTab, '/approve')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await inboxCard(page, 'wants to run a command')
+      .locator('.ibx-btn', { hasText: 'Allow' })
+      .click()
+    await expect
+      .poll(() => museSaid(env, museId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .toContain('Ran: ls -la')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+test('a session on another machine posts a card with koloft inbox, tagged with that machine', async ({
+  env
+}) => {
+  installFakeRemote(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await addRemoteWorkspace(page, env)
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    const row = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    const card = JSON.stringify({ title: 'Built on the machine', level: 'low' })
+    await runIn(page, centerTerm(page), `/koloft inbox add built -- '${card}'`)
+    await openInbox(page)
+    const shown = inboxCard(page, 'Built on the machine')
+    await expect(shown.locator('.ibx-lvp')).toHaveText('Low', { timeout: 30_000 })
+    await expect(shown.locator('.ibx-tag')).toContainText(/Koloft · \S+ · \S+/)
+    await expect(page.locator('.ibx-entry .ibx-count')).toHaveCount(0)
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+test('a session that stopped unexpectedly is a card; Start it again resumes it in its one row and tells it to carry on, and Hand to a new session starts a session with the owner’s note', async ({
+  page,
+  env
+}) => {
+  test.setTimeout(150_000)
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 25_000 })
+  const [first] = await waitForCalls(env, 1)
+  killSession(first.pid, env)
+  await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+  await openInbox(page)
+  const card = inboxCard(page, 'stopped unexpectedly')
+  await card.locator('.ibx-btn', { hasText: 'Start it again' }).click()
+  await expect
+    .poll(() => peerMessages(env), { timeout: 60_000 })
+    .toContain('Carry on where you left off')
+  await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+  await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText('Restarted')
+
+  const [, again] = await waitForCalls(env, 2)
+  killSession(again.pid, env)
+  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+  await page.locator('.ibx-seg button[data-tab="needs-you"]').click()
+  const next = inboxCard(page, 'stopped unexpectedly')
+  await next.locator('.ibx-input').fill('finish the docs')
+  await next.locator('.ibx-btn', { hasText: 'Hand to a new session' }).click()
+  const calls = await waitForCalls(env, 3, 60_000)
+  expect(calls[2].firstPrompt ?? calls[2].argv.join(' ')).toContain(
+    'Pick up the work of the session'
+  )
+  expect(calls[2].firstPrompt ?? calls[2].argv.join(' ')).toContain('«finish the docs»')
+  await expect(await doneStatus(page, 'stopped unexpectedly')).toContainText(
+    'Handed to a new session'
+  )
 })
