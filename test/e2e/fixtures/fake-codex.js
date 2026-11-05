@@ -820,12 +820,9 @@ async function startTui() {
     console.error('Codex fixture startup failure')
     process.exit(Number(read('fake-codex-exit')) || 1)
   }
-  // PLATFORM§35
-  if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)
-    fs.writeFileSync(process.env.KOLOFT_FAKE_TMUX_RAW_MARK, '')
+  process.stdin.setRawMode?.(true)
   const resume = argv.indexOf('resume')
   if (resume >= 0 && flag('fake-codex-confirm-resume')) {
-    process.stdin.setRawMode?.(true)
     process.stdin.resume()
     process.stdout.write('Resume ' + argv[resume + 1] + ': press Enter to continue\r\n')
     await new Promise((resolve) => {
@@ -1004,7 +1001,6 @@ async function startTui() {
         resume >= 0 ? 'thread/resume' : 'thread/start',
         resume >= 0 ? { threadId: argv[resume + 1], cwd } : { cwd }
       )
-      process.stdin.setRawMode?.(true)
       process.stdin.resume()
       const typeIn = (part) => {
         for (const ch of part) {

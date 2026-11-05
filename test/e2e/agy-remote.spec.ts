@@ -126,7 +126,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
       const { id } = await boundRemoteSession(page, 'agy')
       await expect
-        .poll(() => agyTranscriptOf(env, id, machineHome(env)), { timeout: 60_000 })
+        .poll(() => agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini')), {
+          timeout: 60_000
+        })
         .toContain(JSON.stringify(`Answer to: ${TWO_LINE_PROMPT}`).slice(1, -1))
     } finally {
       await quitAndClose(app)

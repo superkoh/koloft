@@ -329,10 +329,13 @@ export function ownersGemini(env: E2EEnv): string {
   return path.join(env.home, '.gemini')
 }
 
-export function agyTranscriptOf(env: E2EEnv, conversationId: string, home = env.home): string {
+export function agyTranscriptOf(
+  env: E2EEnv,
+  conversationId: string,
+  geminiDir = ownersGemini(env)
+): string {
   const file = path.join(
-    home,
-    '.gemini',
+    geminiDir,
     'antigravity-cli',
     'brain',
     conversationId,
