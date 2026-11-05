@@ -182,7 +182,7 @@ export function CommandPalette({
       onRouted(
         typed,
         backend,
-        pin && { title: '', why: '', kind: 'workspace', path: pin.wsPath, worktree: null }
+        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null }
       )
       return
     }

@@ -1,5 +1,5 @@
 import type { MarkdownIt, StateCore, Token } from 'markdown-it'
-import { escapeHtml as esc } from './escape'
+import { escapeHtml as esc } from '@shared/escapeHtml'
 
 const FILE_SUFFIXES_KEPT_APART_FROM_HIGHLIGHTER_LANGS = new Set([
   'ts',

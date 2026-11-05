@@ -11,12 +11,13 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { BYTES_PER_FILE, MB, type DiscordFile } from './discord/link'
+import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
 import type { PagePictures } from './discord/pageShot'
+import { picturesSent, tooLarge } from './discord/phoneCopy'
 
 export const DISCORD_USAGE =
-  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
+  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
 export const NOT_A_PAGE =
   'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
@@ -34,6 +35,19 @@ export interface DiscordVerbDeps {
   reload(tabId: string): Promise<string>
   invite(): string | null
   bindNewChannel(): Promise<ConductorSaveResult>
+  openRoom(ref: string): Promise<AgentReply>
+}
+
+function thread(
+  d: DiscordVerbDeps,
+  rest: string[],
+  tabId: string
+): Promise<AgentReply> | AgentReply {
+  const [verb, ...words] = rest
+  const ref = words.join(' ').trim()
+  if (verb !== 'open' || !ref) return refused(DISCORD_USAGE, EXIT_USAGE)
+  if (!d.channelOf(tabId)) return refused(NOT_THE_BUTLER)
+  return d.openRoom(ref)
 }
 
 async function send(
@@ -58,8 +72,7 @@ async function send(
     } catch {
       return refused(`koloft: cannot read ${name}.`)
     }
-    if (size > BYTES_PER_FILE)
-      return refused(`koloft: File too large (${(size / MB).toFixed(1)} MB); the limit is 20 MB.`)
+    if (size > BYTES_PER_FILE) return refused(`koloft: ${tooLarge(size)}`)
     files.push({ name: path.basename(full), data: fs.readFileSync(full) })
   }
   await d.send(channelId, files, text)
@@ -88,23 +101,9 @@ async function shot(
   const url = pageUrl(before[0], cwd)
   if (!url) return refused(NOT_A_PAGE)
   if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
-  const { files, shown, page } = await d.shoot(url)
-  await d.send(channelId, files, text)
-  const sent =
-    files.length === 1
-      ? 'Sent a picture of the page to Discord.'
-      : `Sent the page to Discord as ${files.length} pictures, top to bottom.`
-  return answered(
-    [
-      sent,
-      shown.height < page.height &&
-        `The page is ${page.height} pixels tall; the pictures stop at ${shown.height}.`,
-      shown.width < page.width &&
-        `The page is ${page.width} pixels wide; the pictures show its left ${shown.width}.`
-    ]
-      .filter(Boolean)
-      .join(' ')
-  )
+  const pictures = await d.shoot(url)
+  await d.send(channelId, pictures.files, text)
+  return answered(picturesSent(pictures, 'Discord'))
 }
 
 async function setup(
@@ -135,6 +134,7 @@ export function discordVerb(d: DiscordVerbDeps): AgentVerb {
     const [sub, ...rest] = args
     if (sub === 'send') return send(d, rest, caller.tabId, caller.cwd)
     if (sub === 'shot') return shot(d, rest, caller.tabId, caller.cwd)
+    if (sub === 'thread') return thread(d, rest, caller.tabId)
     return setup(d, sub, rest, caller.tabId)
   }
 }

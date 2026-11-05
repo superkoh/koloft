@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import type { ParsedDiff } from '../inlineDiff'
+import type { ParsedDiff } from '@shared/unifiedDiff'
 import { highlightLines, langForPath } from '../highlight'
 import '../inlineDiff.css'
 

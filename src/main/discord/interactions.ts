@@ -17,7 +17,7 @@ const REPLY = 4
 export const SLASH_COMMANDS: SlashCommandSpec[] = [
   {
     name: 'run',
-    description: 'Type a slash command into your butler',
+    description: 'Type a slash command into this room’s session, or into your butler',
     options: [
       {
         type: STRING_OPTION,
@@ -29,11 +29,11 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
   },
   {
     name: 'clear',
-    description: 'Start a new conversation with your butler (/clear)'
+    description: 'Start a new conversation with this room’s session, or your butler (/clear)'
   },
   {
     name: 'compact',
-    description: 'Compact your butler’s conversation (/compact)',
+    description: 'Compact the conversation of this room’s session, or your butler (/compact)',
     options: [{ type: STRING_OPTION, name: 'focus', description: 'What the summary should keep' }]
   }
 ]
@@ -51,7 +51,8 @@ function commandTextOf(i: DiscordInteraction): string {
 
 export interface InteractionDeps {
   owner(): string | undefined
-  run(text: string): Promise<string>
+  ownerWrote(): void
+  run(text: string, channelId: string): Promise<string>
   press(i: DiscordInteraction): Promise<void>
   submit(i: DiscordInteraction): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
@@ -61,16 +62,25 @@ export class Interactions {
   constructor(private d: InteractionDeps) {}
 
   async handle(i: DiscordInteraction): Promise<void> {
+    const fromOwner = i.userId === this.d.owner()
+    try {
+      await this.dispatch(i, fromOwner)
+    } finally {
+      if (fromOwner) this.d.ownerWrote()
+    }
+  }
+
+  private async dispatch(i: DiscordInteraction, fromOwner: boolean): Promise<void> {
     if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
     if (i.type === FORM_SUBMIT_INTERACTION) return this.d.submit(i).catch(() => undefined)
     if (i.type !== COMMAND_INTERACTION) return
-    if (i.userId !== this.d.owner()) return this.reply(i, privately(ONLY_THE_OWNER))
+    if (!fromOwner) return this.reply(i, privately(ONLY_THE_OWNER))
     const text = commandTextOf(i)
     const problem = slashCommandProblem(text)
     if (problem) return this.reply(i, privately(didNotRun(problem)))
     let content: string
     try {
-      content = await this.d.run(text)
+      content = await this.d.run(text, i.channelId)
     } catch (error) {
       content = `⚠ ${errorText(error)}`
     }

@@ -3,9 +3,10 @@ import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { remoteNoticeFile } from './hooks'
+import { remoteDiscordSaidFile, remoteNoticeFile } from './hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 import { skillsFromMachineLine } from './remote/launch'
+import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -325,6 +326,7 @@ export const REMOTE_MUSE_HOOK_SH = museHookScript(
   `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
 event="$2"
 said="$HOME/.koloft/tabs/$1.said"
+discord_said="${remoteDiscordSaidFile('$1')}"
 notice="${remoteNoticeFile('$1')}"`,
   `p="$(mktemp 2>/dev/null)" || exit 0
 printf '{"t":"hook","event":"%s","input":%s}\\n' "$event" "$input" > "$p" && cat "$p" >> "$f"
@@ -366,9 +368,16 @@ export interface MuseRunSpec {
   trust: string[]
   trustIf?: string
   koloftSkill: boolean
+  sandboxed: boolean
 }
 
 const MUSE_WRITES_THROUGH_THESE_LINKS = ['settings.json', 'trust.json']
+
+// MUSE§1 MUSE§17
+const SANDBOX_CHECK = `  if command -v unshare >/dev/null 2>&1 && ! unshare -Ur true >/dev/null 2>&1; then
+    printf '%s\\n' ${shq(MUSE_SANDBOX_CANNOT_START)}
+  fi
+`
 
 // MUSE§2 MUSE§13 MUSE§16 MUSE§17
 export function museRunLines(s: MuseRunSpec): string {
@@ -377,7 +386,7 @@ export function museRunLines(s: MuseRunSpec): string {
     ...(s.trustIf ? ['--trust-if', s.trustIf] : [])
   ]
   // PLATFORM§35
-  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
+  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}${s.sandboxed ? SANDBOX_CHECK : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
   A="$HOME/.koloft/muse-homes/"${shq(s.account)}
   mkdir -p "$A/muse" "$O" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"

@@ -63,6 +63,7 @@ import {
   mergeAgySettings,
   mergedAgyHooks,
   mergedAgySettings,
+  ownersPlaywrightMcp,
   ownersTitleCommand,
   prepareAgyHome,
   titleCommandIn,
@@ -152,6 +153,7 @@ export interface AgyMachine {
   agyConversations(): Promise<SummaryRow[]>
   agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
 
@@ -625,7 +627,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey,
-      allowKoloft: !!agent
+      allowKoloft: !!agent,
+      playwrightServers: ownersPlaywrightMcp(gemini),
+      workbenchBrowser: !!endpoint
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -678,6 +682,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ANT_ACCOUNT: pick.account,
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
+          // AGY§30
           ...browserControlEnv(tabId, endpoint),
           ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
         },
@@ -727,7 +732,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
-    if (resumeId && remote.gone(where.host, resumeId) && (await machine.agyHeldElsewhere(resumeId)))
+    if (
+      resumeId &&
+      (remote.gone(where.host, resumeId) || (await machine.endedByKoloft(resumeId))) &&
+      (await machine.agyHeldElsewhere(resumeId))
+    )
       throw new Error(HELD_ELSEWHERE)
     const [apiKey, config] = await Promise.all([
       this.deps.apiKeyOf(pick.account),
@@ -752,7 +761,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
       apiKey: !!apiKey,
-      allowKoloft: agentTools
+      allowKoloft: agentTools,
+      playwrightServers: [],
+      workbenchBrowser: false
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,

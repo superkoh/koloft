@@ -15,12 +15,14 @@ import {
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { museSessionKey } from '../../src/main/sessionStore'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
+import { MUSE_HELD_SH } from '../../src/main/museRemote'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
+import { museAccountEnv } from '../../src/main/museAccounts'
 
 const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
@@ -288,6 +290,32 @@ describe('MuseSessions launch', () => {
       PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     })
     expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
+  })
+
+  // ADR-0048 MUSE§21
+  it("points the owner's Playwright MCP at the Workbench browser, empty in a tab without it so the server still starts, and lets its tools run without an ask only in a tab that has that browser", async () => {
+    const acct = path.join(home, 'acct')
+    picked = { account: 'work', env: museAccountEnv(acct) }
+    fs.mkdirSync(path.join(home, '.config', 'muse'), { recursive: true })
+    fs.writeFileSync(
+      path.join(home, '.config', 'muse', 'settings.json'),
+      JSON.stringify({ schema_version: 1, mcpServers: { pw: { command: 'playwright-mcp' } } })
+    )
+    const inAccount = (name: string): Record<string, unknown> => {
+      const file = path.join(acct, 'muse', name)
+      return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
+    }
+    endpoint = 'ws://127.0.0.1:9/cdp/x'
+    await launch()
+    expect(inAccount('settings.json').mcpServers).toMatchObject({
+      pw: { env: { PLAYWRIGHT_MCP_CDP_ENDPOINT: '${PLAYWRIGHT_MCP_CDP_ENDPOINT}' } }
+    })
+    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(endpoint)
+    expect(JSON.stringify(inAccount('approval-policy.json'))).toContain('mcp__pw__browser_navigate')
+    endpoint = ''
+    await launch()
+    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
+    expect(inAccount('approval-policy.json').rules).toEqual([])
   })
 
   it("writes the folder into muse's own trust list when Koloft was told to trust it", async () => {
@@ -899,6 +927,7 @@ describe('a Muse session on a remote machine', () => {
   let attach: boolean
   let killed: string[]
   let gone: boolean
+  let heldThere: boolean
   let reachable: boolean
   let nameThere: string | null
 
@@ -909,6 +938,7 @@ describe('a Muse session on a remote machine', () => {
     attach = false
     killed = []
     gone = false
+    heldThere = false
     reachable = true
     nameThere = null
     const acct = path.join(home, 'acct')
@@ -932,7 +962,12 @@ describe('a Muse session on a remote machine', () => {
         killed.push(name)
         return undefined
       },
-      runScript: async (script) => (script === TAB_TMUX_NAME_SH ? nameThere : null)
+      endedByKoloft: async (sid) => killed.includes(`k-${sid}`),
+      runScript: async (script) => {
+        if (script === TAB_TMUX_NAME_SH) return nameThere
+        if (script === MUSE_HELD_SH) return heldThere ? '' : null
+        return null
+      }
     }
     sessions = new MuseSessions(path.join(home, 'remote-sessions.json'), {
       ...sessions['deps'],
@@ -1156,6 +1191,20 @@ describe('a Muse session on a remote machine', () => {
     expect(events('prompt')).toHaveLength(0)
     mirror('pty-old', { t: 'state', seq: 3, state: 'done', kind: null })
     await vi.waitFor(() => expect(events('stop')).toHaveLength(1))
+  })
+
+  it('a session whose tab Koloft just closed counts as running elsewhere when another muse on the machine holds it, before the next pull drops it from the live tmux list', async () => {
+    onMachine()
+    const id = await boundRemote()
+    await sessions.stop(id)
+    heldThere = true
+    expect(await sessions.runningElsewhere(museSessionKey(A, 'box'))).toBe(true)
+  })
+
+  it('a session the last pull still saw in its tmux, and Koloft never ended, is not running elsewhere', async () => {
+    onMachine()
+    heldThere = true
+    expect(await sessions.runningElsewhere(museSessionKey(A, 'box'))).toBe(false)
   })
 
   it('closing the tab ends the tmux session on the machine under its bound name; quitting Koloft leaves it running', async () => {

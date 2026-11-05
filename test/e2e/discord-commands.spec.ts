@@ -97,7 +97,7 @@ async function connected(
 }
 
 test.describe('Discord slash commands: the owner runs /clear, /compact and any slash command in the butler, and the butler runs one in any session', () => {
-  test('D-CMD-1: Koloft registers /run, /clear and /compact, none of them naming a session; /run types a command into the butler and posts what it printed in its channel; /compact compacts the butler and posts Compacted; someone else is refused privately', async ({
+  test('D-CMD-1: Koloft registers /run, /clear and /compact, none of them naming a session: in the butler’s channel they go to the butler; /run types a command into the butler and posts what it printed in its channel; /compact compacts the butler and posts Compacted; someone else is refused privately', async ({
     env
   }) => {
     seedConductor(env)

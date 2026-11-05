@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
-import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkbenchPaneProps } from '../../src/renderer/src/components/WorkbenchPane'
 
+const { lagReactTasks, stopLaggingReactTasks, expectReactTasksLagged } =
+  await import('./helpers/reactTaskLag')
+
 const drawn: Record<string, number> = {}
 const guests: Record<string, { onLoading(loading: boolean): void }> = {}
+const ranInPage: string[] = []
+let pageFullscreen: (on: boolean) => void = () => {}
 
 function counting(name: string) {
   return () => {
@@ -43,6 +47,10 @@ vi.mock('../../src/renderer/src/components/BrowserGuest', async (orig) => ({
         canGoForward: () => false,
         isLoading: () => false,
         loadURL: () => Promise.resolve(),
+        executeJavaScript: (code: string) => {
+          ranInPage.push(code)
+          return Promise.resolve()
+        },
         findInPage: () => 0,
         stopFindInPage: () => {},
         addEventListener: () => {},
@@ -78,8 +86,21 @@ function anyApi(): unknown {
       })
   })
 }
-;(window as unknown as { api: unknown }).api = anyApi()
+const api = anyApi() as Record<string, unknown>
+const browserApi = new Proxy(api.browser as Record<string, unknown>, {
+  get: (b, k) =>
+    k === 'onFullscreen'
+      ? (cb: (on: boolean) => void) => {
+          pageFullscreen = cb
+          return () => {}
+        }
+      : b[k as string]
+})
+;(window as unknown as { api: unknown }).api = new Proxy(api, {
+  get: (t, k) => (k === 'browser' ? browserApi : t[k as string])
+})
 
+const { render, cleanup, act, fireEvent, waitFor } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
 const { WorkbenchPane } = await import('../../src/renderer/src/components/WorkbenchPane')
 
@@ -92,7 +113,10 @@ beforeAll(() => {
   }
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  stopLaggingReactTasks()
+  cleanup()
+})
 
 const tab = (id: string, kind: string, more: object = {}) => ({
   id,
@@ -124,7 +148,17 @@ const statesFor = (p: string) =>
 
 let openFind: () => void = () => {}
 
-function Panel({ p }: { p: string }) {
+function Panel({
+  p,
+  visible = true,
+  dialog = null,
+  onDialogAnswer
+}: {
+  p: string
+  visible?: boolean
+  dialog?: WorkbenchPaneProps['dialog']
+  onDialogAnswer?: WorkbenchPaneProps['onDialogAnswer']
+}) {
   const states = useRef(statesFor(p))
   const [shown, setShown] = useState(states.current)
   const [command, setCommand] = useState<WorkbenchPaneProps['command']>(null)
@@ -144,15 +178,15 @@ function Panel({ p }: { p: string }) {
       tabId={`pty-${p}-a`}
       states={shown}
       liveTabs={fixed.live}
-      visible
+      visible={visible}
       full={false}
       command={command}
-      dialog={null}
+      dialog={dialog}
       onUpdate={onUpdate}
       onEvicted={none}
       onExternalOpen={none}
       onCertProceed={none}
-      onDialogAnswer={none}
+      onDialogAnswer={onDialogAnswer ?? none}
       onToggleFull={none}
       panelFocus={0}
       onEscapeFellThrough={none}
@@ -168,11 +202,15 @@ function Panel({ p }: { p: string }) {
   )
 }
 
-async function panelOnFirstPage(p: string): Promise<HTMLElement> {
+function seedSession(p: string): void {
   useStore.setState({
     sessions: [{ tabId: `pty-${p}-a`, sessionId: `s-${p}-a`, updatedAt: 1 } as never],
     tabs: [{ id: `pty-${p}-a`, kind: 'claude', title: 'a', alive: true } as never]
   })
+}
+
+async function panelOnFirstPage(p: string): Promise<HTMLElement> {
+  seedSession(p)
   const { container } = render(<Panel p={p} />)
   for (const id of [`${p}-w2`, `${p}-f1`, `${p}-w1`]) {
     await act(async () => {
@@ -212,5 +250,46 @@ describe('WorkbenchPane: a busy tab bar or find bar redraws no tab body', () => 
       })
     }
     expect(tabBodies('wbfind')).toEqual(before)
+  })
+})
+
+describe('WorkbenchPane: a page’s dialog', () => {
+  it('while the Workbench is off screen, a page’s confirm takes neither focus nor Esc from the terminal; it takes both once the Workbench shows', () => {
+    const p = 'wbdialog'
+    seedSession(p)
+    const answers: unknown[] = []
+    const dialog = {
+      id: 'c-1',
+      kind: 'confirm',
+      origin: 'https://site.test',
+      message: 'Sure?'
+    } as const
+    const terminal = document.body.appendChild(document.createElement('textarea'))
+    try {
+      terminal.focus()
+      const props = { p, dialog, onDialogAnswer: (id: string) => answers.push(id) } as const
+      const { rerender, getByRole } = render(<Panel {...props} visible={false} />)
+      fireEvent.keyDown(terminal, { key: 'Escape' })
+      expect(document.activeElement).toBe(terminal)
+      expect(answers).toEqual([])
+
+      rerender(<Panel {...props} visible />)
+      expect(document.activeElement).toBe(getByRole('button', { name: 'Cancel' }))
+    } finally {
+      terminal.remove()
+    }
+  })
+})
+
+describe('WorkbenchPane page full screen', () => {
+  it('Esc pressed the moment the page goes full screen leaves it, even while React’s effects still lag the screen', async () => {
+    const container = await panelOnFirstPage('wbfull')
+    lagReactTasks()
+    ranInPage.length = 0
+    await Promise.resolve().then(() => pageFullscreen(true))
+    await waitFor(() => expect(container.querySelector('.wb-panel.pagefull')).not.toBeNull())
+    expectReactTasksLagged()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(ranInPage).toEqual([expect.stringContaining('exitFullscreen')])
   })
 })

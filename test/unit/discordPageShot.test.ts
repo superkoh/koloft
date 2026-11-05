@@ -21,4 +21,11 @@ describe('a page shot for Discord', () => {
   it('stops at ten pictures, the most one Discord message carries', () => {
     expect(pictureClips({ width: 1280, height: 200000 }, 2)).toHaveLength(10)
   })
+
+  it('cut for the phone, each picture is at most the look’s picture height, and there are at most its most pictures', () => {
+    const look = { pictureHeight: 1280, mostPictures: 9 }
+    expect(ys(pictureClips({ width: 640, height: 3000 }, 2, look))).toEqual([0, 1280, 2560])
+    expect(pictureClips({ width: 640, height: 3000 }, 2, look).at(-1)?.height).toBe(440)
+    expect(pictureClips({ width: 640, height: 100_000 }, 2, look)).toHaveLength(9)
+  })
 })

@@ -582,6 +582,71 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
   })
 })
 
+describe('WorkspaceManager: a session leaving its worktree', () => {
+  async function leftItsWorktree(removed: boolean): Promise<void> {
+    writeJsonl(repo, 'wt-1')
+    own('wt-1')
+    bindings.set('wt-1', 'tab-1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+    mgr.leavingWorktree('wt-1', 'tab-1')
+    await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
+    mgr.leftWorktree('wt-1', removed)
+    await mgr.whenScanned()
+  }
+
+  async function itsTabIsGone(): Promise<void> {
+    bindings.delete('wt-1')
+    mgr.onTrackerUpdate()
+    await mgr.whenScanned()
+  }
+
+  it('stays out after its tab ends with the worktree removed, while it still reads running and while it is still a member, until its SessionEnd drops it; a later resume lists it again', async () => {
+    await leftItsWorktree(true)
+    expect(latest(repo).rows).toEqual([])
+    await itsTabIsGone()
+    expect(latest(repo).rows).toEqual([])
+
+    mgr.dropOwnership('wt-1', 'claude ended (prompt_input_exit)')
+    await mgr.whenScanned()
+    mgr.adopt(['wt-1'])
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+  })
+
+  it('comes back as soon as another tab binds it', async () => {
+    await leftItsWorktree(true)
+    await itsTabIsGone()
+    bindings.set('wt-1', 'tab-2')
+    mgr.onTrackerUpdate()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
+  })
+
+  it('comes back as a cold member when its SessionEnd never drops it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      await leftItsWorktree(true)
+      await itsTabIsGone()
+      expect(latest(repo).rows).toEqual([])
+      vi.advanceTimersByTime(10_000)
+      await vi.waitFor(() =>
+        expect(latest(repo).rows).toMatchObject([{ id: 'wt-1', running: false }])
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('comes back as soon as its tab ends when the worktree was not removed', async () => {
+    await leftItsWorktree(false)
+    bindings.delete('wt-1')
+    mgr.onTrackerUpdate()
+    await vi.waitFor(() =>
+      expect(latest(repo).rows).toMatchObject([{ id: 'wt-1', running: false }])
+    )
+    expect(dropped).toEqual([])
+  })
+})
+
 describe('WorkspaceManager: pending launches', () => {
   it('holds a pending row until the session materializes, then swaps it in place', async () => {
     writeJsonl(repo, 'old-one')
@@ -1491,6 +1556,34 @@ describe('remote workspace: pending launches', () => {
       expect(latest(repo).rows.map((r) => r.id)).toEqual(['tab-local'])
       expect(latest(sameDirOnDevbox).rows.map((r) => r.id)).toEqual(['tab-remote'])
     })
+  })
+
+  it('a launch whose session id was picked before it ran shows only its Starting… row while the machine already reports that id running with a mirrored transcript, and only the session’s row once its tab binds', async () => {
+    layout.workspaces = [{ path: RKEY }]
+    const alive = new Set<string>()
+    mgr = remoteMgr({ remoteRunning: () => alive })
+    mgr.start()
+    mgr.launchStarted('tab-1', RPATH, undefined, 'devbox', 'picked-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['tab-1']))
+
+    alive.add('picked-1')
+    writeMirrorJsonl('picked-1')
+    await mgr.whenScanned()
+    expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['tab-1'])
+
+    bindings.set('picked-1', 'tab-1')
+    mgr.onSessionBound('picked-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['picked-1']))
+  })
+
+  it('a picked session id keeps its own row where its launch shows no Starting… row', async () => {
+    layout.workspaces = [{ path: RKEY }]
+    writeMirrorJsonl('picked-1')
+    mgr = remoteMgr({ remoteRunning: () => new Set(['picked-1']) })
+    mgr.start()
+    mgr.launchStarted('tab-1', '/home/koh/elsewhere', undefined, 'devbox', 'picked-1')
+    await mgr.whenScanned()
+    expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['picked-1'])
   })
 
   it('a launch started on the typed path before the first heartbeat keeps its pending row once the path resolves to the real one', async () => {

@@ -51,8 +51,10 @@ words are compared with every JSON escape and every ASCII sign and space taken o
 later CLI that escapes a sign Node does not cannot turn the owner's words into a flag
 (today both escape as Node does: CODEX§33, MUSE§9). The hook cannot tell typed text from
 a message, so `[Discord]` typed into those tabs is flagged too, where Claude takes it as
-typed. On another machine no relay writes the file, so every `[Discord]` is flagged
-there, as in a remote Claude tab. **Antigravity has no check**: only typing reaches it
+typed. For a tab on another machine the relay writes the id or the words into that
+machine's hook folder over ssh before it hands the message over, which the remote Claude
+and Muse hooks read; a remote Codex tab runs no such hook, so nothing there checks.
+**Antigravity has no check**: only typing reaches it
 (AGY§16 — its local API needs a token no other program can read), and Claude does not
 flag typed text either.
 **Rejected**: putting Claude's `(Koloft message <id>)` line at the end of the Codex and

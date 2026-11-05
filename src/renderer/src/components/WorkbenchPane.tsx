@@ -26,6 +26,7 @@ import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
 import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
+import { SecretPageBar, webAskOf } from './SecretAsk'
 import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
@@ -630,6 +631,30 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     id ? els.current.get(id) : undefined
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
+  const secretAsk = useStore((s) => webAskOf(s.secretAsks, ownerTab))
+  const secretBarAsk =
+    secretAsk &&
+    activeWebId &&
+    (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
+      ? secretAsk
+      : undefined
+  const askedGuest = secretAsk?.kind === 'page' ? secretAsk.guestId : undefined
+  useEffect(() => {
+    if (askedGuest === undefined || !ownerTab) return
+    const hit = (statesRef.current[ownerTab] ?? NO_TABS).tabs.find(
+      (t) => t.kind === 'web' && guestIdOf(t.id) === askedGuest
+    )
+    if (!hit) return
+    const st = useStore.getState()
+    if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
+    activate(hit.id)
+  }, [askedGuest, ownerTab])
+  const secretBarGuest = visible && secretBarAsk ? activeWebId : null
+  useEffect(() => {
+    if (!secretBarGuest) return undefined
+    const raf = requestAnimationFrame(() => els.current.get(secretBarGuest)?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [secretBarGuest, secretBarAsk?.id])
   const activeGuestId = useCallback(
     () => (activeWebId ? guestIdOf(activeWebId) : 0),
     [activeWebId, guestIdOf]
@@ -916,7 +941,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     return window.api.browser.onFullscreen((on) => setPageFullscreen(on))
   }, [])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!pageFullscreen) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
@@ -1456,6 +1482,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         }}
       />
 
+      {secretBarAsk && <SecretPageBar ask={secretBarAsk} />}
+
       <div className="wb-body">
         {/* PLATFORM§9 */}
         {mountedWebTabs.map(({ owner, tab }) => {
@@ -1586,7 +1614,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         />
       )}
 
-      {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
+      {dialog && visible && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
     </div>
   )
 })

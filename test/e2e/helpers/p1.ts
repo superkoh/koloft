@@ -251,6 +251,28 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
+export async function sessionInRow(page: Page, row: Locator): Promise<string | undefined> {
+  return boundSessionId(page, await row.getAttribute('data-tab-id'))
+}
+
+export async function untilTheRowHoldsANewSession(
+  page: Page,
+  row: Locator,
+  old: string | undefined,
+  timeout = 30_000
+): Promise<void> {
+  expect(old).toBeTruthy()
+  await expect
+    .poll(
+      async () => {
+        const now = await sessionInRow(page, row)
+        return now !== undefined && now !== old
+      },
+      { timeout }
+    )
+    .toBe(true)
+}
+
 export async function agyConversationOnceFirstTurnEnded(
   page: Page,
   tabId?: string
@@ -486,6 +508,7 @@ export function seedGlobalTerm(
 }
 
 export const FAKE_SESSION_TITLE = 'Fake session: project notes'
+export const FAKE_CODEX_SESSION_TITLE = 'Codex fixture session'
 
 export function setNextSessionTitle(env: E2EEnv, title: string): void {
   fs.writeFileSync(path.join(env.home, 'fake-claude-next-title'), title)
@@ -621,8 +644,12 @@ export async function startSessionIn(
   })
 }
 
-export async function waitStartupTurnOver(page: Page, wsName: string): Promise<void> {
-  const titled = wsRows(page, wsName).filter({ hasText: FAKE_SESSION_TITLE })
+export async function waitStartupTurnOver(
+  page: Page,
+  wsName: string,
+  title = FAKE_SESSION_TITLE
+): Promise<void> {
+  const titled = wsRows(page, wsName).filter({ hasText: title })
   const tabId = await titled.getAttribute('data-tab-id', { timeout: 60_000 })
   await expect
     .poll(async () => (await pendingAttention(page)).some((e) => e.tabId === tabId), {

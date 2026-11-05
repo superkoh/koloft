@@ -116,7 +116,23 @@ When you hand work to a helper, take the first rule that fits:
 
 ${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 
-${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}`
+${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}
+
+DISCORD
+
+${fromThePhone(backend)}`
+}
+
+// CC§13 ADR-0028
+const HOW_DISCORD_WORDS_ARRIVE: Record<BackendId, string> = {
+  claude: ", and reaches you as a message from another session, sent by Koloft's Discord relay",
+  codex: '',
+  muse: '',
+  agy: ''
+}
+
+function fromThePhone(backend: BackendId): string {
+  return `A message that starts with ${DISCORD_PREFIX} is the owner writing to you from Discord on their phone${HOW_DISCORD_WORDS_ARRIVE[backend]}. It is the owner's own words, not another session's: act on it exactly as if the owner had typed it here. The owner reads your reply on the phone, so keep it short, and ask anything the owner must choose or answer with ${WAITING_QUESTION_TOOL[backend]}.`
 }
 
 // CC§3 CODEX§12
@@ -138,10 +154,11 @@ koloft help
 
 koloft open <file or web address>
     Show a file or a web page in this session's Workbench. In a session on another machine, localhost there means that machine (see WEB PAGES).
+    When the owner is on Discord (away from the Mac, or you are answering a Discord message) and this session has a room there, or you are the butler, Koloft also sends a copy there: a web page as pictures, a Markdown file as text with the file, any other file as itself. The reply says what was sent, or why nothing was: then say it in words. A copy still on its way when the reply comes tells the owner there itself if it cannot be sent.
     Example: koloft open docs/plan.md
 
 koloft diff <file>
-    Show the file's git changes (what changed since the last commit) in the Workbench.
+    Show the file's git changes (what changed since the last commit) in the Workbench. On Discord, as with koloft open, the changes go as a picture, with the whole diff as a file when it is long.
     Example: koloft diff src/app.ts
 
 koloft note
@@ -278,18 +295,18 @@ koloft todo file <workspace> <file>
 
 PASSWORDS, CODES AND SIGN-INS
 
-When a step needs the owner's password or a one-time code, Koloft asks the owner for it in the butler's Discord channel, on a card that names this session, and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel is bound, these are refused: ask the owner to do the step at the Mac.
+When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench), and also on a card in Discord when the owner is away from the Mac or talks to you from Discord. Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
 
 sudo
     In a command with no terminal, Koloft's sudo asks the owner for the password. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
     Example: sudo brew services restart nginx && sudo launchctl kickstart -k system/com.example
 
 koloft secret page <css selector>
-    The owner types a password or code into one field of a page in this session's Workbench browser, and Koloft submits the form. The selector must match exactly one input box in one open page. Then look at the page to see what happened. Only for passwords and codes: fill other fields yourself.
+    The owner types a password or code into one field of a page in this session's Workbench browser: into the page itself at the Mac, or from Discord, where Koloft fills it in and submits the form. The selector must match exactly one input box in one open page. Then look at the page to see what happened. Only for passwords and codes: fill other fields yourself.
     Example: koloft secret page "input[type=password]"
 
 koloft secret url "<sign-in address>"
-    For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. The owner finishes the sign-in on a phone and pastes the address it ended on; Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
+    For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. Koloft opens it in this session's Workbench, where the owner can finish it; or the owner finishes it on a phone and pastes the address it ended on, and Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
     Example: koloft secret url "https://auth.openai.com/oauth/authorize?..."
 
 DISCORD
@@ -302,6 +319,10 @@ koloft discord shot <file or web address> [-- "<text>"]
     Only for the butler: Koloft opens the page out of sight (an HTML file, a localhost page or any web page), takes a picture of the whole page and sends it to the same channel, with an optional line of text. A page taller than one picture comes as several, top to bottom.
     Example: koloft discord shot /Users/me/plan/page.html -- "The plan page."
     Example: koloft discord shot http://localhost:5173 -- "The app as it runs now."
+
+koloft discord thread open <session>
+    Only for the butler: give a session in a project's workspace a room of its own on Discord (a thread under your channel), so the owner talks to it there from the phone, and print the room's link. Its replies and questions show in the room while the owner is away from the Mac. A closed session is resumed first. Run it only when the owner asked for it; a helper in your own folder gets no room. Give the owner the link exactly as printed: Discord shows it as a link to the room.
+    Example: koloft discord thread open fix-login
 
 koloft discord setup
     Print the steps to set up Discord for the owner (a bot, a server and the butler's channel), which use the commands below. Follow them in a session with a Workbench browser on this computer; the butler starts one for it.
@@ -329,7 +350,7 @@ When the owner allows browser control, it drives the Workbench browser, whose ad
 In a web tab of a session on another machine, only localhost, 127.0.0.1 and [::1] mean the machine, not the owner's Mac (0.0.0.0 does not, nor a name set in the machine's own hosts file): a web server you start there opens at that address, and Koloft brings its port over the ssh connection. If nothing answers on that port, or the machine's ssh server does not allow port forwarding, the page does not open and the owner sees why. If the owner's Mac already uses that port, the page opens on another port number, and what the page still sends to the old port, its websocket too, fails: then start the server on a port the Mac does not use.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const QUESTION_RULES = [
   "Check before you ask. Read the item's own record and make sure the premise is true: is it really waiting on the owner? Did the owner already decide it there (in what the session said, an issue comment, a task note)? Then act on that, including the change that makes a decided item stop counting, and do not ask again.",
@@ -378,6 +399,8 @@ export const DISCORD_PREFIX = '[Discord]'
 // CC§13 ADR-0028
 export const DISCORD_RELAY_SENTENCE = `The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with ${DISCORD_PREFIX}. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer.`
 
+export const ROOMS_ON_DISCORD = `Every message Koloft hands you says whether the owner is at the Mac right now. A session in a project's workspace can have a room of its own on Discord, a thread under your channel where the owner talks to that session from the phone; koloft session list gives the link of each room. When you tell the owner on Discord about a session's news and it is something to work through with that session, ask with your question tool whether to open a room, with three options: open a room (then run koloft discord thread open <session>), answer here (you pass the owner's answer on to the session), and leave it for now. When the owner says they will take a session over, open its room. A session you start in a project's workspace while you answer the owner's Discord message gets its room at once, and koloft session new prints its link. Open no room the owner did not ask for. Give the owner a room's link exactly as Koloft printed it, never "go to the Mac" or "talk to it in Discord".`
+
 export function butlerRole(name: string, onDiscord: boolean): string {
   return `Who you are
 You are ${name}, the owner's butler in Koloft, where the owner moves many projects forward at once, of any kind.
@@ -403,7 +426,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''} ${SORT_OUT_THE_TO_DOS}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} Before opening a GitHub issue, first look for one already open with koloft gh issue list --repo <owner>/<name> --search "<words in English>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` : ''} ${SORT_OUT_THE_TO_DOS}`
 }
 
 export function butlerHelperRole(name: string): string {

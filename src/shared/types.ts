@@ -393,6 +393,15 @@ export interface DiscordSettings {
   lastMessageId?: string
   category?: DiscordChannel
   oldThreadsArchived?: true
+  rooms?: SessionRoom[]
+}
+
+export interface SessionRoom {
+  threadId: string
+  keys: string[]
+  name: string
+  lastMessageId?: string
+  putDown?: true
 }
 
 export type DiscordPhase =
@@ -688,6 +697,13 @@ export interface AttentionSubject {
   title?: string
   sessionId?: string
 }
+
+export type SecretAskShape =
+  | { kind: 'sudo'; command: string; prompt: string }
+  | { kind: 'page'; guestId: number; url: string; label: string }
+  | { kind: 'url'; signIn: string }
+
+export type SecretAskView = SecretAskShape & { id: string; tabId: string }
 
 export interface AttentionEvent extends AttentionSubject {
   tabId: string
@@ -1148,6 +1164,13 @@ export interface KoloftApi {
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
+  }
+  secret: {
+    list(): Promise<SecretAskView[]>
+    onAsks(cb: (asks: SecretAskView[]) => void): () => void
+    answer(id: string, value: string): void
+    done(id: string): void
+    decline(id: string): void
   }
   attention: {
     list(): Promise<AttentionEvent[]>

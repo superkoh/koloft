@@ -821,17 +821,22 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
     expect(r.realArgs).toBeNull()
   })
 
-  it('muse exec gets the picked account’s config folder and file sign-in', async () => {
-    const r = await runShimPick(
-      ['exec', 'say hi'],
-      { account: 'm1', home: '/koloft/muse-homes/m1', banner: 'koloft: → m1' },
-      UTIL,
-      'muse'
-    )
+  // MUSE§21
+  it('muse exec gets the picked account’s config folder and file sign-in, and the Workbench browser’s address set, empty when the terminal has none, so the owner’s Playwright MCP still starts', async () => {
+    const pick = { account: 'm1', home: '/koloft/muse-homes/m1', banner: 'koloft: → m1' }
+    const r = await runShimPick(['exec', 'say hi'], pick, UTIL, 'muse')
     expect(r.status).toBe(0)
     expect(r.realArgs).toEqual(['exec', 'say hi'])
     expect(r.realEnv?.XDG_CONFIG_HOME).toBe('/koloft/muse-homes/m1')
     expect(r.realEnv?.TBH_CREDENTIAL_BACKEND).toBe('file')
+    expect(r.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
+    const withBrowser = await runShimPick(
+      ['exec', 'say hi'],
+      pick,
+      { ...UTIL, PLAYWRIGHT_MCP_CDP_ENDPOINT: 'ws://127.0.0.1:9/cdp/x' },
+      'muse'
+    )
+    expect(withBrowser.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('ws://127.0.0.1:9/cdp/x')
   })
 
   it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key, not even one the shell exported', async () => {

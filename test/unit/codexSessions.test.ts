@@ -226,7 +226,6 @@ beforeEach(() => {
     agent: { enabled: () => false, answer: vi.fn(), skillsFolder: () => '/koloft/plugin/skills' },
     gitAccounts: {
       configEnv: (env) => env,
-      picked: vi.fn(async () => false),
       ghWrapper: path.join(directory, 'shim', 'gh')
     }
   }
@@ -1225,8 +1224,8 @@ describe('CodexSessions', () => {
     ])
   })
 
-  // CODEX§26
-  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint; other entries, and names Codex's -c cannot spell, are left alone", async () => {
+  // ADR-0048 CODEX§26
+  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint, and its tools run without asking unless the owner set the entry's approval mode; other entries, and names Codex's -c cannot spell, are left alone", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'a'.repeat(32)
     vi.mocked(deps.browserEndpoint).mockImplementation((tabId) =>
       tabId === 'pty-reserved' ? endpoint : ''
@@ -1241,7 +1240,11 @@ describe('CodexSessions', () => {
                   args: ['@playwright/mcp@latest'],
                   env_vars: ['MINE']
                 },
-                'pw-global': { command: '/usr/local/bin/playwright-mcp', args: [] },
+                'pw-global': {
+                  command: '/usr/local/bin/playwright-mcp',
+                  args: [],
+                  default_tools_approval_mode: 'prompt'
+                },
                 'my.browser': { command: 'npx', args: ['@playwright/mcp'] },
                 github: { command: 'github-mcp', args: [], env_vars: ['GH_TOKEN'] }
               }
@@ -1252,13 +1255,13 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     const options = mocks.create.mock.calls[0][0] as CodexTransportOptions
     expect(mocks.request).toHaveBeenCalledWith('config/read', { cwd: repo }, '/homes/work')
-    expect(options.configOverrides).toEqual(
-      expect.arrayContaining([
-        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
-        'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
-      ])
-    )
-    expect(options.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    const mcp = (o: CodexTransportOptions): string[] =>
+      o.configOverrides!.filter((c) => c.startsWith('mcp_servers.'))
+    expect(mcp(options)).toEqual([
+      'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
+      'mcp_servers.playwright.default_tools_approval_mode="approve"',
+      'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+    ])
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].id).toBe('pty-reserved')
 
     const answer = mocks.request.getMockImplementation()!
@@ -1272,7 +1275,7 @@ describe('CodexSessions', () => {
     })
     await sessions.launch({ kind: 'codex', cwd: repo })
     const retried = mocks.create.mock.calls.at(-1)![0] as CodexTransportOptions
-    expect(retried.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    expect(mcp(retried)).toEqual(mcp(options))
     mocks.request.mockImplementation(answer)
 
     vi.mocked(deps.browserEndpoint).mockReturnValue('')
@@ -1292,7 +1295,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§26 PLATFORM§17 ADR-0029
-  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
+  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the writable folders stay as they were", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
     const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
@@ -1310,11 +1313,8 @@ describe('CodexSessions', () => {
       ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
-    expect(on.configOverrides).toEqual(
-      expect.arrayContaining([
-        'sandbox_workspace_write.network_access=true',
-        `sandbox_workspace_write.writable_roots=${JSON.stringify(['/owner/root', cache])}`
-      ])
+    expect(on.configOverrides).toContain(
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(['/owner/root', cache])}`
     )
     expect(fs.statSync(cache).isDirectory()).toBe(true)
     const zdot = vi.mocked(deps.pty.create).mock.calls[0][0].processEnv!.ZDOTDIR!
@@ -1336,7 +1336,9 @@ describe('CodexSessions', () => {
     vi.mocked(deps.browserEndpoint).mockReturnValue('')
     await sessions.launch({ kind: 'codex', cwd: repo })
     const off = mocks.create.mock.calls[2][0] as CodexTransportOptions
-    expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
+    expect(
+      off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.writable_roots'))
+    ).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
       ...RESERVED_TAB_PLAYWRIGHT_ENV
@@ -1368,16 +1370,17 @@ describe('CodexSessions', () => {
     )
   })
 
-  // CODEX§29
-  it('a tab in a repository with a picked git account may reach the network, and one without stays offline', async () => {
-    vi.mocked(deps.gitAccounts.picked).mockImplementation(async (cwd) => cwd === repo)
+  // ADR-0047 CODEX§29
+  it("every tab's sandbox may reach the network from launch, with or without the Workbench browser, the butler's alike, so a git account picked later works without a restart", async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
-    await sessions.launch({ kind: 'codex', cwd: other })
-    const [picked, unpicked] = mocks.create.mock.calls.map(([o]) => o as CodexTransportOptions)
-    expect(picked.configOverrides).toContain('sandbox_workspace_write.network_access=true')
-    expect(unpicked.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(
-      false
-    )
+    await sessions.launch({ kind: 'codex', cwd: other, conductor: true })
+    vi.mocked(deps.browserEndpoint).mockReturnValue('ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32))
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(mocks.create).toHaveBeenCalledTimes(3)
+    for (const [o] of mocks.create.mock.calls)
+      expect((o as CodexTransportOptions).configOverrides).toContain(
+        'sandbox_workspace_write.network_access=true'
+      )
   })
 
   // ADR-0029 CODEX§11
@@ -1565,8 +1568,8 @@ describe('CodexSessions', () => {
     expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
   })
 
-  // ADR-0029 CODEX§26
-  it('the butler reaches the Workbench browser like any tab, and its Playwright tools ask as any tab’s do', async () => {
+  // ADR-0029 ADR-0048 CODEX§26
+  it('the butler reaches the Workbench browser like any tab, and its Playwright tools run without asking as any tab’s do', async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32)
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
     const answer = mocks.request.getMockImplementation()!
@@ -1577,7 +1580,7 @@ describe('CodexSessions', () => {
     )
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
     expect(transports[0].options.sessionEnv?.KOLOFT_BROWSER_CDP).toBe(endpoint)
-    expect(transports[0].options.configOverrides).not.toContain(
+    expect(transports[0].options.configOverrides).toContain(
       'mcp_servers.playwright.default_tools_approval_mode="approve"'
     )
   })

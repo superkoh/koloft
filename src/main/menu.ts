@@ -264,7 +264,9 @@ export function setSaveAvailable(available: boolean): void {
   if (item) item.enabled = available
 }
 
-export function setKeepAwakeChecked(on: boolean): void {
+export function setKeepAwakeChecked(on: boolean, changeable: boolean): void {
   const item = Menu.getApplicationMenu()?.getMenuItemById('keep-awake')
-  if (item) item.checked = on
+  if (!item) return
+  item.checked = on
+  item.enabled = changeable
 }

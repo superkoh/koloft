@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest'
 import type { JSX } from 'react'
-import { render, cleanup, fireEvent, screen, waitFor, act } from '@testing-library/react'
 import {
   DEFAULT_SETTINGS,
   type BackendId,
@@ -14,14 +13,20 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
   SessionBackendIcon: ({ backend }: { backend: BackendId }) => <i data-backend={backend} />
 }))
 
+const { lagReactTasks, stopLaggingReactTasks, expectReactTasksLagged } =
+  await import('./helpers/reactTaskLag')
+const { render, cleanup, fireEvent, screen, waitFor, act } = await import('@testing-library/react')
 const { useStore } = await import('../../src/renderer/src/store')
 const { SessionLaunchButtons, useSessionLaunch } =
   await import('../../src/renderer/src/components/SessionLaunchButtons')
 const { WorkspacePicker } = await import('../../src/renderer/src/components/WorkspacePicker')
 const { WorktreeSessionDialog } =
   await import('../../src/renderer/src/components/WorktreeSessionDialog')
+const { NewProjectDialog } = await import('../../src/renderer/src/components/NewProjectDialog')
 
 let answerPull: (r: WorkspacePullResult) => void = () => {}
+let answerCreate: (r: { ok: false; reason: string }) => void = () => {}
+let creates = 0
 
 beforeAll(() => {
   Object.assign(window, {
@@ -33,6 +38,10 @@ beforeAll(() => {
       },
       workspace: {
         pull: () => new Promise<WorkspacePullResult>((resolve) => (answerPull = resolve)),
+        createProject: () => {
+          creates++
+          return new Promise((resolve) => (answerCreate = resolve))
+        },
         worktrees: async () => []
       },
       github: { openItems: async () => ({ state: 'failed' }) }
@@ -41,12 +50,14 @@ beforeAll(() => {
 })
 
 afterEach(() => {
+  stopLaggingReactTasks()
   cleanup()
   useStore.setState((s) => ({
     settings: {
       ...s.settings,
       sessionMethods: DEFAULT_SETTINGS.sessionMethods,
-      gitAutoFetch: DEFAULT_SETTINGS.gitAutoFetch
+      gitAutoFetch: DEFAULT_SETTINGS.gitAutoFetch,
+      newProjectFolders: DEFAULT_SETTINGS.newProjectFolders
     }
   }))
 })
@@ -113,7 +124,7 @@ const behind: WorkspaceRows = {
   rows: []
 }
 
-const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => HTMLElement][] = [
+const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => void][] = [
   [
     'C10 ⌘N picker',
     (started) => (
@@ -127,7 +138,7 @@ const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => HTMLEle
         launchLock={{ current: false }}
       />
     ),
-    () => document.body
+    () => {}
   ],
   [
     'C8 New Worktree Session',
@@ -140,33 +151,82 @@ const pullDialogs: [string, (started: BackendId[]) => JSX.Element, () => HTMLEle
       />
     ),
     () => {
-      const name = screen.getByRole('textbox')
-      fireEvent.change(name, { target: { value: 'feat' } })
-      return name
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'feat' } })
     }
   ]
 ]
 
+const dropFocusFromADisabledFieldAsChromiumDoes = (): void => {
+  const at = document.activeElement
+  if (!(at instanceof HTMLInputElement || at instanceof HTMLButtonElement) || !at.disabled) return
+  at.disabled = false
+  at.blur()
+  at.disabled = true
+}
+
 describe('SessionLaunchButtons while a behind workspace pulls before a start', () => {
   it.each(pullDialogs)(
-    '%s: Pulling… shows the icon of the agent picked from the arrow, and a failed pull leaves Enter on the default agent',
+    '%s: Pulling… shows the icon of the agent picked from the arrow, and a failed pull leaves Enter on the default agent, even pressed while React’s effects still lag the screen',
     async (_name, dialog, prepare) => {
       useStore.setState((s) => ({ settings: { ...s.settings, gitAutoFetch: false } }))
       const started: BackendId[] = []
       render(dialog(started))
-      const enterTarget = prepare()
-      fireEvent.click(await screen.findByRole('button', { name: 'Pick an agent' }))
+      prepare()
+      const pickAgent = await waitFor(() => {
+        const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Pick an agent' })
+        expect(button.disabled).toBe(false)
+        return button
+      })
+      fireEvent.click(pickAgent)
       fireEvent.click(await screen.findByRole('option', { name: new RegExp(BACKEND_LABEL.codex) }))
       const lead = (): string | null | undefined =>
         document.querySelector('button[data-default] [data-backend]')?.getAttribute('data-backend')
       await screen.findAllByText(/Pulling origin\/main…/)
       expect(lead()).toBe('codex')
+      dropFocusFromADisabledFieldAsChromiumDoes()
 
+      lagReactTasks()
       act(() => answerPull({ ok: false, reason: 'not a fast-forward' }))
       await screen.findAllByText(/Pull failed/)
+      expectReactTasksLagged()
       expect(lead()).toBe('claude')
-      fireEvent.keyDown(enterTarget, { key: 'Enter' })
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Enter' })
       await waitFor(() => expect(started).toEqual(['claude']))
     }
   )
+})
+
+describe('New Project after a start fails', () => {
+  it('puts the cursor back in the field Enter was pressed in, so Enter tries again', async () => {
+    useStore.setState((s) => ({
+      settings: { ...s.settings, newProjectFolders: { local: '/projects' } }
+    }))
+    creates = 0
+    render(
+      <NewProjectDialog
+        seed={{ prompt: '', title: '', machine: 'local', folder: 'demo', why: '' }}
+        launchLock={{ current: false }}
+        onClose={() => {}}
+        onStart={async () => {}}
+        onChangeWorkspace={() => {}}
+      />
+    )
+    const folder = await screen.findByDisplayValue('demo')
+    await waitFor(() => expect(document.activeElement).toBe(folder))
+    await screen.findByRole('button', { name: 'Pick an agent' })
+    const title = screen.getByRole('textbox', { name: 'Title' })
+    title.focus()
+    fireEvent.keyDown(title, { key: 'Enter' })
+    await waitFor(() => expect(creates).toBe(1))
+    dropFocusFromADisabledFieldAsChromiumDoes()
+    expect(document.activeElement).toBe(document.body)
+
+    lagReactTasks()
+    act(() => answerCreate({ ok: false, reason: 'The folder already exists.' }))
+    await screen.findByText(/already exists/)
+    expectReactTasksLagged()
+    expect(document.activeElement).toBe(title)
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Enter' })
+    await waitFor(() => expect(creates).toBe(2))
+  })
 })

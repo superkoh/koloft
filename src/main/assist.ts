@@ -14,6 +14,7 @@ export interface AssistJob {
 export type Assist = (job: AssistJob) => Promise<string | null>
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
+export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
 
 // CC§9
 const CLAUDE_ONE_SHOT = (system: string): string[] => [
@@ -162,7 +163,7 @@ async function withASecondTryWhenLate(
   signal?.addEventListener('abort', stopBoth, { once: true })
   let timer: NodeJS.Timeout | undefined
   try {
-    const first = run(both.signal, 2 * ASSIST_TIMEOUT_MS)
+    const first = run(both.signal, ASSIST_ANSWERS_WITHIN_MS)
     const late = new Promise<typeof STILL_RUNNING>((resolve) => {
       timer = setTimeout(() => resolve(STILL_RUNNING), ASSIST_TIMEOUT_MS)
     })

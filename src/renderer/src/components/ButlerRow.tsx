@@ -4,8 +4,12 @@ import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
 import { attentionReason } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
+import { butlerStart } from '@shared/butlerStart'
+import { settingsPaneName } from '@shared/paletteFeatures'
+import type { BackendId } from '@shared/types'
+import { useInstalledBackends } from '../useInstalledBackends'
 import { useStore } from '../store'
-import { rowStateClass } from '../sessionRows'
+import { rowStateClass, statusWithSecrets } from '../sessionRows'
 import { butlerSetUp, butlerTabOf } from '../butlerRows'
 import { visitTab } from '../sessionClick'
 import { SessionBackendIcon } from './SessionBackendIcon'
@@ -37,6 +41,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
+  const secretAsks = useStore((s) => s.secretAsks)
   const opened = useStore((s) => s.butlerTab)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
   const setBindButler = useStore((s) => s.setBindButler)
@@ -85,8 +90,12 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   }
 
   const stateClass =
-    rowStateClass(!!tabId, sess?.status, !!tabId && !sess, sess?.turnOver) +
-    (tabId && tabId === activeTabId ? ' active' : '')
+    rowStateClass(
+      !!tabId,
+      statusWithSecrets(sess?.status, tabId, secretAsks),
+      !!tabId && !sess,
+      sess?.turnOver
+    ) + (tabId && tabId === activeTabId ? ' active' : '')
 
   const title = (
     <>
@@ -123,6 +132,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
             <span>{channel ? channelLabel(channel) : NOT_ON_DISCORD}</span>
           </div>
+          {!tabId && <WhyButlerCannotStart backend={backend} />}
         </div>
       )}
       {!!children?.length && <div className="ws-subtabs">{children}</div>}
@@ -136,6 +146,33 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
         document.body
       )}
     </div>
+  )
+}
+
+function WhyButlerCannotStart({ backend }: { backend: BackendId }): JSX.Element | null {
+  const name = useStore((s) => s.settings.butler.name)
+  const enabled = useStore((s) => s.settings.sessionMethods.enabled)
+  const accounts = useStore((s) => s.accounts)
+  const openSettingsPane = useStore((s) => s.openSettingsPane)
+  const { installed } = useInstalledBackends()
+  if (!accounts || !installed) return null
+  const start = butlerStart(backend, { enabled, installed, accounts }, name)
+  if (!('error' in start)) return null
+  const { lead, fixedIn } = start.preferred
+  return (
+    <p className="field-hint bad" title={start.inFull}>
+      {lead}
+      <button
+        className="ob-link"
+        onClick={(e) => {
+          e.stopPropagation()
+          openSettingsPane(fixedIn)
+        }}
+      >
+        {settingsPaneName(fixedIn)}
+      </button>
+      .
+    </p>
   )
 }
 

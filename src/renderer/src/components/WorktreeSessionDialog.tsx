@@ -1,6 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,6 +55,7 @@ import {
   BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch,
   type SessionLaunchOptions,
   type StartSession
@@ -177,19 +179,15 @@ export function WorktreeSessionDialog({
     item: aim.kind === 'item' ? aim.item.number : undefined
   }
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
+  useLaunchLock(launchLock, locked)
   const choice =
     aim.kind === 'recover'
       ? sessionLaunch.choice({ backends: [aim.backend], chosen: aim.backend })
       : sessionLaunch.choice()
   const confirmBackend = useRef<BackendId>(choice.lead)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       const layer = escPeel({
@@ -208,7 +206,8 @@ export function WorktreeSessionDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [locked, confirm, hot, query, onClose])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     inputRef.current?.focus()
   }, [locked, confirm])

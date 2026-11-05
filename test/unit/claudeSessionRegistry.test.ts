@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { execFileSync, spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -30,6 +30,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -90,8 +91,12 @@ describe("claude's own session registry: the socket a session takes messages on"
     expect(await messagingSocketOf(SID, dir, async () => null)).toBeNull()
   })
 
-  it('waits for a session that binds before it registers, woken by its entry landing, and answers null at the deadline', async () => {
+  // PLATFORM§28
+  it('waits for a session that binds before it registers and finds its entry once it lands, even when a folder watch would never report it, and answers null at the deadline', async () => {
     const startOf = async (): Promise<string | null> => START
+    vi.spyOn(fs, 'watch').mockImplementation(
+      () => ({ close: () => undefined }) as unknown as fs.FSWatcher
+    )
     const waiting = whenMessagingSocket(SID, 60_000, dir, startOf)
     await new Promise((r) => setTimeout(r, 50))
     fs.writeFileSync(

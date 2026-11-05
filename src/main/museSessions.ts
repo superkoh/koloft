@@ -19,7 +19,7 @@ import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
-import { placeKoloftSkills, readJson } from './museAccounts'
+import { mergeMuseSettings, placeKoloftSkills, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { pidAlive } from './leftovers'
 import { inputBoxDraft } from './inputBox'
@@ -123,6 +123,7 @@ export interface MuseMachine {
   museServe(args: string[]): { binary: string; args: string[] }
   museTrusts(dir: string): Promise<boolean>
   endTmuxSession(tmuxName: string): Promise<string | undefined>
+  endedByKoloft(sessionId: string): Promise<boolean>
   runScript(script: string, args: string[]): Promise<string | null>
 }
 
@@ -210,9 +211,11 @@ const MUSE: CliSpec = {
 // MUSE§14
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
+const keepsItsSandbox = (permission: LaunchPermission): boolean => permission !== 'bypass'
+
 // ADR-0038 MUSE§15
 function approvalFlags(permission: LaunchPermission): string[] {
-  if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
+  if (!keepsItsSandbox(permission)) return ['--permission-profile', ':unrestricted']
   return ['--approval-judge', 'off', '--sandbox-network', 'enabled']
 }
 
@@ -440,8 +443,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private async heldOnMachine(host: string, sessionId: string): Promise<boolean> {
     const remote = this.deps.remote
-    if (!remote?.gone(host, sessionId)) return false
-    return (await remote.machine(host).runScript(MUSE_HELD_SH, [sessionId])) !== null
+    if (!remote) return false
+    const machine = remote.machine(host)
+    if (!remote.gone(host, sessionId) && !(await machine.endedByKoloft(sessionId))) return false
+    return (await machine.runScript(MUSE_HELD_SH, [sessionId])) !== null
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
@@ -639,6 +644,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       account: { name: account, auth: () => this.credentialFor(account, env, host) },
       banner,
       args: this.museArgv(opts, approvalFlags(permission), false),
+      sandboxed: keepsItsSandbox(permission),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context: agentTools ? koloftPrompt('muse') : undefined,
@@ -713,7 +719,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
-    if (env.XDG_CONFIG_HOME) placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
+    if (env.XDG_CONFIG_HOME) {
+      placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
+      mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
+    }
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
       ...(role ? [role] : [])

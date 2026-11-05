@@ -61,6 +61,7 @@ let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<type
 let runtime: SessionRuntime
 let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
+let browserEndpoint: string
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
 let skipPermissions: boolean
@@ -183,6 +184,7 @@ beforeEach(() => {
   })
   created = []
   agentTools = false
+  browserEndpoint = ''
   picked = { account: 'work', home: path.join(home, 'agy-homes', 'work') }
   apiKey = undefined
   skipPermissions = false
@@ -233,7 +235,7 @@ beforeEach(() => {
     pickHome: () => picked,
     apiKeyOf: async () => apiKey,
     playwrightBin: tools,
-    browserEndpoint: () => '',
+    browserEndpoint: () => browserEndpoint,
     builtInStatusLine: () => undefined,
     skipPermissions: () => skipPermissions,
     assistOf: () => assist,
@@ -260,6 +262,7 @@ beforeEach(() => {
           machine.ended.push(name)
           return undefined
         },
+        endedByKoloft: async (id) => machine.ended.includes(`k-${id}`),
         runScript: async (script) => (script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null)
       }),
       hosts: () => ['devbox'],
@@ -482,6 +485,26 @@ describe('AgySessions launch', () => {
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
     const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
     expect(after.permissions).toBeUndefined()
+  })
+
+  // ADR-0048 AGY§26 AGY§30
+  it("lets the owner's Playwright MCP run every tool without an ask only in a tab that has the Workbench browser", async () => {
+    const allowHere = (): unknown =>
+      JSON.parse(
+        fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ).permissions
+    fs.mkdirSync(path.join(gemini, 'config'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'config', 'mcp_config.json'),
+      JSON.stringify({ mcpServers: { pw: { command: 'npx', args: ['@playwright/mcp'] } } })
+    )
+    browserEndpoint = 'ws://127.0.0.1:9/cdp/x'
+    await launch()
+    expect(allowHere()).toEqual({ allow: ['mcp(pw/*)'] })
+    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
+    browserEndpoint = ''
+    await launch()
+    expect(allowHere()).toBeUndefined()
   })
 
   // AGY§31
@@ -1686,6 +1709,17 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
 
   it('refuses to resume a conversation another agy on that machine holds', async () => {
     machine.held = true
+    remoteMember(A)
+    await expect(
+      sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    ).rejects.toThrow(/open in another agy window/)
+    expect(machine.launches).toEqual([])
+  })
+
+  it('refuses to resume a conversation another agy on that machine holds when Koloft just ended its tmux and the last pull still listed it', async () => {
+    machine.held = true
+    machine.alive.add(A)
+    machine.ended.push(`k-${A}`)
     remoteMember(A)
     await expect(
       sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })

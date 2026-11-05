@@ -20,6 +20,7 @@ import {
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { museRunLines } from '../../src/main/museRemote'
+import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
@@ -529,6 +530,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
           tabId: 'T',
           account: "o'brien",
           args: ['--approval-judge', 'off', 'say hi'],
+          sandboxed: false,
           trust: [],
           koloftSkill: false
         }),
@@ -593,7 +595,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
         tmuxName: 'm-T',
         program: machineToolProgram(
           'muse',
-          museRunLines({ tabId: 'T', account: 'a', args: [], trust: [], koloftSkill }),
+          museRunLines({
+            tabId: 'T',
+            account: 'a',
+            args: [],
+            sandboxed: false,
+            trust: [],
+            koloftSkill
+          }),
           { 'T.hooks.json': '{"hooks":{}}' }
         )
       })
@@ -614,6 +623,41 @@ describe('U-TAB-*: the tab script on the machine', () => {
       'NEW CORE'
     )
     expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(path.join(owners, 'review'))
+  })
+
+  // MUSE§17
+  it('a Muse tab on a machine where no user namespace can be made says why its sandbox cannot start only when Muse runs with its sandbox, not when permission prompts are skipped', () => {
+    const said = (sandboxed: boolean): string => {
+      const b = box(
+        spec({
+          tmuxName: 'm-T',
+          program: machineToolProgram(
+            'muse',
+            museRunLines({
+              tabId: 'T',
+              account: 'a',
+              args: [],
+              sandboxed,
+              trust: [],
+              koloftSkill: false
+            }),
+            {}
+          )
+        })
+      )
+      for (const [name, text] of [
+        ['unshare', 'exit 1'],
+        ['python3', 'exit 0']
+      ])
+        fs.writeFileSync(path.join(b.home, '.local', 'bin', name), `#!/bin/sh\n${text}\n`, {
+          mode: 0o755
+        })
+      const res = b.run()
+      expect(res.status).toBe(0)
+      return res.stdout
+    }
+    expect(said(true)).toContain(MUSE_SANDBOX_CANNOT_START)
+    expect(said(false)).not.toContain(MUSE_SANDBOX_CANNOT_START)
   })
 
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {

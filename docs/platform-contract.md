@@ -1210,6 +1210,42 @@ inferred, not checked.
   LAST one in its key map and never deletes the first; once the list changes shape
   ahead of it, the first one's nodes stay in the document for good (seen live: one
   session's rows stacked twice).
+- **After a render that did not start from a user event (a promise resolving, a
+  timer), React 19 commits the DOM, yields to the host, and runs that render's
+  `useEffect`s in a later task.** In that gap the screen already shows the new state,
+  while a `window` listener an effect keeps up to date still holds the old one, so a
+  key pressed then is judged by the old state, and a `focus()` an effect makes has not
+  happened yet. `useLayoutEffect` runs inside the commit and has no gap. A render from
+  a click or key runs its effects at the end of the commit, with no gap either.
+  Measured 2026-11-03, react-dom 19.3.1 in headless Chrome 156 (a page bundled with
+  esbuild, driven by Playwright): a `keydown` dispatched from the MutationObserver
+  callback that saw the new text, and again from a `setTimeout(0)` after it, was judged
+  by the old state 3 of 3 runs with `useEffect` and by the new state 3 of 3 runs with
+  `useLayoutEffect`. A ref written in such an effect (as `launchLock` is) lags the same
+  way: read from that MutationObserver callback it still held the old value 3 of 3
+  runs with `useEffect`, the new one 3 of 3 with `useLayoutEffect`. For a click, a
+  `window` click listener added by the effect of the render that click caused receives
+  that same click, with `useEffect` and `useLayoutEffect` alike (3 of 3 each), so moving
+  such an effect to a layout effect does not change what a click does.
+  **A zustand store update has no such gap.** zustand reads the store through
+  `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
+  render's `useEffect`s inside the commit, so only a component's own `useState` set
+  from a promise or an IPC callback has the gap. Measured 2026-11-04, react-dom 19.3.1,
+  zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
+  28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
+  listener added by `useEffect` received an Escape dispatched from the
+  MutationObserver callback that saw the new element 3 of 3 runs when a store update
+  showed it, and 0 of 3 when a `useState` set from a resolved promise did
+  (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
+  lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
+  `useEffect`.
+- **Chromium drops focus to `body` when the focused field or button becomes
+  `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
+  the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
+  Chrome 156: focus on an input, set `disabled`, and one task later
+  `document.activeElement` is `body`; it stays `body` after `disabled = false`. So a
+  dialog that disables its fields while it works must focus one again when it
+  unlocks, or Enter lands on `body` (`sessionLaunchButtons.test.tsx` acts this out).
 - **zustand's `set()` notifies every subscriber even when nothing changed**, because it
   merges into a new state object (seen: a queued hint card appeared one tick early).
 
@@ -2147,6 +2183,17 @@ Gateway (the live connection that pushes events):
   - Archiving and opening one thread back and forth within a second answered 429
     (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
     15 s) still had calls left.
+- **Reading a thread's messages back** — measured 2026-11-04 with the test bot on the test
+  server, REST only, in a thread made on a message (`auto_archive_duration: 1440`) with
+  four bot posts in it:
+  - `GET /channels/{thread}/messages?after={id}&limit=100` answered 200 with every message
+    after that id, newest first, like a text channel. `after=` the opener's id also
+    returned the thread's own first message, `type` 21 (the copy of the opener).
+  - Once the thread was archived (`PATCH {archived: true}`, 200), the same `GET` answered
+    200 with the same messages, and `GET /channels/{thread}` afterwards still read
+    `archived: true`: reading does not open it.
+  - `GET /channels/{parent}/messages?after={opener}` listed none of the thread's
+    messages: a thread keeps its own history.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
@@ -2921,3 +2968,19 @@ call twice on one home, the second time over the link the first one made.
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
 Antigravity sign-in into the user's login shell with an account's environment, and
 `MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+
+## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
+
+- **A hidden `WebContentsView` shows a `.md` file as plain text.** Loaded from a
+  `file://` address, `document.contentType` was `text/markdown` and the body one
+  `<pre>` holding the source: no heading, no table. The Workbench's Markdown layout
+  comes from the renderer, so a picture of the file would show its raw source.
+  Measured 2026-11-04, Electron 43.8.6, a script loading a `.md` with a heading, a
+  table and a mermaid fence into a sandboxed view of its own session.
+- **A ```` ```diff ```` code block shows no colours in Discord's phone app**: added and
+  removed lines read the same. Seen by the owner on their phone, 2026-11-04, on a
+  message the dev test bot posted; a picture with green and red rows was the look
+  picked over an `ansi` block and a coloured square at the start of each line.
+
+Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
+`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.

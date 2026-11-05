@@ -148,7 +148,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `/exit` out of a `-w` session, 15 runs on 2.1.317, the raw bytes saved; 2.1.316
   printed the bare form with the same flags. That the linux-arm64 build repeats the
   same flags is read from its `strings` (the same skip list, value pattern and env
-  name), not run: inferred, not checked.
+  name), not run: inferred, not checked. 2.1.318, darwin-arm64 and linux-arm64, holds
+  the same skip list, value pattern and env name (`strings`, 2026-11-04, not run).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -222,7 +223,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   reasons and SessionStart sources), and on 2.1.317, darwin-arm64 and linux-arm64
   (`strings`, 2026-11-03: the same 33 names in the same order, the same SessionEnd
   reasons `clear`, `resume`, `logout`, `prompt_input_exit`, `other` and SessionStart
-  sources `startup`, `resume`, `clear`, `compact`, `fork`).
+  sources `startup`, `resume`, `clear`, `compact`, `fork`), and on 2.1.318, darwin-arm64
+  and linux-arm64 (`strings`, 2026-11-04: the same 33 names in the same order, the same
+  reasons and sources).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -1276,6 +1279,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   names `strings` glued to the next byte; the 14 names `src/` spells out (8
   `ANTHROPIC_*`, 6 `CLAUDE_CODE_*`; it spells no `DISABLE_*` and no
   `CLAUDE_CONFIG_DIR`) are in both builds.
+  Between 2.1.317 and 2.1.318 (`strings -n 6`, 2026-11-04, darwin-arm64 and
+  linux-arm64): `ANTHROPIC_*` and `*_MODEL` identical at 71 and 14, `anthropic-*`
+  header names identical at 88; dated beta names 56 → 57
+  (`tool-provenance-2026-10-26`); `CLAUDE_CODE_*` gains 16 (among them
+  `CONFIG_LOCK_WAIT_MS`, `RESUME_CACHE_WARM`, `TELEPORT_MOVE`) and loses 1
+  (`ENABLE_CONFIG_MISSING_READ_GUARD`), none of which `src/` sets; `tengu_*` gains 84
+  and loses 10, none of the names this ledger mentions among them; the same 14 names
+  `src/` spells out are in both builds.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
   a cloud or self-hosted runner session uses that session's id again) is read only when
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
@@ -1683,8 +1694,8 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
-2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31) and 2.1.317
-(2026-11-03).
+2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31), 2.1.317
+(2026-11-03) and 2.1.318 (2026-11-04).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1771,8 +1782,23 @@ other bullets of §9 were not re-measured on this build.
   sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
   `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
   `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
-  an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
-  the exit code tells a title from an error.
+  a token the API refuses it prints `Failed to authenticate. API Error: 401 OAuth access
+  token is invalid.` on stdout, nothing on stderr, and exits 1, so only the exit code
+  tells a title from an error (2026-11-04, CC 2.1.317 and 2.1.318, a made-up
+  `sk-ant-oat01-…` in `CLAUDE_CODE_OAUTH_TOKEN`, scratch `HOME`; an expired real token
+  was not tried). Assist's exact argv with a good token printed only the answer on
+  stdout and nothing on stderr on both builds (same day). The 2.1.318 changelog's
+  stderr warning "10 days before a stored claude.ai sign-in ends" and the
+  `credential_expires_at` / `loginExpiresAt` fields come from a stored login's
+  `refreshTokenExpiresAt` and need its refresh token (`strings`): with the token in
+  `CLAUDE_CODE_OAUTH_TOKEN`, as Koloft passes it, `claude auth status` on 2.1.318
+  answers `"loginExpiresAt": null` (2.1.317 has no such key), a `-p --output-format
+  json` result carries no `credential_expires_at` on either build (2026-11-04, a real
+  account), and `-p` text output prints no warning. With a made-up stored login ending
+  in 5 days (linux-arm64 2.1.318 in an offline Docker container, same day) `auth
+  status` gave its date, the JSON result the same `credential_expires_at`, and text
+  output printed `Warning: this sign-in ends between <date> and <date> …` on stderr
+  only; JSON output printed no warning.
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
@@ -1782,8 +1808,10 @@ other bullets of §9 were not re-measured on this build.
   twice, files listed at exit and 5 s later). Both builds' cleanup entry skips the
   sweep, before any delete, when user settings are not read and no other source (a
   managed policy, a `--settings` file) sets `cleanupPeriodDays` (`Skipping retention
-  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked);
-  Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
+  cleanup: userSettings source is disabled…`, `strings`, inferred, not checked; 2.1.318
+  has the same check and text, and the fresh `~/.claude.json` backup its changelog
+  adds is taken only after that check, inside the sweep, `strings`, 2026-11-04, not
+  run); Assist passes no `--settings`. So the 2.1.317 changelog's "old transcripts not being
   cleaned up … such as runs using `--setting-sources`" does not make Assist sweep with
   the 30-day default; that the skip holds in a run long enough to sweep, and what a
   managed `cleanupPeriodDays` does there, is not probed.
@@ -2046,6 +2074,30 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
 - **The first-run page on macOS is the text-style (theme) picker**, and
   `hasCompletedOnboarding: true` skips it: the same fresh install then opened on the
   folder-trust question. (2026-10-11, CC 2.1.296, macOS 27, pty probe with no login.)
+- **Since 2.1.318 a broken `~/.claude.json` stays broken until the user fixes it.**
+  `claude -p ok` (and `-p ok --max-turns 1`, the remote warm-up) with a file holding
+  `{broken`: 2.1.317 exits 1 and replaces the file with 178 bytes of defaults (no
+  `hasCompletedOnboarding`), so the next run works; 2.1.318 exits 1, leaves the file as
+  it is and says to fix the JSON or move the file aside, so every later `-p` fails too.
+  An empty (0-byte) file with no backup: 2.1.317 treats it as broken (exit 1, defaults
+  written); 2.1.318 answers (exit 0), prints "…was empty and no backup holds anything:
+  starting with defaults." on stderr and writes a full file, again without
+  `hasCompletedOnboarding`. An empty or broken file with a good backup in the backups
+  folder: 2.1.318 exits 1, leaves the file and prints a `cp -f <backup> …` line; it does
+  not restore by itself. Interactive start (pty, 12 s): `{broken` shows the same
+  "Configuration error … Exit and fix manually / Reset with default configuration"
+  dialog on both builds; an empty file with no backup shows that dialog on 2.1.317 and
+  the text-style (theme) picker on 2.1.318. (2026-11-04, CC 2.1.317 and 2.1.318
+  darwin-arm64, scratch `HOME`s, a real `CLAUDE_CODE_OAUTH_TOKEN`; that linux-arm64
+  does the same is inferred, not checked.) What this means for Koloft's two writers:
+  the local one writes the onboarding flag only into a file that parses as a JSON
+  object; the remote one puts it right after the `{` when line 1 is exactly `{`, without
+  parsing the rest. Neither writes into an empty file, so on 2.1.318 an empty file
+  opens the theme picker locally and, after the remote warm-up has filled it in, on a
+  remote machine too. On a remote machine with a broken file, where Koloft supplies the
+  login, the warm-up now fails at every launch (it runs while `cachedGrowthBookFeatures` is missing, and its output is
+  thrown away) and the tab opens on the "Configuration error" dialog; on 2.1.317 the
+  first warm-up reset the file to defaults.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
@@ -2075,8 +2127,9 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   (2026-10-30, one interactive pty run in a throwaway config folder); Koloft's registry
   reader parses the JSON and counts no keys. That 2.1.316 and 2.1.317 write the same
   keys is read from `strings` of the code that writes `<pid>.json` (2026-10-31 and
-  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed),
-  not from a run: inferred, not checked. A daemon-hosted
+  2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed;
+  2026-11-04, the 2.1.318 code, darwin-arm64 and linux-arm64, identical to 2.1.317's the
+  same way, 23 keys), not from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2828,11 +2881,19 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   byte-identical to 2.1.316's; `self-hosted-runner --help` adds one sentence, wrapped
   over three lines, under
   `--trust-workspace`: "A session that the server starts without the repository's own
-  settings gets no workspace trust, as with false, whatever this flag says.").
+  settings gets no workspace trust, as with false, whatever this flag says.") and
+  2.1.318 (`2.1.318 (Claude Code)`, 2026-11-04; its `--help`, the same nine subcommand
+  helps and `auth status --help` byte-identical to 2.1.317's; `self-hosted-runner
+  --help` rewords `--release-idle-session-min`, `--hold-idle-file` and `--max-hold-min`,
+  no flag added or gone).
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
-  (2026-11-03); what changed is not read, and that the `--version` the shim runs
+  (2026-11-03); what changed is not read. 2.1.318 holds them 13 and 3 times
+  (darwin-arm64 and linux-arm64, 2026-11-04): it adds a mode that waits for the refresh
+  up to a deadline (`exitWaitsForOAuthRefreshUntilDeadline`), off by default, and with it
+  off the exit reads as before (`strings`, not run: inferred, not checked). That the
+  `--version` the shim runs
   before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
@@ -2866,6 +2927,13 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   one behind the native channel that day, after printing "npm global folder isn't
   writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
   update failing is inferred, not checked. A Homebrew install was not run.
+- **Version cleanup keeps every version a running claude still uses.** It lists only
+  `~/.local/share/claude/versions` (plus its staging and lock folders) and keeps the
+  running `execPath`, the version the launch link points at, every version with a live
+  `locks/<version>@<pid>.lock`, and the 2 newest by mtime; it never reaches `~/.koloft`.
+  Since 2.1.318 a lock whose pid answers `EPERM` (another user's process) counts as
+  live, where 2.1.317 called it dead. (`strings`, darwin-arm64 and linux-arm64,
+  2026-11-04, not run: inferred, not checked.)
 - **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
   reverting each other's `~/.claude.json` writes from then on (§2), which the folder
   trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
@@ -2899,7 +2967,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.308; on 2026-10-31 npm `latest` and `next` and the download host's `latest`
   offered 2.1.316, and npm's and the download host's `stable` had moved to 2.1.309;
   on 2026-11-03 npm `latest` and `next` and the download host's `latest` offered
-  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311.
+  2.1.317, and npm's and the download host's `stable` had moved to 2.1.311; on
+  2026-11-04 npm `latest` and `next` and the download host's `latest` offered 2.1.318,
+  and npm's and the download host's `stable` were still 2.1.311.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2924,7 +2994,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `2.1.314/linux-arm64/claude` with 297,067,016 bytes (ETag the file's MD5), and on
   2026-10-31 `2.1.316/linux-arm64/claude` with 328,459,544 bytes (ETag the file's MD5,
   strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
-  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`) — each ran as
+  331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`), and on 2026-11-04
+  `2.1.318/linux-arm64/claude` with 337,438,136 bytes (ETag the file's MD5, strings
+  stamp `2.1.318` only) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
@@ -3119,7 +3191,21 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   8 suggestions and 6 wrong.
 - **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
   with a usage-limit result; 3 of 5 `max` runs did.
-- **The findings are the result text.** `(none)` means the review found nothing.
+- **The findings are the result text.** `(none)` means the review found nothing. On
+  2.1.318 `-p "/code-review low origin/main...HEAD" --model haiku --output-format json`
+  on a one-line diff still answered exit 0, `is_error: false` and a `result` starting
+  with `(none)`, as on 2.1.317 (2026-11-04, scratch `HOME` and repo; the counts, costs
+  and times above were not re-measured, and that `scripts/code-review.mjs`'s own
+  `medium` / `claude-opus-5-5` argv answers the same way on 2.1.318 is inferred, not
+  checked).
+- **Since 2.1.318 a custom command that cannot run puts its error in `result`, still
+  with `is_error: false`.** In a scratch repo, a project command whose `` !`exit 3` ``
+  step is refused under `-p` answered `result: ""` on 2.1.317 and `Shell command
+  permission check failed for pattern …: This command requires approval` on 2.1.318;
+  a skill set `user-invocable: false` answered `""` and `This skill can only be invoked
+  by Claude, not directly by users. …`. Both exit 0, `is_error: false`, on both builds
+  (2026-11-04, `--model haiku`, text and JSON output). So a `/code-review` that failed
+  to expand reads as a review whose text is the error, where 2.1.317 gave an empty one.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
 

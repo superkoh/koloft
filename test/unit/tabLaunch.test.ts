@@ -217,7 +217,6 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     agent: { enabled: () => true, answer: () => {}, skillsFolder: () => undefined },
     gitAccounts: {
       configEnv: (env) => env,
-      picked: async () => false,
       ghWrapper: path.join(home, 'shim', 'gh')
     }
   })

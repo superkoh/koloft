@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { keychainNamespace, keychainServiceSuffix } from '@shared/types'
-import { museAccountEnv } from './museAccounts'
+import { MUSE_PASSES_TO_PLAYWRIGHT, museAccountEnv } from './museAccounts'
 import { agyAccountEnv } from './agyAccounts'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
@@ -356,10 +356,13 @@ const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useI
     useIt: `unset CODEX_API_KEY OPENAI_API_KEY
     export CODEX_HOME="$phome"`
   },
-  // MUSE§13
+  // MUSE§13 MUSE§21
   muse: {
     reachesTheModel: 'case "$sub" in exec|serve) pick=1 ;; esac',
-    useIt: exportsOf(museAccountEnv('$phome'))
+    useIt: exportsOf({
+      ...museAccountEnv('$phome'),
+      ...Object.fromEntries(MUSE_PASSES_TO_PLAYWRIGHT.map((key) => [key, `\${${key}-}`]))
+    })
   },
   // AGY§6 AGY§7
   agy: {

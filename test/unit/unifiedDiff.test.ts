@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CUT_MARK, MAX_ROW_CHARS, parseUnifiedDiff } from '../../src/renderer/src/inlineDiff'
+import { CUT_MARK, MAX_ROW_CHARS, parseUnifiedDiff } from '../../src/shared/unifiedDiff'
 
 const FULL = [
   'diff --git a/f.txt b/f.txt',

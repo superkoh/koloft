@@ -38,12 +38,12 @@ const stringList = (raw: unknown): string[] =>
 const mergedList = (own: unknown, ours: string[]): string =>
   JSON.stringify([...new Set([...stringList(own), ...ours])])
 
+// ADR-0047 CODEX§26 CODEX§29
+export const SANDBOX_NETWORK = 'sandbox_workspace_write.network_access=true'
+
 // CODEX§26
-export function browserSandboxOverrides(sandbox: unknown, cacheDir: string): string[] {
-  return [
-    'sandbox_workspace_write.network_access=true',
-    `sandbox_workspace_write.writable_roots=${mergedList(record(sandbox).writable_roots, [cacheDir])}`
-  ]
+export function playwrightCacheRootOverride(sandbox: unknown, cacheDir: string): string {
+  return `sandbox_workspace_write.writable_roots=${mergedList(record(sandbox).writable_roots, [cacheDir])}`
 }
 
 const runsPlaywrightMcp = (word: string): boolean =>
@@ -51,15 +51,18 @@ const runsPlaywrightMcp = (word: string): boolean =>
 
 const KEY_THE_CODEX_FLAG_PARSER_TAKES = /^[A-Za-z0-9_-]+$/
 
-// CODEX§26
-export function playwrightEnvOverrides(mcpServers: unknown): string[] {
+// ADR-0048 CODEX§26
+export function playwrightMcpOverrides(mcpServers: unknown): string[] {
   return Object.entries(record(mcpServers)).flatMap(([name, raw]) => {
     const entry = record(raw)
     const words = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
     if (!KEY_THE_CODEX_FLAG_PARSER_TAKES.test(name)) return []
     if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
     return [
-      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`
+      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`,
+      ...(entry.default_tools_approval_mode == null
+        ? [`mcp_servers.${name}.default_tools_approval_mode="approve"`]
+        : [])
     ]
   })
 }

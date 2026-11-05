@@ -19,6 +19,7 @@ import {
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
+  unreadableInRoom,
   type Destination,
   type RelayDeps
 } from '../../src/main/discord/relay'
@@ -29,7 +30,8 @@ import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
   discordSaidFile,
-  NOT_FROM_THE_RELAY
+  NOT_FROM_THE_RELAY,
+  noteDiscordSaid
 } from '../../src/main/hooks'
 import { writeMuseHooks } from '../../src/main/museHooks'
 
@@ -63,6 +65,7 @@ function setup(
   const placed: { buttons: string[]; messageId: string }[] = []
   const answered: { tab: string; reply: string }[] = []
   const conductor: Destination = {
+    channelId: CHANNEL,
     name: 'Assist',
     liveTab: () => TAB,
     open: async () => TAB,
@@ -94,8 +97,13 @@ function setup(
     channels: () => [
       { channelId: CHANNEL, lastMessageId: bound.lastMessageId, seen: (id) => last.push(id) }
     ],
-    butlerChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
+    replyChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
     askChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
+    lobbyLink: () => `<#${CHANNEL}>`,
+    noteDiscordId: async (tab, id) =>
+      fs.appendFileSync(path.join(dir, `${tab}.discord-ids`), `${id}\n`),
+    noteDiscordSaid: async (tab, text) => noteDiscordSaid(dir, tab, text),
+    inRoom: () => false,
     helperTitle: () => undefined,
     withButtons: (_t, view, card) => ({
       ...card,
@@ -185,6 +193,39 @@ describe('DiscordRelay: offline catch-up', () => {
     ])
     expect(writes).toEqual([])
     expect(last).toEqual(['103'])
+  })
+
+  it('in a session’s room, hands each owner message sent while Koloft was away to that session, in order, instead of saying it was not delivered', async () => {
+    const ROOM = '333'
+    const ROOM_TAB = 'pty-room-1'
+    const seenInRoom: string[] = []
+    const room: Destination = {
+      channelId: ROOM,
+      name: 'Fix login',
+      liveTab: () => ROOM_TAB,
+      open: async () => ROOM_TAB,
+      typeCommand: async () => undefined,
+      seen: (id) => void seenInRoom.push(id)
+    }
+    const { relay, posts, sent } = setup(
+      {},
+      [message('101'), message('102', '556'), message('103')],
+      {
+        destinationOf: (c) => (c === ROOM ? room : undefined),
+        channels: () => [
+          { channelId: ROOM, lastMessageId: '100', seen: () => {}, handsOverTo: room }
+        ]
+      }
+    )
+    await relay.catchUp()
+    await vi.waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent.map((s) => s.tab)).toEqual([ROOM_TAB, ROOM_TAB])
+    expect(sent.map((s) => s.content.split('\n')[1])).toEqual([
+      '[Discord] said 101',
+      '[Discord] said 103'
+    ])
+    expect(posts.filter((p) => p.text === OFFLINE_REPLY)).toEqual([])
+    await vi.waitFor(() => expect(seenInRoom).toEqual(['101', '103']))
   })
 
   it('on the first run it only remembers the newest message, and answers nothing', async () => {
@@ -787,7 +828,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
 describe('DiscordRelay: a helper the butler started in its own folder', () => {
   const HELPER = 'pty-helper-1'
 
-  it('posts its question to the butler’s channel under its own name as the butler’s helper; what the owner types then answers the newest card still waiting, and a slash command still goes to the butler', async () => {
+  it('posts its question to the butler’s channel under its own name as the butler’s helper; what the owner types there goes to the butler alone and answers only the butler’s own question, never the helper’s card, and a slash command goes to the butler', async () => {
     let helperQuestion: CodexQuestion | undefined = {
       id: 'h1',
       questions: [
@@ -799,39 +840,38 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       ]
     }
     const writesTo: { tab: string; data: string }[] = []
-    const { relay, posts, commands } = setup({}, [], {
+    const { relay, posts, commands, bodies } = setup({}, [], {
       askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
       type: async (t, keys) => void writesTo.push(...keys.map((data) => ({ tab: t, data })))
     })
+    relay.codexAsked(HELPER, helperQuestion)
+    expect(posts[0].text).toContain(butlerAsks("Sort out to-dos (Assist's helper)"))
+    relay.onMessage(message('701', OWNER, '1'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] 1']))
+    expect(writesTo).toEqual([])
+
     drop(hookFile(TAB, 'ask'), QUESTION)
     relay.onAsk(TAB, QUESTION, HOOK)
-    relay.codexAsked(HELPER, helperQuestion)
-    await vi.waitFor(() => expect(posts).toHaveLength(2))
-    expect(posts[1].text).toContain(butlerAsks("Sort out to-dos (Assist's helper)"))
-
-    relay.onMessage(message('701', OWNER, '1'))
-    await vi.waitFor(() => expect(writesTo).toEqual([{ tab: HELPER, data: '1' }]))
-    expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
-
-    helperQuestion = undefined
     relay.onMessage(message('702', OWNER, 'B'))
     await vi.waitFor(() => expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(true))
+    expect(writesTo).toEqual([])
     fs.rmSync(hookFile(TAB, 'ask'))
+    helperQuestion = undefined
 
     relay.onMessage(message('703', OWNER, '/compact'))
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
   })
 
-  it('answered by a typed Discord reply, its next question is held again while the owner is at the Mac once that turn ends', async () => {
+  it('answered from its card, its next question is held again while the owner is at the Mac once that turn ends', async () => {
     let away = true
     let helperQuestion: CodexQuestion | undefined = {
       id: 'h1',
       questions: [{ question: 'Merge #41?', options: [{ label: 'Merge' }, { label: 'Leave it' }] }]
     }
-    const { relay, posts, reactions } = setup({}, [], {
+    const { relay, posts } = setup({}, [], {
       ownerAway: () => away,
       askChannelOf: (t) => (t === HELPER ? CHANNEL : undefined),
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
@@ -841,8 +881,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
-    relay.onMessage(message('711', OWNER, '1'))
-    await vi.waitFor(() => expect(reactions).toContain('711 +✅'))
+    expect(await relay.answerSession(HELPER, '1')).toBeUndefined()
 
     away = false
     helperQuestion = undefined
@@ -859,9 +898,9 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts[1].text).toContain('Delete the branch?')
   })
 
-  it('a Claude helper answered by a typed Discord reply has its next question held again while the owner is at the Mac once that turn ends', async () => {
+  it('a Claude helper answered from its card has its next question held again while the owner is at the Mac once that turn ends', async () => {
     let away = true
-    const { relay, posts, reactions } = setup({}, [], {
+    const { relay, posts } = setup({}, [], {
       ownerAway: () => away,
       askChannelOf: (t) => (t === HELPER ? CHANNEL : undefined),
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined)
@@ -869,8 +908,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     drop(hookFile(HELPER, 'ask'), QUESTION)
     relay.onAsk(HELPER, QUESTION, HOOK)
     expect(posts).toHaveLength(1)
-    relay.onMessage(message('712', OWNER, 'B'))
-    await vi.waitFor(() => expect(reactions).toContain('712 +✅'))
+    expect(await relay.answerSession(HELPER, 'B')).toBeUndefined()
     expect(fs.existsSync(hookFile(HELPER, 'answer'))).toBe(true)
 
     away = false
@@ -948,7 +986,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts).toHaveLength(1)
   })
 
-  it('a question held at the Mac and answered there, followed by one posted once the owner left, takes the owner’s typed reply to that card', async () => {
+  it('a helper’s question held at the Mac and answered there, followed by one posted once the owner left, leaves what the owner types to the butler: only its card’s buttons answer it', async () => {
     let away = false
     const { relay, posts, bodies } = setup({}, [], {
       ownerAway: () => away,
@@ -964,8 +1002,8 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     relay.onAsk(HELPER, QUESTION, later)
     expect(posts).toHaveLength(1)
     relay.onMessage(message('705', OWNER, 'B'))
-    await vi.waitFor(() => expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(true))
-    expect(bodies()).toEqual([])
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] B']))
+    expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(false)
   })
 
   it('a Codex helper’s question held at the Mac, after an earlier card of its own was answered, does not take what the owner writes to the butler', async () => {
@@ -1002,6 +1040,81 @@ const turn = (reply: string, ...said: string[]): Turn => ({
   said: said.map((text, at) => ({ who: 'peer', text, at })),
   reply,
   at: said.length
+})
+
+describe('DiscordRelay: a session’s room', () => {
+  const ROOM = '333'
+  const ROOM_TAB = 'pty-room-1'
+  const roomMessage = (id: string, content: string): DiscordMessage => ({
+    ...message(id, OWNER, content),
+    channelId: ROOM
+  })
+
+  it('takes the owner’s words to that session at once while the butler is still busy with an earlier message: each has a queue of its own', async () => {
+    let butlerReady: (tab: string) => void = () => {}
+    const room: Destination = {
+      channelId: ROOM,
+      name: 'Fix login',
+      liveTab: () => ROOM_TAB,
+      open: async () => ROOM_TAB,
+      typeCommand: async () => undefined,
+      seen: () => {}
+    }
+    const { relay, sent, conductor } = setup(
+      {},
+      [],
+      { destinationOf: (c) => (c === ROOM ? room : c === CHANNEL ? conductor : undefined) },
+      { liveTab: () => undefined, open: () => new Promise((resolve) => (butlerReady = resolve)) }
+    )
+    relay.onMessage(message('801', OWNER, 'for the butler'))
+    relay.onMessage(roomMessage('802', 'for the room'))
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].tab).toBe(ROOM_TAB)
+    expect(relay.delivering(CHANNEL)).toBe(true)
+    expect(relay.delivering(ROOM)).toBe(false)
+    butlerReady(TAB)
+    await vi.waitFor(() => expect(sent.map((s) => s.tab)).toEqual([ROOM_TAB, TAB]), {
+      timeout: 3000
+    })
+  })
+
+  it('a question Koloft cannot read gets one card in the room that sends the owner to the butler’s channel to have its keys pressed', () => {
+    const { relay, posts } = setup({}, [], {
+      askChannelOf: (t) => (t === ROOM_TAB ? ROOM : undefined),
+      inRoom: (t) => t === ROOM_TAB,
+      helperTitle: (t) => (t === ROOM_TAB ? 'Fix login' : undefined)
+    })
+    relay.asksUnreadably(ROOM_TAB)
+    relay.asksUnreadably(ROOM_TAB)
+    expect(posts).toHaveLength(1)
+    expect(posts[0].text).toBe(
+      `${butlerAsks('Fix login')}\n${unreadableInRoom('Assist', `<#${CHANNEL}>`)}`
+    )
+    relay.stoppedAsking(ROOM_TAB)
+    relay.asksUnreadably(ROOM_TAB)
+    expect(posts).toHaveLength(2)
+  })
+})
+
+describe('DiscordRelay: what Koloft hands the butler says where the owner is', () => {
+  it('Koloft’s own notices end with where the owner is right now; the owner’s Discord words stay exactly as written, so its hook quotes only them, and a slash command gets nothing', async () => {
+    const { relay, bodies, commands, conductor } = setup(
+      {},
+      [],
+      {},
+      { ownerIsWhere: () => '(Koloft: the owner is away from the Mac right now.)' }
+    )
+    relay.onMessage(message('811', OWNER, 'hi'))
+    await vi.waitFor(() => expect(bodies()).toHaveLength(1))
+    relay.tell(conductor, '[Koloft] a note')
+    await vi.waitFor(() => expect(bodies()).toHaveLength(2))
+    relay.onMessage(message('812', OWNER, '/compact'))
+    await vi.waitFor(() => expect(commands).toEqual(['/compact']))
+    expect(bodies()).toEqual([
+      '[Discord] hi',
+      '[Koloft] a note (Koloft: the owner is away from the Mac right now.)'
+    ])
+  })
 })
 
 describe('DiscordRelay: the owner at the Mac', () => {
