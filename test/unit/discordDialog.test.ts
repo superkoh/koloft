@@ -158,12 +158,28 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     )
   })
 
+  const DOWN = '\x1b[B'
+  const UP = '\x1b[A'
+  const downs = (n: number): string[] => Array<string>(n).fill(DOWN)
+  const ups = (n: number): string[] => Array<string>(n).fill(UP)
+
+  // CC§14
+  it('before any answer the highlight goes to the bottom row and back up to option 1, so a highlight the owner moved to the own-words or chat row does not eat the digit', () => {
+    expect(claudeKeysFor(colour, '2')).toEqual({
+      ok: true,
+      value: [...downs(3 + 2), ...ups(3 - 1 + 2), '2']
+    })
+  })
+
   // CC§14
   it('a number or a label presses that option, own words press the option after the last, then type and Enter', () => {
-    expect(claudeKeysFor(colour, '2')).toEqual({ ok: true, value: ['2'] })
-    expect(claudeKeysFor(colour, 'green')).toEqual({ ok: true, value: ['2'] })
-    expect(claudeKeysFor(colour, 'Purple')).toEqual({ ok: true, value: ['4', 'Purple', '\r'] })
-    expect(claudeKeysFor(colour, '7')).toEqual({ ok: true, value: ['4', '7', '\r'] })
+    const toOption1 = [...downs(5), ...ups(4)]
+    expect(claudeKeysFor(colour, 'green')).toEqual({ ok: true, value: [...toOption1, '2'] })
+    expect(claudeKeysFor(colour, 'Purple')).toEqual({
+      ok: true,
+      value: [...toOption1, '4', 'Purple', '\r']
+    })
+    expect(claudeKeysFor(colour, '7')).toEqual({ ok: true, value: [...toOption1, '4', '7', '\r'] })
   })
 
   // CC§14
@@ -176,26 +192,39 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     }
     const ask = (...questions: object[]): typeof colour =>
       ({ ...colour, tool_input: { questions } }) as typeof colour
-    const DOWN = '\x1b[B'
+    const toOption1 = [...downs(5), ...ups(4)]
+    const toOption1OfManyPicks = [...downs(3 + 3), ...ups(3 - 1 + 3)]
     expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
       ok: true,
-      value: ['2', '1', '3', '\t', '1']
+      value: [...toOption1, '2', '1', '3', '\t', '1']
     })
     expect(claudeKeysFor(ask(fruit, q), 'Mango juice\nPurple')).toEqual({
       ok: true,
-      value: [DOWN, DOWN, DOWN, 'Mango juice', '\t', '\r', '4', 'Purple', '\r', '1']
+      value: [
+        ...toOption1OfManyPicks,
+        DOWN,
+        DOWN,
+        DOWN,
+        'Mango juice',
+        '\t',
+        '\r',
+        '4',
+        'Purple',
+        '\r',
+        '1'
+      ]
     })
     expect(claudeKeysFor(ask(fruit), '3, 1, 3,')).toEqual({
       ok: true,
-      value: ['1', '3', '\t', '1']
+      value: [...toOption1OfManyPicks, '1', '3', '\t', '1']
     })
     expect(claudeKeysFor(ask(fruit), '1\ncherry')).toEqual({
       ok: true,
-      value: ['1', '3', '\t', '1']
+      value: [...toOption1OfManyPicks, '1', '3', '\t', '1']
     })
     expect(claudeKeysFor(colour, 'Purple\nstripes')).toEqual({
       ok: true,
-      value: ['4', 'Purple stripes', '\r']
+      value: [...toOption1, '4', 'Purple stripes', '\r']
     })
     expect(claudeKeysFor(ask(q, fruit), '2')).toEqual({
       ok: false,

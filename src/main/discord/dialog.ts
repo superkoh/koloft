@@ -249,13 +249,25 @@ function questionKeys(q: Question, line: string): string[] {
 }
 
 // CC§14
+function highlightToTheFirstOption(q: Question): string[] {
+  const rowsUnderTheOptions = q.multiSelect ? 3 : 2
+  return keysFor([
+    ...Array<string>(q.options.length + rowsUnderTheOptions).fill('Down'),
+    ...Array<string>(q.options.length - 1 + rowsUnderTheOptions).fill('Up')
+  ])
+}
+
+// CC§14
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
-    const keys = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    const keys = [
+      ...qs.slice(0, 1).flatMap(highlightToTheFirstOption),
+      ...qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    ]
     return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }
   }
   if (YES.test(text)) return { ok: true, value: ['1'] }
