@@ -4,6 +4,8 @@ import { shq } from '@shared/shellQuote'
 import { AGENT_GUIDE } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
+import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
+import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
@@ -31,6 +33,9 @@ const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 export const OWNER_TYPES_A_SECRET_WITHIN_MS = 9 * 60_000
 const SECRET_REPLY_OUTLIVES_THE_ASK_MS = 60_000
 const PAGE_PICTURES_REACH_DISCORD_WITHIN_MS = 10 * 60_000
+const GIT_LISTS_AND_ADDS_THE_WORKTREE_WITHIN_MS = 2 * GIT_TIMEOUT_MS
+const ASSIST_TITLES_AND_GIT_ADDS_THE_WORKTREE_WITHIN_MS =
+  ASSIST_ANSWERS_WITHIN_MS + GIT_LISTS_AND_ADDS_THE_WORKTREE_WITHIN_MS
 
 const body = (waitsMs: number, pollMs = SHIM_POLL_MS, afterWrite = ''): string => `
 ${NEWID_FN}
@@ -52,6 +57,7 @@ ${afterWrite}waits=0
 limit=${waitsMs / pollMs}
 [ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
 [ "$1" = discord ] && [ "$2" = shot ] && limit=${PAGE_PICTURES_REACH_DISCORD_WITHIN_MS / pollMs}
+[ "$1" = session ] && [ "$2" = new ] && limit=${Math.ceil(ASSIST_TITLES_AND_GIT_ADDS_THE_WORKTREE_WITHIN_MS / pollMs)}
 while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
