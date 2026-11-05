@@ -308,7 +308,7 @@ export const FilesBar = memo(function FilesBar({
           Browse
         </button>
       </div>
-      <span className="wb-title" />
+      <span className="cv-gap" />
       {c.view === 'changes' ? (
         <>
           <div className="seg">
