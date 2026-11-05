@@ -2183,6 +2183,17 @@ Gateway (the live connection that pushes events):
   - Archiving and opening one thread back and forth within a second answered 429
     (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
     15 s) still had calls left.
+- **Reading a thread's messages back** — measured 2026-11-04 with the test bot on the test
+  server, REST only, in a thread made on a message (`auto_archive_duration: 1440`) with
+  four bot posts in it:
+  - `GET /channels/{thread}/messages?after={id}&limit=100` answered 200 with every message
+    after that id, newest first, like a text channel. `after=` the opener's id also
+    returned the thread's own first message, `type` 21 (the copy of the opener).
+  - Once the thread was archived (`PATCH {archived: true}`, 200), the same `GET` answered
+    200 with the same messages, and `GET /channels/{thread}` afterwards still read
+    `archived: true`: reading does not open it.
+  - `GET /channels/{parent}/messages?after={opener}` listed none of the thread's
+    messages: a thread keeps its own history.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
@@ -2957,3 +2968,19 @@ call twice on one home, the second time over the link the first one made.
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex, Muse or
 Antigravity sign-in into the user's login shell with an account's environment, and
 `MARK_OUTPUT_START` in `src/main/signInOutput.ts`.
+
+## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app
+
+- **A hidden `WebContentsView` shows a `.md` file as plain text.** Loaded from a
+  `file://` address, `document.contentType` was `text/markdown` and the body one
+  `<pre>` holding the source: no heading, no table. The Workbench's Markdown layout
+  comes from the renderer, so a picture of the file would show its raw source.
+  Measured 2026-11-04, Electron 43.8.6, a script loading a `.md` with a heading, a
+  table and a mermaid fence into a sandboxed view of its own session.
+- **A ```` ```diff ```` code block shows no colours in Discord's phone app**: added and
+  removed lines read the same. Seen by the owner on their phone, 2026-11-04, on a
+  message the dev test bot posted; a picture with green and red rows was the look
+  picked over an `ansi` block and a coloured square at the start of each line.
+
+Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
+`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.

@@ -30,6 +30,7 @@ function setup(over: Partial<InteractionDeps> = {}) {
   const pressed: DiscordInteraction[] = []
   const submitted: DiscordInteraction[] = []
   const order: string[] = []
+  const channels: string[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
     ownerWrote: () => void order.push('owner back'),
@@ -38,15 +39,24 @@ function setup(over: Partial<InteractionDeps> = {}) {
       order.push('pressed')
     },
     submit: async (i) => void submitted.push(i),
-    run: async (text) => {
+    run: async (text, channelId) => {
       runs.push(text)
+      channels.push(channelId)
       order.push('ran')
       return `Typing ${text}`
     },
     respond: async (_i, body) => void replies.push(body),
     ...over
   }
-  return { interactions: new Interactions(deps), replies, runs, pressed, submitted, order }
+  return {
+    interactions: new Interactions(deps),
+    replies,
+    runs,
+    channels,
+    pressed,
+    submitted,
+    order
+  }
 }
 
 describe('a Discord interaction from the owner counts as the owner back, once it is handled', () => {
@@ -85,7 +95,14 @@ describe('Discord slash commands', () => {
     expect(runs).toEqual(['/clear'])
   })
 
-  it('none of the commands asks which session: they all go to the butler', () => {
+  it('/run, /clear and /compact carry the channel they were used in, so in a room they go to that room’s session', async () => {
+    const { interactions, channels } = setup()
+    await interactions.handle(interaction({ command: 'clear', channelId: THREAD }))
+    await interactions.handle(interaction({ command: 'clear' }))
+    expect(channels).toEqual([THREAD, CHANNEL])
+  })
+
+  it('none of the commands asks which session: the channel it is used in says, the butler’s or a room’s', () => {
     expect(SLASH_COMMANDS.flatMap((c) => c.options ?? []).map((o) => o.name)).toEqual([
       'command',
       'focus'

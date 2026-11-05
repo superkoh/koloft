@@ -549,10 +549,6 @@ export class GitAccountService {
     return id && machine ? `${machine} ${id}` : id
   }
 
-  async pickedAt(cwd: string): Promise<boolean> {
-    return !!this.pickFor(await this.keys.resolve(cwd))
-  }
-
   workspaceAccount(wsPath: string): WorkspaceGitAccount | undefined {
     const repo = this.keys.known(wsPath)
     const a = this.pickFor(repo)

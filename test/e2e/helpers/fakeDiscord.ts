@@ -82,6 +82,8 @@ export interface FakeThread {
   id: string
   parent_id: string
   owner_id: string
+  name?: string
+  auto_archive_duration?: number
 }
 
 export const FAKE_BOT_ID = '900'
@@ -140,6 +142,8 @@ export interface FakeDiscord {
   callbacks: FakeCallback[]
   threads: FakeThread[]
   archived: string[]
+  postsBeforeArchive: number[]
+  threadMembers: { threadId: string; userId: string }[]
   press(author: FakeAuthor, button: FakeButton, channelId: string): string
   submit(author: FakeAuthor, formId: string, typed: string, channelId: string): string
   say(
@@ -164,6 +168,8 @@ const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
 const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
+const THREAD_ON_MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
+const THREAD_MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
 
 function bodyOf(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -235,6 +241,8 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     callbacks: [],
     threads: [],
     archived: [],
+    postsBeforeArchive: [],
+    threadMembers: [],
     press: (author, button, channelId) => {
       const id = String(++nextId)
       for (const ws of sockets)
@@ -402,8 +410,26 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     }
     if (channel && req.method === 'PATCH') {
       const { archived } = JSON.parse((await bodyOf(req)).toString()) as { archived?: boolean }
-      if (archived) fake.archived.push(channel[1])
+      if (archived) {
+        fake.archived.push(channel[1])
+        fake.postsBeforeArchive.push(fake.posted.length)
+      }
       return { status: 200, body: { id: channel[1] } }
+    }
+    const thread = THREAD_ON_MESSAGE_ROUTE.exec(route)
+    if (thread && req.method === 'POST') {
+      const asked = JSON.parse((await bodyOf(req)).toString()) as {
+        name: string
+        auto_archive_duration: number
+      }
+      const made = { id: thread[2], parent_id: thread[1], owner_id: FAKE_BOT_ID, ...asked }
+      fake.threads.push(made)
+      return { status: 201, body: { ...made, type: PUBLIC_THREAD } }
+    }
+    const member = THREAD_MEMBER_ROUTE.exec(route)
+    if (member && req.method === 'PUT') {
+      fake.threadMembers.push({ threadId: member[1], userId: member[2] })
+      return { status: 204 }
     }
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }

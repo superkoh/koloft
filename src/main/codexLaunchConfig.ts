@@ -38,12 +38,12 @@ const stringList = (raw: unknown): string[] =>
 const mergedList = (own: unknown, ours: string[]): string =>
   JSON.stringify([...new Set([...stringList(own), ...ours])])
 
+// ADR-0047 CODEX§26 CODEX§29
+export const SANDBOX_NETWORK = 'sandbox_workspace_write.network_access=true'
+
 // CODEX§26
-export function browserSandboxOverrides(sandbox: unknown, cacheDir: string): string[] {
-  return [
-    'sandbox_workspace_write.network_access=true',
-    `sandbox_workspace_write.writable_roots=${mergedList(record(sandbox).writable_roots, [cacheDir])}`
-  ]
+export function playwrightCacheRootOverride(sandbox: unknown, cacheDir: string): string {
+  return `sandbox_workspace_write.writable_roots=${mergedList(record(sandbox).writable_roots, [cacheDir])}`
 }
 
 const runsPlaywrightMcp = (word: string): boolean =>

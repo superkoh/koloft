@@ -11,7 +11,7 @@ import { assets } from './assets'
 import { fileRefs } from './fileRefs'
 import { frontMatter } from './frontMatter'
 import { tasks } from './tasks'
-import { escapeHtml as esc } from './escape'
+import { escapeHtml as esc } from '@shared/escapeHtml'
 
 export interface RenderedDoc {
   html: string

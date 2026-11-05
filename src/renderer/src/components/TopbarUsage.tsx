@@ -153,7 +153,18 @@ export function TopbarUsage(): JSX.Element | null {
         windows: pool.windows.map((w) => w.minutes)
       }
     })
-  if (members.length === 0 && homePools.length === 0 && agy.length === 0) return null
+  const capsuleGroups = [
+    ...homePools.map((h) => ({
+      label: h.label,
+      total: h.total,
+      accounts: h.subscriptions,
+      glyphs: h.glyphs
+    })),
+    ...(agy.length > 0
+      ? [{ label: 'Antigravity', total: null, accounts: agy, glyphs: agy.map(quotaGlyph) }]
+      : [])
+  ]
+  if (members.length === 0 && capsuleGroups.length === 0) return null
 
   const claude = members.length > 0
   const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
@@ -197,7 +208,7 @@ export function TopbarUsage(): JSX.Element | null {
         className="tbu"
         aria-label={[
           ...(claude ? [capsuleAria(members, now)] : []),
-          ...homePools.map((h) => homeAria(h.glyphs, h.label))
+          ...capsuleGroups.map((g) => homeAria(g.glyphs, g.label))
         ].join('; ')}
         aria-expanded={pop !== null}
         onMouseEnter={enter}
@@ -222,21 +233,14 @@ export function TopbarUsage(): JSX.Element | null {
             <i className="tbu-fill acc" style={{ height: '100%' }} />
           </span>
         )}
-        {homePools.map((h) => (
-          <span key={h.label} className="tbu-group">
-            {h.total && <CapsuleBar glyph={h.total} total />}
-            {h.subscriptions.map((a, i) => (
-              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={h.glyphs[i]} />
+        {capsuleGroups.map((g) => (
+          <span key={g.label} className="tbu-group">
+            {g.total && <CapsuleBar glyph={g.total} total />}
+            {g.accounts.map((a, i) => (
+              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={g.glyphs[i]} />
             ))}
           </span>
         ))}
-        {agy.length > 0 && (
-          <span className="tbu-group">
-            {agy.map((a) => (
-              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={quotaGlyph(a)} />
-            ))}
-          </span>
-        )}
       </button>
       {/* ADR-0013 */}
       {pop &&

@@ -46,6 +46,20 @@ describe('sanitizeDiscord', () => {
     })
   })
 
+  it('keeps which thread each session’s room is, every id it went by, where it read up to and whether Koloft put it down, across a restart', () => {
+    const room = { threadId: '70', keys: ['a', 'b'], name: 'Fix login', lastMessageId: '71' }
+    expect(
+      sanitizeDiscord({
+        rooms: [
+          room,
+          { ...room, threadId: '72', putDown: true },
+          { threadId: '73', keys: [], name: 'no session' },
+          { threadId: 'x', keys: ['c'], name: 'bad id' }
+        ]
+      })
+    ).toEqual({ rooms: [room, { ...room, threadId: '72', putDown: true }] })
+  })
+
   it('drops a channel with no name', () => {
     expect(sanitizeDiscord({ channel: { guildId: '100', channelId: '5' } })).toEqual({})
   })

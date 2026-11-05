@@ -20,7 +20,9 @@ function setup() {
     hold: false,
     marks: [] as AttentionEvent[],
     judging: new Set<string>(),
-    butlerSide: new Set<string>()
+    butlerSide: new Set<string>(),
+    inRoom: new Set<string>(),
+    touched: [] as string[]
   }
   const told: string[] = []
   const held: ((told: boolean) => void)[] = []
@@ -30,6 +32,8 @@ function setup() {
     reachable: () => state.reachable,
     marks: () => state.marks,
     butlerSide: (tab) => state.butlerSide.has(tab),
+    inRoom: (tab) => state.inRoom.has(tab),
+    touchedBeforeLeaving: () => state.touched,
     judging: (tab) => state.judging.has(tab),
     sessionOf: (m) => ({ title: m.title, sessionId: m.sessionId, workspace: 'koloft' }),
     butlerBusy: () => state.busy,
@@ -103,6 +107,31 @@ describe('AwayDigest — while the owner is away, what sessions did goes to the 
     expect(told[0]).toContain('"crash title"')
     expect(told[0]).toContain('stopped unexpectedly')
     expect(told[0]).not.toMatch(/helper|news|child|seen/)
+  })
+
+  it('leaves out a question or a finished turn of a session whose room the owner carries, which the room already shows, but still names it stopping unexpectedly', async () => {
+    const { state, told, mark, gathered } = setup()
+    state.inRoom.add('roomed')
+    mark('roomed', 'approval')
+    mark('roomed', 'turn-done')
+    await gathered()
+    expect(told).toEqual([])
+    mark('roomed', 'exited')
+    await gathered()
+    expect(told).toHaveLength(1)
+    expect(told[0]).toContain(
+      '"roomed title" (session roomed-id, workspace koloft) stopped unexpectedly.'
+    )
+  })
+
+  it('names the sessions the owner worked with at the Mac just before leaving, so the butler can bring those first', async () => {
+    const { state, told, mark, gathered } = setup()
+    state.touched = ['Fix login', 'Docs']
+    mark('fix', 'turn-done')
+    await gathered()
+    expect(told[0]).toContain(
+      'Before leaving, the owner worked at the Mac with "Fix login", "Docs".'
+    )
   })
 
   it('quotes no reply for a turn that has begun again, so an old reply is never passed off as the new one', async () => {

@@ -40,6 +40,7 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { startEchoServer } from './helpers/fixtureServer'
+import { runGit } from './helpers/gitFixture'
 import {
   addRemoteWorkspace,
   agyReady,
@@ -603,6 +604,81 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
+  test('the butler’s koloft open, in a turn the owner started on Discord, also sends to its channel: an HTML file as a picture, Markdown as text with the file, any other file as itself, and koloft diff as a picture of the changes; a session with no room sends nothing, though the owner is away', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const dir = path.join(env.home, 'shown')
+    fs.mkdirSync(dir)
+    fs.writeFileSync(
+      path.join(dir, 'plan.html'),
+      '<!doctype html><title>plan</title><h1>The plan</h1>'
+    )
+    fs.writeFileSync(
+      path.join(dir, 'plan.md'),
+      '# Plan\n\n| step | who |\n|---|---|\n| ship | me |\n'
+    )
+    fs.writeFileSync(path.join(dir, 'notes.bin'), 'some bytes')
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'const a = 1\n')
+    runGit(dir, 'init', '-q')
+    runGit(dir, 'add', '-A')
+    runGit(dir, 'commit', '-q', '-m', 'init')
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'const a = 2\n')
+    const { app, page } = await connected(env, fake)
+    try {
+      const butlerTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+      const shown = async (args: string, reply: string): Promise<FakePost> => {
+        const before = uploads(fake).length
+        fake.say(OWNER, `/koloft ${args}`)
+        await expect
+          .poll(() => uploads(fake).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe(before + 1)
+        const unwrapped = (s: string): string => s.replace(/\s/g, '')
+        await expect
+          .poll(async () => unwrapped(await terminalText(page, butlerTab)))
+          .toContain(unwrapped(reply))
+        return uploads(fake)[before]
+      }
+
+      const picture = await shown(
+        `open ${path.join(dir, 'plan.html')}`,
+        'Sent a picture of the page to the Discord channel the owner talks to you in.'
+      )
+      expect(picture.channelId).toBe(CHANNEL)
+      expect(isPng(picture.files[0].data)).toBe(true)
+
+      const doc = await shown(`open ${path.join(dir, 'plan.md')}`, 'as text, with the file.')
+      expect(doc.content).toContain('**ship**\n> who: me')
+      expect(doc.files.map((f) => f.name)).toEqual(['plan.md'])
+
+      const file = await shown(`open ${path.join(dir, 'notes.bin')}`, 'Sent the file to')
+      expect(file.files).toEqual([
+        expect.objectContaining({ name: 'notes.bin', text: 'some bytes' })
+      ])
+
+      const diff = await shown(
+        `diff ${path.join(dir, 'app.ts')}`,
+        'Sent a picture of its changes to'
+      )
+      expect(diff.files).toHaveLength(1)
+      expect(isPng(diff.files[0].data)).toBe(true)
+
+      await startSessionIn(page, 'ws-a')
+      const roomless = await tabOf(page, (await waitForCalls(env, 1))[0].sessionId)
+      const sentBefore = fake.posted.length
+      await runIn(page, centerTerm(page), `/koloft open ${path.join(dir, 'plan.html')}`)
+      await expect
+        .poll(() => terminalText(page, roomless), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('koloft exit=0')
+      expect(await terminalText(page, roomless)).not.toContain('Sent')
+      expect(fake.posted.length).toBe(sentBefore)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
     env
   }) => {
@@ -646,7 +722,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
+  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and a press on the card’s button answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -670,7 +746,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         .toBe(true)
-      fake.say(OWNER, '1')
+      const [merge] = fake.posted.find((p) => p.content.startsWith(card))!.buttons!
+      fake.press(OWNER, merge, CHANNEL)
       await expect
         .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Merge')
@@ -686,7 +763,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and the owner’s number answers it', async ({
+  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and a press on the card’s button answers it', async ({
     env
   }) => {
     installCodex(env)
@@ -701,7 +778,10 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         .toBe(true)
-      fake.say(OWNER, '2')
+      const green = fake.posted
+        .find((p) => p.content.startsWith(card))!
+        .buttons!.find((b) => b.label === '2. Green')!
+      fake.press(OWNER, green, CHANNEL)
       await expect
         .poll(
           () =>
