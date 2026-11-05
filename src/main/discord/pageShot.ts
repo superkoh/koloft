@@ -149,11 +149,13 @@ export async function shootPage(
   })
   const wc = view.webContents
   const page = wc.id
-  if (machine) machineOfPage.set(page, machine)
-  wc.once('destroyed', () => {
-    machineOfPage.delete(page)
-    for (const watch of goneWatchers) watch(page)
-  })
+  if (machine) {
+    machineOfPage.set(page, machine)
+    wc.once('destroyed', () => {
+      machineOfPage.delete(page)
+      for (const watch of goneWatchers) watch(page)
+    })
+  }
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   view.setBounds({ x: 0, y: 0, width: look.width, height: look.height })
   try {
