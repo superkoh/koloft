@@ -844,7 +844,6 @@ interface ClaudeTabExit {
   leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
 }
 const claudeTabExits = new Map<string, ClaudeTabExit>()
-const sessionsLeavingTheirWorktree = new Set<string>()
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
 
@@ -866,9 +865,8 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
       treeRoot: session?.treeRoot
     })
   }
-  if (session?.sessionId) sessionsLeavingTheirWorktree.add(session.sessionId)
+  if (session?.sessionId) workspaceMgr?.leavingWorktree(session.sessionId, tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
-  workspaceMgr?.refresh()
 }
 
 const attention = new AttentionTracker((pending, event) => {
@@ -3304,11 +3302,10 @@ app.whenReady().then(() => {
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
       const { sessionId } = claudeExit.leaving
-      if (sessionId) sessionsLeavingTheirWorktree.delete(sessionId)
       const claudeSaid = claudeExit.watch.failure()
+      if (sessionId) workspaceMgr?.leftWorktree(sessionId, !claudeSaid)
       if (claudeSaid)
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
-      workspaceMgr?.refresh()
     }
     flushData()
     // PLATFORM§21
@@ -3605,7 +3602,7 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!butler?.isButlerSession(id) || sessionsLeavingTheirWorktree.has(id),
+    hiddenRow: (id) => !!butler?.isButlerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),

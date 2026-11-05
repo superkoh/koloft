@@ -63,6 +63,7 @@ import { mergeUse } from '@shared/firstRun'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
+const A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS = 10_000
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
 const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
@@ -238,6 +239,7 @@ export class WorkspaceManager {
   private transcriptFileById = new Map<string, string>()
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
+  private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
   private rootWatchers = new Map<string, fs.FSWatcher>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
   private timer?: NodeJS.Timeout
@@ -315,7 +317,7 @@ export class WorkspaceManager {
   }
 
   private hidden(id: string): boolean {
-    return this.deps.hiddenRow?.(id) ?? false
+    return this.leavingTheirWorktree.has(id) || (this.deps.hiddenRow?.(id) ?? false)
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
@@ -515,8 +517,33 @@ export class WorkspaceManager {
     this.unpin(wsPath)
   }
 
-  launchStarted(tabId: string, cwd: string, worktree?: string, host?: string): void {
-    this.launches.set(tabId, { tabId, cwd, worktree, host })
+  launchStarted(
+    tabId: string,
+    cwd: string,
+    worktree?: string,
+    host?: string,
+    pickedSessionId?: string
+  ): void {
+    this.launches.set(tabId, { tabId, cwd, worktree, host, pickedSessionId })
+    this.scheduleRescan()
+  }
+
+  leavingWorktree(sessionId: string, tabId: string): void {
+    this.leavingTheirWorktree.set(sessionId, { tabId, tabEnded: false })
+    this.scheduleRescan()
+  }
+
+  leftWorktree(sessionId: string, removed: boolean): void {
+    const leaving = this.leavingTheirWorktree.get(sessionId)
+    if (!leaving) return
+    const showAgain = (): void => {
+      if (this.leavingTheirWorktree.get(sessionId) !== leaving) return
+      this.leavingTheirWorktree.delete(sessionId)
+      this.scheduleRescan()
+    }
+    if (!removed) return showAgain()
+    leaving.tabEnded = true
+    setTimeout(showAgain, A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS).unref()
     this.scheduleRescan()
   }
 
@@ -785,7 +812,12 @@ export class WorkspaceManager {
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    this.lastRunningKey = [...this.deps.runningBindings().keys()].join(',')
+    const boundAtStart = this.deps.runningBindings()
+    this.lastRunningKey = [...boundAtStart.keys()].join(',')
+    for (const [id, leaving] of this.leavingTheirWorktree) {
+      const tab = boundAtStart.get(id)
+      if (tab && tab !== leaving.tabId) this.leavingTheirWorktree.delete(id)
+    }
     const launches = [...this.launches.values()]
 
     const payload: WorkspaceRows[] = []
@@ -797,6 +829,7 @@ export class WorkspaceManager {
     const bucketDirs: string[] = []
     const workspaceSlugs: string[] = []
     const wantedBucketDirs = new Set<string>()
+    const listed = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
     const butler = this.deps.butlerFolder
@@ -861,15 +894,23 @@ export class WorkspaceManager {
       }
       allRows.unshift(...additional.filter((r) => r.pending))
       for (const r of allRows) wsBySession.set(r.id, ws.path)
+      for (const r of filterOwned(allRows, owned, wsRunningIds)) listed.add(r.id)
       const visible = allRows
         .filter((r) => !this.hidden(r.id))
         .map((r) => (!r.running && wsRunningIds.has(r.id) ? { ...r, running: true } : r))
-      const rows = filterOwned(visible, owned, wsRunningIds)
+      const ownedOrRunning = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
         wantedBucketDirs.add(path.join(root, b.slug))
       }
-      const pending = resolvePending(buckets, launches, rows, Date.now())
+      const pending = resolvePending(buckets, launches, ownedOrRunning, Date.now())
+      const startingTabs = new Set(pending.rows.filter((r) => r.pending).map((r) => r.id))
+      const awaitingTheirTab = new Set(
+        launches.flatMap((l) =>
+          startingTabs.has(l.tabId) && l.pickedSessionId ? [l.pickedSessionId] : []
+        )
+      )
+      const rows = ownedOrRunning.filter((r) => !awaitingTheirTab.has(r.id))
       for (const tabId of pending.promoted) this.launches.delete(tabId)
       for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({
@@ -897,6 +938,8 @@ export class WorkspaceManager {
       })
     }
 
+    for (const [id, leaving] of this.leavingTheirWorktree)
+      if (leaving.tabEnded && !listed.has(id)) this.leavingTheirWorktree.delete(id)
     this.state = { bucketDirs, workspaceSlugs }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
