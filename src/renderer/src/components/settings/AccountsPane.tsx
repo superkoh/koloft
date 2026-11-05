@@ -73,20 +73,23 @@ export function AccountsPane(): JSX.Element {
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
   const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(refreshBeat.current), [])
+  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const dismissFailure = (): void => {
+    if (failed) window.api.accounts.dismissSignInFailure()
+  }
   const openForm = (next: PaneForm): void => {
-    if (login && !loginRunning(login.progress)) clearLogin()
+    if (login && !claudeLoginRunning) clearLogin()
+    dismissFailure()
     setForm(next)
   }
   const openClaudeSignIn = (again?: string): void => {
+    if (claudeLoginRunning) return
+    dismissFailure()
     setForm(null)
     beginLogin(again)
   }
   const signIn = form && 'signIn' in form ? form : null
   const adding = form && 'paste' in form ? form.paste : null
-  const claudeAccounts = accounts.filter((a) => ACCOUNT_KINDS_OF.claude.includes(a.kind))
-  const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
-  const museAccounts = accounts.filter((a) => a.kind === 'muse-home')
-  const agyAccounts = accounts.filter((a) => a.kind === 'agy-home')
 
   useEffect(() => {
     let alive = true
@@ -145,46 +148,33 @@ export function AccountsPane(): JSX.Element {
     )
   }
 
-  const formsOf = (backend: BackendId): JSX.Element | null => {
-    const paste = adding && ACCOUNT_KINDS_OF[backend].includes(adding) && (
-      <AddAccountDialog key={adding} kind={adding} onClose={() => setForm(null)} />
+  const section = (backend: BackendId, empty: string, foot: JSX.Element): JSX.Element => {
+    const list = accounts.filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
+    return (
+      <div className="acct-section">
+        {list.length === 0 ? (
+          <div className="acct-empty">{empty}</div>
+        ) : (
+          <div className="acct-list">{list.map(row)}</div>
+        )}
+        <div className="acct-foot">{foot}</div>
+        {backend === 'claude' && login && <LoginDialog key={login.reauthName ?? ''} />}
+        {signIn?.signIn === backend ? (
+          <SignInDialog
+            key={signIn.again ?? ''}
+            backend={signIn.signIn}
+            again={signIn.again}
+            onClose={() => setForm(null)}
+          />
+        ) : (
+          failed?.backend === backend && <SignInFailedCard failed={failed} />
+        )}
+        {adding && ACCOUNT_KINDS_OF[backend].includes(adding) && (
+          <AddAccountDialog key={adding} kind={adding} onClose={() => setForm(null)} />
+        )}
+      </div>
     )
-    if (backend === 'claude')
-      return (
-        <>
-          {login && <LoginDialog key={login.reauthName ?? ''} />}
-          {paste}
-        </>
-      )
-    if (signIn?.signIn === backend)
-      return (
-        <SignInDialog
-          key={signIn.again ?? ''}
-          backend={backend}
-          again={signIn.again}
-          onClose={() => setForm(null)}
-        />
-      )
-    if (!form && failed?.backend === backend) return <SignInFailedCard failed={failed} />
-    return paste || null
   }
-
-  const section = (
-    backend: BackendId,
-    list: AccountView[],
-    empty: string,
-    foot: JSX.Element
-  ): JSX.Element => (
-    <div className="acct-section">
-      {list.length === 0 ? (
-        <div className="acct-empty">{empty}</div>
-      ) : (
-        <div className="acct-list">{list.map(row)}</div>
-      )}
-      <div className="acct-foot">{foot}</div>
-      {formsOf(backend)}
-    </div>
-  )
 
   const runRefresh = async (): Promise<void> => {
     clearTimeout(refreshBeat.current)
@@ -256,7 +246,6 @@ export function AccountsPane(): JSX.Element {
 
       {section(
         'claude',
-        claudeAccounts,
         'No accounts yet — add one below. Claude sessions start only once there is one.',
         <>
           <button
@@ -275,7 +264,6 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Codex</div>
       {section(
         'codex',
-        codexAccounts,
         'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
@@ -293,7 +281,6 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Muse</div>
       {section(
         'muse',
-        museAccounts,
         'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
         <>
           <button
@@ -311,7 +298,6 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Antigravity</div>
       {section(
         'agy',
-        agyAccounts,
         'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
         <>
           <button
@@ -543,7 +529,7 @@ export function SignInDialog({
   }
 
   return (
-    <div className="acct-add" ref={scrollIntoViewOnOpen}>
+    <div className="acct-add" ref={failed ? undefined : scrollIntoViewOnOpen}>
       <div className="acct-add-title">
         {again ? `Sign in again ${again}` : `Sign in to ${label}`}
       </div>

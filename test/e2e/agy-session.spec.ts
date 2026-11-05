@@ -997,7 +997,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       )
       const paste = page.getByRole('button', { name: 'Paste Gemini API key' })
       await paste.evaluate((b) => b.scrollIntoView({ block: 'end' }))
-      await paste.dispatchEvent('click')
+      await paste.click()
       await expect(page.locator('.acct-add-title')).toHaveText('Add Gemini API key')
       const form = await page.locator('.acct-add').boundingBox()
       const modal = await page.locator('.modal').boundingBox()
