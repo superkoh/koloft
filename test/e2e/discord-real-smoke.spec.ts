@@ -13,7 +13,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
@@ -128,10 +128,19 @@ function conductorSaid(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL && !p.card).map((p) => p.content)
 }
 
-function questionCards(fake: FakeDiscord, channelId: string): FakePost[] {
-  return fake.posted.filter(
-    (p) => p.channelId === channelId && p.card && p.content.startsWith('❓')
-  )
+function cardIdsIn(fake: FakeDiscord, channelId: string): string[] {
+  return fake.posted.filter((p) => p.channelId === channelId && p.card).map((p) => p.id)
+}
+
+function cardsWithButtons(fake: FakeDiscord): { channelId: string; labels: string[] }[] {
+  return fake.posted
+    .filter((p) => p.buttons?.length)
+    .map((p) => ({ channelId: p.channelId, labels: p.buttons!.map((b) => b.label) }))
+}
+
+async function roomsUnderTheButlerChannel(fake: FakeDiscord): Promise<FakeThread[]> {
+  await expect.poll(() => fake.threads.some((t) => t.parent_id === CHANNEL)).toBe(true)
+  return fake.threads.filter((t) => t.parent_id === CHANNEL)
 }
 
 function ran(fake: FakeDiscord): string[] {
@@ -505,11 +514,19 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )!
       expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
-      const room = fake.threads.find((t) => t.parent_id === CHANNEL)!
+      const [room, ...more] = await roomsUnderTheButlerChannel(fake)
+      expect(more).toEqual([])
       await expect
-        .poll(() => questionCards(fake, room.id).map((p) => p.buttons?.map((b) => b.label)))
-        .toEqual([['1. Red', '2. Green', '3. Blue']])
-      expect(questionCards(fake, CHANNEL)).toEqual([])
+        .poll(() => cardsWithButtons(fake))
+        .toEqual([
+          {
+            channelId: room.id,
+            labels: [/^1\. Red\b/, /^2\. Green\b/, /^3\. Blue\b/].map((r) =>
+              expect.stringMatching(r)
+            )
+          }
+        ])
+      expect(cardIdsIn(fake, CHANNEL)).toEqual([room.id])
 
       fake.say(
         OWNER,
@@ -529,6 +546,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         })
         .toMatch(/Green/i)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+      expect(cardIdsIn(fake, CHANNEL)).toEqual([room.id])
     })
   })
 

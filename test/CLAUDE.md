@@ -349,8 +349,9 @@ tmux client there with `-u`.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
 the question, the outcomes as options. Only the questions of the butler and of the
-helpers in its folder reach the owner's Discord, as cards in its channel
-(discord-flow); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
+helpers in its folder reach the owner's Discord as cards in its channel
+(discord-flow), and those of a session with a room of its own as cards in that room
+(discord-real-smoke); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
 butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
 owner answers, check their step in a log or file yourself.
 
