@@ -4,6 +4,9 @@ import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
 import { attentionReason } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
+import { butlerStart, PANE_LABEL } from '@shared/butlerStart'
+import type { BackendId } from '@shared/types'
+import { useInstalledBackends } from '../useInstalledBackends'
 import { useStore } from '../store'
 import { rowStateClass, statusWithSecrets } from '../sessionRows'
 import { butlerSetUp, butlerTabOf } from '../butlerRows'
@@ -128,6 +131,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
             <span>{channel ? channelLabel(channel) : NOT_ON_DISCORD}</span>
           </div>
+          {!tabId && <WhyButlerCannotStart backend={backend} />}
         </div>
       )}
       {!!children?.length && <div className="ws-subtabs">{children}</div>}
@@ -141,6 +145,33 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
         document.body
       )}
     </div>
+  )
+}
+
+function WhyButlerCannotStart({ backend }: { backend: BackendId }): JSX.Element | null {
+  const name = useStore((s) => s.settings.butler.name)
+  const enabled = useStore((s) => s.settings.sessionMethods.enabled)
+  const accounts = useStore((s) => s.accounts)
+  const openSettingsPane = useStore((s) => s.openSettingsPane)
+  const { installed } = useInstalledBackends()
+  if (!accounts || !installed) return null
+  const start = butlerStart(backend, { enabled, installed, accounts }, name)
+  if (!('error' in start)) return null
+  const { lead, fixedIn } = start.preferred
+  return (
+    <p className="field-hint bad" title={start.inFull}>
+      {lead}
+      <button
+        className="ob-link"
+        onClick={(e) => {
+          e.stopPropagation()
+          openSettingsPane(fixedIn)
+        }}
+      >
+        {PANE_LABEL[fixedIn]}
+      </button>
+      .
+    </p>
   )
 }
 
