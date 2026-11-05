@@ -788,7 +788,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...workbenchStateDropped(s, [id])
       }
     })
-    if (toButler) get().landOnButler()
+    if (toButler && !get().inboxOpen) get().landOnButler()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
