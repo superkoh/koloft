@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import {
   OWNER_ASLEEP_ANSWER,
   OwnerAsleep,
+  SENDING_THE_ANSWER_FAILED,
   THIS_MAC,
   type AskedOwner,
   type OwnerAsleepDeps
@@ -140,6 +141,36 @@ describe('owner asleep', () => {
       ['a', 'yes']
     ])
     await t.wakeAfter(HOUR_MS)
+    expect(t.reports[0]).toContain(
+      '2. "Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
+    )
+  })
+
+  it('an answer step that throws is reported as not answered, and a second question waiting behind it is still answered', async () => {
+    const t = setup()
+    let failed: ((e: Error) => void) | undefined
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      t.asks.delete(tabId)
+      if (t.replies.length === 1) await new Promise<void>((_, reject) => (failed = reject))
+      return undefined
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    const first = t.asleep.asks('a')
+    await t.settle()
+    t.asks.set('a', approval('npm publish'))
+    await t.asleep.asks('a')
+    failed?.(new Error())
+    await first
+    expect(t.replies).toEqual([
+      ['a', OWNER_ASLEEP_ANSWER],
+      ['a', 'yes']
+    ])
+    await t.wakeAfter(HOUR_MS)
+    expect(t.reports[0]).toContain(
+      `1. "Session a" asked the owner "Blue or red?"; Koloft could not answer it (${SENDING_THE_ANSWER_FAILED}), so it still waits for the owner.`
+    )
     expect(t.reports[0]).toContain(
       '2. "Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
     )
