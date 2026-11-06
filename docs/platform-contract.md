@@ -1234,7 +1234,7 @@ inferred, not checked.
   **A zustand store update has no such gap.** zustand reads the store through
   `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
   render's `useEffect`s inside the commit, so only a component's own `useState` set
-  from a promise or an IPC callback has the gap. Measured 2026-11-04, react-dom 19.3.1,
+  from a promise, an IPC callback or a timer (a hover delay) has the gap. Measured 2026-11-04, react-dom 19.3.1,
   zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
   28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
   listener added by `useEffect` received an Escape dispatched from the
@@ -1242,7 +1242,13 @@ inferred, not checked.
   showed it, and 0 of 3 when a `useState` set from a resolved promise did
   (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
   lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
-  `useEffect`.
+  `useEffect`. Checked 2026-11-05 the same jsdom way (`ipcShownDialogKeys.test.tsx`):
+  a `useState` set from a `setTimeout` callback lags like one set from a promise. The
+  tip card, shown from a timer, got an Esc in its `useEffect` listener with React's
+  tasks delayed (one run of a throwaway unit case, not kept; not repeated), as its
+  `useLayoutEffect` sets state in the same commit. Why that closes the gap — React runs
+  any waiting `useEffect`s before it starts the next render — is inferred from that one
+  run, not checked.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
