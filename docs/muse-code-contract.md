@@ -225,6 +225,20 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `approval/decide`, `userInput/answer`, `view/subscribe`, `session/resume` are refused
   (`-32021 sessionInUse` / `-32024 sessionNotLoaded`). Neither can the TUI attach to a
   host Koloft would run.
+- **What a session waits on is in `approval/listPending` by the time its `blocked` frame
+  arrives.** Measured 2026-11-06 on `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, the TUI in
+  a python3 pty (160×50) answering the cursor, colour and 7501 queries, a fake
+  `/responses` model at `--base-url` whose first `main` turn called `muse.bash` with
+  `sandbox_permissions: "require_escalated"` (`blocked:kind=permission`) or
+  `muse.request_user_input` (`blocked:kind=question`), `--approval-judge off
+  --trust-workspace`, fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run; from the frame
+  on, a new `muse serve --provider echo` every 250 ms for 3 s, the session id read from
+  `museHome/runtime/muse/sessions/<id>.json`. The first such client, started at the
+  frame, had the approval (4 of 4) or the question (3 of 3) 120–170 ms after it; all 84
+  clients of the 7 runs had it. A cold `muse serve` answered `initialize` in
+  120–760 ms (6 runs). A client that looks the id up through `session/list` instead
+  finds nothing for a while: there the new session showed up 2.75 s after the frame.
 
 ## §6 tmux swallows OSC 7501
 
