@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 
 const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
@@ -439,6 +439,16 @@ function tui() {
       fire('PostToolUse', { ...call, tool_response: ran.stdout })
       return later(() => say(turnId, `Ran: ${cmd}`, text))
     }
+    if (text.startsWith('/koloft ')) {
+      const cmd = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/sh', ['-c', cmd], { cwd: process.cwd() }, (e, out, err) => {
+        const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+        process.stdout.write(`${said}[fake-muse] koloft exit=${code}\r\n`)
+        inputBox()
+      })
+      return
+    }
     if (text === '/approve') {
       const turnId = turn(text)
       return block(
@@ -551,6 +561,20 @@ function tui() {
       process.stdout.write(`resumed session ${child.id}\r\n`)
       const turnId = turn(prompt)
       return later(() => say(turnId, `echo: ${prompt}`, prompt))
+    }
+    // MUSE§9
+    if (text === '/compact') {
+      logRecord(session.id, 'runtime.command.accepted', {
+        command_kind: 'context.compact.manual'
+      })
+      return later(() => {
+        logRecord(session.id, 'context.compact.manual.outcome', {
+          terminal_outcome: 'compacted'
+        })
+        fire('PostCompact', { trigger: 'manual' })
+        fire('SessionStart', { source: 'compact' })
+        inputBox()
+      })
     }
     if (text === '/usage') {
       const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))

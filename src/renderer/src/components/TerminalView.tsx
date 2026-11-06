@@ -220,7 +220,12 @@ export function TerminalView({
     const compScreen = compView?.closest('.xterm-screen') as HTMLElement | null
     const compositionHelper = (
       term as unknown as {
-        _core?: { _compositionHelper?: { updateCompositionElements(): void } }
+        _core?: {
+          _compositionHelper?: {
+            updateCompositionElements(): void
+            _isSendingComposition?: boolean
+          }
+        }
       }
     )._core?._compositionHelper
 
@@ -273,6 +278,7 @@ export function TerminalView({
         commitGrace = true
         onUserInputRef.current?.()
         window.api.terminal.write(id, data)
+        if (compositionHelper) compositionHelper._isSendingComposition = false
         setTimeout(() => {
           commitGrace = false
         }, 0)
@@ -288,7 +294,11 @@ export function TerminalView({
     ta?.addEventListener('compositionend', onCompEnd)
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown') onUserInputRef.current?.()
+      if (e.type === 'keydown') {
+        onUserInputRef.current?.()
+        // PLATFORM§22
+        if (compositionHelper?._isSendingComposition === false) commitGrace = false
+      }
       // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')

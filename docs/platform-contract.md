@@ -1083,7 +1083,7 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 Defects 1–3 are from the upstream xterm.js issues and PRs named in them. Defects 4–7 come
 from reading `CompositionHelper.ts` and from Koloft's own IME (input method) runs, no date
-recorded; inferred, not checked.
+recorded; inferred, not checked. Defect 8 was measured, as it says.
 
 1. The preedit is anchored to a stale cursor, because `updateCompositionElements`
    returns early while not composing (xtermjs/xterm.js#5454, fixed upstream by #5759).
@@ -1106,6 +1106,21 @@ recorded; inferred, not checked.
    by one `setTimeout(0)` drains it without losing the text: xterm's
    `_finalizeComposition` reads the textarea in its own `setTimeout(0)`, queued first
    because its listener was added first (defect 6), so it has sent the text by then.
+8. A key whose keydown is handled before that `setTimeout(0)` runs — the commit and the
+   key queued together on a busy renderer — reaches the app's custom key handler
+   first, then `CompositionHelper.keydown`. Unless its keyCode is 16, 17, 18, 20 or
+   229, and while `_isSendingComposition` is set, that calls
+   `_finalizeComposition(false)`: exactly one `onData` with the composition text (an
+   empty string fires too, as `triggerDataEvent` does not check), and then the key's
+   own data on the same keydown; the timer then sends nothing. So a window that
+   swallows `onData` until the timer drops that key too. Setting
+   `_isSendingComposition` to false once xterm's `compositionend` listener has run
+   stops both sends, the timer's and the keydown's; while it still reads true, a
+   keydown would still send the text again. Measured 2026-11-06 on xterm
+   6.1.0-beta.302, Electron 43.8.6, in the e2e suite: CDP `Input.insertText` and key
+   events sent without waiting between them lost an Enter, and then a letter, 3 of 3
+   times each while the window swallowed what followed (ime-composition.spec.ts); the
+   call order was read in `CoreBrowserTerminal.ts` `_keyDown` and `CompositionHelper.ts`.
 
 State in the shipped `@xterm/xterm` 6.1.0-beta.302 (read 2026-09-24 in
 `src/browser/input/CompositionHelper.ts`): `updateCompositionElements` still returns

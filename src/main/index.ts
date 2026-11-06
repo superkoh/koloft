@@ -770,7 +770,8 @@ type PanelOpen = (
 function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
   return async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
-    return lines && shows(lines)
+    const somethingDrawn = lines?.some((line) => line.trim())
+    return lines && somethingDrawn ? shows(lines) : undefined
   }
 }
 
