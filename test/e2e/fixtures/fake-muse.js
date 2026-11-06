@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 
 const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
@@ -438,6 +438,16 @@ function tui() {
       const ran = spawnSync('/bin/sh', ['-c', cmd], { cwd: process.cwd(), encoding: 'utf8' })
       fire('PostToolUse', { ...call, tool_response: ran.stdout })
       return later(() => say(turnId, `Ran: ${cmd}`, text))
+    }
+    if (text.startsWith('/koloft ')) {
+      const cmd = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/sh', ['-c', cmd], { cwd: process.cwd() }, (e, out, err) => {
+        const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+        process.stdout.write(`${said}[fake-muse] koloft exit=${code}\r\n`)
+        inputBox()
+      })
+      return
     }
     if (text === '/approve') {
       const turnId = turn(text)

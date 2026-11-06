@@ -1868,6 +1868,7 @@ const INSTANT_COMMANDS = new Set([
 ])
 function handleLine(text, origin = {}) {
   if (text.startsWith('!')) return shellEscape(text.slice(1))
+  if (text.startsWith('/koloft ')) return koloftCommand(text.slice('/koloft '.length).trim())
   const command = text.split(/\s/)[0]
   const argument = text.slice(command.length).trim()
   const instant = INSTANT_COMMANDS.has(command)
@@ -1881,6 +1882,11 @@ function shellEscape(cmd) {
   runShell('/bin/bash', cmd, process.env).then((ran) => {
     if (ran.output) say(ran.output.replace(/\n$/, ''))
   })
+}
+function koloftCommand(args) {
+  runShell('/bin/sh', `koloft ${args}`, process.env).then((ran) =>
+    say(`${ran.output}[fake-agy] koloft exit=${ran.code}`)
+  )
 }
 function submit(raw) {
   const text = raw.replace(/\r\n?/g, '\n').trim()
