@@ -16,6 +16,7 @@ import { BYTES_PER_FILE, type DiscordFile } from '../../src/main/discord/link'
 import { DISCORD_MESSAGE_LIMIT } from '../../src/main/discord/split'
 import type { PageLook, PagePictures } from '../../src/main/discord/pageShot'
 import { formatRemoteKey } from '../../src/shared/remoteKey'
+import { machinePageUrl } from '../../src/shared/browserRoute'
 
 const WHERE = 'the room'
 const page = { width: 1280, height: 900 }
@@ -90,16 +91,21 @@ describe('what koloft open shows is sent to the phone as', () => {
     expect(shownOf('/w/app.ts', undefined, 'diff')).toEqual({ diff: '/w/app.ts' })
   })
 
-  it('in a session on another machine: its files are read there, its own pages are not pictured, a public page is', () => {
+  it('in a session on another machine: its files are read there, and every page, its own HTML files and localhost included, is pictured as that session’s Workbench shows it', () => {
     const on = (p: string): string => formatRemoteKey('box', p)
     expect(shownOf('/w/plan.md', 'box')).toEqual({ markdown: on('/w/plan.md') })
     expect(shownOf('/w/app.ts', 'box', 'diff')).toEqual({ diff: on('/w/app.ts') })
-    expect(shownOf('/w/plan.html', 'box')).toEqual({ pageOnMachine: '/w/plan.html' })
+    expect(shownOf('/w/plan.html', 'box')).toEqual({
+      page: machinePageUrl('box', '/w/plan.html'),
+      machine: 'box'
+    })
     expect(shownOf('http://localhost:3000', 'box')).toEqual({
-      pageOnMachine: 'http://localhost:3000'
+      page: 'http://localhost:3000',
+      machine: 'box'
     })
     expect(shownOf('https://example.com/docs', 'box')).toEqual({
-      page: 'https://example.com/docs'
+      page: 'https://example.com/docs',
+      machine: 'box'
     })
   })
 })
@@ -122,12 +128,36 @@ describe('sendPhoneCopy', () => {
     expect(d.sent).toEqual([{ files: [expect.objectContaining({ name: 'page.png' })], parts: [] }])
   })
 
-  it('a page on another machine sends nothing and tells the session to say it in words', async () => {
-    const d = deps()
-    expect(await sendPhoneCopy(d, { pageOnMachine: '/w/plan.html' }, WHERE)).toMatch(
-      /no picture of a page on another machine.*say what it shows/
+  it('a page on another machine is pictured as that machine shows it, and a failure names the file by its path there', async () => {
+    const asked: [string, string | undefined][] = []
+    const d = deps({
+      shoot: async (url, machine) => {
+        asked.push([url, machine])
+        return { files: [{ name: 'page.png', data: Buffer.from('png') }], shown: page, page }
+      }
+    })
+    const there = machinePageUrl('box', '/w/plan.html')
+    expect(await sendPhoneCopy(d, { page: there, machine: 'box' }, WHERE)).toBe(
+      'Sent a picture of the page to the room.'
     )
-    expect(d.sent).toEqual([])
+    expect(asked).toEqual([[there, 'box']])
+
+    let fail!: (e: Error) => void
+    const failing = deps({ shoot: () => new Promise((_, reject) => (fail = reject)) })
+    expect(await sendPhoneCopy(failing, { page: there, machine: 'box' }, WHERE, 0)).toBe(
+      stillSending(WHERE)
+    )
+    fail(new Error('it did not load in time.'))
+    await expect
+      .poll(() => failing.sent)
+      .toEqual([
+        {
+          files: [],
+          parts: [
+            couldNotSendInRoom(formatRemoteKey('box', '/w/plan.html'), 'it did not load in time.')
+          ]
+        }
+      ])
   })
 
   it('a page that cannot be pictured tells the session why, and to say it in words', async () => {

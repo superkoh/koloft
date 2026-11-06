@@ -28,8 +28,13 @@ const CHANNEL = '222'
 const STARTS_AND_ANSWERS_MS = 90_000
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
+const PNG_HEIGHT_AT = 20
+const PLAN_PAGE_HEIGHT_PX = 2000
+
 const isPng = (data: Buffer): boolean =>
   data.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)
+
+const pngHeight = (data: Buffer): number => data.readUInt32BE(PNG_HEIGHT_AT)
 
 const unwrapped = (s: string): string => s.replace(/\s/g, '')
 
@@ -89,7 +94,7 @@ async function roomOfANewSession(
 }
 
 function shows(page: Page, fake: FakeDiscord, room: FakeThread, session: SessionInfo) {
-  return async (args: string, reply: string, sends = true): Promise<FakePost | undefined> => {
+  return async (args: string, reply: string): Promise<FakePost> => {
     const before = fake.posted.filter((p) => p.files.length).length
     fake.say(OWNER, `/koloft ${args}`, { channelId: room.id })
     await expect
@@ -98,8 +103,7 @@ function shows(page: Page, fake: FakeDiscord, room: FakeThread, session: Session
       })
       .toContain(unwrapped(reply))
     const uploads = fake.posted.filter((p) => p.files.length)
-    expect(uploads).toHaveLength(sends ? before + 1 : before)
-    if (!sends) return undefined
+    expect(uploads).toHaveLength(before + 1)
     expect(uploads[before].channelId).toBe(room.id)
     return uploads[before]
   }
@@ -109,7 +113,7 @@ function fixtureFiles(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(
     path.join(dir, 'plan.html'),
-    '<!doctype html><title>plan</title><h1>The plan</h1>'
+    `<!doctype html><title>plan</title><h1 style="height:${PLAN_PAGE_HEIGHT_PX}px">The plan</h1>`
   )
   fs.writeFileSync(
     path.join(dir, 'plan.md'),
@@ -141,15 +145,15 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
         `open ${path.join(dir, 'plan.html')}`,
         `Sent a picture of the page to ${where}.`
       )
-      expect(isPng(picture!.files[0].data)).toBe(true)
+      expect(isPng(picture.files[0].data)).toBe(true)
 
       const doc = await show(`open ${path.join(dir, 'plan.md')}`, `Sent it to ${where} as text`)
-      expect(doc!.content).toContain('**ship**\n> who: me')
-      expect(doc!.content).toContain('see it on the Mac')
-      expect(doc!.files.map((f) => f.name)).toEqual(['plan.md'])
+      expect(doc.content).toContain('**ship**\n> who: me')
+      expect(doc.content).toContain('see it on the Mac')
+      expect(doc.files.map((f) => f.name)).toEqual(['plan.md'])
 
       const file = await show(`open ${path.join(dir, 'notes.bin')}`, `Sent the file to ${where}.`)
-      expect(file!.files).toEqual([
+      expect(file.files).toEqual([
         expect.objectContaining({ name: 'notes.bin', text: 'some bytes' })
       ])
 
@@ -157,7 +161,7 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
         `diff ${path.join(dir, 'app.ts')}`,
         `Sent a picture of its changes to ${where}.`
       )
-      expect(isPng(diff!.files[0].data)).toBe(true)
+      expect(isPng(diff.files[0].data)).toBe(true)
       expect(fake.posted.some((p) => p.channelId === CHANNEL && p.files.length)).toBe(false)
 
       fake.say(
@@ -184,7 +188,7 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
     }
   })
 
-  test('in the room of a session on another machine, its files are pulled from there and sent, its page is not pictured and the session is told to say it in words', async ({
+  test('in the room of a session on another machine, its files are pulled from there and sent, and an HTML file there goes as a picture of the whole page, as from a session on this Mac', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -201,20 +205,21 @@ test.describe('Discord rooms: what a session shows the owner at the Mac also rea
       const where = "this session's room on the owner's Discord"
 
       const doc = await show(`open ${path.join(dir, 'plan.md')}`, `Sent it to ${where} as text`)
-      expect(doc!.content).toContain('**ship**\n> who: me')
-      expect(doc!.files.map((f) => f.name)).toEqual(['plan.md'])
+      expect(doc.content).toContain('**ship**\n> who: me')
+      expect(doc.files.map((f) => f.name)).toEqual(['plan.md'])
 
-      await show(
+      const picture = await show(
         `open ${path.join(dir, 'plan.html')}`,
-        'Koloft takes no picture of a page on another machine',
-        false
+        `Sent a picture of the page to ${where}.`
       )
+      expect(isPng(picture.files[0].data)).toBe(true)
+      expect(pngHeight(picture.files[0].data)).toBeGreaterThanOrEqual(PLAN_PAGE_HEIGHT_PX)
 
       const diff = await show(
         `diff ${path.join(dir, 'app.ts')}`,
         `Sent a picture of its changes to ${where}.`
       )
-      expect(isPng(diff!.files[0].data)).toBe(true)
+      expect(isPng(diff.files[0].data)).toBe(true)
     } finally {
       await quitAndClose(app)
       await fake.close()

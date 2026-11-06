@@ -505,7 +505,13 @@ import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
-import { shootHtml, shootPage } from './discord/pageShot'
+import {
+  machineOfShotPage,
+  onShotPageGone,
+  shootHtml,
+  shootPage,
+  shotSession
+} from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
@@ -3162,6 +3168,7 @@ app.whenReady().then(() => {
   })
 
   setupBrowserPartition()
+  setupPageShotPartition()
   updateDockBadge(attention.list())
   // PLATFORM§15
   setupExtensions({
@@ -5074,11 +5081,9 @@ function fenceRequest(
 async function loopbackOnTheMachine(
   details: Electron.OnBeforeRequestListenerDetails,
   guest: number,
-  machinePort: number
-): Promise<Electron.CallbackResponse | null> {
-  const owner = await reportedOwner(guest)
-  const host = owner ? machineOfOwner(owner) : undefined
-  if (!host) return null
+  machinePort: number,
+  host: string
+): Promise<Electron.CallbackResponse> {
   if (!aPageOnTheMachineAsks(details.resourceType, details.initiatorOrigin)) return { cancel: true }
   const frame = FRAME_LOADS.has(details.resourceType)
   if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
@@ -5088,6 +5093,25 @@ async function loopbackOnTheMachine(
   const there = onMacPort(details.url, macPort)
   if (there === details.url) return {}
   return details.resourceType === 'webSocket' ? { cancel: true } : { redirectURL: there }
+}
+
+// ADR-0045 ADR-0046
+function setupPageShotPartition(): void {
+  const ses = shotSession()
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const page = details.webContentsId
+    const host = machineOfShotPage(page)
+    const fromMachine = machinePageOf(details.url)
+    if (fromMachine && (fromMachine.host !== host || machinePageRequestRefused(details)))
+      return callback({ cancel: true })
+    const machinePort = loopbackPortOf(details.url)
+    if (page === undefined || !host || machinePort === null) return callback({})
+    void loopbackOnTheMachine(details, page, machinePort, host).then(callback, () =>
+      callback({ cancel: true })
+    )
+  })
+  onShotPageGone((page) => pageForwards.pageGone(page))
 }
 
 function setupBrowserPartition(): void {
@@ -5189,10 +5213,15 @@ function setupBrowserPartition(): void {
     const machinePort = loopbackPortOf(details.url)
     if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
       return fenceRequest(details, callback)
-    void loopbackOnTheMachine(details, guest, machinePort).then(
-      (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
-      () => callback({ cancel: true })
-    )
+    void reportedOwner(guest)
+      .then((owner) => {
+        const host = owner ? machineOfOwner(owner) : undefined
+        return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
+      })
+      .then(
+        (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+        () => callback({ cancel: true })
+      )
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -5908,7 +5937,7 @@ async function copyToPhone(
     : "this session's room on the owner's Discord"
   return sendPhoneCopy(
     {
-      shoot: shootPage,
+      shoot: (url, machine) => shootPage(url, { machine }),
       shootHtml,
       size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
       readBytes: (file) =>

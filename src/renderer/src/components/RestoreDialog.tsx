@@ -1,5 +1,5 @@
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { SessionRow } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -31,7 +31,8 @@ export function RestoreDialog({
     }
   }, [wsPath])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }

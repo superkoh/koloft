@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { session, WebContentsView, type WebContents } from 'electron'
+import { pagePathOf } from '@shared/browserRoute'
 import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
 import { within } from '../within'
 
@@ -40,8 +41,18 @@ interface Shot {
 }
 
 let partitionReady = false
+const machineOfPage = new Map<number, string>()
+const goneWatchers: ((page: number) => void)[] = []
 
-function shotSession(): Electron.Session {
+export function machineOfShotPage(page: number | undefined): string | undefined {
+  return page === undefined ? undefined : machineOfPage.get(page)
+}
+
+export function onShotPageGone(watch: (page: number) => void): void {
+  goneWatchers.push(watch)
+}
+
+export function shotSession(): Electron.Session {
   const ses = session.fromPartition(SHOT_PARTITION)
   if (partitionReady) return ses
   partitionReady = true
@@ -118,7 +129,7 @@ export async function shootHtml(
   const file = path.join(dir, 'page.html')
   try {
     await fs.promises.writeFile(file, html)
-    return await shootPage(pathToFileURL(file).href, look, shownAs)
+    return await shootPage(pathToFileURL(file).href, { look, shownAs })
   } finally {
     await fs.promises.rm(dir, { recursive: true, force: true })
   }
@@ -127,13 +138,24 @@ export async function shootHtml(
 // PLATFORM§16
 export async function shootPage(
   url: string,
-  look = PAGE_LOOK,
-  shownAs = url
+  {
+    machine,
+    look = PAGE_LOOK,
+    shownAs = pagePathOf(url) ?? url
+  }: { machine?: string; look?: PageLook; shownAs?: string } = {}
 ): Promise<PagePictures> {
   const view = new WebContentsView({
     webPreferences: { session: shotSession(), sandbox: true, contextIsolation: true }
   })
   const wc = view.webContents
+  const page = wc.id
+  if (machine) {
+    machineOfPage.set(page, machine)
+    wc.once('destroyed', () => {
+      machineOfPage.delete(page)
+      for (const watch of goneWatchers) watch(page)
+    })
+  }
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   view.setBounds({ x: 0, y: 0, width: look.width, height: look.height })
   try {
