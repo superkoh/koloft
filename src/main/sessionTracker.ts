@@ -525,6 +525,7 @@ export class SessionTracker extends SessionRuntime {
       sessionId
     )
   leftBehind?: (sessionId: string) => boolean
+  permissionOnScreen: (tabId: string) => boolean = () => false
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
 
@@ -627,7 +628,9 @@ export class SessionTracker extends SessionRuntime {
     }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
-    if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
+    // CC§12
+    if (turn === 'working' && this.permissionOnScreen(tabId)) this.recordHookTurn(tabId, 'approval')
+    else if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
     else if (turn)
       void this.reportTurnEnd(tabId, event.type === 'stop' ? event.reported : undefined)
@@ -656,6 +659,16 @@ export class SessionTracker extends SessionRuntime {
     if (!t?.idleCompaction) return false
     t.idleCompaction = false
     return true
+  }
+
+  // CC§12 CC§14
+  permissionDrawn(tabId: string): void {
+    if (this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, 'approval')
+  }
+
+  // CC§14
+  dialogAnswered(tabId: string): void {
+    if (this.turnNow(tabId) === 'approval') this.recordHookTurn(tabId, 'working')
   }
 
   setStatus(tabId: string, status: SessionStatus): void {

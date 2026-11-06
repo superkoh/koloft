@@ -11,12 +11,18 @@ function watch() {
   const processes = new Map<string, object>([['t1', {}]])
   const replies: [string, string][] = []
   const closed: string[] = []
+  const statesAfter: string[] = []
+  const drawn: string[] = []
   const w = new ClaudeDialogWatch({
     watchedProcess: (tabId) => processes.get(tabId),
     reply: (tabId, text) => void replies.push([tabId, text]),
-    closed: (tabId) => void closed.push(tabId)
+    permissionDrawn: (tabId) => void drawn.push(tabId),
+    closed: (tabId, stateAfter) => {
+      closed.push(tabId)
+      statesAfter.push(stateAfter)
+    }
   })
-  return { w, processes, replies, closed }
+  return { w, processes, replies, closed, statesAfter, drawn }
 }
 
 describe('ClaudeDialogWatch — a local Claude tab tells Koloft when its dialog closes', () => {
@@ -43,6 +49,22 @@ describe('ClaudeDialogWatch — a local Claude tab tells Koloft when its dialog 
     expect(closed).toEqual(['t1'])
     w.data('t1', frame('state=clear'))
     expect(closed).toEqual(['t1'])
+  })
+
+  it('tells each permission dialog once as it draws, and what claude went on to: working once answered, idle once turned down', () => {
+    const { w, drawn, statesAfter } = watch()
+    w.data('t1', QUERY + frame('state=working'))
+    w.data('t1', blocked('approve Bash: ls') + blocked('approve Bash: ls'))
+    expect(drawn).toEqual(['t1'])
+    expect(w.showsPermission('t1')).toBe(true)
+    w.data('t1', frame('state=working'))
+    expect(w.showsPermission('t1')).toBe(false)
+    w.data('t1', blocked('approve Bash: make') + frame('state=idle'))
+    expect(drawn).toEqual(['t1', 't1'])
+    expect(statesAfter).toEqual(['working', 'idle'])
+    w.data('t1', frame('state=blocked:kind=auth'))
+    expect(drawn).toEqual(['t1', 't1'])
+    expect(w.showsPermission('t1')).toBe(false)
   })
 
   it('a tab it does not watch — remote, or another agent — gets no reply and reports nothing', () => {
