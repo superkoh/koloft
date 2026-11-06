@@ -648,24 +648,20 @@ export class DiscordRelay {
   }
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
-    const error = await this.answerNow(tab, reply)
-    if (error === undefined) this.d.answered(tab, reply)
-    return error
-  }
-
-  private async answerNow(tab: string, reply: string): Promise<string | undefined> {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
         this.codexAsks.delete(tab)
+        if (inPlace === undefined) this.d.answered(tab, reply)
         return inPlace
       }
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
         if (!key) return takesYesOrNo(label)
+        this.d.answered(tab, reply)
         await this.press(tab, [key])
         return undefined
       }
@@ -673,6 +669,7 @@ export class DiscordRelay {
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
       const answers = questionAnswers(question, reply)
       if (!answers) return howToAnswer(question)
+      this.d.answered(tab, reply)
       await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return undefined
     }
@@ -683,12 +680,14 @@ export class DiscordRelay {
         : SHOWS_NO_DIALOG
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
+      this.d.answered(tab, reply)
       return undefined
     }
     if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return SHOWS_NO_DIALOG
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
+    this.d.answered(tab, reply)
     await this.d.type(tab, keys.value)
     return undefined
   }

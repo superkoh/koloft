@@ -163,6 +163,13 @@ const QUESTION = {
   tool_name: 'AskUserQuestion',
   tool_input: { questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] }] }
 }
+// CC§14
+const TO_OPTION_1_OF_TWO = [
+  ...Array<string>(4).fill('\x1b[B'),
+  '\x1b[A',
+  '\x15',
+  ...Array<string>(2).fill('\x1b[A')
+]
 
 async function watchAsksOnceArmed(
   relay: DiscordRelay,
@@ -412,8 +419,8 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     relay.onAsk(TAB, QUESTION)
     expect(relay.dialog(TAB)?.text).toBe('Which?\n1. A\n2. B')
     relay.onMessage(message('801', OWNER, 'neither, use C'))
-    await vi.waitFor(() => expect(reactions).toContain('801 +✅'))
-    expect(writes.map((w) => w.data)).toEqual(['3', 'neither, use C', '\r'])
+    await vi.waitFor(() => expect(reactions).toContain('801 +✅'), { timeout: 8000 })
+    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '3', 'neither, use C', '\r'])
     expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
     expect(posts).toHaveLength(2)
     expect(posts[1].text).toBe(posts[0].text)
@@ -421,7 +428,7 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   })
 
   // CC§14
-  it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys; once that turn is over, the next message goes to it as usual', async () => {
+  it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys, its answer known before the first key so the card never reads the closing dialog as answered at the Mac; once that turn is over, the next message goes to it as usual', async () => {
     let status: SessionStatus = 'approval'
     const { relay, posts, writes, reactions, bodies, answered } = setup({}, [], {
       status: () => status
@@ -429,8 +436,10 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     relay.onAsk(TAB, QUESTION)
     await vi.waitFor(() => expect(posts.map((p) => p.text)[0]).toContain('Which?'))
     relay.onMessage(message('701', OWNER, '2'))
-    await vi.waitFor(() => expect(reactions).toContain('701 +✅'))
-    expect(writes.map((w) => w.data)).toEqual(['2'])
+    await vi.waitFor(() => expect(writes).toHaveLength(1))
+    expect(answered).toEqual([{ tab: TAB, reply: '2' }])
+    await vi.waitFor(() => expect(reactions).toContain('701 +✅'), { timeout: 8000 })
+    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '2'])
     expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     relay.onAsk(TAB, { tool_name: 'Bash', tool_input: { command: 'make' } })
     status = 'waiting'
@@ -591,8 +600,8 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     relay.onAsk(MANAGED, one)
     expect(asksChanged).toEqual([MANAGED])
     expect(await relay.answerSession(MANAGED, 'Purple')).toBeUndefined()
-    expect(writes.map((w) => w.data)).toEqual(['3', 'Purple', '\r'])
-    expect(writes[2].at - writes[1].at).toBeGreaterThanOrEqual(290)
+    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '3', 'Purple', '\r'])
+    expect(writes.at(-1)!.at - writes.at(-2)!.at).toBeGreaterThanOrEqual(290)
     expect(await relay.answerSession(MANAGED, '1')).toBe(SHOWS_NO_DIALOG)
 
     relay.onAsk(MANAGED, one)

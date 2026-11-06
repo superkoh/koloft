@@ -42,6 +42,8 @@ export function onlyTheTerminalsOwnAnswers(data: string): boolean {
   return ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)
 }
 
+export const CLEAR_TO_LINE_START = '\x15'
+
 // CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],

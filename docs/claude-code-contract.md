@@ -2763,7 +2763,51 @@ below was one run.
   left open 20 minutes first. Each time the `tool_result` holding the pick was in the
   transcript about 1 s after Koloft typed the digit, and the tab went on. In real use on
   0.63.1 the same kind of digit typed from a card once drew no `tool_result` at all (the
-  owner answered in the terminal 2 min 42 s later); the cause was not reproduced.
+  owner answered in the terminal 2 min 42 s later); the cause was not reproduced. The
+  next bullet holds four ways to get that same result; which one the owner met is not
+  known.
+- **A digit picks only while the highlight is on a numbered option; where the highlight
+  goes.** 2026-11-05, CC 2.1.318 (the native binary), a python pty 120×40 drawn through
+  `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`, no hook, a local fake Messages API
+  (`ANTHROPIC_BASE_URL`, an `apiKeyHelper` key) that answered every turn with one canned
+  `AskUserQuestion`, keys 0.3–0.5 s apart; one run per line unless it says more.
+  - The rows of one single-pick question with N options are `1.`…`N.`, `N+1. Type
+    something.` (a text field once highlighted), then under a rule `N+2. Chat about
+    this`. A many-pick question has a `Submit` (or `Next`) row between its `Type
+    something` row and `Chat about this`. The first tab of a dialog with several
+    questions has the same rows as its question alone.
+  - With the highlight on `Type something`, a digit is typed into the field (`❯ 3. 1`)
+    and nothing is sent. On `Chat about this` a digit does nothing. On any numbered
+    option it picks that digit's option, wherever the highlight is.
+  - What moves the highlight there: Down twice (single pick, N=2) reaches `Type
+    something`, three times `Chat about this`; a bracketed paste (`hello`) jumps to the
+    field and fills it (`❯ 3. hello`, then `hello1` after the digit); in fullscreen
+    (`"tui": "fullscreen"`) a mouse click on a row moves it there, while a hover report on
+    any row and three wheel-down reports do not. Typed letters, typed Chinese, Tab,
+    space, a focus-out/in report pair and a resize to 90×30 and back left it on option 1.
+  - Down stops at `Chat about this`, the bottom row; Up from option 1 goes to `Type
+    something` (not to the bottom row); Up from `Chat about this` goes to the row above
+    it, from the field (even holding text) to option N. Home (`ESC[H`, `ESC[1~`) and
+    PageUp (`ESC[5~`) do nothing. Four Ups in one write moved the highlight one row.
+  - So Down N+2 times, then Up N+1 times (N+3 and N+2 for a many-pick question), each
+    its own write, leaves the highlight on option 1 from any start: from the start, after
+    two or three Downs, after a paste, after a fullscreen click on the field, and on a
+    two-question dialog after a paste (7 runs, each picked option 1). Two keys that
+    arrive in one read count as one (above); the extra Down covers that, the Ups have no
+    such room.
+  - A many-pick question whose field holds pasted text keeps it ticked: after the keys
+    above, `1`, Tab, `1` sent `"Apple, hello"`.
+  - Ctrl+U (0x15) with the highlight on the field empties it, and an emptied many-pick
+    field is no longer ticked. Down to the bottom, Up onto the field, Ctrl+U, then Up N
+    times: after a paste of `hello`, `3` `Purple` CR sent `Purple`; after Down Down and
+    a typed `hello world`, the same; on an empty field, the same; on a many-pick
+    question after a paste, `1` Tab `1` sent `Apple` (1 run each). With `hello world`
+    typed and the cursor moved 5 places left before the highlight left the field,
+    Ctrl+U alone still emptied it (`Purple` sent; Ctrl+E then Ctrl+U the same), so the
+    cursor is back at the end once the highlight returns.
+  - A `Bash` dialog (`--permission-mode default`; `1. Yes` … `4. No`, every row
+    numbered) took `1` with the highlight moved down to row 3: the command ran. A plan
+    dialog was not run.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
