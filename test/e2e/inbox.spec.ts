@@ -389,8 +389,12 @@ test('a plan an Antigravity session waits on is a card quoting the whole plan; A
     const page = await app.firstWindow()
     await waitBooted(page)
     await newSessionInWith(page, 'ws-a', 'Antigravity')
+    const agyTab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id')) as string
+    await expect
+      .poll(() => terminalText(page, agyTab), { timeout: 30_000 })
+      .toContain('Antigravity CLI')
     await runIn(page, centerTerm(page), '/plan')
-    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
     await openInbox(page)
     const card = inboxCard(page, 'asks you to approve a plan')
     await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
