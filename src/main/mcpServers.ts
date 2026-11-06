@@ -1,6 +1,10 @@
+import fs from 'fs'
 import path from 'path'
 import type { BackendId } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { runsPlaywrightMcp } from './browserControlEnv'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
+import { realpathSafe } from './projectInfo'
 
 export interface McpServer {
   name: string
@@ -46,10 +50,13 @@ function parsed(text: string | null): Record<string, unknown> {
   }
 }
 
+const turnedOn = (raw: unknown): [string, Record<string, unknown>][] =>
+  Object.entries(asRecord(raw))
+    .map(([name, entry]): [string, Record<string, unknown>] => [name, asRecord(entry)])
+    .filter(([, entry]) => entry.disabled !== true)
+
 function listed(backend: BackendId, raw: unknown, onlyIn?: string): McpServer[] {
-  return Object.entries(asRecord(raw))
-    .filter(([, entry]) => asRecord(entry).disabled !== true)
-    .map(([name]) => ({ name, backend, ...(onlyIn && { onlyIn }) }))
+  return turnedOn(raw).map(([name]) => ({ name, backend, ...(onlyIn && { onlyIn }) }))
 }
 
 export function jsonServers(backend: BackendId, files: ConfigText[]): McpServer[] {
@@ -76,6 +83,38 @@ export function claudeServers(
     ),
     ...jsonServers('claude', projectFiles)
   ]
+}
+
+// ADR-0048 CC§22 CC§24
+export function claudePlaywrightServers(
+  claudeJson: string | null,
+  projectFilesFarthestFirst: (string | null)[],
+  projectKey: string
+): string[] {
+  const doc = parsed(claudeJson)
+  const loaded = Object.assign(
+    {},
+    asRecord(doc.mcpServers),
+    ...projectFilesFarthestFirst.map((text) => asRecord(parsed(text).mcpServers)),
+    asRecord(asRecord(asRecord(doc.projects)[projectKey]).mcpServers)
+  )
+  return turnedOn(loaded)
+    .filter(([, entry]) => runsPlaywrightMcp(entry.command, entry.args))
+    .map(([name]) => name)
+}
+
+export const textOrNull = (file: string): Promise<string | null> =>
+  fs.promises.readFile(file, 'utf8').catch(() => null)
+
+// ADR-0048 CC§22 CC§24
+export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> {
+  const [claudeJson, ...projectFiles] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    ...foldersUpToRoot(realpathSafe(cwd))
+      .reverse()
+      .map((folder) => textOrNull(path.join(folder, PROJECT_MCP_FILE)))
+  ])
+  return claudePlaywrightServers(claudeJson, projectFiles, claudeProjectKey(cwd))
 }
 
 const CODEX_TABLE = /^[ \t]*\[[ \t]*(?:"[^"\n]*"|[^\]\s"])+[ \t]*\]/gm
