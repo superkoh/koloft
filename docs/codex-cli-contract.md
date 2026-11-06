@@ -2100,6 +2100,34 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   `{"size":{"answers":["Small"]},"fruit":{"answers":["None of the above","user_note: A ripe
   mango"]}}`. So Koloft answers each question in turn by its own keys, with nothing after
   the last.
+- **A question the person already pressed keys in.** 2026-11-05, codex-cli 0.166.0, the
+  full-screen `codex --no-daemon` in a python pty (120×40, `pyte`), a throwaway `HOME` and
+  `CODEX_HOME` whose `config.toml` points `model_provider` at a fake Responses server on
+  localhost (`wire_api = "responses"`, `env_key` a made-up key, no login; a model name
+  the binary does not know, since `gpt-5.5` stopped on a "Meet GPT-6 Sol" page),
+  `features.default_mode_request_user_input=true`; the fake asked one `isOther: true`
+  question (Red / Green) or two (two options each); every key its own write, 300 ms
+  apart; one run per line, two where marked.
+  - A digit picks by its number wherever the highlight is: after Down ×1, ×2, ×3 (Down
+    from the last row wraps to row 1), Up ×1 (wraps to the last row), Home, PageUp or
+    End (none of them moves it), `2` sent `["Green"]`.
+  - With the notes line open (Down ×2 then Tab, ×2; with `hello` typed in it; or after a
+    bracketed paste, which opens option 1's notes and fills it), `2` went into the note
+    and nothing was sent in 8 s. Esc or a second Tab there clears and closes the note,
+    and `2` then sent `["Green"]`; Esc on the list instead interrupts the turn
+    ("Conversation interrupted") and the `2` lands in the composer.
+  - Koloft's own-words keys (Down × options, Tab, words, Enter) count from where the
+    highlight is: from row 2 they sent `["Red","user_note: Purple"]` (×2), from row 3 or
+    after Up ×1 `["Green","user_note: Purple"]`; with the note open, Tab closed it and
+    the words were lost (`["Green"]`); after a paste nothing was sent.
+  - With two questions, question 1 answered in the terminal: `2`, `2` sent question 1's
+    pick and `Large`, and the second `2` stayed in the composer; own words for question 2
+    went to the model as a new message. With → pressed to question 2 first: the first
+    `2` answered it and opened "Submit with unanswered questions?", where the second `2`
+    only moved to "Go back"; nothing was sent.
+  - No key was found that puts the highlight on a known row. So once the person pressed
+    a key in a question since it was asked, Koloft leaves it to them and presses
+    nothing.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
   an elicitation `mode` other than `form`.
 

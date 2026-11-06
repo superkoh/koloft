@@ -17,6 +17,7 @@ import {
 import {
   answerItFirst,
   inputNotProbed,
+  STARTED_IN_THE_TERMINAL,
   butlerAsks,
   DiscordRelay,
   OFFLINE_REPLY,
@@ -128,10 +129,17 @@ function setup(
       return true
     },
     asksChanged: (t) => asksChanged.push(t),
-    type: async (t, keys) => {
-      await typeKeys((data) => writes.push({ data, at: Date.now() }), keys)
-      if (session.takesKeys) relay.dialogGone(t, false)
+    type: async (t, keys, stillWanted) => {
+      const typed = await typeKeys(
+        (data) => writes.push({ data, at: Date.now() }),
+        keys,
+        stillWanted
+      )
+      if (typed && session.takesKeys) relay.dialogGone(t, false)
+      return typed
     },
+    touchedSinceAsked: () => false,
+    ownerTouchedSince: () => false,
     queueDrained: () => true,
     queue: async () => undefined,
     sendLine: async (tab, line) =>
@@ -184,12 +192,7 @@ const QUESTION = {
   tool_input: { questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] }] }
 }
 // CC§14
-const TO_OPTION_1_OF_TWO = [
-  ...Array<string>(4).fill('\x1b[B'),
-  '\x1b[A',
-  '\x15',
-  ...Array<string>(2).fill('\x1b[A')
-]
+const TO_THE_EMPTIED_FIELD_OF_TWO = [...Array<string>(4).fill('\x1b[B'), '\x1b[A', '\x15']
 
 async function watchAsksOnceArmed(
   relay: DiscordRelay,
@@ -440,7 +443,11 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     expect(relay.dialog(TAB)?.text).toBe('Which?\n1. A\n2. B')
     relay.onMessage(message('801', OWNER, 'neither, use C'))
     await vi.waitFor(() => expect(reactions).toContain('801 +✅'), { timeout: 8000 })
-    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '3', 'neither, use C', '\r'])
+    expect(writes.map((w) => w.data)).toEqual([
+      ...TO_THE_EMPTIED_FIELD_OF_TWO,
+      'neither, use C',
+      '\r'
+    ])
     expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
     expect(posts).toHaveLength(2)
     expect(posts[1].text).toBe(posts[0].text)
@@ -459,7 +466,7 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     await vi.waitFor(() => expect(writes).toHaveLength(1))
     expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     await vi.waitFor(() => expect(reactions).toContain('701 +✅'), { timeout: 8000 })
-    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '2'])
+    expect(writes.map((w) => w.data)).toEqual([...TO_THE_EMPTIED_FIELD_OF_TWO, '\x1b[A', '2'])
     expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     relay.onAsk(TAB, { tool_name: 'Bash', tool_input: { command: 'make' } })
     status = 'waiting'
@@ -620,7 +627,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     relay.onAsk(MANAGED, one)
     expect(asksChanged).toEqual([MANAGED])
     expect(await relay.answerSession(MANAGED, 'Purple')).toBeUndefined()
-    expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '3', 'Purple', '\r'])
+    expect(writes.map((w) => w.data)).toEqual([...TO_THE_EMPTIED_FIELD_OF_TWO, 'Purple', '\r'])
     expect(writes.at(-1)!.at - writes.at(-2)!.at).toBeGreaterThanOrEqual(290)
 
     relay.onAsk(MANAGED, one)
@@ -637,6 +644,137 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'maybe later')).toContain('only answer yes or no')
     relay.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
+  })
+
+  // CC§12 CC§14
+  it('the keys of a Claude answer stop the moment its dialog closes, so the rest of the run never lands in the prompt box, and the answer is reported as not taken; the same dialog delivered again meanwhile does not stop them', async () => {
+    const { relay, writes } = setup({}, [], { status: () => 'approval' })
+    relay.onAsk(MANAGED, QUESTION)
+    const typing = relay.answerSession(MANAGED, '2')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    relay.onAsk(MANAGED, QUESTION)
+    expect(await relay.answerSession(MANAGED, '1')).toBe(ANSWER_ON_ITS_WAY)
+    await vi.waitFor(() => expect(writes.length).toBe(2))
+    relay.dialogGone(MANAGED, true)
+    expect(await typing).toBe(SHOWS_NO_DIALOG)
+    expect(writes.map((w) => w.data)).toEqual(TO_THE_EMPTIED_FIELD_OF_TWO.slice(0, 2))
+  })
+
+  // CC§14
+  it('a Claude dialog of several questions that Koloft already typed into is walked back to question 1 before the next answer, though the owner never touched it', async () => {
+    vi.useFakeTimers()
+    try {
+      const question = (q: string): object => ({
+        question: q,
+        options: [{ label: 'A' }, { label: 'B' }]
+      })
+      const two = {
+        tool_name: 'AskUserQuestion',
+        tool_input: { questions: [question('One?'), question('Two?')] }
+      }
+      const { relay, writes, session } = setup({}, [], { status: () => 'approval' })
+      session.takesKeys = false
+      relay.onAsk(MANAGED, two)
+      const first = relay.answerSession(MANAGED, '1\n1')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await first).toBe(ANSWER_NOT_TAKEN)
+      const firstRun = writes.map((w) => w.data)
+      expect(firstRun).not.toContain('\x1b[Z')
+      const second = relay.answerSession(MANAGED, '2\n2')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await second).toBe(ANSWER_NOT_TAKEN)
+      expect(writes.slice(firstRun.length).map((w) => w.data)).toContain('\x1b[Z')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // CC§14
+  it('the keys of a Claude answer stop when the owner presses a key at the Mac meanwhile; Koloft says it left the dialog to the owner and withdraws the reply it had recorded', async () => {
+    let pressed = false
+    const { relay, writes, answered } = setup({}, [], {
+      status: () => 'approval',
+      ownerTouchedSince: () => pressed
+    })
+    relay.onAsk(MANAGED, QUESTION)
+    const typing = relay.answerSession(MANAGED, '2')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    pressed = true
+    expect(await typing).toBe(STARTED_IN_THE_TERMINAL)
+    expect(writes).toHaveLength(1)
+    expect(answered.at(-1)).toEqual({ tab: MANAGED, reply: '' })
+  })
+
+  // CODEX§20 MUSE§11 AGY§14
+  it('a Codex, Muse or Antigravity question the owner already pressed keys in is left to the owner: Koloft presses nothing and says so', async () => {
+    const question: CodexQuestion = {
+      id: 0,
+      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]
+    }
+    for (const backend of ['codex', 'muse', 'agy'] as const) {
+      const { relay, writes } = setup({}, [], {
+        backendOf: () => backend,
+        pendingQuestion: () => question,
+        touchedSinceAsked: () => true
+      })
+      expect(await relay.answerSession(MANAGED, '2')).toBe(STARTED_IN_THE_TERMINAL)
+      expect(writes).toEqual([])
+    }
+  })
+
+  // CODEX§20
+  it('a Codex answer stops pressing keys the moment the owner presses one in the question, says it left the question to the owner, and withdraws the reply it had recorded', async () => {
+    let touched = false
+    const question: CodexQuestion = {
+      id: 0,
+      questions: [
+        {
+          question: 'Which colour?',
+          options: [{ label: 'Red' }, { label: 'Green' }],
+          ownWords: true
+        }
+      ]
+    }
+    const { relay, writes, answered } = setup({}, [], {
+      backendOf: () => 'codex',
+      pendingQuestion: () => question,
+      touchedSinceAsked: () => touched
+    })
+    const typing = relay.answerSession(MANAGED, 'Purple')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    touched = true
+    expect(await typing).toBe(STARTED_IN_THE_TERMINAL)
+    expect(writes.map((w) => w.data)).toEqual(['\x1b[B'])
+    expect(answered.at(-1)).toEqual({ tab: MANAGED, reply: '' })
+  })
+
+  // CC§14
+  it('a Claude dialog with a many-pick question the owner already pressed keys in is left to the owner, since Koloft’s digits would flip the ticks there; one with single picks is still answered', async () => {
+    const fruit = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [{ label: 'Apple' }, { label: 'Banana' }],
+            multiSelect: true
+          }
+        ]
+      }
+    }
+    let pressedAt = 0
+    const { relay, writes } = setup({}, [], {
+      status: () => 'approval',
+      ownerTouchedSince: (_t, at) => pressedAt >= at
+    })
+    relay.onAsk(MANAGED, fruit)
+    pressedAt = Date.now()
+    expect(await relay.answerSession(MANAGED, 'Apple')).toBe(STARTED_IN_THE_TERMINAL)
+    expect(writes).toEqual([])
+    await new Promise((r) => setTimeout(r, 5))
+    relay.onAsk(MANAGED, QUESTION)
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
+    expect(writes.at(-1)?.data).toBe('2')
   })
 
   // CC§12 CC§14
@@ -1022,7 +1160,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
-      type: async (t, keys) => void writesTo.push(...keys.map((data) => ({ tab: t, data })))
+      type: async (t, keys) => !!writesTo.push(...keys.map((data) => ({ tab: t, data })))
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts[0].text).toContain(butlerAsks("Sort out to-dos (Assist's helper)"))
@@ -1054,7 +1192,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
-      type: async () => undefined
+      type: async () => true
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
@@ -1195,7 +1333,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? question : undefined),
-      type: async (_t, keys) => void writesTo.push(...keys)
+      type: async (_t, keys) => !!writesTo.push(...keys)
     })
     relay.codexAsked(HELPER, question)
     expect(posts).toHaveLength(1)

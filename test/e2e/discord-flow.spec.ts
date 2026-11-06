@@ -1203,7 +1203,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer and once with koloft session keys; each presses its key', async ({
+  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer and once with koloft session keys; each presses its key; once the owner pressed a key in a question, koloft session answer leaves it to the owner and presses nothing', async ({
     env
   }) => {
     installCodex(env)
@@ -1262,6 +1262,21 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           { answers: { colour: { answers: ['Green'] } } },
           { answers: { colour: { answers: ['Red'] } } }
         ])
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
+      await page.evaluate((id) => window.api.terminal.write(id, '\x1b[B'), codexTab)
+      fake.say(OWNER, `/koloft session answer ${codexId} Green`)
+      const conductorTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+      await expect
+        .poll(async () => (await terminalText(page, conductorTab)).replace(/\s/g, ''), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toContain('alreadystartedonthisquestionintheterminal')
+      expect(answers()).toHaveLength(2)
     } finally {
       await quitAndClose(app)
       await fake.close()
