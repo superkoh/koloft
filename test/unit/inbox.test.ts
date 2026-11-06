@@ -12,15 +12,15 @@ import {
 
 function makeHost(
   over: Partial<InboxHost> = {}
-): InboxHost & { sent: [string, string][]; answered: [string, unknown][] } {
-  const sent: [string, string][] = []
+): InboxHost & { sent: [string, string, boolean][]; answered: [string, unknown][] } {
+  const sent: [string, string, boolean][] = []
   const answered: [string, unknown][] = []
   return {
     sent,
     answered,
     now: () => Date.now(),
-    sendToSession: async (session, text) => {
-      sent.push([session, text])
+    sendToSession: async (session, text, toItsOwnSession) => {
+      sent.push([session, text, toItsOwnSession])
       return { ok: true, session }
     },
     answerSession: async (session, answer) => {
@@ -288,6 +288,48 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
       '«commit it»',
       'footer'
     ])
+  })
+
+  it('a button’s message tells the host whether it goes to the card’s own session, since only there may it claim that session’s own permission class (ADR-0028)', async () => {
+    const host = makeHost()
+    const inbox = new Inbox(host)
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    const toOther = {
+      id: 'tell',
+      label: 'Tell s2',
+      run: { type: 'session' as const, session: 's2', message: 'go' }
+    }
+    const toSelf = {
+      id: 'self',
+      label: 'Tell s1',
+      run: { type: 'session' as const, session: 's1', message: 'go' }
+    }
+    const { id } = inbox.add(
+      { source: 'koloft', as: 's1' },
+      { ...done, actions: [...done.actions!, toOther, toSelf] }
+    )
+    inbox.press(id, 'next', { next: 'go on' })
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    inbox.press(id, 'tell', {})
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    inbox.press(id, 'self', {})
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    expect(host.sent.map(([to, , own]) => [to, own])).toEqual([
+      ['s1', true],
+      ['s2', false],
+      ['s1', true]
+    ])
+  })
+
+  it('a card a session moved onto another session with update is not that other session’s own, so its button cannot claim that session’s permission class (ADR-0028)', async () => {
+    const host = makeHost()
+    const inbox = new Inbox(host)
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    const { id } = inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.update({ source: 'koloft', as: 's1' }, 'done-1', { session: 's2' })
+    inbox.press(id, 'next', { next: 'go on' })
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    expect(host.sent.map(([to, , own]) => [to, own])).toEqual([['s2', false]])
   })
 
   it('a session a button hands the card to may then move it, only to the states the button lets', async () => {
