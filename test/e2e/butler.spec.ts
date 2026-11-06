@@ -260,7 +260,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await openButler(page)
       const call = (await waitForAllCalls(env, 1))[0]
       expect(call.cwd).toBe(butlerFolder(env))
-      expect(call.argv).toContain('--plugin-dir')
+      expect(call.argv.join(' ')).toContain('agent-plugin')
       expect(call.argv).not.toContain('--append-system-prompt-file')
       await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Alfred')
