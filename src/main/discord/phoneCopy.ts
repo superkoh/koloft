@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'url'
-import { loopbackPortOf, machinePageOf, routeFor, schemeOf } from '@shared/browserRoute'
+import { pagePathOf, routeFor, schemeOf } from '@shared/browserRoute'
 import { escapeHtml } from '@shared/escapeHtml'
 import { basename, previewKindForPath } from '@shared/preview'
 import { formatRemoteKey } from '@shared/remoteKey'
@@ -13,11 +13,7 @@ import type { PageLook, PagePictures } from './pageShot'
 import { DISCORD_MESSAGE_LIMIT, splitForDiscord } from './split'
 
 export type Shown =
-  | { page: string }
-  | { pageOnMachine: string }
-  | { markdown: string }
-  | { file: string }
-  | { diff: string }
+  { page: string; machine?: string } | { markdown: string } | { file: string } | { diff: string }
 
 export interface FileDiff {
   text: string
@@ -25,7 +21,7 @@ export interface FileDiff {
 }
 
 export interface PhoneCopyDeps {
-  shoot(url: string): Promise<PagePictures>
+  shoot(url: string, machine?: string): Promise<PagePictures>
   shootHtml(html: string, look: PageLook, shownAs: string): Promise<PagePictures>
   size(file: string): Promise<number | undefined>
   readBytes(file: string): Promise<Buffer>
@@ -65,17 +61,13 @@ export function shownOf(
   const file = local && machine ? formatRemoteKey(machine, local) : local
   if (view === 'diff') return file ? { diff: file } : undefined
   const route = routeFor(scheme ? target : (file ?? target), 'agent')
-  if (route.dest === 'browser') {
-    const there = machine && (machinePageOf(route.target) || loopbackPortOf(route.target) !== null)
-    return there ? { pageOnMachine: target } : { page: scheme ? target : route.target }
-  }
+  if (route.dest === 'browser') return { page: scheme ? target : route.target, machine }
   if (!file) return undefined
   return previewKindForPath(file) === 'markdown' ? { markdown: file } : { file }
 }
 
 function nameOf(shown: Shown): string {
-  if ('page' in shown) return shown.page
-  if ('pageOnMachine' in shown) return shown.pageOnMachine
+  if ('page' in shown) return pagePathOf(shown.page) ?? shown.page
   if ('markdown' in shown) return basename(shown.markdown)
   return basename('file' in shown ? shown.file : shown.diff)
 }
@@ -199,10 +191,8 @@ async function diffCopy(d: PhoneCopyDeps, file: string, where: string): Promise<
 }
 
 async function copy(d: PhoneCopyDeps, shown: Shown, where: string): Promise<string> {
-  if ('pageOnMachine' in shown)
-    return `Koloft takes no picture of a page on another machine, so nothing was sent to ${where}; say what it shows in your reply.`
   if ('page' in shown) {
-    const pictures = await d.shoot(shown.page)
+    const pictures = await d.shoot(shown.page, shown.machine)
     await d.send(pictures.files, [])
     return picturesSent(pictures, where)
   }
