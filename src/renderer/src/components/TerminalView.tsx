@@ -297,7 +297,7 @@ export function TerminalView({
       if (e.type === 'keydown') {
         onUserInputRef.current?.()
         // PLATFORM§22
-        commitGrace = false
+        if (compositionHelper?._isSendingComposition === false) commitGrace = false
       }
       // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {

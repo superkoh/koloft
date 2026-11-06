@@ -1115,7 +1115,8 @@ recorded; inferred, not checked. Defect 8 was measured, as it says.
    own data on the same keydown; the timer then sends nothing. So a window that
    swallows `onData` until the timer drops that key too. Setting
    `_isSendingComposition` to false once xterm's `compositionend` listener has run
-   stops both sends, the timer's and the keydown's. Measured 2026-11-06 on xterm
+   stops both sends, the timer's and the keydown's; while it still reads true, a
+   keydown would still send the text again. Measured 2026-11-06 on xterm
    6.1.0-beta.302, Electron 43.8.6, in the e2e suite: CDP `Input.insertText` and key
    events sent without waiting between them lost an Enter, and then a letter, 3 of 3
    times each while the window swallowed what followed (ime-composition.spec.ts); the
