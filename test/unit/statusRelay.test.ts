@@ -61,7 +61,7 @@ const count = (text: string, part: string): number => text.split(part).length - 
 describe.skipIf(!PYTHON_WITH_PTY)(
   'status-relay.py, the python3 pty wrapper a remote Claude Code tab runs in tmux',
   () => {
-    it("answers claude's status query itself, sends each state on as a tmux passthrough, sends the last state again every few seconds between claude's writes, whether claude keeps drawing or not (a tmux client attached later gets it), never splits claude's output, and exits with claude's code", async () => {
+    it("answers claude's status query itself, sends each state on as a tmux passthrough, sends a waiting dialog's state again every few seconds between claude's writes (a tmux client attached later gets it) but no other state, never splits claude's output, and exits with claude's code", async () => {
       const { code, out } = await runRelay()
       expect(code).toBe(3)
       expect(out).not.toContain('7501;?')
@@ -71,7 +71,7 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       expect(count(whileDrawing, throughTmux(BLOCKED))).toBeGreaterThanOrEqual(2)
       expect(whileDrawing.replaceAll(throughTmux(BLOCKED), '')).toMatch(/^(tick )+$/)
       expect(count(out.slice(working), throughTmux(BLOCKED))).toBe(0)
-      expect(count(out.slice(working), throughTmux(WORKING))).toBeGreaterThanOrEqual(2)
+      expect(count(out.slice(working), throughTmux(WORKING))).toBe(1)
     }, 20_000)
   }
 )

@@ -104,22 +104,23 @@ import fcntl, os, pty, re, select, signal, sys, termios, time, tty
 ${STATUS_RELAY_DEFS_PY}
 A_WRITE_HAS_ENDED_AFTER_SECONDS = 0.1
 POLL_SECONDS = A_WRITE_HAS_ENDED_AFTER_SECONDS
-STATE_SENT_AGAIN_EVERY_SECONDS = 2
+BLOCKED_SENT_AGAIN_EVERY_SECONDS = 2
 args = sys.argv[1:]
-last_state = None
+blocked = None
 sent_at = 0.0
 wrote_at = 0.0
 
 ${CHILD_IN_A_PTY_PY}
 
 def passed_on(m):
-    global last_state, sent_at
+    global blocked, sent_at
     body = m.group(1)
     if body == b'?':
         write_all(fd, STATUS_REPLY)
         return b''
-    if not any(part.startswith(b'id=') for part in body.split(b':')):
-        last_state = m.group(0)
+    parts = body.split(b':')
+    if not any(part.startswith(b'id=') for part in parts):
+        blocked = m.group(0) if b'state=blocked' in parts else None
         sent_at = time.time()
     return through_tmux(m.group(0))
 
@@ -134,9 +135,9 @@ def poll():
     global sent_at
     now = time.time()
     quiet = not pending and now - wrote_at >= A_WRITE_HAS_ENDED_AFTER_SECONDS
-    if last_state and quiet and now - sent_at >= STATE_SENT_AGAIN_EVERY_SECONDS:
+    if blocked and quiet and now - sent_at >= BLOCKED_SENT_AGAIN_EVERY_SECONDS:
         sent_at = now
-        write_all(1, through_tmux(last_state))
+        write_all(1, through_tmux(blocked))
 
 
 ${RELAY_LOOP_PY}`

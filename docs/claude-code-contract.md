@@ -2338,10 +2338,9 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   the outer pty attached 3 s after the dialog drew, 1 run: no `blocked` frame came on
   attach. While the dialog waited, claude redrew one cell (the `●` before the pending
   call, on and off) every 0.6 s, so its screen is never quiet for long. With the wrapper
-  sending claude's last state frame again every 2 s, each time only once claude had
-  written nothing for 0.1 s, the outer pty got `blocked` 1.2 s after attaching and every
-  2 s after; `1` then gave `working` 37 ms later, and the `done` after it came again
-  every 2 s while claude sat idle. `/exit` after a Bash call that left `sleep 300` running in
+  sending the last `blocked` frame again every 2 s while the dialog waits, each time
+  only once claude had written nothing for 0.1 s, the outer pty got `blocked` 1.2 s
+  after attaching and every 2 s after; `1` then gave `working` 37 ms later. `/exit` after a Bash call that left `sleep 300` running in
   the background ended claude, the wrapper and the tmux session at once.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
