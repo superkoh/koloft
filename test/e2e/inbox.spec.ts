@@ -3,10 +3,12 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installMuse,
   museCalls,
   museSaid,
+  trustInAgy,
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
@@ -540,29 +542,62 @@ for (const remote of [false, true]) {
   })
 }
 
-test('a finished turn of a Codex session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session', async ({
-  env
-}) => {
-  fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
-  installCodex(env)
-  const app = await launchApp(env)
-  try {
-    const page = await app.firstWindow()
-    await waitBooted(page)
-    await newSessionInWith(page, 'ws-a', 'Codex')
-    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-    const codexTab = (await page.evaluate(() => window.api.sessions.list())).find(
-      (s) => s.backendId === 'codex'
-    )!.tabId as string
-    await typeInto(page, codexTab, 'Shall I merge PR #12?')
-    await pickNotYet(page, /Codex fixture answered: Shall I merge PR #12\?/)
-    await expect
-      .poll(() => fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8'), {
-        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
-      })
-      .toContain('Merge PR #12? «Not yet»')
-    await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
-  } finally {
-    await quitAndClose(app)
+const OTHER_AGENTS = [
+  {
+    name: 'Codex',
+    backend: 'codex',
+    install: (env: E2EEnv) => installCodex(env),
+    said: /Codex fixture answered: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv) =>
+      fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+  },
+  {
+    name: 'Muse',
+    backend: 'muse',
+    install: (env: E2EEnv) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    said: /echo: Shall I merge PR #12\?/,
+    got: undefined
+  },
+  {
+    name: 'Antigravity',
+    backend: 'agy',
+    install: (env: E2EEnv) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    said: /Answer to: Shall I merge PR #12\?/,
+    got: undefined
   }
-})
+] as const
+
+for (const agent of OTHER_AGENTS) {
+  test(`a finished turn of a ${agent.name} session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    agent.install(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', agent.name)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.backendId === agent.backend
+      )!.tabId as string
+      await typeInto(page, tabId, 'Shall I merge PR #12?')
+      await pickNotYet(page, agent.said)
+      await expect
+        .poll(() => (agent.got ? agent.got(env) : terminalText(page, tabId)), {
+          timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+        })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}

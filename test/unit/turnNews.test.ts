@@ -159,7 +159,13 @@ describe('judgeTurn — the Assist decides only what code cannot', () => {
       'Next for you: nothing to fix, just approve the PR.',
       'Your next step: none needed, but please confirm the account name.',
       'Next for you: nothing. Please merge #12 when CI is green.',
-      'Next for you: none; merge when ready'
+      'Next for you: none; merge when ready',
+      'Merge #12 first. Next for you: nothing.',
+      '你合并 #12 后就不用再做什么了。',
+      '请先合并 #12。你不用再做什么了。',
+      '你要做的：没有，等你确认后我再合并。',
+      '你要做的：没有，由你决定要不要发版。',
+      '你不用做什么了，除非你想改名字。'
     ])
       expect(await judgeTurn(say('ACT'), turn(last))).toEqual({ news: false })
   })

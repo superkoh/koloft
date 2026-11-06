@@ -19,24 +19,24 @@ const INSTRUCTIONS = [
   'After ACT, if the person could answer with one tap, add a line "Q: " naming what they decide in at most 8 words, then 2 to 4 lines "- ", each a different answer they could send as it is, at most 5 words, the one the agent recommends first. Every answer must move the work on: no "let me look first" or "wait". A no means "not now", never a step the agent did not offer, such as closing a PR. Write them in the language of the agent\'s reply. Add none when the person has to type something only they know, or do a step away from the chat.'
 ].join('\n')
 
-const NEXT_FOR_YOU_LABEL =
-  '(?:^|[。.！!]\\s*)(接下来)?(你|主人)(接下来|下一步|现在|这边)?(要做的|需要做的|要做)?[：:]\\s*'
-const STILL_ASKS = '只|除了|但|不过|直接|吗|？|\\?|请|记得|麻烦|就行|要你|告诉我|发我|发给我|回我'
-const AND_ASKS_NOTHING_AFTER = `(?![^\\n]*(${STILL_ASKS}))(?:[。.！!，,；;]|$)`
+const SENTENCE_START = '(?:^|[。.！!]\\s*)'
+const SENTENCE_END = '(?:[。.！!，,；;]|$)'
+const STILL_ASKS =
+  /只|除了|除非|但|不过|直接|还是|由你|确认|决定|吗|？|\?|请|记得|麻烦|就行|要你|告诉我|发我|发给我|回我/
 
 const NOTHING_FOR_YOU = [
   new RegExp(
-    `${NEXT_FOR_YOU_LABEL}(没有|无|不用做什么|不用做任何事|什么都不用做)${AND_ASKS_NOTHING_AFTER}`
+    `${SENTENCE_START}(接下来)?(你|主人)(接下来|下一步|现在|这边)?(要做的|需要做的|要做)?[：:]\\s*(没有|无|不用做什么|不用做任何事|什么都不用做)${SENTENCE_END}`
   ),
   new RegExp(
-    `(?:^|[。.！!，,]\\s*)你.{0,8}(不用|不需要|无需)再?(做|处理)(什么|任何事)?了?${AND_ASKS_NOTHING_AFTER}`
+    `(?:^|[。.！!，,]\\s*)你(接下来|现在|这边)?(什么都)?(不用|不需要|无需)再?(做|处理)(什么|任何事)?了?${SENTENCE_END}`
   ),
-  /(?:^|[.!]\s+)(next for you|for you to do|your next step)[^:]{0,12}:\s*(nothing|none)[.!]?$/i
+  /^((next for you|your next step)\s*:\s*(nothing|none)|nothing for you to do)[.!]?$/i
 ]
 
 export function saysNothingForYou(reply: string): boolean {
-  const last = reply.replace(/\*/g, '').trim().split('\n').pop() ?? ''
-  return NOTHING_FOR_YOU.some((re) => re.test(last))
+  const last = reply.replace(/\*/g, '').trim().split('\n').pop()?.trim() ?? ''
+  return !STILL_ASKS.test(last) && NOTHING_FOR_YOU.some((re) => re.test(last))
 }
 
 export interface ReplyChoices {
