@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   installCodex,
   installMuse,
@@ -328,12 +328,15 @@ test('a command a Muse session wants to run is a card in the Inbox; Allow there 
   }
 })
 
-test('the sidebar Inbox edge stays still while nothing new arrives, turns once when a card comes in, then rests again', async ({
+test('the sidebar Inbox edge stays still while nothing new arrives, turns once when a card comes in, then rests again — and a reload with that card still waiting does not turn it', async ({
+  app,
   page
 }) => {
   const entry = page.locator('.ibx-entry')
-  const turning = (): Promise<number> => entry.evaluate((el) => el.getAnimations().length)
+  const turning = (): Promise<number> =>
+    entry.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length)
   await waitBooted(page)
+  await pretendWindowFocused(app)
   await startSessionIn(page, 'ws-a')
   const row = wsRows(page, 'ws-a').first()
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
@@ -349,6 +352,11 @@ test('the sidebar Inbox edge stays still while nothing new arrives, turns once w
   await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
   await expect.poll(turning).toBe(1)
   await expect.poll(turning, { timeout: ONE_TURN_AND_SOME_MS }).toBe(0)
+
+  await page.reload()
+  await waitBooted(page)
+  await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
+  expect(await turning()).toBe(0)
 })
 
 test('a session on another machine posts a card with koloft inbox, tagged with that machine', async ({
