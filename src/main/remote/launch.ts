@@ -13,7 +13,7 @@ import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
-import { CLAUDE_WRAP_FILE } from './claudeWrap'
+import { STATUS_RELAY_FILE } from './statusRelay'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -144,21 +144,20 @@ export interface ClaudeTab {
   claudeArgs: string[]
 }
 
-// PLATFORM§35
-const TITLE_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${TMUX_PASSES_THE_PANE_TITLE_ON.map(
-  (option) => `set -gq ${option}`
-).join(' \\; ')} 2>/dev/null; `
-
-// MUSE§17
-const PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING =
-  'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n'
+// PLATFORM§35 MUSE§17
+const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
+  ...TMUX_PASSES_THE_PANE_TITLE_ON,
+  'allow-passthrough on'
+]
+  .map((option) => `set -gq ${option}`)
+  .join(' \\; ')} 2>/dev/null; `
 
 export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
   ...tab,
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: claudeFirstRun(tab) + PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING,
+    beforeTmux: claudeFirstRun(tab),
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName
@@ -174,7 +173,7 @@ export const machineToolProgram = (
   run,
   beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
   ensureTool: name,
-  beforeTmux: PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING,
+  beforeTmux: '',
   files
 })
 
@@ -190,7 +189,7 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
   set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
-  command -v python3 >/dev/null 2>&1 && exec python3 "$M/${CLAUDE_WRAP_FILE}" "$@"
+  python3 -c 'import pty, termios' >/dev/null 2>&1 && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
   exec "$@"\n`
 }
 
@@ -247,12 +246,12 @@ exited() {
   [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { ${TITLE_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
+[ "$1" = attach ] && { ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen"
-${program.beforeTmux}${TITLE_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+${program.beforeTmux}${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
 }

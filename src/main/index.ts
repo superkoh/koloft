@@ -35,7 +35,7 @@ import {
   type MuseRemoteDeps
 } from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
-import { CLAUDE_WRAP_FILE, CLAUDE_WRAP_PY } from './remote/claudeWrap'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
@@ -1376,7 +1376,7 @@ function machinePackage(): MachinePackage {
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
-    [CLAUDE_WRAP_FILE]: CLAUDE_WRAP_PY,
+    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
@@ -2012,9 +2012,7 @@ const claudeDialogs = new ClaudeDialogWatch({
     const pty = ptyMgr.get(tabId)
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
-  reply: (tabId, text) => {
-    if (hostOfTab(tabId) === 'local') ptyMgr.write(tabId, text)
-  },
+  reply: (tabId, text) => ptyMgr.write(tabId, text),
   closed: (tabId) => {
     askEnded(tabId, true)
     void askButtons?.check(tabId)

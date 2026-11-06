@@ -2324,7 +2324,7 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   each turn with one Bash call (`touch … && sleep 8`), `apiKeyHelper` for the key; one
   run each. Claude started bare in tmux: the query never reached the outer pty and no
   7501 frame came out, while the Bash dialog drew. Claude started under the wrapper
-  Koloft now puts there (`claude-wrap.py`: answers the query with
+  Koloft now puts there (`status-relay.py`: answers the query with
   `PROGRAM_STATUS_REPLY`, re-sends every other 7501 frame as `ESC P tmux;` + the frame
   with each ESC doubled + `ESC \`): the outer pty got `state=idle` at start, `working`
   on the prompt, `blocked:kind=permission:msg=<base64 "approve Bash: …">` with the
@@ -2332,6 +2332,16 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   and `idle` 81 ms after Esc on the next dialog; tmux had unwrapped every frame, and the
   query never reached the outer pty. A first try with a bare `sleep 8` drew no dialog
   at all; why claude let it through was not looked into.
+- **A frame sent while no tmux client is attached is lost, and attaching again replays
+  none; while a dialog waits claude keeps drawing.** Same setup, the wrapper's tmux
+  session started detached (`new-session -d`), the prompt typed with `tmux send-keys`,
+  the outer pty attached 3 s after the dialog drew, 1 run: no `blocked` frame came on
+  attach. While the dialog waited, claude redrew one cell (the `●` before the pending
+  call, on and off) every 0.6 s, so its screen is never quiet. With the wrapper sending
+  the last `blocked` frame again, at most every 2 s, after a whole read of claude's
+  output, the outer pty got it 2.1 s after attaching and every ~2.4 s after; `1` then
+  gave `working` 30 ms later. `/exit` after a Bash call that left `sleep 300` running in
+  the background ended claude, the wrapper and the tmux session at once.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
   `Write(/etc/**)` drew `⚠ Deny rule Write(/etc/**) never matches · use Edit(/etc/**)`

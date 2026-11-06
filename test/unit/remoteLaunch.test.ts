@@ -20,7 +20,7 @@ import {
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { museRunLines } from '../../src/main/museRemote'
-import { CLAUDE_WRAP_FILE, CLAUDE_WRAP_PY } from '../../src/main/remote/claudeWrap'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
@@ -299,6 +299,7 @@ interface Box {
   argv(): string[]
   tmux(): string[]
   ensured(): boolean
+  onATerminal(): boolean
   claudeCalls(): string[][]
   envAt(n: number): Record<string, string>
   tabEnvSeenAt(n: number): boolean
@@ -316,7 +317,7 @@ function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}
   const m = path.join(home, '.koloft', s.machineName)
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
-  fs.writeFileSync(path.join(m, CLAUDE_WRAP_FILE), CLAUDE_WRAP_PY)
+  fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
     `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nexit ${opts.ensureExit ?? 0}\n`,
@@ -361,6 +362,7 @@ printf '%s\\n' "$@" > "$L/argv.$n"
 printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
+[ -t 0 ] && : > "$L/tty"
 exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
@@ -392,6 +394,7 @@ exit ${opts.claudeExit ?? 0}
     order: () => (fs.existsSync(path.join(logs, 'order')) ? read('order').trim().split('\n') : []),
     tmux: () => (fs.existsSync(path.join(logs, 'tmux')) ? read('tmux').trim().split('\n') : []),
     ensured: () => fs.existsSync(path.join(logs, 'ensure')),
+    onATerminal: () => fs.existsSync(path.join(logs, 'tty')),
     standIn: () =>
       fs.existsSync(path.join(logs, 'script')) ? read('script').trim().split('\n') : [],
     run: (...args) => {
@@ -496,6 +499,21 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
     expect(res.stdout).toContain('koloft: bravo')
+  })
+
+  // CC§12
+  it("claude runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead", () => {
+    const relayed = box(spec())
+    expect(relayed.run().status).toBe(0)
+    expect(relayed.onATerminal()).toBe(true)
+
+    const stub = box(spec())
+    fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+      mode: 0o755
+    })
+    expect(stub.run().status).toBe(0)
+    expect(stub.onATerminal()).toBe(false)
+    expect(stub.argv()[0]).toBe('--settings')
   })
 
   it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
@@ -747,13 +765,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§4 PLATFORM§35
-  it('a reconnect turns on the pane title for a tmux started by an older Koloft, attaches to the running session and installs nothing', () => {
+  it("a reconnect turns on the pane title and the agent's status passthrough for a tmux started by an older Koloft, attaches to the running session and installs nothing", () => {
     const b = box(spec())
     const res = b.run('attach')
     expect(res.status).toBe(0)
     expect(b.tmux()).toEqual([
       ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
-      ...['set', '-gq', 'set-titles-string', '#{pane_title}'],
+      ...['set', '-gq', 'set-titles-string', '#{pane_title}', ';'],
+      ...['set', '-gq', 'allow-passthrough', 'on'],
       ...['-L', 'koloft', '-u', 'attach', '-d', '-t', 'k-sess1']
     ])
     expect(b.ensured()).toBe(false)
