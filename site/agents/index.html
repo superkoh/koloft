@@ -123,13 +123,14 @@
         </p>
         <ul class="dash">
           <li>
-            <code>sudo</code> (the admin command) — a <code>sudo</code> the agent runs opens a
-            <code>Sudo password</code> box over that session's terminal, with the command it runs.
-            This is so even when the command got a terminal of its own, as Codex, Muse and
-            Antigravity commands can. Type the password and press <code>Pass on</code>
-            <span class="why">(Koloft types it into sudo itself)</span>. Muse's own sandbox on the
-            Mac still refuses <code>sudo</code>; a <code>sudo</code> you type in a shell tab asks in
-            that tab
+            <code>sudo</code> (the admin command) — wherever the agent can run <code>sudo</code> at
+            all, it opens a <code>Sudo password</code> box over that session's terminal, with the
+            command it runs. This is so even when the command got a terminal of its own, as Codex,
+            Muse and Antigravity commands can. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox and Muse's
+            sandbox on the Mac still refuse <code>sudo</code> themselves: Codex gets the box only
+            with its sandbox off (Skip permission prompts), Muse only in a command it marks as
+            needing more rights. A <code>sudo</code> you type in a shell tab asks in that tab
           </li>
           <li>
             <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
@@ -289,8 +290,8 @@
         <ul class="dash">
           <li>
             <code>koloft inbox add &lt;key&gt; -- '&lt;card JSON&gt;'</code> — put up a card: a
-            title, a level (High, Normal or Low), what to show, buttons and links. A button can send
-            a message back to the session
+            title, a level (<code>high</code>, <code>normal</code> or <code>low</code>), what to
+            show, buttons and links. A button can send a message back to the session
           </li>
           <li>
             <code>koloft inbox update</code>, <code>move</code>, <code>delete</code> and
@@ -380,10 +381,11 @@
           <li>
             playwright-mcp: nothing to set up. It reads
             <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session, so it
-            opens a tab in Koloft and not a browser of its own. If your Claude Code settings have a
-            Playwright MCP entry for that folder, its tools run without asking first; your other MCP
-            servers still ask, and a <code>deny</code> or <code>ask</code> rule you wrote for it
-            still wins.
+            opens a tab in Koloft and not a browser of its own. If Claude Code has a Playwright MCP
+            entry it would load for that folder (your user-wide list, the folder's own entry, or a
+            <code>.mcp.json</code> in the folder or above it), its tools run without asking first
+            while the switch is on; your other MCP servers still ask, and a <code>deny</code> or
+            <code>ask</code> rule you wrote for it still wins.
           </li>
           <li>
             your own Playwright script: one line, with the address in

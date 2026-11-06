@@ -261,8 +261,9 @@
           without opening each tab. It is the first row at the top of the sidebar, above your
           butler. Its line says what waits: <code>Nothing needs you</code>,
           <code>2 need you · 1 high</code>, or <code>2 low, no rush</code>. A number shows how many
-          cards need you; Low cards are not counted. When a new card comes in, the row's edge turns
-          once. Click the row and the Inbox fills the middle of the window.
+          cards need you; Low cards are not counted. When a new card that needs you comes in (not a
+          Low one), the row's edge turns once. Click the row and the Inbox fills the middle of the
+          window.
         </p>
         <p>Koloft puts a card there when a session waits on you:</p>
         <div class="typed-table stacked">
@@ -315,12 +316,13 @@
           <li>
             When Koloft cannot read what a session asks, its card says
             <code>“…” is waiting for you in its tab</code>, and <code>Open session</code> takes you
-            there. Every card has that link.
+            there. Every card Koloft puts there has that link.
           </li>
           <li>
             After you press a button, you have 5 seconds to press <code>Undo</code>. Then Koloft
-            sends it, and the card moves to <code>Done</code>. If the session did not take your
-            answer, the card stays and says
+            sends it, and the card moves on: to <code>Done</code> for an answer, or to
+            <code>In progress</code> while the work runs (<code>Close it for good</code>, or a
+            button an agent made). If the session did not take your answer, the card stays and says
             <code
               >Koloft sent your answer, but the session still waits for it. Open the session and
               answer it there.</code
@@ -333,8 +335,9 @@
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in
-            the tab you are looking at, and a reply that goes back to the session or butler that
-            started it. Questions from your butler and its helpers do get cards.
+            the tab you are looking at, a finished turn of your butler or of its helpers, and a
+            reply that goes back to the session that started it. Questions from your butler and its
+            helpers do get cards.
           </li>
           <li>
             The page has three tabs: <code>Needs you</code>, <code>In progress</code> and
@@ -352,8 +355,9 @@
           </li>
         </ul>
         <p>
-          The Inbox works the same for Claude, Codex, Muse and Antigravity, on your Mac and on a
-          <a href="../remote/">remote folder</a>.
+          The Inbox works for Claude, Codex, Muse and Antigravity, on your Mac and on a
+          <a href="../remote/">remote folder</a>. The one difference: a remote session's card has no
+          <code>Close it for good</code>.
         </p>
 
         <h2 id="keep-running">Keep running</h2>
