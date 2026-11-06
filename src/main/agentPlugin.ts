@@ -3,7 +3,6 @@ import path from 'path'
 import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
-import AI_PITFALLS_MD from './docsSkill/references/ai-pitfalls.md?raw'
 import CORE_MD from './docsSkill/references/core.md?raw'
 import DIAGRAMS_MD from './docsSkill/references/diagrams.md?raw'
 import GENERAL_MD from './docsSkill/references/general.md?raw'
@@ -21,7 +20,6 @@ type Files = Record<string, string>
 
 const DOCS_SKILL_FILES: Files = {
   'SKILL.md': DOCS_SKILL_MD,
-  'references/ai-pitfalls.md': AI_PITFALLS_MD,
   'references/core.md': CORE_MD,
   'references/diagrams.md': DIAGRAMS_MD,
   'references/general.md': GENERAL_MD,
