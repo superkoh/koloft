@@ -728,7 +728,7 @@ export class DiscordRelay {
     const onItsWay =
       ask.typedAt !== undefined && Date.now() - ask.typedAt < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
     if (ask.typing || onItsWay) return { error: ANSWER_ON_ITS_WAY }
-    const keys = claudeKeysFor(ask.payload, reply)
+    const keys = claudeKeysFor(ask.payload, reply, this.d.keyPressedSince(tab, ask.at))
     if (!keys.ok) return { error: keys.error }
     // CC§14
     const ticksTheOwnerMayHaveLeft = (): boolean =>

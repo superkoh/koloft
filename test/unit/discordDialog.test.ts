@@ -189,7 +189,7 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   })
 
   // CC§14
-  it('several questions take one line each, each one emptied first: a pick moves on, picks of a many-pick question are ticked and Tab moves on, own words go in its field, and 1 on the review page sends them all', () => {
+  it('several questions take one line each, after a way back to question 1 and with each question emptied first when the owner pressed keys since it was asked, else with only question 1 emptied: a pick moves on, picks of a many-pick question are ticked and Tab moves on, own words go in its field, and 1 on the review page sends them all', () => {
     const [q] = colour.tool_input.questions
     const fruit = {
       question: 'Which fruits?',
@@ -230,6 +230,29 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
         '\r',
         '1'
       ]
+    })
+    expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry', false)).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, UP, '2', '1', '3', '\t', '1']
+    })
+    expect(claudeKeysFor(ask(q, fruit), 'Purple\nMango juice', false)).toEqual({
+      ok: true,
+      value: [
+        ...toTheEmptiedField,
+        'Purple',
+        '\r',
+        DOWN,
+        DOWN,
+        DOWN,
+        'Mango juice',
+        '\t',
+        '\r',
+        '1'
+      ]
+    })
+    expect(claudeKeysFor(ask(q, q), '1\nPurple', false)).toEqual({
+      ok: true,
+      value: [...toTheEmptiedField, UP, '1', '4', 'Purple', '\r', '1']
     })
     expect(claudeKeysFor(ask(fruit), '3, 1, 3,')).toEqual({
       ok: true,

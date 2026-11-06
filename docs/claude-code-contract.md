@@ -2861,7 +2861,8 @@ below was one run.
     it stays. On the own-words field or on `Chat about this` Shift+Tab does nothing, and
     Left moves the field's cursor. A tab gone back to opens with its highlight on row 1
     and its pick marked (`1. Red ✔`); a digit there picks again and moves on.
-  - So Koloft presses Down as often as the longest tab has rows, Up as often as the
+  - So, once the person pressed a key in the dialog since it was asked, Koloft presses
+    Down as often as the longest tab has rows, Up as often as the
     most rows any tab has under its options (onto an option row), and Shift+Tab once per
     question; then, per question, Down to the bottom, Up onto the field, Ctrl+U, and
     either Up once and the digits (Tab after many-pick ticks) or the own words typed
@@ -2873,7 +2874,11 @@ below was one run.
     straight into the emptied field sent them (`Purple`; `Mango` Tab Enter on a
     many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`). On 2.1.318 the
     same run sent what was asked from tab 2's field, from the review page's `Cancel`
-    and with own words on both tabs (3 runs).
+    and with own words on both tabs (3 runs). With no key pressed since the dialog was
+    asked it still shows question 1 and every later tab opens fresh, so Koloft empties
+    question 1 only and answers later tabs by their digit, `N+1` then the words, or
+    Down × N then the words on a many-pick: `Green` / `Tall` and `Purple` / `Mango` were
+    sent as asked (2 runs).
   - Picks the person ticked on a many-pick question are toggled by Koloft's digits: `1`
     in the terminal, then Koloft's run for `Apple`, sent "The user did not answer the
     questions."
@@ -2907,7 +2912,8 @@ below was one run.
   into row 3 stays when the highlight leaves it: Down, Down, `hello`, Down (highlight on
   row 1), then Shift+Tab sent `hello` too. Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   passes row 3 from any start and approved with no text from row 1 and row 2 with
-  `hello` left in row 3, from row 3 holding it, and from an untouched dialog (4 runs).
+  `hello` left in row 3, from row 3 holding it, and from an untouched dialog (4 runs;
+  on 2.1.318 from row 1 with `hello` left in row 3 and from row 3 holding it).
   Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped

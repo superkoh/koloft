@@ -268,12 +268,20 @@ function emptyTheOwnWordsField(q: Question): string[] {
 }
 
 // CC§14
-function questionKeys(q: Question, line: string): string[] {
+function intoTheFieldOfAFreshQuestion(q: Question): string[] {
+  return q.multiSelect ? presses('Down', q.options.length) : [String(q.options.length + 1)]
+}
+
+// CC§14
+function questionKeys(q: Question, line: string, emptyItFirst: boolean): string[] {
   const picks = picksFor(q, line)
   const moveOn = q.multiSelect ? [NEXT_QUESTION_AFTER_TICKS] : []
-  return picks
-    ? [...emptyTheOwnWordsField(q), ...presses('Up', 1), ...picks.map(String), ...moveOn]
-    : [...emptyTheOwnWordsField(q), ...typedPieces(line), ...moveOn, '\r']
+  if (picks) {
+    const ontoAnOption = emptyItFirst ? [...emptyTheOwnWordsField(q), ...presses('Up', 1)] : []
+    return [...ontoAnOption, ...picks.map(String), ...moveOn]
+  }
+  const intoTheField = emptyItFirst ? emptyTheOwnWordsField(q) : intoTheFieldOfAFreshQuestion(q)
+  return [...intoTheField, ...typedPieces(line), ...moveOn, '\r']
 }
 
 const ROWS_OF_A_PLAN_DIALOG = 3
@@ -290,19 +298,22 @@ function emptyThePlanFeedbackRowFromAnyRow(): string[] {
 }
 
 // CC§14
-export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
+export function claudeKeysFor(
+  p: AskPayload,
+  reply: string,
+  keysPressedSinceAsked = true
+): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
-    const answers = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
-    return {
-      ok: true,
-      value: drawsTabs(qs)
-        ? [...backToTheFirstQuestion(qs), ...answers, SUBMIT_ON_THE_REVIEW_PAGE]
-        : answers
-    }
+    const answers = qs.flatMap((q, i) =>
+      questionKeys(q, lines[i]!, keysPressedSinceAsked || i === 0)
+    )
+    if (!drawsTabs(qs)) return { ok: true, value: answers }
+    const wayBack = keysPressedSinceAsked ? backToTheFirstQuestion(qs) : []
+    return { ok: true, value: [...wayBack, ...answers, SUBMIT_ON_THE_REVIEW_PAGE] }
   }
   if (p.tool_name === 'ExitPlanMode' && YES.test(text))
     return { ok: true, value: [...emptyThePlanFeedbackRowFromAnyRow(), ...keysFor([SHIFT_TAB])] }
