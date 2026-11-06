@@ -74,6 +74,11 @@ interface Result {
   retryHelps?: boolean
 }
 
+// ADR-0028
+function goesToItsOwnSession(card: InboxCard, to: string): boolean {
+  return to === card.session && (card.postedBy ?? to) === to
+}
+
 // ADR-0049
 export class Inbox {
   private sources = new Map<string, string>()
@@ -452,8 +457,11 @@ export class Inbox {
           }
         return { outcome: 'done', text: 'Answered — it is working again' }
       }
-      // ADR-0028
-      const sent = await this.host.sendToSession(to, wrap(run.message ?? ''), to === card.session)
+      const sent = await this.host.sendToSession(
+        to,
+        wrap(run.message ?? ''),
+        goesToItsOwnSession(card, to)
+      )
       if (!sent.ok)
         return { outcome: 'failed', text: sent.why ?? 'Koloft could not reach the session' }
       this.grant(card, action, sent.session ?? to)

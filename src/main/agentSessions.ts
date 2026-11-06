@@ -1161,9 +1161,8 @@ export function sessionVerb(d: SessionVerbDeps): {
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
         EXIT_USAGE
       )
-    const callerMode = d.modeOf(caller.tabId)
     const lineFor =
-      route === 'peerLine' ? peerLineFrom(() => callerMode, text, 'session') : undefined
+      route === 'peerLine' ? peerLineFrom(() => d.modeOf(caller.tabId), text, 'session') : undefined
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     const assist = fromAssist ? caller.session.sessionId : undefined
     if (t.tabId && !busy) {

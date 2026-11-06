@@ -321,6 +321,17 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
     ])
   })
 
+  it('a card a session moved onto another session with update is not that other session’s own, so its button cannot claim that session’s permission class (ADR-0028)', async () => {
+    const host = makeHost()
+    const inbox = new Inbox(host)
+    inbox.register({ id: 'koloft', name: 'Koloft' })
+    const { id } = inbox.add({ source: 'koloft', as: 's1' }, done)
+    inbox.update({ source: 'koloft', as: 's1' }, 'done-1', { session: 's2' })
+    inbox.press(id, 'next', { next: 'go on' })
+    await vi.advanceTimersByTimeAsync(UNDO_MS + 10)
+    expect(host.sent.map(([to, , own]) => [to, own])).toEqual([['s2', false]])
+  })
+
   it('a session a button hands the card to may then move it, only to the states the button lets', async () => {
     const inbox = new Inbox(makeHost())
     inbox.register({ id: 'koloft', name: 'Koloft' })
