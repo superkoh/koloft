@@ -1084,7 +1084,9 @@ export class ClaudeBackend implements SessionBackend {
       shell: plan.shell,
       extraEnv: plan.extraEnv
     })
-    if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
+    // ADR-0028
+    if (spec.permission === 'bypass' || machine?.skipsPermissionChecks)
+      this.launchedBypassing.add(handle.id)
     if (machine) {
       this.forgetHookReports(machine.hookMirror, handle.id)
       tracker.track(handle.id, machine.cwd, machine.tracking)

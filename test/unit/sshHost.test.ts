@@ -761,6 +761,20 @@ describe('accounts for remote launches started together', () => {
     expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
   })
 
+  it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {
+    const skips = async (skipPermissions: boolean, permission?: 'bypass' | 'default') => {
+      const plan = await machine(runOnMachine, {
+        settings: () => ({ skipPermissions })
+      }).launch({ root: keyed('/w'), permission })
+      if (!plan.ok) throw new Error('launch refused')
+      return plan.machine?.skipsPermissionChecks
+    }
+    expect(await skips(true)).toBe(true)
+    expect(await skips(true, 'default')).toBe(true)
+    expect(await skips(false)).toBe(false)
+    expect(await skips(false, 'bypass')).toBe(true)
+  })
+
   it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
     const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
