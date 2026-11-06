@@ -14,7 +14,6 @@ const MINUTE_MS = 60_000
 export const THIS_MAC = ''
 
 export interface AskedOwner {
-  id: string
   question: boolean
   questions: number
   text: string
@@ -107,7 +106,6 @@ export class OwnerAsleep {
   private everMarked = new Set<string>()
   private generation = 0
   private answering = new Map<string, { askedAgain: boolean }>()
-  private lastAnsweredDialog = new Map<string, string>()
 
   constructor(
     private readonly d: OwnerAsleepDeps,
@@ -136,7 +134,6 @@ export class OwnerAsleep {
     this.since = since
     if (since !== null && sleptAt === null) {
       this.keepAnswered([])
-      this.lastAnsweredDialog.clear()
       for (const tabId of this.d.tabs()) void this.asks(tabId)
     }
     if (since === null && sleptAt !== null) {
@@ -187,20 +184,23 @@ export class OwnerAsleep {
     if (answering) return void (answering.askedAgain = true)
     const run = { askedAgain: false }
     this.answering.set(tabId, run)
+    let answeredText: string | undefined
     try {
       do {
         run.askedAgain = false
-        await this.answerShowing(tabId)
+        answeredText = await this.answerShowing(tabId, answeredText)
       } while (run.askedAgain && this.answersFor(tabId))
     } finally {
       this.answering.delete(tabId)
     }
   }
 
-  private async answerShowing(tabId: string): Promise<void> {
+  private async answerShowing(
+    tabId: string,
+    answeredText: string | undefined
+  ): Promise<string | undefined> {
     const asked = await this.d.asked(tabId)
-    if (!asked || asked.id === this.lastAnsweredDialog.get(tabId)) return
-    this.lastAnsweredDialog.set(tabId, asked.id)
+    if (!asked || asked.text === answeredText) return answeredText
     const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
     for (const reply of repliesTo(asked)) {
       entry.failed = await this.d.answer(tabId, reply)
@@ -211,5 +211,6 @@ export class OwnerAsleep {
       }
     }
     this.keepAnswered([...this.answered, entry])
+    return asked.text
   }
 }

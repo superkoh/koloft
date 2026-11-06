@@ -16,19 +16,8 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
 let setups = 0
 afterAll(() => fs.rmSync(userData, { recursive: true, force: true }))
 
-let dialogs = 0
-const question = (text: string, questions = 1): AskedOwner => ({
-  id: `${++dialogs}`,
-  question: true,
-  questions,
-  text
-})
-const approval = (text: string): AskedOwner => ({
-  id: `${++dialogs}`,
-  question: false,
-  questions: 0,
-  text
-})
+const question = (text: string, questions = 1): AskedOwner => ({ question: true, questions, text })
+const approval = (text: string): AskedOwner => ({ question: false, questions: 0, text })
 
 function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null) {
   let now = 0
@@ -129,7 +118,7 @@ describe('owner asleep', () => {
     expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
-  it('a second dialog asked while Koloft waits to see its first answer taken is answered once that wait ends, even when it asks the same thing', async () => {
+  it('a second question asked while Koloft waits to see its first answer taken is answered once that wait ends', async () => {
     const t = setup()
     let landed: (() => void) | undefined
     t.d.answer = async (tabId, reply) => {
@@ -139,24 +128,24 @@ describe('owner asleep', () => {
       return undefined
     }
     await t.fallAsleep()
-    t.asks.set('a', approval('npm test'))
+    t.asks.set('a', question('Blue or red?'))
     const first = t.asleep.asks('a')
     await t.settle()
     landed?.()
-    t.asks.set('a', approval('npm test'))
+    t.asks.set('a', approval('npm publish'))
     await t.asleep.asks('a')
     await first
     expect(t.replies).toEqual([
-      ['a', 'yes'],
+      ['a', OWNER_ASLEEP_ANSWER],
       ['a', 'yes']
     ])
     await t.wakeAfter(HOUR_MS)
     expect(t.reports[0]).toContain(
-      '2. "Session a" asked to be allowed: "npm test"; Koloft allowed it.'
+      '2. "Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
     )
   })
 
-  it('a dialog Koloft already answered gets no second answer when the session signals it again, during the wait or after, whether or not the answer was seen taken', async () => {
+  it('a dialog Koloft already answered gets no second answer when the session signals it again during the wait, whether or not the answer was seen taken', async () => {
     for (const outcome of [undefined, ANSWER_NOT_TAKEN]) {
       const t = setup()
       let ended: (() => void) | undefined
@@ -172,7 +161,6 @@ describe('owner asleep', () => {
       await t.asleep.asks('a')
       ended?.()
       await first
-      await t.asleep.asks('a')
       expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
     }
   })

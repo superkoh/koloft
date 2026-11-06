@@ -1132,16 +1132,14 @@ const ownerAsleep = new OwnerAsleep(
       const stored = await pendingAskOf(tabId)
       if (stored) {
         const questions = 'questions' in stored ? stored.questions.length : 0
-        const text = codexDialog(stored).text
-        return { id: String(stored.id), question: questions > 0, questions, text }
+        return { question: questions > 0, questions, text: codexDialog(stored).text }
       }
       const claude =
         discordRelay?.heldAsk(tabId) ??
         (tracker.statusOf(tabId) === 'approval' ? discordRelay?.askOf(tabId) : undefined)
       if (!claude) return undefined
       const questions = questionsOf(claude).length
-      const id = String(discordRelay?.askedAt(tabId))
-      return { id, question: questions > 0, questions, text: claudeDialog(claude).text }
+      return { question: questions > 0, questions, text: claudeDialog(claude).text }
     },
     answer: answerSession,
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
