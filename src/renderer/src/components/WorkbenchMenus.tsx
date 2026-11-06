@@ -1,18 +1,61 @@
-import type { JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
+import type { ListeningPort } from '@shared/types'
 import { IconCopyLink, IconFile, IconTerminal, IconWebPage } from '../icons'
+
+function SessionPorts({
+  tabId,
+  onPort
+}: {
+  tabId: string
+  onPort: (port: number) => void
+}): JSX.Element | null {
+  const [ports, setPorts] = useState<ListeningPort[] | null>(null)
+  useEffect(() => {
+    let shown = true
+    void window.api.sessions.ports(tabId).then((found) => {
+      if (shown) setPorts(found)
+    })
+    return () => {
+      shown = false
+    }
+  }, [tabId])
+  if (!ports) return null
+  return (
+    <>
+      <div className="sep" />
+      <div className="mi head">{ports.length ? 'Listening ports' : 'No listening ports'}</div>
+      {ports.map((p) => (
+        <button
+          key={p.port}
+          className="mi"
+          role="menuitem"
+          title={`${p.process} (pid ${p.pid})`}
+          onClick={() => onPort(p.port)}
+        >
+          <IconWebPage size={14} />
+          localhost:{p.port}
+        </button>
+      ))}
+    </>
+  )
+}
 
 export function NewTabMenu({
   canTerminal,
+  portsOf,
   onClose,
   onWeb,
   onFile,
-  onTerminal
+  onTerminal,
+  onPort
 }: {
   canTerminal: boolean
+  portsOf: string | null
   onClose: () => void
   onWeb: () => void
   onFile: () => void
   onTerminal: () => void
+  onPort: (port: number) => void
 }): JSX.Element {
   return (
     <div
@@ -61,6 +104,15 @@ export function NewTabMenu({
           <IconTerminal size={14} />
           New terminal
         </button>
+      )}
+      {portsOf && (
+        <SessionPorts
+          tabId={portsOf}
+          onPort={(port) => {
+            onClose()
+            onPort(port)
+          }}
+        />
       )}
     </div>
   )

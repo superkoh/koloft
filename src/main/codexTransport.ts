@@ -27,6 +27,7 @@ export interface CodexProcessOptions {
 export interface CodexUpstream {
   readonly ready: Promise<void>
   readonly limit: number
+  readonly pid?: number
   write(raw: string | Buffer): void
   stop(): Promise<void>
   newScreen?(): void
@@ -261,6 +262,10 @@ class CodexProcess implements CodexUpstream {
     return this.options.maxFrameBytes ?? DEFAULT_MAX_FRAME
   }
 
+  get pid(): number | undefined {
+    return this.child.pid
+  }
+
   private fail(error: Error): void {
     if (this.failed || this.stopping) return
     this.failed = true
@@ -407,6 +412,7 @@ const OWN_REQUEST_ID_PREFIX = 'koloft-'
 
 export interface CodexTransport {
   url: string
+  serverPid(): number | undefined
   stop(): Promise<void>
   request(method: string, params: unknown, timeoutMs?: number): Promise<unknown>
 }
@@ -630,7 +636,7 @@ export async function createCodexTransport(
     })
     await fs.chmod(socketPath, 0o600)
     // CODEX§9
-    return { url: `unix://${socketPath}`, stop, request }
+    return { url: `unix://${socketPath}`, serverPid: () => upstream.pid, stop, request }
   } catch (error) {
     await stop().catch(report)
     throw error

@@ -1902,6 +1902,61 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§66
+  test('E-SSH-47: the Workbench + menu of a Codex and of a Claude Code session on a machine behind the jump host lists the server each started there, though it left its shell, and not the other’s; a click opens the machine’s page', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodexSignedInForTheLab(env)
+    const [codexPort, claudePort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const serve = (port: number): string =>
+      `nohup python3 -m http.server ${port} --bind 127.0.0.1 >/dev/null 2>&1 &`
+    const portsOf = (page: Page, tab: string): Promise<number[]> =>
+      page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l.map((p) => p.port))
+    await withLab(
+      env,
+      async ({ app, page }) => {
+        const codexTab = await codexTabOnKtKey(page)
+        await page.evaluate(
+          ([id, typed]) => window.api.terminal.write(id, typed),
+          [codexTab, `/sh ${serve(codexPort)}\r`]
+        )
+        await expect
+          .poll(() => portsOf(page, codexTab), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toEqual([codexPort])
+
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const tabs = await wsRows(page, 'kt-key').evaluateAll((rows) =>
+          rows.map((r) => r.getAttribute('data-tab-id'))
+        )
+        const claudeTab = tabs.find((t) => t && t !== codexTab)!
+        await agentShell(
+          page,
+          claudeTab,
+          KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        )(serve(claudePort))
+        await expect.poll(() => portsOf(page, claudeTab)).toEqual([claudePort])
+        await switchToRow(page, page.locator(`[data-tab-id="${claudeTab}"]`))
+
+        await page.locator(BROWSER.newTab).click()
+        const menu = page.locator(WORKBENCH.newMenu)
+        await expect(menu.locator('.mi.head')).toHaveText('Listening ports', { timeout: 15_000 })
+        await expect(menu.locator('button.mi', { hasText: /^localhost:/ })).toHaveText([
+          `localhost:${claudePort}`
+        ])
+        await menu.locator('button.mi', { hasText: `localhost:${claudePort}` }).click()
+        const guest = await guestByUrl(app, `localhost:${claudePort}/`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(guest.locator('body')).toContainText('Directory listing')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
   // PLATFORM§8 PLATFORM§33
   test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, hands its result back to the page that opened it, and its address bar does not call that localhost Not secure', async ({
     env

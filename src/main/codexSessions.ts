@@ -349,6 +349,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return this.runs.get(tabId)?.machine
   }
 
+  serverPidOf(tabId: string): number | undefined {
+    return this.runs.get(tabId)?.transport.serverPid()
+  }
+
   machinesWithTabs(): string[] {
     return [...this.runs.values()].flatMap((r) => (r.machine ? [r.machine] : []))
   }

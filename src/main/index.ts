@@ -374,6 +374,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { parseSessionPorts, scanPortsHere, SESSION_PORTS_SH } from './sessionPorts'
 import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
@@ -424,6 +425,7 @@ import {
 import type {
   AccountAddResult,
   AccountKind,
+  ListeningPort,
   QuotaBucket,
   AccountMeta,
   AccountView,
@@ -7010,6 +7012,26 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.sessions.leftovers, () => leftovers)
+  ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[]> => {
+    if (typeof tabId !== 'string') return []
+    const tags = [
+      tabId,
+      ...ptyMgr
+        .list()
+        .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
+        .map((h) => h.id)
+    ]
+    const machine = machineOfTab(tabId)
+    if (!machine) {
+      const server = codexSessions?.serverPidOf(tabId)
+      return parseSessionPorts(await scanPortsHere(tags, server ? [server] : []))
+    }
+    await loginEnvReady()
+    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' '), '']), {
+      controlDir: remoteControlDir
+    })
+    return parseSessionPorts(r.stdout)
+  })
   ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
