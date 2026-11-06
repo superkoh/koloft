@@ -9,7 +9,8 @@ import {
   type KoloftInboxDeps
 } from '../../src/main/koloftInbox'
 import { inboxVerb } from '../../src/main/agentInbox'
-import { ANSWER_NOT_TAKEN, SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
+import { ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
+import { SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
 import type { AgentCaller } from '../../src/main/agentRequests'
 
 function host(): InboxHost {

@@ -8,9 +8,9 @@ import {
   SESSION_CLOSED,
   type ButtonDeps
 } from '../../src/main/discord/buttons'
-import type { DiscordInteraction } from '../../src/main/discord/link'
-import { YES_OR_NO } from '../../src/main/discord/dialog'
-import { ANSWER_NOT_TAKEN } from '../../src/main/discord/relay'
+import { privately, type DiscordInteraction } from '../../src/main/discord/link'
+import { ANSWER_NOT_TAKEN, YES_OR_NO } from '../../src/main/discord/dialog'
+import { ANSWER_ON_ITS_WAY } from '../../src/main/discord/relay'
 
 const OWNER = '555'
 const PLACED = { channelId: '333', messageId: '900' }
@@ -45,6 +45,7 @@ function setup(over: Partial<ButtonDeps> = {}) {
   )
   const press = (n: number, userId = OWNER): DiscordInteraction => ({
     id: '1',
+    applicationId: '700',
     token: 't',
     type: 3,
     channelId: '333',
@@ -127,6 +128,39 @@ describe('answering a question with a button in Discord', () => {
     expect(s.responses).toEqual([UPDATE_LATER, UPDATE_LATER])
     expect(s.followUps).toEqual([ANSWER_NOT_TAKEN, ANSWER_NOT_TAKEN])
     expect(s.edits).toEqual([])
+  })
+
+  it('an answer that fails while being typed is told to the presser too, and the buttons stay', async () => {
+    let fails = true
+    const s = setup({
+      answer: async () => {
+        if (fails) throw new Error('The session closed.')
+        return undefined
+      }
+    })
+    s.buttons.placed(s.card, PLACED)
+    await s.buttons.press(s.press(0))
+    expect(s.followUps).toEqual(['The session closed.'])
+    fails = false
+    await s.buttons.press(s.press(0))
+    expect(s.edits).toEqual([{ messageId: '900', footer: '-# ✅ Yes', buttons: 0 }])
+  })
+
+  it('a second press while the first is still being taken is told to wait, and types nothing', async () => {
+    let taken!: () => void
+    const s = setup({
+      answer: async (tab, reply) => {
+        s.answers.push({ tab, reply })
+        return new Promise((resolve) => (taken = () => resolve(undefined)))
+      }
+    })
+    const first = s.buttons.press(s.press(0))
+    await vi.waitFor(() => expect(taken).toBeDefined())
+    await s.buttons.press(s.press(1))
+    expect(s.responses).toEqual([UPDATE_LATER, privately(ANSWER_ON_ITS_WAY)])
+    expect(s.answers).toEqual([{ tab: 'tab-1', reply: 'yes' }])
+    taken()
+    await first
   })
 })
 

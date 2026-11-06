@@ -61,7 +61,7 @@ import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
 
 test.setTimeout(120_000)
 

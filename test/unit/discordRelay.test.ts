@@ -7,6 +7,8 @@ import type { SessionStatus } from '../../src/shared/types'
 import type { Turn } from '../../src/shared/turns'
 import type { DiscordMessage } from '../../src/main/discord/link'
 import {
+  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
+  ANSWER_NOT_TAKEN,
   NO_OWN_WORDS,
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
@@ -19,8 +21,6 @@ import {
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
-  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
-  ANSWER_NOT_TAKEN,
   ANSWER_ON_ITS_WAY,
   unreadableInRoom,
   type Destination,
@@ -556,14 +556,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   const BASH = { tool_name: 'Bash', tool_input: { command: 'rm -rf build', description: 'Clean' } }
 
   // CC§14
-  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints, to be checked in the transcript', async () => {
+  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints, which counts as taken at once', async () => {
     const { relay, posts, asksChanged } = setup()
     const watcher = await watchAsksOnceArmed(relay, asksChanged)
     drop(hookFile(MANAGED, 'ask'), QUESTION)
     await vi.waitFor(() => expect(asksChanged).toEqual([MANAGED]))
     expect(posts).toEqual([])
     expect(relay.dialog(MANAGED)?.text).toBe('Which?\n1. A\n2. B')
-    expect(await answerItTakes(relay, MANAGED, '2')).toBeUndefined()
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8'))).toMatchObject({
       hookSpecificOutput: { decision: { updatedInput: { answers: { 'Which?': 'B' } } } }
     })
@@ -581,7 +581,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
       fs.rmSync(hookFile(MANAGED, 'answer'), { force: true })
       drop(hookFile(MANAGED, 'ask'), BASH)
       await vi.waitFor(() => expect(relay.dialog(MANAGED)).toBeDefined())
-      expect(await answerItTakes(relay, MANAGED, reply)).toBeUndefined()
+      expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
       expect(
         JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8')).hookSpecificOutput.decision
       ).toEqual(decision)
@@ -863,7 +863,7 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     expect(writes.length).toBeGreaterThan(1)
   })
 
-  it('a reply in Discord to a Codex card is marked delivered only once the session took it; one it did not take is answered that it still waits', async () => {
+  it('a reply in Discord to a Codex card is marked delivered only once the session took it; one it did not take is answered that it still waits, and the turn its keys may still start still answers in Discord', async () => {
     let asked = COLOUR
     const { relay, posts, reactions, session } = codexAsking({ pendingQuestion: () => asked })
     relay.codexAsked(TAB, asked)
@@ -871,6 +871,7 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
     expect(posts.at(-1)).toEqual({ text: ANSWER_NOT_TAKEN, replyTo: '601' })
     expect(reactions).not.toContain('601 +✅')
+    expect(relay.answeringDiscord(TAB)).toBe(true)
 
     session.takesKeys = true
     asked = { ...COLOUR, id: 'q3' }
@@ -1076,7 +1077,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     drop(hookFile(HELPER, 'ask'), QUESTION)
     relay.onAsk(HELPER, QUESTION, HOOK)
     expect(posts).toHaveLength(1)
-    expect(await answerItTakes(relay, HELPER, 'B')).toBeUndefined()
+    expect(await relay.answerSession(HELPER, 'B')).toBeUndefined()
     expect(fs.existsSync(hookFile(HELPER, 'answer'))).toBe(true)
 
     away = false
@@ -1141,7 +1142,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     drop(hookFile(HELPER, 'ask'), QUESTION)
     relay.onAsk(HELPER, QUESTION, HOOK)
     expect(posts).toHaveLength(1)
-    expect(await answerItTakes(relay, HELPER, 'A')).toBeUndefined()
+    expect(await relay.answerSession(HELPER, 'A')).toBeUndefined()
     fs.rmSync(hookFile(HELPER, 'ask'))
 
     away = false

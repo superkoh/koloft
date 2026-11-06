@@ -67,12 +67,18 @@ const ONLY_THE_SENDER_SEES_IT = 64
 const THREAD_FOLDS_AFTER_A_DAY_MINUTES = 1440
 const THREAD_NAME_LIMIT = 100
 
+const onlyForTheSender = (content: string): unknown => ({
+  content,
+  flags: ONLY_THE_SENDER_SEES_IT
+})
+
 export function privately(content: string): unknown {
-  return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
+  return { type: REPLY_TO_INTERACTION, data: onlyForTheSender(content) }
 }
 
 export interface DiscordInteraction {
   id: string
+  applicationId: string
   token: string
   type: number
   channelId: string
@@ -91,6 +97,7 @@ interface RawComponent {
 
 interface RawInteraction {
   id: string
+  application_id: string
   token: string
   type: number
   channel_id?: string
@@ -148,6 +155,7 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   for (const o of data.options ?? []) options[o.name] = String(o.value ?? '')
   return {
     id: raw.id,
+    applicationId: raw.application_id,
     token: raw.token,
     type: raw.type,
     channelId: raw.channel_id,
@@ -529,10 +537,11 @@ export class DiscordLink {
 
   // PLATFORM§39
   followUp(i: DiscordInteraction, privateText: string): Promise<unknown> {
-    return this.api().request('POST', `/webhooks/${this.applicationId}/${i.token}`, {
-      content: privateText,
-      flags: ONLY_THE_SENDER_SEES_IT
-    })
+    return this.api().request(
+      'POST',
+      `/webhooks/${i.applicationId}/${i.token}`,
+      onlyForTheSender(privateText)
+    )
   }
 
   // PLATFORM§39

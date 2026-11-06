@@ -9,7 +9,7 @@ import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from './discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from './discord/dialog'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50

@@ -14,9 +14,10 @@ import {
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
+  ANSWER_NOT_TAKEN,
   type Question
 } from './discord/dialog'
-import { ANSWER_NOT_TAKEN, SHOWS_NO_DIALOG } from './discord/relay'
+import { SHOWS_NO_DIALOG } from './discord/relay'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }

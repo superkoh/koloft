@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto'
 import type { Card } from './cards'
 import type { Choice, DialogView } from './dialog'
 import { privately, type DiscordInteraction } from './link'
+import { ANSWER_ON_ITS_WAY } from './relay'
+import { errorText } from '../agentRequests'
 
 export const NO_LONGER_OPEN = 'This question is no longer open.'
 export const ONLY_THE_OWNER_ANSWERS = 'Only the owner Koloft is paired with can answer here.'
@@ -27,6 +29,7 @@ interface OpenAsk {
   placed?: PlacedAsk
   reply?: string
   footer?: string
+  pressing?: boolean
 }
 
 export interface ButtonDeps {
@@ -76,11 +79,11 @@ export class AskButtons {
   }
 
   async check(tabId: string): Promise<void> {
-    const open = [...this.asks].filter(([, a]) => a.tabId === tabId && !a.footer)
+    const open = [...this.asks].filter(([, a]) => a.tabId === tabId && !a.footer && !a.pressing)
     if (!open.length) return
     const text = await this.d.dialogText(tabId)
     for (const [id, ask] of open)
-      if (text !== ask.text && this.asks.get(id) === ask && !ask.footer)
+      if (text !== ask.text && this.asks.get(id) === ask && !ask.footer && !ask.pressing)
         this.settle(id, ask.reply ? answeredWith(ask.reply) : ANSWERED_ON_THE_COMPUTER)
   }
 
@@ -91,23 +94,30 @@ export class AskButtons {
     }
     const [id, n] = askPartsOf(i.customId)
     const ask = this.asks.get(id)
+    if (ask?.pressing) {
+      await this.d.respond(i, privately(ANSWER_ON_ITS_WAY))
+      return
+    }
     const choice = ask?.choices[Number(n)]
     if (!ask || ask.footer || !choice || (await this.d.dialogText(ask.tabId)) !== ask.text) {
       if (ask && !ask.footer) this.settle(id, ANSWERED_ON_THE_COMPUTER)
       await this.d.respond(i, privately(NO_LONGER_OPEN))
       return
     }
-    this.asks.delete(id)
-    await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
-    const error = await this.d.answer(ask.tabId, choice.reply)
-    this.asks.set(id, ask)
-    if (error) await this.d.followUp(i, error)
-    else this.settle(id, `✅ ${choice.label}`)
+    ask.pressing = true
+    try {
+      await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
+      const error = await this.d.answer(ask.tabId, choice.reply).catch(errorText)
+      if (error) await this.d.followUp(i, error)
+      else this.settle(id, `✅ ${choice.label}`)
+    } finally {
+      ask.pressing = false
+    }
   }
 
   forget(tabId: string, footer = SESSION_CLOSED): void {
     for (const [id, ask] of this.asks)
-      if (ask.tabId === tabId && !ask.footer)
+      if (ask.tabId === tabId && !ask.footer && !ask.pressing)
         this.settle(id, ask.reply ? answeredWith(ask.reply) : footer)
   }
 

@@ -23,7 +23,7 @@ import {
 } from './helpers/p1'
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
 import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const KEYS_READ_APART_MS = 300

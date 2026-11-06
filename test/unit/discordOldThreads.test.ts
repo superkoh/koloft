@@ -74,6 +74,7 @@ const message = (id: string, channelId: string, authorId = '555'): DiscordMessag
 
 const interaction = (channelId: string): DiscordInteraction => ({
   id: '9',
+  applicationId: '700',
   token: 't',
   type: 2,
   channelId,
