@@ -73,6 +73,7 @@ export const expandedKey = (root: string): string => 'koloft.ft.expanded:' + roo
 export const bookmarksKey = (root: string): string => 'koloft.ft.bookmarks:' + root
 export const recentKey = (root: string): string => 'koloft.ft.recent:' + root
 export const showIgnoredKey = (root: string): string => 'koloft.ft.showIgnored:' + root
+export const viewedKey = (root: string): string => 'koloft.cv.viewed:' + root
 
 export function pushRecent(list: readonly string[], path: string): string[] {
   return [path, ...list.filter((p) => p !== path)].slice(0, RECENT_CAP)

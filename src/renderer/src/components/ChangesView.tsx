@@ -16,9 +16,10 @@ import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
 import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
-import { GIT_LETTER, type ChangeFilters } from './filesModel'
+import { GIT_LETTER, loadList, saveList, viewedKey, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
 import { isComposing, keepCaretInSessionTerminal } from '../keys'
+import { IconCheck } from '../icons'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -27,6 +28,7 @@ import {
   buildEntries,
   commentBlocked,
   emptyStreamMessage,
+  flipViewed,
   groupByDir,
   hunkPrompt,
   isBigDiff,
@@ -38,11 +40,14 @@ import {
   splitHunks,
   stableEntries,
   totalDelta,
+  viewedNow,
   writtenPaths,
   type ChangeEntry,
   type DiffSection,
-  type HunkPrompt
+  type HunkPrompt,
+  type ViewedMarks
 } from './changesModel'
+import '../browseView.css'
 import '../changesView.css'
 import '../fileTree.css'
 import '../inlineDiff.css'
@@ -96,6 +101,9 @@ const IDLE_LOAD: LoadState = {
 function scrollStreamOnly(stream: HTMLElement, block: HTMLElement): void {
   stream.scrollTop = block.offsetTop
 }
+
+const loadViewed = (root: string): ViewedMarks =>
+  Object.fromEntries(loadList<[string, number]>(viewedKey(root)))
 
 export function ChangesView(props: ChangesViewProps): JSX.Element {
   const {
@@ -154,6 +162,23 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const shown = useMemo(() => entries.filter((e) => passesFilters(e, filters)), [entries, filters])
   const groups = useMemo(() => groupByDir(shown), [shown])
   const totals = useMemo(() => totalDelta(shown), [shown])
+
+  const [marks, setMarks] = useState<ViewedMarks>(() => loadViewed(root))
+  useEffect(() => setMarks(loadViewed(root)), [root])
+  const marksRef = useRef(marks)
+  marksRef.current = marks
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const viewed = useMemo(() => viewedNow(marks, sections), [marks, sections])
+  const viewedShown = useMemo(() => shown.filter((e) => viewed.has(e.path)).length, [shown, viewed])
+  const toggleViewed = useCallback(
+    (path: string, section: DiffSection): void => {
+      const next = flipViewed(marksRef.current, path, section, entriesRef.current)
+      saveList(viewedKey(root), Object.entries(next))
+      setMarks(next)
+    },
+    [root]
+  )
 
   const resetStream = useCallback((): void => {
     setAgg({})
@@ -484,6 +509,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
             <span className="cv-total-n">
               {totals.files} {totals.files === 1 ? 'file' : 'files'}
               {totals.noCount > 0 && ` · ${totals.noCount} not counted`}
+              {viewedShown > 0 && ` · ${viewedShown} viewed`}
             </span>
             <span className="ft-delta">
               <span className="add">+{totals.added}</span>
@@ -501,11 +527,17 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                   className={'ft-node cv-row' + (current === e.rel ? ' active' : '')}
                   data-path={e.rel}
                   data-status={e.status}
+                  data-viewed={viewed.has(e.path) ? '1' : undefined}
                   title={e.rel}
                   onClick={() => clickRow(e)}
                   onContextMenu={(ev) => onContextMenu(ev, e.path, false)}
                 >
                   <span className="ft-name">{e.name}</span>
+                  {viewed.has(e.path) && (
+                    <span className="bv-bm" title="Viewed" aria-label="Viewed">
+                      <IconCheck size={10} />
+                    </span>
+                  )}
                   {e.delta && (e.delta.added > 0 || e.delta.removed > 0) && (
                     <span className="ft-delta">
                       {e.delta.added > 0 && <span className="add">+{e.delta.added}</span>}
@@ -539,6 +571,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                 view={blockView[e.path] ?? 'diff'}
                 sourceNonce={blockView[e.path] === 'source' ? refreshNonce : 0}
                 seen={!!seen[e.path]}
+                viewed={viewed.has(e.path)}
                 truncated={load.truncated}
                 cut={!!sections[e.path]?.truncated || !!expandCut[e.path]}
                 loading={
@@ -550,6 +583,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                 blocked={blocked}
                 onToggleExpand={toggleExpand}
                 onToggleOpen={toggleOpen}
+                onToggleViewed={toggleViewed}
                 onSetView={setView}
                 onSplit={splitBlock}
                 onContextMenu={onContextMenu}
@@ -569,6 +603,7 @@ interface BlockProps {
   view: 'diff' | 'source'
   sourceNonce: number
   seen: boolean
+  viewed: boolean
   truncated: boolean
   cut: boolean
   loading: boolean
@@ -576,6 +611,7 @@ interface BlockProps {
   blocked: string | null
   onToggleExpand: (path: string) => void
   onToggleOpen: (path: string) => void
+  onToggleViewed: (path: string, section: DiffSection) => void
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
@@ -590,6 +626,7 @@ const ChangeBlock = memo(function ChangeBlock({
   view,
   sourceNonce,
   seen,
+  viewed,
   truncated,
   cut,
   loading,
@@ -597,6 +634,7 @@ const ChangeBlock = memo(function ChangeBlock({
   blocked,
   onToggleExpand,
   onToggleOpen,
+  onToggleViewed,
   onSetView,
   onSplit,
   onContextMenu,
@@ -614,11 +652,12 @@ const ChangeBlock = memo(function ChangeBlock({
   const parsable = !special || entry.kind === 'renamed'
   const folded = parsable && !opened && !isExpanded && isBigDiff(diffText)
   const hunks = useMemo(
-    () => (parsable && !folded ? splitHunks(diffText) : []),
-    [parsable, folded, diffText]
+    () => (parsable && !folded && !viewed ? splitHunks(diffText) : []),
+    [parsable, folded, viewed, diffText]
   )
 
-  const body = ((): JSX.Element => {
+  const body = ((): JSX.Element | null => {
+    if (viewed) return null
     if (view === 'source') {
       return (
         <BlockSource path={entry.path} seen={seen} version={section?.text} nonce={sourceNonce} />
@@ -682,7 +721,7 @@ const ChangeBlock = memo(function ChangeBlock({
     )
   })()
 
-  const hasFinalHeight = view === 'source' || special || folded || hunks.length > 0
+  const hasFinalHeight = viewed || view === 'source' || special || folded || hunks.length > 0
 
   return (
     <div
@@ -692,6 +731,7 @@ const ChangeBlock = memo(function ChangeBlock({
       data-abs={entry.path}
       data-kind={entry.kind}
       data-status={entry.status}
+      data-viewed={viewed ? '1' : undefined}
       data-ready={hasFinalHeight ? '1' : undefined}
       onContextMenu={(e) => onContextMenu(e, entry.path, false)}
     >
@@ -714,10 +754,27 @@ const ChangeBlock = memo(function ChangeBlock({
           </span>
         )}
         <span className="cv-gap" />
+        <div className="seg">
+          <button
+            className={viewed ? 'on' : undefined}
+            aria-pressed={viewed}
+            disabled={!section}
+            title={
+              viewed
+                ? 'Viewed — uncheck to show the diff again'
+                : 'Mark this file as viewed and fold its diff'
+            }
+            onMouseDown={keepCaretInSessionTerminal}
+            onClick={() => section && onToggleViewed(entry.path, section)}
+          >
+            ✓ Viewed
+          </button>
+        </div>
         <div className="seg" role="group" aria-label="Block view">
           <button
             className={view === 'diff' ? 'on' : undefined}
             aria-pressed={view === 'diff'}
+            disabled={viewed}
             onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'diff')}
           >
@@ -726,6 +783,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'source' ? 'on' : undefined}
             aria-pressed={view === 'source'}
+            disabled={viewed}
             onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'source')}
           >
@@ -737,7 +795,7 @@ const ChangeBlock = memo(function ChangeBlock({
         </div>
       </div>
       {body}
-      {cut && <div className="cv-note">{MSG.fileCutOff}</div>}
+      {cut && !viewed && <div className="cv-note">{MSG.fileCutOff}</div>}
     </div>
   )
 })

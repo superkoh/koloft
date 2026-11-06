@@ -1,4 +1,5 @@
 import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
+import { fnv1a32 } from '@shared/fnv1a'
 import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
@@ -281,6 +282,32 @@ export function totalDelta(entries: readonly ChangeEntry[]): ChangeTotals {
     out.added += e.delta.added
     out.removed += e.delta.removed
   }
+  return out
+}
+
+export type ViewedMarks = Record<string, number>
+
+const diffMark = (section: DiffSection): number => fnv1a32(section.text)
+
+export function viewedNow(marks: ViewedMarks, sections: Record<string, DiffSection>): Set<string> {
+  const out = new Set<string>()
+  for (const [path, mark] of Object.entries(marks)) {
+    const section = sections[path]
+    if (section && diffMark(section) === mark) out.add(path)
+  }
+  return out
+}
+
+export function flipViewed(
+  marks: ViewedMarks,
+  path: string,
+  section: DiffSection,
+  changeSet: readonly ChangeEntry[]
+): ViewedMarks {
+  const out: ViewedMarks = {}
+  for (const e of changeSet) if (marks[e.path] !== undefined) out[e.path] = marks[e.path]
+  if (marks[path] === diffMark(section)) delete out[path]
+  else out[path] = diffMark(section)
   return out
 }
 

@@ -736,6 +736,49 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-60: a remote file marked ✓ Viewed stays folded while the session works and after Reload, since its diff did not change', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const block = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"]')
+      await expect(block.locator('.cv-hunk')).toHaveCount(1, { timeout: 30_000 })
+      await block.locator('.cv-blk-hd button', { hasText: /^✓ Viewed$/ }).click()
+      await expect(block).toHaveAttribute('data-viewed', '1')
+      await expect(block.locator('.cv-hunk')).toHaveCount(0)
+
+      fs.writeFileSync(path.join(dir, 'extra.txt'), 'new\n')
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(page.locator('.wb-panel .cv-row[data-path="extra.txt"]')).toBeVisible({
+        timeout: 90_000
+      })
+      await expect(block).toHaveAttribute('data-viewed', '1')
+
+      await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
+      await expect(block).toHaveAttribute('data-viewed', '1')
+      await expect(page.locator('.wb-panel .cv-row[data-path="tracked.txt"] .bv-bm')).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine through ssh and tmux as a paste with the note typed after it, unsent until the person presses Enter', async ({
     env
   }) => {

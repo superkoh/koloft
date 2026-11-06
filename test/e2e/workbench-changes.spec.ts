@@ -82,6 +82,18 @@ const rowOf = (page: Page, rel: string): Locator => page.locator(`${CV.row}[data
 const blockOf = (page: Page, rel: string): Locator =>
   page.locator(`${CV.block}[data-path="${rel}"]`)
 const stream = (page: Page): Locator => page.locator(CV.stream)
+const viewedBtn = (blk: Locator): Locator =>
+  blk.locator('.cv-blk-hd button', { hasText: /^✓ Viewed$/ })
+
+async function expectViewed(page: Page, rel: string): Promise<void> {
+  const blk = blockOf(page, rel)
+  await expect(blk).toHaveAttribute('data-viewed', '1', { timeout: 30_000 })
+  await expect(viewedBtn(blk)).toHaveAttribute('aria-pressed', 'true')
+  await expect(blk.locator(CV.hunk)).toHaveCount(0)
+  await expect(blk.locator('.cv-note')).toHaveCount(0)
+  await expect(rowOf(page, rel)).toHaveAttribute('data-viewed', '1')
+  await expect(rowOf(page, rel).locator('.bv-bm')).toHaveCount(1)
+}
 
 const GIT_KILLED_AFTER_MS = 3000
 
@@ -304,6 +316,59 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(comment).toBeDisabled({ timeout: 30_000 })
     await runIn(page, centerTerm(page), 'back to work')
     await expect(comment).toBeEnabled({ timeout: 30_000 })
+  })
+
+  test('WB-C20: ✓ Viewed folds a file to its header and checks its row; a second press opens it again; the mark outlives Reload and a relaunch, and an edit that moves its ±N brings the diff back', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    await openChanges(page)
+    await waitStream(page, 2)
+
+    const x = blockOf(page, 'src/change-1.ts')
+    const y = blockOf(page, 'src/change-2.ts')
+    await viewedBtn(x).click()
+    await expectViewed(page, 'src/change-1.ts')
+    const seg = x.locator(CV.blockSeg)
+    await expect(seg.locator('button', { hasText: /^Diff$/ })).toBeDisabled()
+    await expect(seg.locator('button', { hasText: /^Source$/ })).toBeDisabled()
+    await expect(seg.locator('button', { hasText: '↗ New tab' })).toBeEnabled()
+    await expect(page.locator(`${CV.total} .cv-total-n`)).toHaveText('2 files · 1 viewed')
+    await viewedBtn(y).click()
+    await expect(y).toHaveAttribute('data-viewed', '1')
+    await viewedBtn(y).click()
+    await expect(y.locator(CV.hunk)).toHaveCount(1)
+    await expect(rowOf(page, 'src/change-2.ts').locator('.bv-bm')).toHaveCount(0)
+
+    await reloadBtn(page).click()
+    await waitStream(page, 2)
+    await expectViewed(page, 'src/change-1.ts')
+
+    await app.close().catch(() => {})
+    const next = await launchApp(env)
+    try {
+      const page2 = await next.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      await waitBooted(page2)
+      await openChanges(page2)
+      await waitStream(page2, 2)
+      await expectViewed(page2, 'src/change-1.ts')
+      await expect(blockOf(page2, 'src/change-2.ts').locator(CV.hunk)).toHaveCount(1)
+
+      fx.editTracked(fx.paths.changeable[0])
+      const x2 = blockOf(page2, 'src/change-1.ts')
+      await expect(x2.locator(CV.hunk)).toHaveCount(2, { timeout: 30_000 })
+      await expect(x2).not.toHaveAttribute('data-viewed', '1')
+      await expect(viewedBtn(x2)).toHaveAttribute('aria-pressed', 'false')
+      await expect(rowOf(page2, 'src/change-1.ts').locator('.bv-bm')).toHaveCount(0)
+      await expect(page2.locator(`${CV.total} .cv-total-n`)).toHaveText('2 files')
+    } finally {
+      await quitAndClose(next)
+    }
   })
 
   test('WB-C04: merge-base lists the committed and the uncommitted change; vs HEAD lists only the uncommitted', async ({
@@ -871,7 +936,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     })
 
   for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
-    test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
+    test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes; a file marked viewed before /clear is still viewed after it`, async ({
       env
     }) => {
       const fx = setupChangeFixture(env.workspaces.a)
@@ -885,6 +950,9 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
         await expect
           .poll(() => shownPaths(page), { timeout: 30_000 })
           .toEqual(['src/agent-notes.ts'])
+        await waitStream(page, 1)
+        await viewedBtn(blockOf(page, 'src/agent-notes.ts')).click()
+        await expectViewed(page, 'src/agent-notes.ts')
 
         const row = wsRows(page, 'ws-a').first()
         const old = await sessionInRow(page, row)
@@ -896,6 +964,12 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
         await expect
           .poll(() => shownPaths(page), { timeout: 30_000 })
           .toEqual(['src/agent-notes-b.ts'])
+
+        await pickChip(page, 'Ownership', 'all')
+        await expect
+          .poll(async () => (await shownPaths(page)).sort(), { timeout: 30_000 })
+          .toEqual(['src/agent-notes-b.ts', 'src/agent-notes.ts'])
+        await expectViewed(page, 'src/agent-notes.ts')
       } finally {
         await quitAndClose(app)
       }

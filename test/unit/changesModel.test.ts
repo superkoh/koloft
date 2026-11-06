@@ -14,6 +14,7 @@ import {
   classifyKind,
   commentBlocked,
   emptyStreamMessage,
+  flipViewed,
   groupByDir,
   hunkPrompt,
   isBigDiff,
@@ -25,6 +26,7 @@ import {
   splitHunks,
   stableEntries,
   totalDelta,
+  viewedNow,
   writtenPaths,
   type ChangeEntry,
   type DiffSection
@@ -232,6 +234,42 @@ describe('mergeSections keeps identity for what did not move (FR-58)', () => {
   it('drops a file that left the change set', () => {
     const prev = { '/w/a.ts': s('one'), '/w/b.ts': s('two') }
     expect(Object.keys(mergeSections(prev, { '/w/a.ts': s('one') }))).toEqual(['/w/a.ts'])
+  })
+})
+
+describe('the viewed mark (#251) — a file stays viewed only while its diff is the one it was marked on', () => {
+  const s = (text: string): DiffSection => ({ rel: 'a.ts', text, binary: false, renameFrom: null })
+  const set = (...paths: string[]): ChangeEntry[] =>
+    paths.map((p) => ({ path: p }) as unknown as ChangeEntry)
+
+  it('marks, then unmarks on a second press', () => {
+    const marked = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
+    expect([...viewedNow(marked, { '/w/a.ts': s('one') })]).toEqual(['/w/a.ts'])
+    const unmarked = flipViewed(marked, '/w/a.ts', s('one'), set('/w/a.ts'))
+    expect(viewedNow(unmarked, { '/w/a.ts': s('one') }).size).toBe(0)
+  })
+
+  it('drops the mark once the diff text differs, and brings it back when the same text returns (a base switched away and back)', () => {
+    const marks = flipViewed({}, '/w/a.ts', s('vs HEAD'), set('/w/a.ts'))
+    expect(viewedNow(marks, { '/w/a.ts': s('vs merge-base') }).size).toBe(0)
+    expect(viewedNow(marks, { '/w/a.ts': s('vs HEAD') }).size).toBe(1)
+  })
+
+  it('pressing a file whose mark no longer matches marks its new diff instead of clearing it', () => {
+    const old = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
+    const next = flipViewed(old, '/w/a.ts', s('two'), set('/w/a.ts'))
+    expect(viewedNow(next, { '/w/a.ts': s('two') }).size).toBe(1)
+  })
+
+  it('reads no mark for a file whose diff is not loaded', () => {
+    const marks = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
+    expect(viewedNow(marks, {}).size).toBe(0)
+  })
+
+  it('forgets marks of files that left the change set, but keeps marks of files a filter only hides', () => {
+    const marks = { '/w/gone.ts': 1, '/w/hidden.md': 2 }
+    const next = flipViewed(marks, '/w/a.ts', s('one'), set('/w/a.ts', '/w/hidden.md'))
+    expect(Object.keys(next).sort()).toEqual(['/w/a.ts', '/w/hidden.md'])
   })
 })
 
