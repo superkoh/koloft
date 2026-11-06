@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocketServer, type WebSocket } from 'ws'
 import {
   MachineCodexUpstream,
+  codexTabScript,
   machineAppServerCmd,
   ownerWordsLines
 } from '../../src/main/remote/codexMachine'
@@ -80,6 +81,30 @@ describe('a Codex session that another session starts on a machine', () => {
     expect(mac[0]).toContain('Chinese')
     expect(answers('machine.said')).toEqual(mac)
     fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('the tab script of a Codex session on a machine', () => {
+  it("copies the koloft-docs skill from the machine package into the tab's Codex home every time, and the koloft skill only with agent tools on", () => {
+    const script = (agentTools: boolean): string =>
+      codexTabScript({
+        tabId: 'T',
+        instance: 'i',
+        machineName: 'm-1',
+        version: '1.0.0',
+        cwd: '/w',
+        trust: [],
+        env: {},
+        config: [],
+        hookTrust: [],
+        agentTools
+      })
+    const docs = 'cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$"'
+    const koloft = 'cp -R "$M/agent-plugin/skills/koloft" "$H/skills/koloft.new-$$"'
+    expect(script(true)).toContain(docs)
+    expect(script(true)).toContain(koloft)
+    expect(script(false)).toContain(docs)
+    expect(script(false)).not.toContain(koloft)
   })
 })
 

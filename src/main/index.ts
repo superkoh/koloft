@@ -168,6 +168,7 @@ import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './r
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
+  DOCS_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
@@ -605,7 +606,13 @@ import {
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
+import {
+  agentPluginFiles,
+  pluginSkills,
+  docsPluginFiles,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -1379,6 +1386,8 @@ function machinePackage(): MachinePackage {
     pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
+  for (const [rel, text] of Object.entries(docsPluginFiles()))
+    pkgFiles[`${DOCS_PLUGIN_DIR}${rel}`] = text
   try {
     // PLATFORM§36
     const bundleDir = path.dirname(bundlePath())
@@ -1416,6 +1425,7 @@ const PLAIN_KOLOFT_SHIM = {
   hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
 }
 let claudeAgentPlugin: string | undefined
+let claudeDocsPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -3176,6 +3186,11 @@ app.whenReady().then(() => {
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
+  try {
+    claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))
+  } catch (err) {
+    console.error('[koloft] the koloft-docs plugin could not be written:', err)
+  }
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3517,10 +3532,11 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
+      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
+        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -6219,6 +6235,7 @@ const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    docsPlugin: () => claudeDocsPlugin,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
   }),
   (machine) =>

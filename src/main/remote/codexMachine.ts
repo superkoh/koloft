@@ -5,7 +5,7 @@ import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
 import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
-import { assertSafeNames, koloftSkillLine, tabPushed, type MachinePackage } from './launch'
+import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import {
@@ -120,7 +120,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
-  const skill = `${koloftSkillLine('$H/skills', s.agentTools ? '$M' : undefined)}\n`
+  const skill = `${skillsFromMachineLine('$H/skills', '$M', s.agentTools)}\n`
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}

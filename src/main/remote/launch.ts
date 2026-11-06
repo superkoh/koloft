@@ -11,7 +11,7 @@ import {
 } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
-import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { CLAUDE_WRAP_FILE } from './claudeWrap'
 
@@ -59,12 +59,24 @@ export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
 export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
+export const DOCS_PLUGIN_DIR = 'docs-plugin/'
 
-export function koloftSkillLine(skillsDir: string, machineDir: string | undefined): string {
-  const dir = `${skillsDir}/${KOLOFT_SKILL}`
-  if (!machineDir) return `rm -rf "${dir}"`
-  const copy = `"${dir}/SKILL.md.k$$"`
-  return `mkdir -p "${dir}" && cp "${machineDir}/${AGENT_PLUGIN_DIR}${KOLOFT_SKILL_FILE}" ${copy} && mv -f ${copy} "${dir}/SKILL.md"`
+export function skillsFromMachineLine(
+  skillsDir: string,
+  machineDir: string,
+  koloftOn: boolean
+): string {
+  const keep = (pluginDir: string, skill: string): string => {
+    const from = `"${machineDir}/${pluginDir}${pluginSkillDir(skill)}"`
+    const to = `"${skillsDir}/${skill}"`
+    const next = `"${skillsDir}/${skill}.new-$$"`
+    return `{ diff -r ${from} ${to} >/dev/null 2>&1 || { rm -rf ${next} && cp -R ${from} ${next} && rm -rf ${to} && mv ${next} ${to}; }; }`
+  }
+  return [
+    `mkdir -p "${skillsDir}"`,
+    keep(DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
+    koloftOn ? keep(AGENT_PLUGIN_DIR, KOLOFT_SKILL) : `rm -rf "${skillsDir}/${KOLOFT_SKILL}"`
+  ].join('; ')
 }
 
 export function buildMachinePackage(
@@ -173,11 +185,11 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
-// CC§12
+// CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
   command -v python3 >/dev/null 2>&1 && exec python3 "$M/${CLAUDE_WRAP_FILE}" "$@"
   exec "$@"\n`
 }
