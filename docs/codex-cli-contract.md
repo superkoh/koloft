@@ -415,7 +415,7 @@ archived afterwards.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
-0.164.0, 0.165.0 or 0.166.0. Koloft
+0.164.0, 0.165.0, 0.166.0 or 0.167.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
 `src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
@@ -475,7 +475,39 @@ queue`'s options) and 34 (a TUI whose app-server is killed keeps trying to recon
 were measured again, and the same
 e2e specs passed, the remote ones (E-SSH-23/24/25) too. `codex
 --help`, `app-server --help`, `exec --help` and `resume --help` are byte-identical to
-0.165.0's; `queue --help` and `doctor --help` (`--network-only`) differ. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+0.165.0's; `queue --help` and `doctor --help` (`--network-only`) differ. On 0.167.0
+(2026-11-06, the same way against 0.166.0, `gpt-6-luna`, each home's `config.toml`
+keeping logins in its file): sections 1 (`initialize` keys, `thread/list` keys and
+`readStates` unchanged, 32 keys per thread, the same 18 notifications in a turn;
+`account/login/start` and `LoginAccountParams` byte-identical; the schema adds the
+server notification `thread/section/changed {threadId, sectionId}` (#58380, not seen in a
+turn and not read by Koloft), the `requiredHumanApproval` initialize capability with a
+`humanCommand` command-approval kind that only a client sending that capability is given
+(#58045; Koloft sends none, so it gets none — **inferred, not checked**), the
+experimental client method `thread/guardianReview`, and an audio input given by
+`fileId`; no server request is added and nothing is removed), 5 (one process, no shared
+daemon from an app-server Koloft's way), 13/14 (`model/list` the same eight models, all
+priced, default `gpt-6.1-sol`; the token-usage fields and the rollout record types of a
+turn unchanged; #58091's new defaults for memory extraction, `gpt-6-luna` and
+`gpt-6.1-terra`, are read from the upstream change, not run, and both are priced), 15
+(`login status`, `auth.json` unchanged by three turns, nothing written to `HOME`), 16
+(Linux, there), 17 (a message queued mid-turn starts the next turn within 9 ms,
+`clientId` kept), 18 and 21 (`agents`, `/resume`, there), 20 (the waiting question, the
+same), 22 (npm runs from `/`, there), 23 (paste, and a leading `!`, there), 24 (search,
+the same), 25 (the same startup and exit sequences, no new terminal query, OSC 7501
+still sent, the TUI starting with every query unanswered; the keys, the leader key and
+Ctrl+L the same), 26 (the MCP tool question, there), 27/30 (the same four events, order,
+stdin keys and `cwd`; a `PreToolUse` hook that sleeps 8 s still holds the command 8 s, a
+deny still blocks it), 28 (not fixed, there), 34 (a TUI whose app-server dies reconnects
+and resumes the same thread) and the command and patch approvals of section 3 (the same
+wire, screen and `y` / Esc keys; #58281's inline patch review showed no new key) were
+measured again, and the same e2e specs passed, the remote ones (E-SSH-23/24/25) too.
+`app-server --help`, `exec --help`, `resume --help`, `queue --help`, `doctor --help` and
+`update --help` are byte-identical to 0.166.0's; `codex --help` and `agents --help`
+differ (§18). Not reached on 0.167.0: a Guardian review (#58368; the probe threads ran
+`never`), a keychain that cannot be read and a token refresh (#58219, #58343), and the
+terminal-detected image features (#58261, #58270; Koloft reports `Apple_Terminal`, so
+they are **inferred, not checked**, to stay off). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
 approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
@@ -1564,6 +1596,28 @@ after the drop. A later client's `thread/loaded/list` and `thread/read` did not 
 thread; the app-server process itself stayed up after the unload, and `thread/read` and
 `thread/resume` still returned the whole turn.
 
+**Rechecked on 0.167.0, the same on 0.166.0.** 2026-11-06, `node:22-bookworm-slim`
+(Docker, arm64) as a non-root user, both builds installed with Koloft's own line
+(`npm install -g --prefix <dir> @openai/codex@<v> </dev/null`, `install.ts`), a
+stand-in Responses server and a made-up API key: `codex --version` prints `codex-cli
+0.167.0`; npm picks `@openai/codex-linux-arm64` with
+`vendor/aarch64-unknown-linux-musl/` (musl); the installed `codex` `execve`s into the
+native binary (`/proc/<pid>/exe` is the native `codex`, no `node` parent) under
+`--stdio` and under `setsid nohup … --listen` alike, so the npm `node` wrapper the
+0.162.0 entries here name is gone on Linux too, as on the Mac since 0.166.0 (§5). The
+side app-server (`--stdio -c check_for_update_on_startup=false`), the tab app-server
+(`--listen unix://…` with `-c allow_login_shell=false`, its socket a link into
+`/tmp/codex-daemon-<uid>/`) and `app-server proxy --sock` answered `initialize`,
+`thread/start` and a turn whose command ran as `/bin/bash -c '…'`; a socket folder
+others can write (0775) still refuses to start; a `--stdio` server ends 18–26 ms after
+SIGTERM or a closed stdin; a stale socket target left by a SIGKILL does not stop a
+restart at the same path once the link is removed, and a live server at that path still
+makes the next one exit with "app-server control socket is already in use". A `--listen`
+server here ended within 3 s of SIGTERM, idle or after a stand-in turn — not the signed-in
+two-turn case with a `codex-code-mode` child measured below, which was not rerun. On
+Linux, `codex --help` lacks only the Mac's `app` line, and `app-server --help` is the
+same as the Mac's.
+
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
@@ -1849,6 +1903,18 @@ Codex's own full-screen screen from one that prints and exits.
   `agents` ("Browse all agent sessions"; it takes `--no-alt-screen`, a TUI flag), and
   bare `cloud` ("Browse tasks"). `cloud exec | status | list | apply | diff` print and
   exit (`cloud exec`: "without launching the TUI").
+- **`agents` on 0.167.0** (2026-11-06, `--help` of both builds, and each run in a
+  python pty with a throwaway `CODEX_HOME`): the help line now reads "Open the agent
+  command center to browse and switch sessions" (0.166.0: "Browse all agent sessions on
+  the shared local app-server daemon"), the only change to `codex --help`, and `agents`
+  gains `--no-daemon` ("Run the agents overview with an embedded app server"), which
+  takes no value. `codex --remote <url> agents` opens the full-screen command center on
+  both builds (`? help esc back ↑/↓ move enter open n new`; Esc goes on to the plain
+  TUI), and `agents --no-daemon` on 0.167.0 too, starting no other process. A bare
+  `codex agents` on 0.167.0 started `app-server --listen unix:// --managed-daemon` and
+  `app-server daemon pid-update-loop` from `$CODEX_HOME/packages/app-server-daemon/`,
+  and both were still running after the TUI quit. A bare `agents` on 0.166.0 was not
+  run.
 - **Subcommands that print or run and exit:** `exec` (alias `e`, "Run Codex
   non-interactively"), `review` ("non-interactively"), `login`, `logout`, `mcp`, `plugin`,
   `mcp-server`, `app-server`, `remote-control`, `app` (opens the Desktop app),
@@ -2191,6 +2257,20 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   is not read as "no panel".
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
+- **From 0.167.0 a bare `/resume` opens its picker on the TUI's own connection**
+  (#58280/#58457, cross-backend session switching). 2026-11-06, a real `--remote` TUI
+  in a python pty on a Node WebSocket relay in front of `codex app-server --stdio` that
+  logged every frame and, unlike Koloft, passed a second connection through, `gpt-6-luna`.
+  On 0.166.0 the picker opened a second WebSocket, which the app-server refused (`Already
+  initialized`, -32600), and the screen said "Failed to start TUI session picker: failed
+  to connect to remote app server". On 0.167.0 there was only ever one connection and the
+  picker opened (`Resume a previous session … enter resume ⌃a archive esc exit …`),
+  sending `thread/turns/list`, `thread/items/list` and `thread/loaded/list`, none of them
+  read by Koloft. Picking another thread sent `thread/resume` and then
+  `thread/unsubscribe` of the old one, as `/resume <id>` does; picking the thread already
+  open showed `Already viewing <rollout path>` and sent nothing. Koloft answers a second
+  connection with 409 (`codexTransport.ts`), so in a Koloft tab the picker failed before
+  0.167.0 and works from it — both **inferred, not checked** in Koloft itself.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
   more turns, one each, right after it; between turns the thread status went `idle`
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
@@ -2225,6 +2305,21 @@ How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` wi
   and `zsh -l -i -c` both find `codex` right after it. (2026-10-11, 0.162.1, macOS 27:
   `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh` under
   `zsh -l -i` with a fresh temporary `HOME`, `CODEX_HOME` unset.)
+- **From 0.167.0 the npm way runs npm from `/`**, not from the folder `codex update` was
+  typed in (#58403 "Run package updates outside the project on non-Windows platforms").
+  2026-11-06, npm installs of 0.166.0 and 0.167.0 in throwaway prefixes in
+  `node:22-bookworm-slim` (Docker, arm64, a non-root user), run from a project folder
+  holding a `package.json` with a `preinstall` script, an `.npmrc` setting `prefix`, and a
+  `node_modules`; first with a stand-in `npm` that logged its folder and arguments, then
+  with the real one. Both ran `npm install -g @openai/codex` with no `--prefix`, 0.166.0
+  in the project folder and 0.167.0 in `/`, and 0.167.0 ran it even when already up to
+  date. The project's files were left as they were on both, and its `.npmrc` and
+  `preinstall` took no effect on either. The real npm, as a non-root user, aimed at
+  `/usr/local/lib/node_modules` and failed with EACCES on both (`codex update` exit 1,
+  "failed with status exit status: 243"). So it never reaches the copy Koloft installs on
+  a machine under `$HOME/.koloft/codex-cli` (§16), which Koloft checks by version at
+  each start. That the standalone way now starts from `/` too is **inferred, not
+  checked**.
 
 ## 23. A bracketed paste lands in the composer unsent
 
@@ -2266,6 +2361,19 @@ message" (3 runs).
   established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
+- **A text whose first character is `!` runs as a shell command, pasted or typed, on
+  0.166.0 and 0.167.0 alike.** 2026-11-06, a real `--remote` TUI in a python pty
+  (120×40, Koloft's `TERM` and `COLORTERM`) on a relay in front of `codex app-server
+  --stdio`, output replayed into `@xterm/headless`, `gpt-6-luna`: a two-line bracketed
+  paste waited 5 s unsent and the next CR sent it as one `turn/start` on both. A pasted
+  `!echo BANGPASTE`, and the same typed in one write, turned the composer into "Shell
+  mode", and the CR sent `thread/shellCommand {command: "echo BANGPASTE"}`, which never
+  reaches the model. What 0.167.0 changed (#58412): `x!echo BANGDEL` with the `x`
+  deleted afterwards stays an ordinary draft, where 0.166.0 turned it into
+  `! echo BANGDEL` in Shell mode. Koloft never deletes a character it typed, and every
+  Koloft message to a Codex session goes through `thread/queue/add` (§17), not the
+  composer; what Koloft pastes into a Codex composer (a picked element, a hunk comment,
+  failing checks) does not start with `!`.
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.
@@ -2567,6 +2675,16 @@ so its folders were not writable by default.
   - `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (values `auto`, `prompt`,
     `writes`, `approve`): the call ran with no request under `on-request` and under
     `never`.
+  - 2026-11-06, codex-cli 0.167.0 against 0.166.0, a real `--remote` TUI in a python pty
+    on a relay in front of `codex app-server --stdio`, a tiny stdio MCP server (tool
+    `stamp_note`), `gpt-6-luna`: the screen question is the same on both (`Allow the
+    probe MCP server to run tool "stamp_note"?`, `1. Allow / 2. Allow for this session /
+    3. Always allow / 4. Cancel`, `enter to submit | esc to cancel`; it takes a digit or
+    Enter, not `y`), and so is `message`. 0.167.0's `_meta` adds `tool_name` and
+    `tool_annotations` (`readOnlyHint`, `destructiveHint`, `openWorldHint`); Koloft reads
+    no `_meta`. Koloft never presses `y` for it: `openApproval` in
+    `codexObservation.ts` counts only `*/requestApproval`, and `codexQuestionOf` drops a
+    form with no fields.
 - **The same with the real Playwright MCP, checked 2026-11-02** on codex-cli 0.166.0 and
   `@playwright/mcp` 0.0.84 (`--headless --isolated`, installed into a scratch folder), a
   Node script driving `codex app-server` in a temporary `CODEX_HOME` holding a copied
@@ -2797,6 +2915,11 @@ home where one app-server had already started and stopped first.
 - **Not fixed on 0.166.0** either (2026-10-30, the same method): 2 of 6 fresh-home rounds
   lost one app-server with the same error, exit 1, 50–76 ms after start (0.165.0 the
   same day: 5 of 6); a home used once before, 0 of 6 on both.
+- **Not fixed on 0.167.0** (2026-11-06, the same method, each fresh home holding a
+  copied `auth.json` and a `config.toml`): 2 of 6 fresh-home rounds lost one app-server
+  with the same error, exit 1, 71–85 ms after start (0.166.0 the same day: 0 of 6, so the
+  race comes and goes); a home used once before, 0 of 6 on both. Rounds where both
+  answered still logged `failed to install system skills: … (os error 66)` on both.
 
 ## 29. Git credentials from inside the sandbox
 
