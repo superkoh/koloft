@@ -640,6 +640,22 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(writes.map((w) => w.data)).toEqual(TO_THE_EMPTIED_FIELD_OF_TWO.slice(0, 2))
   })
 
+  // CC§14
+  it('the keys of a Claude answer stop when the owner presses a key at the Mac meanwhile; Koloft says it left the dialog to the owner and withdraws the reply it had recorded', async () => {
+    let pressed = false
+    const { relay, writes, answered } = setup({}, [], {
+      status: () => 'approval',
+      keyPressedSince: () => pressed
+    })
+    relay.onAsk(MANAGED, QUESTION)
+    const typing = relay.answerSession(MANAGED, '2')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    pressed = true
+    expect(await typing).toBe(STARTED_IN_THE_TERMINAL)
+    expect(writes).toHaveLength(1)
+    expect(answered.at(-1)).toEqual({ tab: MANAGED, reply: '' })
+  })
+
   // CODEX§20 MUSE§11 AGY§14
   it('a Codex, Muse or Antigravity question the owner already pressed keys in is left to the owner: Koloft presses nothing and says so', async () => {
     const question: CodexQuestion = {
@@ -658,7 +674,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CODEX§20
-  it('a Codex answer stops pressing keys the moment the owner presses one in the question, and says it left the question to the owner', async () => {
+  it('a Codex answer stops pressing keys the moment the owner presses one in the question, says it left the question to the owner, and withdraws the reply it had recorded', async () => {
     let touched = false
     const question: CodexQuestion = {
       id: 0,
@@ -670,7 +686,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
         }
       ]
     }
-    const { relay, writes } = setup({}, [], {
+    const { relay, writes, answered } = setup({}, [], {
       backendOf: () => 'codex',
       pendingQuestion: () => question,
       touchedSinceAsked: () => touched
@@ -680,6 +696,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     touched = true
     expect(await typing).toBe(STARTED_IN_THE_TERMINAL)
     expect(writes.map((w) => w.data)).toEqual(['\x1b[B'])
+    expect(answered.at(-1)).toEqual({ tab: MANAGED, reply: '' })
   })
 
   // CC§14
@@ -696,13 +713,16 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
         ]
       }
     }
+    let pressedAt = 0
     const { relay, writes } = setup({}, [], {
       status: () => 'approval',
-      keyPressedSince: () => true
+      keyPressedSince: (_t, at) => pressedAt >= at
     })
     relay.onAsk(MANAGED, fruit)
+    pressedAt = Date.now()
     expect(await relay.answerSession(MANAGED, 'Apple')).toBe(STARTED_IN_THE_TERMINAL)
     expect(writes).toEqual([])
+    await new Promise((r) => setTimeout(r, 5))
     relay.onAsk(MANAGED, QUESTION)
     expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
     expect(writes.at(-1)?.data).toBe('2')

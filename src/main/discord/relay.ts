@@ -68,6 +68,7 @@ export const unreadableInRoom = (butler: string, lobby: string | undefined): str
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
+const NOT_ANSWERED_FROM_HERE = ''
 export const STARTED_IN_THE_TERMINAL =
   'You already started on this question in the terminal, so Koloft leaves it to you there.'
 
@@ -703,9 +704,10 @@ export class DiscordRelay {
       // CODEX§20 MUSE§11 AGY§14
       if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       this.d.answered(tab, reply)
-      if (!(await this.pressAnswer(tab, answerKeys(answerKeysFor, question, answers))))
-        return { error: STARTED_IN_THE_TERMINAL }
-      return { watch: true }
+      if (await this.pressAnswer(tab, answerKeys(answerKeysFor, question, answers)))
+        return { watch: true }
+      this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+      return { error: STARTED_IN_THE_TERMINAL }
     }
     const ask = this.openAsk(tab)
     if (!ask)
@@ -735,14 +737,19 @@ export class DiscordRelay {
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
     this.d.answered(tab, reply)
+    const startedAt = Date.now()
     // CC§14
     const stillWanted = watch
-      ? (): boolean => this.asks.get(tab) === ask && !ticksTheOwnerMayHaveLeft()
+      ? (): boolean => this.asks.get(tab) === ask && !this.d.keyPressedSince(tab, startedAt)
       : undefined
     ask.typing = true
     try {
-      if (!(await this.d.type(tab, keys.value, stillWanted)))
-        return { error: this.asks.get(tab) === ask ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
+      if (!(await this.d.type(tab, keys.value, stillWanted))) {
+        const open = this.asks.get(tab) === ask
+        ask.typedAt = undefined
+        this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+        return { error: open ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
+      }
     } catch (error) {
       ask.typedAt = undefined
       throw error
