@@ -13,6 +13,7 @@ import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
+import { CLAUDE_WRAP_FILE } from './claudeWrap'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -136,12 +137,16 @@ const TITLE_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${TMUX_PASSES_THE_PANE_T
   (option) => `set -gq ${option}`
 ).join(' \\; ')} 2>/dev/null; `
 
+// MUSE§17
+const PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING =
+  'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n'
+
 export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
   ...tab,
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: claudeFirstRun(tab),
+    beforeTmux: claudeFirstRun(tab) + PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName
@@ -157,7 +162,7 @@ export const machineToolProgram = (
   run,
   beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
   ensureTool: name,
-  beforeTmux: 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n',
+  beforeTmux: PASSTHROUGH_ON_A_TMUX_ALREADY_RUNNING,
   files
 })
 
@@ -168,10 +173,13 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
+// CC§12
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  exec claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}\n`
+  set -- claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  command -v python3 >/dev/null 2>&1 && exec python3 "$M/${CLAUDE_WRAP_FILE}" "$@"
+  exec "$@"\n`
 }
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {

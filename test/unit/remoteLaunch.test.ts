@@ -20,6 +20,7 @@ import {
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { museRunLines } from '../../src/main/museRemote'
+import { CLAUDE_WRAP_FILE, CLAUDE_WRAP_PY } from '../../src/main/remote/claudeWrap'
 import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
@@ -315,6 +316,7 @@ function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}
   const m = path.join(home, '.koloft', s.machineName)
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
+  fs.writeFileSync(path.join(m, CLAUDE_WRAP_FILE), CLAUDE_WRAP_PY)
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
     `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nexit ${opts.ensureExit ?? 0}\n`,
