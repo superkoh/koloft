@@ -203,7 +203,12 @@ export class OwnerAsleep {
     if (!asked || asked.text === answeredText) return answeredText
     const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
     for (const reply of repliesTo(asked)) {
-      entry.failed = await this.d.answer(tabId, reply)
+      try {
+        entry.failed = await this.d.answer(tabId, reply)
+      } catch (e) {
+        entry.failed = e instanceof Error ? e.message : String(e)
+        break
+      }
       if (entry.failed === ANSWER_NOT_TAKEN) break
       if (entry.failed === undefined) {
         entry.gave = reply

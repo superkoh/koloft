@@ -145,6 +145,34 @@ describe('owner asleep', () => {
     )
   })
 
+  it('an answer step that throws is reported as not answered, and a second question waiting behind it is still answered', async () => {
+    const t = setup()
+    let failed: ((e: Error) => void) | undefined
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      t.asks.delete(tabId)
+      if (t.replies.length === 1) await new Promise<void>((_, reject) => (failed = reject))
+      return undefined
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    const first = t.asleep.asks('a')
+    await t.settle()
+    t.asks.set('a', approval('npm publish'))
+    await t.asleep.asks('a')
+    failed?.(new Error('the keys could not be sent'))
+    await first
+    expect(t.replies).toEqual([
+      ['a', OWNER_ASLEEP_ANSWER],
+      ['a', 'yes']
+    ])
+    await t.wakeAfter(HOUR_MS)
+    expect(t.reports[0]).toContain(
+      'Koloft could not answer it (the keys could not be sent), so it still waits for the owner.'
+    )
+    expect(t.reports[0]).toContain('Koloft allowed it.')
+  })
+
   it('a dialog Koloft already answered gets no second answer when the session signals it again during the wait, whether or not the answer was seen taken', async () => {
     for (const outcome of [undefined, ANSWER_NOT_TAKEN]) {
       const t = setup()
