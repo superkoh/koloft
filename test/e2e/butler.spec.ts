@@ -605,7 +605,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  test('the butler lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace', async ({
+  // CODEX§15
+  test('the butler lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace, though the session ran in an account home and the default home never loaded it', async ({
     env
   }) => {
     installCodex(env)

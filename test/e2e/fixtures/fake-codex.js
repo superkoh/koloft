@@ -36,6 +36,14 @@ const save = (thread) => {
   fs.writeFileSync(target + '.tmp', JSON.stringify(thread))
   fs.renameSync(target + '.tmp', target)
 }
+// CODEX§15
+const threadsThisHomeLoaded = path.join(codexHome, 'fake-codex-loaded')
+const markLoadedHere = (id) => {
+  fs.mkdirSync(threadsThisHomeLoaded, { recursive: true })
+  fs.writeFileSync(path.join(threadsThisHomeLoaded, id), '')
+}
+const turnsSeenHere = (thread) =>
+  fs.existsSync(path.join(threadsThisHomeLoaded, thread.id)) ? thread.turns : []
 const savedThreads = () =>
   fs
     .readdirSync(sessions)
@@ -547,13 +555,13 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       if (method === 'thread/turns/list') {
         const thread = load(p.threadId)
         if (!thread) error(id, 'Thread not found')
-        else result(id, { data: thread.turns, nextCursor: null })
+        else result(id, { data: turnsSeenHere(thread), nextCursor: null })
         return
       }
       if (method === 'thread/read') {
         const thread = load(p.threadId)
         if (!thread) error(id, 'Thread not found')
-        else result(id, { thread })
+        else result(id, { thread: { ...thread, turns: turnsSeenHere(thread) } })
         return
       }
       if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
@@ -570,6 +578,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         if (method === 'thread/fork' && previous.path)
           persistTurn(active, previous.preview || 'Forked session')
         save(active)
+        markLoadedHere(active.id)
         const opened = active
         setTimeout(
           () => {

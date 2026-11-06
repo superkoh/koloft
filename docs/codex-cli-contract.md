@@ -1378,6 +1378,31 @@ resumed from the default home (issue #486). Not probed: 0.159.3 (the
 `codex migrate-rollouts --apply` fills the index. A `codex exec` rollout (`source: "exec"`) is not in the
 default listing, which asks for interactive sources only.
 
+**The same on 0.166.0, and what a `thread/resume` from the default home leaves behind.**
+Checked 2026-11-06 with codex-cli 0.166.0, no login: a Node client on `codex app-server`
+in throwaway `HOME` and `CODEX_HOME`s laid out as above, the model provider in the shared
+`config.toml` pointed at a closed local port (`base_url = "http://127.0.0.1:9/v1"`), so
+B's one turn failed but was recorded (an 80 KB rollout). D, already running, listed the
+thread (`notLoaded`) and read 0 turns (`thread/read`, `thread/turns/list`); B read 1.
+`thread/resume` from D answered in 17–23 ms with the turn, and left `updatedAt` in
+`thread/list` and the rollout's bytes unchanged; D gained
+`thread-writer-locks/<id>.lock`, `shell_snapshots/<id>.<ns>.sh` and `.sandbox_migration`,
+and no child process outlived it by 3 s. **The resuming app-server keeps the thread's
+writer for as long as it lives, even after `thread/unsubscribe` (`unsubscribed`)**: a
+second app-server on D then got `-32600` "thread … already has an active writer" on
+`thread/resume` and "thread not found" on `turn/start`, while one on B resumed and took
+a turn. Once the resuming process exited, a new app-server on D resumed the thread and
+took a turn. A `thread/read` from B took no writer: D and B both resumed after it. After
+the resuming app-server closed, an app-server on D that had been running all along read
+the turn too, and a home that has the thread loaded also reads the turns other homes
+add later (1, 2, then 3 as D and B took turns). So Koloft reads a closed session's turns
+from the account home Koloft last ran it in, and only when that gives none (no record, or
+a session from before Koloft kept them) resumes it in the default home on an app-server
+of its own that it closes at once — never on the long-lived one, which would keep
+`codex resume <id>` in the default home from writing to it. A rollout from 0.165.0
+copied with its old mtime into a running 0.166.0 home's `sessions/` was not listed at
+all, even after a resume; why was not looked into.
+
 **A session started on one login takes a model turn on another.** Checked 2026-10-09
 with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
 emails), each signed in with `codex login --device-auth` into its own throwaway

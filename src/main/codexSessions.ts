@@ -279,6 +279,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
+  homeOf(sessionId: string): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
   builtInStatusLine(): boolean
@@ -762,13 +763,28 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
   }
 
-  // CODEX§19
+  // CODEX§15 CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    return this.withRpcFor(key, async (rpc) => {
+    const read = async (rpc: CodexRpc): Promise<Turn[]> => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
-    })
+    }
+    if (hostOfKey(key)) return this.withRpcFor(key, read)
+    const turns = await this.withRpc(this.deps.homeOf(key), read)
+    if (turns.length > 0) return turns
+    await this.indexInDefaultHome(id)
+    return this.withRpc(undefined, read)
+  }
+
+  // CODEX§15
+  private async indexInDefaultHome(threadId: string): Promise<void> {
+    const rpc = this.rpc(undefined)
+    try {
+      await rpc.request('thread/resume', { threadId }).catch(() => undefined)
+    } finally {
+      await rpc.close().catch(() => {})
+    }
   }
 
   // CODEX§2
