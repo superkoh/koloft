@@ -152,6 +152,14 @@ export interface SshHostDeps {
   claude: MachineClaudeDeps
 }
 
+function machinePermission(
+  spec: ClaudeLaunch,
+  skipPermissions: boolean
+): ClaudeLaunch['permission'] {
+  if (spec.permission && spec.permission !== 'default') return spec.permission
+  return skipPermissions ? 'bypass' : undefined
+}
+
 // CC§9
 export function machineClaudeArgs(
   spec: ClaudeLaunch,
@@ -164,12 +172,7 @@ export function machineClaudeArgs(
     worktree: spec.worktree,
     model: spec.model,
     effort: spec.effort,
-    permission:
-      spec.permission && spec.permission !== 'default'
-        ? spec.permission
-        : skipPermissions
-          ? 'bypass'
-          : undefined
+    permission: machinePermission(spec, skipPermissions)
   })
   if (!argv.ok) return argv
   const fresh = !spec.resumeSessionId
@@ -1300,7 +1303,8 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        pickKey
+        pickKey,
+        skipsPermissionChecks: machinePermission(spec, settings.skipPermissions) === 'bypass'
       }
     }
   }

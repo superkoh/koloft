@@ -53,6 +53,7 @@ export interface MachineTab {
   hookMirror: string
   attachTo?: string
   pickKey?: string
+  skipsPermissionChecks: boolean
 }
 
 export type ClaudeLaunchPlan =

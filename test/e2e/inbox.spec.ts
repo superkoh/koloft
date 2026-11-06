@@ -21,7 +21,12 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
+import {
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  installFakeRemote,
+  machineHome
+} from './helpers/remote'
 import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
@@ -198,10 +203,12 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
-async function allowFromItsCard(page: Page, command: string) {
+async function allowFromItsCard(page: Page, env: E2EEnv, remote: boolean, command: string) {
   await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
-  const row = wsRows(page, 'ws-a').first()
+  if (remote) await addRemoteWorkspace(page, env)
+  const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+  await startSessionIn(page, ws, { remote })
+  const row = wsRows(page, ws).first()
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
   const tabId = (await row.getAttribute('data-tab-id')) as string
   await runIn(page, centerTerm(page), `/bash ${command}`)
@@ -212,44 +219,54 @@ async function allowFromItsCard(page: Page, command: string) {
   return { tabId, card }
 }
 
-// CC§12
-test('a command a Claude Code session wants to run is a card; Allow there moves it to Done as Answered once the dialog closes, while the command still runs', async ({
-  env
-}) => {
+function programStatusClaudeOn(env: E2EEnv, remote: boolean): string {
   env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
-  const app = await launchApp(env)
-  try {
-    const page = await app.firstWindow()
-    const { tabId } = await allowFromItsCard(page, 'slow make test')
-    await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered', {
-      timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
-    })
-    expect(await terminalText(page, tabId)).not.toContain('Ran: slow make test')
-    fs.writeFileSync(path.join(env.home, 'go-run'), '')
-    await expect
-      .poll(() => terminalText(page, tabId), { timeout: 15_000 })
-      .toContain('Ran: slow make test')
-  } finally {
-    await quitAndClose(app)
-  }
-})
+  if (!remote) return env.home
+  installFakeRemote(env)
+  return machineHome(env)
+}
 
-// CC§12
-test('an Allow pressed on a card that the Claude Code session ignores stays in Needs you and sends the owner to the session', async ({
-  env
-}) => {
-  env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
-  fs.writeFileSync(path.join(env.home, 'fake-claude-drop-key'), '')
-  const app = await launchApp(env)
-  try {
-    const { card } = await allowFromItsCard(await app.firstWindow(), 'make test')
-    await expect(card).toContainText(ANSWER_NOT_TAKEN_ON_A_CARD, {
-      timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
-    })
-  } finally {
-    await quitAndClose(app)
-  }
-})
+for (const remote of [false, true]) {
+  const where = remote ? 'remote ' : ''
+  // CC§12
+  test(`a command a ${where}Claude Code session wants to run is a card; Allow there moves it to Done as Answered once the dialog closes, while the command still runs`, async ({
+    env
+  }) => {
+    const claudeHome = programStatusClaudeOn(env, remote)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      const { tabId } = await allowFromItsCard(page, env, remote, 'slow make test')
+      await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered', {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+      })
+      expect(await terminalText(page, tabId)).not.toContain('Ran: slow make test')
+      fs.writeFileSync(path.join(claudeHome, 'go-run'), '')
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+        .toContain('Ran: slow make test')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§12
+  test(`an Allow pressed on a card that the ${where}Claude Code session ignores stays in Needs you and sends the owner to the session`, async ({
+    env
+  }) => {
+    const claudeHome = programStatusClaudeOn(env, remote)
+    fs.writeFileSync(path.join(claudeHome, 'fake-claude-drop-key'), '')
+    const app = await launchApp(env)
+    try {
+      const { card } = await allowFromItsCard(await app.firstWindow(), env, remote, 'make test')
+      await expect(card).toContainText(ANSWER_NOT_TAKEN_ON_A_CARD, {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
 
 test('a command a Codex session wants to run is a card in the Inbox, and Allow there approves it', async ({
   env
