@@ -205,6 +205,54 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
+test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close on Escape like the app’s other menus, and on a click outside, even on another card’s Open button', async ({
+  page
+}) => {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const tabId = (await row.getAttribute('data-tab-id')) as string
+  const say = (message: string) => ({ type: 'session', session: 'card', message })
+  const card = JSON.stringify({
+    title: 'Pull request 9 is ready to merge',
+    level: 'normal',
+    actions: [
+      { id: 'merge', label: 'Merge it', style: 'main', run: say('Merge it.') },
+      { id: 'close', label: 'Close it', style: 'danger', confirm: 'Close it?', run: say('Close.') }
+    ]
+  })
+  await runIn(page, centerTerm(page), `/koloft inbox add pr-9 -- '${card}'`)
+  await expect
+    .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+    .toContain('Added card pr-9.')
+  const other = JSON.stringify({ title: 'Pull request 10 has a new comment', level: 'low' })
+  await runIn(page, centerTerm(page), `/koloft inbox add pr-10 -- '${other}'`)
+  await expect
+    .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+    .toContain('Added card pr-10.')
+  await openInbox(page)
+  const shown = inboxCard(page, 'Pull request 9 is ready to merge')
+  const opened = page.locator('.inbox-page .ibx-menu, .inbox-page .ibx-pop')
+
+  for (const trigger of [
+    shown.locator('.ibx-dots'),
+    shown.locator('.ibx-btn', { hasText: 'More' }),
+    page.locator('.ibx-pill', { hasText: 'Sort' }),
+    page.locator('.ibx-pill', { hasText: 'Source' })
+  ]) {
+    await trigger.click()
+    await expect(opened).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(opened).toHaveCount(0)
+  }
+
+  await shown.locator('.ibx-dots').click()
+  await expect(opened).toHaveCount(1)
+  await inboxCard(page, 'Pull request 10').locator('.ibx-btn', { hasText: 'Open' }).click()
+  await expect(opened).toHaveCount(0)
+})
+
 async function allowFromItsCard(page: Page, env: E2EEnv, remote: boolean, command: string) {
   await waitBooted(page)
   if (remote) await addRemoteWorkspace(page, env)
