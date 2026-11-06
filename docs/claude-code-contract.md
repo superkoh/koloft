@@ -2293,8 +2293,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   yet, or the last one stopped), `error`; background tasks and subagents report under
   their own `id`, a gone one gets `state=clear:id=<id>`, and exit writes a bare
   `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
-  not applied), so whether it crosses tmux to the outer terminal is not probed; in or
-  out of fullscreen alike (read, not run). The 2.1.299, 2.1.301, 2.1.302, 2.1.303,
+  not applied), in or out of fullscreen alike (read, not run); behind tmux it never
+  turns on (run, below). The 2.1.299, 2.1.301, 2.1.302, 2.1.303,
   2.1.304, 2.1.306 and 2.1.308 binaries carry the same builder (`app=claude-code`, `id=`,
   `kind=`, `progress=`, a base64 `title=` capped at 192, `msg=` capped at 2048), states,
   kinds and startup probe (`strings`, 2026-10-14, 2026-10-16, 2026-10-17, 2026-10-19,
@@ -2314,8 +2314,34 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   dialog drew as `state=blocked:app=claude-code:kind=permission:msg=<base64 "approve Bash:
   <command>">` (`"approve plan"` for `ExitPlanMode`), 20 ms before the `PermissionRequest`
   hook. In the strings the reports gate only these frames and the bare `state=clear`
-  written on exit; nothing else claude draws or sends depends on them. Behind tmux the
-  query never reaches Koloft (MUSE§6, measured on muse), so remote tabs get no frames.
+  written on exit; nothing else claude draws or sends depends on them.
+- **Behind tmux claude sends no reports until something between them answers its query;
+  a pty wrapper that does so gets every frame out, as remote Muse's does (MUSE§17).**
+  2026-11-05, CC 2.1.319 (the `claude-code-linux-arm64` npm build) in Docker (the e2e
+  `sshd` image: tmux 3.3a, python3, `--network none`, the `node` user), started inside
+  tmux with Koloft's `tmux.conf` (`allow-passthrough on`) from an outer python pty that
+  logged every byte; `--permission-mode default`, a local fake Messages API answering
+  each turn with one Bash call (`touch … && sleep 8`), `apiKeyHelper` for the key; one
+  run each. Claude started bare in tmux: the query never reached the outer pty and no
+  7501 frame came out, while the Bash dialog drew. Claude started under the wrapper
+  Koloft now puts there (`status-relay.py`: answers the query with
+  `PROGRAM_STATUS_REPLY`, re-sends every other 7501 frame as `ESC P tmux;` + the frame
+  with each ESC doubled + `ESC \`): the outer pty got `state=idle` at start, `working`
+  on the prompt, `blocked:kind=permission:msg=<base64 "approve Bash: …">` with the
+  dialog, `working` 34 ms after `1` (the command then ran 8 s more, `done` after it),
+  and `idle` 81 ms after Esc on the next dialog; tmux had unwrapped every frame, and the
+  query never reached the outer pty. A first try with a bare `sleep 8` drew no dialog
+  at all; why claude let it through was not looked into.
+- **A frame sent while no tmux client is attached is lost, and attaching again replays
+  none; while a dialog waits claude keeps drawing.** Same setup, the wrapper's tmux
+  session started detached (`new-session -d`), the prompt typed with `tmux send-keys`,
+  the outer pty attached 3 s after the dialog drew, 1 run: no `blocked` frame came on
+  attach. While the dialog waited, claude redrew one cell (the `●` before the pending
+  call, on and off) every 0.6 s, so its screen is never quiet for long. With the wrapper
+  sending the last `blocked` frame again every 2 s while the dialog waits, each time
+  only once claude had written nothing for 0.1 s, the outer pty got `blocked` 1.2 s
+  after attaching and every 2 s after; `1` then gave `working` 37 ms later. `/exit` after a Bash call that left `sleep 300` running in
+  the background ended claude, the wrapper and the tmux session at once.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
   `Write(/etc/**)` drew `⚠ Deny rule Write(/etc/**) never matches · use Edit(/etc/**)`
