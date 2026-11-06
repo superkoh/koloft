@@ -19,14 +19,19 @@ const INSTRUCTIONS = [
   'After ACT, if the person could answer with one tap, add a line "Q: " naming what they decide in at most 8 words, then 2 to 4 lines "- ", each a different answer they could send as it is, at most 5 words, the one the agent recommends first. Every answer must move the work on: no "let me look first" or "wait". A no means "not now", never a step the agent did not offer, such as closing a PR. Write them in the language of the agent\'s reply. Add none when the person has to type something only they know, or do a step away from the chat.'
 ].join('\n')
 
-const AND_YET_ASKS = '(只|除了|但|直接|吗|？|\\?)'
-const SENTENCE_ENDS_ASKING_NOTHING = `(?:[。.！!]|$|[，,；;](?!.*${AND_YET_ASKS}))`
+const NEXT_FOR_YOU_LABEL =
+  '(?:^|[。.！!]\\s*)(接下来)?(你|主人)(接下来|下一步|现在|这边)?(要做的|需要做的|要做)?[：:]\\s*'
+const STILL_ASKS = '只|除了|但|不过|直接|吗|？|\\?|请|记得|麻烦|就行|要你|告诉我|发我|发给我|回我'
+const AND_ASKS_NOTHING_AFTER = `(?![^\\n]*(${STILL_ASKS}))(?:[。.！!，,；;]|$)`
+
 const NOTHING_FOR_YOU = [
   new RegExp(
-    `(你|主人)[^：:]{0,8}[：:]\\s*(没有|无|不用做什么|不用做任何事|什么都不用做)${SENTENCE_ENDS_ASKING_NOTHING}`
+    `${NEXT_FOR_YOU_LABEL}(没有|无|不用做什么|不用做任何事|什么都不用做)${AND_ASKS_NOTHING_AFTER}`
   ),
-  new RegExp(`你.{0,8}(不用|不需要|无需)再?(做|处理)(什么|任何事)?${SENTENCE_ENDS_ASKING_NOTHING}`),
-  /\b(next for you|for you to do|your next step)\b[^:]{0,12}:\s*(nothing|none)\b(?:[.!]|$|,(?!.*(just|but|except|only|please|\?)))/i
+  new RegExp(
+    `(?:^|[。.！!，,]\\s*)你.{0,8}(不用|不需要|无需)再?(做|处理)(什么|任何事)?了?${AND_ASKS_NOTHING_AFTER}`
+  ),
+  /(?:^|[.!]\s+)(next for you|for you to do|your next step)[^:]{0,12}:\s*(nothing|none)[.!]?$/i
 ]
 
 export function saysNothingForYou(reply: string): boolean {
@@ -44,12 +49,7 @@ export interface Verdict {
   choices?: ReplyChoices
 }
 
-const cut = (text: string, max: number): string =>
-  Array.from(text).length > max
-    ? `${Array.from(text)
-        .slice(0, max - 1)
-        .join('')}…`
-    : text
+const fits = (text: string, max: number): boolean => Array.from(text).length <= max
 
 function choicesIn(lines: string[]): ReplyChoices | undefined {
   const question = lines
@@ -60,12 +60,12 @@ function choicesIn(lines: string[]): ReplyChoices | undefined {
     ...new Set(
       lines
         .filter((l) => l.startsWith('- '))
-        .map((l) => cut(l.slice(2).trim(), REPLY_OFFERED_CHARS))
-        .filter(Boolean)
+        .map((l) => l.slice(2).trim())
+        .filter((o) => o && fits(o, REPLY_OFFERED_CHARS))
     )
   ].slice(0, MOST_REPLIES_OFFERED)
-  if (!question || options.length < 2) return undefined
-  return { question: cut(question, QUESTION_CHARS), options }
+  if (!question || !fits(question, QUESTION_CHARS) || options.length < 2) return undefined
+  return { question, options }
 }
 
 export interface Waiter {

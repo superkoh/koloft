@@ -127,6 +127,8 @@ describe('judgeTurn — the Assist decides only what code cannot', () => {
       '**你下一步：** 不用做什么。',
       '你接下来要做的：无。',
       '你现在什么都不用做。合并顺序不变：先合 #1451。',
+      '你下一步要做的：没有，memory 已经改好了。',
+      '你不用做什么了。',
       'Next for you: nothing.'
     ])
       expect(await judgeTurn(say('ACT'), turn(`- A（推荐）\n- B？\n\n${last}`))).toEqual({
@@ -147,16 +149,27 @@ describe('judgeTurn — the Assist decides only what code cannot', () => {
       '你不用做什么，除了把 token 发我。',
       '提醒你：没有你的授权我不能推，要推吗？',
       '主人要定：不用 A 用 B 可以吗？',
+      '要我合并 #12 吗？\n\n你担心的回归：没有。',
+      '我帮你查过日志：没有。',
+      '你要做的：没有。要我顺手合并 PR 吗？',
+      '你要做的：没有，合并 #12 就行。',
+      '你：没有，请合并。',
+      '你不用做什么，等测试跑完请合并 PR。',
+      '你不用处理，不过记得重启一下。',
       'Next for you: nothing to fix, just approve the PR.',
-      'Your next step: none needed, but please confirm the account name.'
+      'Your next step: none needed, but please confirm the account name.',
+      'Next for you: nothing. Please merge #12 when CI is green.',
+      'Next for you: none; merge when ready'
     ])
       expect(await judgeTurn(say('ACT'), turn(last))).toEqual({ news: false })
   })
 
-  it('replies offered after ACT ride along: 2 to 4 distinct ones under a question, and none when fewer or no question', async () => {
+  it('replies offered after ACT ride along: 2 to 4 distinct short ones under a question, a reply too long to send whole is left out, and none when fewer or no question', async () => {
     expect(
       await judgeTurn(
-        say('ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n- Merge it\n- A\n- B\n- C'),
+        say(
+          'ACT\nQ: Merge PR #12?\n- Merge it\n- Merge it and then delete the release branch afterwards\n- Not yet\n- Merge it\n- A\n- B\n- C'
+        ),
         turn('Merge it?')
       )
     ).toEqual({

@@ -502,25 +502,67 @@ test('a session that ends its turn waiting on the owner is a card with its last 
   })
 })
 
-test('a finished turn the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session', async ({
-  page,
+const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
+
+async function pickNotYet(page: Page, quoted: RegExp): Promise<void> {
+  await openInbox(page)
+  const card = cardQuoting(page, quoted)
+  await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: 30_000 })
+  await card.locator('.ibx-choice', { hasText: 'Not yet' }).click()
+}
+
+for (const remote of [false, true]) {
+  test(`a finished turn of a ${remote ? 'remote ' : ''}Claude Code session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, ws, { remote })
+      const row = wsRows(page, ws).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) as string
+
+      await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
+      await pickNotYet(page, /Answer to: Shall I merge PR #12\?/)
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
+test('a finished turn of a Codex session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session', async ({
   env
 }) => {
-  fs.writeFileSync(
-    path.join(env.home, 'fake-claude-assist-reply'),
-    'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
-  )
-  await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
-  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
-
-  await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
-  await openInbox(page)
-  const card = cardQuoting(page, /Answer to: Shall I merge PR #12\?/)
-  await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: 15_000 })
-  await card.locator('.ibx-choice', { hasText: 'Not yet' }).click()
-  await expect
-    .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
-    .toContain('Merge PR #12? «Not yet»')
-  await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+  fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+  installCodex(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', 'Codex')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    const codexTab = (await page.evaluate(() => window.api.sessions.list())).find(
+      (s) => s.backendId === 'codex'
+    )!.tabId as string
+    await typeInto(page, codexTab, 'Shall I merge PR #12?')
+    await pickNotYet(page, /Codex fixture answered: Shall I merge PR #12\?/)
+    await expect
+      .poll(() => fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8'), {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+      })
+      .toContain('Merge PR #12? «Not yet»')
+    await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+  } finally {
+    await quitAndClose(app)
+  }
 })
