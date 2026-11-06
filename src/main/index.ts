@@ -513,7 +513,14 @@ import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
+import {
+  bracketedPaste,
+  clicksTheMouse,
+  pressesAKey,
+  typedPieces,
+  typeKeys,
+  withoutMouseAndFocusReports
+} from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -790,7 +797,9 @@ const slash = new SlashCommands({
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
-  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  typeNow: async (tabId, keys) => {
+    await typeKeys((data) => ptyMgr.write(tabId, data), keys)
+  },
   // AGY§23
   outputOnlyOnScreen: (tabId) =>
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
@@ -1902,9 +1911,9 @@ const sessionDeps: SessionVerbDeps = {
   bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => {
+  press: async (tabId, keys) => {
     butler?.firstWordsComing(tabId)
-    return ptyMgr.type(tabId, keys)
+    await ptyMgr.type(tabId, keys)
   },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
@@ -2022,6 +2031,7 @@ const claudeDialogs = new ClaudeDialogWatch({
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
+  questionSeen.delete(tabId)
   koloftInbox.askEnded(tabId)
   discordRelay?.dialogGone(tabId, dialogClosed)
 }
@@ -3369,6 +3379,8 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
+    ownerTouchedAt.delete(e.id)
+    questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -3964,7 +3976,12 @@ app.whenReady().then(() => {
       showAskOnItsRow(tabId)
       void ownerAsleep.asks(tabId)
     },
-    type: (tabId, keys) => ptyMgr.type(tabId, keys),
+    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    touchedSinceAsked: (tabId) => {
+      const asked = questionSeenAt(tabId)
+      return asked !== undefined && ownerTouchedSince(tabId, asked)
+    },
+    ownerTouchedSince,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
@@ -5923,6 +5940,34 @@ function askUnreadablySoon(tabId: string): void {
 }
 
 const touchedAt = new Map<string, number>()
+const ownerTouchedAt = new Map<string, number>()
+const questionSeen = new Map<string, { asks: string; at: number }>()
+
+function questionSeenAt(tabId: string): number | undefined {
+  const open = storedOwnerOf(tabId)?.openQuestion(tabId)
+  if (!open) return undefined
+  const asks = JSON.stringify(open.questions)
+  const seen = questionSeen.get(tabId)
+  if (seen?.asks === asks) return seen.at
+  const at = Date.now()
+  questionSeen.set(tabId, { asks, at })
+  return at
+}
+
+// CC§14
+function touchesADialog(tabId: string, data: string): boolean {
+  if (pressesAKey(data)) return true
+  return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'
+}
+
+function ownerTouchedTheScreen(tabId: string): void {
+  questionSeenAt(tabId)
+  ownerTouchedAt.set(tabId, Date.now())
+}
+
+function ownerTouchedSince(tabId: string, at: number): boolean {
+  return (ownerTouchedAt.get(tabId) ?? 0) >= at
+}
 const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
 
 function ownerTouched(tabId: string): void {
@@ -6348,6 +6393,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(id)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -6357,6 +6403,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id)) void guard.free(id)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
+    ownerTouchedTheScreen(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })

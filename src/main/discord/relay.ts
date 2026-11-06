@@ -43,6 +43,7 @@ import {
   howToAnswer,
   isAskedCall,
   questionAnswers,
+  takesSeveralPicks,
   type AnswerKeys,
   type SentAnswer,
   type CodexApproval,
@@ -68,6 +69,9 @@ export const unreadableInRoom = (butler: string, lobby: string | undefined): str
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
+const NOT_ANSWERED_FROM_HERE = ''
+export const STARTED_IN_THE_TERMINAL =
+  'You already started on this question in the terminal, so Koloft leaves it to you there.'
 
 const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
   backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
@@ -138,7 +142,9 @@ export interface RelayDeps {
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   asksChanged(tabId: string): void
-  type(tabId: string, keys: string[]): Promise<void>
+  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
+  touchedSinceAsked(tabId: string): boolean
+  ownerTouchedSince(tabId: string, at: number): boolean
   queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
@@ -167,7 +173,10 @@ interface OpenClaudeAsk {
   payload: AskPayload
   hook?: string
   raw: string
+  at: number
   typedAt?: number
+  typing?: boolean
+  keysSent?: boolean
 }
 
 function slashTextOf(content: string): string | undefined {
@@ -611,9 +620,10 @@ export class DiscordRelay {
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
     const raw = JSON.stringify(payload)
     const before = this.asks.get(tab)
-    if (before && before.hook === hook && before.raw === raw && before.typedAt === undefined) return
+    const same = before && before.hook === hook && before.raw === raw
+    if (same && (before.typedAt === undefined || before.typing)) return
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
-    this.asks.set(tab, { payload, hook, raw })
+    this.asks.set(tab, { payload, hook, raw, at: Date.now() })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
     this.postClaudeAsk(tab, payload)
@@ -658,10 +668,15 @@ export class DiscordRelay {
     if (ask && isAskedCall(ask.payload, call)) this.answer(tab, {})
   }
 
-  private async press(tab: string, keys: string[]): Promise<void> {
+  private async press(tab: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
     this.codexAsks.delete(tab)
     await this.d.answerable(tab)
-    await this.d.type(tab, keys)
+    return this.d.type(tab, keys, stillWanted)
+  }
+
+  // CODEX§20 MUSE§11 AGY§14
+  private pressAnswer(tab: string, keys: string[]): Promise<boolean> {
+    return this.press(tab, keys, () => !this.d.touchedSinceAsked(tab))
   }
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
@@ -691,9 +706,13 @@ export class DiscordRelay {
         return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: howToAnswer(question) }
+      // CODEX§20 MUSE§11 AGY§14
+      if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       this.d.answered(tab, reply)
-      await this.press(tab, answerKeys(answerKeysFor, question, answers))
-      return { watch: true }
+      if (await this.pressAnswer(tab, answerKeys(answerKeysFor, question, answers)))
+        return { watch: true }
+      this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+      return { error: STARTED_IN_THE_TERMINAL }
     }
     const ask = this.openAsk(tab)
     if (!ask)
@@ -711,17 +730,38 @@ export class DiscordRelay {
       return { watch }
     }
     if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return { error: SHOWS_NO_DIALOG }
-    if (ask.typedAt !== undefined && Date.now() - ask.typedAt < A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-      return { error: ANSWER_ON_ITS_WAY }
-    const keys = claudeKeysFor(ask.payload, reply)
+    const onItsWay =
+      ask.typedAt !== undefined && Date.now() - ask.typedAt < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
+    if (ask.typing || onItsWay) return { error: ANSWER_ON_ITS_WAY }
+    const ownerTouchedIt = this.d.ownerTouchedSince(tab, ask.at)
+    const keys = claudeKeysFor(ask.payload, reply, ownerTouchedIt || !!ask.keysSent)
     if (!keys.ok) return { error: keys.error }
+    // CC§14
+    if (takesSeveralPicks(ask.payload) && ownerTouchedIt) return { error: STARTED_IN_THE_TERMINAL }
+    ask.keysSent = true
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
     this.d.answered(tab, reply)
-    await this.d.type(tab, keys.value).catch((error: unknown) => {
+    const startedAt = Date.now()
+    // CC§14
+    const stillWanted = watch
+      ? (): boolean => this.asks.get(tab) === ask && !this.d.ownerTouchedSince(tab, startedAt)
+      : undefined
+    ask.typing = true
+    try {
+      if (!(await this.d.type(tab, keys.value, stillWanted))) {
+        const open = this.asks.get(tab) === ask
+        ask.typedAt = undefined
+        this.d.answered(tab, NOT_ANSWERED_FROM_HERE)
+        return { error: open ? STARTED_IN_THE_TERMINAL : SHOWS_NO_DIALOG }
+      }
+    } catch (error) {
       ask.typedAt = undefined
       throw error
-    })
+    } finally {
+      ask.typing = false
+    }
+    if (watch) ask.typedAt = Date.now()
     return { watch }
   }
 
@@ -781,9 +821,14 @@ export class DiscordRelay {
   ): void {
     if ('questions' in open) {
       const answers = questionAnswers(open, m.content)
-      if (answers)
-        void this.press(tab, answerKeys(keys, open, answers)).then(() =>
-          this.d.answered(tab, m.content)
+      // CODEX§20 MUSE§11 AGY§14
+      if (answers && this.d.touchedSinceAsked(tab))
+        this.say(m.channelId, STARTED_IN_THE_TERMINAL, m.id)
+      else if (answers)
+        void this.pressAnswer(tab, answerKeys(keys, open, answers)).then((typed) =>
+          typed
+            ? this.d.answered(tab, m.content)
+            : this.say(m.channelId, STARTED_IN_THE_TERMINAL, m.id)
         )
       else this.say(m.channelId, cannotAnswer(open), m.id)
       return
