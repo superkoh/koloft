@@ -787,6 +787,11 @@ export function forgetAssistMarkers(regDir: string, tabId: string): void {
 
 export const KOLOFT_ALLOW_RULE = { allow: ['Bash(koloft *)'] }
 
+// CC§24
+const toolNamePartOf = (server: string): string => server.replace(/[^A-Za-z0-9_-]/g, '_')
+// ADR-0048 CC§24
+const allowEveryToolOf = (server: string): string => `mcp__${toolNamePartOf(server)}`
+
 // CC§6
 export function writeTabHookSettings(
   paths: HookPaths,
@@ -794,7 +799,8 @@ export function writeTabHookSettings(
   statusLine?: StatusLineSetting,
   allowKoloft = false,
   conductor = false,
-  holdWhileBusy = false
+  holdWhileBusy = false,
+  playwrightServers: string[] = []
 ): string {
   fs.rmSync(statusLogOf(paths.regDir, tabId), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
@@ -802,8 +808,12 @@ export function writeTabHookSettings(
     statusLine,
     hold: holdWhileBusy ? { script: paths.hold, event: 'hold' } : undefined
   })
-  // CC§13
-  if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
+  // CC§13 ADR-0048 CC§24
+  const allow = [
+    ...(allowKoloft ? KOLOFT_ALLOW_RULE.allow : []),
+    ...playwrightServers.map(allowEveryToolOf)
+  ]
+  if (allow.length) settings.permissions = { allow }
   // CC§13 ADR-0028
   if (conductor) settings.crossSessionInbound = 'accept'
   const out = path.join(paths.settingsDir, `${tabId}.json`)
