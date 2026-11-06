@@ -2,7 +2,6 @@ import { execFileSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
 import http from 'http'
-import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -42,7 +41,12 @@ import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fake
 import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
-import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
+import {
+  hostResolverSwitch,
+  portFreeOnTheMac,
+  servesAFolderOn,
+  startEchoServer
+} from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import {
@@ -275,15 +279,6 @@ function publishOnOrigin(lab: SshLab, from: number, to: number): void {
     'kuser',
     `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
   )
-}
-
-function portFreeOnTheMac(): Promise<number> {
-  return new Promise((resolve) => {
-    const s = net.createServer().listen(0, '127.0.0.1', () => {
-      const { port } = s.address() as net.AddressInfo
-      s.close(() => resolve(port))
-    })
-  })
 }
 
 function serveOnTheMac(port: number, body: string): Promise<http.Server> {
@@ -1909,17 +1904,15 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     seedSettings(env, { hintsOff: true })
     installCodexSignedInForTheLab(env)
     const [codexPort, claudePort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
-    const serve = (port: number): string =>
-      `nohup python3 -m http.server ${port} --bind 127.0.0.1 >/dev/null 2>&1 &`
-    const portsOf = (page: Page, tab: string): Promise<number[]> =>
-      page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l.map((p) => p.port))
+    const portsOf = (page: Page, tab: string): Promise<number[] | undefined> =>
+      page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l?.map((p) => p.port))
     await withLab(
       env,
       async ({ app, page }) => {
         const codexTab = await codexTabOnKtKey(page)
         await page.evaluate(
           ([id, typed]) => window.api.terminal.write(id, typed),
-          [codexTab, `/sh ${serve(codexPort)}\r`]
+          [codexTab, `/sh ${servesAFolderOn(codexPort)}\r`]
         )
         await expect
           .poll(() => portsOf(page, codexTab), {
@@ -1936,7 +1929,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           page,
           claudeTab,
           KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
-        )(serve(claudePort))
+        )(servesAFolderOn(claudePort))
         await expect.poll(() => portsOf(page, claudeTab)).toEqual([claudePort])
         await switchToRow(page, page.locator(`[data-tab-id="${claudeTab}"]`))
 

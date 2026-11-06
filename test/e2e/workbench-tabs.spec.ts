@@ -1,9 +1,15 @@
 import fs from 'fs'
-import net from 'net'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { installAgy, installCodex, seedSettings, trustInAgy } from './helpers/env'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  seedSettings,
+  trustInAgy,
+  trustInMuse
+} from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   agentShell,
@@ -25,7 +31,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { BROWSER, addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
-import { startEchoServer } from './helpers/fixtureServer'
+import { portFreeOnTheMac, servesAFolderOn, startEchoServer } from './helpers/fixtureServer'
 import {
   answerFileDialog,
   cancelFileDialog,
@@ -672,18 +678,6 @@ test.describe('Workbench commands and the panel’s first mount', () => {
   })
 })
 
-function portFreeHere(): Promise<number> {
-  return new Promise((resolve) => {
-    const s = net.createServer().listen(0, '127.0.0.1', () => {
-      const { port } = s.address() as net.AddressInfo
-      s.close(() => resolve(port))
-    })
-  })
-}
-
-const servesAFolderOn = (port: number): string =>
-  `nohup python3 -m http.server ${port} --bind 127.0.0.1 >/dev/null 2>&1 &`
-
 const answers = (port: number): Promise<boolean> =>
   fetch(`http://127.0.0.1:${port}/`).then(
     (r) => r.ok,
@@ -726,16 +720,18 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText('No listening ports')
     await page.keyboard.press('Escape')
 
-    const port = await portFreeHere()
+    const port = await portFreeOnTheMac()
     await agentShell(page, tabId, 30_000)(servesAFolderOn(port))
     await expect.poll(() => answers(port)).toBe(true)
     await openThePortItLists(app, page, port)
   })
 
-  test('WB-T28: a Codex session lists the server a command of its app-server keeps running, and an Antigravity session leaves out agy’s own ports', async ({
+  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell, and an Antigravity session leaves out agy’s own ports', async ({
     env
   }) => {
     installCodex(env)
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
     const app = await launchApp(env)
@@ -743,13 +739,20 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       const page = await app.firstWindow()
       await waitBooted(page)
       await startCodex(page, env)
-      const port = await portFreeHere()
-      await runIn(page, centerTerm(page), `/sh python3 -m http.server ${port} --bind 127.0.0.1`)
+      const port = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(port)}`)
       await expect.poll(() => answers(port), { timeout: 30_000 }).toBe(true)
       await openThePortItLists(app, page, port)
 
-      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await newSessionInWith(page, 'ws-a', 'Muse')
       await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 30_000 })
+      const musePort = await portFreeOnTheMac()
+      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(musePort)}`)
+      await expect.poll(() => answers(musePort), { timeout: 30_000 }).toBe(true)
+      await openThePortItLists(app, page, musePort)
+
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(3, { timeout: 30_000 })
       await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
       await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText(
         'No listening ports'

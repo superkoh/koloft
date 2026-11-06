@@ -1346,8 +1346,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
       {newMenuOpen && (
         <NewTabMenu
-          canTerminal={canTerminal}
-          portsOf={canTerminal ? ownerTab : null}
+          liveSession={canTerminal ? ownerTab : null}
           onClose={() => setNewMenuOpen(false)}
           onWeb={newWebTab}
           onFile={openFilePicker}

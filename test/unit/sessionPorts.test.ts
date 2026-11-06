@@ -11,16 +11,9 @@ afterEach(() => {
   for (const child of started.splice(0)) child.kill('SIGKILL')
 })
 
-function envWithout(tag?: string): NodeJS.ProcessEnv {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !k.startsWith('KOLOFT_'))
-  )
-  return tag ? { ...env, KOLOFT_TAB_ID: tag } : env
-}
-
-async function serve(tag?: string): Promise<{ pid: number; port: number }> {
+async function serve(tag: string): Promise<{ pid: number; port: number }> {
   const child = spawn(process.execPath, ['-e', SERVER], {
-    env: envWithout(tag),
+    env: { ...process.env, KOLOFT_TAB_ID: tag },
     detached: true,
     stdio: ['ignore', 'pipe', 'ignore']
   })
@@ -31,8 +24,8 @@ async function serve(tag?: string): Promise<{ pid: number; port: number }> {
   return { pid: child.pid as number, port }
 }
 
-const portsOf = async (tags: string[], roots: number[] = []): Promise<number[]> =>
-  parseSessionPorts(await scanPortsHere(tags, roots)).map((p) => p.port)
+const portsOf = async (tags: string[]): Promise<number[] | undefined> =>
+  parseSessionPorts(await scanPortsHere(tags))?.map((p) => p.port)
 
 describe('a session tab’s listening ports', () => {
   it('lists the servers of processes carrying the tab’s id or one of its terminals’ ids, and no other tab’s', async () => {
@@ -46,13 +39,13 @@ describe('a session tab’s listening ports', () => {
     expect(ports).not.toContain(otherTab.port)
   })
 
-  it('lists the server of a root process that carries no id, such as a local Codex app-server', async () => {
-    const untagged = await serve()
-    expect(await portsOf([`pty-none-${randomUUID()}`], [untagged.pid])).toEqual([untagged.port])
-  })
-
   it('lists nothing for a tab no process carries', async () => {
     expect(await portsOf([`pty-none-${randomUUID()}`])).toEqual([])
+  })
+
+  it('reads a scan that did not finish as unknown, not as no ports', () => {
+    expect(parseSessionPorts('')).toBeNull()
+    expect(parseSessionPorts('P 200 python3 -m http.server 8000\np200\n')).toBeNull()
   })
 
   it('leaves out the agent program’s own ports and lists a port held on two addresses once', () => {
@@ -63,7 +56,8 @@ describe('a session tab’s listening ports', () => {
       'n127.0.0.1:58781',
       'p200',
       'n*:8000',
-      'n[::]:8000'
+      'n[::]:8000',
+      'scanned'
     ].join('\n')
     expect(parseSessionPorts(scan)).toEqual([{ port: 8000, pid: 200, process: 'python3' }])
   })

@@ -349,10 +349,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return this.runs.get(tabId)?.machine
   }
 
-  serverPidOf(tabId: string): number | undefined {
-    return this.runs.get(tabId)?.transport.serverPid()
-  }
-
   machinesWithTabs(): string[] {
     return [...this.runs.values()].flatMap((r) => (r.machine ? [r.machine] : []))
   }
@@ -886,7 +882,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       env,
       sessionEnv: {
         ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
-        ...(machine ? { KOLOFT_TAB_ID: tabId } : browserControlEnv(tabId, endpoint)),
+        KOLOFT_TAB_ID: tabId,
+        ...(!machine && browserControlEnv(tabId, endpoint)),
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said,

@@ -8,23 +8,31 @@ function SessionPorts({
 }: {
   tabId: string
   onPort: (port: number) => void
-}): JSX.Element | null {
-  const [ports, setPorts] = useState<ListeningPort[] | null>(null)
+}): JSX.Element {
+  const [ports, setPorts] = useState<ListeningPort[] | null | undefined>(undefined)
   useEffect(() => {
     let shown = true
-    void window.api.sessions.ports(tabId).then((found) => {
+    const show = (found: ListeningPort[] | null): void => {
       if (shown) setPorts(found)
-    })
+    }
+    window.api.sessions.ports(tabId).then(show, () => show(null))
     return () => {
       shown = false
     }
   }, [tabId])
-  if (!ports) return null
+  const head =
+    ports === undefined
+      ? 'Looking for listening ports…'
+      : ports === null
+        ? 'Could not read listening ports'
+        : ports.length
+          ? 'Listening ports'
+          : 'No listening ports'
   return (
     <>
       <div className="sep" />
-      <div className="mi head">{ports.length ? 'Listening ports' : 'No listening ports'}</div>
-      {ports.map((p) => (
+      <div className="mi head">{head}</div>
+      {ports?.map((p) => (
         <button
           key={p.port}
           className="mi"
@@ -41,16 +49,14 @@ function SessionPorts({
 }
 
 export function NewTabMenu({
-  canTerminal,
-  portsOf,
+  liveSession,
   onClose,
   onWeb,
   onFile,
   onTerminal,
   onPort
 }: {
-  canTerminal: boolean
-  portsOf: string | null
+  liveSession: string | null
   onClose: () => void
   onWeb: () => void
   onFile: () => void
@@ -92,7 +98,7 @@ export function NewTabMenu({
         <IconFile size={14} />
         Open file…
       </button>
-      {canTerminal && (
+      {liveSession && (
         <button
           className="mi"
           role="menuitem"
@@ -105,9 +111,9 @@ export function NewTabMenu({
           New terminal
         </button>
       )}
-      {portsOf && (
+      {liveSession && (
         <SessionPorts
-          tabId={portsOf}
+          tabId={liveSession}
           onPort={(port) => {
             onClose()
             onPort(port)

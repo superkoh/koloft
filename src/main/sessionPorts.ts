@@ -1,13 +1,13 @@
-import { execFile } from 'child_process'
 import path from 'path'
 import type { ListeningPort } from '@shared/types'
 import { AGENT_PROGRAM } from './machineTrees'
+import { makeExec } from './taskProcs'
 
 const SCAN_DEADLINE_MS = 5000
+const SCAN_FINISHED = 'scanned'
 
 // PLATFORM§59 PLATFORM§66
 export const SESSION_PORTS_SH = String.raw`ids=" $1 "
-roots=" $2 "
 tags() {
   if [ -r /proc/self/environ ]; then
     grep -a -o -s -E 'KOLOFT_(TAB_ID|HOLD_TAB)=[^[:cntrl:]]+' /proc/[0-9]*/environ | sed 's#^/proc/\([0-9]*\)/environ:[^=]*=#\1 #'
@@ -15,7 +15,7 @@ tags() {
     ps -A -E -ww -o pid= -o command= | awk '{ s = $0; while (match(s, /KOLOFT_(TAB_ID|HOLD_TAB)=[^ ]+/)) { t = substr(s, RSTART, RLENGTH); sub(/^[^=]*=/, "", t); print $1, t; s = substr(s, RSTART + RLENGTH) } }'
   fi
 }
-members=$({ tags; echo -; ps -A -ww -o pid= -o ppid= -o args=; } | awk -v ids="$ids" -v roots="$roots" '
+members=$({ tags; echo -; ps -A -ww -o pid= -o ppid= -o args=; } | awk -v ids="$ids" '
 !table && $0 == "-" { table = 1; next }
 !table { if (index(ids, " " $2 " ")) mine[$1] = 1; else other[$1] = 1; next }
 { pid = $1; up[pid] = $2; a = $0; sub(/^ *[0-9]+ +[0-9]+ */, "", a); args[pid] = a; order[++m] = pid }
@@ -25,33 +25,36 @@ END {
     for (i = 1; i <= m; i++) {
       p = order[i]
       if (p in in_) continue
-      if ((p in mine) || index(roots, " " p " ") || ((up[p] in in_) && !(p in other))) { in_[p] = 1; grew = 1 }
+      if ((p in mine) || ((up[p] in in_) && !(p in other))) { in_[p] = 1; grew = 1 }
     }
   }
-  for (i = 1; i <= m; i++) if (order[i] in in_) print order[i], args[order[i]]
+  for (i = 1; i <= m; i++) if (order[i] in in_) print "P", order[i], args[order[i]]
 }')
-[ -n "$members" ] || exit 0
-printf '%s\n' "$members" | sed 's/^/P /'
-pids=$(printf '%s\n' "$members" | awk '{ print $1 }')
-if command -v lsof >/dev/null 2>&1; then
-  lsof -nP -a -p "$(printf '%s\n' "$pids" | paste -s -d, -)" -iTCP -sTCP:LISTEN -Fpn 2>/dev/null
-  exit 0
-fi
-{ for p in $pids; do ls -l "/proc/$p/fd" 2>/dev/null | sed -n "s/.*socket:\[\([0-9]*\)\]\$/$p \1/p"; done; echo -; cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; } | awk '
+if [ -n "$members" ]; then
+  printf '%s\n' "$members"
+  pids=$(printf '%s\n' "$members" | awk '{ print $2 }')
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -a -p "$(printf '%s\n' "$pids" | paste -s -d, -)" -iTCP -sTCP:LISTEN -Fpn 2>/dev/null
+  else
+    { for p in $pids; do ls -l "/proc/$p/fd" 2>/dev/null | sed -n "s/.*socket:\[\([0-9]*\)\]\$/$p \1/p"; done; echo -; cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; } | awk '
 function hex(s,  i, v) { v = 0; for (i = 1; i <= length(s); i++) v = v * 16 + index("0123456789ABCDEF", toupper(substr(s, i, 1))) - 1; return v }
 !table && $0 == "-" { table = 1; next }
 !table { owner[$2] = $1; next }
 $4 == "0A" && ($10 in owner) { k = split($2, a, ":"); print "p" owner[$10]; print "n*:" hex(a[k]) }'
-exit 0
+  fi
+fi
+echo ${SCAN_FINISHED}
 `
 
-const programName = (command: string): string => path.basename(command.split(' ')[0] ?? '')
+const programName = (command: string): string => path.basename(command.split(' ')[0])
 
-export function parseSessionPorts(stdout: string): ListeningPort[] {
+export function parseSessionPorts(stdout: string): ListeningPort[] | null {
+  const lines = stdout.trimEnd().split('\n')
+  if (lines.at(-1) !== SCAN_FINISHED) return null
   const commandOf = new Map<number, string>()
   const found = new Map<number, ListeningPort>()
   let pid = 0
-  for (const line of stdout.split('\n')) {
+  for (const line of lines) {
     const member = /^P (\d+) (.*)$/.exec(line)
     if (member) commandOf.set(Number(member[1]), member[2])
     else if (line.startsWith('p')) pid = Number(line.slice(1))
@@ -65,13 +68,8 @@ export function parseSessionPorts(stdout: string): ListeningPort[] {
   return [...found.values()].sort((a, b) => a.port - b.port)
 }
 
-export function scanPortsHere(tags: string[], rootPids: number[]): Promise<string> {
-  return new Promise((resolve) => {
-    execFile(
-      '/bin/sh',
-      ['-c', SESSION_PORTS_SH, 'ports', tags.join(' '), rootPids.join(' ')],
-      { maxBuffer: 8 * 1024 * 1024, timeout: SCAN_DEADLINE_MS },
-      (err, stdout) => resolve(err ? '' : String(stdout))
-    )
-  })
+const runHere = makeExec(SCAN_DEADLINE_MS)
+
+export function scanPortsHere(tags: string[]): Promise<string> {
+  return runHere('/bin/sh', ['-c', SESSION_PORTS_SH, 'ports', tags.join(' ')])
 }

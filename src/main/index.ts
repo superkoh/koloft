@@ -7012,8 +7012,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CH.sessions.leftovers, () => leftovers)
-  ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[]> => {
-    if (typeof tabId !== 'string') return []
+  ipcMain.handle(CH.sessions.ports, async (_e, tabId: unknown): Promise<ListeningPort[] | null> => {
+    if (typeof tabId !== 'string') return null
     const tags = [
       tabId,
       ...ptyMgr
@@ -7022,12 +7022,9 @@ function registerIpc(): void {
         .map((h) => h.id)
     ]
     const machine = machineOfTab(tabId)
-    if (!machine) {
-      const server = codexSessions?.serverPidOf(tabId)
-      return parseSessionPorts(await scanPortsHere(tags, server ? [server] : []))
-    }
+    if (!machine) return parseSessionPorts(await scanPortsHere(tags))
     await loginEnvReady()
-    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' '), '']), {
+    const r = await runSsh(machine, remoteShCommand(SESSION_PORTS_SH, [tags.join(' ')]), {
       controlDir: remoteControlDir
     })
     return parseSessionPorts(r.stdout)
