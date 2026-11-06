@@ -130,7 +130,7 @@ function setup(
     type: (_t, keys, stillWanted) =>
       typeKeys((data) => writes.push({ data, at: Date.now() }), keys, stillWanted),
     touchedSinceAsked: () => false,
-    keyPressedSince: () => false,
+    ownerTouchedSince: () => false,
     queueDrained: () => true,
     queue: async () => undefined,
     sendLine: async (tab, line) =>
@@ -641,11 +641,39 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§14
+  it('a Claude dialog of several questions that Koloft already typed into is walked back to question 1 before the next answer, though the owner never touched it', async () => {
+    vi.useFakeTimers()
+    try {
+      const question = (q: string): object => ({
+        question: q,
+        options: [{ label: 'A' }, { label: 'B' }]
+      })
+      const two = {
+        tool_name: 'AskUserQuestion',
+        tool_input: { questions: [question('One?'), question('Two?')] }
+      }
+      const { relay, writes } = setup({}, [], { status: () => 'approval' })
+      relay.onAsk(MANAGED, two)
+      const first = relay.answerSession(MANAGED, '1\n1')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await first).toBeUndefined()
+      const firstRun = writes.map((w) => w.data)
+      expect(firstRun).not.toContain('\x1b[Z')
+      const second = relay.answerSession(MANAGED, '2\n2')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await second).toBeUndefined()
+      expect(writes.slice(firstRun.length).map((w) => w.data)).toContain('\x1b[Z')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // CC§14
   it('the keys of a Claude answer stop when the owner presses a key at the Mac meanwhile; Koloft says it left the dialog to the owner and withdraws the reply it had recorded', async () => {
     let pressed = false
     const { relay, writes, answered } = setup({}, [], {
       status: () => 'approval',
-      keyPressedSince: () => pressed
+      ownerTouchedSince: () => pressed
     })
     relay.onAsk(MANAGED, QUESTION)
     const typing = relay.answerSession(MANAGED, '2')
@@ -716,7 +744,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     let pressedAt = 0
     const { relay, writes } = setup({}, [], {
       status: () => 'approval',
-      keyPressedSince: (_t, at) => pressedAt >= at
+      ownerTouchedSince: (_t, at) => pressedAt >= at
     })
     relay.onAsk(MANAGED, fruit)
     pressedAt = Date.now()

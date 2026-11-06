@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bracketedPaste, pressesAKey } from '../../src/main/typeKeys'
+import { bracketedPaste, clicksTheMouse, pressesAKey } from '../../src/main/typeKeys'
 
 describe('what the owner sends a terminal', () => {
   it('counts as a key press for arrows, Shift+Tab, Esc and text, and not for mouse, focus or the terminal’s own replies', () => {
@@ -14,6 +14,13 @@ describe('what the owner sends a terminal', () => {
       ''
     ])
       expect(pressesAKey(report)).toBe(false)
+  })
+
+  // CC§14
+  it('counts as a mouse click only for a button press, not for hover or the wheel', () => {
+    expect(clicksTheMouse('\x1b[<0;5;21M\x1b[<0;5;21m')).toBe(true)
+    for (const report of ['\x1b[<35;5;21M', '\x1b[<65;5;19M', '\x1b[B'])
+      expect(clicksTheMouse(report)).toBe(false)
   })
 })
 

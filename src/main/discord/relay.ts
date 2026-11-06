@@ -143,7 +143,7 @@ export interface RelayDeps {
   asksChanged(tabId: string): void
   type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<boolean>
   touchedSinceAsked(tabId: string): boolean
-  keyPressedSince(tabId: string, at: number): boolean
+  ownerTouchedSince(tabId: string, at: number): boolean
   queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
@@ -175,6 +175,7 @@ interface OpenClaudeAsk {
   at: number
   typedAt?: number
   typing?: boolean
+  keysSent?: boolean
 }
 
 function slashTextOf(content: string): string | undefined {
@@ -728,19 +729,19 @@ export class DiscordRelay {
     const onItsWay =
       ask.typedAt !== undefined && Date.now() - ask.typedAt < A_TAKEN_ANSWER_SHOWS_WITHIN_MS
     if (ask.typing || onItsWay) return { error: ANSWER_ON_ITS_WAY }
-    const keys = claudeKeysFor(ask.payload, reply, this.d.keyPressedSince(tab, ask.at))
+    const ownerTouchedIt = this.d.ownerTouchedSince(tab, ask.at)
+    const keys = claudeKeysFor(ask.payload, reply, ownerTouchedIt || !!ask.keysSent)
     if (!keys.ok) return { error: keys.error }
     // CC§14
-    const ticksTheOwnerMayHaveLeft = (): boolean =>
-      takesSeveralPicks(ask.payload) && this.d.keyPressedSince(tab, ask.at)
-    if (ticksTheOwnerMayHaveLeft()) return { error: STARTED_IN_THE_TERMINAL }
+    if (takesSeveralPicks(ask.payload) && ownerTouchedIt) return { error: STARTED_IN_THE_TERMINAL }
+    ask.keysSent = true
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
     this.d.answered(tab, reply)
     const startedAt = Date.now()
     // CC§14
     const stillWanted = watch
-      ? (): boolean => this.asks.get(tab) === ask && !this.d.keyPressedSince(tab, startedAt)
+      ? (): boolean => this.asks.get(tab) === ask && !this.d.ownerTouchedSince(tab, startedAt)
       : undefined
     ask.typing = true
     try {

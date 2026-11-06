@@ -2376,6 +2376,10 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   `tmux load-buffer -w -` too. Its debug log says which: `clipboard: setClipboard
   mux=… ssh=… native=… emit=…`. Read from the 2.1.318 binary's `strings` (2026-11-05);
   not run.
+- **Arrow keys, Shift+Tab and Ctrl+U typed through tmux reach a dialog as typed.**
+  2026-11-06, linux-arm64 CC 2.1.319 inside tmux 3.3a with Koloft's tmux.conf, keys
+  written to the tmux client 300 ms apart: Koloft's dialog key runs answered 6 of 6 as
+  on this Mac (§14, last bullet).
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
@@ -2861,7 +2865,8 @@ below was one run.
     it stays. On the own-words field or on `Chat about this` Shift+Tab does nothing, and
     Left moves the field's cursor. A tab gone back to opens with its highlight on row 1
     and its pick marked (`1. Red ✔`); a digit there picks again and moves on.
-  - So, once the person pressed a key in the dialog since it was asked, Koloft presses
+  - So, once the person pressed a key or clicked in the dialog since it was asked (a
+    fullscreen click moves it too), or Koloft already typed into it, Koloft presses
     Down as often as the longest tab has rows, Up as often as the
     most rows any tab has under its options (onto an option row), and Shift+Tab once per
     question; then, per question, Down to the bottom, Up onto the field, Ctrl+U, and
@@ -2874,8 +2879,8 @@ below was one run.
     straight into the emptied field sent them (`Purple`; `Mango` Tab Enter on a
     many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`). On 2.1.318 the
     same run sent what was asked from tab 2's field, from the review page's `Cancel`
-    and with own words on both tabs (3 runs). With no key pressed since the dialog was
-    asked it still shows question 1 and every later tab opens fresh, so Koloft empties
+    and with own words on both tabs (3 runs). With nothing pressed or clicked since the
+    dialog was asked it still shows question 1 and every later tab opens fresh, so Koloft empties
     question 1 only and answers later tabs by their digit, `N+1` then the words, or
     Down × N then the words on a many-pick: `Green` / `Tall` and `Purple` / `Mango` were
     sent as asked (2 runs).
@@ -2915,6 +2920,18 @@ below was one run.
   `hello` left in row 3, from row 3 holding it, and from an untouched dialog (4 runs;
   on 2.1.318 from row 1 with `hello` left in row 3 and from row 3 holding it).
   Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
+- **The same key runs through tmux, as a remote tab sends them.** 2026-11-06, linux-arm64
+  CC 2.1.319 in Docker `--network none` (the e2e `koloft-e2e-sshd` image, user `node`),
+  claude inside `tmux -L <sock> -u -f <Koloft's tmux.conf> new-session` (tmux 3.3a), every
+  key written to the tmux client's pty 300 ms apart, the fake Messages API above; one run
+  per line, the dialog state checked with `tmux capture-pane` before Koloft's keys. A
+  two-question dialog with the person on tab 2 holding `hello` in its field, and on the
+  review page's `Cancel`: the way back and the per-question run sent `Green` / `Small`
+  both times; a one-pick and a many-pick question with own words given from tab 2, and the
+  same untouched with the short run, sent `Purple` / `Mango`; a plan with `hello` in row 3,
+  highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
+  approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
+  unchanged (6 of 6).
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 

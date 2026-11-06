@@ -53,6 +53,12 @@ export function pressesAKey(data: string): boolean {
   return keys !== '' && !onlyTheTerminalsOwnAnswers(keys)
 }
 
+const A_MOUSE_BUTTON_PRESS = /\x1b\[<[0-2];\d+;\d+M/
+
+export function clicksTheMouse(data: string): boolean {
+  return A_MOUSE_BUTTON_PRESS.test(data)
+}
+
 export const CLEAR_TO_LINE_START = '\x15'
 
 // CC§12 CODEX§25

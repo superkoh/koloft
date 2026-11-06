@@ -514,6 +514,7 @@ import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecyc
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import {
   bracketedPaste,
+  clicksTheMouse,
   pressesAKey,
   typedPieces,
   typeKeys,
@@ -3375,7 +3376,7 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
-    keyPressedAt.delete(e.id)
+    ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
@@ -3975,9 +3976,9 @@ app.whenReady().then(() => {
     type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
     touchedSinceAsked: (tabId) => {
       const asked = questionSeenAt(tabId)
-      return asked !== undefined && keyPressedSince(tabId, asked)
+      return asked !== undefined && ownerTouchedSince(tabId, asked)
     },
-    keyPressedSince,
+    ownerTouchedSince,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
@@ -5936,7 +5937,7 @@ function askUnreadablySoon(tabId: string): void {
 }
 
 const touchedAt = new Map<string, number>()
-const keyPressedAt = new Map<string, number>()
+const ownerTouchedAt = new Map<string, number>()
 const questionSeen = new Map<string, { asks: string; at: number }>()
 
 function questionSeenAt(tabId: string): number | undefined {
@@ -5950,13 +5951,19 @@ function questionSeenAt(tabId: string): number | undefined {
   return at
 }
 
-function ownerPressedAKey(tabId: string): void {
-  questionSeenAt(tabId)
-  keyPressedAt.set(tabId, Date.now())
+// CC§14
+function touchesADialog(tabId: string, data: string): boolean {
+  if (pressesAKey(data)) return true
+  return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'
 }
 
-function keyPressedSince(tabId: string, at: number): boolean {
-  return (keyPressedAt.get(tabId) ?? 0) >= at
+function ownerTouchedTheScreen(tabId: string): void {
+  questionSeenAt(tabId)
+  ownerTouchedAt.set(tabId, Date.now())
+}
+
+function ownerTouchedSince(tabId: string, at: number): boolean {
+  return (ownerTouchedAt.get(tabId) ?? 0) >= at
 }
 const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
 
@@ -6383,7 +6390,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(id)
-    if (pressesAKey(data)) ownerPressedAKey(id)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -6393,7 +6400,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id)) void guard.free(id)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
-    ownerPressedAKey(id)
+    ownerTouchedTheScreen(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
