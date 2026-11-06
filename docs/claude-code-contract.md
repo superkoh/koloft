@@ -2864,14 +2864,19 @@ below was one run.
     question with question 1 answered and a paste on tab 2; own words on both tabs from
     tab 2's field; a many-pick question with its highlight on `Submit`. Own words typed
     straight into the emptied field sent them (`Purple`; `Mango` Tab Enter on a
-    many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`).
+    many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`). On 2.1.318 the
+    same run sent what was asked from tab 2's field, from the review page's `Cancel`
+    and with own words on both tabs (3 runs).
   - Picks the person ticked on a many-pick question are toggled by Koloft's digits: `1`
     in the terminal, then Koloft's run for `Apple`, sent "The user did not answer the
     questions."
   - Keys written while claude was stopped (SIGSTOP, the writes 300 ms apart, SIGCONT):
     two Ups from the field moved two rows; four Ups from `Chat about this` moved one row,
     into the field. Once the highlight lands on the field, the rest of that read goes
-    into it, so a run loses keys only past the field, where its Ctrl+U is due anyway.
+    into it, so an emptying run loses keys only past the field, where its Ctrl+U is due
+    anyway. The way back to question 1 also passes the field, so Koloft makes it twice;
+    with claude stopped across the first pass's Ups and Shift+Tabs (from tab 2's `Chat
+    about this`), the run still sent what was asked (1 run).
   - The dialog's 7501 frame, `state=blocked:kind=question:msg=<base64 "answer: <first
     question> (<options>)">`, stays the same across tabs; the next frame comes when it
     is answered or cancelled. A `1` typed at the Mac answered it and `state=working`
@@ -2886,10 +2891,12 @@ below was one run.
   Claude what to change` ("shift+tab to approve with this feedback"). Row 3 is a text
   field: with the highlight there (Down twice, or Up once from row 1), `1` is typed into
   it (`❯ 3. 1`) and nothing is sent. Down from row 3 wraps to row 1. Shift+Tab approved
-  from rows 1, 2 and 3 alike, in an auto and a bypass session, as option 1 does (the
-  footer then read auto mode / bypass permissions), and sent the field's text with it
+  from rows 1, 2 and 3 alike, in an auto, a bypass and a manual session (`--permission-mode
+  default`, two Shift+Tabs into plan mode; its option 1 also read auto mode), as option 1
+  does (the footer then read auto mode / bypass permissions), and sent the field's text with it
   (`{"type":"text","text":"hello"}` next to the `tool_result`); Ctrl+U empties the field
-  and does nothing on rows 1–2, so Ctrl+U then Shift+Tab approved with no text (5 runs).
+  and does nothing on rows 1–2, so Ctrl+U then Shift+Tab approved with no text (5 runs;
+  on 2.1.318 too, from row 3 holding text and from row 1 of a bypass session).
   Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped

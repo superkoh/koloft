@@ -42,6 +42,7 @@ import {
   howToAnswer,
   isAskedCall,
   questionAnswers,
+  takesSeveralPicks,
   type AnswerKeys,
   type SentAnswer,
   type CodexApproval,
@@ -657,10 +658,15 @@ export class DiscordRelay {
     if (ask && isAskedCall(ask.payload, call)) this.answer(tab, {})
   }
 
-  private async press(tab: string, keys: string[]): Promise<void> {
+  private async press(tab: string, keys: string[], stillWanted?: () => boolean): Promise<void> {
     this.codexAsks.delete(tab)
     await this.d.answerable(tab)
-    await this.d.type(tab, keys)
+    await this.d.type(tab, keys, stillWanted)
+  }
+
+  // CODEX§20 MUSE§11 AGY§14
+  private pressAnswer(tab: string, keys: string[]): Promise<void> {
+    return this.press(tab, keys, () => !this.d.touchedSinceAsked(tab))
   }
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
@@ -693,7 +699,7 @@ export class DiscordRelay {
       // CODEX§20 MUSE§11 AGY§14
       if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       this.d.answered(tab, reply)
-      await this.press(tab, answerKeys(answerKeysFor, question, answers))
+      await this.pressAnswer(tab, answerKeys(answerKeysFor, question, answers))
       return { watch: true }
     }
     const ask = this.openAsk(tab)
@@ -716,6 +722,9 @@ export class DiscordRelay {
       return { error: ANSWER_ON_ITS_WAY }
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return { error: keys.error }
+    // CC§14
+    if (takesSeveralPicks(ask.payload) && this.d.touchedSinceAsked(tab))
+      return { error: STARTED_IN_THE_TERMINAL }
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
     this.d.answered(tab, reply)
@@ -725,6 +734,7 @@ export class DiscordRelay {
       ask.typedAt = undefined
       throw error
     })
+    if (stillOpen?.()) ask.typedAt = Date.now()
     return { watch }
   }
 
@@ -785,10 +795,11 @@ export class DiscordRelay {
     if ('questions' in open) {
       const answers = questionAnswers(open, m.content)
       // CODEX§20 MUSE§11 AGY§14
-      if (answers && this.d.touchedSinceAsked(tab))
+      if (answers && this.d.touchedSinceAsked(tab)) {
+        this.codexAsks.delete(tab)
         this.say(m.channelId, STARTED_IN_THE_TERMINAL, m.id)
-      else if (answers)
-        void this.press(tab, answerKeys(keys, open, answers)).then(() =>
+      } else if (answers)
+        void this.pressAnswer(tab, answerKeys(keys, open, answers)).then(() =>
           this.d.answered(tab, m.content)
         )
       else this.say(m.channelId, cannotAnswer(open), m.id)

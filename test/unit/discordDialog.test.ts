@@ -198,11 +198,10 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     }
     const ask = (...questions: object[]): typeof colour =>
       ({ ...colour, tool_input: { questions } }) as typeof colour
-    const backToTheFirst = (tabs: number): string[] => [
-      ...downs(3 + 3),
-      ...ups(3),
-      ...Array<string>(tabs).fill(SHIFT_TAB)
-    ]
+    const backToTheFirst = (tabs: number): string[] => {
+      const pass = [...downs(3 + 3), ...ups(3), ...Array<string>(tabs).fill(SHIFT_TAB)]
+      return [...pass, ...pass]
+    }
     expect(claudeKeysFor(ask(q, fruit), '2\n1, cherry')).toEqual({
       ok: true,
       value: [

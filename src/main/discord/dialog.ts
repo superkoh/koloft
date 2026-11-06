@@ -234,21 +234,28 @@ function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
 // CC§14
 const NEXT_QUESTION_AFTER_TICKS = '\t'
 const SUBMIT_ON_THE_REVIEW_PAGE = '1'
-const APPROVE_THE_PLAN_FROM_ANY_ROW = 'Shift-Tab'
+const SHIFT_TAB = 'Shift-Tab'
+const PASSES_SO_A_STALLED_READ_CANNOT_SWALLOW_THE_WAY_BACK = 2
 
 const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
 
 const rowsUnderTheOptions = (q: Question): number => (q.multiSelect ? 3 : 2)
 
 // CC§14
+export function takesSeveralPicks(p: AskPayload): boolean {
+  return p.tool_name === 'AskUserQuestion' && questionsOf(p).some((q) => q.multiSelect)
+}
+
+// CC§14
 function backToTheFirstQuestion(qs: Question[]): string[] {
   const toTheBottomRow = Math.max(...qs.map((q) => q.options.length + rowsUnderTheOptions(q)))
   const ontoAnOption = Math.max(...qs.map(rowsUnderTheOptions))
-  return [
+  const pass = [
     ...presses('Down', toTheBottomRow),
     ...presses('Up', ontoAnOption),
-    ...presses('Shift-Tab', qs.length)
+    ...presses(SHIFT_TAB, qs.length)
   ]
+  return Array<string[]>(PASSES_SO_A_STALLED_READ_CANNOT_SWALLOW_THE_WAY_BACK).fill(pass).flat()
 }
 
 // CC§14
@@ -285,7 +292,7 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
     }
   }
   if (p.tool_name === 'ExitPlanMode' && YES.test(text))
-    return { ok: true, value: [CLEAR_TO_LINE_START, ...keysFor([APPROVE_THE_PLAN_FROM_ANY_ROW])] }
+    return { ok: true, value: [CLEAR_TO_LINE_START, ...keysFor([SHIFT_TAB])] }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
   return fail(YES_OR_NO_BY_KEYS)

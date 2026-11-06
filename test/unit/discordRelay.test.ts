@@ -653,6 +653,57 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     }
   })
 
+  // CODEX§20
+  it('a Codex answer stops pressing keys the moment the owner presses one in the question', async () => {
+    let touched = false
+    const question: CodexQuestion = {
+      id: 0,
+      questions: [
+        {
+          question: 'Which colour?',
+          options: [{ label: 'Red' }, { label: 'Green' }],
+          ownWords: true
+        }
+      ]
+    }
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => 'codex',
+      pendingQuestion: () => question,
+      touchedSinceAsked: () => touched
+    })
+    const typing = relay.answerSession(MANAGED, 'Purple')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    touched = true
+    await typing
+    expect(writes.map((w) => w.data)).toEqual(['\x1b[B'])
+  })
+
+  // CC§14
+  it('a Claude dialog with a many-pick question the owner already pressed keys in is left to the owner, since Koloft’s digits would flip the ticks there; one with single picks is still answered', async () => {
+    const fruit = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [{ label: 'Apple' }, { label: 'Banana' }],
+            multiSelect: true
+          }
+        ]
+      }
+    }
+    const { relay, writes } = setup({}, [], {
+      status: () => 'approval',
+      touchedSinceAsked: () => true
+    })
+    relay.onAsk(MANAGED, fruit)
+    expect(await relay.answerSession(MANAGED, 'Apple')).toBe(STARTED_IN_THE_TERMINAL)
+    expect(writes).toEqual([])
+    relay.onAsk(MANAGED, QUESTION)
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
+    expect(writes.at(-1)?.data).toBe('2')
+  })
+
   // CC§12 CC§14
   it('a Claude dialog answered by keys stays open until the session shows it closed, and a second answer meanwhile is told to wait; a yes whose closing Koloft cannot see is dropped once typed, a no is not', async () => {
     vi.useFakeTimers()
