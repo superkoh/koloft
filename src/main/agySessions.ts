@@ -90,7 +90,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
-import { keepKoloftSkillIn } from './agentPlugin'
+import { keepSkillsIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -102,7 +102,8 @@ import {
   questionAnswers,
   type CodexApproval,
   type CodexQuestion,
-  type Question
+  type Question,
+  type SentAnswer
 } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { record } from './codexObservation'
@@ -612,7 +613,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // AGY§4
     prepareAgyHome(pick.home, gemini)
     // AGY§31
-    keepKoloftSkillIn(path.join(pick.home, AGY_SKILLS), !!agent)
+    keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
@@ -797,7 +798,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         onboarding: readText(agyOnboardingFile(pick.home)),
         token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
         start: instructions ? sessionStartOutput(instructions) : undefined,
-        skillFromMachine: agentTools ? m : undefined
+        koloftSkill: agentTools
       }),
       portOffset: resource ? portOffset(resource.worktreeName) : undefined
     })
@@ -1398,7 +1399,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§14 AGY§16 AGY§19
-  async answer(tabId: string, reply: string): Promise<string | undefined | false> {
+  async answer(tabId: string, reply: string): Promise<SentAnswer | false> {
     const run = this.runs.get(tabId)
     const ask = run?.waiting
     const id = run?.info?.nativeSessionId
@@ -1414,16 +1415,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           : false
       if (!viaApi) return false
       run.waiting = undefined
-      return undefined
+      return {}
     }
     if (!ask.approval) return false
     const key = codexKeyFor(reply)
-    if (!key) return 'an Antigravity approval takes yes or no.'
+    if (!key) return { error: 'an Antigravity approval takes yes or no.' }
     const yes = key === 'y'
     run.waiting = undefined
     if (ask.plan) {
       await this.deliverText(run, `[${yes ? 'Approved' : 'Rejected'}] ${ask.plan}`)
-      return undefined
+      return {}
     }
     const viaApi = ask.pending
       ? await run.api?.allow(id, ask.pending, yes).then(
@@ -1431,11 +1432,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           () => false
         )
       : false
-    if (!viaApi) {
-      const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
-      this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
-    }
-    return undefined
+    if (viaApi) return {}
+    const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
+    this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
+    return { watch: true }
   }
 
   // AGY§15 AGY§16

@@ -129,7 +129,7 @@ export interface MuseMachineLaunch {
   trust: string[]
   trustIf?: string
   context?: string
-  skill?: string
+  koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
   holdWhileBusy?: boolean
@@ -152,6 +152,14 @@ export interface SshHostDeps {
   claude: MachineClaudeDeps
 }
 
+function machinePermission(
+  spec: ClaudeLaunch,
+  skipPermissions: boolean
+): ClaudeLaunch['permission'] {
+  if (spec.permission && spec.permission !== 'default') return spec.permission
+  return skipPermissions ? 'bypass' : undefined
+}
+
 // CC§9
 export function machineClaudeArgs(
   spec: ClaudeLaunch,
@@ -164,12 +172,7 @@ export function machineClaudeArgs(
     worktree: spec.worktree,
     model: spec.model,
     effort: spec.effort,
-    permission:
-      spec.permission && spec.permission !== 'default'
-        ? spec.permission
-        : skipPermissions
-          ? 'bypass'
-          : undefined
+    permission: machinePermission(spec, skipPermissions)
   })
   if (!argv.ok) return argv
   const fresh = !spec.resumeSessionId
@@ -1077,7 +1080,6 @@ export class SshHost implements Host {
           )
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
-        if (spec.skill) files[`${tabId}.skill.md`] = spec.skill
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
@@ -1097,7 +1099,8 @@ export class SshHost implements Host {
               args: spec.args,
               sandboxed: spec.sandboxed,
               trust: spec.trust.map((p) => this.bare(p)),
-              trustIf: bareOrNot(spec.trustIf)
+              trustIf: bareOrNot(spec.trustIf),
+              koloftSkill: spec.koloftSkill
             }),
             files
           )
@@ -1300,7 +1303,8 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        pickKey
+        pickKey,
+        skipsPermissionChecks: machinePermission(spec, settings.skipPermissions) === 'bypass'
       }
     }
   }

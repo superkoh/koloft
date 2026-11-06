@@ -46,6 +46,7 @@ function setup(over: Partial<SecretAskDeps> = {}) {
     over: Partial<DiscordInteraction> = {}
   ): DiscordInteraction => ({
     id: '1',
+    applicationId: '700',
     token: 't',
     type,
     channelId: 'thread-1',

@@ -3,7 +3,7 @@ import path from 'path'
 import { isDeepStrictEqual } from 'util'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
-import { KOLOFT_SKILL, keepKoloftSkillIn } from './agentPlugin'
+import { KOLOFT_SKILLS, keepSkillsIn } from './agentPlugin'
 import { playwrightMcpEnv, runsPlaywrightMcp } from './browserControlEnv'
 
 const MUSE_HOMES = 'muse-homes'
@@ -81,14 +81,14 @@ function linkOwnersSkills(own: string, owners: string): void {
   } catch {}
   for (const skill of skills) {
     const mine = path.join(own, skill)
-    if (skill === KOLOFT_SKILL || fs.lstatSync(mine, { throwIfNoEntry: false })) continue
+    if (KOLOFT_SKILLS.includes(skill) || fs.lstatSync(mine, { throwIfNoEntry: false })) continue
     fs.symlinkSync(path.join(owners, skill), mine)
   }
 }
 
 // MUSE§16
-export function placeKoloftSkill(home: string, on: boolean): void {
-  keepKoloftSkillIn(path.join(home, 'muse', 'skills'), on)
+export function placeKoloftSkills(home: string, koloftOn: boolean): void {
+  keepSkillsIn(path.join(home, 'muse', 'skills'), koloftOn)
 }
 
 // MUSE§13

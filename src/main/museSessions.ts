@@ -19,9 +19,8 @@ import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
-import { mergeMuseSettings, placeKoloftSkill, readJson } from './museAccounts'
+import { mergeMuseSettings, placeKoloftSkills, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
-import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
 import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
@@ -649,7 +648,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
       context: agentTools ? koloftPrompt('muse') : undefined,
-      skill: agentTools ? agentSkillMarkdown() : undefined,
+      koloftSkill: agentTools,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
       ownerWords: opts.ownerWords,
       holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
@@ -721,7 +720,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     if (env.XDG_CONFIG_HOME) {
-      placeKoloftSkill(env.XDG_CONFIG_HOME, !!agent)
+      placeKoloftSkills(env.XDG_CONFIG_HOME, !!agent)
       mergeMuseSettings(env.XDG_CONFIG_HOME, museConfigHome(this.env), !!endpoint)
     }
     const instructions = [

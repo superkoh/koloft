@@ -8,8 +8,9 @@ import {
   SESSION_CLOSED,
   type ButtonDeps
 } from '../../src/main/discord/buttons'
-import type { DiscordInteraction } from '../../src/main/discord/link'
-import { YES_OR_NO } from '../../src/main/discord/dialog'
+import { privately, type DiscordInteraction } from '../../src/main/discord/link'
+import { ANSWER_NOT_TAKEN, YES_OR_NO } from '../../src/main/discord/dialog'
+import { ANSWER_ON_ITS_WAY } from '../../src/main/discord/relay'
 
 const OWNER = '555'
 const PLACED = { channelId: '333', messageId: '900' }
@@ -18,6 +19,7 @@ function setup(over: Partial<ButtonDeps> = {}) {
   let open: string | undefined = 'Bash asks to run:\nnpm test'
   const answers: { tab: string; reply: string }[] = []
   const responses: unknown[] = []
+  const followUps: string[] = []
   const edits: { messageId: string; footer?: string; buttons: number }[] = []
   const buttons = new AskButtons({
     owner: () => OWNER,
@@ -27,6 +29,7 @@ function setup(over: Partial<ButtonDeps> = {}) {
       return undefined
     },
     respond: async (_i, body) => void responses.push(body),
+    followUp: async (_i, text) => void followUps.push(text),
     edit: async (placed, card) =>
       void edits.push({
         messageId: placed.messageId,
@@ -42,6 +45,7 @@ function setup(over: Partial<ButtonDeps> = {}) {
   )
   const press = (n: number, userId = OWNER): DiscordInteraction => ({
     id: '1',
+    applicationId: '700',
     token: 't',
     type: 3,
     channelId: '333',
@@ -56,6 +60,7 @@ function setup(over: Partial<ButtonDeps> = {}) {
     press,
     answers,
     responses,
+    followUps,
     edits,
     close: () => {
       open = undefined
@@ -66,22 +71,23 @@ function setup(over: Partial<ButtonDeps> = {}) {
   }
 }
 
-type Update = {
-  type: number
-  data: { components: { components: { content?: string; type: number }[] }[] }
-}
+const UPDATE_LATER = { type: 6 }
 
 describe('answering a question with a button in Discord', () => {
-  it('a press answers that option and turns the card into one that says what was picked, with no buttons left', async () => {
-    const { buttons, card, press, answers, responses } = setup()
-    expect(card.buttons?.map((b) => b.label)).toEqual(['Yes', 'No'])
-    await buttons.press(press(1))
-    expect(answers).toEqual([{ tab: 'tab-1', reply: 'no' }])
-    const update = responses[0] as Update
-    expect(update.type).toBe(7)
-    const inside = update.data.components[0].components
-    expect(inside.map((c) => c.content).filter(Boolean)).toContain('-# ✅ No')
-    expect(inside.some((c) => c.type === 1)).toBe(false)
+  it('a press is acknowledged before the session has taken the answer, and once it has, the card says what was picked, with no buttons left', async () => {
+    let taken!: () => void
+    const s = setup({
+      answer: async () => new Promise((resolve) => (taken = () => resolve(undefined)))
+    })
+    expect(s.card.buttons?.map((b) => b.label)).toEqual(['Yes', 'No'])
+    s.buttons.placed(s.card, PLACED)
+    const pressing = s.buttons.press(s.press(1))
+    await vi.waitFor(() => expect(taken).toBeDefined())
+    expect(s.responses).toEqual([UPDATE_LATER])
+    expect(s.edits).toEqual([])
+    taken()
+    await pressing
+    expect(s.edits).toEqual([{ messageId: '900', footer: '-# ✅ No', buttons: 0 }])
   })
 
   it('a press after the question was answered at the Mac, or replaced by another, answers nothing and says so only to the presser', async () => {
@@ -114,16 +120,63 @@ describe('answering a question with a button in Discord', () => {
     expect(responses).toEqual([{ type: 4, data: { content: ONLY_THE_OWNER_ANSWERS, flags: 64 } }])
   })
 
-  it('an answer Koloft cannot give is shown only to the presser, and the buttons stay for another try', async () => {
-    const { buttons, press, responses } = setup({
-      answer: async () => 'a Codex approval takes yes or no.'
+  it('an answer Koloft cannot give, or one the session did not take, is shown only to the presser, and the buttons stay for another try', async () => {
+    const s = setup({ answer: async () => ANSWER_NOT_TAKEN })
+    s.buttons.placed(s.card, PLACED)
+    await s.buttons.press(s.press(0))
+    await s.buttons.press(s.press(0))
+    expect(s.responses).toEqual([UPDATE_LATER, UPDATE_LATER])
+    expect(s.followUps).toEqual([ANSWER_NOT_TAKEN, ANSWER_NOT_TAKEN])
+    expect(s.edits).toEqual([])
+  })
+
+  it('a press the session did not take, on a question that closed meanwhile, still takes the buttons off, without naming the answer that was not taken', async () => {
+    const s = setup({
+      answer: async (tab, reply) => {
+        s.buttons.answered(tab, reply)
+        s.close()
+        return ANSWER_NOT_TAKEN
+      }
     })
-    await buttons.press(press(0))
-    await buttons.press(press(0))
-    expect(responses).toEqual([
-      { type: 4, data: { content: 'a Codex approval takes yes or no.', flags: 64 } },
-      { type: 4, data: { content: 'a Codex approval takes yes or no.', flags: 64 } }
+    s.buttons.placed(s.card, PLACED)
+    await s.buttons.press(s.press(0))
+    expect(s.followUps).toEqual([ANSWER_NOT_TAKEN])
+    expect(s.edits).toEqual([
+      { messageId: '900', footer: `-# ${ANSWERED_ON_THE_COMPUTER}`, buttons: 0 }
     ])
+  })
+
+  it('an answer that fails while being typed is told to the presser too, and the buttons stay', async () => {
+    let fails = true
+    const s = setup({
+      answer: async () => {
+        if (fails) throw new Error('The session closed.')
+        return undefined
+      }
+    })
+    s.buttons.placed(s.card, PLACED)
+    await s.buttons.press(s.press(0))
+    expect(s.followUps).toEqual(['The session closed.'])
+    fails = false
+    await s.buttons.press(s.press(0))
+    expect(s.edits).toEqual([{ messageId: '900', footer: '-# ✅ Yes', buttons: 0 }])
+  })
+
+  it('a second press while the first is still being taken is told to wait, and types nothing', async () => {
+    let taken!: () => void
+    const s = setup({
+      answer: async (tab, reply) => {
+        s.answers.push({ tab, reply })
+        return new Promise((resolve) => (taken = () => resolve(undefined)))
+      }
+    })
+    const first = s.buttons.press(s.press(0))
+    await vi.waitFor(() => expect(taken).toBeDefined())
+    await s.buttons.press(s.press(1))
+    expect(s.responses).toEqual([UPDATE_LATER, privately(ANSWER_ON_ITS_WAY)])
+    expect(s.answers).toEqual([{ tab: 'tab-1', reply: 'yes' }])
+    taken()
+    await first
   })
 })
 
@@ -199,7 +252,6 @@ describe('a question answered some other way loses its buttons too', () => {
     await s.buttons.check('tab-1')
     finish()
     await pressing
-    expect(s.edits).toEqual([])
-    expect((s.responses[0] as Update).type).toBe(7)
+    expect(s.edits).toEqual([{ messageId: '900', footer: '-# ✅ No', buttons: 0 }])
   })
 })

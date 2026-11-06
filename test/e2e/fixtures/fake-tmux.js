@@ -78,8 +78,9 @@ function attach(name) {
   process.stdin.resume()
   // PLATFORM§35
   const keysAtOnceOnceThePaneIsRaw = () => {
-    if (process.stdin.isTTY && !process.stdin.isRaw && fs.existsSync(rawPaneMark(io)))
-      process.stdin.setRawMode(true)
+    if (!process.stdin.isTTY) return
+    const raw = fs.existsSync(rawPaneMark(io))
+    if (raw !== process.stdin.isRaw) process.stdin.setRawMode(raw)
   }
   keysAtOnceOnceThePaneIsRaw()
 

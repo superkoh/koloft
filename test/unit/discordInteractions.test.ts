@@ -14,6 +14,7 @@ const THREAD = '333'
 function interaction(over: Partial<DiscordInteraction>): DiscordInteraction {
   return {
     id: '9',
+    applicationId: '700',
     token: 'tok',
     type: 2,
     channelId: CHANNEL,
@@ -165,6 +166,7 @@ describe('reading an interaction from the Gateway', () => {
     expect(
       interactionOf({
         id: '1',
+        application_id: '700',
         token: 't',
         type: 2,
         channel_id: CHANNEL,
@@ -173,6 +175,7 @@ describe('reading an interaction from the Gateway', () => {
       })
     ).toEqual({
       id: '1',
+      applicationId: '700',
       token: 't',
       type: 2,
       channelId: CHANNEL,
@@ -186,6 +189,7 @@ describe('reading an interaction from the Gateway', () => {
     expect(
       interactionOf({
         id: '2',
+        application_id: '700',
         token: 't',
         type: 3,
         channel_id: CHANNEL,
@@ -200,6 +204,7 @@ describe('reading an interaction from the Gateway', () => {
     expect(
       interactionOf({
         id: '3',
+        application_id: '700',
         token: 't',
         type: 5,
         channel_id: THREAD,

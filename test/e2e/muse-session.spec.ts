@@ -3,7 +3,14 @@ import path from 'path'
 import { execFileSync, spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { windowLabel } from '../../src/shared/accountUsage'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  launchApp,
+  pendingAttention,
+  pretendWindowFocused,
+  quitAndClose
+} from './helpers/app'
 import {
   E2E_MUSE_ACCOUNT,
   installCodex,
@@ -33,7 +40,9 @@ import {
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
   sendTwoLinesJoinedByShiftEnter,
+  startSessionIn,
   staysOnTheFolderPageNotTheButler,
+  switchToRow,
   TWO_LINE_PROMPT,
   waitBooted,
   wsRows
@@ -43,8 +52,8 @@ test.setTimeout(120_000)
 
 const SKIPS_PERMISSION_PROMPTS_AS_SHIPPED = ['--permission-profile', ':unrestricted']
 
-function museRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
+function museRows(page: Page, ws = 'ws-a'): Locator {
+  return wsRows(page, ws).filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
@@ -57,6 +66,9 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
   return museCalls(env)[before]
 }
 
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
 const OUTLASTS_A_MUSE_USAGE_READ_MS = 30_000
 const ROWS_FOLLOW_A_LISTING_MS = 2_000
 const SAMPLE_EVERY_MS = 100
@@ -649,6 +661,138 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await expect(history.getByRole('button').filter({ hasText: 'first topic' })).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Muse session marked Keep running never goes to sleep for being idle, while an ordinary Muse session beside it does, red dot and all, and a click wakes that same session', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const kept = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'stay up')
+      await expect(museRows(page)).toContainText('stay up')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await openMenu(page, museRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(museRows(page).locator('.ws-tab-resident')).toBeVisible()
+
+      const ordinary = museRows(page, 'ws-b')
+      await newSessionInWith(page, 'ws-b', 'Muse')
+      await expect(page.locator('.term-wrap:visible')).toContainText('Do you trust this workspace?')
+      await runIn(page, centerTerm(page), '')
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      const sleeper = museCalls(env)[1]
+      await expect(ordinary).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'nod off')
+      await expect(ordinary).toContainText('nod off')
+      await expect(ordinary).toHaveClass(/st-waiting/)
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
+
+      await expect.poll(() => processAlive(sleeper.pid), { timeout: 40_000 }).toBe(false)
+      expect(processAlive(kept.pid)).toBe(true)
+      await expect(museRows(page)).not.toHaveClass(/\bcold\b/)
+      await expect(ordinary).toHaveClass(/\bst-idle\b/)
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+      expect(museCalls(env)).toHaveLength(2)
+
+      await ordinary.click()
+      await expect.poll(() => museCalls(env).length).toBe(3)
+      expect(museCalls(env)[2].sessionId).toBe(sleeper.sessionId)
+      await expect(ordinary).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Muse session marked Keep running starts again by itself when Koloft reopens even though its tab was closed, as the same Muse session, and selects nothing', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me running')
+      await expect(museRows(page)).toContainText('keep me running')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await openMenu(page, museRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(museRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(museRows(page)).toHaveClass(/cold/)
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(museRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(museRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Muse session’s unread red dot survives a Koloft restart on its row, which comes back running the same session; clicking the row in a focused window keeps it, and Muse working again clears it', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'leave a dot')
+      await expect(museRows(page)).toContainText('leave a dot')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(museRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(museRows(page)).not.toHaveClass(/\bactive\b/)
+
+      await pretendWindowFocused(app)
+      await switchToRow(page, museRows(page))
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      fs.writeFileSync(
+        path.join(env.home, 'fake-muse-delay'),
+        A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS
+      )
+      await runIn(page, centerTerm(page), 'work again')
+      await expect(museRows(page)).toHaveClass(/st-working/)
+      await expect(museRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(museCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }

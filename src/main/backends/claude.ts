@@ -99,7 +99,13 @@ export interface ClaudeBackendDeps {
   remoteSync(): RemoteSync | null
   userData(): string
   setupLine(): string | undefined
-  hookSettings(tabId: string, allowKoloft: boolean, conductor: boolean): string | undefined
+  hookSettings(
+    tabId: string,
+    allowKoloft: boolean,
+    conductor: boolean,
+    playwrightServers: string[]
+  ): string | undefined
+  playwrightMcp(cwd: string): Promise<string[]>
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
@@ -1062,6 +1068,7 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
+    const playwrightServers = machine ? [] : await this.d.playwrightMcp(plan.spawnCwd)
     const handle = this.d.pty.create({
       id: spec.tabId,
       kind: 'claude',
@@ -1070,7 +1077,8 @@ export class ClaudeBackend implements SessionBackend {
           this.d.hookSettings(
             tabId,
             plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            plan.conductor === true
+            plan.conductor === true,
+            playwrightServers
           )
       },
       cwd: plan.spawnCwd,
@@ -1084,7 +1092,9 @@ export class ClaudeBackend implements SessionBackend {
       shell: plan.shell,
       extraEnv: plan.extraEnv
     })
-    if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
+    // ADR-0028
+    if (spec.permission === 'bypass' || machine?.skipsPermissionChecks)
+      this.launchedBypassing.add(handle.id)
     if (machine) {
       this.forgetHookReports(machine.hookMirror, handle.id)
       tracker.track(handle.id, machine.cwd, machine.tracking)

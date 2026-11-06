@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  claudePlaywrightServers,
   claudeServers,
   codexServers,
   foldersUpToRepoTop,
@@ -50,6 +51,50 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     expect(
       claudeServers(claudeJson, [], [{ folder: '/work/mono/app', projectKey: '/work/mono' }])
     ).toEqual([{ name: 'jira', backend: 'claude', onlyIn: '/work/mono/app' }])
+  })
+
+  // ADR-0048 CC§22 CC§24
+  it('Claude: the Playwright MCP servers a folder reaches are those in ~/.claude.json’s own list, under its project key there and in the .mcp.json files given, each once, never one turned off, one that runs something else, or one under another project', () => {
+    const playwright = { command: 'npx', args: ['@playwright/mcp@latest'] }
+    const claudeJson = JSON.stringify({
+      mcpServers: { playwright, linear: { command: 'linear-mcp' } },
+      projects: {
+        '/work/shop': {
+          mcpServers: {
+            browser: { command: '/opt/bin/playwright-mcp' },
+            off: { ...playwright, disabled: true }
+          }
+        },
+        '/work/blog': { mcpServers: { elsewhere: playwright } }
+      }
+    })
+    expect(
+      claudePlaywrightServers(
+        claudeJson,
+        [JSON.stringify({ mcpServers: { team: playwright, playwright } }), null, 'not json'],
+        '/work/shop'
+      )
+    ).toEqual(['playwright', 'team', 'browser'])
+    expect(claudePlaywrightServers(null, [], '/work/shop')).toEqual([])
+  })
+
+  // CC§24
+  it('Claude: when two places name a server alike, the one Claude Code loads decides — the project entry in ~/.claude.json over a .mcp.json, the nearer .mcp.json over one further up, any .mcp.json over ~/.claude.json’s own list', () => {
+    const playwright = { command: 'npx', args: ['@playwright/mcp'] }
+    const other = { command: 'deploy-mcp' }
+    const mcp = (servers: Record<string, unknown>): string =>
+      JSON.stringify({ mcpServers: servers })
+    const claudeJson = JSON.stringify({
+      mcpServers: { a: playwright, b: other, c: playwright },
+      projects: { '/w': { mcpServers: { a: other } } }
+    })
+    expect(
+      claudePlaywrightServers(
+        claudeJson,
+        [mcp({ b: other, c: other, d: playwright }), mcp({ b: playwright })],
+        '/w'
+      )
+    ).toEqual(['b', 'd'])
   })
 
   // MUSE§18 AGY§30

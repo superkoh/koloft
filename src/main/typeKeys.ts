@@ -4,11 +4,17 @@ import { sleep } from './codexTransport'
 const SUBMIT_AFTER_TEXT_MS = 300
 
 // CC§12
-export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
+export async function typeKeys(
+  write: (data: string) => void,
+  keys: string[],
+  stillWanted: () => boolean = () => true
+): Promise<boolean> {
   for (const [i, key] of keys.entries()) {
     if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
+    if (!stillWanted()) return false
     write(key)
   }
+  return true
 }
 
 const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g
@@ -41,6 +47,19 @@ const ONLY_THE_TERMINALS_OWN_ANSWERS =
 export function onlyTheTerminalsOwnAnswers(data: string): boolean {
   return ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)
 }
+
+export function pressesAKey(data: string): boolean {
+  const keys = withoutMouseAndFocusReports(data)
+  return keys !== '' && !onlyTheTerminalsOwnAnswers(keys)
+}
+
+const A_MOUSE_BUTTON_PRESS = /\x1b\[<[0-2];\d+;\d+M/
+
+export function clicksTheMouse(data: string): boolean {
+  return A_MOUSE_BUTTON_PRESS.test(data)
+}
+
+export const CLEAR_TO_LINE_START = '\x15'
 
 // CC§12 CODEX§25
 const NAMED_KEYS = new Map([

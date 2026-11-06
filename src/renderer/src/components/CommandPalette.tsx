@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent
+} from 'react'
 import { flushSync } from 'react-dom'
 import { IconAiStart, IconFolder, IconSearch } from '../icons'
 import type { BackendId, HostId, SearchSnippet, SessionSearchHit } from '@shared/types'
@@ -207,7 +215,8 @@ export function CommandPalette({
     setHotKey(null)
   }
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     inputRef.current?.focus()
     return () => stopAsking()
   }, [])
@@ -235,7 +244,8 @@ export function CommandPalette({
     }
   }, [typed, scan])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()

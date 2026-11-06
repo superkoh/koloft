@@ -84,6 +84,7 @@ import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { ButlerRow } from './ButlerRow'
+import { InboxRow } from './Inbox'
 import { everyWorkspaceRows } from '../butlerRows'
 import {
   discardAll,
@@ -161,7 +162,8 @@ interface MenuState {
 }
 
 export function useDismissOnOutside(open: boolean, dismiss: (none: null) => void): void {
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!open) return
     const close = (): void => dismiss(null)
     const onKey = (e: KeyboardEvent): void => {
@@ -1477,6 +1479,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
+          <InboxRow />
           <ButlerRow>
             {butlerWorkspace && [
               ...queuedIn(butlerWorkspace.workspace.path).map(queuedRow),

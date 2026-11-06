@@ -2293,8 +2293,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   yet, or the last one stopped), `error`; background tasks and subagents report under
   their own `id`, a gone one gets `state=clear:id=<id>`, and exit writes a bare
   `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
-  not applied), so whether it crosses tmux to the outer terminal is not probed; in or
-  out of fullscreen alike (read, not run). The 2.1.299, 2.1.301, 2.1.302, 2.1.303,
+  not applied), in or out of fullscreen alike (read, not run); behind tmux it never
+  turns on (run, below). The 2.1.299, 2.1.301, 2.1.302, 2.1.303,
   2.1.304, 2.1.306 and 2.1.308 binaries carry the same builder (`app=claude-code`, `id=`,
   `kind=`, `progress=`, a base64 `title=` capped at 192, `msg=` capped at 2048), states,
   kinds and startup probe (`strings`, 2026-10-14, 2026-10-16, 2026-10-17, 2026-10-19,
@@ -2306,6 +2306,42 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   carries, which in 2.1.306 covers 2.1.296–2.1.304, so it is no longer in its strings.
   Since Codex CLI 0.163.0 the Codex TUI writes OSC 7501 too, with no query first and
   only `state` and `app=codex` (`docs/codex-cli-contract.md` §25).
+- **Run on 2.1.318, Koloft's own reply turns the reports on.** 2026-11-05, a python pty
+  (120×40) through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR`, haiku,
+  `--permission-mode default`; 6 runs. The query came 0.8–2.0 s after start; answered with
+  `ESC ] 7501 ; ? BEL` (5 runs) or with Koloft's `PROGRAM_STATUS_REPLY` (`?:states=…:kinds=…`
+  ended by ST, 1 run), `state=working:app=claude-code` followed at once. A permission
+  dialog drew as `state=blocked:app=claude-code:kind=permission:msg=<base64 "approve Bash:
+  <command>">` (`"approve plan"` for `ExitPlanMode`), 20 ms before the `PermissionRequest`
+  hook. In the strings the reports gate only these frames and the bare `state=clear`
+  written on exit; nothing else claude draws or sends depends on them.
+- **Behind tmux claude sends no reports until something between them answers its query;
+  a pty wrapper that does so gets every frame out, as remote Muse's does (MUSE§17).**
+  2026-11-05, CC 2.1.319 (the `claude-code-linux-arm64` npm build) in Docker (the e2e
+  `sshd` image: tmux 3.3a, python3, `--network none`, the `node` user), started inside
+  tmux with Koloft's `tmux.conf` (`allow-passthrough on`) from an outer python pty that
+  logged every byte; `--permission-mode default`, a local fake Messages API answering
+  each turn with one Bash call (`touch … && sleep 8`), `apiKeyHelper` for the key; one
+  run each. Claude started bare in tmux: the query never reached the outer pty and no
+  7501 frame came out, while the Bash dialog drew. Claude started under the wrapper
+  Koloft now puts there (`status-relay.py`: answers the query with
+  `PROGRAM_STATUS_REPLY`, re-sends every other 7501 frame as `ESC P tmux;` + the frame
+  with each ESC doubled + `ESC \`): the outer pty got `state=idle` at start, `working`
+  on the prompt, `blocked:kind=permission:msg=<base64 "approve Bash: …">` with the
+  dialog, `working` 34 ms after `1` (the command then ran 8 s more, `done` after it),
+  and `idle` 81 ms after Esc on the next dialog; tmux had unwrapped every frame, and the
+  query never reached the outer pty. A first try with a bare `sleep 8` drew no dialog
+  at all; why claude let it through was not looked into.
+- **A frame sent while no tmux client is attached is lost, and attaching again replays
+  none; while a dialog waits claude keeps drawing.** Same setup, the wrapper's tmux
+  session started detached (`new-session -d`), the prompt typed with `tmux send-keys`,
+  the outer pty attached 3 s after the dialog drew, 1 run: no `blocked` frame came on
+  attach. While the dialog waited, claude redrew one cell (the `●` before the pending
+  call, on and off) every 0.6 s, so its screen is never quiet for long. With the wrapper
+  sending the last `blocked` frame again every 2 s while the dialog waits, each time
+  only once claude had written nothing for 0.1 s, the outer pty got `blocked` 1.2 s
+  after attaching and every 2 s after; `1` then gave `working` 37 ms later. `/exit` after a Bash call that left `sleep 300` running in
+  the background ended claude, the wrapper and the tmux session at once.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
   `Write(/etc/**)` drew `⚠ Deny rule Write(/etc/**) never matches · use Edit(/etc/**)`
@@ -2359,6 +2395,17 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   removed. A prompt handed over as a launch argument and holding such a character is
   cleaned and sent without review, or put back in the box for review when it starts
   with `/`: read from `strings` only, inferred, not checked.
+- **How a copy reaches the clipboard.** When Claude Code sees an ssh login it skips the
+  system tool (`pbcopy` on macOS; `wl-copy`, `xclip` or `xsel` on Linux) and relies on
+  the terminal; with no ssh it runs that tool. Either way it then writes the text out as
+  OSC 52 — inside tmux both bare and wrapped for tmux passthrough, and through
+  `tmux load-buffer -w -` too. Its debug log says which: `clipboard: setClipboard
+  mux=… ssh=… native=… emit=…`. Read from the 2.1.318 binary's `strings` (2026-11-05);
+  not run.
+- **Arrow keys, Shift+Tab and Ctrl+U typed through tmux reach a dialog as typed.**
+  2026-11-06, linux-arm64 CC 2.1.319 inside tmux 3.3a with Koloft's tmux.conf, keys
+  written to the tmux client 300 ms apart: Koloft's dialog key runs answered 6 of 6 as
+  on this Mac (§14, last bullet).
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
@@ -2378,6 +2425,13 @@ sessions.
   as `plugins: [{name:"koloft", source:"koloft@inline"}]` and
   `skills: ["koloft:<n>"]`. The model called the skill through the Skill tool and read
   its body.
+- **Two `--plugin-dir` flags load both plugins.** 2026-11-05, CC 2.1.318, on this Mac:
+  `claude -p --output-format stream-json --verbose --max-turns 1 --plugin-dir A
+  --plugin-dir B` in a scratch folder, A holding plugin `koloft` with skill `koloft` and B
+  plugin `koloft-docs` with skill `koloft-docs` (each a `.claude-plugin/plugin.json` and a
+  `skills/<n>/SKILL.md`). The `system/init` record listed both plugins and the skills
+  `["koloft:koloft","koloft-docs:koloft-docs"]`. Koloft hands every Claude Code tab its
+  `koloft-docs` plugin this way, and its `koloft` plugin beside it when agent tools are on.
 - **An interactive session's transcript lists the skills it was handed** (2026-10-10,
   CC 2.1.296 for Linux arm64, an interactive claude on a Docker ssh machine, read off its
   jsonl): an `attachment` record `{type:"skill_listing", content}` whose `content` holds one
@@ -2748,6 +2802,162 @@ below was one run.
     `Purple stripes` / `Apple, Cherry`; Down Down Down `Mango juice` Tab CR `2` `1` sent
     `Mango juice` / `Green`; `2` Down Down Down `Mango juice` Tab CR `1` sent `Green` /
     `Mango juice`; `2` `3` Tab `1` on one many-pick question sent `Banana, Cherry`.
+- **An answered `AskUserQuestion` reaches the transcript within about a second.**
+  2026-11-05, CC 2.1.318, the hand-test sandbox, a real local Claude tab (Sonnet 5.5),
+  no `.answerable` marker, so the dialog drew in the terminal; 4 runs, each answered from
+  its Inbox card: a one-question pick while its tab was the selected one, the same while
+  another tab was, a long Chinese question with two described options, and that one again
+  left open 20 minutes first. Each time the `tool_result` holding the pick was in the
+  transcript about 1 s after Koloft typed the digit, and the tab went on. In real use on
+  0.63.1 the same kind of digit typed from a card once drew no `tool_result` at all (the
+  owner answered in the terminal 2 min 42 s later); the cause was not reproduced. The
+  bullet "A digit picks only while the highlight is on a numbered option" below holds four
+  ways to get that same result; which one the owner met is not known.
+- **What shows a permission dialog was answered, and when.** 2026-11-05, CC 2.1.318, the
+  setup of the §12 run on 2.1.318 (logging hooks on `PreToolUse`, `PermissionRequest`,
+  `PostToolUse`, `Notification`, `Stop`, `UserPromptSubmit`; the transcript tailed), one
+  run each, the key 3 s after the dialog drew:
+  - `1` on a `Bash` dialog for a 25-second command: OSC 7501 `state=working` 20 ms
+    later, and nothing else — no hook, no transcript record — until the command ended
+    25 s on (`PostToolUse`, then the `tool_result`, whose record carries
+    `permissionDecision`). `PreToolUse` had fired before the dialog, not after the yes.
+  - Esc on the same dialog: `state=idle` 70 ms later and, 0.3 s after the key, a
+    `tool_result` with `is_error: true` ("The user doesn't want to proceed with this tool
+    use…") and a `[Request interrupted by user for tool use]` user record; no `Stop`.
+  - `1` on an `ExitPlanMode` dialog: `state=working` 10 ms later, `PostToolUse` at 30 ms,
+    the `tool_result` "User has approved your plan…" at 0.2 s. Esc on it: `state=idle`, and
+    the same rejected `tool_result` and interrupt record as the Bash one, at 0.3 s.
+  So a no and a plan answer reach the transcript at once; a yes to a slow tool shows only
+  in OSC 7501 until the tool ends.
+- **The same through Koloft.** 2026-11-05, CC 2.1.318, the hand-test sandbox, a real local
+  Claude tab (Sonnet 5.5) with "Skip permission prompts" off; 1 run. The tab started in
+  auto mode (its banner: "Auto mode is now Claude Code's default permission mode"), which
+  ran a 45-second `python3 -c "import time; time.sleep(45)…"` Bash call with no dialog;
+  one Shift+Tab gave "⏸ manual mode on", and the same call then drew the Bash dialog. Its
+  Inbox card's Allow moved it to Done as Answered 5.0 s after the press (the undo), while
+  that call's `tool_result` came 43 s later.
+- **The `Bash` dialog lists four choices on 2.1.318:** `1. Yes`, `2. Yes, and don’t ask
+  again for: <prefix> *`, `3. Yes, and switch to auto mode · auto mode handles these
+  prompts for you`, `4. No` (above it "Tip: auto mode handles these prompts for you"). `3`
+  ran the command and switched the session to auto mode. Koloft presses only `1` and Esc
+  (`claudeKeysFor`), which mean the same as before.
+- **A digit picks only while the highlight is on a numbered option; where the highlight
+  goes.** 2026-11-05, CC 2.1.318 (the native binary), a python pty 120×40 drawn through
+  `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`, no hook, a local fake Messages API
+  (`ANTHROPIC_BASE_URL`, an `apiKeyHelper` key) that answered every turn with one canned
+  `AskUserQuestion`, keys 0.3–0.5 s apart; one run per line unless it says more.
+  - The rows of one single-pick question with N options are `1.`…`N.`, `N+1. Type
+    something.` (a text field once highlighted), then under a rule `N+2. Chat about
+    this`. A many-pick question has a `Submit` (or `Next`) row between its `Type
+    something` row and `Chat about this`. The first tab of a dialog with several
+    questions has the same rows as its question alone.
+  - With the highlight on `Type something`, a digit is typed into the field (`❯ 3. 1`)
+    and nothing is sent. On `Chat about this` a digit does nothing. On any numbered
+    option it picks that digit's option, wherever the highlight is.
+  - What moves the highlight there: Down twice (single pick, N=2) reaches `Type
+    something`, three times `Chat about this`; a bracketed paste (`hello`) jumps to the
+    field and fills it (`❯ 3. hello`, then `hello1` after the digit); in fullscreen
+    (`"tui": "fullscreen"`) a mouse click on a row moves it there, while a hover report on
+    any row and three wheel-down reports do not. Typed letters, typed Chinese, Tab,
+    space, a focus-out/in report pair and a resize to 90×30 and back left it on option 1.
+  - Down stops at `Chat about this`, the bottom row; Up from option 1 goes to `Type
+    something` (not to the bottom row); Up from `Chat about this` goes to the row above
+    it, from the field (even holding text) to option N. Home (`ESC[H`, `ESC[1~`) and
+    PageUp (`ESC[5~`) do nothing. Four Ups in one write moved the highlight one row.
+  - So Down N+2 times, then Up N+1 times (N+3 and N+2 for a many-pick question), each
+    its own write, leaves the highlight on option 1 from any start: from the start, after
+    two or three Downs, after a paste, after a fullscreen click on the field, and on a
+    two-question dialog after a paste (7 runs, each picked option 1). How keys that
+    arrive in one read are taken: see the 2.1.319 bullet below.
+  - A many-pick question whose field holds pasted text keeps it ticked: after the keys
+    above, `1`, Tab, `1` sent `"Apple, hello"`.
+  - Ctrl+U (0x15) with the highlight on the field empties it, and an emptied many-pick
+    field is no longer ticked. Down to the bottom, Up onto the field, Ctrl+U, then Up N
+    times: after a paste of `hello`, `3` `Purple` CR sent `Purple`; after Down Down and
+    a typed `hello world`, the same; on an empty field, the same; on a many-pick
+    question after a paste, `1` Tab `1` sent `Apple` (1 run each). With `hello world`
+    typed and the cursor moved 5 places left before the highlight left the field,
+    Ctrl+U alone still emptied it (`Purple` sent; Ctrl+E then Ctrl+U the same), so the
+    cursor is back at the end once the highlight returns.
+  - A `Bash` dialog (`--permission-mode default`; `1. Yes` … `4. No`, every row
+    numbered) took `1` with the highlight moved down to row 3: the command ran.
+- **The later tabs of a dialog, keys that arrive together, and an answer at the Mac
+  while Koloft types.** 2026-11-05, CC 2.1.319 (the native binary), the setup of the
+  bullet above, with OSC 7501 answered and logging hooks; one run per line.
+  - With question 1 answered in the terminal (or Right or Tab pressed), Koloft's run of
+    2.1.318 (question 1's reset, `2`, `2`, `1`) picked on tab 2 and then pressed `2` on
+    the review page, which is `Cancel`: "User declined to answer questions".
+  - Shift+Tab or Left on an option row or on the review page goes back one tab; on tab 1
+    it stays. On the own-words field or on `Chat about this` Shift+Tab does nothing, and
+    Left moves the field's cursor. A tab gone back to opens with its highlight on row 1
+    and its pick marked (`1. Red ✔`); a digit there picks again and moves on.
+  - So, once the person pressed a key or clicked in the dialog since it was asked (a
+    fullscreen click moves it too), or Koloft already typed into it, Koloft presses
+    Down as often as the longest tab has rows, Up as often as the
+    most rows any tab has under its options (onto an option row), and Shift+Tab once per
+    question; then, per question, Down to the bottom, Up onto the field, Ctrl+U, and
+    either Up once and the digits (Tab after many-pick ticks) or the own words typed
+    into the emptied field and Enter (Tab, Enter on a many-pick). 7 of 7 runs sent what
+    was asked: untouched; the person on tab 2 with `hello` in its field; on tab 2's
+    `Chat about this`; on the review page's `Cancel`; a one-pick and a many-pick
+    question with question 1 answered and a paste on tab 2; own words on both tabs from
+    tab 2's field; a many-pick question with its highlight on `Submit`. Own words typed
+    straight into the emptied field sent them (`Purple`; `Mango` Tab Enter on a
+    many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`). On 2.1.318 the
+    same run sent what was asked from tab 2's field, from the review page's `Cancel`
+    and with own words on both tabs (3 runs). With nothing pressed or clicked since the
+    dialog was asked it still shows question 1 and every later tab opens fresh, so Koloft empties
+    question 1 only and answers later tabs by their digit, `N+1` then the words, or
+    Down × N then the words on a many-pick: `Green` / `Tall` and `Purple` / `Mango` were
+    sent as asked (2 runs).
+  - Picks the person ticked on a many-pick question are toggled by Koloft's digits: `1`
+    in the terminal, then Koloft's run for `Apple`, sent "The user did not answer the
+    questions."
+  - Keys written while claude was stopped (SIGSTOP, the writes 300 ms apart, SIGCONT):
+    two Ups from the field moved two rows; four Ups from `Chat about this` moved one row,
+    into the field. Once the highlight lands on the field, the rest of that read goes
+    into it, so an emptying run loses keys only past the field, where its Ctrl+U is due
+    anyway. The way back to question 1 also passes the field, so Koloft makes it twice;
+    with claude stopped across the first pass's Ups and Shift+Tabs (from tab 2's `Chat
+    about this`), the run still sent what was asked (1 run).
+  - The dialog's 7501 frame, `state=blocked:kind=question:msg=<base64 "answer: <first
+    question> (<options>)">`, stays the same across tabs; the next frame comes when it
+    is answered or cancelled. A `1` typed at the Mac answered it and `state=working`
+    came 20 ms later; the rest of a run typed after that landed in the prompt box: a
+    draft `my draft` was replaced by a recalled prompt, emptied by Ctrl+U, and `2` was
+    left there. So Koloft stops its keys once the dialog shows closed.
+- **A plan dialog with its highlight moved.** 2026-11-05, CC 2.1.319, the setup above,
+  `--permission-mode plan`, the fake API writing the plan file named in the system
+  prompt with `Write` and then calling `ExitPlanMode` with `{}`; one run per line. Its
+  rows: `1. Yes, and use auto mode` (`1. Yes, and switch to BYPASS PERMISSIONS …` with
+  `--allow-dangerously-skip-permissions`), `2. Yes, manually approve edits`, `3. Tell
+  Claude what to change` ("shift+tab to approve with this feedback"). Row 3 is a text
+  field: with the highlight there (Down twice, or Up once from row 1), `1` is typed into
+  it (`❯ 3. 1`) and nothing is sent. Down from row 3 wraps to row 1. Shift+Tab approved
+  from rows 1, 2 and 3 alike, in an auto, a bypass and a manual session (`--permission-mode
+  default`, two Shift+Tabs into plan mode; its option 1 also read auto mode), as option 1
+  does (the footer then read auto mode / bypass permissions), and sent the field's text with it
+  (`{"type":"text","text":"hello"}` next to the `tool_result`); Ctrl+U empties the field
+  and does nothing on rows 1–2, so Ctrl+U then Shift+Tab approved with no text (5 runs;
+  on 2.1.318 too, from row 3 holding text and from row 1 of a bypass session). Text typed
+  into row 3 stays when the highlight leaves it: Down, Down, `hello`, Down (highlight on
+  row 1), then Shift+Tab sent `hello` too. Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
+  passes row 3 from any start and approved with no text from row 1 and row 2 with
+  `hello` left in row 3, from row 3 holding it, and from an untouched dialog (4 runs;
+  on 2.1.318 from row 1 with `hello` left in row 3 and from row 3 holding it).
+  Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
+- **The same key runs through tmux, as a remote tab sends them.** 2026-11-06, linux-arm64
+  CC 2.1.319 in Docker `--network none` (the e2e `koloft-e2e-sshd` image, user `node`),
+  claude inside `tmux -L <sock> -u -f <Koloft's tmux.conf> new-session` (tmux 3.3a), every
+  key written to the tmux client's pty 300 ms apart, the fake Messages API above; one run
+  per line, the dialog state checked with `tmux capture-pane` before Koloft's keys. A
+  two-question dialog with the person on tab 2 holding `hello` in its field, and on the
+  review page's `Cancel`: the way back and the per-question run sent `Green` / `Small`
+  both times; a one-pick and a many-pick question with own words given from tab 2, and the
+  same untouched with the short run, sent `Purple` / `Mango`; a plan with `hello` in row 3,
+  highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
+  approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
+  unchanged (6 of 6).
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
@@ -3275,3 +3485,49 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
 conversation (`src/main/discord/butler.ts`).
+
+## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
+
+2026-11-05, CC 2.1.318 on this Mac, the real binary run through Koloft's shim for the
+sign-in (`KOLOFT_UTIL=1`, `KOLOFT_HOOK_SETTINGS` and every `CLAUDE_CODE_*` removed), a
+scratch `CLAUDE_CONFIG_DIR`, model haiku, `--strict-mcp-config --mcp-config <file>` with
+two fake stdio servers, `playwright` and `other`, each offering `browser_navigate`
+(`destructiveHint`) and `browser_snapshot` (`readOnlyHint`). Most runs were `claude -p
+--output-format stream-json`, asked to call the three tools once each; a denied call
+reads "Claude requested permissions to use …, but you haven't granted it yet" and is
+listed in the result's `permission_denials`. One interactive claude in a pty (python
+`pty.fork` + `pyte`) was read off its screen.
+
+- **In `--permission-mode default` and `acceptEdits` every MCP tool asks, the read-only
+  one too.** On screen: `Do you want to proceed?` with `1. Yes`, `2. Yes, and don't ask
+  again for playwright — Browser Navigate commands in <cwd>`, `3. No`. Answered `1`, the
+  same call in the same session asked again. Answered `2`, it wrote
+  `{"permissions":{"allow":["mcp__playwright__browser_navigate"]}}` to
+  `<cwd>/.claude/settings.local.json` — one tool, one folder — and the next call and a
+  call after `/clear` ran without asking. A new session with that file moved away asked
+  again.
+- **`--dangerously-skip-permissions` asks for nothing**: all three tools ran.
+- **`permissions.allow: ["mcp__playwright"]` in a `--settings` file lets every tool of
+  that server run without asking**, in `default` and in `acceptEdits`, the first call and
+  the next, while the `other` server's tool still asks. `mcp__playwright__*` did the same.
+- **The owner's own rules still win over that allow.** With `mcp__playwright` allowed in
+  `--settings`: a `deny: ["mcp__playwright"]` in the user `settings.json` took the
+  server's tools away (`No such tool available`); `ask: ["mcp__playwright"]` there made
+  both tools ask; `ask: ["mcp__playwright__browser_navigate"]` made that one tool ask
+  and left `browser_snapshot` allowed. An `ask: ["mcp__playwright"]` in the folder's
+  `.claude/settings.json` or `.claude/settings.local.json` made the tool ask too.
+- **`permissions.allow` from `--settings` is added to the user's own, not swapped in**:
+  user `allow: ["mcp__other"]` plus `--settings` `allow: ["mcp__playwright"]` ran all
+  three tools.
+- **The server name in a tool's name**: every character outside `A-Za-z0-9_-` becomes
+  `_` — tried `.`, a space, `:`, `@`, `/` and `é` (`play.wright` → `mcp__play_wright__…`,
+  which `mcp__play_wright` allows; `pwé` → `mcp__pw___…`) — while `-` and upper case
+  stay (`mcp__play-wright__…`, `mcp__Play_W__…`). Read off the `system/init` `tools` list.
+- **When several places name a server alike, one entry runs**, read off which fake
+  server got the call (the `.mcp.json` servers allowed with `enableAllProjectMcpServers`):
+  the folder's project entry in `~/.claude.json` over the folder's `.mcp.json`, that over
+  the top-level `mcpServers`, and the folder's own `.mcp.json` over one in the folder
+  above it.
+
+Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
+`writeTabHookSettings` in `src/main/hooks.ts`.

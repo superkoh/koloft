@@ -208,6 +208,8 @@ if ! have gh && [ -z "$(find "$gh_failed" -mmin -${GH_TRIES_AGAIN_AFTER_MINUTES}
   }
 fi`
 
+export const PYTHON3_HAS_PTY = "python3 -c 'import pty, termios' >/dev/null 2>&1"
+
 // PLATFORM§37
 export const ENSURE_SH = `#!/bin/sh
 ${REMOTE_ENV_LINES}
@@ -219,7 +221,7 @@ program="$1"
 ${ENSURE_CLAUDE_MINIMUM_FN}
 ${ENSURE_MUSE_MINIMUM_FN}
 ${ENSURE_AGY_MINIMUM_FN}
-python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
+python_has_pty() { ${PYTHON3_HAS_PTY}; }
 official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
   say "installing $1 (official installer$3)"
@@ -313,6 +315,7 @@ set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
 set -gq allow-passthrough on
+set -g set-clipboard on
 ${TMUX_PASSES_THE_PANE_TITLE_ON.map((option) => `set -g ${option}\n`).join('')}`
 
 export interface MachineTmp {

@@ -3,7 +3,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
-import { keysFor, typedPieces } from '../typeKeys'
+import { CLEAR_TO_LINE_START, keysFor, typedPieces } from '../typeKeys'
 import type { CardButton } from './cards'
 
 interface Option {
@@ -226,7 +226,7 @@ function linesPerQuestion(qs: Question[], reply: string): string[] | undefined {
   return all.length === qs.length ? all : undefined
 }
 
-// CC§14 AGY§14
+// AGY§14
 function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
   return [String(q.options.length + 1), ...typedPieces(text), '\r']
 }
@@ -234,33 +234,107 @@ function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
 // CC§14
 const NEXT_QUESTION_AFTER_TICKS = '\t'
 const SUBMIT_ON_THE_REVIEW_PAGE = '1'
+const SHIFT_TAB = 'Shift-Tab'
+const PASSES_SO_A_STALLED_READ_CANNOT_SWALLOW_THE_WAY_BACK = 2
+
+const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
+
+const rowsUnderTheOptions = (q: Question): number => (q.multiSelect ? 3 : 2)
 
 // CC§14
-function questionKeys(q: Question, line: string): string[] {
-  const picks = picksFor(q, line)
-  if (!q.multiSelect) return picks ? picks.map(String) : ownWordsAfterTheLastOption(q, line)
-  if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
+export function takesSeveralPicks(p: AskPayload): boolean {
+  return p.tool_name === 'AskUserQuestion' && questionsOf(p).some((q) => q.multiSelect)
+}
+
+// CC§14
+function backToTheFirstQuestion(qs: Question[]): string[] {
+  const toTheBottomRow = Math.max(...qs.map((q) => q.options.length + rowsUnderTheOptions(q)))
+  const ontoAnOption = Math.max(...qs.map(rowsUnderTheOptions))
+  const pass = [
+    ...presses('Down', toTheBottomRow),
+    ...presses('Up', ontoAnOption),
+    ...presses(SHIFT_TAB, qs.length)
+  ]
+  return Array<string[]>(PASSES_SO_A_STALLED_READ_CANNOT_SWALLOW_THE_WAY_BACK).fill(pass).flat()
+}
+
+// CC§14
+function emptyTheOwnWordsField(q: Question): string[] {
   return [
-    ...keysFor(q.options.map(() => 'Down')),
-    ...typedPieces(line),
-    NEXT_QUESTION_AFTER_TICKS,
-    '\r'
+    ...presses('Down', q.options.length + rowsUnderTheOptions(q)),
+    ...presses('Up', rowsUnderTheOptions(q) - 1),
+    CLEAR_TO_LINE_START
   ]
 }
 
 // CC§14
-export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
+function intoTheFieldOfAFreshQuestion(q: Question): string[] {
+  return q.multiSelect ? presses('Down', q.options.length) : [String(q.options.length + 1)]
+}
+
+// CC§14
+function questionKeys(q: Question, line: string, emptyItFirst: boolean): string[] {
+  const picks = picksFor(q, line)
+  const moveOn = q.multiSelect ? [NEXT_QUESTION_AFTER_TICKS] : []
+  if (picks) {
+    const ontoAnOption = emptyItFirst ? [...emptyTheOwnWordsField(q), ...presses('Up', 1)] : []
+    return [...ontoAnOption, ...picks.map(String), ...moveOn]
+  }
+  const intoTheField = emptyItFirst ? emptyTheOwnWordsField(q) : intoTheFieldOfAFreshQuestion(q)
+  return [...intoTheField, ...typedPieces(line), ...moveOn, '\r']
+}
+
+const ROWS_OF_A_PLAN_DIALOG = 3
+
+// CC§14
+function emptyThePlanFeedbackRowFromAnyRow(): string[] {
+  const nextRow = [...presses('Down', 1), CLEAR_TO_LINE_START]
+  return [
+    CLEAR_TO_LINE_START,
+    ...Array<string[]>(ROWS_OF_A_PLAN_DIALOG - 1)
+      .fill(nextRow)
+      .flat()
+  ]
+}
+
+// CC§14
+export function claudeKeysFor(
+  p: AskPayload,
+  reply: string,
+  keysPressedSinceAsked = true
+): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
-    const keys = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
-    return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }
+    const answers = qs.flatMap((q, i) =>
+      questionKeys(q, lines[i]!, keysPressedSinceAsked || i === 0)
+    )
+    if (!drawsTabs(qs)) return { ok: true, value: answers }
+    const wayBack = keysPressedSinceAsked ? backToTheFirstQuestion(qs) : []
+    return { ok: true, value: [...wayBack, ...answers, SUBMIT_ON_THE_REVIEW_PAGE] }
   }
+  if (p.tool_name === 'ExitPlanMode' && YES.test(text))
+    return { ok: true, value: [...emptyThePlanFeedbackRowFromAnyRow(), ...keysFor([SHIFT_TAB])] }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
   return fail(YES_OR_NO_BY_KEYS)
+}
+
+export const A_TAKEN_ANSWER_SHOWS_WITHIN_MS = 15_000
+export const ANSWER_NOT_TAKEN = 'Koloft sent your answer, but the session still waits for it.'
+
+export interface SentAnswer {
+  error?: string
+  watch?: boolean
+}
+
+const ANSWERED_WITHOUT_RUNNING = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+// CC§14
+export function claudeResultComesAtOnce(p: AskPayload, reply: string): boolean {
+  return ANSWERED_WITHOUT_RUNNING.has(p.tool_name ?? '') || !YES.test(reply.trim())
 }
 
 export function approvalDetail(a: CodexApproval): string | undefined {

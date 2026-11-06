@@ -35,6 +35,7 @@ import {
   type MuseRemoteDeps
 } from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
@@ -167,6 +168,7 @@ import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './r
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
+  DOCS_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
@@ -503,7 +505,13 @@ import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb, type FieldPage } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
-import { shootHtml, shootPage } from './discord/pageShot'
+import {
+  machineOfShotPage,
+  onShotPageGone,
+  shootHtml,
+  shootPage,
+  shotSession
+} from './discord/pageShot'
 import { OldThreads } from './discord/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
 import { accentOf } from './discord/cards'
@@ -511,7 +519,14 @@ import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
+import {
+  bracketedPaste,
+  clicksTheMouse,
+  pressesAKey,
+  typedPieces,
+  typeKeys,
+  withoutMouseAndFocusReports
+} from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -535,6 +550,8 @@ import {
   foldersUpToRepoTop,
   foldersUpToRoot,
   jsonServers,
+  ownersClaudePlaywrightMcp,
+  textOrNull,
   type ConfigText,
   type McpServer
 } from './mcpServers'
@@ -555,6 +572,20 @@ import {
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { inboxVerb } from './agentInbox'
+import { Inbox } from './inbox'
+import { flushInbox, loadInbox, saveInbox } from './inboxFile'
+import {
+  askFromClaude,
+  askFromCodex,
+  inboxFooter,
+  where,
+  KoloftInbox,
+  type AskedSession,
+  type KoloftAsk
+} from './koloftInbox'
+import { ClaudeDialogWatch } from './claudeDialogWatch'
+import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
@@ -590,7 +621,13 @@ import {
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
+import {
+  agentPluginFiles,
+  pluginSkills,
+  docsPluginFiles,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -648,6 +685,7 @@ const sessionBackends = new SessionBackends({
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     const handedOff = sessionCommand.turnEnded(tabId, turn)
+    koloftInbox.turnEnded(tabId, turn.reply, handedOff)
     awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
   prompted: (tabId) => {
@@ -672,12 +710,14 @@ const sessionBackends = new SessionBackends({
       async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
     )
     startedSessions.bound(tabId, key)
+    koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
+    koloftInbox.asked(tabId)
     if (discordRelay) discordRelay.onAsk(tabId, ask)
     else showAskOnItsRow(tabId)
   },
@@ -712,7 +752,8 @@ function allSessions(): SessionInfo[] {
 const newsJudge = new NewsJudge({
   isNews: (turn) => onlyNews(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId)
+  markFyi: (tabId) => attention.markFyi(tabId),
+  judged: (tabId, news) => koloftInbox.judged(tabId, news)
 })
 
 // CC§14
@@ -764,7 +805,9 @@ const slash = new SlashCommands({
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
-  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  typeNow: async (tabId, keys) => {
+    await typeKeys((data) => ptyMgr.write(tabId, data), keys)
+  },
   // AGY§23
   outputOnlyOnScreen: (tabId) =>
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
@@ -876,6 +919,7 @@ const attention = new AttentionTracker((pending, event) => {
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
   awayDigest?.marked()
+  koloftInbox.sync()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -1097,7 +1141,7 @@ const ownerAsleep = new OwnerAsleep(
       const questions = questionsOf(claude).length
       return { question: questions > 0, questions, text: claudeDialog(claude).text }
     },
-    answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
+    answer: answerSession,
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
     changedSince: (since) => awayDigest?.changedSince(since) ?? [],
     report: (text) => discordRelay?.tell(butlerDestination(), text),
@@ -1349,6 +1393,7 @@ function machinePackage(): MachinePackage {
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
+    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
@@ -1358,6 +1403,8 @@ function machinePackage(): MachinePackage {
     pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
+  for (const [rel, text] of Object.entries(docsPluginFiles()))
+    pkgFiles[`${DOCS_PLUGIN_DIR}${rel}`] = text
   try {
     // PLATFORM§36
     const bundleDir = path.dirname(bundlePath())
@@ -1390,11 +1437,18 @@ const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
-  ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
+  | ((
+      tabId: string,
+      allowKoloft: boolean,
+      conductor: boolean,
+      playwrightServers?: string[]
+    ) => string)
+  | undefined
 const PLAIN_KOLOFT_SHIM = {
   hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
 }
 let claudeAgentPlugin: string | undefined
+let claudeDocsPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -1600,10 +1654,6 @@ function butlerSide(tabId: string): boolean {
     !!butler?.isButlerTab(tabId) ||
     sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
   )
-}
-
-function textOrNull(file: string): Promise<string | null> {
-  return fs.promises.readFile(file, 'utf8').catch(() => null)
 }
 
 async function mcpServersNow(): Promise<McpServer[]> {
@@ -1871,17 +1921,14 @@ const sessionDeps: SessionVerbDeps = {
   bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => {
+  press: async (tabId, keys) => {
     butler?.firstWordsComing(tabId)
-    return ptyMgr.type(tabId, keys)
+    await ptyMgr.type(tabId, keys)
   },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
-  answer: async (tabId, reply) => {
-    if (!discordRelay) return STILL_STARTING
-    return discordRelay.answerSession(tabId, reply)
-  },
+  answer: answerSession,
   undelivered: (callerTab, target, why) => {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
@@ -1906,6 +1953,98 @@ const sessionDeps: SessionVerbDeps = {
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
+const inbox = new Inbox(
+  {
+    now: () => Date.now(),
+    sendToSession: (ref, text, toItsOwnSession) =>
+      sessionCommand.sendFromInbox(ref, text, toItsOwnSession),
+    answerSession: (ref, given) => koloftInbox.answer(ref, given),
+    startSession: async (spec, card, onReply) => {
+      const started = await sessionCommand.startFromInbox(
+        card.session ?? undefined,
+        spec,
+        ownersPermission(),
+        onReply
+      )
+      const bound = started.session && sessionOfTab(started.session)?.sessionId
+      return bound ? { ...started, session: bound } : started
+    },
+    footer: (card, action) => inboxFooter(card, action.lets),
+    changed: () => {
+      if (inboxPushQueued) return
+      inboxPushQueued = true
+      queueMicrotask(() => {
+        inboxPushQueued = false
+        const now = inbox.snapshot()
+        saveInbox(now)
+        sendToRenderer(CH.inbox.changed, now)
+      })
+    }
+  },
+  loadInbox()
+)
+let inboxPushQueued = false
+
+function liveSessionOf(ref: string): SessionInfo | undefined {
+  return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
+}
+
+function inboxSessionOfTab(tabId: string): AskedSession | undefined {
+  const s = sessionOfTab(tabId)
+  if (!s?.sessionId) return undefined
+  const ws = sessionBackends.workspaceOfTab(tabId)
+  return {
+    sessionId: s.sessionId,
+    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
+    backend: s.backendId,
+    workspace: ws ? scopeName(ws) : undefined,
+    machine: ws ? parseRemoteKey(ws)?.host : undefined
+  }
+}
+
+async function inboxAskOf(tabId: string): Promise<KoloftAsk | undefined> {
+  const claude = claudeAsks.get(tabId)
+  if (claude) return askFromClaude(claude)
+  const other = await pendingAskOf(tabId)
+  return other && askFromCodex(other)
+}
+
+const koloftInbox = new KoloftInbox({
+  inbox,
+  marks: () => attention.list(),
+  sessionOfTab: inboxSessionOfTab,
+  liveTabOf: (ref) => {
+    const s = liveSessionOf(ref)
+    return s && { tabId: s.tabId, backend: s.backendId }
+  },
+  askOf: inboxAskOf,
+  answer: answerSession,
+  butlerSide,
+  watching: () => attention.watching()
+})
+
+const claudeDialogs = new ClaudeDialogWatch({
+  watchedProcess: (tabId) => {
+    const pty = ptyMgr.get(tabId)
+    return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
+  },
+  reply: (tabId, text) => ptyMgr.write(tabId, text),
+  closed: (tabId) => {
+    askEnded(tabId, true)
+    void askButtons?.check(tabId)
+  }
+})
+
+function askEnded(tabId: string, dialogClosed = false): void {
+  claudeAsks.delete(tabId)
+  questionSeen.delete(tabId)
+  discordRelay?.dialogGone(tabId, dialogClosed)
+}
+
+async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
+  return discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING
+}
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
@@ -1921,6 +2060,13 @@ const agentRequests = new AgentRequests({
     }),
     ...notesAndWorkbenchVerbs,
     session: sessionCommand.verb,
+    inbox: inboxVerb({
+      inbox: () => inbox,
+      whereOf: (caller) => {
+        const s = inboxSessionOfTab(caller.tabId)
+        return s ? where(s) : {}
+      }
+    }),
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
@@ -3026,6 +3172,7 @@ app.whenReady().then(() => {
   })
 
   setupBrowserPartition()
+  setupPageShotPartition()
   updateDockBadge(attention.list())
   // PLATFORM§15
   setupExtensions({
@@ -3058,6 +3205,11 @@ app.whenReady().then(() => {
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
+  try {
+    claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))
+  } catch (err) {
+    console.error('[koloft] the koloft-docs plugin could not be written:', err)
+  }
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3121,14 +3273,15 @@ app.whenReady().then(() => {
   // ADR-0033
   Object.assign(process.env, gitAccounts.configEnv(process.env))
   gitAccounts.start()
-  writeHookSettings = (tabId, allowKoloft, conductor) =>
+  writeHookSettings = (tabId, allowKoloft, conductor, playwrightServers) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
       conductor,
-      !!guard?.isBackground(tabId)
+      !!guard?.isBackground(tabId),
+      playwrightServers
     )
   hookRegDir = hookPaths.regDir
   guard = new ResourceGuard({
@@ -3179,6 +3332,7 @@ app.whenReady().then(() => {
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     // CC§12
     if (sleepers.has(d.id)) return
+    claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
@@ -3208,6 +3362,7 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
+    if (!exited?.alive) claudeDialogs.forget(e.id)
     // CC§12 CODEX§5 MUSE§1 AGY§1
     const unexpected =
       !e.endedByKoloft &&
@@ -3235,6 +3390,8 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
+    ownerTouchedAt.delete(e.id)
+    questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -3305,7 +3462,7 @@ app.whenReady().then(() => {
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
-    if (ask && isAskedCall(ask, call)) claudeAsks.delete(tabId)
+    if (ask && isAskedCall(ask, call)) askEnded(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })
@@ -3320,7 +3477,7 @@ app.whenReady().then(() => {
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
-    if (t.prev === 'approval') claudeAsks.delete(t.tabId)
+    if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     const asksOnDiscord = !!askChannelOfTab(t.tabId)
@@ -3397,10 +3554,11 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
+      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
+        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
@@ -3716,11 +3874,9 @@ app.whenReady().then(() => {
   const buttons = new AskButtons({
     owner: () => butlerNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
-    answer: async (tabId, reply) => {
-      if (!discordRelay) return STILL_STARTING
-      return discordRelay.answerSession(tabId, reply)
-    },
+    answer: answerSession,
     respond: (i, body) => link.respond(i, body),
+    followUp: (i, privateText) => link.followUp(i, privateText),
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
@@ -3829,7 +3985,12 @@ app.whenReady().then(() => {
       showAskOnItsRow(tabId)
       void ownerAsleep.asks(tabId)
     },
-    type: (tabId, keys) => ptyMgr.type(tabId, keys),
+    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    touchedSinceAsked: (tabId) => {
+      const asked = questionSeenAt(tabId)
+      return asked !== undefined && ownerTouchedSince(tabId, asked)
+    },
+    ownerTouchedSince,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
@@ -3842,6 +4003,7 @@ app.whenReady().then(() => {
     answerInPlace: async (tabId, reply) => {
       return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
     },
+    showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir,
     attachmentsDir
   })
@@ -4207,6 +4369,7 @@ app.on('before-quit', (e) => {
   sessionAccounts?.flushSync()
   for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
+  flushInbox()
   freshness?.stop()
   remoteSync?.stop()
   gitAccounts?.stop()
@@ -4923,11 +5086,9 @@ function fenceRequest(
 async function loopbackOnTheMachine(
   details: Electron.OnBeforeRequestListenerDetails,
   guest: number,
-  machinePort: number
-): Promise<Electron.CallbackResponse | null> {
-  const owner = await reportedOwner(guest)
-  const host = owner ? machineOfOwner(owner) : undefined
-  if (!host) return null
+  machinePort: number,
+  host: string
+): Promise<Electron.CallbackResponse> {
   if (!aPageOnTheMachineAsks(details.resourceType, details.initiatorOrigin)) return { cancel: true }
   const frame = FRAME_LOADS.has(details.resourceType)
   if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
@@ -4937,6 +5098,25 @@ async function loopbackOnTheMachine(
   const there = onMacPort(details.url, macPort)
   if (there === details.url) return {}
   return details.resourceType === 'webSocket' ? { cancel: true } : { redirectURL: there }
+}
+
+// ADR-0045 ADR-0046
+function setupPageShotPartition(): void {
+  const ses = shotSession()
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const page = details.webContentsId
+    const host = machineOfShotPage(page)
+    const fromMachine = machinePageOf(details.url)
+    if (fromMachine && (fromMachine.host !== host || machinePageRequestRefused(details)))
+      return callback({ cancel: true })
+    const machinePort = loopbackPortOf(details.url)
+    if (page === undefined || !host || machinePort === null) return callback({})
+    void loopbackOnTheMachine(details, page, machinePort, host).then(callback, () =>
+      callback({ cancel: true })
+    )
+  })
+  onShotPageGone((page) => pageForwards.pageGone(page))
 }
 
 function setupBrowserPartition(): void {
@@ -5038,10 +5218,15 @@ function setupBrowserPartition(): void {
     const machinePort = loopbackPortOf(details.url)
     if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
       return fenceRequest(details, callback)
-    void loopbackOnTheMachine(details, guest, machinePort).then(
-      (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
-      () => callback({ cancel: true })
-    )
+    void reportedOwner(guest)
+      .then((owner) => {
+        const host = owner ? machineOfOwner(owner) : undefined
+        return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
+      })
+      .then(
+        (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+        () => callback({ cancel: true })
+      )
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -5218,6 +5403,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
   if (archived) {
+    koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
     readerDocs.forget(id)
@@ -5756,7 +5942,7 @@ async function copyToPhone(
     : "this session's room on the owner's Discord"
   return sendPhoneCopy(
     {
-      shoot: shootPage,
+      shoot: (url, machine) => shootPage(url, { machine }),
       shootHtml,
       size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
       readBytes: (file) =>
@@ -5785,6 +5971,34 @@ function askUnreadablySoon(tabId: string): void {
 }
 
 const touchedAt = new Map<string, number>()
+const ownerTouchedAt = new Map<string, number>()
+const questionSeen = new Map<string, { asks: string; at: number }>()
+
+function questionSeenAt(tabId: string): number | undefined {
+  const open = storedOwnerOf(tabId)?.openQuestion(tabId)
+  if (!open) return undefined
+  const asks = JSON.stringify(open.questions)
+  const seen = questionSeen.get(tabId)
+  if (seen?.asks === asks) return seen.at
+  const at = Date.now()
+  questionSeen.set(tabId, { asks, at })
+  return at
+}
+
+// CC§14
+function touchesADialog(tabId: string, data: string): boolean {
+  if (pressesAKey(data)) return true
+  return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'
+}
+
+function ownerTouchedTheScreen(tabId: string): void {
+  questionSeenAt(tabId)
+  ownerTouchedAt.set(tabId, Date.now())
+}
+
+function ownerTouchedSince(tabId: string, at: number): boolean {
+  return (ownerTouchedAt.get(tabId) ?? 0) >= at
+}
 const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
 
 function ownerTouched(tabId: string): void {
@@ -6096,6 +6310,7 @@ const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    docsPlugin: () => claudeDocsPlugin,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
   }),
   (machine) =>
@@ -6155,8 +6370,10 @@ const claudeBackend = new ClaudeBackend({
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
-  hookSettings: (tabId, allowKoloft, conductor) =>
-    writeHookSettings?.(tabId, allowKoloft, conductor),
+  hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor, playwrightServers),
+  playwrightMcp: async (cwd) =>
+    loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -6209,6 +6426,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(id)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -6218,8 +6436,12 @@ function registerIpc(): void {
     if (guard?.isBackground(id)) void guard.free(id)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
+    ownerTouchedTheScreen(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
+  })
+  ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
+    if (typeof text === 'string' && text) clipboard.writeText(text)
   })
   // PLATFORM§21
   ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
@@ -6255,6 +6477,7 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     sessionCommand.tabMoved(oldTabId, newTabId)
+    koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
     for (const wc of webContents.getAllWebContents())
       if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
@@ -6271,6 +6494,55 @@ function registerIpc(): void {
     return id ? installTool(id) : null
   })
   ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.inbox.list, () => {
+    koloftInbox.sync()
+    return inbox.snapshot()
+  })
+  const onCard =
+    (act: (cardId: string, ...rest: unknown[]) => void) =>
+    (_e: unknown, cardId: unknown, ...rest: unknown[]): void => {
+      if (typeof cardId !== 'string') return
+      try {
+        act(cardId, ...rest)
+      } catch (error) {
+        sendToRenderer(CH.cron.toast, errorText(error))
+      }
+    }
+  ipcMain.on(
+    CH.inbox.press,
+    onCard((id, action, answers) => {
+      if (typeof action === 'string' && answers && typeof answers === 'object')
+        inbox.press(id, action, answers as InboxAnswers)
+    })
+  )
+  ipcMain.on(
+    CH.inbox.confirm,
+    onCard((id) => inbox.confirm(id))
+  )
+  ipcMain.on(
+    CH.inbox.undo,
+    onCard((id) => inbox.undo(id))
+  )
+  ipcMain.on(
+    CH.inbox.retry,
+    onCard((id) => inbox.retry(id))
+  )
+  ipcMain.on(
+    CH.inbox.dismiss,
+    onCard((id) => inbox.dismiss(id))
+  )
+  ipcMain.on(
+    CH.inbox.top,
+    onCard((id) => inbox.moveToTop(id))
+  )
+  ipcMain.on(
+    CH.inbox.level,
+    onCard((id, level) => {
+      if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
+        inbox.setYourLevel(id, level as InboxLevel | null)
+    })
+  )
+  ipcMain.on(CH.inbox.clearNotes, () => inbox.clearNotes())
   ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
   ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
     if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)

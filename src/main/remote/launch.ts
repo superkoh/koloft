@@ -4,6 +4,7 @@ import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import {
+  PYTHON3_HAS_PTY,
   REMOTE_ENV_LINES,
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
@@ -11,8 +12,9 @@ import {
 } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
-import { AGENT_PROMPT_FILE, KOLOFT_SKILL, KOLOFT_SKILL_FILE } from '../agentPlugin'
+import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
+import { STATUS_RELAY_FILE } from './statusRelay'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -58,12 +60,24 @@ export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
 export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
+export const DOCS_PLUGIN_DIR = 'docs-plugin/'
 
-export function koloftSkillLine(skillsDir: string, machineDir: string | undefined): string {
-  const dir = `${skillsDir}/${KOLOFT_SKILL}`
-  if (!machineDir) return `rm -rf "${dir}"`
-  const copy = `"${dir}/SKILL.md.k$$"`
-  return `mkdir -p "${dir}" && cp "${machineDir}/${AGENT_PLUGIN_DIR}${KOLOFT_SKILL_FILE}" ${copy} && mv -f ${copy} "${dir}/SKILL.md"`
+export function skillsFromMachineLine(
+  skillsDir: string,
+  machineDir: string,
+  koloftOn: boolean
+): string {
+  const keep = (pluginDir: string, skill: string): string => {
+    const from = `"${machineDir}/${pluginDir}${pluginSkillDir(skill)}"`
+    const to = `"${skillsDir}/${skill}"`
+    const next = `"${skillsDir}/${skill}.new-$$"`
+    return `{ diff -r ${from} ${to} >/dev/null 2>&1 || { rm -rf ${next} && cp -R ${from} ${next} && rm -rf ${to} && mv ${next} ${to}; }; }`
+  }
+  return [
+    `mkdir -p "${skillsDir}"`,
+    keep(DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
+    koloftOn ? keep(AGENT_PLUGIN_DIR, KOLOFT_SKILL) : `rm -rf "${skillsDir}/${KOLOFT_SKILL}"`
+  ].join('; ')
 }
 
 export function buildMachinePackage(
@@ -131,10 +145,13 @@ export interface ClaudeTab {
   claudeArgs: string[]
 }
 
-// PLATFORM§35
-const TITLE_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${TMUX_PASSES_THE_PANE_TITLE_ON.map(
-  (option) => `set -gq ${option}`
-).join(' \\; ')} 2>/dev/null; `
+// PLATFORM§35 MUSE§17
+const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
+  ...TMUX_PASSES_THE_PANE_TITLE_ON,
+  'allow-passthrough on'
+]
+  .map((option) => `set -gq ${option}`)
+  .join(' \\; ')} 2>/dev/null; `
 
 export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
   ...tab,
@@ -157,7 +174,7 @@ export const machineToolProgram = (
   run,
   beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
   ensureTool: name,
-  beforeTmux: 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n',
+  beforeTmux: '',
   files
 })
 
@@ -168,10 +185,13 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
+// CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  exec claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}\n`
+  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  ${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
+  exec "$@"\n`
 }
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
@@ -227,12 +247,12 @@ exited() {
   [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { ${TITLE_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
+[ "$1" = attach ] && { ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen"
-${program.beforeTmux}${TITLE_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+${program.beforeTmux}${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
 }

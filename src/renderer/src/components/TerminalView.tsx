@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
 import { activateTerminalLink } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
+import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
@@ -29,7 +30,8 @@ export function TerminalView({
   focusSignal,
   onRepainted,
   onOutput,
-  maxCols
+  maxCols,
+  copiesToClipboard = false
 }: {
   id: string
   active: boolean
@@ -40,6 +42,7 @@ export function TerminalView({
   onRepainted?: () => void
   onOutput?: () => void
   maxCols?: number
+  copiesToClipboard?: boolean
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
@@ -148,6 +151,7 @@ export function TerminalView({
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
     // CC§12
     suppressXtversionReply(term)
+    if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)
     term.open(ref.current!)
     termRef.current = term
     fitRef.current = fit
@@ -392,7 +396,7 @@ export function TerminalView({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint])
+  }, [id, safeFit, forceRepaint, copiesToClipboard])
 
   useEffect(() => {
     const term = termRef.current

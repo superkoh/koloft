@@ -1068,6 +1068,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **XTVERSION**: the query is `CSI > 0 q` (or `CSI > q`) and a reply is
   `DCS > | <name> ST` (xterm docs); xterm ≥ 6.1 answers `xterm.js(<version>)`. xterm
   always answers DA1 (`CSI 0 c`).
+- **xterm does nothing with OSC 52 (set the clipboard)** unless a handler is registered:
+  its built-in OSC handlers are 0, 1, 2, 4, 8, 10, 11, 12, 104 and 110–112 (read from
+  `@xterm/xterm` 6.1.0-beta.302 `lib/xterm.mjs`, 2026-11-05); the clipboard addon is a
+  separate package.
 - **OSC 8 links**: xterm's own OSC 8 provider wins over the web-links addon, and with no
   `linkHandler` it falls back to a native `confirm()` plus `window.open`.
 - **Under the WebGL renderer the terminal has no text nodes**; `innerText` is empty, so
@@ -1230,7 +1234,7 @@ inferred, not checked.
   **A zustand store update has no such gap.** zustand reads the store through
   `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
   render's `useEffect`s inside the commit, so only a component's own `useState` set
-  from a promise or an IPC callback has the gap. Measured 2026-11-04, react-dom 19.3.1,
+  from a promise, an IPC callback or a timer (a hover delay) has the gap. Measured 2026-11-04, react-dom 19.3.1,
   zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
   28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
   listener added by `useEffect` received an Escape dispatched from the
@@ -1238,7 +1242,13 @@ inferred, not checked.
   showed it, and 0 of 3 when a `useState` set from a resolved promise did
   (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
   lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
-  `useEffect`.
+  `useEffect`. Checked 2026-11-05 the same jsdom way (`ipcShownDialogKeys.test.tsx`):
+  a `useState` set from a `setTimeout` callback lags like one set from a promise. The
+  tip card, shown from a timer, got an Esc in its `useEffect` listener with React's
+  tasks delayed (one run of a throwaway unit case, not kept; not repeated), as its
+  `useLayoutEffect` sets state in the same commit. Why that closes the gap — React runs
+  any waiting `useEffect`s before it starts the next render — is inferred from that one
+  run, not checked.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
@@ -1868,6 +1878,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   Backspace, `z`, Enter reached it as one line `xz\n`, edited by the pane's terminal
   (2026-11-01, tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run in a python
   pty with `TERM=xterm-256color`, each pane a python script logging the bytes it read).
+- **What reaches the outer terminal when a pane program sets the clipboard (OSC 52).**
+  Under Koloft's `tmux.conf` (`allow-passthrough on`, `set-clipboard` left at its default)
+  and an outer `TERM=xterm-256color`: a bare `ESC]52;c;<base64>BEL` from the pane is
+  dropped; the same wrapped for passthrough (`ESC Ptmux; ESC ESC]52;c;… BEL ESC \`) comes
+  out unchanged; `tmux load-buffer -w -` comes out as `ESC]52;;<base64>BEL` — an empty
+  first field, not `c`. With `set -g set-clipboard on` added, the bare one comes out too,
+  as `ESC]52;;<base64>BEL`, and the other two come out once each as before (2026-11-05,
+  tmux 3.3a in the `koloft-e2e-sshd` Docker image, the client run under `script` with
+  each kind printed in turn, the outer bytes decoded).
 - **An agent's own code passed through ssh can be 255, the code ssh uses for a broken
   link**, so the tab script passes 255 on as 254 (`AGENT_EXIT_255_PASSED_AS`).
 - **A tmux client whose login names no UTF-8 locale draws `_` for every character
@@ -2131,6 +2150,18 @@ Gateway (the live connection that pushes events):
     Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
     up either. A table written as a bold line per row with a `>` quote line per cell
     read well.
+- **A button press answered later** — measured 2026-11-06 with the test bot on the test
+  server (a Node script: REST plus its own Gateway connection, intents `GUILDS`), the owner
+  pressing a plain button on the Discord app:
+  - The press arrived as `INTERACTION_CREATE` type 3 carrying `application_id`. Callback
+    `{type: 6}` (deferred update) answered 204, 0.4 s after the press; Discord showed no
+    "interaction failed".
+  - 5 s later a follow-up `POST /webhooks/{application_id}/{token}` with `flags: 64`
+    answered 200 with `flags: 64`, and the owner saw it as a message only they could see.
+  - The bot's own `PATCH /channels/{channel}/messages/{message}` with new text and
+    `components: []` answered 200; a `GET` of the message then had the new text, an
+    `edited_timestamp` and no components. The owner saw the buttons go; that the new
+    text showed on the phone at once was not seen.
 - **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
   on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
   name change within a few seconds answered `429` with `retry_after` 599.6 s, though
@@ -2984,3 +3015,27 @@ Antigravity sign-in into the user's login shell with an account's environment, a
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
 `diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+
+## §65 The `electron` npm package loaded by plain Node
+
+- **Loading it downloads the Electron binary when the binary is not there.** Under plain
+  Node, `require('electron')` runs `node_modules/electron/index.js`, which exports the
+  binary's path. When `path.txt` or the binary under `dist/` is missing, it first runs
+  `install.js` (a download from GitHub's releases) with `spawnSync`, and throws `Electron
+  failed to install correctly` if that fails. `npm ci` does not fetch the binary, so a
+  fresh CI runner downloads it again in every vitest worker that loads the package; a
+  GitHub 504 there failed whole unit test files (issue #1496).
+- **`ELECTRON_OVERRIDE_DIST_PATH` skips it.** With the variable set, `index.js` returns
+  that folder joined with `path.txt`'s text (or `electron`) without looking for the
+  binary or downloading it.
+- **A `resolve.alias` cannot do the same.** Vitest leaves `node_modules` packages to
+  plain Node, so a package such as `electron-chrome-extensions` reaches the real
+  `electron` through its own `require`, past any alias.
+- Measured 2026-11-05, electron 43.8.6, vitest 5.0.5, macOS: with `path.txt` moved
+  aside and `ELECTRON_MIRROR` pointing at a closed port, the whole unit suite failed 21
+  files on `Downloading Electron binary...`; with the variable set in `test.env`, all of
+  it passed and nothing downloaded. The third point is read from `index.js` and vitest's
+  defaults, not checked.
+
+Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
+`electronPackage.test.ts` fails if that setting goes.

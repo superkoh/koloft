@@ -40,11 +40,13 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
+import type { SendResult, StartResult, StartSpec } from './inbox'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
   FROM_KOLOFT,
   crossSessionLine,
+  fitsACrossSessionMessage,
   type ModeClass
 } from './crossSessionMessage'
 import {
@@ -1008,18 +1010,36 @@ interface OwedReply {
   asked?: string
 }
 
+const INBOX_SENDER = 'inbox'
+
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
+  sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
+  startFromInbox(
+    aboutRef: string | undefined,
+    spec: StartSpec,
+    permission: 'bypass' | 'default',
+    onReply: (reply: string) => void
+  ): Promise<StartResult>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
   let queued = 0
   let lined = 0
+  const peerLineFrom = (
+    modeFor: (tab: string) => ModeClass,
+    text: string,
+    sender: string
+  ): ((tab: string) => string) => {
+    const id = `koloft-${sender}-${++lined}`
+    return (tab) => crossSessionLine(modeFor(tab), text, id)
+  }
   const replyOwed = new Map<string, OwedReply>()
+  const inboxOwed = new Map<string, (reply: string) => void>()
   const messagedBy = new Map<string, Set<string>>()
 
   // ADR-0031
@@ -1080,13 +1100,14 @@ export function sessionVerb(d: SessionVerbDeps): {
   const sendNow = async (
     t: Target,
     text: string,
-    line: string | undefined,
+    lineFor: ((tab: string) => string) | undefined,
     until: number,
     from: string,
     assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
+    const line = lineFor?.(tab)
     const owed = assist
       ? {
           owner: assist,
@@ -1135,15 +1156,13 @@ export function sessionVerb(d: SessionVerbDeps): {
   ): Promise<AgentReply> => {
     const route = messagingOf(t.backend, !!t.remote)
     const typed = route === 'typed'
-    const line =
-      route !== 'peerLine'
-        ? undefined
-        : crossSessionLine(d.modeOf(caller.tabId), text, `koloft-session-${++lined}`)
-    if (line === null)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
       return refused(
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
         EXIT_USAGE
       )
+    const callerMode = route === 'peerLine' ? d.modeOf(caller.tabId) : undefined
+    const lineFor = callerMode && peerLineFrom(() => callerMode, text, 'session')
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     const assist = fromAssist ? caller.session.sessionId : undefined
     if (t.tabId && !busy) {
@@ -1152,7 +1171,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const sent = await sendNow(
         t,
         text,
-        line,
+        lineFor,
         Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
         caller.session.sessionId,
         assist
@@ -1162,7 +1181,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     void sendNow(
       t,
       text,
-      line,
+      lineFor,
       Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
       caller.session.sessionId,
       assist
@@ -1182,6 +1201,12 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const turnEnded = (tabId: string, turn: Turn): boolean => {
     messagedBy.delete(tabId)
+    const toInbox = inboxOwed.get(tabId)
+    if (toInbox && turn.reply.trim()) {
+      inboxOwed.delete(tabId)
+      toInbox(turn.reply.trim())
+      return true
+    }
     const owed = replyOwed.get(tabId)
     if (!owed) return false
     const { owner, asked } = owed
@@ -1461,12 +1486,115 @@ export function sessionVerb(d: SessionVerbDeps): {
   const tabMoved = (oldTabId: string, newTabId: string): void => {
     names.moved(oldTabId, newTabId)
     const owed = replyOwed.get(oldTabId)
-    if (owed === undefined) return
-    replyOwed.delete(oldTabId)
-    replyOwed.set(newTabId, owed)
+    if (owed !== undefined) {
+      replyOwed.delete(oldTabId)
+      replyOwed.set(newTabId, owed)
+    }
+    const inbox = inboxOwed.get(oldTabId)
+    if (inbox) {
+      inboxOwed.delete(oldTabId)
+      inboxOwed.set(newTabId, inbox)
+    }
   }
 
-  return { verb, turnEnded, waitsOnAnother, startButlerHelper, tabMoved }
+  const targetOf = (ref: string): Target | undefined => {
+    const open = d.allSessions().find((s) => s.tabId === ref || s.sessionId === ref)
+    if (open?.tabId && open.alive) return openTarget({ ...open, tabId: open.tabId })
+    return sessionTarget(d, open?.sessionId ?? ref)
+  }
+
+  const sendFromInbox = async (
+    ref: string,
+    text: string,
+    toItsOwnSession: boolean
+  ): Promise<SendResult> => {
+    const t = targetOf(ref)
+    if (!t) return { ok: false, why: `There is no session ${ref} any more` }
+    const route = messagingOf(t.backend, !!t.remote)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
+      return { ok: false, why: 'The message holds text the session cannot take' }
+    // ADR-0028
+    const modeFor = (tab: string): ModeClass => (toItsOwnSession ? d.modeOf(tab) : 'prompting')
+    const lineFor = route === 'peerLine' ? peerLineFrom(modeFor, text, 'inbox') : undefined
+    const woke = !t.tabId
+    const busy = route === 'typed' && !!t.tabId && !(await d.ready(t.tabId, 0, true))
+    const until =
+      Date.now() +
+      (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
+    try {
+      await sendNow(t, text, lineFor, until, INBOX_SENDER)
+      return {
+        ok: true,
+        session: t.key,
+        text: woke
+          ? 'Sent — the session was asleep, so Koloft woke it first'
+          : busy
+            ? 'Sent — it reached the session once its turn ended'
+            : 'Sent to the session'
+      }
+    } catch (error) {
+      return { ok: false, why: errorText(error) }
+    }
+  }
+
+  const startFromInbox = async (
+    aboutRef: string | undefined,
+    spec: StartSpec,
+    permission: 'bypass' | 'default',
+    onReply: (reply: string) => void
+  ): Promise<StartResult> => {
+    const about = aboutRef
+      ? d.allSessions().find((s) => s.tabId === aboutRef || s.sessionId === aboutRef)
+      : undefined
+    const workspace =
+      spec.workspace ??
+      (about &&
+        placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === about.sessionId)
+          ?.workspace)
+    if (!workspace)
+      return { ok: false, why: 'Koloft could not tell which workspace to start it in' }
+    const backend = backendIdOf(spec.backend) ?? about?.backendId ?? 'claude'
+    const held =
+      spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
+    let tabId: string | null = null
+    try {
+      const gitWorkspace = d
+        .sidebar()
+        .some((w) => w.workspace.path === workspace && w.workspace.isGit)
+      const worktree =
+        gitWorkspace && spec.worktree
+          ? freshWorktreeName(await d.worktrees(workspace), Date.now(), spec.worktree)
+          : undefined
+      tabId = await d
+        .launch({
+          kind: backend,
+          cwd: workspace,
+          name: held?.name,
+          worktree,
+          model: spec.model,
+          permission,
+          // ADR-0026
+          trustFolder: !worktree && d.pinnedWorkspaces().some((w) => w.path === workspace),
+          firstPrompt: spec.task
+        })
+        .catch(() => null)
+    } finally {
+      if (held) names.launched(held, tabId)
+    }
+    if (!tabId) return { ok: false, why: 'Koloft could not start the session' }
+    inboxOwed.set(tabId, onReply)
+    return { ok: true, session: tabId, name: held?.name }
+  }
+
+  return {
+    verb,
+    turnEnded,
+    waitsOnAnother,
+    startButlerHelper,
+    tabMoved,
+    sendFromInbox,
+    startFromInbox
+  }
 }
 
 export interface WorkspaceVerbDeps {

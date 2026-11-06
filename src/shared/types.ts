@@ -1,5 +1,6 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
+import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
 
 export interface ProjectInfo {
   root: string
@@ -1115,6 +1116,7 @@ export interface KoloftApi {
     create(opts: CreateTabOptions): Promise<CreateTabResult>
     write(id: string, data: string): void
     paste(id: string, text: string, typedAfter?: string): Promise<void>
+    copy(text: string): void
     ack(id: string, utf16Units: number): void
     attach(id: string): void
     flowStats(): Promise<FlowStats[]>
@@ -1164,6 +1166,18 @@ export interface KoloftApi {
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
+  }
+  inbox: {
+    list(): Promise<InboxSnapshot>
+    onChanged(cb: (snapshot: InboxSnapshot) => void): () => void
+    press(cardId: string, actionId: string, answers: InboxAnswers): void
+    confirm(cardId: string): void
+    undo(cardId: string): void
+    retry(cardId: string): void
+    dismiss(cardId: string): void
+    level(cardId: string, level: InboxLevel | null): void
+    top(cardId: string): void
+    clearNotes(): void
   }
   secret: {
     list(): Promise<SecretAskView[]>

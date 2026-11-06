@@ -110,6 +110,7 @@ import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './se
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { sudoAskOf, SudoDialog } from './components/SecretAsk'
+import { InboxPage } from './components/Inbox'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -127,7 +128,7 @@ import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePi
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
-import { hostOf } from '@shared/remoteKey'
+import { hostOf, isRemoteKey } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
 import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
@@ -296,6 +297,7 @@ export default function App(): JSX.Element {
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
   const secretAsks = useStore((s) => s.secretAsks)
+  const inboxOpen = useStore((s) => s.inboxOpen)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
   const setWorkbenchFull = useStore((s) => s.setWorkbenchFull)
@@ -992,8 +994,15 @@ export default function App(): JSX.Element {
   }, [activeTabId])
 
   useEffect(() => {
-    window.api.attention.activeTab(activeTabId)
-  }, [activeTabId])
+    window.api.attention.activeTab(inboxOpen ? null : activeTabId)
+  }, [activeTabId, inboxOpen])
+
+  useEffect(() => {
+    const set = useStore.getState().setInbox
+    const off = window.api.inbox.onChanged(set)
+    void window.api.inbox.list().then(set)
+    return off
+  }, [])
 
   useEffect(() => {
     return window.api.attention.onActivateTab(visitAndReveal)
@@ -1697,6 +1706,7 @@ export default function App(): JSX.Element {
       {/* PLATFORM§10 */}
       {(sbDragging || nbDragging || vDragging) && <div className="drag-overlay" />}
       <div className="center" ref={centerRef}>
+        {inboxOpen && <InboxPage />}
         <div className="center-row">
           {sidebarHidden && panelFull && <div className="wb-full-drag" />}
           <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
@@ -1736,6 +1746,7 @@ export default function App(): JSX.Element {
                           scrollbar={false}
                           focusSignal={tuiFocus}
                           maxCols={CENTER_TERMINAL_MAX_COLS}
+                          copiesToClipboard={isRemoteKey(t.cwd)}
                         />
                       </div>
                     ),
@@ -1753,6 +1764,7 @@ export default function App(): JSX.Element {
                         active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                         scrollbar={false}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
+                        copiesToClipboard={isRemoteKey(t.cwd)}
                         onUserInput={
                           isSessionKind(t.kind)
                             ? () => window.api.sessions.noteActivity(t.id)

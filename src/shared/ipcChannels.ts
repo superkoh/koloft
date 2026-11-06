@@ -4,6 +4,7 @@ export const CH = {
     create: 'terminal:create',
     write: 'terminal:write',
     paste: 'terminal:paste',
+    copy: 'terminal:copy',
     ack: 'terminal:ack',
     attach: 'terminal:attach',
     flowStats: 'terminal:flowStats',
@@ -98,6 +99,18 @@ export const CH = {
     pair: 'discord:pair',
     channels: 'discord:channels',
     setUpWithButler: 'discord:setUpWithButler'
+  },
+  inbox: {
+    changed: 'inbox:changed',
+    list: 'inbox:list',
+    press: 'inbox:press',
+    confirm: 'inbox:confirm',
+    undo: 'inbox:undo',
+    retry: 'inbox:retry',
+    dismiss: 'inbox:dismiss',
+    level: 'inbox:level',
+    top: 'inbox:top',
+    clearNotes: 'inbox:clear-notes'
   },
   secret: {
     asks: 'secret:asks',

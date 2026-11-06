@@ -60,6 +60,7 @@ interface CreateArgs {
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
     KOLOFT_AGENT_PROMPT?: string
+    KOLOFT_DOCS_PLUGIN?: string
     KOLOFT_PORT_OFFSET?: string
   }
 }
@@ -208,6 +209,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
         key === 'KOLOFT_AGENT_PROMPT' ||
+        key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
@@ -234,6 +236,7 @@ export class PtyManager extends EventEmitter {
         'KOLOFT_SESSION_NAME',
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
+        'KOLOFT_DOCS_PLUGIN',
         'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
@@ -376,12 +379,12 @@ export class PtyManager extends EventEmitter {
     return turn
   }
 
-  type(id: string, keys: string[]): Promise<void> {
-    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  type(id: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys, stillWanted))
   }
 
-  paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+  async paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    await this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

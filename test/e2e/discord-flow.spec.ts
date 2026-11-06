@@ -61,6 +61,7 @@ import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
 
 test.setTimeout(120_000)
 
@@ -679,7 +680,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
+  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press is acknowledged at once, answers it, and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -694,11 +695,15 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       fake.say(OWNER, '/ask Which colour?|Red|Green')
       await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
       expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
-      fake.press(OWNER, card()!.buttons![1], CHANNEL)
+      const colourCard = card()!
+      fake.press(OWNER, colourCard.buttons![1], CHANNEL)
       await expect.poll(() => said(fake).join('\n')).toContain('Picked: Green')
-      expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
-        [7, `${question}\n-# ✅ 2. Green`]
-      ])
+      expect(fake.callbacks.map((c) => c.type)).toEqual([6])
+      await expect
+        .poll(() =>
+          fake.edits.filter((e) => e.id === colourCard.id).map((e) => [e.content, e.buttons ?? []])
+        )
+        .toEqual([[`${question}\n-# ✅ 2. Green`, []]])
 
       fake.say(OWNER, '/ask Which size?|Small|Large')
       await expect.poll(() => said(fake).join('\n')).toContain('Which size?')
@@ -893,7 +898,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       fake.say(OWNER, `/koloft session resume ${title} -- carry on`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain(sent('carry on', 3))
+        .toContain(sent('carry on', 2))
       expect(
         readAllCalls(env).filter((c) => c.argv[c.argv.indexOf('--resume') + 1] === managed)
       ).toHaveLength(1)
@@ -1160,7 +1165,45 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer and once with koloft session keys; each presses its key', async ({
+  // CC§12
+  test('a koloft session answer whose key the Claude session drops tells the butler the session still waits, past the koloft command’s usual wait; sent again, it is taken and the command runs', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const butlerTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managedTab = await tabOf(page, managed)
+      fs.writeFileSync(path.join(env.home, 'fake-claude-drop-key'), '')
+      await page.evaluate((id) => window.api.terminal.write(id, '/bash make test\r'), managedTab)
+      await expect.poll(() => terminalText(page, managedTab)).toContain(DIALOG_ON_SCREEN)
+
+      fake.say(OWNER, `/koloft session answer ${managed} yes`)
+      const unwrapped = (s: string): string => s.replace(/\s/g, '')
+      await expect
+        .poll(async () => unwrapped(await terminalText(page, butlerTab)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
+        })
+        .toContain(unwrapped(ANSWER_NOT_TAKEN))
+      expect(await terminalText(page, butlerTab)).toContain('koloft exit=1')
+      expect(await terminalText(page, managedTab)).not.toContain('Ran: make test')
+
+      fake.say(OWNER, `/koloft session answer ${managed} yes`)
+      await expect
+        .poll(() => terminalText(page, managedTab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Ran: make test')
+      await expect.poll(() => terminalText(page, butlerTab)).toContain('koloft exit=0')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer and once with koloft session keys; each presses its key; once the owner pressed a key in a question, koloft session answer leaves it to the owner and presses nothing', async ({
     env
   }) => {
     installCodex(env)
@@ -1219,6 +1262,21 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           { answers: { colour: { answers: ['Green'] } } },
           { answers: { colour: { answers: ['Red'] } } }
         ])
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
+      await page.evaluate((id) => window.api.terminal.write(id, '\x1b[B'), codexTab)
+      fake.say(OWNER, `/koloft session answer ${codexId} Green`)
+      const conductorTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+      await expect
+        .poll(async () => (await terminalText(page, conductorTab)).replace(/\s/g, ''), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toContain('alreadystartedonthisquestionintheterminal')
+      expect(answers()).toHaveLength(2)
     } finally {
       await quitAndClose(app)
       await fake.close()

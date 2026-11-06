@@ -253,6 +253,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
             s: ++seq,
             d: {
               id,
+              application_id: FAKE_APPLICATION_ID,
               token: `token-${id}`,
               type: BUTTON_PRESS,
               channel_id: channelId,
@@ -274,6 +275,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
             s: ++seq,
             d: {
               id,
+              application_id: FAKE_APPLICATION_ID,
               token: `token-${id}`,
               type: FORM_SUBMIT,
               channel_id: channelId,
@@ -300,6 +302,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
             s: ++seq,
             d: {
               id,
+              application_id: FAKE_APPLICATION_ID,
               token: `token-${id}`,
               type: opts.type ?? SLASH_COMMAND,
               channel_id: opts.channelId ?? FAKE_CHANNELS[0].id,

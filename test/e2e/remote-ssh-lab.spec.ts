@@ -38,6 +38,7 @@ import {
   waitPanelAttached
 } from './helpers/workbench'
 import { rowsWithSub } from './helpers/blackbox'
+import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fakeDiscord'
 import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
@@ -68,6 +69,7 @@ import {
   terminalText,
   termIds,
   waitBooted,
+  waitConductorStarted,
   worktreeDialog,
   wsGroup,
   wsMenuTexts,
@@ -126,6 +128,11 @@ const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf
 const OWNER_LAST_WORDS = 'make the sidebar a little darker'
 const NOT_ASCII = '中文 ⏺ …'
 const NOT_ASCII_FILE = '中文.txt'
+const DISCORD_OWNER = { id: '555', username: 'letian' }
+const DISCORD_CHANNEL = '222'
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PNG_HEIGHT_AT = 20
+const TALL_PAGE_PX = 2000
 
 function mirroredSaidFiles(env: E2EEnv): string[] {
   const root = path.join(env.userData, 'remote')
@@ -759,6 +766,37 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  // PLATFORM§35
+  test('E-SSH-46: text a program in a session on the machine copies reaches this Mac’s clipboard through real tmux, whether it sends OSC 52 bare, wrapped for tmux, or through tmux load-buffer -w', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page, lab }) => {
+      await app.evaluate(({ clipboard }) => {
+        const g = globalThis as unknown as { __koloftCopied?: string[] }
+        g.__koloftCopied = []
+        clipboard.writeText = ((text: string): void => {
+          g.__koloftCopied?.push(text)
+        }) as typeof clipboard.writeText
+      })
+      const copied = (): Promise<string[] | undefined> =>
+        app.evaluate(() => (globalThis as unknown as { __koloftCopied?: string[] }).__koloftCopied)
+      const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`/sh printf '\\033]52;c;%s\\007' ${b64('bare 复制')}\r`)
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制'])
+      await session.write(
+        `/sh printf '\\033Ptmux;\\033\\033]52;c;%s\\007\\033\\\\' ${b64('wrapped 复制')}\r`
+      )
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制', 'wrapped 复制'])
+      await session.write(`/sh printf 'buffer 复制' | tmux load-buffer -w -\r`)
+      await expect
+        .poll(copied, { timeout: 30_000 })
+        .toEqual(['bare 复制', 'wrapped 复制', 'buffer 复制'])
+    })
+  })
+
   // PLATFORM§37
   test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets the machine’s C.UTF-8 as LC_CTYPE, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
     env
@@ -989,6 +1027,84 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           .toBe('refused')
       })
     } finally {
+      macServer.close()
+    }
+  })
+
+  // ADR-0046
+  test('E-SSH-46: while the owner is away, a localhost page that a session on a machine behind the jump host opens reaches that session’s Discord room as a picture of the machine’s page, not of the Mac server on the same port, through a forward on its ssh connection that goes once the picture is taken and its web tab is closed', async ({
+    env
+  }) => {
+    seedSettings(env, {
+      hintsOff: true,
+      assist: { on: true, backend: 'claude' },
+      discord: {
+        userId: DISCORD_OWNER.id,
+        userName: DISCORD_OWNER.username,
+        channel: { guildId: '111', channelId: DISCORD_CHANNEL, name: 'koloft-all' }
+      }
+    })
+    const port = await portFreeOnTheMac()
+    const macServer = await serveOnTheMac(port, 'from the Mac')
+    const fake = await startFakeDiscord(env)
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(
+          lab,
+          port,
+          `<title>tall</title><body style="margin:0"><div style="height:${TALL_PAGE_PX}px">on the machine</div></body>`
+        )
+        await waitConductorStarted(env, BACKGROUND_CONNECT_MS)
+        await addMachine(page, 'kt-key', 'kuser')
+        fake.say(
+          DISCORD_OWNER,
+          `/koloft session new --workspace ${remoteKeyFor('kt-key', 'kuser')} -- warm up`
+        )
+        const room = (): FakeThread | undefined =>
+          fake.threads.find((t) => t.parent_id === DISCORD_CHANNEL)
+        await expect.poll(room, { timeout: BACKGROUND_CONNECT_MS }).toBeTruthy()
+        const roomId = room()!.id
+        await expect
+          .poll(
+            () =>
+              fake.posted.some((p) => p.channelId === roomId && p.content.includes('where it is')),
+            { timeout: BACKGROUND_CONNECT_MS }
+          )
+          .toBe(true)
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const tabId = (await remoteRow.getAttribute('data-tab-id'))!
+
+        fake.say(DISCORD_OWNER, `/koloft open http://localhost:${port}/`, { channelId: roomId })
+        const picture = (): FakePost | undefined =>
+          fake.posted.find((p) => p.channelId === roomId && p.files.length)
+        await expect
+          .poll(picture, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+          .toBeTruthy()
+        const png = picture()!.files[0].data
+        expect(png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)).toBe(true)
+        expect(png.readUInt32BE(PNG_HEIGHT_AT)).toBeGreaterThanOrEqual(TALL_PAGE_PX)
+        await expect
+          .poll(async () => (await terminalText(page, tabId)).replace(/\s/g, ''), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain('Sentapictureofthepage')
+
+        await switchToRow(page, remoteRow)
+        const shown = await guestByUrl(app, new RegExp(`localhost:(?!${port}/)\\d+/$`), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(shown.locator('body')).toHaveText('on the machine')
+        const macPort = Number(new URL(shown.url()).port)
+        const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
+        while ((await webTabs.count()) > 0)
+          await webTabs.first().locator(BROWSER.tabCloseIn).click()
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
+          .toBe('refused')
+        expect(await fetchOnTheMacOnAFreshConnection(port)).toBe('from the Mac')
+      })
+    } finally {
+      await fake.close()
       macServer.close()
     }
   })

@@ -361,7 +361,9 @@ only downloaded the public release.
   `WSL_DISTRO_NAME`, `WSL_INTEROP`; sign-in reads the three SSH variables and, with any
   one set, does not open the browser (it shows the URL and the paste field only); copy
   reads `SSH_CONNECTION` only and with it skips `pbcopy` and sends only OSC 52, so the
-  Mac clipboard is not changed; agy's terminal detection (`ssh=` in its log) reads the
+  Mac clipboard is not changed unless the terminal acts on OSC 52 (the binary also
+  holds the tmux passthrough wrapper `Ptmux;` next to `]52;c;`, `strings`, 2026-11-05);
+  agy's terminal detection (`ssh=` in its log) reads the
   three SSH variables; usage reports to Google read all five (they then say "SSH" or
   "WSL"). With `WSL_DISTRO_NAME` or `WSL_INTEROP`, sign-in, copy, copy-on-select,
   image paste and the escape codes agy sends were the same as with no variable. The
@@ -872,6 +874,50 @@ only downloaded the public release.
   question), `done`. In 1.4.12 `ask_question`'s schema is only `questions[{question,
   options (2 or more strings), is_multi_select?}]` with `additionalProperties: false`: no
   `toolSummary` or `toolAction`.
+
+- **An answer taken shows as the 7501 frame leaving `blocked`.** agy 1.5.1 (build
+  `1.5.1-4523430503120896`, Linux arm64 from the manifest, sha512 checked) in Docker
+  `--network none` (`agy-a-img`, tmux 3.3a, 160×50), a fresh `--gemini_dir` per run with
+  `modelProvider: "gemini"`, the folder trusted and onboarding seeded, a fake Gemini
+  server answering a `run_command` or `ask_question` call, `AGY_CLI_OSC7501=on`, frames
+  read through `tmux pipe-pane` with a time stamp, keys by `tmux send-keys`, 2026-11-05.
+  The `blocked` frame and the ask's text always came in the same read. `1` on a command
+  ask or a digit on a question, sent 0, 100, 300 or 2500 ms after `blocked` (22 runs):
+  the model got the tool result 4–22 ms after the key, and the next frame came 14–25 ms
+  after it — `working`, or `done` with no `working` when the model answered within about
+  20 ms; `working` came at the key even for a command that ran 4 s. `4` gave `idle` 20–25
+  ms after the key, with no `done` (4 runs). Through the Connect API (§16),
+  `HandleCascadeUserInteraction` returned `200 {}` in about 1 ms and `working` followed
+  2–4 ms later (6 runs). A key sent 50–64 ms before `blocked`, before the ask was drawn,
+  was not taken (6 runs): no frame for 60 s, and the digit was left unsent in the input
+  box under the ask. On 1.5.1 the opening `blocked:kind=auth` frame of §10 did not come;
+  the first frame was `idle`. Not probed: the file-deny key `2`; macOS.
+
+- **A question the person already pressed keys in.** agy 1.5.1 (the binary of the bullet
+  above, sha256 `d2b02615…9565`, copied into `agy-a-img`), the same setup, a fresh
+  `--gemini_dir` per run, one question (Apple / Banana) or two (fruit, size), keys by
+  `tmux send-keys` 300 ms apart, a paste by `load-buffer` + `paste-buffer -p`,
+  2026-11-05; one run per line, two where marked.
+  - A digit picks by its number wherever the highlight is: after Down ×1, ×2 (on
+    "Write-in..."), ×3 (it stops there), Up ×1 (it stops on row 1), Home or PageUp
+    (neither moves it), or a paste (the text is dropped), `2` sent `A1: Banana`, and
+    `3`, `Purple`, Enter sent `A1: Purple`.
+  - With "Your answer:" open (Enter on Write-in, ×2; with `hello` typed, ×2), `2` was
+    typed into it and nothing was sent, the frame staying `blocked`; `3`, `Purple`,
+    Enter sent `A1: 3Purple` / `A1: hello3Purple`.
+  - With two questions, question 1 answered in the terminal: `2`, `2` sent `A1: Apple\nA2:
+    Medium`, the second `2` left in the input box; with → pressed to question 2 (×2):
+    `A1: User Skipped\nA2: Medium`.
+  - Keys that undo this: Esc in "Your answer:" goes back to the list (empty or not; the
+    text is gone when it is opened again), while Esc on the list skips the question
+    (`A1: User Skipped`); Ctrl+U empties the box and does nothing on the list; ← on an
+    option row goes back one question, keeping its pick, and does nothing on question 1
+    or inside the box. Ctrl+U, `N+1`, Ctrl+U, Esc, then ← once per later question
+    brought back question 1's list from every state tried (15 runs, each answered as
+    asked) — but only when every question has the same number of options, since a digit
+    above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
+    and Muse instead: once the person pressed a key in a question since it was asked, it
+    leaves it to them and presses nothing.
 
 ## §15 Typing into it
 
