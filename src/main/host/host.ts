@@ -71,6 +71,7 @@ export type ClaudeLaunchPlan =
         KOLOFT_PORT_OFFSET?: string
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
+        KOLOFT_DOCS_PLUGIN?: string
       }
       machine?: MachineTab
     }

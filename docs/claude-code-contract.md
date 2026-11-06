@@ -2395,6 +2395,13 @@ sessions.
   as `plugins: [{name:"koloft", source:"koloft@inline"}]` and
   `skills: ["koloft:<n>"]`. The model called the skill through the Skill tool and read
   its body.
+- **Two `--plugin-dir` flags load both plugins.** 2026-11-05, CC 2.1.318, on this Mac:
+  `claude -p --output-format stream-json --verbose --max-turns 1 --plugin-dir A
+  --plugin-dir B` in a scratch folder, A holding plugin `koloft` with skill `koloft` and B
+  plugin `koloft-docs` with skill `koloft-docs` (each a `.claude-plugin/plugin.json` and a
+  `skills/<n>/SKILL.md`). The `system/init` record listed both plugins and the skills
+  `["koloft:koloft","koloft-docs:koloft-docs"]`. Koloft hands every Claude Code tab its
+  `koloft-docs` plugin this way, and its `koloft` plugin beside it when agent tools are on.
 - **An interactive session's transcript lists the skills it was handed** (2026-10-10,
   CC 2.1.296 for Linux arm64, an interactive claude on a Docker ssh machine, read off its
   jsonl): an `attachment` record `{type:"skill_listing", content}` whose `content` holds one

@@ -47,6 +47,7 @@ const POLLUTANTS = {
   KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
   KOLOFT_AGENT_DIR: '/parent-koloft/agent',
   KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
+  KOLOFT_DOCS_PLUGIN: '/parent-koloft/docs-plugin',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -106,7 +107,7 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it("hands the koloft request folder to every tab that runs Koloft's shim and to none that brings its own tools, and the skill plugin only to a launch that brings it", () => {
+  it("hands the koloft request folder to every tab that runs Koloft's shim and to none that brings its own tools, and each skill plugin only to a launch that brings it", () => {
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
       const mgr = new PtyManager()
@@ -122,9 +123,14 @@ describe('PtyManager per-tab environment', () => {
       kind: 'claude',
       koloftShim: SHIM,
       cwd: os.tmpdir(),
-      extraEnv: { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+      extraEnv: {
+        KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
+        KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin'
+      }
     })
     expect(plugged.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
+    expect(plugged.KOLOFT_DOCS_PLUGIN).toBe('/koloft/docs-plugin')
+    expect(plain.KOLOFT_DOCS_PLUGIN).toBeUndefined()
     expect(
       envFor({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR
     ).toBe('/koloft/agent')
