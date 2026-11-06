@@ -577,7 +577,106 @@ const OTHER_AGENTS = [
   }
 ] as const
 
+const RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS = 120_000
+
+for (const remote of [false, true]) {
+  test(`a question${remote ? ' of a remote Claude Code session' : ' and a finished turn of Claude Code'} still waiting on the owner ${remote ? 'stays' : 'stay'} in Needs you across a Koloft restart, and the question then sends the owner to its tab`, async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    if (remote) installFakeRemote(env)
+    let app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) {
+        await addRemoteWorkspace(page, env)
+      } else {
+        await startSessionIn(page, 'ws-a')
+        await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, {
+          timeout: 30_000
+        })
+        await runIn(page, centerTerm(page), '/answer Shall I merge it?')
+      }
+      const ws = remote ? REMOTE_WS_NAME : 'ws-b'
+      await startSessionIn(page, ws, { remote })
+      const asker = wsRows(page, ws).first()
+      await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+      await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await openInbox(page)
+      if (!remote)
+        await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({
+          timeout: 15_000
+        })
+      await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+
+    fs.writeFileSync(
+      path.join(remote ? machineHome(env) : env.home, 'fake-claude-delay'),
+      String(RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS)
+    )
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openInbox(page)
+      if (!remote)
+        await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({
+          timeout: 15_000
+        })
+      const question = inboxCard(page, 'asks a question')
+      await expect(question).toContainText('Which colour?')
+      await expect(question).toContainText('Open the session and answer it there')
+      await expect(question.locator('.ibx-choice')).toHaveCount(0)
+      await expect(question.locator('.ibx-btn')).toHaveText(['Dismiss'])
+      await expect(question.locator('.ibx-link')).toHaveText(['Open session ›'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
 for (const agent of OTHER_AGENTS) {
+  test(`a finished turn of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    agent.install(env)
+    let app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', agent.name)
+      if (agent.startsOnFirstLine) {
+        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
+      } else {
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === agent.backend
+        )?.tabId as string
+        await typeInto(page, tabId, 'Shall I merge PR #12?')
+      }
+      await openInbox(page)
+      await expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await openInbox(page)
+      await expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 15_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test(`a finished turn of a session in ${agent.name} the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
     env
   }) => {

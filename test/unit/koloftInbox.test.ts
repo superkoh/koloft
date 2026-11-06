@@ -4,6 +4,7 @@ import { Inbox, type InboxHost } from '../../src/main/inbox'
 import { pickToPress } from '../../src/shared/inbox'
 import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
+  ASK_GONE_WITH_A_RESTART,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -89,6 +90,23 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     const w = world()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    w.mark([])
+    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
+  })
+
+  it('a question still waiting when Koloft restarts stays in Needs you, showing what it asked and sending the owner to its tab, and closes once the session works again', async () => {
+    const w = world()
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    w.mark([{ ...asking, kind: 'turn-done' }])
+    expect(w.inbox.all()[0]).toMatchObject({
+      state: 'needs-you',
+      actions: [],
+      blocks: [
+        { type: 'quote', who: 'It asked', text: 'Which colour?\nWhich sizes?' },
+        { type: 'text', text: ASK_GONE_WITH_A_RESTART }
+      ]
+    })
     w.mark([])
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
   })

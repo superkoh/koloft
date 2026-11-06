@@ -74,6 +74,9 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }
 
+export const ASK_GONE_WITH_A_RESTART =
+  'Koloft restarted, so it can no longer answer this from here. Open the session and answer it there.'
+
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
 const SIGNAL_OF: Record<AttentionEvent['kind'], string> = {
@@ -84,6 +87,11 @@ const SIGNAL_OF: Record<AttentionEvent['kind'], string> = {
 
 function signalKey(m: AttentionEvent): string {
   return `${SIGNAL_OF[m.kind]}:${m.sessionId}:${m.at}`
+}
+
+function askAsATurnDone(key: string): string {
+  const asked = `${SIGNAL_OF.approval}:`
+  return key.startsWith(asked) ? `${SIGNAL_OF['turn-done']}:${key.slice(asked.length)}` : key
 }
 
 function isSignal(c: InboxCard): boolean {
@@ -354,6 +362,10 @@ export class KoloftInbox {
         c.press?.step === 'working'
       )
         continue
+      if (standing.has(askAsATurnDone(c.key))) {
+        if (c.actions.length) this.askOnlyInItsTab(c)
+        continue
+      }
       try {
         this.d.inbox.move(
           KOLOFT,
@@ -366,6 +378,20 @@ export class KoloftInbox {
     for (const m of marks)
       if (m.kind !== 'turn-done' && !this.d.inbox.find(KOLOFT, signalKey(m)))
         void this.post(m, true)
+  }
+
+  private askOnlyInItsTab(c: InboxCard): void {
+    const blocks: InboxBlock[] = c.blocks.map((b) =>
+      b.type === 'choice'
+        ? { type: 'quote', who: 'It asked', text: b.questions.map((q) => q.text).join('\n') }
+        : b
+    )
+    try {
+      this.d.inbox.update(KOLOFT, c.key, {
+        blocks: [...blocks, { type: 'text', text: ASK_GONE_WITH_A_RESTART }],
+        actions: []
+      })
+    } catch {}
   }
 
   turnEnded(tabId: string, reply: string, handedOff: boolean): void {

@@ -920,7 +920,7 @@ const attention = new AttentionTracker((pending, event) => {
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
   awayDigest?.marked()
-  koloftInbox.sync()
+  if (!quitCommitted) koloftInbox.sync()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
