@@ -3,6 +3,7 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
+  agyApiCalls,
   installAgy,
   installCodex,
   installMuse,
@@ -76,15 +77,10 @@ function peerMessages(env: E2EEnv): string {
 }
 
 function agyMessages(env: E2EEnv): string[] {
-  const file = path.join(env.home, 'fake-agy-api.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .trim()
-    .split('\n')
-    .map((l) => JSON.parse(l) as { method: string; body: { items?: { text?: string }[] } })
+  return agyApiCalls(env)
     .filter((c) => c.method === 'SendUserCascadeMessage')
-    .flatMap((c) => (c.body.items ?? []).map((i) => i.text ?? ''))
+    .flatMap((c) => ((c.body as { items?: { text?: string }[] }).items ?? []).map((i) => i.text))
+    .filter((t): t is string => !!t)
 }
 
 function codexAnswers(env: E2EEnv): unknown[] {

@@ -1377,11 +1377,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     } catch {}
     const waiting = names
       .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))
-      .filter((x) => x.meta.requestFeedback === true)
-      .map((x) => x.n.replace(/\.metadata\.json$/, ''))
-    const plan = waiting[0]
-    if (!plan) return
-    const askId = `plan:${id}:${plan}`
+      .find((x) => x.meta.requestFeedback === true)
+    if (!waiting) return
+    const plan = waiting.n.replace(/\.metadata\.json$/, '')
+    const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
     const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,

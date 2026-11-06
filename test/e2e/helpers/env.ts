@@ -322,6 +322,22 @@ export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
     .map((line) => JSON.parse(line) as AgyCall)
 }
 
+export interface AgyApiCall {
+  method: string
+  body: unknown
+  authorized: boolean
+}
+
+export function agyApiCalls(env: E2EEnv, home = env.home): AgyApiCall[] {
+  const file = path.join(home, 'fake-agy-api.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as AgyApiCall)
+}
+
 export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
   agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 

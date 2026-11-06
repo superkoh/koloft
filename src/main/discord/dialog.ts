@@ -73,8 +73,10 @@ function toolText(p: AskPayload): string {
     : `${p.tool_name ?? 'A tool'} asks to run:\n${JSON.stringify(p.tool_input ?? {})}`
 }
 
-function planText(plan: string | undefined): string {
-  return plan === undefined ? 'Approve this plan?' : `Approve this plan?\n\n${plan}`
+export const PLAN_IS_IN_ITS_SESSION = 'Open the session to read the plan.'
+
+function planText(plan: string): string {
+  return `Approve this plan?\n\n${plan}`
 }
 
 export function dialogText(p: AskPayload): string {
@@ -135,10 +137,9 @@ export function claudeDialog(p: AskPayload): DialogView {
 }
 
 export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
-  if (!('questions' in a))
-    return a.plan
-      ? { text: planText(a.reason), choices: APPROVE_OR_REJECT }
-      : { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
+  if (!('questions' in a) && a.plan)
+    return { text: planText(a.reason ?? PLAN_IS_IN_ITS_SESSION), choices: APPROVE_OR_REJECT }
+  if (!('questions' in a)) return { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
   const [only, ...more] = a.questions
   return {
     text: a.questions.map(questionText).join('\n\n'),
