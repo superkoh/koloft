@@ -123,14 +123,16 @@
         </p>
         <ul class="dash">
           <li>
-            <code>sudo</code> (the admin command) — wherever the agent can run <code>sudo</code> at
-            all, it opens a <code>Sudo password</code> box over that session's terminal, with the
-            command it runs. This is so even when the command got a terminal of its own, as Codex,
-            Muse and Antigravity commands can. Type the password and press <code>Pass on</code>
+            <code>sudo</code> (the admin command) — a <code>sudo</code> the agent runs opens a
+            <code>Sudo password</code> box over that session's terminal, with the command it runs
+            (not a <code>sudo -n</code>, which is told never to ask). This is so even when the
+            command got a terminal of its own, as Codex, Muse and Antigravity commands can. Type the
+            password and press <code>Pass on</code>
             <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox and Muse's
             sandbox on the Mac still refuse <code>sudo</code> themselves: Codex gets the box only
-            with its sandbox off (Skip permission prompts), Muse only in a command it marks as
-            needing more rights. A <code>sudo</code> you type in a shell tab asks in that tab
+            for a command that runs outside its sandbox, as with Skip permission prompts on; Muse
+            only in a command it marks as needing more rights. A <code>sudo</code> you type in a
+            shell tab asks in that tab
           </li>
           <li>
             <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
