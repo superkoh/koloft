@@ -255,6 +255,107 @@
           </li>
         </ul>
 
+        <h2 id="inbox">The Inbox</h2>
+        <p>
+          Red dots tell you who is calling. The <mark class="hl">Inbox</mark> lets you answer
+          without opening each tab. It is the first row at the top of the sidebar, above your
+          butler. Its line says what waits: <code>Nothing needs you</code>,
+          <code>2 need you · 1 high</code>, or <code>2 low, no rush</code>. A number shows how many
+          cards need you; Low cards are not counted. When a new card comes in, the row's edge turns
+          once. Click the row and the Inbox fills the middle of the window.
+        </p>
+        <p>Koloft puts a card there when a session waits on you:</p>
+        <div class="typed-table stacked">
+          <table>
+            <thead>
+              <tr>
+                <th>when a session</th>
+                <th>its card</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>asks you a question</td>
+                <td>
+                  <code>“…” asks a question</code>, marked High. Pick an option, or type your own
+                  words when the question lets you, and the answer goes to the session.
+                </td>
+              </tr>
+              <tr>
+                <td>wants your OK</td>
+                <td>
+                  <code>“…” wants to run a command</code>, with the command, and
+                  <code>Allow</code> or <code>Deny</code>. For a plan:
+                  <code>“…” asks you to approve a plan</code>, with <code>Approve</code> or
+                  <code>Reject</code>. Marked High.
+                </td>
+              </tr>
+              <tr>
+                <td>ends its turn and needs you</td>
+                <td>
+                  <code>“…” finished and waits for you</code>, with the end of what it said and a
+                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it.
+                </td>
+              </tr>
+              <tr>
+                <td>stops unexpectedly</td>
+                <td>
+                  <code>“…” stopped unexpectedly</code>. <code>Start it again</code> (the
+                  recommended one) picks up where it left off. <code>Hand to a new session</code>
+                  starts a new session of the same agent on its work, with the note you type.
+                  <code>Close it for good</code> asks you to confirm; the session then starts once
+                  more only to wrap up, and closes its tab, its worktree and its branch. That last
+                  button is only there on this Mac.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ul class="dash">
+          <li>
+            When Koloft cannot read what a session asks, its card says
+            <code>“…” is waiting for you in its tab</code>, and <code>Open session</code> takes you
+            there. Every card has that link.
+          </li>
+          <li>
+            After you press a button, you have 5 seconds to press <code>Undo</code>. Then Koloft
+            sends it, and the card moves to <code>Done</code>. If the session did not take your
+            answer, the card stays and says
+            <code
+              >Koloft sent your answer, but the session still waits for it. Open the session and
+              answer it there.</code
+            >
+          </li>
+          <li>
+            Answer in the tab instead, or from Discord, and the card closes by itself as
+            <code>Handled in its tab</code>. A finished-turn card closes as
+            <code>It went on</code> once the session works again.
+          </li>
+          <li>
+            No card for: a turn that only reports (its dot says "just letting you know"), a turn in
+            the tab you are looking at, and a reply that goes back to the session or butler that
+            started it. Questions from your butler and its helpers do get cards.
+          </li>
+          <li>
+            The page has three tabs: <code>Needs you</code>, <code>In progress</code> and
+            <code>Done</code>. <code>Done</code> keeps the last 7 days. Sort by
+            <code>Priority</code>, <code>Newest</code> or <code>Oldest</code>, and filter by
+            <code>Source</code>, <code>Workspace</code> or <code>Machine</code>. A card's
+            <code>⋯</code> menu sets it High, Normal or Low, moves it to the top, or dismisses it.
+            <kbd>↑</kbd> and <kbd>↓</kbd> move between cards; <kbd>1</kbd>, <kbd>2</kbd> and
+            <kbd>3</kbd> pick an option or press a button.
+          </li>
+          <li>
+            An agent can put up a card of its own, with buttons that send your answer back to it,
+            like "Pull request 812 is ready to merge" (see
+            <a href="../agents/#inbox">the koloft command</a>).
+          </li>
+        </ul>
+        <p>
+          The Inbox works the same for Claude, Codex, Muse and Antigravity, on your Mac and on a
+          <a href="../remote/">remote folder</a>.
+        </p>
+
         <h2 id="keep-running">Keep running</h2>
         <figure class="shot is-narrow" style="--ar: 558 / 668">
           <div class="frame">

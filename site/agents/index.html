@@ -123,10 +123,13 @@
         </p>
         <ul class="dash">
           <li>
-            <code>sudo</code> (the admin command) — a <code>sudo</code> the session runs with no
-            terminal opens a <code>Sudo password</code> box over that session's terminal, with the
-            command it runs. Type the password and press <code>Pass on</code>
-            <span class="why">(Koloft types it into sudo itself)</span>
+            <code>sudo</code> (the admin command) — a <code>sudo</code> the agent runs opens a
+            <code>Sudo password</code> box over that session's terminal, with the command it runs.
+            This is so even when the command got a terminal of its own, as Codex, Muse and
+            Antigravity commands can. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>. Muse's own sandbox on the
+            Mac still refuses <code>sudo</code>; a <code>sudo</code> you type in a shell tab asks in
+            that tab
           </li>
           <li>
             <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
@@ -244,7 +247,9 @@
             <code>koloft session screen</code>, <code>koloft session keys</code> and
             <code>koloft session answer</code> — see what an open session's terminal shows, press
             keys in it as you would at the Mac, or answer the question it is showing: pick an option
-            number, say yes or no, or type your own words if the question lets you
+            number, say yes or no, or type your own words if the question lets you. It says the
+            question is answered only once the session took the answer; if not, it says
+            <code>Koloft sent your answer, but the session still waits for it.</code>
           </li>
           <li>
             <code>koloft session command</code> — run one slash command (like <code>/compact</code>)
@@ -275,6 +280,39 @@
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
+        <h3 id="inbox">Inbox cards</h3>
+        <p>
+          Koloft already puts a card in your <a href="../sessions/#inbox">Inbox</a> when a session
+          asks, stops, or ends its turn needing you. A session can also put up a card of its own,
+          when you need buttons that do something for you, such as merging a pull request it made.
+        </p>
+        <ul class="dash">
+          <li>
+            <code>koloft inbox add &lt;key&gt; -- '&lt;card JSON&gt;'</code> — put up a card: a
+            title, a level (High, Normal or Low), what to show, buttons and links. A button can send
+            a message back to the session
+          </li>
+          <li>
+            <code>koloft inbox update</code>, <code>move</code>, <code>delete</code> and
+            <code>list</code> — change a card, move it to <code>needs-you</code>,
+            <code>in-progress</code> or <code>closed</code>, remove it, or list its own cards
+          </li>
+        </ul>
+        <p>
+          When you press a button, the session gets a message that starts
+          <code class="nowrap">(From Inbox:</code>, with your own words in it, and is told whether
+          to move the card itself.
+        </p>
+
+        <h3 id="docs">Writing documents</h3>
+        <p>
+          Every session Koloft starts, on this Mac and on a remote folder's machine, also gets a
+          skill called <code>koloft-docs</code>. It tells the agent how to write a document a person
+          will read (a product plan, a design, a README, a report, a memo…): put the main point
+          first, lose no detail, use tables and diagrams where they help. The session still has this
+          skill with "Let agents use Koloft" off.
+        </p>
+
         <h3 id="gh">GitHub</h3>
         <ul class="dash">
           <li>
@@ -342,7 +380,10 @@
           <li>
             playwright-mcp: nothing to set up. It reads
             <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session, so it
-            opens a tab in Koloft and not a browser of its own.
+            opens a tab in Koloft and not a browser of its own. If your Claude Code settings have a
+            Playwright MCP entry for that folder, its tools run without asking first; your other MCP
+            servers still ask, and a <code>deny</code> or <code>ask</code> rule you wrote for it
+            still wins.
           </li>
           <li>
             your own Playwright script: one line, with the address in
@@ -410,8 +451,9 @@
                 <td>it connects</td>
                 <td>
                   It just drives. Koloft asks nothing; the switch is its one control. On this Mac,
-                  the Playwright MCP tools of Codex, Antigravity and Muse sessions run without
-                  asking (see above); any other question about allowing a tool is the agent's own.
+                  the Playwright MCP tools of Claude Code, Codex, Antigravity and Muse sessions run
+                  without asking (see above); any other question about allowing a tool is the
+                  agent's own.
                 </td>
               </tr>
               <tr>
