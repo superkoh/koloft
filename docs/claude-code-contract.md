@@ -2896,7 +2896,11 @@ below was one run.
   does (the footer then read auto mode / bypass permissions), and sent the field's text with it
   (`{"type":"text","text":"hello"}` next to the `tool_result`); Ctrl+U empties the field
   and does nothing on rows 1–2, so Ctrl+U then Shift+Tab approved with no text (5 runs;
-  on 2.1.318 too, from row 3 holding text and from row 1 of a bypass session).
+  on 2.1.318 too, from row 3 holding text and from row 1 of a bypass session). Text typed
+  into row 3 stays when the highlight leaves it: Down, Down, `hello`, Down (highlight on
+  row 1), then Shift+Tab sent `hello` too. Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
+  passes row 3 from any start and approved with no text from row 1 and row 2 with
+  `hello` left in row 3, from row 3 holding it, and from an untouched dialog (4 runs).
   Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped

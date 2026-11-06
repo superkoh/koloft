@@ -250,9 +250,12 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   })
 
   // CC§14
-  it('an approval takes 1 for yes; a plan takes Ctrl+U then Shift+Tab, which approve it from any row without sending text left in its feedback row; both take Esc for no, and nothing else', () => {
+  it('an approval takes 1 for yes; a plan takes Ctrl+U on each of its three rows in turn, then Shift+Tab, which approves it from any row without sending text left in its feedback row; both take Esc for no, and nothing else', () => {
     expect(claudeKeysFor(bash, 'yes')).toEqual({ ok: true, value: ['1'] })
-    expect(claudeKeysFor(plan, 'yes')).toEqual({ ok: true, value: [CTRL_U, SHIFT_TAB] })
+    expect(claudeKeysFor(plan, 'yes')).toEqual({
+      ok: true,
+      value: [CTRL_U, DOWN, CTRL_U, DOWN, CTRL_U, SHIFT_TAB]
+    })
     for (const p of [bash, plan]) {
       expect(claudeKeysFor(p, 'no')).toEqual({ ok: true, value: ['\x1b'] })
       expect(claudeKeysFor(p, 'Add a test first.').ok).toBe(false)

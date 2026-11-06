@@ -276,6 +276,19 @@ function questionKeys(q: Question, line: string): string[] {
     : [...emptyTheOwnWordsField(q), ...typedPieces(line), ...moveOn, '\r']
 }
 
+const ROWS_OF_A_PLAN_DIALOG = 3
+
+// CC§14
+function emptyThePlanFeedbackRowFromAnyRow(): string[] {
+  const nextRow = [...presses('Down', 1), CLEAR_TO_LINE_START]
+  return [
+    CLEAR_TO_LINE_START,
+    ...Array<string[]>(ROWS_OF_A_PLAN_DIALOG - 1)
+      .fill(nextRow)
+      .flat()
+  ]
+}
+
 // CC§14
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
@@ -292,7 +305,7 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
     }
   }
   if (p.tool_name === 'ExitPlanMode' && YES.test(text))
-    return { ok: true, value: [CLEAR_TO_LINE_START, ...keysFor([SHIFT_TAB])] }
+    return { ok: true, value: [...emptyThePlanFeedbackRowFromAnyRow(), ...keysFor([SHIFT_TAB])] }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
   return fail(YES_OR_NO_BY_KEYS)

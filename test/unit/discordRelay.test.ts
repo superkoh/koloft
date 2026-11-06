@@ -130,6 +130,7 @@ function setup(
     type: (_t, keys, stillWanted) =>
       typeKeys((data) => writes.push({ data, at: Date.now() }), keys, stillWanted),
     touchedSinceAsked: () => false,
+    keyPressedSince: () => false,
     queueDrained: () => true,
     queue: async () => undefined,
     sendLine: async (tab, line) =>
@@ -626,13 +627,16 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§12 CC§14
-  it('the keys of a Claude answer stop the moment its dialog closes, so the rest of the run never lands in the prompt box', async () => {
+  it('the keys of a Claude answer stop the moment its dialog closes, so the rest of the run never lands in the prompt box, and the answer is reported as not taken; the same dialog delivered again meanwhile does not stop them', async () => {
     const { relay, writes } = setup({}, [], { status: () => 'approval' })
     relay.onAsk(MANAGED, QUESTION)
     const typing = relay.answerSession(MANAGED, '2')
+    await vi.waitFor(() => expect(writes.length).toBe(1))
+    relay.onAsk(MANAGED, QUESTION)
+    expect(await relay.answerSession(MANAGED, '1')).toBe(ANSWER_ON_ITS_WAY)
     await vi.waitFor(() => expect(writes.length).toBe(2))
     relay.dialogGone(MANAGED, true)
-    await typing
+    expect(await typing).toBe(SHOWS_NO_DIALOG)
     expect(writes.map((w) => w.data)).toEqual(TO_THE_EMPTIED_FIELD_OF_TWO.slice(0, 2))
   })
 
@@ -654,7 +658,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CODEX§20
-  it('a Codex answer stops pressing keys the moment the owner presses one in the question', async () => {
+  it('a Codex answer stops pressing keys the moment the owner presses one in the question, and says it left the question to the owner', async () => {
     let touched = false
     const question: CodexQuestion = {
       id: 0,
@@ -674,7 +678,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     const typing = relay.answerSession(MANAGED, 'Purple')
     await vi.waitFor(() => expect(writes.length).toBe(1))
     touched = true
-    await typing
+    expect(await typing).toBe(STARTED_IN_THE_TERMINAL)
     expect(writes.map((w) => w.data)).toEqual(['\x1b[B'])
   })
 
@@ -694,7 +698,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     }
     const { relay, writes } = setup({}, [], {
       status: () => 'approval',
-      touchedSinceAsked: () => true
+      keyPressedSince: () => true
     })
     relay.onAsk(MANAGED, fruit)
     expect(await relay.answerSession(MANAGED, 'Apple')).toBe(STARTED_IN_THE_TERMINAL)
@@ -970,7 +974,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
-      type: async (t, keys) => void writesTo.push(...keys.map((data) => ({ tab: t, data })))
+      type: async (t, keys) => !!writesTo.push(...keys.map((data) => ({ tab: t, data })))
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts[0].text).toContain(butlerAsks("Sort out to-dos (Assist's helper)"))
@@ -1002,7 +1006,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
-      type: async () => undefined
+      type: async () => true
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
@@ -1143,7 +1147,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
       backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
       pendingQuestion: (t) => (t === HELPER ? question : undefined),
-      type: async (_t, keys) => void writesTo.push(...keys)
+      type: async (_t, keys) => !!writesTo.push(...keys)
     })
     relay.codexAsked(HELPER, question)
     expect(posts).toHaveLength(1)

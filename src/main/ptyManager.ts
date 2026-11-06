@@ -376,12 +376,12 @@ export class PtyManager extends EventEmitter {
     return turn
   }
 
-  type(id: string, keys: string[], stillWanted?: () => boolean): Promise<void> {
+  type(id: string, keys: string[], stillWanted?: () => boolean): Promise<boolean> {
     return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys, stillWanted))
   }
 
-  paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+  async paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    await this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

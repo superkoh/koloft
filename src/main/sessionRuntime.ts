@@ -84,11 +84,6 @@ export class SessionRuntime extends EventEmitter {
     return this.entries.get(tabId)?.turn
   }
 
-  askedAt(tabId: string): number | undefined {
-    const e = this.entries.get(tabId)
-    return e?.status === 'approval' ? e.since : undefined
-  }
-
   protected statusSince(tabId: string): number {
     return this.entries.get(tabId)?.since ?? 0
   }

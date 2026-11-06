@@ -8,12 +8,13 @@ export async function typeKeys(
   write: (data: string) => void,
   keys: string[],
   stillWanted: () => boolean = () => true
-): Promise<void> {
+): Promise<boolean> {
   for (const [i, key] of keys.entries()) {
     if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
-    if (!stillWanted()) return
+    if (!stillWanted()) return false
     write(key)
   }
+  return true
 }
 
 const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g

@@ -788,7 +788,9 @@ const slash = new SlashCommands({
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
-  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  typeNow: async (tabId, keys) => {
+    await typeKeys((data) => ptyMgr.write(tabId, data), keys)
+  },
   // AGY§23
   outputOnlyOnScreen: (tabId) =>
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
@@ -1896,9 +1898,9 @@ const sessionDeps: SessionVerbDeps = {
   bound: tabBound,
   asking: asksTheOwner,
   sendLine: sendPeerLine,
-  press: (tabId, keys) => {
+  press: async (tabId, keys) => {
     butler?.firstWordsComing(tabId)
-    return ptyMgr.type(tabId, keys)
+    await ptyMgr.type(tabId, keys)
   },
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
@@ -2015,6 +2017,7 @@ const claudeDialogs = new ClaudeDialogWatch({
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
+  questionSeen.delete(tabId)
   koloftInbox.askEnded(tabId)
   discordRelay?.dialogGone(tabId, dialogClosed)
 }
@@ -3357,7 +3360,8 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
     touchedAt.delete(e.id)
-    keyPressed.delete(e.id)
+    keyPressedAt.delete(e.id)
+    questionSeen.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -3954,15 +3958,10 @@ app.whenReady().then(() => {
     },
     type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
     touchedSinceAsked: (tabId) => {
-      const asked = tracker.askedAt(tabId)
-      const pressed = keyPressed.get(tabId)
-      return (
-        asked !== undefined &&
-        !!pressed &&
-        pressed.at > asked &&
-        pressed.question === storedOwnerOf(tabId)?.openQuestion(tabId)?.id
-      )
+      const asked = questionSeenAt(tabId)
+      return asked !== undefined && keyPressedSince(tabId, asked)
     },
+    keyPressedSince,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
@@ -5921,10 +5920,27 @@ function askUnreadablySoon(tabId: string): void {
 }
 
 const touchedAt = new Map<string, number>()
-const keyPressed = new Map<string, { at: number; question?: string | number }>()
+const keyPressedAt = new Map<string, number>()
+const questionSeen = new Map<string, { asks: string; at: number }>()
+
+function questionSeenAt(tabId: string): number | undefined {
+  const open = storedOwnerOf(tabId)?.openQuestion(tabId)
+  if (!open) return undefined
+  const asks = JSON.stringify(open.questions)
+  const seen = questionSeen.get(tabId)
+  if (seen?.asks === asks) return seen.at
+  const at = Date.now()
+  questionSeen.set(tabId, { asks, at })
+  return at
+}
 
 function ownerPressedAKey(tabId: string): void {
-  keyPressed.set(tabId, { at: Date.now(), question: storedOwnerOf(tabId)?.openQuestion(tabId)?.id })
+  questionSeenAt(tabId)
+  keyPressedAt.set(tabId, Date.now())
+}
+
+function keyPressedSince(tabId: string, at: number): boolean {
+  return (keyPressedAt.get(tabId) ?? 0) >= at
 }
 const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
 
