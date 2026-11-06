@@ -2790,6 +2790,13 @@ below was one run.
     the same rejected `tool_result` and interrupt record as the Bash one, at 0.3 s.
   So a no and a plan answer reach the transcript at once; a yes to a slow tool shows only
   in OSC 7501 until the tool ends.
+- **The same through Koloft.** 2026-11-05, CC 2.1.318, the hand-test sandbox, a real local
+  Claude tab (Sonnet 5.5) with "Skip permission prompts" off; 1 run. The tab started in
+  auto mode (its banner: "Auto mode is now Claude Code's default permission mode"), which
+  ran a 45-second `python3 -c "import time; time.sleep(45)…"` Bash call with no dialog;
+  one Shift+Tab gave "⏸ manual mode on", and the same call then drew the Bash dialog. Its
+  Inbox card's Allow moved it to Done as Answered 5.0 s after the press (the undo), while
+  that call's `tool_result` came 43 s later.
 - **The `Bash` dialog lists four choices on 2.1.318:** `1. Yes`, `2. Yes, and don’t ask
   again for: <prefix> *`, `3. Yes, and switch to auto mode · auto mode handles these
   prompts for you`, `4. No` (above it "Tip: auto mode handles these prompts for you"). `3`
