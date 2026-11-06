@@ -3088,7 +3088,9 @@ Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the b
   started with two different `KOLOFT_TAB_ID` values, one through `nohup` (macOS) or
   `setsid nohup` (Linux); each tab's scan listed exactly its own ports (about 0.25 s on
   this Mac), a tab id no process carried listed none. The `agy` point is from
-  `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open.
+  `lsof -nP -iTCP -sTCP:LISTEN` on this Mac with a real `agy` tab open. The `-a` point
+  was measured 2026-10-11 on this Mac (a shell's grandchild listener found, every
+  listening socket of the user listed without `-a`); on 2026-11-06 only the `-a` form ran.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
 menu's listening ports).
