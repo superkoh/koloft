@@ -1,5 +1,10 @@
 import { shq } from '@shared/shellQuote'
-import { CHILD_IN_A_PTY_PY, pyBytes, relayLoopPy, STATUS_RELAY_DEFS_PY } from './remote/statusRelay'
+import {
+  CHILD_IN_A_PTY_PY,
+  pyBytes,
+  RELAY_LOOP_PY,
+  STATUS_RELAY_DEFS_PY
+} from './remote/statusRelay'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
@@ -234,7 +239,12 @@ def follow_registry():
         bind(best[1])
 
 
-${relayLoopPy(['follow_registry', 'follow_log'])}`
+def poll():
+    follow_registry()
+    follow_log()
+
+
+${RELAY_LOOP_PY}`
 
 // MUSE§9 MUSE§17 ADR-0031
 export const REMOTE_MUSE_HOOK_SH = museHookScript(

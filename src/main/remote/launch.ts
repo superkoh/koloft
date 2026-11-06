@@ -4,6 +4,7 @@ import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import {
+  PYTHON3_HAS_PTY,
   REMOTE_ENV_LINES,
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
@@ -189,7 +190,7 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
   set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
-  python3 -c 'import pty, termios' >/dev/null 2>&1 && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
+  ${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
   exec "$@"\n`
 }
 

@@ -22,19 +22,17 @@ const FAKE_CLAUDE_JS = `
 const ESC = '\\x1b'
 process.stdin.setRawMode(true)
 let heard = ''
-const redrawEvery = (ms, until) => {
-  const t = setInterval(() => process.stdout.write('tick '), ms)
-  setTimeout(() => { clearInterval(t); until() }, 2800)
-}
 process.stdin.on('data', (chunk) => {
   heard += chunk.toString('latin1')
   if (!heard.includes(ESC + ']7501;?:states=')) return
   heard = ''
   process.stdout.write(${JSON.stringify(BLOCKED)})
-  redrawEvery(300, () => {
+  const redraw = setInterval(() => process.stdout.write('tick '), 300)
+  setTimeout(() => {
+    clearInterval(redraw)
     process.stdout.write(${JSON.stringify(WORKING)})
-    redrawEvery(300, () => process.exit(3))
-  })
+    setTimeout(() => process.exit(3), 4500)
+  }, 4500)
 })
 process.stdout.write(ESC + ']7501;?' + '\\x07')
 `
@@ -63,15 +61,17 @@ const count = (text: string, part: string): number => text.split(part).length - 
 describe.skipIf(!PYTHON_WITH_PTY)(
   'status-relay.py, the python3 pty wrapper a remote Claude Code tab runs in tmux',
   () => {
-    it("answers claude's status query itself, sends each state on as a tmux passthrough, sends a waiting dialog's state again every few seconds while claude keeps drawing (a tmux client attached later gets it), stops once the dialog is gone, and exits with claude's code", async () => {
+    it("answers claude's status query itself, sends each state on as a tmux passthrough, sends the last state again every few seconds between claude's writes, whether claude keeps drawing or not (a tmux client attached later gets it), never splits claude's output, and exits with claude's code", async () => {
       const { code, out } = await runRelay()
       expect(code).toBe(3)
       expect(out).not.toContain('7501;?')
-      expect(out).toContain('tick ')
       const working = out.indexOf(throughTmux(WORKING))
       expect(working).toBeGreaterThan(0)
-      expect(count(out.slice(0, working), throughTmux(BLOCKED))).toBeGreaterThanOrEqual(2)
+      const whileDrawing = out.slice(0, working)
+      expect(count(whileDrawing, throughTmux(BLOCKED))).toBeGreaterThanOrEqual(2)
+      expect(whileDrawing.replaceAll(throughTmux(BLOCKED), '')).toMatch(/^(tick )+$/)
       expect(count(out.slice(working), throughTmux(BLOCKED))).toBe(0)
-    }, 15_000)
+      expect(count(out.slice(working), throughTmux(WORKING))).toBeGreaterThanOrEqual(2)
+    }, 20_000)
   }
 )

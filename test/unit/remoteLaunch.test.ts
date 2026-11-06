@@ -502,19 +502,22 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§12
-  it("claude runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead", () => {
-    const relayed = box(spec())
-    expect(relayed.run().status).toBe(0)
-    expect(relayed.onATerminal()).toBe(true)
+  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0)(
+    "claude runs on a terminal of the status relay's, and where python3 cannot run (macOS's stub without the developer tools) it starts on its own instead",
+    () => {
+      const relayed = box(spec())
+      expect(relayed.run().status).toBe(0)
+      expect(relayed.onATerminal()).toBe(true)
 
-    const stub = box(spec())
-    fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
-      mode: 0o755
-    })
-    expect(stub.run().status).toBe(0)
-    expect(stub.onATerminal()).toBe(false)
-    expect(stub.argv()[0]).toBe('--settings')
-  })
+      const stub = box(spec())
+      fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+        mode: 0o755
+      })
+      expect(stub.run().status).toBe(0)
+      expect(stub.onATerminal()).toBe(false)
+      expect(stub.argv()[0]).toBe('--settings')
+    }
+  )
 
   it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
     const b = box(

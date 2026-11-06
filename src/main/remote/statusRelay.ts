@@ -10,7 +10,6 @@ export const STATUS_RELAY_DEFS_PY = `STATUS_REPLY = ${pyBytes(PROGRAM_STATUS_REP
 OPEN = b'\\x1b]7501;'
 FRAME = re.compile(b'\\x1b\\\\]7501;([^\\x07\\x1b]*)(?:\\x07|\\x1b\\\\\\\\)')
 LONGEST_PARTIAL_FRAME = 4096
-READ_BYTES = 65536
 in_tmux = bool(os.environ.get('TMUX'))
 
 
@@ -58,23 +57,21 @@ except Exception:
     saved_tty = None
 `
 
-export const relayLoopPy = (polled: string[]): string => `reading = [0, fd]
+export const RELAY_LOOP_PY = `reading = [0, fd]
 pending = b''
-${polled.length ? 'next_poll = 0.0\n' : ''}while True:
-${
-  polled.length
-    ? `    now = time.time()
+next_poll = 0.0
+while True:
+    now = time.time()
     if now >= next_poll:
-${polled.map((call) => `        ${call}()\n`).join('')}        next_poll = now + POLL_SECONDS
-`
-    : ''
-}    try:
-        ready, _, _ = select.select(reading, [], [], ${polled.length ? 'POLL_SECONDS' : 'None'})
+        poll()
+        next_poll = now + POLL_SECONDS
+    try:
+        ready, _, _ = select.select(reading, [], [], POLL_SECONDS)
     except InterruptedError:
         continue
     if fd in ready:
         try:
-            chunk = os.read(fd, READ_BYTES)
+            chunk = os.read(fd, 65536)
         except OSError:
             break
         if not chunk:
@@ -105,32 +102,41 @@ export const STATUS_RELAY_PY = `#!/usr/bin/env python3
 import fcntl, os, pty, re, select, signal, sys, termios, time, tty
 
 ${STATUS_RELAY_DEFS_PY}
-BLOCKED_SENT_AGAIN_EVERY_SECONDS = 2
+A_WRITE_HAS_ENDED_AFTER_SECONDS = 0.1
+POLL_SECONDS = A_WRITE_HAS_ENDED_AFTER_SECONDS
+STATE_SENT_AGAIN_EVERY_SECONDS = 2
 args = sys.argv[1:]
-blocked = [None]
-sent_at = [0.0]
+last_state = None
+sent_at = 0.0
+wrote_at = 0.0
 
 ${CHILD_IN_A_PTY_PY}
 
 def passed_on(m):
+    global last_state, sent_at
     body = m.group(1)
     if body == b'?':
         write_all(fd, STATUS_REPLY)
         return b''
-    parts = body.split(b':')
-    if not any(part.startswith(b'id=') for part in parts):
-        blocked[0] = m.group(0) if b'state=blocked' in parts else None
-        sent_at[0] = time.time()
+    if not any(part.startswith(b'id=') for part in body.split(b':')):
+        last_state = m.group(0)
+        sent_at = time.time()
     return through_tmux(m.group(0))
 
 
 def translate(chunk):
-    out = FRAME.sub(passed_on, chunk)
-    whole_writes = len(chunk) < READ_BYTES
-    if blocked[0] and whole_writes and time.time() - sent_at[0] >= BLOCKED_SENT_AGAIN_EVERY_SECONDS:
-        sent_at[0] = time.time()
-        out += through_tmux(blocked[0])
-    return out
+    global wrote_at
+    wrote_at = time.time()
+    return FRAME.sub(passed_on, chunk)
 
 
-${relayLoopPy([])}`
+def poll():
+    global sent_at
+    now = time.time()
+    quiet = not pending and now - wrote_at >= A_WRITE_HAS_ENDED_AFTER_SECONDS
+    if last_state and quiet and now - sent_at >= STATE_SENT_AGAIN_EVERY_SECONDS:
+        sent_at = now
+        write_all(1, through_tmux(last_state))
+
+
+${RELAY_LOOP_PY}`
