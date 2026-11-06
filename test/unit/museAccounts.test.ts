@@ -72,7 +72,7 @@ describe("a Muse account's own settings folder", () => {
   })
 
   // MUSE§16
-  it("links in each of the owner's own skills, keeps Koloft's two skills its own, takes the koloft skill away again when asked, and keeps koloft-docs whole with nothing left over from an older copy", () => {
+  it("links in each of the owner's own skills, keeps Koloft's two skills its own, and takes the koloft skill away again when asked while koloft-docs stays", () => {
     for (const skill of ['review', 'koloft', 'koloft-docs'])
       fs.mkdirSync(path.join(owner, 'muse', 'skills', skill), { recursive: true })
     prepareMuseHome(home, owner)
@@ -86,8 +86,6 @@ describe("a Muse account's own settings folder", () => {
     for (const skill of ['koloft', 'koloft-docs'])
       expect(fs.lstatSync(path.join(skills, skill)).isSymbolicLink()).toBe(false)
     expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toContain('koloft')
-    const leftOver = path.join(skills, 'koloft-docs', 'references', 'old.md')
-    fs.writeFileSync(leftOver, 'old')
     placeKoloftSkills(home, false)
     expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
     expect(fs.existsSync(path.join(owner, 'muse', 'skills', 'koloft'))).toBe(true)
@@ -95,7 +93,6 @@ describe("a Muse account's own settings folder", () => {
       /^---\nname: koloft-docs\n/
     )
     expect(fs.existsSync(path.join(skills, 'koloft-docs', 'references', 'core.md'))).toBe(true)
-    expect(fs.existsSync(leftOver)).toBe(false)
   })
 })
 

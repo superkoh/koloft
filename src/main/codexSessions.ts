@@ -285,7 +285,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
-  docsSkillsFolder(): string
+  docsSkillsFolder(): string | undefined
   agent: {
     enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -940,12 +940,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...processOptions.configOverrides!,
         ...hookOverrides(trustedInPlace(hooks, trusted))
       ]
-      const koloftSkills = agent?.skillsFolder()
+      const skillRoots = [agent?.skillsFolder(), this.deps.docsSkillsFolder()].filter(
+        (root): root is string => !!root
+      )
       transport = await this.startTransport({
         ...processOptions,
-        ...(!machine && {
-          skillRoots: [...(koloftSkills ? [koloftSkills] : []), this.deps.docsSkillsFolder()]
-        }),
+        ...(!machine && { skillRoots }),
         ...(machine && {
           upstream: (frame, failure) =>
             new MachineCodexUpstream(

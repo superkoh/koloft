@@ -99,8 +99,8 @@ describe('the tab script of a Codex session on a machine', () => {
         hookTrust: [],
         agentTools
       })
-    const docs = 'cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/"'
-    const koloft = 'cp -R "$M/agent-plugin/skills/koloft" "$H/skills/"'
+    const docs = 'cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$"'
+    const koloft = 'cp -R "$M/agent-plugin/skills/koloft" "$H/skills/koloft.new-$$"'
     expect(script(true)).toContain(docs)
     expect(script(true)).toContain(koloft)
     expect(script(false)).toContain(docs)

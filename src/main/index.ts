@@ -607,7 +607,7 @@ import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeEx
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
   agentPluginFiles,
-  agentPluginSkills,
+  pluginSkills,
   docsPluginFiles,
   writeAgentPlugin,
   writeDocsPlugin
@@ -1423,7 +1423,7 @@ const PLAIN_KOLOFT_SHIM = {
   hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
 }
 let claudeAgentPlugin: string | undefined
-let claudeDocsPlugin: string
+let claudeDocsPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -3182,7 +3182,11 @@ app.whenReady().then(() => {
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
-  claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))
+  try {
+    claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))
+  } catch (err) {
+    console.error('[koloft] the koloft-docs plugin could not be written:', err)
+  }
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3524,11 +3528,11 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      docsSkillsFolder: () => agentPluginSkills(claudeDocsPlugin),
+      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
-        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
+        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),

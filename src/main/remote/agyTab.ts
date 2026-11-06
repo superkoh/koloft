@@ -81,7 +81,7 @@ export interface AgyTabSpec {
   onboarding?: string
   token?: string
   start?: string
-  koloftSkill?: boolean
+  koloftSkill: boolean
 }
 
 // AGY§31
@@ -105,7 +105,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
     seed('auth.json', `${own}/antigravity-oauth-token`),
-    skillsFromMachineLine(`$A/${AGY_SKILLS}`, '$M', !!s.koloftSkill),
+    skillsFromMachineLine(`$A/${AGY_SKILLS}`, '$M', s.koloftSkill),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,

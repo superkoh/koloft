@@ -92,7 +92,7 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
-  docsPlugin(): string
+  docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
 }
 

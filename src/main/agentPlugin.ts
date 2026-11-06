@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
-import { writeWholeBeforeVisible } from './jsonDrops'
 import DOCS_SKILL_MD from './docsSkill/SKILL.md?raw'
 import CORE_MD from './docsSkill/references/core.md?raw'
 import DIAGRAMS_MD from './docsSkill/references/diagrams.md?raw'
@@ -15,6 +14,7 @@ export const AGENT_PROMPT_FILE = 'koloft-prompt.md'
 const SKILLS = 'skills'
 export const KOLOFT_SKILL = 'koloft'
 export const KOLOFT_DOCS_SKILL = 'koloft-docs'
+export const KOLOFT_SKILLS = [KOLOFT_DOCS_SKILL, KOLOFT_SKILL]
 
 type Files = Record<string, string>
 
@@ -29,7 +29,7 @@ const DOCS_SKILL_FILES: Files = {
   'references/ui-design.md': UI_DESIGN_MD
 }
 
-export function agentPluginSkills(pluginDir: string): string {
+export function pluginSkills(pluginDir: string): string {
   return path.join(pluginDir, SKILLS)
 }
 
@@ -55,28 +55,39 @@ function holdsExactly(dir: string, files: Files): boolean {
   )
 }
 
-function keepFolder(dir: string, files: Files | undefined): void {
-  if (files && holdsExactly(dir, files)) return
-  fs.rmSync(dir, { recursive: true, force: true })
-  if (!files) return
+function keepFolder(dir: string, files: Files): void {
+  if (holdsExactly(dir, files)) return
+  const next = `${dir}.new-${process.pid}`
+  fs.rmSync(next, { recursive: true, force: true })
   for (const [rel, text] of Object.entries(files)) {
-    const file = path.join(dir, rel)
+    const file = path.join(next, rel)
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    writeWholeBeforeVisible(file, text)
+    fs.writeFileSync(file, text)
   }
+  fs.rmSync(dir, { recursive: true, force: true })
+  fs.renameSync(next, dir)
+}
+
+const skillsCheckedThisRun = new Set<string>()
+
+function keepSkill(dir: string, files: Files): void {
+  if (skillsCheckedThisRun.has(dir) && fs.existsSync(path.join(dir, 'SKILL.md'))) return
+  keepFolder(dir, files)
+  skillsCheckedThisRun.add(dir)
 }
 
 export function keepSkillsIn(skillsDir: string, koloftOn: boolean): void {
-  keepFolder(path.join(skillsDir, KOLOFT_DOCS_SKILL), DOCS_SKILL_FILES)
-  keepFolder(path.join(skillsDir, KOLOFT_SKILL), koloftOn ? koloftSkillFiles() : undefined)
-}
-
-export function agentSkillMarkdown(): string {
-  return `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
+  keepSkill(path.join(skillsDir, KOLOFT_DOCS_SKILL), DOCS_SKILL_FILES)
+  const koloft = path.join(skillsDir, KOLOFT_SKILL)
+  if (koloftOn) return keepSkill(koloft, koloftSkillFiles())
+  fs.rmSync(koloft, { recursive: true, force: true })
+  skillsCheckedThisRun.delete(koloft)
 }
 
 function koloftSkillFiles(): Files {
-  return { 'SKILL.md': agentSkillMarkdown() }
+  return {
+    'SKILL.md': `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
+  }
 }
 
 function pluginFiles(name: string, description: string, skill: Files): Files {

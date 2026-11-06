@@ -429,7 +429,7 @@ function putSkillsInMachinePackage(machineDir: string): void {
 }
 
 describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on the machine", () => {
-  it('copies the koloft-docs skill folder whole from the machine package every time, and the koloft skill only while agent tools are on, each replacing an older copy and removed from it what the package no longer holds', () => {
+  it('keeps the koloft-docs skill folder the same as the machine package every time, and the koloft skill only while agent tools are on: an older copy is swapped for a whole new one with nothing left over, and a copy already the same is left in place, so a running agent never finds it gone', () => {
     const root = mkroot('skill')
     const machineDir = path.join(root, 'm-1')
     const skills = path.join(root, 'home', 'skills')
@@ -448,10 +448,13 @@ describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on 
     expect(fs.readdirSync(path.join(skills, 'koloft'))).toEqual(['SKILL.md'])
     expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
     expect(fs.readdirSync(path.join(skills, 'koloft-docs', 'references'))).toEqual(['core.md'])
+    const docsFolder = fs.statSync(path.join(skills, 'koloft-docs')).ino
     expect(run(skillsFromMachineLine(skills, machineDir, false))).toBe(0)
     expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
     expect(read('koloft-docs/SKILL.md')).toBe('NEW DOCS')
     expect(read('koloft-docs/references/core.md')).toBe('NEW CORE')
+    expect(fs.statSync(path.join(skills, 'koloft-docs')).ino).toBe(docsFolder)
+    expect(fs.readdirSync(skills).sort()).toEqual(['koloft-docs'])
   })
 })
 
@@ -675,7 +678,8 @@ describe('U-TAB-*: the tab script on the machine', () => {
         args: ['--csrf_token=x', 'say hi'],
         settings: tabFiles['T.settings.json'],
         hooks: tabFiles['T.hooks.json'],
-        token: tabFiles['T.auth.json']
+        token: tabFiles['T.auth.json'],
+        koloftSkill: false
       })
     })
     const b = box(s)
@@ -708,7 +712,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
   it("an Antigravity tab started without an API key runs agy without the machine's own key", () => {
     const b = box(
       spec({
-        program: agyTab({ tabId: 'T', account: 'a', args: [], settings: '{}', hooks: '{}' })
+        program: agyTab({
+          tabId: 'T',
+          account: 'a',
+          args: [],
+          settings: '{}',
+          hooks: '{}',
+          koloftSkill: false
+        })
       })
     )
     fs.writeFileSync(

@@ -65,14 +65,17 @@ export function skillsFromMachineLine(
   machineDir: string,
   koloftOn: boolean
 ): string {
-  const copy = (pluginDir: string, skill: string): string =>
-    `cp -R "${machineDir}/${pluginDir}${pluginSkillDir(skill)}" "${skillsDir}/"`
+  const keep = (pluginDir: string, skill: string): string => {
+    const from = `"${machineDir}/${pluginDir}${pluginSkillDir(skill)}"`
+    const to = `"${skillsDir}/${skill}"`
+    const next = `"${skillsDir}/${skill}.new-$$"`
+    return `{ diff -r ${from} ${to} >/dev/null 2>&1 || { rm -rf ${next} && cp -R ${from} ${next} && rm -rf ${to} && mv ${next} ${to}; }; }`
+  }
   return [
     `mkdir -p "${skillsDir}"`,
-    `rm -rf "${skillsDir}/${KOLOFT_DOCS_SKILL}" "${skillsDir}/${KOLOFT_SKILL}"`,
-    copy(DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
-    ...(koloftOn ? [copy(AGENT_PLUGIN_DIR, KOLOFT_SKILL)] : [])
-  ].join(' && ')
+    keep(DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
+    koloftOn ? keep(AGENT_PLUGIN_DIR, KOLOFT_SKILL) : `rm -rf "${skillsDir}/${KOLOFT_SKILL}"`
+  ].join('; ')
 }
 
 export function buildMachinePackage(
