@@ -22,6 +22,7 @@ import {
   sendShortcut,
   sessionInRow,
   setNextSessionTitle,
+  snap,
   startSessionIn,
   transcriptFile,
   untilTheRowHoldsANewSession,
@@ -337,6 +338,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(seg.locator('button', { hasText: /^Source$/ })).toBeDisabled()
     await expect(seg.locator('button', { hasText: '↗ New tab' })).toBeEnabled()
     await expect(page.locator(`${CV.total} .cv-total-n`)).toHaveText('2 files · 1 viewed')
+    await snap(page, 'WB-C20')
     await viewedButton(y).click()
     await expect(y).toHaveAttribute('data-viewed', '1')
     await viewedButton(y).click()

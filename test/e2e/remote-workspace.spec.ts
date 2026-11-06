@@ -476,7 +476,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     bound?: (page: Page) => Promise<unknown>
   }[] = [{ label: 'Claude' }, ...OTHER_AGENTS_ON_THE_MACHINE]
   for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
-    test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes`, async ({
+    test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes; a file marked viewed before /clear is still viewed after it`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -509,6 +509,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           .toEqual(['old-session.txt', 'tracked.txt'])
         await pickChip(page, 'Ownership', 'session')
         await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['old-session.txt'])
+        const oldBlock = page.locator('.wb-panel .cv-blk[data-path="old-session.txt"]')
+        await expect(oldBlock.locator('.cv-hunk')).toHaveCount(1, { timeout: 30_000 })
+        await viewedButton(oldBlock).click()
+        await expect(oldBlock).toHaveAttribute('data-viewed', '1')
 
         const old = await sessionInRow(page, row)
         await runIn(page, centerTerm(page), '/clear')
@@ -519,6 +523,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         await expect
           .poll(() => shownPaths(page), { timeout: A_WRITE_REACHES_CHANGES_MS })
           .toEqual(['new-session.txt'])
+
+        await pickChip(page, 'Ownership', 'all')
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toContain('old-session.txt')
+        await expect(oldBlock).toHaveAttribute('data-viewed', '1')
+        await expect(oldBlock.locator('.cv-hunk')).toHaveCount(0)
       } finally {
         await quitAndClose(app)
       }
