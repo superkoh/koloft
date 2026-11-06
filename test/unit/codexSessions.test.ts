@@ -596,7 +596,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('reads what a closed session said from the account home that ran it, and a session with no such home is resumed once in the default home by an app-server closed at once, then read there', async () => {
+  it('reads what a closed session said from the account home that ran it, and a session with no such home is resumed in the default home by an app-server closed at once, then read there, at most once a run', async () => {
     const said = [
       {
         completedAt: 1,
@@ -634,6 +634,33 @@ describe('CodexSessions', () => {
     expect(mocks.close.mock.invocationCallOrder.some((at) => at > resumed && at < reread)).toBe(
       true
     )
+
+    indexed.delete(undefined)
+    mocks.request.mockClear()
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(mocks.request.mock.calls.map(([m, , home]) => `${m} ${home}`)).toEqual([
+      'thread/read undefined',
+      'thread/read undefined'
+    ])
+  })
+
+  // CODEX§15
+  it('a closed session whose account home cannot be read is read from the default home instead', async () => {
+    mocks.request.mockImplementation(async (method, _params, home) => {
+      if (method === 'thread/read' && home === '/homes/gone') throw new Error('thread not found')
+      if (method === 'thread/read')
+        return {
+          thread: {
+            id: A,
+            cwd: repo,
+            turns: [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Still here' }] }]
+          }
+        }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockReturnValue('/homes/gone')
+    const turns = await sessions.readTurns(codexSessionKey(A), 5)
+    expect(turns.map((t) => t.reply)).toEqual(['Still here'])
   })
 
   // CODEX§15

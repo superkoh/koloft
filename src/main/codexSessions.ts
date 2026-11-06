@@ -315,6 +315,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
+  private resumedInDefaultHome = new Set<string>()
   private sideServers = new CodexSideServers((home: string | undefined) => this.rpc(home))
   private machineSideServers = new CodexSideServers((machine: string) => this.machineRpc(machine))
   private machineHistory = new Map<
@@ -770,8 +771,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     }
-    if (hostOfKey(key)) return this.withRpcFor(key, read)
-    const turns = await this.withRpc(this.deps.homeOf(key), read)
+    const machine = hostOfKey(key)
+    if (machine) return this.withMachineRpc(machine, read)
+    const turns = await this.withRpc(this.deps.homeOf(key), read).catch((): Turn[] => [])
     if (turns.length > 0) return turns
     await this.indexInDefaultHome(id)
     return this.withRpc(undefined, read)
@@ -779,6 +781,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§15
   private async indexInDefaultHome(threadId: string): Promise<void> {
+    if (this.resumedInDefaultHome.has(threadId)) return
+    this.resumedInDefaultHome.add(threadId)
     const rpc = this.rpc(undefined)
     try {
       await rpc.request('thread/resume', { threadId }).catch(() => undefined)

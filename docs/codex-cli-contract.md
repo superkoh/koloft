@@ -1387,7 +1387,9 @@ thread (`notLoaded`) and read 0 turns (`thread/read`, `thread/turns/list`); B re
 `thread/resume` from D answered in 17–23 ms with the turn, and left `updatedAt` in
 `thread/list` and the rollout's bytes unchanged; D gained
 `thread-writer-locks/<id>.lock`, `shell_snapshots/<id>.<ns>.sh` and `.sandbox_migration`,
-and no child process outlived it by 3 s. **The resuming app-server keeps the thread's
+and no child process outlived it by 3 s. With an `[mcp_servers.<name>]` table in the shared
+`config.toml` (a Node stub that logs each start), the resume started that MCP server once
+more, and it was gone 1.5 s after the resuming app-server closed. **The resuming app-server keeps the thread's
 writer for as long as it lives, even after `thread/unsubscribe` (`unsubscribed`)**: a
 second app-server on D then got `-32600` "thread … already has an active writer" on
 `thread/resume` and "thread not found" on `turn/start`, while one on B resumed and took
@@ -1397,8 +1399,8 @@ the resuming app-server closed, an app-server on D that had been running all alo
 the turn too, and a home that has the thread loaded also reads the turns other homes
 add later (1, 2, then 3 as D and B took turns). So Koloft reads a closed session's turns
 from the account home Koloft last ran it in, and only when that gives none (no record, or
-a session from before Koloft kept them) resumes it in the default home on an app-server
-of its own that it closes at once — never on the long-lived one, which would keep
+a session from before Koloft kept them) resumes it in the default home, at most once per
+thread a run, on an app-server of its own that it closes at once — never on the long-lived one, which would keep
 `codex resume <id>` in the default home from writing to it. A rollout from 0.165.0
 copied with its old mtime into a running 0.166.0 home's `sessions/` was not listed at
 all, even after a resume; why was not looked into.
