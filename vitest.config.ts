@@ -18,6 +18,8 @@ export default defineConfig({
     environment: 'node',
     include: ['test/unit/**/*.test.{ts,tsx}'],
     execArgv: ['--experimental-sqlite'],
+    // PLATFORM§65
+    env: { ELECTRON_OVERRIDE_DIST_PATH: resolve(__dirname, 'test/unit/no-electron-binary') },
     testTimeout: OUTLASTS_SPEC_WAITFOR_BUDGETS_MS,
     hookTimeout: OUTLASTS_SPEC_WAITFOR_BUDGETS_MS
   }
