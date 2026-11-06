@@ -62,3 +62,26 @@ Muse text too, so every backend checks an id. The model, Koloft's own transcript
 (the owner's words handed to a helper, a session's last prompt) and the owner would all
 see that line, and each reader would need it cut off; the words file changes nothing
 anyone sees.
+
+## A message from an Inbox card button
+
+**Decision**: when the owner presses a card button that sends a message to the card's own
+Claude session (Send on a "waits for you" card, or any card action whose `session` is
+the card's), the message claims that session's own class, read once Koloft has the tab
+— after waking it, when it was closed — as the Discord relay does. The words are the
+owner's answers inside text written by Koloft or by that same session, so no session
+pushes work into another one, and this is not the rejected "always claim bypass". A card
+a session posted counts as its own only while its `session` is still the poster:
+`koloft inbox add` sets it to the caller, but `koloft inbox update` may move it onto
+another session, and that card then claims `prompting` like any other. Claiming
+`prompting` for every card held each such message to a bypass session behind the dialog,
+and the owner had to press Deliver in the session's own tab, so the Inbox saved them
+nothing.
+**Rejected**: claiming the receiver's class for every card button. A card action may name
+another session and carry text the posting session wrote; claiming the receiver's class
+there would let a session that asks before each command push its text into one that never
+asks, the moment the owner presses a harmless-looking label. Such a message claims
+`prompting`, and a bypass receiver holds it.
+**Limit**: the class is the one the session was launched with. A session the owner
+switched to another mode mid-session (Shift+Tab) still holds the message: only the Assist
+takes `crossSessionInbound: "accept"`.

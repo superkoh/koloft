@@ -26,6 +26,7 @@ import type { ToolCall } from '../sessionTracker'
 import {
   MESSAGE_SOCKET_SHOWS_WITHIN_MS,
   crossSessionLine,
+  fitsACrossSessionMessage,
   type ModeClass
 } from '../crossSessionMessage'
 import {
@@ -441,11 +442,14 @@ export class DiscordRelay {
 
   // CC§13 ADR-0028
   private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
-    const line = crossSessionLine(this.d.modeOf(tab), text, id)
-    if (line === null)
+    if (!fitsACrossSessionMessage(text))
       throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
     if (text.startsWith(DISCORD_PREFIX)) await this.d.noteDiscordId(tab, id)
-    await this.d.sendLine(tab, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
+    await this.d.sendLine(
+      tab,
+      crossSessionLine(this.d.modeOf(tab), text, id),
+      MESSAGE_SOCKET_SHOWS_WITHIN_MS
+    )
   }
 
   private async readyTab(dest: Destination): Promise<string> {

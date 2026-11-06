@@ -35,6 +35,7 @@ import {
   type MuseRemoteDeps
 } from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
@@ -1384,6 +1385,7 @@ function machinePackage(): MachinePackage {
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
+    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
@@ -1947,7 +1949,8 @@ const sessionCommand = sessionVerb(sessionDeps)
 const inbox = new Inbox(
   {
     now: () => Date.now(),
-    sendToSession: (ref, text) => sessionCommand.sendFromInbox(ref, text),
+    sendToSession: (ref, text, toItsOwnSession) =>
+      sessionCommand.sendFromInbox(ref, text, toItsOwnSession),
     answerSession: (ref, given) => koloftInbox.answer(ref, given),
     startSession: async (spec, card, onReply) => {
       const started = await sessionCommand.startFromInbox(
@@ -2017,7 +2020,7 @@ const koloftInbox = new KoloftInbox({
 const claudeDialogs = new ClaudeDialogWatch({
   watchedProcess: (tabId) => {
     const pty = ptyMgr.get(tabId)
-    return backendIdOf(pty?.kind) === 'claude' && hostOfTab(tabId) === 'local' ? pty : undefined
+    return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
   closed: (tabId) => {

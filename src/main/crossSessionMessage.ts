@@ -14,9 +14,12 @@ export const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
 const MESSAGES_A_SENDER_MAY_BURST = 30
 const MS_UNTIL_A_SENDER_MAY_SEND_ONE_MORE = 2000
 
+export function fitsACrossSessionMessage(body: string): boolean {
+  return !body.includes(CLOSING_TAG)
+}
+
 // CC§13
-export function crossSessionLine(mode: ModeClass, body: string, id: string): string | null {
-  if (body.includes(CLOSING_TAG)) return null
+export function crossSessionLine(mode: ModeClass, body: string, id: string): string {
   const content = `<cross-session-message from-mode="${mode}">\n${body}\n(Koloft message ${id})\n${CLOSING_TAG}`
   return JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n'
 }
