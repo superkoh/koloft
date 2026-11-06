@@ -110,7 +110,7 @@ describe('Koloft Assist', () => {
   })
 
   describe('a Codex one-shot that is late', () => {
-    const LIMIT_MS = 400
+    const LIMIT_MS = 1000
 
     function codexThatAnswersOnTry(answers: string[]): { bin: string; tries: () => number } {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-late-'))
@@ -119,8 +119,9 @@ describe('Koloft Assist', () => {
       const cases = answers.map((step, i) => `  ${i + 1}) ${step} ;;`).join('\n')
       fs.writeFileSync(
         bin,
-        `#!/bin/sh\ncat > /dev/null\necho x >> ${JSON.stringify(count)}\n` +
-          `n=$(wc -l < ${JSON.stringify(count)} | tr -d ' ')\ncase "$n" in\n${cases}\nesac\n`,
+        `#!/bin/sh\ntries() { wc -l < ${JSON.stringify(count)} | tr -d ' '; }\n` +
+          `cat > /dev/null\necho x >> ${JSON.stringify(count)}\n` +
+          `n=$(tries)\ncase "$n" in\n${cases}\nesac\n`,
         { mode: 0o755 }
       )
       return { bin, tries: () => read(count)?.trim().split('\n').length ?? 0 }
@@ -151,7 +152,7 @@ describe('Koloft Assist', () => {
 
     it('still takes the first try’s answer when it comes in after the second try started', async () => {
       const codex = codexThatAnswersOnTry([
-        `sleep ${(1.5 * LIMIT_MS) / 1000}; echo From the first try`,
+        'until [ "$(tries)" -ge 2 ]; do sleep 0.05; done; echo From the first try',
         'exec sleep 30'
       ])
       const reply = await (await lateAssist(codex.bin))(JOB)
