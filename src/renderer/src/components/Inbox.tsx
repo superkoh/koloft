@@ -23,6 +23,7 @@ import {
   type InboxAnswers,
   type InboxBlock,
   type InboxCard,
+  type InboxCounts,
   type InboxLevel,
   type InboxLink,
   type InboxSort,
@@ -139,9 +140,10 @@ function tagOf(card: InboxCard): string {
   return [card.sourceName, ...Object.values(card.where)].join(' · ')
 }
 
-function waitingLine(waiting: number, high: number): string {
-  if (!waiting) return 'Nothing needs you'
-  const line = `${waiting} need${waiting === 1 ? 's' : ''} you`
+function waitingLine({ badge, high, byState }: InboxCounts): string {
+  const low = byState['needs-you'] - badge
+  if (!badge) return low ? `${low} low, no rush` : 'Nothing needs you'
+  const line = `${badge} need${badge === 1 ? 's' : ''} you`
   return high ? `${line} · ${high} high` : line
 }
 
@@ -149,11 +151,20 @@ export function InboxRow(): JSX.Element {
   const open = useStore((s) => s.inboxOpen)
   const cards = useStore((s) => s.inbox.cards)
   const c = inboxCounts(cards, Date.now())
+  const [fresh, setFresh] = useState(false)
+  const shownBadge = useRef(c.badge)
+  useEffect(() => {
+    if (c.badge > shownBadge.current) setFresh(true)
+    shownBadge.current = c.badge
+  }, [c.badge])
   return (
     <div className="ibx-entry-wrap">
       <div
-        className={'ibx-entry' + (c.badge > 0 ? ' lit' : '') + (open ? ' on' : '')}
+        className={
+          'ibx-entry' + (c.badge > 0 ? ' lit' : '') + (open ? ' on' : '') + (fresh ? ' fresh' : '')
+        }
         onClick={() => useStore.getState().setInboxOpen(true)}
+        onAnimationEnd={() => setFresh(false)}
       >
         <svg className="ibx-ink-defs" aria-hidden>
           <linearGradient id="ibx-ink" x1="0" y1="0" x2="1" y2="1">
@@ -167,7 +178,7 @@ export function InboxRow(): JSX.Element {
         <span className="ibx-entry-text">
           <span className="ibx-entry-name">Inbox</span>
           <span className="ws-tab-sub">
-            <span>{waitingLine(c.byState['needs-you'], c.high)}</span>
+            <span>{waitingLine(c)}</span>
           </span>
         </span>
         {c.badge > 0 && <span className={'ibx-count' + (c.high ? ' high' : '')}>{c.badge}</span>}

@@ -27,6 +27,7 @@ import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const KEYS_READ_APART_MS = 300
+const ONE_TURN_AND_SOME_MS = 10_000
 
 function inboxCard(page: Page, title: string | RegExp) {
   return page.locator('.inbox-page .ibx-item', {
@@ -180,6 +181,7 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
     .poll(() => terminalText(page, tabId), { timeout: 15_000 })
     .toContain('Added card pr-8.')
   await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
+  await expect(page.locator('.ibx-entry .ws-tab-sub')).toHaveText('1 needs you · 1 high')
   await openInbox(page)
   const shown = inboxCard(page, 'Pull request 8 is ready to merge')
   await expect(shown.locator('.ibx-lvp')).toHaveText('High')
@@ -307,6 +309,29 @@ test('a command a Muse session wants to run is a card in the Inbox; Allow there 
   } finally {
     await quitAndClose(app)
   }
+})
+
+test('the sidebar Inbox edge stays still while nothing new arrives, turns once when a card comes in, then rests again', async ({
+  page
+}) => {
+  const entry = page.locator('.ibx-entry')
+  const turning = (): Promise<number> => entry.evaluate((el) => el.getAnimations().length)
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  const row = wsRows(page, 'ws-a').first()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+  const tabId = (await row.getAttribute('data-tab-id')) as string
+  expect(await turning()).toBe(0)
+
+  await runIn(
+    page,
+    centerTerm(page),
+    `/koloft inbox add new-one -- '{"title":"Look at this","level":"normal"}'`
+  )
+  await expect.poll(() => terminalText(page, tabId), { timeout: 15_000 }).toContain('Added card')
+  await expect(page.locator('.ibx-entry .ibx-count')).toHaveText('1')
+  await expect.poll(turning).toBe(1)
+  await expect.poll(turning, { timeout: ONE_TURN_AND_SOME_MS }).toBe(0)
 })
 
 test('a session on another machine posts a card with koloft inbox, tagged with that machine', async ({
