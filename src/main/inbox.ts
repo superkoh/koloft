@@ -76,7 +76,7 @@ interface Result {
 
 // ADR-0028
 function goesToItsOwnSession(card: InboxCard, to: string): boolean {
-  return to === card.session && (card.postedBy ?? to) === to
+  return to === card.session && (card.postedBy === null || card.postedBy === to)
 }
 
 // ADR-0049

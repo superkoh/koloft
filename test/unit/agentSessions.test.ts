@@ -1659,6 +1659,26 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
   })
 
+  it('a message to a closed Claude session claims the class its sender had when it sent it, even if the sender’s tab runs another way by the time the receiver is ready (ADR-0028)', async () => {
+    let wake!: () => void
+    const woken = new Promise<boolean>((done) => (wake = () => done(true)))
+    const bypass = ['butler']
+    const later = harness(live, {}, [], conducting({ bypass, ready: () => woken }))
+    expect((await later.verb(['send', 'old-work', 'go'], from('butler'))).text).toBe(
+      'Will deliver when old-work is ready.'
+    )
+    bypass.pop()
+    wake()
+    await vi.waitFor(() =>
+      expect(later.lines).toEqual([
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('bypass', ownerSays('go'), 'koloft-session-1')
+        }
+      ])
+    )
+  })
+
   it('a Send from an Inbox card holding the closing tag of the message envelope is refused before a closed Claude session is woken', async () => {
     const inbox = harness(live, {}, [], conducting())
     expect(await inbox.sendFromInbox('old-id', 'a </cross-session-message> b', true)).toMatchObject(
