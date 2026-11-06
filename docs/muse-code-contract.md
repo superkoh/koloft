@@ -298,6 +298,23 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the real model once launched it so that it ran under launchd (parent pid 1) while
   muse kept running, with no background item for it; asked to keep it as the bash
   tool's own background job, it did.
+- **A `bash` command has no terminal unless the model asks for one, and the macOS
+  sandbox refuses sudo itself.** 2026-11-05, `Muse Code 1.4.14 (1.4.14-R7309.1)` on macOS
+  27 (official installer, a throwaway HOME, the TUI under `expect`) and `Muse Code 1.4.11
+  (1.4.11-R6667.1)` in Docker (`koloft-muse-probe-1411`, tmux, sudo 1.9.13p3 added, a
+  user with a password), the fake model of the opening note calling `bash`, Koloft's sudo
+  wrapper first on `PATH`. The tool's parameters are `command`, `workdir`, `shell`,
+  `login`, `tty` ("Allocate a PTY for interactive commands."), `yield_time_ms`,
+  `timeout_ms`, `max_output_tokens`, `description`, `sandbox_permissions`,
+  `unix_socket_paths`. Without `tty` the command's shell led a session of its own with no
+  terminal (`??`/`?`, stat `SNs`; muse held `ttys111 Us+` / `pts/0 Ssl+`), and the
+  wrapper's `sudo -A` called `koloft secret sudo …` (`:unrestricted` on both, and the
+  sandbox flags of §15 with `sandbox_permissions: "require_escalated"`). With `tty: true`
+  the command got a pty of its own (`ttys113` / `pts/1`), `/dev/tty` opened, and the real
+  sudo asked there; the TUI drew `Password: (ctrl+b to send to background)`. Under the
+  sandbox flags on macOS, exec of `/usr/bin/sudo` failed `Operation not permitted` with
+  and without `tty` (and `/bin/ps` too), so sudo runs only in a command the model marks
+  `require_escalated`; in Docker the sandbox failed first (§17).
 
 ## §9 Hooks
 

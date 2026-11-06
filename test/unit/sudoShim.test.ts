@@ -3,7 +3,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
-import { ASKPASS_NAME, writeSudoShims } from '../../src/main/sudoShim'
+import {
+  ASKPASS_NAME,
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '../../src/main/sudoShim'
 
 let base: string
 let shimDir: string
@@ -27,6 +32,16 @@ function run(
   })
 }
 
+const MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL = '/usr/bin/script'
+
+function runWithATerminalOfItsOwn(
+  file: string,
+  args: string[],
+  env: Record<string, string> = {}
+): Promise<{ status: number }> {
+  return run(MACOS_SCRIPT_GIVES_ITS_COMMAND_A_TERMINAL, ['-q', '/dev/null', file, ...args], env)
+}
+
 const logged = (): string[] => fs.readFileSync(log, 'utf8').trim().split('\n')
 
 beforeEach(() => {
@@ -36,7 +51,7 @@ beforeEach(() => {
   log = path.join(base, 'calls.log')
   fs.mkdirSync(shimDir)
   fs.mkdirSync(realDir)
-  writeSudoShims(shimDir)
+  writeSudoShims(shimDir, SUDO_SHIM_FILES)
   fs.writeFileSync(
     path.join(realDir, 'sudo'),
     `#!/bin/sh\necho "askpass=$SUDO_ASKPASS args=$*" >> '${log}'\n`,
@@ -69,6 +84,26 @@ describe("Koloft's sudo in a session", () => {
       'askpass= args=-S true',
       'askpass= args=-n true',
       'askpass=/own/helper args=true'
+    ])
+  })
+
+  it('a command an agent runs with a terminal of its own, which no one sees, still asks Koloft for the password', async () => {
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([`askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`])
+  })
+
+  it('sudo typed into a Koloft shell tab on another machine, whose terminal the owner sees, asks in that terminal as usual', async () => {
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'], { KOLOFT_UTIL: '1' })
+    expect(logged()).toEqual(['askpass= args=true'])
+  })
+
+  it('in the folder local Claude Code tabs share with this Mac’s shell tabs, a terminal is the owner’s and sudo asks there', async () => {
+    writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
+    await runWithATerminalOfItsOwn(path.join(shimDir, 'sudo'), ['true'])
+    await run(path.join(shimDir, 'sudo'), ['true'])
+    expect(logged()).toEqual([
+      'askpass= args=true',
+      `askpass=${path.join(shimDir, ASKPASS_NAME)} args=-A true`
     ])
   })
 
