@@ -2,11 +2,17 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  agySessionCalls,
+  agyTranscriptOf,
   installAgy,
   installCodex,
   installMuse,
+  museCalls,
+  museSaid,
   seedSettings,
   trustInAgy,
   trustInMuse,
@@ -18,6 +24,7 @@ import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } fro
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   chooseBackend,
   gitInit,
@@ -92,7 +99,9 @@ function shownTermText(page: Page, box: string): Promise<string> {
 
 async function koloftExits(page: Page): Promise<string[]> {
   const text = await shownTermText(page, CENTER)
-  return [...text.matchAll(/\[fake-(?:claude|codex)\] koloft exit=(\d+)/g)].map((m) => m[1])
+  return [...text.matchAll(/\[fake-(?:claude|codex|muse|agy)\] koloft exit=(\d+)/g)].map(
+    (m) => m[1]
+  )
 }
 
 async function koloftInSession(page: Page, args: string): Promise<string> {
@@ -114,24 +123,85 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
   return dlg
 }
 
+function installAgent(env: E2EEnv, backend: BackendId): void {
+  if (backend === 'codex') installCodex(env)
+  if (backend === 'muse') {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+  }
+  if (backend === 'agy') {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+  }
+}
+
+async function startAgentTab(page: Page, env: E2EEnv, backend: BackendId): Promise<void> {
+  if (backend === 'claude' || backend === 'codex') {
+    await startLocalSession(page, env, backend)
+    return
+  }
+  const row = wsRows(page, 'ws-a')
+  if (backend === 'muse') {
+    await newSessionInWith(page, 'ws-a', 'Muse')
+    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    return
+  }
+  await newSessionInWith(page, 'ws-a', 'Antigravity')
+  await expect.poll(() => agySessionCalls(env).length, { timeout: 60_000 }).toBe(1)
+  await runIn(page, centerTerm(page), 'warm up')
+  await agyConversationOnceFirstTurnEnded(page)
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+}
+
+function processOf(env: E2EEnv, backend: BackendId, sessionId: string): number | undefined {
+  if (backend === 'claude') return readCalls(env).find((c) => c.sessionId === sessionId)?.pid
+  if (backend === 'muse') return museCalls(env).find((c) => c.sessionId === sessionId)?.pid
+  return agySessionCalls(env)[0]?.pid
+}
+
+function reportReached(env: E2EEnv, backend: BackendId, parentId: string): string {
+  const file = (name: string): string => {
+    const p = path.join(env.home, name)
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+  }
+  if (backend === 'claude') return file('fake-claude-peer.jsonl')
+  if (backend === 'codex') return file('fake-codex-wire.jsonl')
+  if (backend === 'muse') return JSON.stringify(museSaid(env, parentId))
+  return agyTranscriptOf(env, parentId)
+}
+
+function parentStartedAgain(env: E2EEnv, backend: BackendId, parentId: string): boolean {
+  if (backend === 'muse') return museCalls(env).filter((c) => c.sessionId === parentId).length > 1
+  if (backend === 'agy')
+    return agySessionCalls(env).some((c) => c.argv.includes(`--conversation=${parentId}`))
+  return true
+}
+
 async function aChildWhoseParentTabWasClosed(
   page: Page,
   env: E2EEnv,
-  backend: 'claude' | 'codex'
+  backend: BackendId
 ): Promise<{ parentId: string; kidTab: string }> {
-  await startLocalSession(page, env, backend)
+  await startAgentTab(page, env, backend)
   const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
-  const parent = (await page.evaluate(() => window.api.sessions.list())).find(
-    (s) => s.tabId === parentTab
-  )!
+  const sessionOf = async (tab: string): Promise<SessionInfo | undefined> =>
+    (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tab)
+  if (backend === 'muse' || backend === 'agy')
+    await expect.poll(async () => (await sessionOf(parentTab))?.nativeSessionId).toBeTruthy()
+  const parent = (await sessionOf(parentTab))!
+  const parentId = parent.nativeSessionId ?? parent.sessionId
+  const parentPid =
+    backend === 'codex'
+      ? undefined
+      : processOf(env, backend, backend === 'claude' ? parent.sessionId : parentId)
+  if (backend !== 'codex') expect(parentPid).toBeDefined()
   expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
   const kidRow = wsGroup(page, 'ws-a').locator(
     `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
   )
   await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   const kidTab = (await kidRow.getAttribute('data-tab-id'))!
-  const parentClaude =
-    backend === 'claude' ? readCalls(env).find((c) => c.sessionId === parent.sessionId)! : undefined
+  expect((await sessionOf(kidTab))?.backendId).toBe(backend)
   await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
   await expect
     .poll(async () =>
@@ -140,24 +210,23 @@ async function aChildWhoseParentTabWasClosed(
       )
     )
     .toBe(false)
-  if (parentClaude)
-    await expect.poll(() => processAlive(parentClaude.pid), { timeout: 30_000 }).toBe(false)
-  return { parentId: parent.nativeSessionId ?? parent.sessionId, kidTab }
+  if (parentPid) await expect.poll(() => processAlive(parentPid), { timeout: 30_000 }).toBe(false)
+  return { parentId, kidTab }
 }
 
 test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH reaches Koloft and acts for the session it runs in', () => {
-  for (const backend of ['claude', 'codex'] as const)
+  for (const backend of SESSION_BACKENDS)
     test(`koloft cron add from a ${backend} session adds a job to its pinned workspace, shown in Scheduled jobs and in koloft cron list, and show and off find it by its name with spaces given without quotes`, async ({
       env
     }) => {
       test.setTimeout(120_000)
-      if (backend === 'codex') installCodex(env)
+      installAgent(env, backend)
       seedSettings(env, { hintsOff: true })
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startLocalSession(page, env, backend)
+        await startAgentTab(page, env, backend)
 
         expect(
           await koloftInSession(page, 'cron add --name "Nightly tests" --daily 09:00 -- say hi')
@@ -179,7 +248,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       }
     })
 
-  for (const backend of ['claude', 'codex'] as const)
+  for (const backend of SESSION_BACKENDS)
     test(`koloft open and koloft diff from a ${backend} session show a file, then its change as a diff, in that session's Workbench, a source file too, and koloft note reads and adds to its workspace note`, async ({
       env
     }) => {
@@ -193,13 +262,13 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const note = notesPath(env, env.workspaces.a)
       fs.mkdirSync(path.dirname(note), { recursive: true })
       fs.writeFileSync(note, 'from the owner')
-      if (backend === 'codex') installCodex(env)
+      installAgent(env, backend)
       seedSettings(env, { hintsOff: true })
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startLocalSession(page, env, backend)
+        await startAgentTab(page, env, backend)
 
         expect(await koloftInSession(page, 'open README.md')).toBe('0')
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
@@ -479,12 +548,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
-  for (const backend of ['claude', 'codex'] as const)
+  for (const backend of SESSION_BACKENDS)
     test(`a ${backend} child reports to the ${backend} session that started it after that session’s tab was closed: koloft session send with the id from its first message starts the parent again and delivers the report marked with who sent it`, async ({
       env
     }) => {
       test.setTimeout(120_000)
-      if (backend === 'codex') installCodex(env)
+      installAgent(env, backend)
       seedSettings(env, { hintsOff: true })
       const app = await launchApp(env)
       try {
@@ -495,16 +564,10 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
           ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
           [kidTab, `/koloft session send ${parentId} all done`]
         )
-        const parentGot = (): string => {
-          const file = path.join(
-            env.home,
-            backend === 'claude' ? 'fake-claude-peer.jsonl' : 'fake-codex-wire.jsonl'
-          )
-          return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-        }
         await expect
-          .poll(parentGot, { timeout: 60_000 })
+          .poll(() => reportReached(env, backend, parentId), { timeout: 60_000 })
           .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+        expect(parentStartedAgain(env, backend, parentId)).toBe(true)
       } finally {
         await quitAndClose(app)
       }
