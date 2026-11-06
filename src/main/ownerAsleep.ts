@@ -10,6 +10,7 @@ const FIRST_OPTION = '1'
 const APPROVE = 'yes'
 const ASKED_CHARS_QUOTED = 200
 const MINUTE_MS = 60_000
+export const SENDING_THE_ANSWER_FAILED = 'sending the answer failed'
 
 export const THIS_MAC = ''
 
@@ -205,8 +206,8 @@ export class OwnerAsleep {
     for (const reply of repliesTo(asked)) {
       try {
         entry.failed = await this.d.answer(tabId, reply)
-      } catch (e) {
-        entry.failed = e instanceof Error ? e.message : String(e)
+      } catch {
+        entry.failed = SENDING_THE_ANSWER_FAILED
         break
       }
       if (entry.failed === ANSWER_NOT_TAKEN) break

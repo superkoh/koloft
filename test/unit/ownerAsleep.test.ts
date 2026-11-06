@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import {
   OWNER_ASLEEP_ANSWER,
   OwnerAsleep,
+  SENDING_THE_ANSWER_FAILED,
   THIS_MAC,
   type AskedOwner,
   type OwnerAsleepDeps
@@ -160,7 +161,7 @@ describe('owner asleep', () => {
     await t.settle()
     t.asks.set('a', approval('npm publish'))
     await t.asleep.asks('a')
-    failed?.(new Error('the keys could not be sent'))
+    failed?.(new Error())
     await first
     expect(t.replies).toEqual([
       ['a', OWNER_ASLEEP_ANSWER],
@@ -168,9 +169,11 @@ describe('owner asleep', () => {
     ])
     await t.wakeAfter(HOUR_MS)
     expect(t.reports[0]).toContain(
-      'Koloft could not answer it (the keys could not be sent), so it still waits for the owner.'
+      `1. "Session a" asked the owner "Blue or red?"; Koloft could not answer it (${SENDING_THE_ANSWER_FAILED}), so it still waits for the owner.`
     )
-    expect(t.reports[0]).toContain('Koloft allowed it.')
+    expect(t.reports[0]).toContain(
+      '2. "Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
+    )
   })
 
   it('a dialog Koloft already answered gets no second answer when the session signals it again during the wait, whether or not the answer was seen taken', async () => {
