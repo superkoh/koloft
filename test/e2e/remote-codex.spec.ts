@@ -21,11 +21,13 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   startSessionIn,
   switchToRow,
   terminalText,
   termIds,
+  TWO_LINE_PROMPT,
   worktreeDialog,
   wsRows
 } from './helpers/p1'
@@ -43,7 +45,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
-import { codexAnswers, fakeCodexLog, type CodexWireLine } from './helpers/codex'
+import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 
 test.setTimeout(180_000)
 
@@ -195,8 +197,26 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
+  // CODEX§2 CODEX§16
+  test('E-RC-16: ⇧⏎ in a remote Codex tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt to the app-server on the machine', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      await expect
+        .poll(() => codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')))
+        .toContain(TWO_LINE_PROMPT)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§27
-  test("E-RC-11: a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
+  test("E-RC-11:a file a shell command of a Codex session there made joins that session's written files, read from the machine through the mirror", async ({
     env
   }) => {
     installCodexOnFakeRemote(env)

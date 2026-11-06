@@ -13,7 +13,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
@@ -126,6 +126,21 @@ function said(fake: FakeDiscord): string[] {
 
 function conductorSaid(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL && !p.card).map((p) => p.content)
+}
+
+function cardIdsIn(fake: FakeDiscord, channelId: string): string[] {
+  return fake.posted.filter((p) => p.channelId === channelId && p.card).map((p) => p.id)
+}
+
+function cardsWithButtons(fake: FakeDiscord): { channelId: string; labels: string[] }[] {
+  return fake.posted
+    .filter((p) => p.buttons?.length)
+    .map((p) => ({ channelId: p.channelId, labels: p.buttons!.map((b) => b.label) }))
+}
+
+async function roomsUnderTheButlerChannel(fake: FakeDiscord): Promise<FakeThread[]> {
+  await expect.poll(() => fake.threads.some((t) => t.parent_id === CHANNEL)).toBe(true)
+  return fake.threads.filter((t) => t.parent_id === CHANNEL)
 }
 
 function ran(fake: FakeDiscord): string[] {
@@ -478,7 +493,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§14
-  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question draws in the session’s terminal and never reaches the channel, the owner’s "pick Green" to the conductor answers it with koloft session answer or keys, and the session takes Green', async ({
+  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question draws in the session’s terminal and comes as a card with a button per option in the session’s own room on Discord, never in the butler’s channel; the owner’s "pick Green" to the conductor answers it with koloft session answer or keys, and the session takes Green', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -499,7 +514,19 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )!
       expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
-      expect(fake.posted.filter((p) => p.card)).toEqual([])
+      const [room, ...more] = await roomsUnderTheButlerChannel(fake)
+      expect(more).toEqual([])
+      await expect
+        .poll(() => cardsWithButtons(fake))
+        .toEqual([
+          {
+            channelId: room.id,
+            labels: [/^1\. Red\b/, /^2\. Green\b/, /^3\. Blue\b/].map((r) =>
+              expect.stringMatching(r)
+            )
+          }
+        ])
+      expect(cardIdsIn(fake, CHANNEL)).toEqual([room.id])
 
       fake.say(
         OWNER,
@@ -519,6 +546,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         })
         .toMatch(/Green/i)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+      expect(cardIdsIn(fake, CHANNEL)).toEqual([room.id])
     })
   })
 

@@ -80,12 +80,14 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   snap,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
   switchToRow,
   termIds,
+  TWO_LINE_PROMPT,
   waitBooted,
   worktreeDialog,
   wsRows
@@ -1329,6 +1331,23 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§2
+  test('⇧⏎ in a Codex tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      await expect.poll(() => codexPrompts(env)).toContain(TWO_LINE_PROMPT)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§34
   test('a Codex screen whose connection drops mid-turn connects again to a new app-server for the same thread: the cut-off turn no longer shows as working, and the tab is live again and answers the next prompt', async ({
     env
@@ -1760,7 +1779,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('an OpenAI API key pasted under Codex in Settings ▸ Accounts is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+  test('Paste API key opens its form inside the Codex section, closing the Claude Paste token form opened before it; an OpenAI API key pasted there is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
     env
   }) => {
     installCodex(env)
@@ -1781,12 +1800,13 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       await sendShortcut(app, 'shortcut:open-settings')
       await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
-      await page
+      await page.getByRole('button', { name: 'Paste token' }).click()
+      const codexSection = page
         .locator('.set-grp', { hasText: /^Codex$/ })
         .locator('xpath=following-sibling::div[1]')
-        .getByRole('button', { name: 'Paste API key' })
-        .click()
-      const dialog = page.locator('.acct-add')
+      await codexSection.getByRole('button', { name: 'Paste API key' }).click()
+      await expect(page.locator('.acct-add')).toHaveCount(1)
+      const dialog = codexSection.locator('.acct-add')
       await expect(dialog.locator('.acct-add-title')).toHaveText('Add OpenAI API key')
       await dialog.getByPlaceholder('Account name (e.g. personal)').fill('metered')
       const loginFails = path.join(env.home, 'fake-codex-key-login-fails')

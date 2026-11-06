@@ -429,7 +429,26 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   approve, Esc rejects. `blocked:kind=question` shows the options; Enter picks the
   first, `<n>` then Enter or Down then Enter another, Esc cancels. A key sent within
   half a second of the `blocked` frame was applied only a minute later; two seconds
-  after it, at once.
+  after it, at once. (On 1.4.11 such a key is dropped instead: next bullet.)
+- **A key sent before the approval box is drawn is dropped, and an answer taken leaves
+  `blocked` at once.** Measured 2026-11-05 on `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, muse in a
+  python3 pty (160×50) that answered the 7501 query with §3's reply and timestamped every
+  frame, `--base-url` to a fake SSE `/responses` model, `--approval-judge off
+  --trust-workspace`, a fresh `XDG_CONFIG_HOME` per run; 26 runs, times from the
+  `blocked` frame. The model asked a `bash` call with `sandbox_permissions:
+  "require_escalated"` (`blocked:kind=permission`) or a one-question `request_user_input`
+  (`blocked:kind=question`). The approval box was drawn 400–405 ms after its frame (5 of
+  5), the question box with it (1 of 1). `y` at 2.5 s: `state=working` 40–71 ms after the
+  key (4 of 4), then `done`; the command ran. Esc at 2.5 s: `working` 177–190 ms after it
+  (3 of 4) or `done` at 237 ms (1 of 4); the model got "tool denied: approval aborted".
+  `2` then Enter 300 ms apart at 2.5 s: no frame on the digit, `working` 13–31 ms after
+  the Enter (4 of 4), `selected_label: "Banana"`; the same at 0.2 s / 0.5 s was taken too
+  (1 of 1). A `y` at 0.02 s (1), 0.2 s (3) or 0.3 s (1) was dropped: no frame in the
+  30–90 s watched, nothing left in the input box, and a second `y` then gave `working`
+  53–70 ms later. A `y` at 0.4 s, 0.5 s, 0.7 s, 1.0 s (2) and 2.0 s (2) gave `working`
+  32–77 ms later. So the frame leaving `blocked` says an answer was taken, and one muse
+  missed leaves it at `blocked`.
 - **A question takes the owner's own words, and several questions are answered in turn,
   then on a review page.** Measured 2026-10-29 on the Muse the TUI drew as `Muse Code
   1.4.11` (the `koloft-muse-probe-1411` image, launcher 1.4.14, `MUSE_NO_AUTO_UPDATE=1`),
@@ -713,6 +732,15 @@ server of the opening note and with `--provider echo`; October 2026.
   alone exits 125, "invalid private Linux invocation markers"), so neither a system
   `bwrap` nor muse's copy can be run as a check. Not probed yet: an AppArmor profile
   for muse's binary, and whether it makes muse's sandbox start.
+- **A copy reaches the Mac only as OSC 52.** The 1.4.11 Linux binary holds `pbcopy`,
+  `wl-copy`, `tmux load-buffer -w` and an OSC 52 sequence wrapped for tmux passthrough
+  (`]52;c;` next to `Ptmux;`); a machine with no display has none of the system tools,
+  so only the escape code and tmux's own `load-buffer -w` can reach the terminal
+  (read from `strings` of `muse-bin-1.4.11-R6667.1` in the `koloft-muse-probe-1411`
+  image, 2026-11-05). Run: that muse on the echo model, in a Koloft tab on the Docker lab
+  machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
+  `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
+  back; 2026-11-05).
 
 ## §18 MCP servers and a project's instruction files
 

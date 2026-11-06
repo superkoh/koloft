@@ -166,6 +166,32 @@ The approval dialog takes single keys, with no Enter after them: `y`, `1` or Ent
 approve; `3` or Esc decline. Recorded from the Discord design round's probe notes
 (2026-10-02, Codex 0.159.3, a real TUI); the setup was not re-run here.
 
+**A key answers a dialog only once the TUI has had it for about 20 ms; earlier, it is
+dropped.** 2026-11-05, codex-cli 0.166.0, `gpt-6-astra` at `low`, a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards; `features.apps=false`,
+`features.plugins=false`, `check_for_update_on_startup=false`, the folder trusted,
+`approval_policy = "on-request"`, `sandbox_mode = "read-only"`), a Node WebSocket relay in
+front of one `codex app-server --stdio` (`-c features.default_mode_request_user_input=true`
+for the questions) logging every frame, the real TUI in a python pty (120×40) as `codex
+--remote ws://127.0.0.1:<port> -a on-request -s read-only "<prompt>"`, a fresh TUI and
+app-server per run, the key written alone at a set delay after the request frame passed
+the relay; 33 runs.
+- A `touch approved.txt` approval offered `availableDecisions: ["accept",
+  {acceptWithExecpolicyAmendment: …}, "cancel"]`, drawn as "1. Yes, proceed (y) / 2. Yes,
+  and don't ask again … (p) / 3. No, and tell Codex what to do differently (esc)". `y` 2 s
+  after the request sent `{decision: "accept"}` 1–3 ms after the key (2 runs). Esc sent
+  `{decision: "cancel"}` at once, and the turn then ended `turn/completed` `status:
+  "interrupted"` 6 ms later (2 runs). A `requestUserInput` answered `2` 2 s after sent
+  `{answers: {colour: {answers: ["Green"]}}}` 1 ms after the key (2 runs). Each taken
+  answer was followed within 2 ms by `serverRequest/resolved` and `thread/status/changed`
+  with `activeFlags: []`.
+- The dialog was on screen 3–14 ms after the request. `y`, Esc or `2` written 2–13 ms
+  after the request (12 runs, some after the dialog was drawn) was dropped: no reply,
+  nothing in the composer, the dialog stayed for 15 s; the same key written again then
+  was taken within 2 ms (12 of 12). From 22 ms on (and `2` once at 13 ms), every key was
+  taken within 1 ms (17 runs). So a key from a person seconds later is taken at once; a
+  dropped one never answers late.
+
 Not probed yet: `…/requestApproval` for other item kinds. `item/tool/requestUserInput`
 and `mcpServer/elicitation/request` were seen on the wire later (section 20).
 
@@ -318,18 +344,64 @@ Read 2026-10-11 from Codex CLI 0.162.1: `codex features list` prints `worktrees 
 true` (on 0.164.0, 2026-10-23, `worktrees removed true` — the flag is gone and the
 feature always on, while `--worktree` is still in `codex --help` and `resume --help`);
 `codex`, `exec`, `resume` and `fork` take `--worktree` ("Run the session in a new
-managed Git worktree"); the model gets the MCP tools `codex_worktrees/create_worktree`
+managed Git worktree"); the strings hold the MCP tools `codex_worktrees/create_worktree`
 ("Defaults to the repository's remote default branch, not the current branch"),
-`get_worktree_creation_status` and `list_worktrees`; and the TUI's strings hold a
+`get_worktree_creation_status` and `list_worktrees` (which TUI offers them to the
+model: below); and the TUI's strings hold a
 picker "Where should the new conversation run?" / "Where should the forked conversation
 run?" with "Use current Git worktree", "Create new Git worktree", "Continue current
 conversation" and "Start new conversation", and "Managed worktrees are only supported
 for local sessions" / "require a local Git repository" / "The source project is not
-trusted". Where it puts them is not in the strings (only Desktop keys
-`desktop.git-worktree-root`, `desktop.worktree-auto-cleanup-enabled`), and whether the
-picker shows on `/new` in a TUI connected with `--remote` was not seen in the e2e run
-of that day (the Playwright MCP case does a `/new` and passed), so it is read, not
-run: **inferred, not checked**.
+trusted".
+
+**A TUI started with `--remote` gets no managed worktrees at all.** Measured
+2026-11-05 on codex-cli 0.166.0 (standalone build, macOS arm64) with no login: a
+throwaway `CODEX_HOME` holding a made-up API key, a stand-in Responses server that
+made the tool calls a model would, and the real TUI in a Python PTY. With `--remote
+unix://…` the TUI reached either a relay to `codex app-server --stdio` that logged
+every line both ways, or `codex app-server --listen unix://…` directly; both gave the
+same result. The app-server ran with no `-c` overrides. The repository had `main`
+pushed to a bare `origin` and a checked-out `feature` branch one commit ahead, plus
+one uncommitted file. The npm package was not run.
+
+- **Where they go:** `$CODEX_HOME/worktrees/<id>/<repository folder name>`, a linked
+  Git worktree on a detached HEAD, with a `.metadata_never_index` file in
+  `$CODEX_HOME/worktrees`; the five checkouts made had ids of 4 hex digits (`1bf0`,
+  `56b5`, `0e31`, `816c`, `80d5`). With `CODEX_HOME` set apart from `$HOME/.codex`,
+  nothing went under `$HOME`. The uncommitted file was not in the `exec --worktree`
+  checkout.
+- **`codex exec --worktree`** makes the checkout before it reads the prompt, from the
+  commit checked out (`feature`), and the session's workdir is the new checkout.
+- **`create_worktree` in a TUI with no `--remote`** (`--no-daemon`): the tools are not
+  in the model's tool list; `tool_search` names the source `codex_worktrees`, and a
+  search returns the namespace `mcp__codex_worktrees` with `create_worktree`
+  (`allowAsync: true` required, `ref` optional), `list_worktrees` and
+  `get_worktree_creation_status` (`operationId`). The call answers `{"type":
+  "pending", "operationId": …}`; the status call then answers `{"type": "created",
+  "worktree": {"root", "workspaceRoot", "sourceCwd"}, "message": "Keep the task cwd.
+  Use the returned workspaceRoot explicitly and request filesystem permissions if
+  needed."}`. The checkout was made from `origin/main`, not from `feature`. The
+  thread's `cwd` in its rollout stayed the first folder for the whole turn: the thread
+  does not move, the model is told to work in the other folder by its path.
+- **The same TUI with `--remote unix://…`:** its `thread/start` carries
+  `dynamicTools` with one namespace, `codex_tui` (`list_threads`,
+  `list_archived_threads`, `read_thread`, `wait_threads`, `set_thread_title`,
+  `set_thread_archived`, all `deferLoading`), and no worktree tool; the model's
+  `tool_search` lists only "Dynamic tools" and "Multi-agent tools", so the model is
+  never offered `create_worktree` and no checkout was made.
+- **`/new` and `/fork`:** with `--remote` the TUI sends a fresh `thread/start` (or
+  `thread/fork`) with the same `cwd` at once, and no picker shows; with no `--remote`
+  `/new` shows "Where should the new conversation run?" (`/fork` with no `--remote`
+  not run).
+- **`codex --remote … --worktree`** prints "Error: `--worktree` is only supported for
+  local sessions" and exits before it connects.
+- **`--disable worktrees`** changes nothing on 0.166.0: a TUI with no `--remote` still
+  offers the tools and makes the checkout.
+
+Not probed yet: a TUI on the shared background app-server (no `--no-daemon`, no
+`--remote`), a `ws://` remote, an app-server on Linux, one given an enclosing app's
+`-c` overrides, and the agents panel's "new worktree" key (`agents.new_worktree` in
+the TUI's key map) under `--remote`.
 
 **A thread goes on in a worktree deleted and made again at the same path.** Checked
 2026-10-25 with codex-cli 0.162.0 and this Mac's own login: `codex app-server` (stdio)
@@ -1573,6 +1645,12 @@ hooks.UserPromptSubmit=…` and `-c hooks.PostToolUse=…` gave keys
 `trusted_hash` into the machine's `CODEX_HOME/config.toml` with `awk` and `printf`, twice
 over, left one table each, and the machine's 0.162.0 then listed both hooks `trusted`.
 
+**A copy in the TUI goes through the terminal as OSC 52 when no system clipboard is
+reached.** The binary holds a native clipboard, a tmux clipboard and an OSC 52 fallback
+(`native clipboard: …; OSC 52 fallback: …`), writes OSC 52 to `/dev/tty`, and wraps it
+for tmux passthrough (`ESC Ptmux; … ESC \`). Which of them it picks on a machine with
+no display: read from the Mac's codex binary's `strings` (2026-11-05), not run.
+
 Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it
@@ -2188,7 +2266,9 @@ message" (3 runs).
   established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
-- The paste over ssh and tmux is not probed for Codex.
+- Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
+  ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
+  sends the app-server on the machine does.
 - **A picture path in the message is opened when the question needs it.** Measured
   2026-10-28, Codex CLI 0.162.0, `codex exec -s read-only` with Koloft's element-pick
   text (its `Picture:` line names a PNG of a canvas with the word ZEBRA drawn on it; the
@@ -2297,8 +2377,9 @@ the one before, the screen read back through `pyte`.
   `CODEX_HOME`, otherwise as above) the TUI sent both `h` and `l` for 1000, 1002, 1003
   and 1006, and only `?1004h` (focus reports); the order was not recorded. What it does
   with a cut mouse report was not run.
-- Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
-  (§16).
+- Not run: the same keys in a remote Codex tab. Its TUI runs on the Mac too (§16,
+  ADR-0039), so the keys never cross ssh or tmux; only what the TUI then asks of the
+  app-server on the machine (an interrupt after Esc, say) does.
 - **A bare `codex` may stop on a "Background server has incompatible feature settings"
   dialog** (choices "Run without daemon this time" / "Restart with these settings"),
   which is why probes run `codex --no-daemon`; `codex features list` shows

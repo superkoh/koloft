@@ -3,7 +3,7 @@ import path from 'path'
 import { spawn } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { E2E_MUSE_ACCOUNT, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_MUSE_ACCOUNT, installMuse, museSaid, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
   dropTmuxPassthrough,
@@ -29,8 +29,10 @@ import {
   newSessionInWith,
   openMenu,
   runIn,
+  sendTwoLinesJoinedByShiftEnter,
   switchToRow,
   terminalText,
+  TWO_LINE_PROMPT,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -111,6 +113,28 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await expect(row).toHaveClass(/\bst-working\b/)
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(row).toContainText('hello muse')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§7 PLATFORM§35
+  test('E-RM-11: ⇧⏎ in a remote Muse tab reaches Muse through ssh and tmux as a new line in the prompt, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      await expect
+        .poll(() => museSaid(env, call.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain(`echo: ${TWO_LINE_PROMPT}`)
     } finally {
       await quitAndClose(app)
     }

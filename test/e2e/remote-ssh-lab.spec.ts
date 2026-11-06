@@ -759,6 +759,37 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  // PLATFORM§35
+  test('E-SSH-46: text a program in a session on the machine copies reaches this Mac’s clipboard through real tmux, whether it sends OSC 52 bare, wrapped for tmux, or through tmux load-buffer -w', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page, lab }) => {
+      await app.evaluate(({ clipboard }) => {
+        const g = globalThis as unknown as { __koloftCopied?: string[] }
+        g.__koloftCopied = []
+        clipboard.writeText = ((text: string): void => {
+          g.__koloftCopied?.push(text)
+        }) as typeof clipboard.writeText
+      })
+      const copied = (): Promise<string[] | undefined> =>
+        app.evaluate(() => (globalThis as unknown as { __koloftCopied?: string[] }).__koloftCopied)
+      const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`/sh printf '\\033]52;c;%s\\007' ${b64('bare 复制')}\r`)
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制'])
+      await session.write(
+        `/sh printf '\\033Ptmux;\\033\\033]52;c;%s\\007\\033\\\\' ${b64('wrapped 复制')}\r`
+      )
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制', 'wrapped 复制'])
+      await session.write(`/sh printf 'buffer 复制' | tmux load-buffer -w -\r`)
+      await expect
+        .poll(copied, { timeout: 30_000 })
+        .toEqual(['bare 复制', 'wrapped 复制', 'buffer 复制'])
+    })
+  })
+
   // PLATFORM§37
   test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets the machine’s C.UTF-8 as LC_CTYPE, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
     env

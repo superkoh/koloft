@@ -772,27 +772,67 @@ const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
 const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
 const ESC = /\x1b/g
-process.stdin.on('data', (chunk) =>
+// CC§12
+const STATUS_REPLY = /\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)/
+const STATUS_QUERY_WAITS_MS = 1000
+const statusQueried = !!process.env.KOLOFT_FAKE_PROGRAM_STATUS && process.stdin.isTTY
+let reportsState = false
+const reportState = (body) => {
+  if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
+}
+const stopStatusQuery = () => {
+  if (!dialogKey) process.stdin.setRawMode(false)
+}
+if (statusQueried) {
+  process.stdin.setRawMode(true)
+  process.stdout.write('\x1b]7501;?\x07')
+  setTimeout(stopStatusQuery, STATUS_QUERY_WAITS_MS)
+}
+process.stdin.on('data', (chunk) => {
+  if (statusQueried && STATUS_REPLY.test(String(chunk))) {
+    reportsState = true
+    stopStatusQuery()
+    chunk = String(chunk).replace(STATUS_REPLY, '')
+    if (!chunk) return
+  }
   dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
-)
+})
 process.stdin.on('end', () => typedLines.end())
 // CC§14
 function keysOnTheDialog(answerOnceDone) {
+  const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    // PLATFORM§35
+    if (paneRaw) fs.writeFileSync(paneRaw, '')
+    reportState('state=blocked:kind=permission')
+    const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
+      if (fs.existsSync(dropKey)) return void fs.rmSync(dropKey, { force: true })
       const answer = answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
+      if (paneRaw) fs.rmSync(paneRaw, { force: true })
+      reportState('state=working')
       resolve(answer)
     }
   })
 }
 const keyOnTheDialog = () => keysOnTheDialog((key) => key)
+const untilExists = (file) =>
+  new Promise((resolve) => {
+    const tick = setInterval(() => {
+      if (!fs.existsSync(file)) return
+      clearInterval(tick)
+      resolve()
+    }, 200)
+  })
 const DOWN_KEYS = ['\x1b[B', '\x1bOB']
+const UP_KEYS = ['\x1b[A', '\x1bOA']
 // CC§14
-function tabbedQuestionKeys(questions) {
+function questionDialogKeys(questions) {
+  const reviewPage = questions.length > 1 || questions[0].multiSelect
   const state = questions.map(() => ({
     ticked: new Set(),
     words: '',
@@ -814,38 +854,54 @@ function tabbedQuestionKeys(questions) {
           ...(s.words && !s.wordsUnticked ? [s.words] : [])
         ].join(', ')
       : s.words || q.labels[s.pick - 1]
-  return (key) => {
-    if (at === questions.length)
-      return key === '1' ? questions.map((q, i) => answerOf(q, state[i])).join(', ') : undefined
+  const answers = () => questions.map((q, i) => answerOf(q, state[i])).join(', ')
+  const press = (key) => {
     const q = questions[at]
     const s = state[at]
     const options = q.labels.length
+    const chatRow = q.multiSelect ? options + 2 : options + 1
     const tick = (n) => (s.ticked.has(n) ? s.ticked.delete(n) : s.ticked.add(n))
+    const moved = DOWN_KEYS.includes(key)
+      ? Math.min(row + 1, chatRow)
+      : UP_KEYS.includes(key)
+        ? (row || options + 1) - 1
+        : undefined
+    if (moved !== undefined) {
+      row = moved
+      typing = row === options
+      return
+    }
     if (typing) {
-      if (q.multiSelect && key === '\t') {
+      if (key === '\x15') s.words = ''
+      else if (q.multiSelect && key === '\t') {
         typing = false
         row = options + 1
       } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
       else if (key === '\r') next()
       else s.words += key
-      return undefined
+      return
     }
+    if (row === chatRow) return
     if (/^\d$/.test(key) && Number(key) >= 1 && Number(key) <= options) {
       if (q.multiSelect) tick(Number(key))
       else {
         s.pick = Number(key)
+        s.words = ''
         next()
       }
-    } else if (!q.multiSelect && key === String(options + 1)) typing = true
-    else if (q.multiSelect && DOWN_KEYS.includes(key)) {
-      row = Math.min(row + 1, options + 1)
-      typing = row === options
+    } else if (!q.multiSelect && key === String(options + 1)) {
+      typing = true
+      row = options
     } else if (q.multiSelect && key === '\t') next()
     else if (q.multiSelect && key === '\r') {
       if (row === options + 1) next()
       else tick(row + 1)
     }
-    return undefined
+  }
+  return (key) => {
+    if (at === questions.length) return reviewPage && key === '1' ? answers() : undefined
+    press(key)
+    return at === questions.length && !reviewPage ? answers() : undefined
   }
 }
 const rl = readline.createInterface({ input: typedLines })
@@ -1435,7 +1491,8 @@ function handleLine(line) {
     const command = text.slice('/run '.length).trim()
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
     const meta = usageMeta()
-    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: meta.id, cwd }
+    const toolUseId = `toolu_run_${require('crypto').randomUUID()}`
+    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: toolUseId, cwd }
     append([
       {
         type: 'user',
@@ -1452,7 +1509,7 @@ function handleLine(line) {
           role: 'assistant',
           id: meta.id,
           model: meta.model,
-          content: [{ type: 'tool_use', id: meta.id, name: 'Bash', input: { command } }],
+          content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command } }],
           usage: meta.usage
         },
         cwd
@@ -1484,22 +1541,17 @@ function handleLine(line) {
   if (text.startsWith('/later ')) {
     const later = text.slice('/later '.length)
     const marker = path.join(home, 'go-later')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(marker).then(() => {
       fs.rmSync(marker, { force: true })
       handleLine(later)
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
     return
   }
   if (text.startsWith('/open-later ')) {
     const target = text.slice('/open-later '.length).trim()
     if (!target) return void process.stdout.write('> ')
-    const marker = path.join(home, 'go-open')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(path.join(home, 'go-open')).then(() => {
       try {
         cp.execFileSync('open', [target], {
           cwd,
@@ -1507,7 +1559,7 @@ function handleLine(line) {
           env: openEnvRoutingPastShimToRecordingFakeOpen()
         })
       } catch {}
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed open ${target}\r\n> `)
     return
   }
@@ -1645,7 +1697,7 @@ function handleLine(line) {
             message: `Claude needs your permission to use ${name}`
           })
       }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
-      picked = keyed(await key)
+      picked = await keyed(await key)
     }
     append([
       {
@@ -1684,26 +1736,27 @@ function handleLine(line) {
         multiSelect: q.multiSelect
       }))
     }
-    const [first] = questions
     const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
       (updated) => pickedText(Object.values(updated.answers).join(', ')),
       pickedText,
-      questions.length > 1 || first.multiSelect
-        ? tabbedQuestionKeys(questions)
-        : (key) => first.labels[Number(key) - 1] ?? key
+      questionDialogKeys(questions)
     )
   }
   if (text.startsWith('/bash ')) {
     const command = text.slice('/bash '.length)
     const ran = `Ran: ${command}`
+    const runs = async () => {
+      if (command.startsWith('slow ')) await untilExists(path.join(home, 'go-run'))
+      return ran
+    }
     return ask(
       'Bash',
       { command, description: 'A command' },
       () => ran,
-      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+      (key) => (key === '1' ? runs() : `Denied: key ${JSON.stringify(key)}`)
     )
   }
   if (text === '/need-approval') {

@@ -313,6 +313,7 @@ set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
 set -gq allow-passthrough on
+set -g set-clipboard on
 ${TMUX_PASSES_THE_PANE_TITLE_ON.map((option) => `set -g ${option}\n`).join('')}`
 
 export interface MachineTmp {

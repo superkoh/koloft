@@ -1,6 +1,7 @@
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
+import type { InboxSnapshot } from '@shared/inbox'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
@@ -117,6 +118,8 @@ interface AppState {
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
   secretAsks: SecretAskView[]
+  inbox: InboxSnapshot
+  inboxOpen: boolean
   revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
@@ -206,6 +209,8 @@ interface AppState {
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
   setSecretAsks: (asks: SecretAskView[]) => void
+  setInbox: (inbox: InboxSnapshot) => void
+  setInboxOpen: (open: boolean) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
@@ -455,13 +460,18 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
+function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxOpen: false } {
+  return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
+}
+
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
   useStore.setState((s) => ({
     tabs: s.tabs.map((x) =>
       x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
     ),
-    activeTabId: select || s.activeTabId === asleep.id ? t.id : s.activeTabId,
-    resumeLaunch: select ? null : s.resumeLaunch,
+    ...(select
+      ? shownTab(t.id)
+      : { activeTabId: s.activeTabId === asleep.id ? t.id : s.activeTabId }),
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
@@ -646,6 +656,8 @@ export const useStore = create<AppState>((set, get) => ({
   leftovers: {},
   attention: [],
   secretAsks: [],
+  inbox: { cards: [], ready: [] },
+  inboxOpen: false,
   revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
@@ -701,7 +713,7 @@ export const useStore = create<AppState>((set, get) => ({
     activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
-    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
+    set((s) => ({ tabs: [...s.tabs, t], ...shownTab(t.id) }))
   },
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
@@ -713,7 +725,7 @@ export const useStore = create<AppState>((set, get) => ({
         ? s
         : {
             tabs: [...s.tabs, t],
-            ...(awaited && { activeTabId: t.id, resumeLaunch: null })
+            ...(awaited && shownTab(t.id))
           }
     )
   },
@@ -776,7 +788,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...workbenchStateDropped(s, [id])
       }
     })
-    if (toButler) get().landOnButler()
+    if (toButler && !get().inboxOpen) get().landOnButler()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
@@ -850,7 +862,7 @@ export const useStore = create<AppState>((set, get) => ({
   activateTab: (id) => {
     activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
     if (activateOnceSpawned) return
-    set({ activeTabId: id, resumeLaunch: null })
+    set(shownTab(id))
   },
   revealTab: (id) => set({ revealRow: { tabId: id } }),
 
@@ -1041,6 +1053,8 @@ export const useStore = create<AppState>((set, get) => ({
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
   setSecretAsks: (secretAsks) => set({ secretAsks }),
+  setInbox: (inbox) => set({ inbox }),
+  setInboxOpen: (inboxOpen) => set({ inboxOpen }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),

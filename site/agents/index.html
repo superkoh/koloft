@@ -106,6 +106,11 @@
           </li>
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
           <li>
+            when the session has a <a href="../discord/#rooms">room on Discord</a> and you are away
+            or talking to it from there, what <code>koloft open</code> and
+            <code>koloft diff</code> show also goes to that room
+          </li>
+          <li>
             <code>koloft note</code> — read the <a href="../workbench/#note">note</a> it shows (its
             folder's, or the butler's own), or add a line to the end of it
           </li>
@@ -113,30 +118,41 @@
 
         <h3 id="secrets">Passwords and codes</h3>
         <p>
-          When the session needs something only you know, and you are on your phone, it can ask in
-          your butler's Discord channel, on a card that names the session (see
-          <a href="../discord/#secrets">passwords and codes on Discord</a>), which says what happens
-          to what you type. The agent never sees it.
+          When the session needs something only you know, it asks you in its own tab. The agent
+          never sees what you give.
         </p>
         <ul class="dash">
           <li>
-            <code>sudo</code> (the Mac's admin command) — a <code>sudo</code> the session runs with
-            no terminal asks you for the password on Discord, instead of failing
+            <code>sudo</code> (the admin command) — a <code>sudo</code> the session runs with no
+            terminal opens a <code>Sudo password</code> box over that session's terminal, with the
+            command it runs. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>
           </li>
           <li>
             <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
-            — a password or one-time code for a field on a web page in its Workbench
+            — a password or one-time code for a field on a web page in its Workbench. That page
+            comes to the front with a bar above it:
+            <code>This session needs your &lt;field&gt; on this page.</code> Type into the page
+            itself, then press <code>Done</code>; when the page moves on, Koloft counts it as done
           </li>
           <li>
             <code>koloft secret url "&lt;sign-in address&gt;"</code> — a sign-in that ends on a
-            <code>127.0.0.1</code> address (an address on the machine itself); you finish it on your
-            phone and paste the last address
+            <code>127.0.0.1</code> or <code>localhost</code> address (an address on the machine
+            itself). It opens in the session's Workbench with the bar
+            <code>This session needs you to finish this sign-in here.</code> Sign in there; once it
+            lands on that last page, Koloft is done, with nothing for you to paste
           </li>
         </ul>
         <p>
-          With no Discord channel bound, all three are refused with a message that says so. While
-          you <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), they are
-          refused too:
+          <code>Cancel</code> (or <kbd>Esc</kbd> in the box) tells the session you turned it down.
+          While the box or bar waits, the session's row is amber, as when it needs your OK. While
+          you are away from the Mac, or talking to that session from Discord, a card comes to
+          Discord too (see <a href="../discord/#secrets">passwords and codes on Discord</a>), and
+          the first answer wins. The other one closes. With no Discord set up, the box and the bar
+          still work. Koloft does this the same way for every agent, on this Mac and in a
+          <a href="../remote/">remote folder</a>. While you
+          <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all three are
+          refused at once:
           <code
             >koloft: the owner is asleep and cannot give a password or a code now. Skip this step,
             go on with the rest, and say in your report that it waits for the owner.</code
@@ -273,8 +289,8 @@
         <p>
           Your <a href="../accounts/#butler">butler</a>, Koloft's own AI that you talk to from the
           sidebar or from Discord, uses the same commands. Only it, with a Discord channel bound,
-          can send you files or a picture of a page on Discord. See
-          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+          can use <code>koloft discord send</code> and <code>shot</code> to send you files or a
+          picture of a page. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 691; --ar-phone: 736 / 744">
@@ -358,6 +374,27 @@
           <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
           this.
         </p>
+        <h3>Antigravity</h3>
+        <p>
+          In an Antigravity session on this Mac, a Playwright MCP entry in your Antigravity MCP
+          settings (<code>~/.gemini/config/mcp_config.json</code>) gets the session's address, so
+          its tools open tabs in Koloft, and they run without asking first; your other MCP servers
+          still ask. If your own Antigravity permissions name that server, Koloft adds nothing and
+          your rules decide. In a remote folder, Koloft adds none of this.
+        </p>
+        <h3>Muse</h3>
+        <p>
+          In a Muse session on this Mac, a Playwright MCP entry in your Muse settings
+          (<code>~/.config/muse/settings.json</code>) gets the session's address too, so its tools
+          open tabs in Koloft. Its tools that change a page run without asking first. Your other MCP
+          servers still ask. An "Always allow" or a refusal you saved for one of its tools stays. To
+          do this, Koloft gives each account its own copy of your settings file, and starts Muse on
+          this Mac on that copy. A setting you change inside such a session (with
+          <code>/theme</code> or <code>/permissions</code>, say) is copied back into your file the
+          next time Muse starts on that account. A change you make to your file by hand reaches
+          those sessions the next time they start. In a remote folder, Koloft adds none of this, and
+          Muse uses your settings file there as it is.
+        </p>
 
         <h3>What to expect</h3>
         <div class="typed-table">
@@ -372,9 +409,9 @@
               <tr>
                 <td>it connects</td>
                 <td>
-                  It just drives. Koloft asks nothing; the switch is its one control. Codex, on its
-                  usual permissions, asks you once per thread whether to allow the tool. That
-                  question is Codex's own.
+                  It just drives. Koloft asks nothing; the switch is its one control. On this Mac,
+                  the Playwright MCP tools of Codex, Antigravity and Muse sessions run without
+                  asking (see above); any other question about allowing a tool is the agent's own.
                 </td>
               </tr>
               <tr>

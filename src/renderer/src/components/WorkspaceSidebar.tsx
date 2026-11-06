@@ -84,6 +84,7 @@ import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { ButlerRow } from './ButlerRow'
+import { InboxRow } from './Inbox'
 import { everyWorkspaceRows } from '../butlerRows'
 import {
   discardAll,
@@ -1477,6 +1478,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
+          <InboxRow />
           <ButlerRow>
             {butlerWorkspace && [
               ...queuedIn(butlerWorkspace.workspace.path).map(queuedRow),
