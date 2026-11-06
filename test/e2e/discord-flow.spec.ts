@@ -893,7 +893,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       fake.say(OWNER, `/koloft session resume ${title} -- carry on`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain(sent('carry on', 3))
+        .toContain(sent('carry on', 2))
       expect(
         readAllCalls(env).filter((c) => c.argv[c.argv.indexOf('--resume') + 1] === managed)
       ).toHaveLength(1)

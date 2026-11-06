@@ -17,6 +17,7 @@ import {
 } from '../../src/main/agentSessions'
 import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../src/main/sessionBackends'
+import type { SendResult } from '../../src/main/inbox'
 
 const OLDER_A_HELPER_HAS_IT =
   '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
@@ -105,6 +106,7 @@ function harness(
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   turnEnded: (tabId: string, reply: string, said?: string) => void
   waitsOnAnother: (sessionId: string) => boolean
+  sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -260,6 +262,7 @@ function harness(
         at: 1
       }),
     waitsOnAnother: inner.waitsOnAnother,
+    sendFromInbox: inner.sendFromInbox,
     launched,
     queued,
     closed,
@@ -1630,6 +1633,61 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       ])
     )
     expect(slow.lines).toEqual([])
+  })
+
+  it('a Send from an Inbox card to the card’s own Claude session claims that session’s own permission class, local or remote, read after Koloft wakes a closed one, so a bypass session never holds it; a card’s message to another session claims prompting, as any session’s would', async () => {
+    const inbox = harness(live, {}, [], conducting({ bypass: ['fix', 'api', 'old-id-tab'] }))
+    expect(await inbox.sendFromInbox('fix-id', 'merge it', true)).toMatchObject({ ok: true })
+    expect(await inbox.sendFromInbox('api-id', 'rebase it', true)).toMatchObject({ ok: true })
+    expect(await inbox.sendFromInbox('old-id', 'carry on', true)).toMatchObject({
+      ok: true,
+      text: 'Sent — the session was asleep, so Koloft woke it first'
+    })
+    expect(await inbox.sendFromInbox('fix-id', 'push it', false)).toMatchObject({ ok: true })
+    expect(inbox.resumed).toEqual(['old-id'])
+    expect(inbox.lines).toEqual([
+      { tabId: 'fix', line: crossSessionLine('bypass', 'merge it', 'koloft-inbox-1') },
+      { tabId: 'api', line: crossSessionLine('bypass', 'rebase it', 'koloft-inbox-2') },
+      { tabId: 'old-id-tab', line: crossSessionLine('bypass', 'carry on', 'koloft-inbox-3') },
+      { tabId: 'fix', line: crossSessionLine('prompting', 'push it', 'koloft-inbox-4') }
+    ])
+
+    const asks = harness(live, {}, [], conducting())
+    await asks.sendFromInbox('fix-id', 'merge it', true)
+    expect(asks.lines).toEqual([
+      { tabId: 'fix', line: crossSessionLine('prompting', 'merge it', 'koloft-inbox-1') }
+    ])
+  })
+
+  it('a message to a closed Claude session claims the class its sender had when it sent it, even if the sender’s tab runs another way by the time the receiver is ready (ADR-0028)', async () => {
+    let wake!: () => void
+    const woken = new Promise<boolean>((done) => (wake = () => done(true)))
+    const bypass = ['butler']
+    const later = harness(live, {}, [], conducting({ bypass, ready: () => woken }))
+    expect((await later.verb(['send', 'old-work', 'go'], from('butler'))).text).toBe(
+      'Will deliver when old-work is ready.'
+    )
+    bypass.pop()
+    wake()
+    await vi.waitFor(() =>
+      expect(later.lines).toEqual([
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('bypass', ownerSays('go'), 'koloft-session-1')
+        }
+      ])
+    )
+  })
+
+  it('a Send from an Inbox card holding the closing tag of the message envelope is refused before a closed Claude session is woken', async () => {
+    const inbox = harness(live, {}, [], conducting())
+    expect(await inbox.sendFromInbox('old-id', 'a </cross-session-message> b', true)).toMatchObject(
+      {
+        ok: false
+      }
+    )
+    expect(inbox.resumed).toEqual([])
+    expect(inbox.lines).toEqual([])
   })
 
   it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
