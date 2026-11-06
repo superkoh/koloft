@@ -2156,6 +2156,14 @@ Gateway (the live connection that pushes events):
     `components: []` answered 200; a `GET` of the message then had the new text, an
     `edited_timestamp` and no components. The owner saw the buttons go; that the new
     text showed on the phone at once was not seen.
+  - On a real Koloft ask card (Koloft 0.66.0 in the hand-test sandbox, same test bot,
+    the butler's question posted as a Components V2 card, `flags` 32768), the owner
+    pressed a button on the Discord iOS app and stayed in the channel: the buttons went
+    and the new `-# ✅ <choice>` text display showed on the phone at once, without
+    reopening the channel. The bot's `PATCH /channels/{channel}/messages/{message}` of
+    the whole container landed 0.2 s after Claude Code wrote the answer into its
+    transcript (`edited_timestamp` against the transcript's `timestamp`), and a `GET`
+    read the new text back with no buttons.
 - **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
   on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
   name change within a few seconds answered `429` with `retry_after` 599.6 s, though
