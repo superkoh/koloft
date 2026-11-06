@@ -501,3 +501,26 @@ test('a session that ends its turn waiting on the owner is a card with its last 
     timeout: 15_000
   })
 })
+
+test('a finished turn the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session', async ({
+  page,
+  env
+}) => {
+  fs.writeFileSync(
+    path.join(env.home, 'fake-claude-assist-reply'),
+    'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
+  )
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-a')
+  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
+
+  await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
+  await openInbox(page)
+  const card = cardQuoting(page, /Answer to: Shall I merge PR #12\?/)
+  await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: 15_000 })
+  await card.locator('.ibx-choice', { hasText: 'Not yet' }).click()
+  await expect
+    .poll(() => peerMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+    .toContain('Merge PR #12? «Not yet»')
+  await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+})

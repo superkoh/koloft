@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { NewsJudge, onlyNews, waitsOnOtherWork, type Helper } from '../../src/main/turnNews'
+import {
+  NewsJudge,
+  judgeTurn,
+  waitsOnOtherWork,
+  type Helper,
+  type Verdict
+} from '../../src/main/turnNews'
 import type { Turn } from '../../src/shared/turns'
 
 const turn = (reply: string): Turn => ({ said: [], reply, at: 1 })
@@ -36,17 +42,17 @@ describe('waitsOnOtherWork — what Koloft itself can see a session waiting on',
 
 describe('NewsJudge — each finished turn is judged once, and only its own mark takes the verdict', () => {
   function judge() {
-    const verdicts: ((news: boolean) => void)[] = []
+    const verdicts: ((v: Verdict) => void)[] = []
     const marked = new Set<string>()
     const fyi: string[] = []
     const j = new NewsJudge({
-      isNews: () => new Promise((resolve) => verdicts.push(resolve)),
+      judge: () => new Promise((resolve) => verdicts.push(resolve)),
       awaitingVerdict: (tabId) => marked.has(tabId),
       markFyi: (tabId) => fyi.push(tabId),
       judged: () => {}
     })
     const settle = async (news: boolean): Promise<void> => {
-      verdicts.shift()?.(news)
+      verdicts.shift()?.({ news })
       await Promise.resolve()
     }
     return { j, marked, fyi, verdicts, settle }
@@ -94,21 +100,73 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
   })
 })
 
-describe('onlyNews — the Assist decides only what code cannot', () => {
+describe('judgeTurn — the Assist decides only what code cannot', () => {
+  const asks: string[] = []
+  const say =
+    (answer: string | null) =>
+    async ({ prompt }: { prompt: string }): Promise<string | null> => {
+      asks.push(prompt)
+      return answer
+    }
+
   it('news only when the Assist answers NEWS; ACT, no answer or an empty reply keep it a call', async () => {
-    const asks: string[] = []
-    const say =
-      (answer: string | null) =>
-      async ({ prompt }: { prompt: string }): Promise<string | null> => {
-        asks.push(prompt)
-        return answer
-      }
+    asks.length = 0
     expect(
-      await onlyNews(say(' news\n'), turn('PR is open; I will report when CI is green.'))
-    ).toBe(true)
-    expect(await onlyNews(say('ACT'), turn('Merge it?'))).toBe(false)
-    expect(await onlyNews(say(null), turn('Done.'))).toBe(false)
-    expect(await onlyNews(say('NEWS'), turn('   '))).toBe(false)
+      await judgeTurn(say(' news\n'), turn('PR is open; I will report when CI is green.'))
+    ).toEqual({ news: true })
+    expect(await judgeTurn(say('ACT'), turn('Merge it?'))).toEqual({ news: false })
+    expect(await judgeTurn(say(null), turn('Done.'))).toEqual({ news: false })
+    expect(await judgeTurn(say('NEWS'), turn('   '))).toEqual({ news: false })
     expect(asks).toHaveLength(3)
+  })
+
+  it('a last line saying the owner has nothing to do is news without asking the Assist, even after recommendations', async () => {
+    asks.length = 0
+    for (const last of [
+      '接下来你要做的：没有，等你合并三份。',
+      '**你下一步：** 不用做什么。',
+      '你接下来要做的：无。',
+      '你现在什么都不用做。合并顺序不变：先合 #1451。',
+      'Next for you: nothing.'
+    ])
+      expect(await judgeTurn(say('ACT'), turn(`- A（推荐）\n- B？\n\n${last}`))).toEqual({
+        news: true
+      })
+    expect(asks).toHaveLength(0)
+    for (const last of [
+      '你要做的：决定合不合 PR #1539。',
+      '你不用处理冲突，但要决定合不合 #12。',
+      '你要做的：没有别的，只要合并 #12。',
+      '你要做的：不用改代码，只要在 GitHub 上点一下合并 #12。',
+      '你要做的：不用管 CI，直接合并 #12。',
+      '需要你确认：不用 Haiku 改用 Sonnet 行不行？',
+      '你要做的：没有问题的话就合并 #12，有问题告诉我。',
+      '你要做的：没有意见就回我一声，我就推。',
+      '你要做的：没有了，只差你点合并。',
+      '你这边不用做什么，只需要批一下这个 PR。',
+      '你不用做什么，除了把 token 发我。',
+      '提醒你：没有你的授权我不能推，要推吗？',
+      '主人要定：不用 A 用 B 可以吗？',
+      'Next for you: nothing to fix, just approve the PR.',
+      'Your next step: none needed, but please confirm the account name.'
+    ])
+      expect(await judgeTurn(say('ACT'), turn(last))).toEqual({ news: false })
+  })
+
+  it('replies offered after ACT ride along: 2 to 4 distinct ones under a question, and none when fewer or no question', async () => {
+    expect(
+      await judgeTurn(
+        say('ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n- Merge it\n- A\n- B\n- C'),
+        turn('Merge it?')
+      )
+    ).toEqual({
+      news: false,
+      choices: { question: 'Merge PR #12?', options: ['Merge it', 'Not yet', 'A', 'B'] }
+    })
+    expect(await judgeTurn(say('ACT\nQ: Merge?\n- Merge it'), turn('Merge it?'))).toEqual({
+      news: false
+    })
+    expect(await judgeTurn(say('ACT\n- Yes\n- No'), turn('Merge it?'))).toEqual({ news: false })
+    expect(await judgeTurn(say('NEWS\nQ: x\n- a\n- b'), turn('Done.'))).toEqual({ news: true })
   })
 })
