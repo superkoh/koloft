@@ -11,7 +11,7 @@ import {
   WORKBENCH_GIT
 } from '../e2e/helpers/gitSpawnLog'
 import type { E2EEnv } from '../e2e/helpers/env'
-import { GitFreshnessEngine } from '../../src/main/gitFreshness'
+import { GitFreshnessEngine, LocalRunner } from '../../src/main/gitFreshness'
 
 const SHA = '41bc8cd5b57f78e76e57ee127ce63d489203cccc'
 const ROOT = '/private/tmp/koloft-e2e-home-x/ws-a'
@@ -153,10 +153,12 @@ describe('WORKBENCH_GIT against the freshness engine’s real spawns', () => {
     } as unknown as E2EEnv)
     process.env.PATH = `${fakeBin}:${realPath}`
 
+    const local = new LocalRunner()
     const engine = new GitFreshnessEngine({
       workspaces: () => [{ path: work, missing: false }],
       autoFetch: () => true,
-      onChange: () => {}
+      onChange: () => {},
+      runner: () => local
     })
     await engine.sweep()
     const before = await engine.fetchNow(work)

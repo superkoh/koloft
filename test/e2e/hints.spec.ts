@@ -1,3 +1,4 @@
+import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
@@ -22,7 +23,12 @@ async function toggleWorkbenchWithoutClicking(app: ElectronApplication, page: Pa
 
 async function start(
   env: E2EEnv,
-  opts: { hintsSeen?: string[]; hintsOff?: boolean; panelOpen?: boolean } = {}
+  opts: {
+    hintsSeen?: string[]
+    hintsOff?: boolean
+    panelOpen?: boolean
+    noStartupTurn?: boolean
+  } = {}
 ): Promise<{ app: ElectronApplication; page: Page }> {
   seedSettings(env, {
     onboardingSeen: true,
@@ -30,6 +36,7 @@ async function start(
     hintsOff: opts.hintsOff ?? false
   })
   if (opts.panelOpen === false) seedWorkbenchDefault(env, false)
+  if (opts.noStartupTurn) fs.writeFileSync(env.claudeLazyFile, '1')
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
@@ -69,7 +76,7 @@ async function expectAnchoredAt(page: Page, selector: string): Promise<void> {
 }
 
 async function shownTabId(page: Page): Promise<string> {
-  const id = await page.locator('.ws-tab.active').first().getAttribute('data-tab-id')
+  const id = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
   if (!id) throw new Error('the shown session row carries no data-tab-id')
   return id
 }
@@ -116,7 +123,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    let { app, page } = await start(env, { panelOpen: false })
+    let { app, page } = await start(env, { panelOpen: false, noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       await runIn(page, centerTerm(page), '/write first.md')
@@ -163,7 +170,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     env
   }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env)
+    const { app, page } = await start(env, { noStartupTurn: true })
     try {
       await holdWorkbenchReads(app)
       await startSessionIn(page, 'ws-a')
@@ -197,7 +204,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await stayAbsentPastPumpGap(page)
 
       await runIn(page, centerTerm(page), 'back to work')
-      await expect(page.locator(rowSel(b))).not.toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await expect(page.locator(rowSel(b))).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
       await page.locator(rowSel(a)).click()
       await expect(page.locator(rowSel(a))).toHaveClass(/\bactive\b/, { timeout: 15_000 })
 
@@ -213,7 +220,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     }
   })
 
-  test('with the sidebar hidden, the sidebar button carries the Dock badge’s count, and the approval card points at the button until the sidebar comes back', async ({
+  test('with the sidebar hidden, the bell beside the sidebar button carries the Dock badge’s count, and the approval card points at the sidebar button until the sidebar comes back', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -224,6 +231,13 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       const a = await shownTabId(page)
       await startSessionIn(page, 'ws-a')
       const b = await shownTabId(page)
+      await expect
+        .poll(
+          async () =>
+            (await pendingAttention(page)).some((e) => e.tabId === b && e.kind === 'turn-done'),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
       await page.locator(rowSel(a)).click()
       await expect(page.locator(rowSel(a))).toHaveClass(/\bactive\b/, { timeout: 15_000 })
 
@@ -232,7 +246,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await typeIntoHiddenRow(page, b, '/need-approval')
       await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
       await expectAnchoredAt(page, sidebarButton)
-      const count = page.locator(`${sidebarButton} .ws-unread-count`)
+      const count = page.locator('.aux-ico.waiting-bell .ws-unread-count')
       await expect
         .poll(
           async () => {
@@ -247,7 +261,6 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await clickAppMenuItem(app, page, 'toggle-sidebar')
       await expect(page.locator('.side')).toBeVisible()
       await expectAnchoredAt(page, rowSel(b))
-      await expect(count).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
@@ -335,7 +348,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-06: Esc and an outside click close a hint, and count it as seen', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { panelOpen: false })
+    const { app, page } = await start(env, { panelOpen: false, noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       await runIn(page, centerTerm(page), '/write one.md')
@@ -362,7 +375,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
   test('T-HN-07: two triggers at once show one card, and the second waits', async ({ env }) => {
     test.setTimeout(240_000)
-    const { app, page } = await start(env, { hintsSeen: ['worktree'] })
+    const { app, page } = await start(env, { hintsSeen: ['worktree'], noStartupTurn: true })
     try {
       await startSessionIn(page, 'ws-a')
       const a = await shownTabId(page)

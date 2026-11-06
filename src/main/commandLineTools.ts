@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process'
 
-const APPLE_GIT_STUB_DIR = '/usr/bin'
+export const APPLE_GIT_STUB_DIR = '/usr/bin'
 const USUAL_OTHER_GIT_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/opt/local/bin']
 
 // PLATFORM§1

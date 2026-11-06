@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import {
-  LuBell,
-  LuConciergeBell,
-  LuInfo,
-  LuKeyboard,
-  LuPalette,
-  LuPuzzle,
-  LuSparkles,
-  LuTerminal,
-  LuUsers,
-  LuX
-} from 'react-icons/lu'
+  IconAccounts,
+  IconAiStart,
+  IconAppearance,
+  IconAssist,
+  IconClose,
+  IconExtensions,
+  IconInfo,
+  IconNotifications,
+  IconShortcuts,
+  IconTerminal,
+  IconUsage,
+  type Icon
+} from '../../icons'
 import { clearHistory } from '../../browserHistory'
 import { useStore } from '../../store'
 import { EscScope } from './escScope'
 import { AccountsPane } from './AccountsPane'
+import { UsagePane } from './UsagePane'
 import { SessionsPane } from './SessionsPane'
 import { AppearancePane } from './AppearancePane'
 import { ShortcutsPane } from './ShortcutsPane'
@@ -25,18 +28,8 @@ import { WelcomePane } from './WelcomePane'
 import { DiscordPane } from './DiscordPane'
 import { AssistPane } from './AssistPane'
 import { BsDiscord } from 'react-icons/bs'
-
-type PaneId =
-  | 'welcome'
-  | 'sessions'
-  | 'accounts'
-  | 'appearance'
-  | 'shortcuts'
-  | 'assist'
-  | 'notifications'
-  | 'discord'
-  | 'extensions'
-  | 'about'
+import { SETTINGS_PANES, type SettingsPaneId } from '@shared/paletteFeatures'
+import '../../settings.css'
 
 function ClearBrowsingData(): JSX.Element {
   const [asking, setAsking] = useState(false)
@@ -78,18 +71,21 @@ function ClearBrowsingData(): JSX.Element {
   )
 }
 
-const PANES: { id: PaneId; label: string; Icon: typeof LuUsers }[] = [
-  { id: 'welcome', label: 'Welcome', Icon: LuSparkles },
-  { id: 'sessions', label: 'Sessions', Icon: LuTerminal },
-  { id: 'accounts', label: 'Accounts', Icon: LuUsers },
-  { id: 'appearance', label: 'Appearance', Icon: LuPalette },
-  { id: 'shortcuts', label: 'Shortcuts', Icon: LuKeyboard },
-  { id: 'assist', label: 'Assist', Icon: LuConciergeBell },
-  { id: 'discord', label: 'Discord', Icon: BsDiscord },
-  { id: 'notifications', label: 'Notifications', Icon: LuBell },
-  { id: 'extensions', label: 'Extensions', Icon: LuPuzzle },
-  { id: 'about', label: 'About', Icon: LuInfo }
-]
+const PANE_ICONS: Record<SettingsPaneId, Icon> = {
+  welcome: IconAiStart,
+  sessions: IconTerminal,
+  accounts: IconAccounts,
+  usage: IconUsage,
+  appearance: IconAppearance,
+  shortcuts: IconShortcuts,
+  assist: IconAssist,
+  discord: BsDiscord,
+  notifications: IconNotifications,
+  extensions: IconExtensions,
+  about: IconInfo
+}
+
+const PANES = SETTINGS_PANES.map(({ id, label }) => ({ id, label, Icon: PANE_ICONS[id] }))
 
 export function SettingsModal(): JSX.Element | null {
   const open = useStore((s) => s.settingsOpen)
@@ -98,7 +94,7 @@ export function SettingsModal(): JSX.Element | null {
     const phase = s.accountLogin?.progress?.phase
     return phase === 'starting' || phase === 'browser'
   })
-  const [pane, setPane] = useState<PaneId>('accounts')
+  const [pane, setPane] = useState<SettingsPaneId>('accounts')
   const modalRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const escConsumers = useRef(new Set<() => boolean>())
@@ -110,7 +106,7 @@ export function SettingsModal(): JSX.Element | null {
 
   useEffect(() => {
     if (!open) return
-    setPane('accounts')
+    setPane(useStore.getState().settingsPane ?? 'accounts')
     void window.api.accounts.probe()
   }, [open])
 
@@ -208,6 +204,7 @@ export function SettingsModal(): JSX.Element | null {
             {pane === 'welcome' && <WelcomePane />}
             {pane === 'sessions' && <SessionsPane />}
             {pane === 'accounts' && <AccountsPane />}
+            {pane === 'usage' && <UsagePane />}
             {pane === 'appearance' && <AppearancePane />}
             {pane === 'shortcuts' && <ShortcutsPane />}
             {pane === 'notifications' && <NotificationsPane />}
@@ -223,7 +220,7 @@ export function SettingsModal(): JSX.Element | null {
           aria-label="Close"
           onClick={() => setSettingsOpen(false)}
         >
-          <LuX size={14} />
+          <IconClose size={14} />
         </button>
       </div>
     </div>

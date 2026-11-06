@@ -5,7 +5,8 @@ import os from 'os'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import { execFileSync } from 'child_process'
-import { GitFreshnessEngine } from '../../src/main/gitFreshness'
+import { GitFreshnessEngine, LocalRunner, type FreshnessRunner } from '../../src/main/gitFreshness'
+import { parseRemoteKey } from '@shared/remoteKey'
 import type { WorkspaceFreshness } from '@shared/types'
 
 let tmp: string
@@ -57,20 +58,27 @@ function publish(n: number): void {
 interface Harness {
   engine: GitFreshnessEngine
   changed: string[]
+  moved: string[]
   setNow(ms: number): void
 }
 
 function harness(
   opts: {
     autoFetch?: () => boolean
+    autoPull?: () => boolean
+    busy?: (wsPath: string) => boolean
+    toast?: (text: string) => void
     paths?: string[]
     missing?: string[]
     gitBin?: string
     fetchTimeoutMs?: number
+    machine?: (host: string) => FreshnessRunner | null
   } = {}
 ): Harness {
   const changed: string[] = []
+  const moved: string[] = []
   let now = 1_700_000_000_000
+  const local = new LocalRunner(opts.gitBin)
   const engine = new GitFreshnessEngine(
     {
       workspaces: () =>
@@ -79,12 +87,20 @@ function harness(
           missing: opts.missing ? opts.missing.includes(p) : !fs.existsSync(p)
         })),
       autoFetch: opts.autoFetch ?? ((): boolean => true),
+      autoPull: opts.autoPull,
+      busy: opts.busy,
+      toast: opts.toast,
       onChange: (p) => changed.push(p),
+      onDefaultMoved: (m) => moved.push(`${m.wsPath} ${m.defRef} ${m.from}..${m.to}`),
+      runner: (p) => {
+        const key = parseRemoteKey(p)
+        return key ? (opts.machine?.(key.host) ?? null) : local
+      },
       now: () => now
     },
-    { gitBin: opts.gitBin, fetchTimeoutMs: opts.fetchTimeoutMs }
+    { fetchTimeoutMs: opts.fetchTimeoutMs }
   )
-  return { engine, changed, setNow: (ms) => (now = ms) }
+  return { engine, changed, moved, setNow: (ms) => (now = ms) }
 }
 
 function loggingGitBin(
@@ -277,6 +293,21 @@ describe('Tier-1 + Tier-2 measurement', () => {
     expect(v.lastAttemptAt).not.toBeNull()
   })
 
+  it('a fetch that moves origin’s default branch reports where it moved from and to; the first measure, and a fetch that brings nothing, report no move', async () => {
+    const h = harness()
+    await h.engine.fetchNow(work)
+    const before = git(work, 'rev-parse', 'origin/main').trim()
+    h.setNow(1_700_000_100_000)
+    await h.engine.fetchNow(work)
+    expect(h.moved).toEqual([])
+
+    publish(2)
+    h.setNow(1_700_000_200_000)
+    await h.engine.fetchNow(work)
+    const after = git(work, 'rev-parse', 'origin/main').trim()
+    expect(h.moved).toEqual([`${work} origin/main ${before}..${after}`])
+  })
+
   it('reports nothing at all for a directory that is not a repo', async () => {
     const plain = path.join(tmp, 'plain')
     fs.mkdirSync(plain)
@@ -412,6 +443,26 @@ describe('sweep throttle, backoff and the gitAutoFetch switch', () => {
     expect(h.engine.get(work)).toBeUndefined()
     await h.engine.fetchNow(work)
     expect(f(h.engine.get(work)).lastAttemptAt).toBe(T0)
+  })
+
+  it('gitAutoPull fast-forwards a clean default branch right after the sweep fetches it, and says so', async () => {
+    const toasts: string[] = []
+    const h = harness({ autoPull: () => true, toast: (t) => toasts.push(t) })
+    publish(2)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(0)
+    expect(git(work, 'rev-parse', 'HEAD')).toBe(git(work, 'rev-parse', 'origin/main'))
+    expect(toasts).toEqual([expect.stringMatching(/^work · main: fast-forwarded 2 commits/)])
+  })
+
+  it.each([
+    ['a session there is mid-task', { autoPull: (): boolean => true, busy: (): boolean => true }],
+    ['the switch is off', { autoPull: (): boolean => false }]
+  ])('gitAutoPull leaves the checkout alone when %s', async (_, opts) => {
+    publish(2)
+    const h = harness(opts)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(2)
   })
 
   it('skips a workspace whose directory is gone', async () => {
@@ -720,13 +771,129 @@ describe('default-ref memo', () => {
 })
 
 describe('remote workspaces', () => {
-  it('U-FRESH-1: never measures a remote key, and still measures the local pins beside it', async () => {
+  const REMOTE = 'ssh://devbox/x'
+
+  function machineRunner(asked: string[], fail?: Error): FreshnessRunner {
+    return {
+      measure: async (root, fetchTimeoutMs) => {
+        asked.push(`${root}${fetchTimeoutMs === null ? '' : ' +fetch'}`)
+        if (fail) throw fail
+        return {
+          snapshot: {
+            branch: 'main',
+            head: 'a'.repeat(40),
+            defRef: 'origin/main',
+            linked: false,
+            hasSubmodules: false,
+            tracking: {
+              fetched: true,
+              fetchHeadAt: null,
+              ahead: 0,
+              behind: 2,
+              dirty: false,
+              defHead: 'b'.repeat(40)
+            }
+          },
+          enoent: false
+        }
+      },
+      pull: async () => {
+        throw new Error('not asked')
+      }
+    }
+  }
+
+  it('U-FRESH-1: a remote key is swept only while its machine is connected, never on a mirror round, and the local pins beside it are measured either way', async () => {
     const w = loggingGitBin('git-remote-filter')
-    const h = harness({ paths: [work, 'ssh://devbox/x'], gitBin: w.bin })
+    const asked: string[] = []
+    let connected = false
+    const h = harness({
+      paths: [work, REMOTE],
+      missing: [],
+      gitBin: w.bin,
+      machine: (host) => (host === 'devbox' && connected ? machineRunner(asked) : null)
+    })
     await h.engine.sweep()
-    await h.engine.refreshLocal([work, 'ssh://devbox/x'])
+    await h.engine.refreshLocal([work, REMOTE])
+    expect(asked).toEqual([])
+    expect(h.engine.get(REMOTE)).toBeUndefined()
     const lines = logLines(w.log).join('\n')
     expect(lines).not.toContain('ssh://')
     expect(lines).toContain(work)
+
+    connected = true
+    await h.engine.machineUp('devbox')
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+    expect(f(h.engine.get(REMOTE))).toMatchObject({ state: 'ok', behind: 2, onDefault: true })
+
+    await h.engine.refreshLocal([REMOTE])
+    expect(asked).toHaveLength(1)
+  })
+
+  it('a fetch asked for while the machine is away keeps the last result and never delays the fetch on reconnect', async () => {
+    const asked: string[] = []
+    let connected = true
+    const h = harness({
+      paths: [REMOTE],
+      missing: [],
+      machine: () => (connected ? machineRunner(asked) : null)
+    })
+    const start = 1_700_000_000_000
+    await h.engine.machineUp('devbox')
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+
+    connected = false
+    h.setNow(start + 2 * 60_000)
+    expect(f(await h.engine.fetchNow(REMOTE))).toMatchObject({ state: 'ok', behind: 2 })
+    expect(asked).toHaveLength(1)
+
+    connected = true
+    h.setNow(start + 2 * 60_000 + 30_000)
+    await h.engine.machineUp('devbox')
+    expect(asked).toEqual([`${REMOTE} +fetch`, `${REMOTE} +fetch`])
+  })
+
+  it('a window-focus or wake-up sweep fetches only the local pins, never over ssh', async () => {
+    const w = loggingGitBin('git-local-sweep')
+    const asked: string[] = []
+    const h = harness({
+      paths: [work, REMOTE],
+      missing: [],
+      gitBin: w.bin,
+      machine: () => machineRunner(asked)
+    })
+    await h.engine.sweep({ host: null })
+    expect(asked).toEqual([])
+    expect(fetchLines(w.log).join('\n')).toContain(work)
+
+    await h.engine.sweep()
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+  })
+
+  it('gitAutoPull never pulls a remote workspace by itself, however far behind it is', async () => {
+    const asked: string[] = []
+    const h = harness({
+      paths: [REMOTE],
+      missing: [],
+      autoPull: () => true,
+      machine: () => machineRunner(asked)
+    })
+    await h.engine.sweep()
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+    expect(f(h.engine.get(REMOTE)).behind).toBe(2)
+  })
+
+  it('a machine whose git is missing never stops the local badges', async () => {
+    const asked: string[] = []
+    const gitMissing = Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' })
+    const h = harness({
+      paths: [work, REMOTE],
+      missing: [],
+      machine: () => machineRunner(asked, gitMissing)
+    })
+    publish(1)
+    await h.engine.sweep()
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+    expect(f(await h.engine.fetchNow(work)).behind).toBe(1)
   })
 })

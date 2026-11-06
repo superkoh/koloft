@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { routeFor, dedupKey, canOpenExternally } from '@shared/browserRoute'
+import {
+  routeFor,
+  dedupKey,
+  canOpenExternally,
+  aPageOnTheMachineAsks,
+  folderFileOf,
+  loopbackPortOf,
+  onMacPort,
+  machinePageUrl,
+  MACHINE_PAGE_SCHEME,
+  pagePathOf,
+  previewFileOf,
+  previewFileUrl
+} from '@shared/browserRoute'
 
 describe('routeFor — the §05B routing table', () => {
   it('sends http(s) to the Browser from every source, localhost included', () => {
@@ -109,6 +122,34 @@ describe('routeFor — the §05B routing table', () => {
     }
   })
 
+  it('opens a page on an ssh machine as a machine page web tab that maps back to the same file, and keeps every other machine file out of the browser', () => {
+    for (const source of ['agent', 'user', 'address'] as const) {
+      expect(routeFor('ssh://dev/srv/a.html', source).target).not.toMatch(/^koloft-machine:\/\/\d/)
+      const decision = routeFor('ssh://u@Box.lan/srv/my site/a#b.html', source)
+      expect(decision.dest).toBe('browser')
+      expect(decision.target.startsWith(`${MACHINE_PAGE_SCHEME}://`)).toBe(true)
+      expect(routeFor(decision.target, source)).toEqual(decision)
+      expect(pagePathOf(decision.target)).toBe('ssh://u@Box.lan/srv/my site/a#b.html')
+      expect(routeFor('ssh://box/srv/notes.md', source).dest).toBe('drop')
+      expect(routeFor('ssh://box/srv/run.sh', source).dest).toBe('drop')
+    }
+    expect(new URL('style.css', machinePageUrl('box', '/srv/site/a.html')).href).toBe(
+      machinePageUrl('box', '/srv/site/style.css')
+    )
+    expect(pagePathOf('file:///w/a.html')).toBe('/w/a.html')
+    expect(pagePathOf(`${MACHINE_PAGE_SCHEME}://zz/srv/a.html`)).toBeNull()
+  })
+
+  it('a Workbench preview address names the machine its file is on, and reads back as the same file, while an address naming no machine reads as none', () => {
+    for (const file of ['/w/my pic#1.png', 'ssh://u@Box.lan/srv/my pic#1.png']) {
+      expect(previewFileOf(previewFileUrl(file))).toBe(file)
+      expect(previewFileOf(`${previewFileUrl(file)}?v=3`)).toBe(file)
+    }
+    expect(previewFileUrl('/w/a.pdf')).toBe('koloft-file://localhost/w/a.pdf')
+    expect(previewFileOf('koloft-file://elsewhere/w/a.pdf')).toBeNull()
+    expect(previewFileOf('file:///w/a.pdf')).toBeNull()
+  })
+
   it('hands mailto:/tel: to the OS on a user action only (SEC-4)', () => {
     expect(routeFor('mailto:x@y.z', 'user')).toEqual({ dest: 'system', target: 'mailto:x@y.z' })
     expect(routeFor('tel:+123', 'user')).toEqual({ dest: 'system', target: 'tel:+123' })
@@ -173,9 +214,19 @@ describe('routeFor — the §05B routing table', () => {
     expect(new URL(search.target).searchParams.get('q')).toBe('error message text')
   })
 
-  it('searches rather than navigates for a lone word or a path-looking entry', () => {
+  it('searches rather than navigates for a lone word or a bare page name, which is not a host', () => {
     expect(new URL(routeFor('koloft', 'address').target).host).toBe('duckduckgo.com')
-    expect(new URL(routeFor('/w/docs/page.html', 'address').target).host).toBe('duckduckgo.com')
+    expect(new URL(routeFor('design.html', 'address').target).host).toBe('duckduckgo.com')
+    expect(new URL(routeFor('index.htm', 'address').target).host).toBe('duckduckgo.com')
+  })
+
+  it('opens an absolute path typed in the address bar as the local file: a page as file://, another viewable file in the preview', () => {
+    expect(routeFor('/w/docs/page.html', 'address')).toEqual({
+      dest: 'browser',
+      target: 'file:///w/docs/page.html'
+    })
+    expect(routeFor('/w/notes.md', 'address')).toEqual({ dest: 'preview', target: '/w/notes.md' })
+    expect(routeFor('/w/app.bin', 'address').dest).toBe('drop')
   })
 
   it('drops empty and whitespace-only targets', () => {
@@ -186,6 +237,63 @@ describe('routeFor — the §05B routing table', () => {
         reason: 'unsupported-target'
       })
     }
+  })
+})
+
+describe("folderFileOf — an address-bar entry read as a file in the session's folder", () => {
+  it('resolves a relative entry inside a local folder and a remote one, keeping ?… and #… aside', () => {
+    expect(folderFileOf('index.html', '/w/wt')).toEqual({ path: '/w/wt/index.html', suffix: '' })
+    expect(folderFileOf('docs/a.html', '/w/wt')).toEqual({ path: '/w/wt/docs/a.html', suffix: '' })
+    expect(folderFileOf('./x.md', '/w/wt')).toEqual({ path: '/w/wt/x.md', suffix: '' })
+    expect(folderFileOf('index.html?x=1#a', '/w/wt')).toEqual({
+      path: '/w/wt/index.html',
+      suffix: '?x=1#a'
+    })
+    expect(folderFileOf('docs/a.html', 'ssh://box/srv/app')).toEqual({
+      path: 'ssh://box/srv/app/docs/a.html',
+      suffix: ''
+    })
+  })
+
+  it('refuses a path that climbs out of the folder, on this Mac and on a remote machine', () => {
+    expect(folderFileOf('../x.md', '/w/wt')).toBeNull()
+    expect(folderFileOf('a/../../x', '/w/wt')).toBeNull()
+    expect(folderFileOf('../../../etc/passwd', 'ssh://box/srv/app')).toBeNull()
+    expect(folderFileOf('.', '/w/wt')).toBeNull()
+  })
+
+  it('leaves a URL, an absolute or home path, a search with a space, an empty entry and a missing folder to the usual routing', () => {
+    for (const entry of ['https://x', 'localhost:5173', '/abs', '~/x', 'react hooks', '  ']) {
+      expect(folderFileOf(entry, '/w/wt')).toBeNull()
+    }
+    expect(folderFileOf('index.html', null)).toBeNull()
+  })
+})
+
+describe("loopbackPortOf and onMacPort — a remote tab's localhost goes through a forward", () => {
+  it('reads the machine port of every loopback name and scheme a page can reach, and nothing else', () => {
+    expect(loopbackPortOf('http://localhost:5173/a')).toBe(5173)
+    expect(loopbackPortOf('ws://127.0.0.1:24678/')).toBe(24678)
+    expect(loopbackPortOf('http://[::1]:3000/')).toBe(3000)
+    expect(loopbackPortOf('https://localhost/')).toBe(443)
+    expect(loopbackPortOf('http://localhost/')).toBe(80)
+    expect(loopbackPortOf('http://example.com:5173/')).toBeNull()
+    expect(loopbackPortOf('file:///tmp/a.html')).toBeNull()
+  })
+
+  it('forwards a page load, and a request a localhost page makes, but not a request another site makes to localhost', () => {
+    expect(aPageOnTheMachineAsks('mainFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('subFrame', 'https://example.com')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'http://localhost:5173')).toBe(true)
+    expect(aPageOnTheMachineAsks('webSocket', 'http://127.0.0.1:61000')).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', undefined)).toBe(true)
+    expect(aPageOnTheMachineAsks('xhr', 'https://example.com')).toBe(false)
+    expect(aPageOnTheMachineAsks('image', 'null')).toBe(false)
+  })
+
+  it('moves a page to its Mac port, and leaves it as it is when the Mac port is the same', () => {
+    expect(onMacPort('http://localhost:5173/a?b=1', 61000)).toBe('http://localhost:61000/a?b=1')
+    expect(onMacPort('ws://[::1]:5173/', 5173)).toBe('ws://[::1]:5173/')
   })
 })
 

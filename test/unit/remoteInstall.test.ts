@@ -6,11 +6,12 @@ import { spawnSync } from 'child_process'
 
 import {
   ENSURE_SH,
+  NO_FILES_THERE,
   NODE_VERSION,
   heartbeatCmd,
   parseHeartbeat
 } from '../../src/main/remote/install'
-import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
   'sh',
@@ -88,7 +89,7 @@ interface Machine {
   give(name: string, body: string): void
   giveLogger(name: string, code?: number): void
   calls(name: string): string[]
-  run(): { status: number | null; stdout: string; stderr: string }
+  run(arg?: string): { status: number | null; stdout: string; stderr: string }
 }
 
 function machine(): Machine {
@@ -111,8 +112,8 @@ function machine(): Machine {
       const f = path.join(logs, `${name}.log`)
       return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean) : []
     },
-    run: () =>
-      spawnSync('/bin/sh', [script], {
+    run: (arg) =>
+      spawnSync('/bin/sh', [script, ...(arg ? [arg] : [])], {
         encoding: 'utf8',
         env: { HOME: home, PATH: onlyRealUnixToolsDir, FIXTURES: fixtures },
         timeout: 60_000
@@ -133,6 +134,13 @@ exit 0`
 const expectNoHomebrewRsyncThePathCannotHide = (): void => {
   expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
 }
+
+const HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE = [
+  '/opt/homebrew/bin/curl',
+  '/opt/homebrew/bin/wget',
+  '/usr/local/bin/curl',
+  '/usr/local/bin/wget'
+].filter((f) => fs.existsSync(f))
 
 const NODE = (version: string) => `[ "$1" = -v ] && echo v${version}\nexit 0`
 
@@ -317,17 +325,33 @@ exec "$@"`
   })
 })
 
-describe('ensure.sh holds a remote Claude Code to the minimum this Koloft supports', () => {
-  const OLDER_YET_LATER_AS_TEXT = '2.1.99'
-  const claudeAt = (m: Machine, version: string, updatesTo?: string): void => {
-    const file = path.join(m.home, 'claude-version')
+describe.each([
+  {
+    product: 'Claude Code',
+    tool: 'claude',
+    tab: undefined,
+    min: MIN_CLAUDE_VERSION,
+    older: '2.1.99',
+    versionLine: '%s (Claude Code)'
+  },
+  {
+    product: 'Antigravity CLI',
+    tool: 'agy',
+    tab: 'agy',
+    min: MIN_AGY_VERSION,
+    older: '1.3.6',
+    versionLine: '%s'
+  }
+])('ensure.sh holds a remote $product to the minimum this Koloft supports', (t) => {
+  const toolAt = (m: Machine, version: string, updatesTo?: string): void => {
+    const file = path.join(m.home, `${t.tool}-version`)
     fs.writeFileSync(file, version)
     const bump = updatesTo ? `printf '%s' ${updatesTo} > ${JSON.stringify(file)}` : ':'
     m.give(
-      'claude',
+      t.tool,
       `case "$1" in
---version) printf '%s (Claude Code)\\n' "$(cat ${JSON.stringify(file)})" ;;
-update) printf 'update\\n' >> ${JSON.stringify(path.join(m.logs, 'claude.log'))}; ${bump} ;;
+--version) printf '${t.versionLine}\\n' "$(cat ${JSON.stringify(file)})" ;;
+update) printf 'update\\n' >> ${JSON.stringify(path.join(m.logs, `${t.tool}.log`))}; ${bump} ;;
 esac
 exit 0`
     )
@@ -336,21 +360,88 @@ exit 0`
   it('an older one is updated before the session starts', () => {
     const m = machine()
     complete(m)
-    claudeAt(m, OLDER_YET_LATER_AS_TEXT, '99.0.0')
-    const res = m.run()
+    toolAt(m, t.older, '99.0.0')
+    const res = m.run(t.tab)
     expect(res.status).toBe(0)
-    expect(m.calls('claude')).toEqual(['update'])
-    expect(res.stderr).toContain(`older than ${MIN_CLAUDE_VERSION}`)
+    expect(m.calls(t.tool)).toEqual(['update'])
+    expect(res.stderr).toContain(`older than ${t.min}`)
   })
 
-  it('one the update cannot lift stops the session and says to run claude update', () => {
+  it(`one the update cannot lift stops the session and says to run ${t.tool} update`, () => {
     const m = machine()
     complete(m)
-    claudeAt(m, OLDER_YET_LATER_AS_TEXT)
-    const res = m.run()
+    toolAt(m, t.older)
+    const res = m.run(t.tab)
     expect(res.status).toBe(4)
-    expect(m.calls('claude')).toEqual(['update'])
-    expect(res.stderr).toContain('Run "claude update" yourself')
+    expect(m.calls(t.tool)).toEqual(['update'])
+    expect(res.stderr).toContain(`Run "${t.tool} update"`)
+  })
+})
+
+describe('ensure.sh for a Muse tab', () => {
+  const MUSE_INSTALLER = `
+printf '%s\\n' "$*" >> "$LOGS/curl.log"
+printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin/muse"; chmod +x "$HOME/.local/bin/muse"'`
+
+  const forMuse = (m: Machine, python: 'runs' | 'is a stub'): void => {
+    m.give('bash', 'exec /bin/bash "$@"')
+    m.give('tmux', 'exit 0')
+    m.give('rsync', 'exit 0')
+    m.give('gh', 'exit 0')
+    m.give('python3', python === 'runs' ? 'exit 0' : 'exit 1')
+    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\n${MUSE_INSTALLER}`)
+    m.giveLogger('sudo', 1)
+    m.giveLogger('apt-get')
+  }
+
+  it("installs muse with Meta's installer, and never claude or the statusline's node", () => {
+    const m = machine()
+    forMuse(m, 'runs')
+    const res = m.run('muse')
+    expect(res.status).toBe(0)
+    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+    expect(fs.existsSync(path.join(m.home, '.local', 'bin', 'muse'))).toBe(true)
+    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
+  })
+
+  it('stops with what is missing when python3 there does not run, as the macOS stand-in does', () => {
+    const m = machine()
+    forMuse(m, 'is a stub')
+    const res = m.run('muse')
+    expect(res.status).toBe(4)
+    expect(res.stdout).toContain('Muse sessions need python3 on this machine')
+    expect(m.calls('curl')).toEqual([])
+  })
+
+  it.skipIf(HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE.length > 0)(
+    'on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs',
+    () => {
+      const m = machine()
+      forMuse(m, 'runs')
+      const curl = path.join(m.home, '.local', 'bin', 'curl')
+      const packaged = path.join(m.home, 'curl-from-the-package')
+      fs.renameSync(curl, packaged)
+      m.give('id', 'echo 0')
+      m.give(
+        'apt-get',
+        `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'apt-get.log'))}
+[ "$*" = "install -y curl" ] && cat ${JSON.stringify(packaged)} > ${JSON.stringify(curl)} && chmod +x ${JSON.stringify(curl)}
+exit 0`
+      )
+      const res = m.run('muse')
+      expect(res.status).toBe(0)
+      expect(m.calls('apt-get')).toEqual(['update', 'install -y curl'])
+      expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+    }
+  )
+
+  it('a Claude tab never reaches for muse or python3', () => {
+    const m = machine()
+    complete(m)
+    m.giveLogger('python3')
+    expect(m.run().status).toBe(0)
+    expect(m.calls('python3')).toEqual([])
+    expect(m.calls('curl')).toEqual([])
   })
 })
 
@@ -379,8 +470,8 @@ describe('the heartbeat question', () => {
 
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-  const ask = (paths: string[]): ReturnType<typeof parseHeartbeat> => {
-    const cmd = heartbeatCmd(paths)
+  const ask = (paths: string[], watched: string[] = []): ReturnType<typeof parseHeartbeat> => {
+    const cmd = heartbeatCmd(paths, watched)
     const res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8' })
     expect(res.status).toBe(0)
     return parseHeartbeat(res.stdout)
@@ -422,6 +513,12 @@ describe('the heartbeat question', () => {
     expect(ask([nasty]).git.get(nasty)?.isGit).toBe(true)
   })
 
+  // PLATFORM§37
+  it('passes on no folder for a Workbench shell whose folder was removed under it on Linux', () => {
+    const [shell] = parseHeartbeat('shell pty-1\tbash\t/home/u/build (deleted)\n').shells
+    expect(shell).toEqual({ tabId: 'pty-1', name: 'bash', cwd: '' })
+  })
+
   // CC§2
   it("tells the machine's resolved /tmp and its user id, where claude keeps each session's scratchpad", () => {
     expect(ask([]).tmp).toEqual({ tmpRoot: fs.realpathSync('/tmp'), uid: process.getuid!() })
@@ -446,8 +543,126 @@ describe('the heartbeat question', () => {
     expect(onLinux({ TMPDIR: tmpdir, CLAUDE_CODE_TMPDIR: ccTmp })).toBe(fs.realpathSync(ccTmp))
   })
 
-  it('reads the lines before the first folder as tmux session names', () => {
-    const parsed = parseHeartbeat('k-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n')
+  it('stamps every watched file and folder in the order asked, a missing one with an empty stamp, and still answers the folders', () => {
+    const file = path.join(dir, 'watched.txt')
+    fs.writeFileSync(file, 'abc')
+    const info = ask([repo], [file, path.join(dir, 'gone.txt'), repo])
+    expect(info.stamps).toHaveLength(3)
+    expect(info.stamps[0]).toMatch(/^\d+\.\d+ 3$/)
+    expect(info.stamps[1]).toBe('')
+    expect(info.stamps[2]).toMatch(/^\d+\.\d+ \d+$/)
+    expect(info.git.get(repo)?.isGit).toBe(true)
+  })
+
+  // PLATFORM§34 PLATFORM§37
+  it("stamps the workspace's transcripts and the hook folder as wholes: an append, a same-size rewrite within one second, a new or a removed file each change the stamp, another project's files never do", () => {
+    const home = path.join(dir, 'home')
+    const projects = path.join(home, '.claude', 'projects')
+    const hookDir = path.join(home, '.koloft', 'hook-sessions')
+    const mine = path.join(projects, '-home-koh-api')
+    const other = path.join(projects, '-srv-www')
+    for (const d of [path.join(mine, 's1', 'subagents'), other, hookDir])
+      fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(mine, 's1.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(mine, 's1', 'subagents', 'x.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(other, 's3.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(hookDir, 't1.json'), '{"event":"stop"}')
+    const mirrors = (): ReturnType<typeof parseHeartbeat>['mirrors'] => {
+      const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home }
+      })
+      expect(res.status).toBe(0)
+      return parseHeartbeat(res.stdout).mirrors
+    }
+    const hook = path.join(hookDir, 't1.json')
+    fs.utimesSync(hook, 1_700_000_000.25, 1_700_000_000.25)
+    const first = mirrors()
+    expect(first.transcripts).toMatch(/^\d+ \d+$/)
+    expect(first.hooks).toMatch(/^\d+ \d+$/)
+
+    fs.appendFileSync(path.join(other, 's3.jsonl'), 'b\n')
+    fs.writeFileSync(path.join(projects, 'stray.jsonl'), 'a\n')
+    expect(mirrors()).toEqual(first)
+
+    fs.appendFileSync(path.join(mine, 's1', 'subagents', 'x.jsonl'), 'b\n')
+    const appended = mirrors()
+    expect(appended.transcripts).not.toBe(first.transcripts)
+    expect(appended.hooks).toBe(first.hooks)
+
+    fs.writeFileSync(hook, '{"event":"ask"}X')
+    fs.utimesSync(hook, 1_700_000_000.5, 1_700_000_000.5)
+    const rewritten = mirrors()
+    expect(rewritten.hooks).not.toBe(appended.hooks)
+    expect(rewritten.transcripts).toBe(appended.transcripts)
+
+    fs.writeFileSync(path.join(hookDir, 't2.status.jsonl'), 'x\n')
+    const added = mirrors()
+    expect(added.hooks).not.toBe(rewritten.hooks)
+    fs.rmSync(path.join(hookDir, 't2.status.jsonl'))
+    expect(mirrors().hooks).not.toBe(added.hooks)
+  }, 120_000)
+
+  it('stamps each extra folder it is asked to mirror under the home, one line apiece in the order asked, so a change in one leaves the others and the workspace folders as they were', () => {
+    const home = path.join(dir, 'home')
+    const brain = path.join(home, '.gemini', 'antigravity', 'brain', 'c1')
+    const other = path.join(home, 'other')
+    const workspace = path.join(home, 'api')
+    for (const d of [brain, other, workspace]) fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'transcript.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(other, 'x'), 'a\n')
+    const beat = (): ReturnType<typeof parseHeartbeat> => {
+      const res = spawnSync(
+        'sh',
+        ['-c', heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])],
+        { encoding: 'utf8', env: { ...process.env, HOME: home } }
+      )
+      expect(res.status).toBe(0)
+      return parseHeartbeat(res.stdout)
+    }
+    const first = beat()
+    expect(first.mirrors.extras).toHaveLength(3)
+    expect(first.mirrors.extras[2]).toBe(NO_FILES_THERE)
+    expect(first.alive).toEqual([])
+    expect([...first.git.keys()]).toEqual([workspace])
+
+    fs.appendFileSync(path.join(brain, 'transcript.jsonl'), 'b\n')
+    const after = beat().mirrors.extras
+    expect(after[0]).not.toBe(first.mirrors.extras[0])
+    expect(after.slice(1)).toEqual(first.mirrors.extras.slice(1))
+  }, 120_000)
+
+  it('says "no files there" for the transcripts of a machine that never ran a Claude Code session, so they are not copied, while Koloft’s own hook folder is made and always stamped, so its copy still shows a shell that breaks rsync', () => {
+    const home = fs.mkdtempSync(path.join(dir, 'bare-home-'))
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home }
+    })
+    expect(res.status).toBe(0)
+    const mirrors = parseHeartbeat(res.stdout).mirrors
+    expect(mirrors.transcripts).toBe(NO_FILES_THERE)
+    expect(mirrors.hooks).toMatch(/^\d+ \d+$/)
+    expect(fs.existsSync(path.join(home, '.koloft', 'hook-sessions'))).toBe(true)
+  })
+
+  it('still stamps transcripts once the folder is there but every transcript was deleted, so the copy with --delete drops them here too', () => {
+    const home = fs.mkdtempSync(path.join(dir, 'emptied-home-'))
+    fs.mkdirSync(path.join(home, '.claude', 'projects', '-home-koh-api'), { recursive: true })
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'], ['brain'])], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home }
+    })
+    expect(res.status).toBe(0)
+    const mirrors = parseHeartbeat(res.stdout).mirrors
+    expect(mirrors.transcripts).toMatch(/^\d+ \d+$/)
+    expect(mirrors.extras).toEqual([NO_FILES_THERE])
+  })
+
+  it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
+    const parsed = parseHeartbeat(
+      'stamp 1.5 3\nstamp \nk-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n'
+    )
+    expect(parsed.stamps).toEqual(['1.5 3', ''])
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
     expect(parsed.git.get('/home/koh/api')?.worktrees).toEqual([{ dir: '/home/koh/api' }])
   })

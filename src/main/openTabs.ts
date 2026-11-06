@@ -1,5 +1,6 @@
 import fs from 'fs'
 import type { BackendId } from '@shared/types'
+import { backendIdOf } from '@shared/sessionBackend'
 import { BackgroundFile } from './backgroundFile'
 
 export interface OpenTab {
@@ -23,7 +24,7 @@ function isOpenTab(v: unknown): v is OpenTab {
     !!t &&
     typeof t.sessionId === 'string' &&
     !!t.sessionId &&
-    (t.kind === 'claude' || t.kind === 'codex') &&
+    backendIdOf(t.kind) !== undefined &&
     typeof t.title === 'string' &&
     typeof t.cwd === 'string'
   )

@@ -1,12 +1,18 @@
 import { execFileSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
+import http from 'http'
+import net from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  addCodexAccount,
+  installAgy,
+  installCodex,
+  installMuse,
   installRealGhThatOnlyReads,
   seedSettings,
   setGithubFixture,
@@ -31,33 +37,66 @@ import {
   showBrowse,
   waitPanelAttached
 } from './helpers/workbench'
+import { rowsWithSub } from './helpers/blackbox'
+import { startFakeDiscord, type FakePost, type FakeThread } from './helpers/fakeDiscord'
+import { codexCalls } from './helpers/codex'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { BROWSER, addressValue, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
+import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
+  agentShell,
   centerTerm,
+  chooseBackend,
   closeMenu,
   FAKE_SESSION_TITLE,
+  INCLUDED_ENV,
+  fetchNowInGitPanel,
+  openGitPanel,
   menuItemTexts,
+  newSessionInWith,
   notesOnDisk,
   openMenu,
+  openSessionTerminal,
   openWorktreeSession,
+  panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
+  switchToRow,
+  terminalText,
+  termIds,
   waitBooted,
+  waitConductorStarted,
+  worktreeDialog,
   wsGroup,
-  wsRows
+  wsMenuTexts,
+  wsRows,
+  type ClaudeCall
 } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
+  HAVE_LINUX_MUSE,
   NEEDS_LINUX_CLAUDE,
+  NEEDS_LINUX_MUSE,
   dockerAvailable,
+  FAKE_RESPONSES_PORT,
+  installCurlOnTarget,
+  installFakeCodexOnTarget,
+  installFakeMuseOnTarget,
+  installRealMuseOnTheMachine,
   installLabSsh,
+  startFakeResponsesOnTarget,
   LAB_PASSWORD,
   loginsAccepted,
   remoteKeyFor,
+  runOnBastion,
   runOnTarget,
+  servePageOnTarget,
   startSshLab,
+  stopMachine,
   stopSshLab,
   transcriptOnTarget,
   useRealClaudeOnTheMachine,
@@ -66,6 +105,8 @@ import {
 } from './helpers/docker'
 
 const BACKGROUND_CONNECT_MS = 45_000
+const A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS = 3000
+const LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC = 'lab-page.test'
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
 const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker for ${user}.\n`
@@ -77,18 +118,88 @@ const ECHO_THE_PORT_OFFSET_WITH_BASH =
 const ENTERS_BEFORE_GIVING_UP = 3
 const TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS = 1_000
 const A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS = 15_000
-const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
+const COMMIT_THE_PROJECT =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
-  ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
-  ' && printf "edited\\n" >> README.md'
+  ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
+const COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV =
+  'cd proj && printf "NOTES.md\\n.env\\n" > .gitignore && printf ".env\\n" > .worktreeinclude' +
+  ' && git init -q && git add -A && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
+const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
+const OWNER_LAST_WORDS = 'make the sidebar a little darker'
+const NOT_ASCII = '中文 ⏺ …'
+const NOT_ASCII_FILE = '中文.txt'
+const DISCORD_OWNER = { id: '555', username: 'letian' }
+const DISCORD_CHANNEL = '222'
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PNG_HEIGHT_AT = 20
+const TALL_PAGE_PX = 2000
+
+function mirroredSaidFiles(env: E2EEnv): string[] {
+  const root = path.join(env.userData, 'remote')
+  if (!fs.existsSync(root)) return []
+  return fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.said'))
+    .map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
+}
+const RUN_FOLDERS = 'proj/.claude/worktrees'
+const REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS = 20_000
+const A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS = 8000
+const A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS = 6000
+const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
+const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
+  'set -e',
+  'G="git -c user.email=lab@koloft.test -c user.name=lab"',
+  'cd proj && git init -q -b main && git add -A && $G commit -qm base',
+  'git clone -q --bare . "$HOME/origin.git"',
+  'git remote add origin "$HOME/origin.git" && git fetch -q origin',
+  'git clone -q "$HOME/origin.git" "$HOME/pub" && cd "$HOME/pub"',
+  'for n in 1 2; do echo $n > up$n.txt; git add -A; $G commit -qm $n; done',
+  'git push -q origin main'
+].join('\n')
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS = 30_000
+const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
+const REAL_CODEX_AUTH = process.env.KOLOFT_SMOKE_CODEX_AUTH ?? ''
+const A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS = 300_000
+const PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1_000
+const KEEP_THE_MODEL_CHOICE = '2. Use existing model'
+// CODEX§16
+const NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE =
+  'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
+const STAND_IN_MODEL_CONFIG = [
+  'model = "gpt-5.5"',
+  'model_provider = "stand-in"',
+  'sandbox_mode = "danger-full-access"',
+  'approval_policy = "never"',
+  '[model_providers.stand-in]',
+  'name = "stand-in"',
+  `base_url = "http://127.0.0.1:${FAKE_RESPONSES_PORT}/v1"`,
+  'wire_api = "responses"',
+  '[projects."/home/kuser/proj"]',
+  'trust_level = "trusted"',
+  ''
+].join('\n')
+// CODEX§15
+const A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN = JSON.stringify({
+  OPENAI_API_KEY: 'sk-not-a-real-key'
+})
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
   ['kt-tcsh', 'tuser'],
   ['kt-fish', 'fuser']
 ]
+const ONE_MACHINE_PER_LOGIN_SHELL = MACHINES_FOR_THE_KOLOFT_COMMAND.filter(
+  ([alias]) => alias !== 'kt-few'
+)
+const LOGIN_SHELL_OF: Record<string, string> = {
+  'kt-key': 'bash',
+  'kt-tcsh': 'tcsh',
+  'kt-fish': 'fish'
+}
+const A_SHELL_REPORT_FROM_THE_MACHINE_MS = 30_000
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -114,6 +225,83 @@ async function withLab(
     if (app) await quitAndClose(app)
     stopSshLab(lab, defaultControlDir())
   }
+}
+
+async function refusedSessionNewOnKtKey(
+  page: Page,
+  parentTab: string,
+  backend: string
+): Promise<string> {
+  const before = (await terminalText(page, parentTab)).length
+  const reply = async (): Promise<string> => (await terminalText(page, parentTab)).slice(before)
+  await runIn(
+    page,
+    centerTerm(page),
+    `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+  )
+  await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
+  const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
+  expect(refused).not.toBeNull()
+  return refused![1].trim()
+}
+
+const LAB_GIT = 'git -c user.email=lab@koloft.test -c user.name=lab'
+
+function originThatNeedsTheMachinesKey(lab: SshLab): void {
+  runOnBastion(lab, 'kuser', 'git init -q --bare -b main origin.git')
+  const pub = runOnTarget(
+    lab,
+    'kuser',
+    "ssh-keygen -q -t ed25519 -N '' -f .ssh/id_origin && cat .ssh/id_origin.pub"
+  ).trim()
+  runOnBastion(lab, 'kuser', `printf '%s\\n' '${pub}' >> .ssh/authorized_keys`)
+  runOnTarget(
+    lab,
+    'kuser',
+    [
+      'set -e',
+      `ssh-keyscan -t ed25519 ${lab.bastion} > .ssh/known_hosts 2>/dev/null`,
+      `printf 'Host gitbox\\n  HostName ${lab.bastion}\\n  User kuser\\n  IdentityFile ~/.ssh/id_origin\\n  IdentitiesOnly yes\\n' > .ssh/config`,
+      `cd proj && git init -q -b main && git add -A && ${LAB_GIT} commit -qm base`,
+      'git remote add origin gitbox:origin.git && git push -q -u origin main'
+    ].join('\n')
+  )
+  runOnBastion(lab, 'kuser', 'git clone -q origin.git pub')
+}
+
+function publishOnOrigin(lab: SshLab, from: number, to: number): void {
+  runOnBastion(
+    lab,
+    'kuser',
+    `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
+  )
+}
+
+function portFreeOnTheMac(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as net.AddressInfo
+      s.close(() => resolve(port))
+    })
+  })
+}
+
+function serveOnTheMac(port: number, body: string): Promise<http.Server> {
+  return new Promise((resolve) => {
+    const s = http.createServer((_q, r) => r.end(body)).listen(port, () => resolve(s))
+  })
+}
+
+function fetchOnTheMacOnAFreshConnection(port: number, host = '127.0.0.1'): Promise<string> {
+  return new Promise((resolve) => {
+    http
+      .get({ host, port, agent: false }, (r) => {
+        let body = ''
+        r.on('data', (c) => (body += c))
+        r.on('end', () => resolve(body))
+      })
+      .on('error', () => resolve('refused'))
+  })
 }
 
 async function addMachine(page: Page, alias: LabAlias, user: string): Promise<void> {
@@ -145,6 +333,21 @@ async function connectsListsAndReads(page: Page, alias: LabAlias, user: string):
   expect(await readme(page, alias, user)).toBe(README(user))
 }
 
+const MACHINES_THAT_ASK_TO_SIGN_IN: {
+  alias: LabAlias
+  user: string
+  asks: string
+  answer: string
+}[] = [
+  { alias: 'kt-pw', user: 'puser', asks: 'password:', answer: LAB_PASSWORD },
+  { alias: 'kt-newhost', user: 'kuser', asks: 'continue connecting', answer: 'yes' }
+]
+
+async function answerInTheTab(page: Page, prompt: string, answer: string): Promise<void> {
+  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
+  await runIn(page, centerTerm(page), answer)
+}
+
 async function newSessionAnsweringAtTheTab(
   page: Page,
   alias: LabAlias,
@@ -155,8 +358,7 @@ async function newSessionAnsweringAtTheTab(
   await openMenu(page, page.locator('.ws-head', { hasText: alias }))
   await page.locator('.menu .mi', { hasText: 'New session' }).click()
   await expect(rows).toHaveCount(1, { timeout: 30_000 })
-  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
-  await runIn(page, centerTerm(page), answer)
+  await answerInTheTab(page, prompt, answer)
   await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(1, { timeout: 90_000 })
 }
 
@@ -188,6 +390,41 @@ async function newRealSessionOnKtKey(page: Page, lab: SshLab): Promise<RealSessi
   await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
   await page.locator('.menu .mi', { hasText: 'New session' }).click()
   return boundRealSession(page, lab)
+}
+
+const LAB_CODEX_TOKEN = 'mac-token-for-the-lab'
+
+function installCodexSignedInForTheLab(env: E2EEnv): void {
+  installCodex(
+    env,
+    JSON.stringify({ tokens: { access_token: LAB_CODEX_TOKEN, account_id: 'lab' } })
+  )
+}
+
+async function codexTabOnKtKey(page: Page): Promise<string> {
+  await addMachine(page, 'kt-key', 'kuser')
+  await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+  await newSessionInWith(page, 'kt-key', 'Codex')
+  await expect(wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })).toHaveClass(
+    /st-waiting/,
+    { timeout: 120_000 }
+  )
+  return (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.backendId === 'codex' && s.alive
+  )!.tabId
+}
+
+async function ranInCodexTabAndExitedZero(
+  page: Page,
+  tabId: string,
+  line: string,
+  turnOverWithExit: RegExp,
+  timeout: number
+): Promise<void> {
+  await page.evaluate(([id, typed]) => window.api.terminal.write(id, typed), [tabId, `${line}\r`])
+  await expect
+    .poll(async () => turnOverWithExit.exec(await terminalText(page, tabId))?.[1], { timeout })
+    .toBe('0')
 }
 
 async function typeAndSubmit(page: Page, session: RealSession, text: string): Promise<void> {
@@ -246,6 +483,57 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  for (const agent of ['Codex', 'Muse'] as const)
+    test(`E-SSH-37 (${agent}): a ${agent} session on a machine that asks for a password, and on one met for the first time, opens its tab, which asks; once answered there, the session starts on the machine and its files list`, async ({
+      env
+    }) => {
+      seedSettings(env, { hintsOff: true })
+      installCodexSignedInForTheLab(env)
+      installMuse(env)
+      await withLab(
+        env,
+        async ({ page }) => {
+          for (const { alias, user, asks, answer } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+            await addMachine(page, alias, user)
+            await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+              timeout: BACKGROUND_CONNECT_MS
+            })
+            await newSessionInWith(page, alias, agent)
+            await answerInTheTab(page, asks, answer)
+            await expect(wsRows(page, alias)).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+            await connectsListsAndReads(page, alias, user)
+          }
+        },
+        (lab) => {
+          installFakeCodexOnTarget(lab)
+          installFakeMuseOnTarget(
+            lab,
+            MACHINES_THAT_ASK_TO_SIGN_IN.map((m) => m.user)
+          )
+        }
+      )
+    })
+
+  test('E-SSH-38: an Antigravity session on a machine that asks for a password, or on one met for the first time, is refused with words that say to sign in through a Claude Code, Codex or Muse tab there first, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installAgy(env)
+    await withLab(env, async ({ page }) => {
+      for (const { alias, user } of MACHINES_THAT_ASK_TO_SIGN_IN) {
+        await addMachine(page, alias, user)
+        await expect(dot(page, alias)).toHaveAttribute('title', /sign in/, {
+          timeout: BACKGROUND_CONNECT_MS
+        })
+        await newSessionInWith(page, alias, 'Antigravity')
+        await expect(
+          page.locator('.toast-msg', { hasText: /Claude Code, Codex or Muse session there/ })
+        ).toBeVisible({ timeout: 30_000 })
+        await expect(wsRows(page, alias)).toHaveCount(0)
+      }
+    })
+  })
+
   // PLATFORM§37
   test('E-SSH-04: a machine whose login shell is tcsh, and one whose is fish: files list and read, and sessions start and show up', async ({
     env
@@ -257,6 +545,82 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await connectsListsAndReads(page, 'kt-fish', 'fuser')
       await startSessionIn(page, 'kt-tcsh', { remote: true })
       await startSessionIn(page, 'kt-fish', { remote: true })
+    })
+  })
+
+  test('E-SSH-20: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(lab, 'fuser', COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN)
+      await addMachine(page, 'kt-fish', 'fuser')
+      const badge = page.locator('.ws-head', { hasText: 'kt-fish' }).locator('.ws-behind')
+      await expect(badge).toHaveText('2', { timeout: BACKGROUND_CONNECT_MS })
+      await badge.click()
+      const pull = page.locator('.tbu-pop.fx .tbu-act.pull')
+      await expect(pull).toBeEnabled()
+      await pull.click()
+      await expect(page.locator('.toast')).toHaveText(/^proj · main: fast-forwarded 2 commits/, {
+        timeout: 60_000
+      })
+      await expect(badge).toHaveCount(0)
+      expect(runOnTarget(lab, 'fuser', 'git -C proj rev-parse HEAD')).toBe(
+        runOnTarget(lab, 'fuser', 'git -C pub rev-parse HEAD')
+      )
+    })
+  })
+
+  test('E-SSH-19: an origin the machine reaches only with its own ssh key: the behind count comes on connect, Fetch now sees a newer commit, Pull fast-forwards, with the key gone the git panel says origin cannot be reached from that machine, and once the machine drops off Fetch now and Pull are off', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      originThatNeedsTheMachinesKey(lab)
+      publishOnOrigin(lab, 1, 2)
+      await addMachine(page, 'kt-key', 'kuser')
+      const badge = page.locator('.ws-head', { hasText: 'kt-key' }).locator('.ws-behind')
+      await expect(badge).toHaveText('2', { timeout: BACKGROUND_CONNECT_MS })
+
+      publishOnOrigin(lab, 3, 3)
+      await fetchNowInGitPanel(page, 'kt-key')
+      await expect(badge).toHaveText('3', { timeout: 60_000 })
+      await badge.click()
+      const pull = page.locator('.tbu-pop.fx .tbu-act.pull')
+      await expect(pull).toBeEnabled()
+      await pull.click()
+      await expect(page.locator('.toast')).toHaveText(/^proj · main: fast-forwarded 3 commits/, {
+        timeout: 60_000
+      })
+      await expect(badge).toHaveCount(0)
+      expect(runOnTarget(lab, 'kuser', 'git -C proj rev-parse HEAD')).toBe(
+        runOnBastion(lab, 'kuser', 'git -C pub rev-parse HEAD')
+      )
+
+      runOnTarget(lab, 'kuser', 'mv .ssh/id_origin .ssh/id_origin.off')
+      publishOnOrigin(lab, 4, 4)
+      await fetchNowInGitPanel(page, 'kt-key')
+      const panel = await openGitPanel(page, 'kt-key')
+      await expect(panel.locator('.fx-note', { hasText: 'origin' })).toHaveText(
+        "can't reach origin from kt-key — check its network or credentials.",
+        { timeout: 60_000 }
+      )
+      await expect(badge).toHaveCount(0)
+      await page.mouse.move(1, 1)
+
+      runOnTarget(lab, 'kuser', 'mv .ssh/id_origin.off .ssh/id_origin')
+      await fetchNowInGitPanel(page, 'kt-key')
+      await expect(badge).toHaveText('1', { timeout: 60_000 })
+
+      runOnTarget(
+        lab,
+        'kuser',
+        "mv .ssh/authorized_keys .ssh/authorized_keys.off && pkill -u kuser -f '^sshd(-session)?: kuser' || true"
+      )
+      await expect(dot(page, 'kt-key')).not.toHaveClass(/\bon\b/, { timeout: 60_000 })
+      await badge.click()
+      const pop = page.locator('.tbu-pop.fx')
+      await expect(pop.locator('.fx-counts')).toContainText('↓ 1 behind')
+      await expect(pop.locator('.tbu-act.pull')).toBeDisabled()
+      await expect(pop.locator('.tbu-act', { hasText: 'Fetch now' })).toBeDisabled()
     })
   })
 
@@ -326,14 +690,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as source', async ({
+  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as a web page', async ({
     env
   }) => {
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
     const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
     expect(fs.existsSync(scratch)).toBe(false)
-    await withLab(env, async ({ page, lab }) => {
+    await withLab(env, async ({ app, page, lab }) => {
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
@@ -361,10 +725,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
 
       await htmlRow.click()
       await expect.poll(() => layoutState(page)).toBe('T2')
-      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('y.html')
-      await expect(
-        page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
-      ).toHaveText('Source')
+      await guestByUrl(app, /^koloft-machine:\/\/.*\/y\.html$/, { timeout: 30_000 })
     })
   })
 
@@ -380,6 +741,83 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
       }
+    })
+  })
+
+  // PLATFORM§35
+  test('E-SSH-34: on a machine whose ssh login names no UTF-8 locale, the characters outside ASCII that the agent prints reach the tab as they are, not as _', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      expect(
+        execFileSync(
+          '/usr/bin/ssh',
+          ['-F', lab.config, '-o', 'BatchMode=yes', 'kt-key', 'echo "[$LANG$LC_ALL$LC_CTYPE]"'],
+          { encoding: 'utf8', timeout: 10_000 }
+        ).trim()
+      ).toBe('[]')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`${NOT_ASCII}\r`)
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
+        .toContain(`handled: ${NOT_ASCII}`)
+    })
+  })
+
+  // PLATFORM§35
+  test('E-SSH-46: text a program in a session on the machine copies reaches this Mac’s clipboard through real tmux, whether it sends OSC 52 bare, wrapped for tmux, or through tmux load-buffer -w', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page, lab }) => {
+      await app.evaluate(({ clipboard }) => {
+        const g = globalThis as unknown as { __koloftCopied?: string[] }
+        g.__koloftCopied = []
+        clipboard.writeText = ((text: string): void => {
+          g.__koloftCopied?.push(text)
+        }) as typeof clipboard.writeText
+      })
+      const copied = (): Promise<string[] | undefined> =>
+        app.evaluate(() => (globalThis as unknown as { __koloftCopied?: string[] }).__koloftCopied)
+      const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write(`/sh printf '\\033]52;c;%s\\007' ${b64('bare 复制')}\r`)
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制'])
+      await session.write(
+        `/sh printf '\\033Ptmux;\\033\\033]52;c;%s\\007\\033\\\\' ${b64('wrapped 复制')}\r`
+      )
+      await expect.poll(copied, { timeout: 30_000 }).toEqual(['bare 复制', 'wrapped 复制'])
+      await session.write(`/sh printf 'buffer 复制' | tmux load-buffer -w -\r`)
+      await expect
+        .poll(copied, { timeout: 30_000 })
+        .toEqual(['bare 复制', 'wrapped 复制', 'buffer 复制'])
+    })
+  })
+
+  // PLATFORM§37
+  test('E-SSH-43: on a machine whose ssh login names no UTF-8 locale, a command the agent runs there gets the machine’s C.UTF-8 as LC_CTYPE, and ls in the Workbench shell prints a file name outside ASCII as it is, not as escapes', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page, lab }) => {
+      runOnTarget(lab, 'kuser', `: > "proj/${NOT_ASCII_FILE}"`)
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const session = await boundRealSession(page, lab)
+      await session.write('/sh echo "ctype=[$LC_CTYPE]"\r')
+      await expect
+        .poll(() => terminalText(page, session.tabId), { timeout: 30_000 })
+        .toContain('ctype=[C.utf8]')
+      await openSessionTerminal(app, page)
+      const shell = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
+      if (!shell) throw new Error('the Workbench shell carries no data-pty')
+      await runIn(page, panelTerm(page), 'ls ~/proj; echo "LS_$((6*7))"')
+      await expect
+        .poll(() => terminalText(page, shell), { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        .toContain('LS_42')
+      expect(await terminalText(page, shell)).toContain(NOT_ASCII_FILE)
     })
   })
 
@@ -409,7 +847,313 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it', async ({
+  test('E-SSH-35: the plain open the agent runs in a session on the machine shows a file there in that session’s Workbench, as koloft open does', async ({
+    env
+  }) => {
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await waitPanelAttached(page)
+      expect(await layoutState(page)).toBe('T1')
+
+      await runIn(page, centerTerm(page), '/open README.md')
+      await expect
+        .poll(() => layoutState(page), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        .toBe('T2')
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('README.md')
+      await expect(artifactBody(page)).toContainText('koloft-ssh-lab marker for kuser')
+    })
+  })
+
+  test('E-SSH-27: koloft open, typed in the Workbench shell of a session on the machine, shows a file there in that session’s Workbench, on machines whose login shell is bash (whose /etc/profile resets PATH), tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'koloft open README.md')
+        await expect(artifactBody(page)).toContainText(`koloft-ssh-lab marker for ${user}`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+      }
+    })
+  })
+
+  test('E-SSH-36: the Workbench shell of a session on the machine is named for the program running there, not ssh, and its folder follows cd there, on machines whose login shell is bash, tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        const shellTab = page.locator(`${WORKBENCH.tabActive}:visible ${WORKBENCH.tabLabel}`)
+        const folder = page.locator('.wb-panel .wb-bar:visible .wb-title')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'sleep 60')
+        await expect(shellTab).toHaveText('sleep', { timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS })
+        await page.keyboard.press('Control+C')
+        await expect(shellTab).toHaveText(LOGIN_SHELL_OF[alias], {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await runIn(page, panelTerm(page), 'cd /tmp')
+        await expect(folder).toHaveAttribute('title', `ssh://${alias}/tmp`, {
+          timeout: A_SHELL_REPORT_FROM_THE_MACHINE_MS
+        })
+        await expect(folder).toHaveText(/\/tmp$/)
+      }
+    })
+  })
+
+  // PLATFORM§33
+  test('E-SSH-28: a Claude Code session on a machine behind the jump host drives its Workbench browser with the playwright-cli Koloft fetched there, through an ssh -R on the tab’s connection, and the address goes once browser control is switched off', async ({
+    env
+  }) => {
+    const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC]))
+    try {
+      await withLab(env, async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const tabId = (await wsRows(page, 'kt-key').first().getAttribute('data-tab-id'))!
+        const address = (): string =>
+          runOnTarget(lab, 'kuser', `cat .koloft/tabs/${tabId}.cdp 2>/dev/null; true`)
+        await expect
+          .poll(address, { timeout: BACKGROUND_CONNECT_MS })
+          .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
+
+        const title = `lab-${Date.now().toString(36)}`
+        const url = server
+          .page('/lab', `<title>${title}</title><body>from the lab</body>`)
+          .replace('127.0.0.1', LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC)
+        const run = agentShell(page, tabId, KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS)
+        expect((await run(`playwright-cli open ${url}`)).replace(/\n/g, '')).toContain(
+          `Page Title: ${title}`
+        )
+        await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+        await run('playwright-cli close')
+
+        await page.evaluate(() => window.api.settings.set({ browserControl: false }))
+        await expect.poll(address, { timeout: BACKGROUND_CONNECT_MS }).toBe('')
+      })
+    } finally {
+      await server.close()
+    }
+  })
+
+  // PLATFORM§33
+  test('E-SSH-40: a localhost page the agent opens in a session on a machine behind the jump host, while a session on this Mac is the one selected, or drives with playwright-cli there, is the machine’s, through a forward on that ssh connection that keeps the port while the Mac has it free, takes another while a Mac server holds it, and goes when its web tab closes', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [free, heldOnMac] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const macServer = await serveOnTheMac(heldOnMac, 'from the Mac')
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(lab, free, '<title>first</title><body>first page on the machine</body>')
+        servePageOnTarget(
+          lab,
+          heldOnMac,
+          '<title>second</title><body>second page on the machine</body>'
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+        await startSessionIn(page, 'ws-a')
+
+        await page.evaluate(
+          ([t, l]) => window.api.terminal.write(t, l + '\r'),
+          [remoteTab, `/open http://localhost:${free}/`]
+        )
+        await expect
+          .poll(() => terminalText(page, remoteTab), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain(`opened http://localhost:${free}/`)
+        await switchToRow(page, remoteRow)
+        const first = await guestByUrl(app, `localhost:${free}/`)
+        await expect(first.locator('body')).toHaveText('first page on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+        expect(await fetchOnTheMacOnAFreshConnection(free)).toContain('first page on the machine')
+        expect(await fetchOnTheMacOnAFreshConnection(free, '::1')).toContain(
+          'first page on the machine'
+        )
+
+        await expect
+          .poll(
+            () => runOnTarget(lab, 'kuser', `cat .koloft/tabs/${remoteTab}.cdp 2>/dev/null; true`),
+            {
+              timeout: BACKGROUND_CONNECT_MS
+            }
+          )
+          .toMatch(/^ws:\/\//)
+        const run = agentShell(page, remoteTab, KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS)
+        expect(
+          (await run(`playwright-cli open http://localhost:${free}/`)).replace(/\n/g, '')
+        ).toContain('Page Title: first')
+        await run('playwright-cli close')
+
+        await runIn(page, centerTerm(page), `/open http://localhost:${heldOnMac}/`)
+        const second = await guestByUrl(
+          app,
+          new RegExp(`localhost:(?!${free}/|${heldOnMac}/)\\d+/$`),
+          { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS }
+        )
+        await expect(second.locator('body')).toHaveText('second page on the machine')
+        const macPort = Number(new URL(second.url()).port)
+        await expect.poll(() => addressValue(page)).toBe(`http://localhost:${macPort}/`)
+        expect(await fetchOnTheMacOnAFreshConnection(heldOnMac)).toBe('from the Mac')
+
+        const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
+        while ((await webTabs.count()) > 0)
+          await webTabs.first().locator(BROWSER.tabCloseIn).click()
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(free, '::1'), { timeout: 30_000 })
+          .toBe('refused')
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
+          .toBe('refused')
+      })
+    } finally {
+      macServer.close()
+    }
+  })
+
+  // ADR-0046
+  test('E-SSH-46: while the owner is away, a localhost page that a session on a machine behind the jump host opens reaches that session’s Discord room as a picture of the machine’s page, not of the Mac server on the same port, through a forward on its ssh connection that goes once the picture is taken and its web tab is closed', async ({
+    env
+  }) => {
+    seedSettings(env, {
+      hintsOff: true,
+      assist: { on: true, backend: 'claude' },
+      discord: {
+        userId: DISCORD_OWNER.id,
+        userName: DISCORD_OWNER.username,
+        channel: { guildId: '111', channelId: DISCORD_CHANNEL, name: 'koloft-all' }
+      }
+    })
+    const port = await portFreeOnTheMac()
+    const macServer = await serveOnTheMac(port, 'from the Mac')
+    const fake = await startFakeDiscord(env)
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(
+          lab,
+          port,
+          `<title>tall</title><body style="margin:0"><div style="height:${TALL_PAGE_PX}px">on the machine</div></body>`
+        )
+        await waitConductorStarted(env, BACKGROUND_CONNECT_MS)
+        await addMachine(page, 'kt-key', 'kuser')
+        fake.say(
+          DISCORD_OWNER,
+          `/koloft session new --workspace ${remoteKeyFor('kt-key', 'kuser')} -- warm up`
+        )
+        const room = (): FakeThread | undefined =>
+          fake.threads.find((t) => t.parent_id === DISCORD_CHANNEL)
+        await expect.poll(room, { timeout: BACKGROUND_CONNECT_MS }).toBeTruthy()
+        const roomId = room()!.id
+        await expect
+          .poll(
+            () =>
+              fake.posted.some((p) => p.channelId === roomId && p.content.includes('where it is')),
+            { timeout: BACKGROUND_CONNECT_MS }
+          )
+          .toBe(true)
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const tabId = (await remoteRow.getAttribute('data-tab-id'))!
+
+        fake.say(DISCORD_OWNER, `/koloft open http://localhost:${port}/`, { channelId: roomId })
+        const picture = (): FakePost | undefined =>
+          fake.posted.find((p) => p.channelId === roomId && p.files.length)
+        await expect
+          .poll(picture, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+          .toBeTruthy()
+        const png = picture()!.files[0].data
+        expect(png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)).toBe(true)
+        expect(png.readUInt32BE(PNG_HEIGHT_AT)).toBeGreaterThanOrEqual(TALL_PAGE_PX)
+        await expect
+          .poll(async () => (await terminalText(page, tabId)).replace(/\s/g, ''), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain('Sentapictureofthepage')
+
+        await switchToRow(page, remoteRow)
+        const shown = await guestByUrl(app, new RegExp(`localhost:(?!${port}/)\\d+/$`), {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(shown.locator('body')).toHaveText('on the machine')
+        const macPort = Number(new URL(shown.url()).port)
+        const webTabs = page.locator(`${BROWSER.tabOpen}:visible`)
+        while ((await webTabs.count()) > 0)
+          await webTabs.first().locator(BROWSER.tabCloseIn).click()
+        await expect
+          .poll(() => fetchOnTheMacOnAFreshConnection(macPort), { timeout: 30_000 })
+          .toBe('refused')
+        expect(await fetchOnTheMacOnAFreshConnection(port)).toBe('from the Mac')
+      })
+    } finally {
+      await fake.close()
+      macServer.close()
+    }
+  })
+
+  test('E-SSH-44: koloft secret url, run in a session on a machine behind the jump host, opens the sign-in in that session’s Workbench; once the owner’s sign-in lands on localhost, the page is the machine’s and the session hears it finished there, without the address and its code', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [free, idpPort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    const callback = `http://localhost:${free}/auth/callback?code=z-44`
+    const idp = await serveOnTheMac(
+      idpPort,
+      `<title>sign in</title><a id="go" href="${callback}">Continue</a>`
+    )
+    env.extraArgs.push('--host-resolver-rules=MAP koloft-a.test 127.0.0.1')
+    try {
+      await withLab(env, async ({ app, page, lab }) => {
+        servePageOnTarget(lab, free, '<title>cb</title><body>signed in on the machine</body>')
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remoteRow = wsRows(page, 'kt-key').first()
+        const remoteTab = (await remoteRow.getAttribute('data-tab-id'))!
+        await switchToRow(page, remoteRow)
+        await page.evaluate(
+          ([t, l]) => window.api.terminal.write(t, l + '\r'),
+          [remoteTab, `/sh koloft secret url "http://koloft-a.test:${idpPort}/authorize"`]
+        )
+        const signIn = await guestByUrl(app, `koloft-a.test:${idpPort}/authorize`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await expect(page.locator('[aria-label="Secret ask"]')).toContainText(
+          'finish this sign-in here'
+        )
+        await signIn.locator('#go').click()
+        await expect(signIn.locator('body')).toHaveText('signed in on the machine')
+        await expect
+          .poll(async () => (await terminalText(page, remoteTab)).replace(/\s+/g, ''), {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toContain('itslastpageloadedonkt-key')
+        expect(await terminalText(page, remoteTab)).not.toContain('z-44')
+        await expect(page.locator('[aria-label="Secret ask"]')).toHaveCount(0)
+      })
+    } finally {
+      idp.close()
+    }
+  })
+
+  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it, whose reply-language hook starts from the owner’s last words, not from its task', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -417,6 +1161,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await startSessionIn(page, 'kt-key', { remote: true })
+      await runIn(page, centerTerm(page), OWNER_LAST_WORDS)
+      await expect
+        .poll(() => mirroredSaidFiles(env).join('\n'), { timeout: 30_000 })
+        .toContain(OWNER_LAST_WORDS)
       await runIn(page, centerTerm(page), '/koloft session new -w lab-child -- "/answer hi"')
       await expect(centerTerm(page)).toContainText('koloft exit=0', {
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
@@ -426,6 +1174,304 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect
         .poll(() => runOnTarget(lab, 'kuser', 'ls proj/.claude/worktrees'), { timeout: 30_000 })
         .toContain('lab-child')
+      // ADR-0031
+      await expect
+        .poll(
+          () =>
+            runOnTarget(
+              lab,
+              'kuser',
+              'for f in .koloft/hook-sessions/*.said; do cat "$f"; echo; done'
+            )
+              .split('\n')
+              .filter(Boolean),
+          { timeout: 30_000 }
+        )
+        .toEqual([OWNER_LAST_WORDS, OWNER_LAST_WORDS])
+    })
+  })
+
+  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, on the child’s message socket there through ssh, not typed into its terminal, since SendMessage reaches no session on another machine', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === parentTab
+      )!
+      await runIn(
+        page,
+        centerTerm(page),
+        `/koloft session new --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+      )
+      await expect(centerTerm(page)).toContainText('koloft exit=0', { timeout: 30_000 })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1, { timeout: 90_000 })
+      await expect(wsRows(page, 'kt-key').first()).toHaveClass(/\bst-waiting\b/, {
+        timeout: 90_000
+      })
+      const kidTab = (await wsRows(page, 'kt-key').first().getAttribute('data-tab-id'))!
+      const write = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([t, l]) => window.api.terminal.write(t, l + '\r'), [tab, line])
+
+      await write(
+        kidTab,
+        `/koloft session send ${parent.nativeSessionId ?? parent.sessionId} all done`
+      )
+      const parentGot = (): string => {
+        const file = path.join(env.home, 'fake-claude-peer.jsonl')
+        return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+      }
+      await expect
+        .poll(parentGot, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+        .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+
+      await write(parentTab, `/koloft session send ${kidTab} keep going`)
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'cat fake-claude-peer.jsonl 2>/dev/null; :'), {
+          timeout: 60_000
+        })
+        .toMatch(/<cross-session-message from-mode=\\"\w+\\">\\n.*keep going/)
+    })
+  })
+
+  test('E-SSH-45: with a folder for new projects remembered on the machine, ⌘P “a new …” there makes the project folder on the machine, adds it as a workspace and starts the agent in it with the words typed, without asking for the folder — Claude Code on ⏎; the same ask again on ⌘⏎ makes <name>-2 and starts Codex there', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true, newProjectFolders: { 'kt-key': '/home/kuser/projects' } })
+    installCodexSignedInForTheLab(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-claude-assist-reply'),
+      JSON.stringify({ workspace: null, machine: 'kt-key', newFolder: 'crawler', title: 'Crawler' })
+    )
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        runOnTarget(lab, 'kuser', 'mkdir projects')
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const claudeCallsOnTheMachine = (): ClaudeCall[] =>
+          runOnTarget(lab, 'kuser', 'cat fake-claude-calls.jsonl 2>/dev/null; :')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as ClaudeCall)
+        const palette = page.locator('.modal.palette')
+        const askForANewCrawler = async (words: string, key: string): Promise<void> => {
+          await sendShortcut(app, 'shortcut:command-palette')
+          const askBox = palette.getByRole('textbox', { name: 'Ask or jump' })
+          await expect(askBox).toBeFocused()
+          await askBox.fill(words)
+          await expect(palette.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
+          await page.keyboard.press(key)
+        }
+
+        await askForANewCrawler('on kt-key, a new price crawler', 'Enter')
+        await expect.poll(() => claudeCallsOnTheMachine().length, { timeout: 90_000 }).toBe(1)
+        expect(
+          fs.readFileSync(path.join(env.home, 'fake-claude-assist-asked.txt'), 'utf8')
+        ).toContain('on kt-key, a new price crawler')
+        const [claude] = claudeCallsOnTheMachine()
+        expect(claude.cwd).toBe('/home/kuser/projects/crawler')
+        expect(claude.firstPrompt).toBe('on kt-key, a new price crawler')
+        expect(claude.argv[claude.argv.indexOf('--name') + 1]).toBe('Crawler')
+        await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })
+
+        await askForANewCrawler('another price crawler on kt-key', 'Meta+Enter')
+        await expect.poll(() => codexCalls(env).length, { timeout: 120_000 }).toBe(1)
+        const [codex] = codexCalls(env)
+        expect(codex.effectiveCwd).toBe('/home/kuser/projects/crawler-2')
+        expect(codex.argv.at(-1)).toBe('another price crawler on kt-key')
+        expect(
+          runOnTarget(
+            lab,
+            'kuser',
+            `find . -path '*/sessions/${codex.sessionId}.json' -exec cat {} +`
+          )
+        ).toContain('"cwd":"/home/kuser/projects/crawler-2"')
+        await expect(wsRows(page, 'crawler-2')).toHaveCount(1, { timeout: 60_000 })
+        expect(runOnTarget(lab, 'kuser', 'ls projects').split('\n').filter(Boolean)).toEqual([
+          'crawler',
+          'crawler-2'
+        ])
+        expect(claudeCallsOnTheMachine()).toHaveLength(1)
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  test('E-SSH-29: koloft session new --workspace on a machine that has gone down is refused with ssh’s reason for every agent, Claude too, instead of reported as started; New Claude session there says the same reason and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    installCodex(env, JSON.stringify({ tokens: { access_token: 'mac-token', account_id: 'lab' } }))
+    installMuse(env)
+    installAgy(env)
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      let reason = ''
+      for (const backend of SESSION_BACKENDS)
+        reason = await refusedSessionNewOnKtKey(page, parentTab, backend)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'New Claude session' }).click()
+      await expect(page.locator('.toast-msg')).toContainText(reason, { timeout: 30_000 })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(0)
+    })
+  })
+
+  test('E-SSH-32: resuming a closed Claude Code session on a machine that has gone down says ssh’s reason, the same one koloft session new gives there, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const row = wsRows(page, 'kt-key').first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      const reason = await refusedSessionNewOnKtKey(page, parentTab, 'claude')
+      const terminalsBefore = await termIds(page)
+
+      await row.click()
+      await expect(page.locator('.toast-msg', { hasText: reason })).toBeVisible({
+        timeout: 30_000
+      })
+      await page.waitForTimeout(A_RESUME_THAT_WENT_ON_WOULD_HAVE_OPENED_ITS_TAB_BY_MS)
+      expect(await termIds(page)).toEqual(terminalsBefore)
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1)
+      await expect(row).toHaveClass(/\bcold\b/)
+    })
+  })
+
+  test('E-SSH-21: closing a scheduled run’s tab on the machine takes its worktree folder and branch away there once its claude has left, History says "folder removed", and its row stays', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT)
+      // CC§9 ADR-0026
+      runOnTarget(
+        lab,
+        'kuser',
+        `printf '%s' '{"projects":{"/home/kuser/proj":{"hasTrustDialogAccepted":true}}}' > .claude.json`
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+
+      const dlg = page.locator('.modal.cronjobs')
+      const jobCard = dlg.locator('.job-row', { hasText: 'Lab report' })
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Lab report')
+      await dlg.locator('[aria-label="What to run"]').fill('/answer ok')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await jobCard.locator('button.mini', { hasText: 'Run now' }).click()
+
+      const folders = (): string[] =>
+        runOnTarget(lab, 'kuser', `ls ${RUN_FOLDERS} 2>/dev/null || true`)
+          .split('\n')
+          .filter(Boolean)
+      await expect.poll(() => folders().length, { timeout: 90_000 }).toBe(1)
+      const [wt] = folders()
+      const branch = (): string =>
+        runOnTarget(
+          lab,
+          'kuser',
+          `git -C proj branch --list worktree-${wt} --format='%(refname:short)'`
+        ).trim()
+      await expect.poll(branch, { timeout: 30_000 }).toBe(`worktree-${wt}`)
+      await expect
+        .poll(() => jobCard.locator('.job-last').innerText(), { timeout: 90_000 })
+        .toContain('done — waiting for you')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws-tab-cron') })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect
+        .poll(() => folders(), { timeout: A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS })
+        .toEqual([])
+      expect(branch()).toBe('')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-cron')).toHaveCount(1)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await expect
+        .poll(() => dlg.locator('.hist-row .hist-folder').first().textContent(), {
+          timeout: 30_000
+        })
+        .toBe(' · folder removed')
+    })
+  })
+
+  // CC§4 PLATFORM§35
+  test('E-SSH-33: /exit in a Claude Code worktree session on the machine lets its row and tab go as soon as Claude Code starts removing the worktree there through real tmux, while the removal still runs, and the worktree and its branch are gone once it ends', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(
+        lab,
+        'kuser',
+        `${COMMIT_THE_PROJECT} && printf '${REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS}' > ../fake-claude-remove-ms`
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await expect
+        .poll(async () => (await wsMenuTexts(page, 'kt-key')).join(' | '), { timeout: 60_000 })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, 'kt-key')
+      await worktreeDialog(page).locator('input').fill('leaving')
+      await page.keyboard.press('Enter')
+      const row = rowsWithSub(page, 'kt-key', 'leaving')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 120_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const there = (what: string): boolean =>
+        runOnTarget(lab, 'kuser', `${what} && echo yes || echo no`).trim() === 'yes'
+      const folder = (): boolean => there('test -d proj/.claude/worktrees/leaving')
+      const branch = (): boolean =>
+        there('git -C proj rev-parse -q --verify refs/heads/worktree-leaving >/dev/null')
+      expect(branch()).toBe(true)
+
+      await row.click()
+      await page.evaluate(([id]) => window.api.terminal.write(id, '/exit\r'), [tabId] as const)
+      await expect(row).toHaveCount(0, { timeout: A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS })
+      expect(folder()).toBe(true)
+
+      await expect
+        .poll(folder, { timeout: REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS + 30_000 })
+        .toBe(false)
+      await expect.poll(branch, { timeout: 10_000 }).toBe(false)
+      await expect
+        .poll(() => there("tmux -L koloft ls -F '#S' | grep -q ."), { timeout: 30_000 })
+        .toBe(false)
+      const failed = page.locator('.toast .toast-msg', {
+        hasText: /Claude Code did not remove the worktree/
+      })
+      const running = wsGroup(page, 'kt-key').locator('.ws-tab:not(.cold)')
+      for (let waited = 0; waited < A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS; waited += 250) {
+        expect(await failed.count()).toBe(0)
+        expect(await row.count()).toBe(0)
+        expect(await running.count()).toBe(0)
+        await page.waitForTimeout(250)
+      }
     })
   })
 
@@ -569,7 +1615,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         )
         expect(claudeSkillListingsIn(transcript()).join('\n')).toMatch(/^- koloft:koloft: /m)
         expect(outputs.some((o) => o.includes('koloft note append <text>'))).toBe(true)
-        expect(outputs.some((o) => o.includes('Added to the workspace note.'))).toBe(true)
+        expect(outputs.some((o) => o.includes('Added to the note.'))).toBe(true)
       },
       (lab) => useRealClaudeOnTheMachine(env, lab)
     )
@@ -697,7 +1743,463 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§37
+  test('E-SSH-18: on a Linux machine, with a plain and a tcsh login shell, the Workbench saves a file there, refuses a save once the file changed there, and "Keep mine" overwrites it', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      for (const [alias, user] of [
+        ['kt-key', 'kuser'],
+        ['kt-tcsh', 'tuser']
+      ] as [LabAlias, string][]) {
+        await addMachine(page, alias, user)
+        await expect(dot(page, alias)).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const file = `${remoteKeyFor(alias, user)}/README.md`
+        const onTheMachine = (): string => runOnTarget(lab, user, 'cat proj/README.md')
+
+        const opened = await page.evaluate((p) => window.api.edit.open(p), file)
+        expect(opened.text).toBe(README(user))
+        const saved = await page.evaluate(([p, o]) => window.api.edit.write(p, 'mine\n', o), [
+          file,
+          opened
+        ] as const)
+        expect(saved).toMatchObject({ ok: true, size: 5 })
+        expect(onTheMachine()).toBe('mine\n')
+
+        runOnTarget(lab, user, 'printf "theirs, longer\\n" > proj/README.md')
+        const refused = await page.evaluate(([p, o]) => window.api.edit.write(p, 'again\n', o), [
+          file,
+          saved
+        ] as const)
+        expect(refused).toMatchObject({ ok: false, code: 'stale', text: 'theirs, longer\n' })
+        expect(onTheMachine()).toBe('theirs, longer\n')
+
+        const kept = await page.evaluate(
+          ([p, o]) => window.api.edit.write(p, 'again\n', o, { force: true }),
+          [file, saved] as const
+        )
+        expect(kept).toMatchObject({ ok: true })
+        expect(onTheMachine()).toBe('again\n')
+      }
+    })
+  })
+
   // PLATFORM§34
+  test('E-SSH-22: a REAL muse 1.4.9 on the echo model (no account) on a Linux machine, inside real tmux through the wrapper and real hooks: the session binds, its light and title follow its turn, /clear follows the new session, and closing the tab ends it there', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_MUSE, NEEDS_LINUX_MUSE)
+    installMuse(env)
+    const tmuxThere = (lab: SshLab): string =>
+      runOnTarget(lab, 'kuser', 'tmux -L koloft ls -F "#S" 2>/dev/null; true').trim()
+    const boundMuse = async (page: Page): Promise<string> =>
+      (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.backendId === 'muse' && s.nativeSessionId
+      )?.nativeSessionId ?? ''
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Muse')
+        const rows = wsRows(page, 'kt-key')
+        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 180_000 })
+        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe('')
+        const first = await boundMuse(page)
+        expect(tmuxThere(lab)).toBe(`k-${first}`)
+        const tabId = (await rows.getAttribute('data-tab-id'))!
+        const write = (data: string): Promise<void> =>
+          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+        const mirrorLines = (mark: string): number =>
+          runOnTarget(lab, 'kuser', 'cat .koloft/hook-sessions/*.muse.jsonl; true')
+            .split('\n')
+            .filter((l) => l.includes(mark)).length
+        const submit = async (text: string, mark: string): Promise<void> => {
+          const before = mirrorLines(mark)
+          await write(text)
+          for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && mirrorLines(mark) === before; i++) {
+            await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+            await write('\r')
+            await expect
+              .poll(() => mirrorLines(mark), {
+                timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+              })
+              .toBeGreaterThan(before)
+              .catch(() => undefined)
+          }
+        }
+        await submit('hello from the lab', '"event":"UserPromptSubmit"')
+        await expect(rows).toContainText('hello from the lab', { timeout: 60_000 })
+        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await submit('/clear', '"t":"bound"')
+        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe(first)
+        const second = await boundMuse(page)
+        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe(`k-${second}`)
+        await page.locator('.ws .ws-tab.active').first().click()
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe('')
+      },
+      (lab) => installRealMuseOnTheMachine(lab, 'kuser')
+    )
+  })
+
+  // ADR-0039 CODEX§16
+  test('E-SSH-23: a Codex session on a Linux machine behind the jump host runs its app-server there, signed in from this Mac; koloft run by it there answers from this Koloft, though a login shell there would drop the koloft command from PATH; and closing its tab ends that server', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        const tabId = await codexTabOnKtKey(page)
+        expect(runOnTarget(lab, 'kuser', 'cat fake-codex-logins.jsonl')).toContain(
+          `"accessToken":"${LAB_CODEX_TOKEN}"`
+        )
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/koloft help',
+          /koloft exit=(\d+)[\s\S]*Codex done/,
+          KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        )
+        await expect(
+          wsRows(page, 'kt-key').and(page.locator(`[data-tab-id="${tabId}"]`))
+        ).toHaveClass(/\bst-waiting\b/)
+        const listening = (): string =>
+          runOnTarget(lab, 'kuser', 'ps -eo args | grep -c "[-]-listen" || true').trim()
+        const pidFiles = (): string =>
+          runOnTarget(
+            lab,
+            'kuser',
+            'ls .koloft/cx/*/ 2>/dev/null | grep -v "^side[.]pid$" | grep -c "[.]pid$" || true'
+          ).trim()
+        expect([listening(), pidFiles()]).toEqual(['1', '1'])
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // PLATFORM§33
+  test('E-SSH-41: a localhost address typed into a web tab of a Codex session on a machine behind the jump host opens the machine’s page there, as in a Claude Code tab', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    const port = await portFreeOnTheMac()
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        servePageOnTarget(lab, port, '<body>a page Codex serves on the machine</body>')
+        await codexTabOnKtKey(page)
+        await newWebTab(page)
+        await typeInAddressBar(page, `localhost:${port}`)
+        const guest = await guestByUrl(app, `localhost:${port}/`)
+        await expect(guest.locator('body')).toHaveText('a page Codex serves on the machine')
+        await expect(page.locator(`${BROWSER.addressBar} .ws-remote`)).toHaveText('kt-key')
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // PLATFORM§8 PLATFORM§33
+  test('E-SSH-42: a sign-in popup that a localhost page opens in a web tab of a session on a machine behind the jump host loads the machine’s page too, hands its result back to the page that opened it, and its address bar does not call that localhost Not secure', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    const [port, popupPort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
+    await withLab(env, async ({ app, page, lab }) => {
+      servePageOnTarget(
+        lab,
+        port,
+        '<title>machine</title><p id="result">waiting</p>' +
+          `<button id="signin" onclick="window.open('http://localhost:${popupPort}/popup', 'signin', 'width=400,height=400')">sign in</button>` +
+          '<script>addEventListener("message", (e) => { document.getElementById("result").textContent = e.data })</script>'
+      )
+      servePageOnTarget(
+        lab,
+        popupPort,
+        '<title>popup</title><script>window.opener.postMessage("popup on the machine", "*")</script>'
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await newWebTab(page)
+      await typeInAddressBar(page, `localhost:${port}`)
+      const guest = await guestByUrl(app, `localhost:${port}/`)
+      await guest.click('#signin')
+      await expect(guest.locator('#result')).toHaveText('popup on the machine', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(page.locator(BROWSER.tabOpen)).toHaveCount(1)
+      let bar: Page | undefined
+      await expect
+        .poll(() => (bar = app.windows().find((w) => w.url().endsWith('/sign-in-bar.html'))))
+        .toBeTruthy()
+      await expect(bar!.getByRole('textbox', { name: 'Address' })).toHaveValue(
+        `http://localhost:${popupPort}/popup`
+      )
+      await expect(bar!.getByText('Not secure')).toBeHidden()
+    })
+  })
+
+  // CC§3
+  test('E-SSH-31: a worktree Koloft makes on a Linux machine for a Codex session there gets the ignored files .worktreeinclude lists, copied there by the machine’s own sh and git', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    seedSettings(env, { hintsOff: true })
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        runOnTarget(
+          lab,
+          'kuser',
+          `${COMMIT_THE_PROJECT_WITH_AN_INCLUDED_ENV} && printf '${INCLUDED_ENV}' > .env`
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await expect
+          .poll(async () => (await wsMenuTexts(page, 'kt-key')).join(' | '), { timeout: 60_000 })
+          .toContain('New worktree session')
+        await openWorktreeSession(page, 'kt-key')
+        await worktreeDialog(page).locator('input').fill('lab-tree')
+        await chooseBackend(page, 'Codex')
+        await expect(
+          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
+        ).toHaveCount(1, { timeout: 120_000 })
+        expect(runOnTarget(lab, 'kuser', 'cat proj/.claude/worktrees/lab-tree/.env')).toBe(
+          INCLUDED_ENV
+        )
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  test('E-SSH-30: a Codex session on a Linux machine that has no gh gets the gh Koloft installs there, and a command Codex runs there finds it (downloads gh)', async ({
+    env
+  }) => {
+    installCodexSignedInForTheLab(env)
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        expect(runOnTarget(lab, 'kuser', 'command -v gh || echo none').trim()).toBe('none')
+        const tabId = await codexTabOnKtKey(page)
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/sh gh --version',
+          /gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
+          ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
+        )
+        expect(runOnTarget(lab, 'kuser', 'ls .local/bin')).toMatch(/^gh$/m)
+      },
+      (lab) => {
+        installFakeCodexOnTarget(lab)
+        installCurlOnTarget(lab)
+      }
+    )
+  })
+
+  // ADR-0039 CODEX§16
+  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+    env
+  }) => {
+    test.skip(
+      !fs.existsSync(REAL_CODEX),
+      'set KOLOFT_SMOKE_CODEX (absolute path of the real codex binary on this Mac)'
+    )
+    test.setTimeout(A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS + 300_000)
+    const binary = path.join(env.fakeBin, 'codex')
+    fs.symlinkSync(REAL_CODEX, binary)
+    env.launchEnv.KOLOFT_CODEX_CMD = binary
+    env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+    fs.mkdirSync(env.launchEnv.CODEX_HOME, { recursive: true })
+    fs.writeFileSync(
+      path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
+      NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
+    )
+    addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
+    const turns = '/home/kuser/stand-in-model.jsonl'
+    const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Codex')
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).toHaveLength(1)
+        const [tabId] = await termIds(page)
+        const bound = async (): Promise<boolean> =>
+          (await page.evaluate(() => window.api.sessions.list())).some(
+            (s) => s.tabId === tabId && s.alive && !!s.sessionId
+          )
+        await expect
+          .poll(
+            async () => {
+              if ((await terminalText(page, tabId)).includes(KEEP_THE_MODEL_CHOICE))
+                await page.evaluate((id) => window.api.terminal.write(id, '2\r'), tabId)
+              return bound()
+            },
+            { timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS }
+          )
+          .toBe(true)
+        const asked = (): string => runOnTarget(lab, 'kuser', `cat ${turns} 2>/dev/null || true`)
+        await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, 'run it'])
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && !asked(); i++) {
+          await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+          await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+          await expect
+            .poll(asked, { timeout: 15_000 })
+            .not.toBe('')
+            .catch(() => {})
+        }
+        await expect
+          .poll(asked, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+          .toContain('koloft lets you ask Koloft')
+      },
+      (lab) => {
+        startFakeResponsesOnTarget(lab, 'koloft help', turns)
+        runOnTarget(
+          lab,
+          'kuser',
+          `mkdir -p .koloft/codex-home && echo ${config} | base64 -d > .koloft/codex-home/config.toml`
+        )
+      }
+    )
+  })
+
+  // ADR-0039 CODEX§16
+  test('E-SSH-25: a REAL Codex on the machine, signed in from this Mac with a real ChatGPT login Koloft hands over and never renews, answers a turn, runs a shell command there, is listed, and after its tab closes resumes and remembers (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(
+      !fs.existsSync(REAL_CODEX) || !fs.existsSync(REAL_CODEX_AUTH),
+      'set KOLOFT_SMOKE_CODEX (the real codex on this Mac) and KOLOFT_SMOKE_CODEX_AUTH (a copy of a signed-in auth.json whose refresh token is a dummy)'
+    )
+    test.setTimeout(A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS + 600_000)
+    const binary = path.join(env.fakeBin, 'codex')
+    fs.symlinkSync(REAL_CODEX, binary)
+    env.launchEnv.KOLOFT_CODEX_CMD = binary
+    env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+    fs.mkdirSync(env.launchEnv.CODEX_HOME, { recursive: true })
+    fs.writeFileSync(
+      path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
+      NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
+    )
+    addCodexAccount(env, fs.readFileSync(REAL_CODEX_AUTH, 'utf8'))
+    const accountAuth = path.join(env.userData, 'codex-homes', 'e2e-codex', 'auth.json')
+    const before = {
+      text: fs.readFileSync(accountAuth, 'utf8'),
+      mtime: fs.statSync(accountAuth).mtimeMs
+    }
+    const trusted = Buffer.from(
+      '[projects."/home/kuser/proj"]\ntrust_level = "trusted"\n'
+    ).toString('base64')
+    await withLab(env, async ({ app, page, lab }) => {
+      await page.evaluate(() => {
+        const w = window as unknown as { __toasts: string[] }
+        w.__toasts = []
+        window.api.cron.onToast((text) => w.__toasts.push(text))
+      })
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      const opened = async (known: string[]): Promise<string> => {
+        await expect
+          .poll(async () => (await termIds(page)).filter((id) => !known.includes(id)), {
+            timeout: 30_000
+          })
+          .toHaveLength(1)
+        const [tabId] = (await termIds(page)).filter((id) => !known.includes(id))
+        await expect
+          .poll(
+            async () => {
+              if ((await terminalText(page, tabId)).includes(KEEP_THE_MODEL_CHOICE))
+                await page.evaluate((id) => window.api.terminal.write(id, '2\r'), tabId)
+              return (await page.evaluate(() => window.api.sessions.list())).some(
+                (s) => s.tabId === tabId && s.alive && !!s.sessionId
+              )
+            },
+            { timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS }
+          )
+          .toBe(true)
+        return tabId
+      }
+      const ask = async (tabId: string, prompt: string, done: () => Promise<boolean>) => {
+        await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, prompt])
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && !(await done()); i++) {
+          await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+          await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+          await expect
+            .poll(done, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS / 3 })
+            .toBe(true)
+            .catch(() => {})
+        }
+        await expect.poll(done, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS }).toBe(true)
+      }
+      const shows = (tabId: string, word: RegExp) => async () =>
+        word.test(await terminalText(page, tabId))
+
+      await newSessionInWith(page, 'kt-key', 'Codex')
+      runOnTarget(
+        lab,
+        'kuser',
+        `mkdir -p .koloft/codex-home && echo ${trusted} | base64 -d >> .koloft/codex-home/config.toml`
+      )
+      const first = await opened([])
+      await ask(
+        first,
+        'Reply with the capital of France, in lowercase, as one word.',
+        shows(first, /\bparis\b/)
+      )
+      const row = wsRows(page, 'kt-key')
+      await expect(row).toHaveCount(1)
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const made = (): Promise<boolean> =>
+        Promise.resolve(
+          runOnTarget(
+            lab,
+            'kuser',
+            'test -f proj/koloft-was-here.txt && echo yes || true'
+          ).trim() === 'yes'
+        )
+      await ask(
+        first,
+        'Use your shell tool to run exactly this command: touch /home/kuser/proj/koloft-was-here.txt — then reply with the word done.',
+        made
+      )
+      await expect(row).toHaveClass(/st-waiting|st-idle/, {
+        timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+      })
+
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+      expect(
+        runOnTarget(
+          lab,
+          'kuser',
+          'ps -eo stat=,args= | grep -E "app-server [-]-listen|codex-code-mod[e]" || true'
+        )
+      ).toBe('')
+      await row.click()
+      const again = await opened([first])
+      await ask(
+        again,
+        'Repeat, in uppercase, the one word you answered with first in this conversation.',
+        shows(again, /\bPARIS\b/)
+      )
+
+      const toasts = await page.evaluate(
+        () => (window as unknown as { __toasts: string[] }).__toasts
+      )
+      expect(
+        toasts.filter((t) => !t.includes('newer than the version Koloft was tested with'))
+      ).toEqual([])
+      expect(fs.statSync(accountAuth).mtimeMs).toBe(before.mtime)
+      expect(fs.readFileSync(accountAuth, 'utf8')).toBe(before.text)
+      expect(runOnTarget(lab, 'kuser', 'ls .koloft/codex-home')).not.toMatch(/auth\.json/)
+    })
+  })
+
   test('E-SSH-08: a machine whose shell prints a greeting at login: the dot says so instead of never syncing in silence', async ({
     env
   }) => {

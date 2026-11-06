@@ -1,8 +1,22 @@
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
-import { settingsOnDisk, waitBooted } from './helpers/p1'
+import {
+  agySessionCalls,
+  installAgy,
+  installMuse,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import {
+  butlerHelperRows,
+  readAllCalls,
+  settingsOnDisk,
+  terminalText,
+  waitBooted
+} from './helpers/p1'
 import { openSettings } from './helpers/extensions'
 import {
   FAKE_BOT,
@@ -63,17 +77,17 @@ async function launched(
   }
 }
 
-test.describe('Discord in Settings: Assist does the setup, and the screen shows who you are, the status and the bindings', () => {
-  test('with no bot token saved, Settings ▸ Discord shows only Set up with Assist: no token field, no Bot rows, no bindings', async ({
+test.describe('Discord in Settings: the butler does the setup, and the screen shows who you are, the status and its channel', () => {
+  test('with no bot token saved, Settings ▸ Discord shows only Set up with Alfred: no token field, no Bot rows, no channel', async ({
     env
   }) => {
     const { page, close } = await launched(env, { token: '' })
     try {
       const pane = await discordPane(page)
       await expect(
-        pane.locator('.set-row', { hasText: 'Let Assist set up Discord' })
+        pane.locator('.set-row', { hasText: 'Let Alfred set up Discord' })
       ).toContainText('Already have a bot?')
-      await expect(pane.getByRole('button', { name: 'Set up with Assist' })).toBeVisible()
+      await expect(pane.getByRole('button', { name: 'Set up with Alfred' })).toBeVisible()
       await expect(pane.locator('input')).toHaveCount(0)
       await expect(pane.locator('.set-grp')).toHaveCount(0)
       await expect(pane.getByRole('button', { name: 'Bind a channel…' })).toHaveCount(0)
@@ -115,9 +129,11 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).bindings).toMatchObject([
-        { scope: 'global', channel: { guildId: '111', channelId: '222', name: 'koloft-all' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
     } finally {
       await close()
     }
@@ -128,7 +144,7 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: STRANGER.id, userName: STRANGER.username, bindings: [] }
+      discord: { userId: STRANGER.id, userName: STRANGER.username }
     })
     const fake = await startFakeDiscord(env)
     fake.appOwner = OWNER
@@ -151,7 +167,7 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
     }
   })
 
-  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings sends the owner to Set up with Assist', async ({
+  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings sends the owner to Set up with Alfred', async ({
     env
   }) => {
     const { page, close } = await launched(env, {
@@ -164,7 +180,9 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
       const pane = await discordPane(page)
       const status = pane.locator('.set-row', { hasText: 'Status' })
       await expect(status).toContainText('Message Content is off')
-      await expect(status).toContainText('Click Set up with Assist above')
+      await expect(status).toContainText(
+        'Click Set up with Alfred above: Alfred does that with you.'
+      )
     } finally {
       await close()
     }
@@ -198,15 +216,14 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
     }
   })
 
-  test('Bind keeps New channel picked and makes it: one category named after the bot, #global, a workspace channel named after its folder with -2 on a clash, its path in the topic, through a 429', async ({
+  test('Bind keeps New channel picked and makes it: one category named after the bot, #global with the butler in its topic, through a 429; Change channel then moves the one binding to a channel already there', async ({
     env
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const fake = await startFakeDiscord(env)
-    fake.made.push({ id: '600', name: 'ws-a', type: 0 })
     fake.rateLimitChannelPosts = 1
     const app = await launchApp(env)
     const page = await app.firstWindow()
@@ -224,26 +241,34 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
       const category = fake.made.find((c) => c.type === CATEGORY)
       expect(category?.name).toBe(FAKE_BOT)
       const global = fake.made.find((c) => c.name === 'global')
-      expect(global).toMatchObject({ type: 0, parent_id: category?.id })
+      expect(global).toMatchObject({
+        type: 0,
+        parent_id: category?.id,
+        topic: 'Koloft · your butler, for all workspaces'
+      })
       expect(discordOnDisk(env)).toMatchObject({
-        bindings: [{ scope: 'global', channel: { channelId: global?.id, name: 'global' } }],
+        channel: { channelId: global?.id, name: 'global' },
         category: { channelId: category?.id }
       })
-
-      await pane.getByRole('button', { name: 'Bind a channel…' }).click()
-      await dlg.locator('.wt-list').first().locator('.cb-row', { hasText: /^ws-a/ }).click()
-      await expect(dlg.locator('.cb-row.hot', { hasText: 'New channel' })).toContainText(
-        'New channel #ws-a-2'
+      await expect(pane.locator('.acct-row', { hasText: 'Alfred · Butler' })).toContainText(
+        '#global'
       )
-      await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg).toHaveCount(0)
-      const wsA = fake.made.find((c) => c.name === 'ws-a-2')
-      expect(wsA).toMatchObject({ parent_id: category?.id, topic: env.workspaces.a })
+      await expect(pane.getByRole('button', { name: 'Bind a channel…' })).toHaveCount(0)
+
+      await pane.getByRole('button', { name: 'Change channel…' }).click()
+      const change = page.getByRole('dialog', { name: 'Change Discord channel' })
+      await expect(change.locator('.cb-row', { hasText: 'New channel' })).toContainText(
+        'New channel #global-2'
+      )
+      await change.locator('.cb-row', { hasText: '#koloft-all' }).click()
+      await change.locator('.modal-foot .btn-primary').click()
+      await expect(change).toHaveCount(0)
       expect(fake.made.filter((c) => c.type === CATEGORY)).toHaveLength(1)
-      expect(discordOnDisk(env).bindings.map((b) => b.channel.channelId)).toEqual([
-        global?.id,
-        wsA?.id
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -255,7 +280,7 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const fake = await startFakeDiscord(env)
     fake.refuseChannels = true
@@ -277,9 +302,11 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).bindings).toMatchObject([
-        { scope: 'global', channel: { channelId: '222', name: 'koloft-all' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
       expect(fake.made).toEqual([])
     } finally {
       await quitAndClose(app)
@@ -287,12 +314,51 @@ test.describe('Discord in Settings: Assist does the setup, and the screen shows 
     }
   })
 
-  test('once a token and an owner are set, an error shows only on the status line and the bindings stay in view', async ({
+  const helperOf = {
+    muse: { install: installMuse, calls: museCalls },
+    agy: { install: installAgy, calls: agySessionCalls }
+  }
+  for (const [backend, agent] of Object.entries(helperOf)) {
+    test(`with a ${backend} butler, Set up with Alfred starts a ${backend} helper in the butler’s folder told to run koloft discord setup, even while Claude is on too`, async ({
+      env
+    }) => {
+      agent.install(env)
+      seedSettings(env, {
+        assist: { on: true, backend },
+        sessionMethods: {
+          defaultBackend: 'claude',
+          enabled: { claude: true, codex: true, muse: true, agy: true }
+        }
+      })
+      const { page, close } = await launched(env, { token: '' })
+      try {
+        const pane = await discordPane(page)
+        await pane.getByRole('button', { name: 'Set up with Alfred' }).click()
+        const helper = butlerHelperRows(page)
+        await expect(helper).toHaveCount(1, { timeout: 60_000 })
+        const helperTab = (await helper.getAttribute('data-tab-id')) ?? ''
+        await expect
+          .poll(async () => (await terminalText(page, helperTab)).replace(/\s+/g, ''), {
+            timeout: 60_000
+          })
+          .toContain('runkoloftdiscordsetup')
+        const butlerFolder = path.join(env.userData, 'conductors', 'global')
+        const folders = agent.calls(env).map((c) => c.cwd)
+        expect(folders.length).toBeGreaterThanOrEqual(2)
+        expect(new Set(folders)).toEqual(new Set([butlerFolder]))
+        expect(readAllCalls(env)).toEqual([])
+      } finally {
+        await close()
+      }
+    })
+  }
+
+  test('once a token and an owner are set, an error shows only on the status line and the channel stays in view', async ({
     env
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const { page, close } = await launched(env, { closeOnIdentify: 4014 })
     try {

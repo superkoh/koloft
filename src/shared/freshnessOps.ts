@@ -1,4 +1,6 @@
-import type { WorkspaceFreshness } from './types'
+import type { SessionInfo, WorkspaceFreshness, WorkspacePullSummary } from './types'
+import { basename } from './preview'
+import { statusUnavailable } from './sessionBackend'
 
 const FRESH_WINDOW_MS = 15 * 60_000
 
@@ -8,6 +10,24 @@ export function freshnessShown(f: WorkspaceFreshness | null | undefined): f is W
 
 export function canPull(f: WorkspaceFreshness): boolean {
   return f.state === 'ok' && f.behind > 0 && f.ahead === 0 && !f.dirty && f.onDefault && !f.linked
+}
+
+export function busyInCheckout(
+  sessions: Pick<SessionInfo, 'alive' | 'treeRoot' | 'status' | 'turnOver' | 'details'>[],
+  root: string
+): number {
+  return sessions.filter(
+    (s) =>
+      s.alive &&
+      s.treeRoot === root &&
+      ((s.status === 'working' && !s.turnOver) || s.status === 'approval' || statusUnavailable(s))
+  ).length
+}
+
+export function pullToast(wsPath: string, branch: string, s: WorkspacePullSummary): string {
+  return `${basename(wsPath)} · ${branch}: fast-forwarded ${s.count} commit${
+    s.count === 1 ? '' : 's'
+  } (${s.from} → ${s.to})`
 }
 
 export type FreshLineState =

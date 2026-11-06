@@ -104,9 +104,28 @@ async function unpackGit(tmp, dir) {
   fs.writeFileSync(path.join(dir, 'COPYING'), copying)
 }
 
+// PLATFORM§50
+async function unpackGcm(tmp, dir) {
+  const { version, macArm64Sha256, licenseSha256 } = release.gcm
+  const base = 'https://github.com/git-ecosystem/git-credential-manager'
+  const tarball = await download(
+    `${base}/releases/download/v${version}/gcm-osx-arm64-${version}.tar.gz`,
+    macArm64Sha256
+  )
+  const license = await download(
+    `https://raw.githubusercontent.com/git-ecosystem/git-credential-manager/v${version}/LICENSE`,
+    licenseSha256
+  )
+  fs.writeFileSync(path.join(tmp, 'gcm.tar.gz'), tarball)
+  fs.mkdirSync(dir, { recursive: true })
+  execFileSync('tar', ['-xzf', path.join(tmp, 'gcm.tar.gz'), '-C', dir])
+  fs.writeFileSync(path.join(dir, 'LICENSE'), license)
+}
+
 async function fetchVendor() {
   await refresh('gh', release.gh.version, unpackGh)
   await refresh('git', release.git.dugiteTag, unpackGit)
+  await refresh('gcm', release.gcm.version, unpackGcm)
 }
 
 exports.default = fetchVendor

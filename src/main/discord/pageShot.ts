@@ -1,0 +1,198 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { pathToFileURL } from 'url'
+import { session, WebContentsView, type WebContents } from 'electron'
+import { pagePathOf } from '@shared/browserRoute'
+import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
+import { within } from '../within'
+
+const SHOT_PARTITION = 'koloft-page-shot'
+// PLATFORM§16
+const LONGEST_SIDE_THAT_CAPTURED_PX = 16000
+const PAGE_LOADS_WITHIN_MS = 30_000
+const FONTS_LOAD_WITHIN_MS = 5000
+// PLATFORM§16
+const A_CAPTURE_ANSWERS_WITHIN_MS = 20_000
+const SMALLER_PICTURE_QUALITY = 80
+
+export interface PageLook {
+  width: number
+  height: number
+  pictureHeight: number
+  mostPictures: number
+}
+
+export const PAGE_LOOK: PageLook = {
+  width: 1280,
+  height: 800,
+  pictureHeight: Infinity,
+  mostPictures: 10
+}
+
+interface Size {
+  width: number
+  height: number
+}
+
+interface Shot {
+  format: 'png' | 'jpeg'
+  data: Buffer
+}
+
+let partitionReady = false
+const machineOfPage = new Map<number, string>()
+const goneWatchers: ((page: number) => void)[] = []
+
+export function machineOfShotPage(page: number | undefined): string | undefined {
+  return page === undefined ? undefined : machineOfPage.get(page)
+}
+
+export function onShotPageGone(watch: (page: number) => void): void {
+  goneWatchers.push(watch)
+}
+
+export function shotSession(): Electron.Session {
+  const ses = session.fromPartition(SHOT_PARTITION)
+  if (partitionReady) return ses
+  partitionReady = true
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  ses.on('will-download', (event) => event.preventDefault())
+  return ses
+}
+
+type Clip = Size & { y: number }
+
+export function pictureClips(
+  page: Size,
+  devicePixelRatio: number,
+  look: Pick<PageLook, 'pictureHeight' | 'mostPictures'> = PAGE_LOOK
+): Clip[] {
+  const side = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / devicePixelRatio)
+  const width = Math.min(page.width, side)
+  const tall = Math.min(side, look.pictureHeight)
+  const clips: Clip[] = []
+  for (let y = 0; y < page.height && clips.length < look.mostPictures; y += tall)
+    clips.push({ y, width, height: Math.min(tall, page.height - y) })
+  return clips
+}
+
+async function capture(wc: WebContents, clip: Clip, quality?: number): Promise<Shot> {
+  const format = quality ? 'jpeg' : 'png'
+  const r = (await within(
+    wc.debugger.sendCommand('Page.captureScreenshot', {
+      format,
+      ...(quality ? { quality } : {}),
+      captureBeyondViewport: true,
+      clip: { x: 0, y: clip.y, width: clip.width, height: clip.height, scale: 1 }
+    }),
+    A_CAPTURE_ANSWERS_WITHIN_MS,
+    'The page did not let Koloft take its picture in time.'
+  )) as { data: string }
+  return { format, data: Buffer.from(r.data, 'base64') }
+}
+
+const PAGE_STUCK = 'The page stopped answering, so Koloft could not take its picture.'
+
+// PLATFORM§16
+async function settled(wc: WebContents): Promise<void> {
+  if (!wc.isLoading()) return
+  const stopped = new Promise<void>((resolve) => wc.once('did-stop-loading', () => resolve()))
+  await within(stopped, PAGE_LOADS_WITHIN_MS, '').catch(() => undefined)
+}
+
+async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }> {
+  const [metrics, ratio] = await within(
+    Promise.all([
+      wc.debugger.sendCommand('Page.getLayoutMetrics') as Promise<{ cssContentSize: Size }>,
+      wc.executeJavaScript('window.devicePixelRatio') as Promise<number>
+    ]),
+    A_CAPTURE_ANSWERS_WITHIN_MS,
+    PAGE_STUCK
+  )
+  const { width, height } = metrics.cssContentSize
+  return { size: { width: Math.ceil(width), height: Math.ceil(height) }, ratio: ratio || 1 }
+}
+
+export interface PagePictures {
+  files: DiscordFile[]
+  shown: Size
+  page: Size
+}
+
+export async function shootHtml(
+  html: string,
+  look: PageLook,
+  shownAs: string
+): Promise<PagePictures> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'koloft-shot-'))
+  const file = path.join(dir, 'page.html')
+  try {
+    await fs.promises.writeFile(file, html)
+    return await shootPage(pathToFileURL(file).href, { look, shownAs })
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true })
+  }
+}
+
+// PLATFORM§16
+export async function shootPage(
+  url: string,
+  {
+    machine,
+    look = PAGE_LOOK,
+    shownAs = pagePathOf(url) ?? url
+  }: { machine?: string; look?: PageLook; shownAs?: string } = {}
+): Promise<PagePictures> {
+  const view = new WebContentsView({
+    webPreferences: { session: shotSession(), sandbox: true, contextIsolation: true }
+  })
+  const wc = view.webContents
+  const page = wc.id
+  if (machine) {
+    machineOfPage.set(page, machine)
+    wc.once('destroyed', () => {
+      machineOfPage.delete(page)
+      for (const watch of goneWatchers) watch(page)
+    })
+  }
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }))
+  view.setBounds({ x: 0, y: 0, width: look.width, height: look.height })
+  try {
+    await within(wc.loadURL(url), PAGE_LOADS_WITHIN_MS, 'it did not load in time.').catch(
+      (error: unknown) => {
+        throw new Error(`Koloft could not open ${shownAs}: ${(error as Error).message}`)
+      }
+    )
+    await settled(wc)
+    await within(
+      wc.executeJavaScript('document.fonts.ready.then(() => true)'),
+      FONTS_LOAD_WITHIN_MS,
+      'fonts'
+    ).catch(() => undefined)
+    wc.debugger.attach('1.3')
+    const { size, ratio } = await pageSize(wc)
+    const clips = pictureClips(size, ratio, look)
+    const last = clips.at(-1)
+    if (!last)
+      throw new Error(`${shownAs} is an empty page: there is nothing to take a picture of.`)
+    const files: DiscordFile[] = []
+    for (const [i, clip] of clips.entries()) {
+      let shot = await capture(wc, clip)
+      if (shot.data.length > BYTES_PER_FILE) shot = await capture(wc, clip, SMALLER_PICTURE_QUALITY)
+      if (shot.data.length > BYTES_PER_FILE)
+        throw new Error(
+          `A picture of ${shownAs} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most ${BYTES_PER_FILE / MB} MB.`
+        )
+      const part = clips.length > 1 ? `-${i + 1}` : ''
+      files.push({ name: `page${part}.${shot.format === 'png' ? 'png' : 'jpg'}`, data: shot.data })
+    }
+    return {
+      files,
+      shown: { width: last.width, height: last.y + last.height },
+      page: size
+    }
+  } finally {
+    wc.close()
+  }
+}

@@ -1,14 +1,15 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import { execFileSync, spawnSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { expect } from './app'
+import { expect, pendingAttention } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
-  AssistRecord,
   BackendAvailability,
+  ButlerSession,
+  DiscordSettings,
   SessionWorkbenchState
 } from '../../../src/shared/types'
 
@@ -38,6 +39,11 @@ export interface ClaudeCall {
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
+  const conductors = path.join(env.userData, 'conductors')
+  return readAllCalls(env).filter((c) => path.dirname(c.cwd) !== conductors)
+}
+
+export function readAllCalls(env: E2EEnv): ClaudeCall[] {
   if (!fs.existsSync(env.claudeCalls)) return []
   return fs
     .readFileSync(env.claudeCalls, 'utf8')
@@ -63,18 +69,25 @@ export async function waitForCalls(
   return calls()
 }
 
-export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
-  const conductors = path.join(env.userData, 'conductors')
-  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+export async function waitForAllCalls(
+  env: E2EEnv,
+  count: number,
+  timeout = 40_000
+): Promise<ClaudeCall[]> {
+  await expect.poll(() => readAllCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
+  return readAllCalls(env)
 }
 
-export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
-  const records = (settingsOnDisk(env).assistSessions as AssistRecord[] | undefined) ?? []
-  return scope === undefined ? records[0] : records.find((r) => r.scope === scope)
+export function butlerSessionOnDisk(env: E2EEnv): ButlerSession | undefined {
+  return settingsOnDisk(env).butlerSession as ButlerSession | undefined
+}
+
+export function discordOnDisk(env: E2EEnv): DiscordSettings {
+  return (settingsOnDisk(env).discord as DiscordSettings | undefined) ?? {}
 }
 
 export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
-  const bound = (): number => assistRecordOnDisk(env)?.sessionIds.length ?? 0
+  const bound = (): number => butlerSessionOnDisk(env)?.sessionIds.length ?? 0
   await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 
@@ -124,6 +137,59 @@ export function gitInit(dir: string): void {
   )
 }
 
+export interface InterruptedWorktree {
+  resourceId: string
+  cwd: string
+  baseline: string
+  saved(): { resources: Record<string, { state: string }>; members: object }
+}
+
+export function seedWorktreeInterruptedBeforeAnySessionBound(
+  env: E2EEnv,
+  storeFile: string,
+  name: string
+): InterruptedWorktree {
+  const ws = env.workspaces.a
+  const resourceId = crypto.randomUUID()
+  const cwd = path.join(ws, '.claude', 'worktrees', name)
+  const baseline = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ws, encoding: 'utf8' }).trim()
+  const file = path.join(env.userData, storeFile)
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      members: {},
+      resources: {
+        [resourceId]: {
+          id: resourceId,
+          originalCwd: ws,
+          worktreePath: cwd,
+          worktreeName: name,
+          worktreeBranch: 'worktree-' + name,
+          originalHeadCommit: baseline,
+          state: 'creating',
+          managed: true
+        }
+      }
+    })
+  )
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.email=e2e@koloft.test',
+      '-c',
+      'user.name=koloft-e2e',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'Advance main'
+    ],
+    { cwd: ws }
+  )
+  return { resourceId, cwd, baseline, saved: () => JSON.parse(fs.readFileSync(file, 'utf8')) }
+}
+
 export function gitCommitAll(dir: string): void {
   assertFixtureDir('gitCommitAll', dir)
   execFileSync('git', ['add', '-A'], { cwd: dir })
@@ -141,6 +207,17 @@ export function gitCommitAll(dir: string): void {
     ],
     { cwd: dir }
   )
+}
+
+export const INCLUDED_ENV = 'PORT=3000\n'
+
+// CC§3
+export function gitRepoWithAnIncludedEnv(dir: string): void {
+  gitInit(dir)
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n.env\n')
+  fs.writeFileSync(path.join(dir, '.worktreeinclude'), '.env\n')
+  gitCommitAll(dir)
+  fs.writeFileSync(path.join(dir, '.env'), INCLUDED_ENV)
 }
 
 // CC§3
@@ -172,6 +249,54 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
     (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
     tabId
   )
+}
+
+export async function sessionInRow(page: Page, row: Locator): Promise<string | undefined> {
+  return boundSessionId(page, await row.getAttribute('data-tab-id'))
+}
+
+export async function untilTheRowHoldsANewSession(
+  page: Page,
+  row: Locator,
+  old: string | undefined,
+  timeout = 30_000
+): Promise<void> {
+  expect(old).toBeTruthy()
+  await expect
+    .poll(
+      async () => {
+        const now = await sessionInRow(page, row)
+        return now !== undefined && now !== old
+      },
+      { timeout }
+    )
+    .toBe(true)
+}
+
+export async function agyConversationOnceFirstTurnEnded(
+  page: Page,
+  tabId?: string
+): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find(
+          (x) =>
+            x.backendId === 'agy' &&
+            x.alive &&
+            (tabId === undefined || x.tabId === tabId) &&
+            x.usage &&
+            x.nativeSessionId
+        )
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
+      },
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+  return found!
 }
 
 export interface SeedOptions {
@@ -208,6 +333,25 @@ function seedOwnership(env: E2EEnv, id: string): void {
 export function withMember(members: unknown, id: string): string[] {
   const list = Array.isArray(members) ? (members as string[]) : []
   return list.includes(id) ? list : [...list, id]
+}
+
+// CC§11
+export function runClaudeElsewhere(env: E2EEnv, sessionId: string): () => void {
+  const other = spawn('sleep', ['600'], { stdio: 'ignore' })
+  const pid = other.pid
+  if (!pid) throw new Error('could not start the stand-in claude process')
+  const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    env: { ...process.env, TZ: 'UTC' }
+  })
+    .toString()
+    .trim()
+  const registry = path.join(env.home, '.claude', 'sessions')
+  fs.mkdirSync(registry, { recursive: true })
+  fs.writeFileSync(
+    path.join(registry, `${pid}.json`),
+    JSON.stringify({ pid, sessionId, procStart })
+  )
+  return () => other.kill()
 }
 
 export function seedJsonl(env: E2EEnv, bucketDir: string, opts: SeedOptions = {}): string {
@@ -270,6 +414,17 @@ export async function sendShortcut(app: ElectronApplication, channel: string): P
   }, channel)
 }
 
+export async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
+  await page.locator('.ws .ws-tab.active').first().click()
+  await sendShortcut(app, 'shortcut:close-tab')
+  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  if (await confirm.isVisible({ timeout: 4000 }).catch(() => false))
+    await confirm
+      .locator('button', { hasText: /^Close$/ })
+      .first()
+      .click()
+}
+
 export async function clickAppMenuItem(
   app: ElectronApplication,
   page: Page,
@@ -324,7 +479,7 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 }
 
 export function notesIsland(page: Page): Locator {
-  return page.locator('.isl-notes:not(.isl-conductors)')
+  return page.locator('.isl-notes')
 }
 
 export function notesArea(page: Page): Locator {
@@ -353,6 +508,7 @@ export function seedGlobalTerm(
 }
 
 export const FAKE_SESSION_TITLE = 'Fake session: project notes'
+export const FAKE_CODEX_SESSION_TITLE = 'Codex fixture session'
 
 export function setNextSessionTitle(env: E2EEnv, title: string): void {
   fs.writeFileSync(path.join(env.home, 'fake-claude-next-title'), title)
@@ -360,6 +516,31 @@ export function setNextSessionTitle(env: E2EEnv, title: string): void {
 
 export function wsGroup(page: Page, wsName: string): Locator {
   return page.locator('.ws').filter({ has: page.locator('.ws-head', { hasText: wsName }) })
+}
+
+export function butlerRow(page: Page): Locator {
+  return page.locator('.isl-butler > .ws-tab')
+}
+
+export function butlerHelperRows(page: Page): Locator {
+  return page.locator('.isl-butler .ws-subtabs > .ws-tab')
+}
+
+export async function landsOnTheButler(page: Page): Promise<void> {
+  await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+}
+
+const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
+
+export async function staysOnTheFolderPageNotTheButler(
+  page: Page,
+  env: E2EEnv,
+  wsName: string
+): Promise<void> {
+  await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
+  await expect(page.locator('.w-empty .big')).toHaveText(wsName)
+  await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+  expect(readAllCalls(env).length - readCalls(env).length).toBe(0)
 }
 
 export function wsRows(page: Page, wsName: string): Locator {
@@ -383,25 +564,37 @@ export function worktreeDialog(page: Page): Locator {
 }
 
 export function dialogPrimary(dlg: Locator): Locator {
-  return dlg.locator('.modal-foot .btn-primary')
+  return dlg.locator('.modal-foot .btn-primary:not([aria-haspopup])')
 }
 
-export async function chooseBackend(page: Page, which: 'default' | 'other'): Promise<void> {
+export type AgentName = 'Claude' | 'Codex' | 'Muse' | 'Antigravity'
+
+export function agentRow(page: Page, method: AgentName): Locator {
+  return page
+    .getByRole('listbox', { name: 'Agents' })
+    .getByRole('option')
+    .filter({ hasText: new RegExp(`^\\d?${method}`) })
+}
+
+export async function pickAgent(page: Page, from: Locator, method: AgentName): Promise<void> {
+  await from.getByRole('button', { name: 'Pick an agent' }).click()
+  await agentRow(page, method).click()
+}
+
+export async function chooseBackend(page: Page, which: 'default' | AgentName): Promise<void> {
   const dialog = page.locator('.modal.wspicker, .modal.worktreesess')
-  const start = dialog.locator(
-    which === 'default'
-      ? '.modal-foot button[data-default="true"]'
-      : '.modal-foot button[data-default="false"]'
-  )
-  await expect(start).toBeEnabled()
-  await start.click()
+  if (which === 'default') {
+    const start = dialog.locator('.modal-foot button[data-default="true"]')
+    await expect(start).toBeEnabled()
+    await start.click()
+  } else await pickAgent(page, dialog, which)
   await expect(dialog).toHaveCount(0)
 }
 
 export async function newSessionInWith(
   page: Page,
   wsName: string,
-  method: 'Claude' | 'Codex'
+  method: AgentName
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: `New ${method} session` }).click()
@@ -425,7 +618,7 @@ export async function openWorktreeSession(page: Page, wsName: string): Promise<L
 export async function startSessionIn(
   page: Page,
   wsName: string,
-  opts: { remote?: boolean; method?: 'Claude' | 'Codex' } = {}
+  opts: { remote?: boolean; method?: AgentName } = {}
 ): Promise<void> {
   const rows = wsRows(page, wsName)
   const before = await rows.count()
@@ -436,16 +629,34 @@ export async function startSessionIn(
     .click()
   await expect(rows).toHaveCount(before + 1, { timeout: 30_000 })
   await expect(page.locator('.modal')).toHaveCount(0)
-  await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
   if (opts.remote) {
     await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(titledBefore + 1, {
       timeout: 60_000
     })
     return
   }
+  await expect(page.locator('.w-empty'), 'the new session is on screen').toHaveCount(0, {
+    timeout: 30_000
+  })
   await expect(page.locator(SESSION_BOUND_ICON)).toHaveAttribute('aria-disabled', 'false', {
     timeout: 30_000
   })
+}
+
+export async function waitStartupTurnOver(
+  page: Page,
+  wsName: string,
+  title = FAKE_SESSION_TITLE
+): Promise<void> {
+  const titled = wsRows(page, wsName).filter({ hasText: title })
+  const tabId = await titled.getAttribute('data-tab-id', { timeout: 60_000 })
+  await expect
+    .poll(async () => (await pendingAttention(page)).some((e) => e.tabId === tabId), {
+      timeout: 60_000
+    })
+    .toBe(true)
+  await expect(titled).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }
 
 const SESSION_BOUND_ICON = '.aux-ico[aria-label="Workbench"]'
@@ -465,9 +676,51 @@ export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
 }
 
+export function shownCenterTerm(page: Page): Promise<{ cols: number; left: number } | undefined> {
+  return page.evaluate(() => {
+    const terms = (
+      window as unknown as {
+        __koloftTerms?: Record<string, { cols: number; element?: HTMLElement }>
+      }
+    ).__koloftTerms
+    for (const t of Object.values(terms ?? {})) {
+      const wrap = t.element?.closest<HTMLElement>('.term-island .term-wrap')
+      if (wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden') {
+        const left = wrap.querySelector('.term')!.getBoundingClientRect().left
+        return { cols: t.cols, left: Math.round(left) }
+      }
+    }
+    return undefined
+  })
+}
+
+export async function setWindowWidth(app: ElectronApplication, width: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, w) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    win.setSize(w, win.getSize()[1])
+  }, width)
+}
+
+export async function switchToRow(page: Page, row: Locator): Promise<void> {
+  await row.click()
+  await expect(row).toHaveClass(/\bactive\b/)
+  await expect(page.locator('.terminals > .empty')).toHaveCount(0)
+}
+
 export async function runIn(page: Page, term: Locator, cmd: string): Promise<void> {
   await term.click()
   await page.keyboard.type(cmd)
+  await page.keyboard.press('Enter')
+}
+
+export const TWO_LINE_PROMPT = 'first line\nsecond line'
+
+export async function sendTwoLinesJoinedByShiftEnter(page: Page, term: Locator): Promise<void> {
+  const [first, second] = TWO_LINE_PROMPT.split('\n')
+  await term.click()
+  await page.keyboard.type(first)
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type(second)
   await page.keyboard.press('Enter')
 }
 
@@ -556,14 +809,15 @@ export function terminalText(page: Page, tabId: string): Promise<string> {
 }
 
 export function termIds(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    Object.keys(
+  return page.evaluate(() => {
+    const butler = document.querySelector('.isl-butler > .ws-tab')?.getAttribute('data-tab-id')
+    return Object.keys(
       (window as unknown as { __koloftTerms?: Record<string, unknown> }).__koloftTerms ?? {}
-    )
-  )
+    ).filter((id) => id !== butler)
+  })
 }
 
-const SHELL_READY_ONCE_QUIET_FOR_MS = 700
+const TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS = 700
 
 export async function openSessionTerminal(app: ElectronApplication, page: Page): Promise<Locator> {
   await page.waitForFunction(
@@ -595,49 +849,27 @@ export async function openSessionTerminal(app: ElectronApplication, page: Page):
   const ptyId = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
   if (!ptyId) throw new Error('the visible terminal tab carries no data-pty')
 
+  await waitTerminalQuiet(page, ptyId)
+  return term
+}
+
+export async function waitTerminalQuiet(page: Page, tabId: string): Promise<void> {
   let last = ''
   let stableSince = 0
   await expect
     .poll(
       async () => {
-        const now = (
-          await page.evaluate((id) => {
-            const t = (
-              window as unknown as {
-                __koloftTerms?: Record<
-                  string,
-                  {
-                    buffer: {
-                      active: {
-                        length: number
-                        getLine(
-                          i: number
-                        ): { translateToString(trim?: boolean): string } | undefined
-                      }
-                    }
-                  }
-                >
-              }
-            ).__koloftTerms?.[id]
-            if (!t) return ''
-            const b = t.buffer.active
-            const out: string[] = []
-            for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
-            return out.join('\n')
-          }, ptyId)
-        ).trim()
+        const now = (await terminalText(page, tabId)).trim()
         if (now !== last || now === '') {
           last = now
           stableSince = Date.now()
           return false
         }
-        if (stableSince === 0) stableSince = Date.now()
-        return Date.now() - stableSince >= SHELL_READY_ONCE_QUIET_FOR_MS
+        return Date.now() - stableSince >= TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS
       },
       { intervals: [200], timeout: 40_000 }
     )
     .toBe(true)
-  return term
 }
 
 export function panelTerm(page: Page): Locator {
@@ -712,7 +944,12 @@ export function islandBorderColors(
   })
 }
 
+const scrollIntoViewBeforeTheClickSoTheListsScrollEventCannotCloseTheMenu = (
+  target: Locator
+): Promise<void> => target.scrollIntoViewIfNeeded()
+
 export async function openMenu(page: Page, target: Locator): Promise<Locator> {
+  await scrollIntoViewBeforeTheClickSoTheListsScrollEventCannotCloseTheMenu(target)
   await target.click({ button: 'right' })
   const menu = page.locator('.menu')
   await expect(menu).toBeVisible()
@@ -724,9 +961,35 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
   return texts.map((t) => t.replace(/\s+/g, ' ').trim())
 }
 
+export const ENDED_ROW_NOTE = /· (exited \(code \d+\)|killed \(signal \d+\))$/
+
+export async function closeKeptTab(page: Page, row: Locator): Promise<void> {
+  await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 40_000 })
+  await openMenu(page, row)
+  await page.locator('.menu .mi', { hasText: /^Close/ }).click()
+  await expect(row.locator('.ws-tab-sub', { hasText: ENDED_ROW_NOTE })).toHaveCount(0, {
+    timeout: 20_000
+  })
+  await expect(row.and(page.locator('.ws-tab:not(.cold)'))).toHaveCount(0, { timeout: 20_000 })
+}
+
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
+}
+
+export async function wsMenuTexts(page: Page, wsName: string): Promise<string[]> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const items = await menuItemTexts(page)
+  await closeMenu(page)
+  return items
+}
+
+export async function restoreOffered(page: Page, wsName: string): Promise<boolean> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const greyed = await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()
+  await closeMenu(page)
+  return greyed === 0
 }
 
 export function gitMark(page: Page, wsName: string): Locator {

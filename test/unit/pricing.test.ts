@@ -47,6 +47,29 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('gpt-6-astra-2026-09-01')).toBeUndefined()
   })
 
+  // AGY§21
+  it.each([
+    ['gemini-3.1-pro-low', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],
+    ['gemini-3.1-pro-preview', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],
+    ['gemini-3.8-flash-high', { inPerM: 0.75, outPerM: 3.75, cacheReadPerM: 0.075 }],
+    ['gemini-3.1-flash-lite-preview', { inPerM: 0.25, outPerM: 1.5, cacheReadPerM: 0.025 }]
+  ])(
+    'prices the Gemini id %s, effort or preview suffix and all, at its base model, with no cache-write charge and a 1M window',
+    (id, expected) => {
+      expect(resolvePricing(id)).toEqual({
+        ...expected,
+        cacheWritePerM: 0,
+        cacheWrite1hPerM: 0,
+        windowTokens: 1_048_576
+      })
+    }
+  )
+
+  it('leaves a Gemini model with no price row of its own unpriced, never borrowing a sibling', () => {
+    expect(resolvePricing('gemini-3.9-flash-low')).toBeUndefined()
+    expect(resolvePricing('gemini-3.1-pro-ultra')).toBeUndefined()
+  })
+
   it('returns undefined for unknown / synthetic / empty ids (design D6: no $)', () => {
     expect(resolvePricing('gpt-4')).toBeUndefined()
     expect(resolvePricing('<synthetic>')).toBeUndefined()
@@ -90,9 +113,18 @@ describe('resolvePricing — exact then longest-prefix match', () => {
         windowTokens: 1_000_000
       }
     ],
-    ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }]
+    ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }],
+    [
+      'gpt-6.1-terra',
+      {
+        inPerM: 1,
+        outPerM: 5,
+        cacheReadPerM: 0.05,
+        longContext: { aboveInputTokens: 272_000, inPerM: 2, cacheReadPerM: 0.1, outPerM: 7.5 }
+      }
+    ]
   ])(
-    'prices %s, a default model of Claude Code 2.1.293+ or Codex 0.161+, at its own row',
+    'prices %s, a model Claude Code 2.1.293+ or Codex 0.161+ offers, at its own row',
     (id, expected) => {
       expect(resolvePricing(id)).toMatchObject(expected)
     }

@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { fileURLToPath } from 'url'
 import type { ConductorSaveResult } from '@shared/types'
+import { machinePageOf, routeFor, schemeOf } from '@shared/browserRoute'
 import {
   answered,
   EXIT_USAGE,
@@ -11,26 +12,42 @@ import {
   type AgentVerb
 } from './agentRequests'
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
+import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
+import type { PagePictures } from './discord/pageShot'
+import { picturesSent, tooLarge } from './discord/phoneCopy'
 
 export const DISCORD_USAGE =
-  'koloft: usage: koloft discord send <file>... [-- "<text>"] | status | token --from-page | reload | invite | bind --new-channel [--workspace <path>]'
-export const NOT_A_CONDUCTOR =
-  'koloft: only an Assist bound to a Discord channel can send to Discord.'
-export const NOT_THE_SETUP_TASK =
-  "koloft: only the global Assist's Discord setup task can run this."
-
-const MB = 1024 * 1024
-const SETUP_ONLY = new Set(['status', 'token', 'reload', 'invite', 'bind'])
+  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | thread open <session> | setup | status | token --from-page | reload | invite | bind --new-channel'
+export const NOT_A_PAGE =
+  'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
+export const NOT_THE_BUTLER =
+  'koloft: only the butler bound to a Discord channel can send to Discord.'
+export const OWNER_AT_THE_MAC =
+  'koloft: nothing was sent: the owner is at the Mac, so Discord stays quiet. Show it in the Workbench with koloft open <file or web address> instead.'
 
 export interface DiscordVerbDeps {
   channelOf(tabId: string): string | undefined
+  quiet(tabId: string): boolean
   send(channelId: string, files: DiscordFile[], text: string): Promise<void>
-  isSetupTask(tabId: string): boolean
+  shoot(url: string): Promise<PagePictures>
   status(): string
   tokenFromPage(tabId: string): Promise<string>
   reload(tabId: string): Promise<string>
   invite(): string | null
-  bindNewChannel(scope: string): Promise<ConductorSaveResult>
+  bindNewChannel(): Promise<ConductorSaveResult>
+  openRoom(ref: string): Promise<AgentReply>
+}
+
+function thread(
+  d: DiscordVerbDeps,
+  rest: string[],
+  tabId: string
+): Promise<AgentReply> | AgentReply {
+  const [verb, ...words] = rest
+  const ref = words.join(' ').trim()
+  if (verb !== 'open' || !ref) return refused(DISCORD_USAGE, EXIT_USAGE)
+  if (!d.channelOf(tabId)) return refused(NOT_THE_BUTLER)
+  return d.openRoom(ref)
 }
 
 async function send(
@@ -40,9 +57,10 @@ async function send(
   cwd: string
 ): Promise<AgentReply> {
   const channelId = d.channelOf(tabId)
-  if (!channelId) return refused(NOT_A_CONDUCTOR)
+  if (!channelId) return refused(NOT_THE_BUTLER)
   const { before: names, after: text } = splitAtDashes(rest)
   if (!names.length && !text) return refused(DISCORD_USAGE, EXIT_USAGE)
+  if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
   const files: DiscordFile[] = []
   for (const name of names) {
     const full = path.resolve(cwd, name)
@@ -54,12 +72,38 @@ async function send(
     } catch {
       return refused(`koloft: cannot read ${name}.`)
     }
-    if (size > BYTES_PER_FILE)
-      return refused(`koloft: File too large (${(size / MB).toFixed(1)} MB); the limit is 20 MB.`)
+    if (size > BYTES_PER_FILE) return refused(`koloft: ${tooLarge(size)}`)
     files.push({ name: path.basename(full), data: fs.readFileSync(full) })
   }
   await d.send(channelId, files, text)
   return answered('Sent to Discord.')
+}
+
+function pageUrl(target: string, cwd: string): string | undefined {
+  const route = routeFor(schemeOf(target) ? target : path.resolve(cwd, target), 'agent')
+  if (route.dest !== 'browser' || machinePageOf(route.target)) return undefined
+  if (schemeOf(route.target) !== 'file:') return route.target
+  return fs.statSync(fileURLToPath(route.target), { throwIfNoEntry: false })?.isFile()
+    ? route.target
+    : undefined
+}
+
+async function shot(
+  d: DiscordVerbDeps,
+  rest: string[],
+  tabId: string,
+  cwd: string
+): Promise<AgentReply> {
+  const channelId = d.channelOf(tabId)
+  if (!channelId) return refused(NOT_THE_BUTLER)
+  const { before, after: text } = splitAtDashes(rest)
+  if (before.length !== 1) return refused(DISCORD_USAGE, EXIT_USAGE)
+  const url = pageUrl(before[0], cwd)
+  if (!url) return refused(NOT_A_PAGE)
+  if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
+  const pictures = await d.shoot(url)
+  await d.send(channelId, pictures.files, text)
+  return answered(picturesSent(pictures, 'Discord'))
 }
 
 async function setup(
@@ -68,6 +112,7 @@ async function setup(
   rest: string[],
   tabId: string
 ): Promise<AgentReply> {
+  if (sub === 'setup' && !rest.length) return answered(DISCORD_SETUP_STEPS)
   if (sub === 'status' && !rest.length) return answered(d.status())
   if (sub === 'token' && rest.length === 1 && rest[0] === '--from-page')
     return answered(await d.tokenFromPage(tabId))
@@ -76,11 +121,8 @@ async function setup(
     const url = d.invite()
     return url ? answered(url) : refused('koloft: save the bot token first.')
   }
-  if (sub === 'bind' && rest[0] === '--new-channel') {
-    const [flag, workspace, ...extra] = rest.slice(1)
-    if (extra.length || (flag !== undefined && (flag !== '--workspace' || !workspace)))
-      return refused(DISCORD_USAGE, EXIT_USAGE)
-    const r = await d.bindNewChannel(workspace ?? GLOBAL_SCOPE)
+  if (sub === 'bind' && rest.length === 1 && rest[0] === '--new-channel') {
+    const r = await d.bindNewChannel()
     return r.ok ? answered('Bound to a new channel.') : refused(`koloft: ${r.error}`)
   }
   return refused(DISCORD_USAGE, EXIT_USAGE)
@@ -91,8 +133,8 @@ export function discordVerb(d: DiscordVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [sub, ...rest] = args
     if (sub === 'send') return send(d, rest, caller.tabId, caller.cwd)
-    if (!SETUP_ONLY.has(sub)) return refused(DISCORD_USAGE, EXIT_USAGE)
-    if (!d.isSetupTask(caller.tabId)) return refused(NOT_THE_SETUP_TASK)
+    if (sub === 'shot') return shot(d, rest, caller.tabId, caller.cwd)
+    if (sub === 'thread') return thread(d, rest, caller.tabId)
     return setup(d, sub, rest, caller.tabId)
   }
 }

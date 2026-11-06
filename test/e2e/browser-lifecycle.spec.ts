@@ -7,6 +7,7 @@ import {
   centerTerm,
   gitCommitAll,
   gitInit,
+  landsOnTheButler,
   layoutOnDisk,
   openMenu,
   runIn,
@@ -18,7 +19,6 @@ import {
 import {
   BROWSER,
   activeKind,
-  activeSurface,
   browserSurface,
   downloadedFiles,
   globeIcon,
@@ -28,6 +28,7 @@ import {
   openBrowser,
   openTabs,
   pinnedTab,
+  tabByTitle,
   typeInAddressBar
 } from './helpers/browser'
 import {
@@ -191,7 +192,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 20_000 })
-      const row = page.locator('.ws-tab', { hasText: 'Old layout session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Old layout session' })
       await expect(row).toBeVisible({ timeout: 40_000 })
 
       await expect
@@ -475,6 +476,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       const row = wsRows(page, 'ws-a').first()
       process.kill(call.pid, 'SIGHUP')
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+      await landsOnTheButler(page)
       await openMenu(page, row)
       await page.locator('.menu .mi', { hasText: 'Remove from list' }).click()
       await expect(row).toHaveCount(0, { timeout: 30_000 })
@@ -485,8 +487,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
           { timeout: 30_000 }
         )
         .toBe(0)
-      await expect(browserSurface(page)).toBeHidden()
-      expect(await activeSurface(page)).toBeNull()
+      await expect(tabByTitle(page, /Page A|Page B/)).toHaveCount(0)
       await expect.poll(() => downloadedFiles(env), { timeout: 60_000 }).toContain('slow.bin')
     } finally {
       await srv.close()

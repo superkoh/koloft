@@ -14,6 +14,8 @@ directories:
 # what ballooned the dmg from ~120 MB (0.5.0) to ~385 MB (0.5.1+).
 files:
   - out/**
+  - '!out/THIRD-PARTY-NOTICES.txt'
+  - '!out/*/.vite/**'
 
 # Chromium UI locales shipped inside Electron Framework — 220 .lproj folders, ~48 MB.
 # Koloft's own UI is English; these strings only surface in Chromium-internal chrome
@@ -23,8 +25,9 @@ electronLanguages:
   - en
   - zh_CN
 
-# Downloads the pinned gh (GitHub CLI) and git into vendor/, checksum-checked, so a new
-# Mac has both without installing anything (scripts/vendor-release.json pins them).
+# Downloads the pinned gh (GitHub CLI), git and Git Credential Manager into vendor/,
+# checksum-checked, so a new Mac has them without installing anything
+# (scripts/vendor-release.json pins them).
 beforePack: scripts/fetch-vendor.cjs
 
 extraResources:
@@ -32,6 +35,10 @@ extraResources:
     to: gh
   - from: vendor/git
     to: git
+  - from: vendor/gcm
+    to: gcm
+  - from: out/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
 
 # Runs after the app is assembled and before it is signed, so the signature covers the
 # stripped native binaries.

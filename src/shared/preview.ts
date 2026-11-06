@@ -58,6 +58,16 @@ export function writtenForTheAgent(src: string): boolean {
   return AGENT_ONLY_PATHS.some((p) => p.test(src))
 }
 
+export type ReadErrorState = 'missing' | 'tooLarge' | 'binary' | 'error'
+
+export function stateAfterReadError(message: string, firstRead: boolean): ReadErrorState | null {
+  if (message.includes('KOLOFT_READ_FAILED') || message.includes('KOLOFT_NOT_FILE'))
+    return 'missing'
+  if (message.includes('KOLOFT_TOO_LARGE')) return 'tooLarge'
+  if (message.includes('KOLOFT_BINARY')) return 'binary'
+  return firstRead ? 'error' : null
+}
+
 export const VIEWABLE_EXTENSIONS: readonly string[] = [
   ...PREVIEW_EXTENSIONS,
   ...WEB_PAGE_EXTENSIONS

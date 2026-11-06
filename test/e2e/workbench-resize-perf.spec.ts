@@ -1,12 +1,71 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
-import { startSessionIn } from './helpers/p1'
+import { startSessionIn, waitBooted } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH, workbenchIcon, workbenchPanel } from './helpers/workbench'
 import { newWebTab, activeKind } from './helpers/browser'
 
 const LAYOUT_STEP_CEILING_BETWEEN_MEASURED_17_FIXED_AND_73_UNFIXED_MS = 45
 const DRAG_FRAME_AVG_CEILING_BETWEEN_MEASURED_14_FIXED_AND_60_UNFIXED_MS = 35
+const SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_7_FIXED_AND_127_UNFIXED = 20
+const SIDEBAR_DRAG_PX = 160
+
+test.describe('Sidebar edge drag writes the width, not the store, on each mouse move', () => {
+  test('dragging the sidebar edge resizes it live, saves the width once on release, and re-renders the app only a few times', async ({
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    await page.addInitScript(() => {
+      const w = window as unknown as { __commits: number; __REACT_DEVTOOLS_GLOBAL_HOOK__: unknown }
+      w.__commits = 0
+      w.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        supportsFiber: true,
+        renderers: new Map(),
+        inject: () => 1,
+        checkDCE: () => {},
+        onScheduleFiberRoot: () => {},
+        onCommitFiberUnmount: () => {},
+        onPostCommitFiberRoot: () => {},
+        onCommitFiberRoot: () => {
+          w.__commits++
+        }
+      }
+    })
+    await page.reload()
+    await waitBooted(page)
+
+    const side = page.locator('.side')
+    const start = (await side.boundingBox())!.width
+    const grip = (await page.locator('.side-grip').boundingBox())!
+    const x = grip.x + grip.width / 2
+    const y = grip.y + grip.height / 2
+    await page.evaluate(() => {
+      ;(window as unknown as { __commits: number }).__commits = 0
+    })
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + SIDEBAR_DRAG_PX, y, { steps: 30 })
+    const far = (await side.boundingBox())!.width
+    expect(far, 'the width follows the mouse during the drag').toBeGreaterThan(
+      start + SIDEBAR_DRAG_PX / 2
+    )
+    await page.mouse.move(x + SIDEBAR_DRAG_PX / 2, y, { steps: 30 })
+    await page.mouse.up()
+    const commits = await page.evaluate(
+      () => (window as unknown as { __commits: number }).__commits
+    )
+    console.log(`RESIZE-PERF sidebar drag: ${commits} React commits over 60 mouse moves`)
+
+    const end = (await side.boundingBox())!.width
+    expect(far - end).toBeCloseTo(SIDEBAR_DRAG_PX / 2, 0)
+    await expect
+      .poll(() => page.evaluate(() => window.api.settings.get().then((s) => s.sidebarWidth)))
+      .toBeCloseTo(end, 0)
+    expect(commits, 'the sidebar drag must write the DOM, not the store').toBeLessThan(
+      SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_7_FIXED_AND_127_UNFIXED
+    )
+  })
+})
 
 test.describe('Workbench gutter drag over a large Changes stream stays smooth', () => {
   async function showChanges(page: Page): Promise<void> {

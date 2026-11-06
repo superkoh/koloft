@@ -6,10 +6,9 @@
     <title>Sessions on a timer — Koloft</title>
     <meta
       name="description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/scheduled/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -19,7 +18,7 @@
     <meta property="og:title" content="Sessions on a timer — Koloft" />
     <meta
       property="og:description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
     <meta property="og:url" content="__SITE_URL__/scheduled/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -27,34 +26,47 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Sessions on a timer — Koloft" />
     <meta
       name="twitter:description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -80,21 +92,32 @@
         <h2>Set up a job</h2>
         <p>
           Right-click a folder in the sidebar and pick Scheduled jobs… from the menu. Each job
-          starts a Claude or a Codex session (in a remote folder, Claude only). For each one you
-          choose:
+          starts a Claude Code, Codex, Muse Code or Antigravity session; the Runs in row lists the
+          agents you have on, and a remote folder gets the same list. For each one you choose:
         </p>
         <ul class="dash">
           <li>
-            a name, and what to run: any message, or a skill's <code>/name</code>. A Claude run's
-            row in the sidebar shows the job's name; a Codex run is named by Codex itself.
+            a name, and what to run: any message, or a skill's <code>/name</code>. A run's row in
+            the sidebar shows the job's name (for Antigravity, in a folder on your Mac).
           </li>
           <li>
-            when: every so many minutes or hours, every day at a time, or on the days you pick
+            when: every so many minutes or hours, every day at a time, on the days you pick, once on
+            a day and time, or a set wait after each run (see <a href="#once-after">below</a>)
           </li>
-          <li>the model, and how hard it thinks</li>
+          <li>
+            the model, and how hard it thinks. For Claude Code, Codex and Antigravity, pick a model
+            from a short list, or type another under <code>Other…</code>. For Muse, keep
+            <code>Default</code> or type a name under <code>Other…</code>. Antigravity shows only
+            the thinking levels its model takes.
+          </li>
           <li>the permission it gets</li>
           <li>when it is done: Leave it open (the default), or Close it</li>
         </ul>
+        <p>
+          If you later switch a job's agent off in Settings ▸ Sessions, its runs do not start.
+          History says <code>Could not start — Codex is turned off in Settings ▸ Sessions</code>,
+          with your agent's name in place of Codex.
+        </p>
 
         <div class="typed-table">
           <table>
@@ -108,9 +131,10 @@
               <tr>
                 <td>Same as my other sessions</td>
                 <td>
-                  Follows your Accounts setting. A Claude job skips every check when Skip permission
-                  prompts is on in Settings ▸ Accounts. If not, it asks before risky steps, like
-                  your other sessions.
+                  Follows your Accounts setting. A job skips every check when Skip permission
+                  prompts is on in Settings ▸ Accounts and Koloft runs it on one of your accounts.
+                  If not, it asks before risky steps, like your other sessions; a Codex job follows
+                  Codex's own approval settings.
                 </td>
               </tr>
               <tr>
@@ -145,7 +169,6 @@
                 alt="Koloft's Scheduled jobs window for one folder: two jobs, a nightly test report and a morning dependency check, each with an on switch, its first message, when it runs next, and a Run now button"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>two jobs, each with its own switch and the time it runs next</figcaption>
         </figure>
@@ -154,12 +177,60 @@
           <a href="../agents/">Agents can use Koloft too</a>.
         </p>
 
+        <h2 id="once-after">Once, and after each run</h2>
+        <p>The When row has five choices. Two of them do not follow the clock:</p>
+        <div class="typed-table">
+          <table>
+            <thead>
+              <tr>
+                <th>when</th>
+                <th>what happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Once</td>
+                <td>
+                  Pick a day and a time. At that time one run starts and the job turns itself off.
+                  It stays in the list; give it a new time and it is on again. If that time is
+                  missed or skipped (see History below), no run happens, and the job still turns
+                  itself off.
+                </td>
+              </tr>
+              <tr>
+                <td>After each run…</td>
+                <td>
+                  Pick a wait, in minutes or hours. The wait starts when the last run is over (it
+                  closed itself, you closed it, it could not start, or its agent quit with an
+                  error); then the next run starts. While a run is open, nothing new starts, Run now
+                  included. Saving the job or turning it on starts the wait again. It is never
+                  missed: if the wait ran out while Koloft was closed or asleep, the run starts as
+                  soon as Koloft is back.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Picking After each run… sets When done to Close it, so each run makes room for the next by
+          itself. The list says <code>waits for the open run to end</code> while a run is open. In a
+          <a href="../remote/">remote folder</a>, while the link is down a run's tab keeps trying to
+          reconnect, and the run stays open. If the agent quits with an error after the run has
+          started, the run is over at once: the wait starts, and History says
+          <code>Agent quit</code>. Its tab stays open with its last screen, and its copy of the
+          folder stays until you close the tab; ⇧⌘R there picks the same session up again in the
+          same copy, as an ordinary session, not a new run. If the agent quits before the run
+          starts, its tab closes and History says <code>Could not start</code>.
+        </p>
+
         <h2>Where it runs</h2>
         <p>
           Git is the tool that keeps a history of your files. A worktree is
           <mark class="hl">a new copy of the folder</mark>, on its own branch, so your own files are
-          never touched. Each run's copy and branch stay until you remove them, or until a job set
-          to Close it removes its own.
+          never touched. When a run's tab closes, Koloft removes its copy and branch, unless they
+          hold work not committed, or a commit that is nowhere else. The run's row stays in the
+          sidebar, greyed; a click makes the copy again and resumes the same session. Copies left by
+          older runs go the next time Koloft opens.
         </p>
         <pre
           class="ascii"
@@ -210,24 +281,23 @@
           A job set to Close it says "closes when done" in the list. When its run closes, a small
           message pops up: "⏰ <i>name</i> finished and closed".
         </p>
-        <figure class="shot" style="--ar: 1280 / 700; --pos: 50% 100%; --ar-phone: 774 / 645">
+        <figure class="shot" style="--ar: 1280 / 730; --pos: 50% 100%; --ar-phone: 774 / 670">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
                 srcset="../img/u-cron-close-phone2.webp"
                 width="774"
-                height="645"
+                height="670"
               />
               <img
                 src="../img/u-cron-close.webp"
                 width="1280"
-                height="840"
+                height="870"
                 loading="lazy"
-                alt="The Scheduled jobs window after a run: the nightly test report job reads last run today 18:48, done — closed itself, and its history below says Done — closed itself"
+                alt="The Scheduled jobs window after a run: the nightly test report job reads last run today 13:10, done — closed itself, and History · all jobs below has one line, Nightly test report, Done — closed itself"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the nightly job after its run closed itself</figcaption>
         </figure>
@@ -238,7 +308,14 @@
           <li>closing it would lose a change that is not committed, or a commit</li>
           <li>a file in its Workbench is not saved</li>
         </ul>
-        <p>Each job keeps a short history of its runs. A line there reads one of:</p>
+        <p>
+          History, at the bottom of the window, lists every job's runs, newest first (<code
+            >History · all jobs</code
+          >). Each line shows when it ran, then the job's name, then what happened. Click a job's
+          name on its card: the card is highlighted and History shows that job alone (<code
+            >History · &lt;job&gt;</code
+          >). Click it again to see all jobs. A line there reads one of:
+        </p>
         <div class="typed-table">
           <table>
             <thead>
@@ -253,6 +330,17 @@
                 <td>The run finished and is still open in the sidebar.</td>
               </tr>
               <tr>
+                <td>Done — closing</td>
+                <td>The run finished, and Close it is cleaning it up right now.</td>
+              </tr>
+              <tr>
+                <td>Done — still finishing</td>
+                <td>
+                  The run's turn is over, but work it started still runs in the background. Close it
+                  cleans up once that work is over; Koloft looks again every minute.
+                </td>
+              </tr>
+              <tr>
                 <td>Done — closed itself</td>
                 <td>The run finished and Close it cleaned it up.</td>
               </tr>
@@ -265,11 +353,35 @@
               </tr>
               <tr>
                 <td>Closed by you</td>
-                <td>You closed the run yourself.</td>
+                <td>
+                  You closed the run yourself. The line then ends with
+                  <code>· folder removed</code>, or <code>· folder kept: …</code> and what is left
+                  in it.
+                </td>
+              </tr>
+              <tr>
+                <td>Agent quit — exited (code <i>N</i>)</td>
+                <td>
+                  The agent quit with an error after the run started, and nobody closed it. A run on
+                  a remote machine says the agent's own exit code there (255 shows as 254); one
+                  killed there reads 128 plus the signal's number, such as
+                  <code>exited (code 137)</code>. The folder line follows, as for Closed by you,
+                  once you close the run's tab.
+                </td>
+              </tr>
+              <tr>
+                <td>Agent quit — killed (signal <i>N</i>)</td>
+                <td>
+                  The run's process on this Mac was killed after the run started: the agent itself,
+                  or for a remote run its ssh link.
+                </td>
               </tr>
               <tr>
                 <td>Ended — Koloft quit</td>
-                <td>Koloft quit while the run was open.</td>
+                <td>
+                  Koloft quit while the run was open, and the run did not come back as the job's
+                  open run.
+                </td>
               </tr>
               <tr>
                 <td>Missed — Koloft was closed or asleep</td>
@@ -294,9 +406,17 @@
           such as "Missed 3 times — Koloft was closed or asleep".
         </p>
         <p>
-          Close it works the same for a Claude job, a Codex job, and a Claude job in a
+          If you quit Koloft while a run that had started working is open and awake (not asleep),
+          its tab comes back when Koloft opens. It still counts as the job's open run, so the next
+          time is skipped until it closes. A Close it run that had finished closes itself about a
+          minute later; one cut off mid-work stays open for you.
+        </p>
+        <p>
+          Close it works the same for a Claude, Codex or Muse job, on this Mac and in a
           <a href="../remote/">remote folder</a>. On a remote machine, Koloft cannot see programs
-          the run left going in the background there.
+          the run left going in the background. The run's copy there goes once its session has left
+          the machine; otherwise the line says <code>folder kept: machine unreachable</code> or
+          <code>still running on the machine</code>.
         </p>
 
         <h2>What it never does</h2>
@@ -304,8 +424,8 @@
           <li>
             <s class="struck">type into your session</s>
             <span class="why"
-              >(it hands the first message to <code>claude</code> or <code>codex</code> once, as the
-              session starts, and nothing after that)</span
+              >(it hands the first message to the agent once, as the session starts, and nothing
+              after that)</span
             >
           </li>
           <li>
@@ -313,36 +433,55 @@
             <span class="why"
               >(Jobs run only while Koloft is open. A time that came while Koloft was closed is
               missed, even by a minute. If the Mac was asleep, a run up to five minutes late still
-              happens; later than that, it is missed.)</span
+              happens; later than that, it is missed. After each run… jobs do not follow the clock:
+              see <a href="#once-after">above</a>.)</span
             >
           </li>
           <li>
             <s class="struck">pile up runs</s>
             <span class="why"
-              >(if the last run is still open, the next one is skipped; a run that closed itself is
-              not in the way)</span
+              >(if the last run is still open, the next one is skipped, and an After each run… job
+              waits; a run that closed itself is not in the way)</span
             >
           </li>
         </ul>
 
-        <p class="next">next page -&gt; <a href="../accounts/">Several accounts, one pool</a></p>
+        <p class="next">Next page → <a href="../accounts/">Several accounts, one pool</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

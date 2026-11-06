@@ -25,7 +25,7 @@ export function lower(base: string): string {
 export const INSTALL_TEXT =
   '**未签名个人构建**,需要手动允许运行:\n\n' +
   '```bash\n' +
-  'curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash\n' +
+  'curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash\n' +
   '```\n\n' +
   'Or:\n\n' +
   '```bash\n' +
@@ -59,7 +59,7 @@ export function release(
     tag_name: `v${version}`,
     name: `Koloft v${version}`,
     body,
-    html_url: `https://github.com/superkoh/koloft-releases/releases/tag/v${version}`,
+    html_url: `https://github.com/superkoh/koloft/releases/tag/v${version}`,
     draft: opts.draft ?? false,
     prerelease: opts.prerelease ?? false,
     assets: [

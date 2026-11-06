@@ -1,7 +1,28 @@
 import fs from 'fs'
 import path from 'path'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import type { BackendSessionRow, ResumePlan } from '@shared/types'
+import type {
+  BackendSessionRow,
+  ResumeFailure,
+  ResumePlan,
+  SessionResumeRequest
+} from '@shared/types'
+
+export class ResumeRefused extends Error {
+  constructor(
+    readonly code: ResumeFailure,
+    message: string = code
+  ) {
+    super(message)
+  }
+}
+
+export async function rebuildsTheWorktree(
+  mode: SessionResumeRequest['mode'],
+  treeThere: () => Promise<boolean>
+): Promise<boolean> {
+  return mode === 'rebuild' || (!mode && !(await treeThere()))
+}
 
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
@@ -19,7 +40,12 @@ export function dirExistsSync(p: string): boolean {
   }
 }
 
-export type GitOut = (dir: string, args: string[], timeoutMs?: number) => Promise<string | null>
+export type GitOut = (
+  dir: string,
+  args: string[],
+  timeoutMs?: number,
+  onFailure?: (stderr: string) => void
+) => Promise<string | null>
 
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {
@@ -56,7 +82,7 @@ async function freeWorktreeName(base: string, home: string, probes: ResumeProbes
   const taken = async (dir: string): Promise<boolean> =>
     !!probes.recorded?.(dir) || (await probes.dirExists(dir))
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && (await taken(path.join(home, `${base}-${n}`)))) n++
+  while (n < RENAME_SUFFIX_CAP && (await taken(`${home}/${base}-${n}`))) n++
   return `${base}-${n}`
 }
 

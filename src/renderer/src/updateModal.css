@@ -1,0 +1,179 @@
+.update-modal .modal-body {
+  gap: 16px;
+}
+.update-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.update-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: updateSpin 0.7s linear infinite;
+}
+@keyframes updateSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.update-status {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.update-check {
+  color: #7fb985;
+  font-weight: 700;
+}
+.update-error {
+  color: #d97066;
+}
+.update-version {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+.update-ver-old {
+  color: var(--fg-faint);
+}
+.update-arrow {
+  color: var(--fg-dim);
+}
+.update-ver-new {
+  color: var(--accent);
+}
+.update-notes {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-wrap: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.update-notes > * + * {
+  margin-top: 14px;
+}
+.update-notes h1,
+.update-notes h2,
+.update-notes h3,
+.update-notes h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.update-notes p {
+  margin: 8px 0;
+}
+.update-notes ul,
+.update-notes ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.update-notes li + li {
+  margin-top: 4px;
+}
+.update-notes strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.update-notes code {
+  font-family: var(--mono);
+  font-size: 92%;
+  background: var(--bg-1);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.update-notes pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: var(--bg-1);
+  border-radius: var(--r-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.update-notes pre code {
+  background: none;
+  padding: 0;
+}
+.update-notes hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.update-notes-ver {
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.update-notes-more {
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.update-link {
+  -webkit-app-region: no-drag;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  margin-left: auto;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.15s var(--ease);
+}
+.update-link:hover {
+  color: var(--accent);
+}
+.update-hint {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+.update-progress {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s var(--ease);
+}
+.update-progress-fill.indet {
+  width: 35%;
+  animation: updateIndet 1.1s ease-in-out infinite;
+}
+@keyframes updateIndet {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}

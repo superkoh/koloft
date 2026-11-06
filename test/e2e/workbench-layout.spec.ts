@@ -20,6 +20,7 @@ import {
   waitForCalls
 } from './helpers/p1'
 import {
+  WELCOME_PAGE,
   WORKBENCH,
   seedWorkbench,
   sessionWorkbenchOnDisk,
@@ -47,6 +48,16 @@ async function layoutState(page: Page): Promise<'T1' | 'T2' | 'T3'> {
     const tui = document.querySelector('.term-island') as HTMLElement | null
     return tui && tui.offsetWidth > 0 ? ('T2' as const) : ('T3' as const)
   })
+}
+
+async function waitColumnRiseInOver(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator(WORKBENCH.column)
+        .evaluate((el) => el.getAnimations().every((a) => a.playState === 'finished'))
+    )
+    .toBe(true)
 }
 
 async function relaunch(
@@ -100,6 +111,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     await startSessionIn(page, 'ws-a')
     if ((await layoutState(page)) !== 'T2') await workbenchIcon(page).click()
     await expect.poll(() => layoutState(page)).toBe('T2')
+    await waitColumnRiseInOver(page)
     const open = (await workbenchIcon(page).boundingBox())!
     const strip = (await page.locator(WORKBENCH.tabStrip).boundingBox())!
     const plus = (await page.locator(WORKBENCH.newTab).boundingBox())!
@@ -159,22 +171,25 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     await expect.poll(() => layoutState(page)).toBe('T1')
   })
 
-  test('WB-L05: with no session the panel is unavailable', async ({ app, page }) => {
+  test('WB-L05: with no session the Workbench is the welcome page’s workspace’s — shut at first even when sessions open theirs, Files of that folder, and no terminal', async ({
+    app,
+    page
+  }) => {
+    await expect(page.locator(`${WELCOME_PAGE} .big`)).toHaveText('ws-a')
     await expect(page.locator('.aux-icons .aux-ico')).toHaveCount(1)
-    await expect(workbenchIcon(page)).toHaveAttribute('aria-disabled', 'true')
-
-    await toggleWorkbench(app, page)
-    await sendShortcut(app, 'shortcut:find-files')
-    await toggleFull(app, page)
+    await expect(workbenchIcon(page)).toHaveAttribute('aria-disabled', 'false')
     await expect(workbenchPanel(page)).toBeHidden()
 
-    await expect
-      .poll(() =>
-        app.evaluate(
-          ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('toggle-focus-mode')?.enabled
-        )
-      )
-      .toBe(false)
+    await toggleWorkbench(app, page)
+    await expect(workbenchPanel(page)).toBeVisible()
+    await expect(page.locator(WORKBENCH.tab)).toHaveCount(1)
+    await page
+      .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`, { hasText: 'Browse' })
+      .click()
+    await expect(page.locator(WORKBENCH.browseRows, { hasText: 'notes.xyz' })).toBeVisible()
+    await page.locator(WORKBENCH.newTab).click()
+    await expect(page.locator(WORKBENCH.newMenuItem)).toHaveText(['New web tab', 'Open file…'])
+    await page.keyboard.press('Escape')
 
     await expect
       .poll(() =>
@@ -183,6 +198,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
         )
       )
       .toBe(false)
+    await expect(page.locator(WELCOME_PAGE)).toBeVisible()
   })
 
   test('WB-L06: switching sessions dissolves T3 and lands on the target’s own open state', async ({
@@ -191,7 +207,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
   }) => {
     await startSessionIn(page, 'ws-a')
     await startSessionIn(page, 'ws-a')
-    const rows = page.locator('.ws-tab')
+    const rows = page.locator('.ws .ws-tab')
     await expect(rows).toHaveCount(2, { timeout: 20_000 })
     const rowB = rows.nth(0)
     const rowA = rows.nth(1)
@@ -486,7 +502,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     }
 
     const rowTitled = (page: Page, title: string): ReturnType<Page['locator']> =>
-      page.locator('.ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
+      page.locator('.ws .ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
 
     test('WB-L11: under the shipped default a new session starts with the panel collapsed', async ({
       app,

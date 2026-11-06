@@ -1,3 +1,4 @@
+import dns from 'dns'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -5,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import WebSocket from 'ws'
 import type { RelayTarget } from '../../src/main/cdpProtocol'
 import type { RelayDeps } from '../../src/main/cdpRelay'
+import { machinePageUrl } from '../../src/shared/browserRoute'
 
 let userData = ''
 const guests = new Map<number, FakeGuest>()
@@ -16,6 +18,10 @@ vi.mock('electron', () => ({
 
 interface FakeGuest {
   isDestroyed(): boolean
+  getURL(): string
+  loadURL: ReturnType<typeof vi.fn>
+  once(event: string, fn: () => void): void
+  destroy(): void
   debugger: {
     attach: ReturnType<typeof vi.fn>
     detach: ReturnType<typeof vi.fn>
@@ -32,7 +38,7 @@ interface FakeGuest {
   emit(event: string, ...args: unknown[]): void
 }
 
-function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGuest {
+function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } = {}): FakeGuest {
   const listeners = new Map<string, Set<(...a: never[]) => void>>()
   let attached = false
   let release = (): void => {}
@@ -40,8 +46,19 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
     if (!listeners.has(event)) listeners.set(event, new Set())
     listeners.get(event)?.add(fn)
   }
+  const onDestroyed: (() => void)[] = []
+  let destroyed = false
   const guest: FakeGuest = {
-    isDestroyed: () => false,
+    isDestroyed: () => destroyed,
+    getURL: () => opts.url ?? 'http://x/a',
+    loadURL: vi.fn(async () => {}),
+    once: (event, fn) => {
+      if (event === 'destroyed') onDestroyed.push(fn)
+    },
+    destroy: () => {
+      destroyed = true
+      for (const fn of onDestroyed) fn()
+    },
     reload: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     debugger: {
@@ -76,6 +93,7 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
 
 const TAB = 'tab-1'
 const SESSION = 'sess-1'
+const GUEST_ON_A_FORWARD = 18
 
 interface Harness extends RelayDeps {
   session: string | null
@@ -87,7 +105,7 @@ function makeDeps(): Harness {
     session: SESSION,
     strip: [{ targetId: 'bt1', url: 'http://x/a', title: 'A', guestId: 11 }],
     sessionForTab: () => h.session,
-    mount: vi.fn(async () => 11),
+    mount: vi.fn(async (_s: string, tabId: string) => Number(tabId.replace('bt', '1'))),
     create: vi.fn(async (_s: string, url: string) => ({
       targetId: 'bt2',
       url,
@@ -96,7 +114,8 @@ function makeDeps(): Harness {
     })),
     close: vi.fn(async () => {}),
     stage: vi.fn(async () => {}),
-    setAttached: vi.fn()
+    setAttached: vi.fn(),
+    cameThroughAForward: vi.fn((guestId: number) => guestId === GUEST_ON_A_FORWARD)
   } as unknown as Harness
   return h
 }
@@ -104,6 +123,7 @@ function makeDeps(): Harness {
 type Relay = typeof import('../../src/main/cdpRelay')
 
 let relay: Relay
+let composition: typeof import('../../src/main/hostComposition')
 let deps: Harness
 const sockets: WebSocket[] = []
 
@@ -175,6 +195,7 @@ beforeEach(async () => {
   fakeGuest(11)
   deps = makeDeps()
   relay = await import('../../src/main/cdpRelay')
+  composition = await import('../../src/main/hostComposition')
   relay.startRelay(deps)
   relay.relayStripChanged(SESSION, deps.strip)
   relay.setRelayEnabled(true, [TAB])
@@ -182,6 +203,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  composition.hostComposing(false)
   for (const ws of sockets.splice(0)) ws.close()
   relay.setRelayEnabled(false, [])
   fs.rmSync(userData, { recursive: true, force: true })
@@ -263,6 +285,215 @@ describe('a tab whose session went away (§4.4)', () => {
   })
 })
 
+describe("a session on another machine never reaches this Mac's files or servers through the Workbench browser", () => {
+  const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
+  const NAME_FOR_THE_MAC = 'http://mac-server.test/'
+  const REFUSED = 'cannot reach files or servers of the Mac'
+  const LOOPBACK_MEANS_THE_MACHINE = 'only localhost, 127.0.0.1 and [::1] mean the machine'
+  const errorOf = (reply: Record<string, unknown>): string =>
+    String((reply.error as { message?: string } | undefined)?.message ?? '')
+
+  beforeEach(() => {
+    vi.spyOn(dns.promises, 'lookup').mockImplementation((async (host: string) =>
+      host === 'mac-server.test'
+        ? [{ address: '127.0.0.1', family: 4 }]
+        : [{ address: '93.184.216.34', family: 4 }]) as never)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  async function attachedTo(c: Conn, url: string): Promise<string> {
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    const targetId = listed.targetInfos.find((t) => t.url === url)?.targetId ?? ''
+    return ((await c.cmd('Target.attachToTarget', { targetId })).result as { sessionId: string })
+      .sessionId
+  }
+
+  const NOTES = 'file:///Users/me/notes.html'
+
+  it('refuses to open, navigate to, upload or drag in a Mac file, or open a server on the Mac, however the address is written, and only an address it opens or goes to is answered with the addresses that do mean the machine; web pages still work', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const guest = fakeGuest(11)
+    const c = await registered()
+
+    for (const url of [
+      MAC_FILE,
+      'fi\tle:///etc/hosts',
+      '\u0001file:///etc/hosts',
+      'FILE:/etc/hosts',
+      'http://127.0.0.2:8888/tree',
+      'http://dev.localhost:3000/',
+      NAME_FOR_THE_MAC
+    ]) {
+      const refusal = errorOf(await c.cmd('Target.createTarget', { url }))
+      expect(refusal, url).toContain(REFUSED)
+      expect(refusal, url).toContain(LOOPBACK_MEANS_THE_MACHINE)
+    }
+    expect(deps.create).not.toHaveBeenCalled()
+
+    const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    for (const [method, params] of [
+      ['Page.navigate', { url: MAC_FILE }],
+      ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
+      ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
+      ['Page.navigate', { url: 'http://[::ffff:127.0.0.1]:5173/' }],
+      ['Page.navigate', { url: NAME_FOR_THE_MAC }],
+      ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
+      ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
+      ['Network.loadNetworkResource', { url: 'http://localhost:3000/', frameId: 'f', options: {} }],
+      ['Fetch.continueRequest', { requestId: 'r', url: 'http://127.0.0.1:3000/' }],
+      ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
+      ['DOM.getFileInfo', { objectId: 'file-1' }],
+      ['Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/Users/me/Library' }],
+      [
+        'Input.dispatchDragEvent',
+        { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
+      ]
+    ] as const) {
+      const refusal = errorOf(await c.cmd(method, params, sid))
+      expect(refusal, method).toContain(REFUSED)
+      expect(refusal.includes(LOOPBACK_MEANS_THE_MACHINE), method).toBe(method === 'Page.navigate')
+    }
+    const sent = (): string[] =>
+      guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
+    for (const method of [
+      'Page.navigate',
+      'Fetch.continueRequest',
+      'DOM.setFileInputFiles',
+      'DOM.getFileInfo',
+      'Page.setDownloadBehavior'
+    ])
+      expect(sent()).not.toContain(method)
+
+    await c.cmd('Page.navigate', { url: 'https://example.com/' }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
+      url: 'https://example.com/'
+    })
+    c.ws.close()
+    await until(() => !relay.relayAttached(TAB), 'the client to go')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it("opens localhost, 127.0.0.1 and [::1], which in its own tab reach the machine's own servers through a forward on its ssh connection", async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    for (const url of ['http://localhost:5173/', 'http://127.0.0.1:3000/', 'http://[::1]:8080/']) {
+      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toBe('')
+      expect(made.loadURL).toHaveBeenCalledWith(url)
+    }
+  })
+
+  it('opens a page it asks for blank first and fences it before loading the address, so even its first load is fenced', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    await c.cmd('Target.createTarget', { url: 'https://example.com/' })
+    expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
+    expect(relay.guestDrivenFromAnotherMachine(12)).toBe(true)
+    expect(made.loadURL).toHaveBeenCalledWith('https://example.com/')
+  })
+
+  it('keeps a page fenced after the client lets go of it, until the page is closed', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const guest = fakeGuest(11)
+    const c = await registered()
+    await attachedTo(c, 'http://x/a')
+    await c.cmd('Target.detachFromTarget', { sessionId: 'KOLOFT-1' })
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it('remembers every site a fenced page opened, so its workers stay fenced after the page leaves; an opaque origin is never one of them', () => {
+    relay.notePageOpenedForAMachine('https://evil.example/wait')
+    relay.notePageOpenedForAMachine('about:blank')
+    expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(true)
+    expect(relay.originDrivenFromAnotherMachine('https://example.com')).toBe(false)
+    expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
+  })
+
+  it('never shows it, or lets it attach to, a tab on a Mac file, a page from an ssh machine or a local server — a localhost page counts as the machine’s only when it came through a forward — even before the strip has caught up', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    fakeGuest(11)
+    fakeGuest(13, { url: NOTES })
+    fakeGuest(14, { url: NOTES })
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
+      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 },
+      {
+        targetId: 'bt8',
+        url: 'http://localhost:5173/',
+        title: 'machine dev server',
+        guestId: GUEST_ON_A_FORWARD
+      },
+      {
+        targetId: 'bt7',
+        url: machinePageUrl('devbox', '/home/u/report.html'),
+        title: 'report',
+        guestId: 17
+      }
+    ])
+    const c = await registered()
+    await c.cmd('Target.setDiscoverTargets', { discover: true })
+
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    expect(listed.targetInfos.map((t) => t.url)).toEqual([
+      'http://x/a',
+      'http://x/before',
+      'http://localhost:5173/'
+    ])
+    const lagging = listed.targetInfos[1]?.targetId ?? ''
+    expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(REFUSED)
+
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: NOTES, title: 'notes', guestId: 14 },
+      { targetId: 'bt5', url: 'file:///Users/me/new.html', title: 'new', guestId: 15 }
+    ])
+    await c.cmd('Browser.getVersion')
+    expect(JSON.stringify(c.events)).not.toContain('file:')
+    expect(c.events.map((e) => e.method)).toContain('Target.targetDestroyed')
+  })
+
+  it("a session on this Mac still opens this Mac's files", async () => {
+    const guest = fakeGuest(11)
+    const c = await registered()
+    const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+    await c.cmd('Page.navigate', { url: MAC_FILE }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', { url: MAC_FILE })
+  })
+})
+
+describe("a tab's endpoint made for its machine (each new ssh forward)", () => {
+  it('turns the old address away and sends off a client still on it, so an address read off a port another account took after the link dropped opens nothing', async () => {
+    const old = relay.relayEndpoint(TAB)
+    const onOld = await registered()
+    const renewed = relay.renewRelayEndpointOnMachine(TAB)
+    expect(renewed).not.toBe(old)
+    expect(relay.relayEndpoint(TAB)).toBe(renewed)
+    expect(await closedReason(onOld)).toBe('the ssh forward to the machine was made again')
+
+    const stale = new WebSocket(old)
+    sockets.push(stale)
+    const reason = await new Promise<string>((resolve) =>
+      stale.on('close', (_code, r) => resolve(String(r)))
+    )
+    expect(reason).toBe('unknown endpoint')
+    expect(await (await registered()).cmd('Browser.getVersion')).toHaveProperty('result')
+  })
+})
+
 describe('a client that drops in the middle of an attach', () => {
   it('leaves no debugger attached and no listeners behind', async () => {
     const guest = fakeGuest(11, { holdFrameTree: true })
@@ -339,6 +570,74 @@ describe('a socket that closes while its tab is still binding', () => {
 
     const b = connect()
     expect(await b.cmd('Browser.getVersion')).toHaveProperty('result')
+  })
+})
+
+// PLATFORM§10
+describe('a client driving a page while the user is mid-word in an input method', () => {
+  async function attachedGuest(): Promise<{ guest: FakeGuest; a: Conn; sessionId: string }> {
+    const guest = fakeGuest(11)
+    const a = await registered()
+    const listed = (await a.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string }[]
+    }
+    const targetId = listed.targetInfos[0]?.targetId ?? ''
+    const { sessionId } = (await a.cmd('Target.attachToTarget', { targetId })).result as {
+      sessionId: string
+    }
+    return { guest, a, sessionId }
+  }
+  const evaluated = (guest: FakeGuest): number =>
+    guest.debugger.sendCommand.mock.calls.filter((c) => c[0] === 'Runtime.evaluate').length
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+  }
+
+  it('holds the command until the user finishes the word, then sends it', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    composition.hostComposing(true)
+    const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(evaluated(guest)).toBe(0)
+
+    composition.hostComposing(false)
+    expect(await reply).toHaveProperty('result')
+    expect(evaluated(guest)).toBe(1)
+  })
+
+  it('drops a held command whose client went away before the word was done, so it never lands on a page a later client drives', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    composition.hostComposing(true)
+    void a.cmd('Runtime.evaluate', { expression: '1' }, sessionId).catch(() => {})
+    await new Promise((r) => setTimeout(r, 100))
+    a.ws.close()
+    await until(() => !relay.relayAttached(TAB), 'the relay to drop the client')
+
+    composition.hostComposing(false)
+    await settle()
+    expect(evaluated(guest)).toBe(0)
+  })
+
+  it('sends the held command anyway once the word has sat untouched for 8 s, so a composition that never ends cannot stall the agent', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      composition.hostComposing(true)
+      const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+      await settle()
+      await vi.advanceTimersByTimeAsync(7_000)
+      composition.hostComposing(true)
+      await vi.advanceTimersByTimeAsync(7_000)
+      await settle()
+      expect(evaluated(guest)).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      await settle()
+      expect(evaluated(guest)).toBe(1)
+      expect(await reply).toHaveProperty('result')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

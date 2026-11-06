@@ -8,12 +8,11 @@ import {
   type SearchHit,
   type ContentHit
 } from '@shared/types'
+import { gitIgnoredAmong } from './gitIgnored'
 
 const execFile = promisify(execFileCb)
 
 const HEAVY = HIDDEN_BY_DEFAULT_NAMES
-
-const IGNORE_BATCH_UNDER_ARG_MAX = 500
 
 function sortEntries(entries: DirEntry[]): DirEntry[] {
   return entries.sort((a, b) => {
@@ -24,24 +23,10 @@ function sortEntries(entries: DirEntry[]): DirEntry[] {
 
 // PLATFORM§30
 async function ignoredChildren(dir: string, names: string[]): Promise<Set<string>> {
-  const ignored = new Set<string>()
-  if (names.length === 0) return ignored
-  for (let i = 0; i < names.length; i += IGNORE_BATCH_UNDER_ARG_MAX) {
-    const batch = names.slice(i, i + IGNORE_BATCH_UNDER_ARG_MAX)
-    try {
-      const { stdout } = await execFile('git', ['-C', dir, 'check-ignore', '--', ...batch], {
-        maxBuffer: 16 * 1024 * 1024
-      })
-      for (const line of stdout.split('\n')) {
-        const n = line.replace(/\r$/, '')
-        if (n) ignored.add(n)
-      }
-    } catch (e) {
-      if ((e as { code?: unknown }).code === 1) continue
-      return ignored
-    }
-  }
-  return ignored
+  if (names.length === 0) return new Set()
+  const onDiskByGitName = new Map(names.map((n) => [n.normalize('NFC'), n]))
+  const ignored = await gitIgnoredAmong(dir, [...onDiskByGitName.keys()]).catch(() => [])
+  return new Set(ignored.map((n) => onDiskByGitName.get(n) ?? n))
 }
 
 export async function dirExists(absPath: string): Promise<boolean> {
@@ -65,14 +50,15 @@ export async function listDir(
   const candidates: DirEntry[] = []
   for (const d of dirents) {
     const full = path.join(absPath, d.name)
+    let isDir = d.isDirectory()
     if (d.isSymbolicLink()) {
       try {
-        await fs.promises.stat(full)
+        isDir = (await fs.promises.stat(full)).isDirectory()
       } catch {
         continue
       }
     }
-    candidates.push({ name: d.name, path: full, isDir: d.isDirectory() })
+    candidates.push({ name: d.name, path: full, isDir })
   }
   const gitIgnored = await ignoredChildren(
     absPath,

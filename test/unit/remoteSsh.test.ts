@@ -165,6 +165,12 @@ describe("U-SSH-2: remote command result code is null on a local timeout, 127 fo
     expect(r.stderr).toContain('boom')
   })
 
+  it('an ssh that exits before reading the input it was given keeps its exit code, with no EPIPE thrown', async () => {
+    fakeSsh('exit 255')
+    const r = await runSsh('host', 'cat', { controlDir: tmp, input: Buffer.alloc(4 * 1024 * 1024) })
+    expect(r.code).toBe(255)
+  })
+
   it('a missing ssh binary reads as 127, with the reason in stderr', async () => {
     process.env.PATH = tmp
     const r = await runSsh('host', 'true', { controlDir: tmp })

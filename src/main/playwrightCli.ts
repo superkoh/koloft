@@ -29,8 +29,10 @@ NO_UPDATE_NOTIFIER=1 exec ${shq(path.join(dir, 'node'))} ${shq(unpackedModulePat
 }
 
 export function writeExecutable(file: string, text: string): void {
-  fs.writeFileSync(file, text, { mode: 0o755 })
-  fs.chmodSync(file, 0o755)
+  const next = `${file}.next`
+  fs.writeFileSync(next, text, { mode: 0o755 })
+  fs.chmodSync(next, 0o755)
+  fs.renameSync(next, file)
 }
 
 export function setupPlaywrightCli(): string {

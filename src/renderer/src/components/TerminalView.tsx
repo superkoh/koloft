@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { consumeAdoptedNudge, useStore } from '../store'
 import { activateTerminalLink } from '../termLinks'
 import { suppressXtversionReply } from '../xtversionMask'
+import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
@@ -17,6 +18,7 @@ const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
 const ACK_FLUSH_AT_UTF16_UNITS = 64 * 1024
 const ACK_FLUSH_AFTER_MS = 100
+const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
 export const NO_FOCUS_SIGNAL = 0
 
 export function TerminalView({
@@ -26,7 +28,10 @@ export function TerminalView({
   autoFocus = true,
   scrollbar = true,
   focusSignal,
-  onRepainted
+  onRepainted,
+  onOutput,
+  maxCols,
+  copiesToClipboard = false
 }: {
   id: string
   active: boolean
@@ -35,12 +40,17 @@ export function TerminalView({
   scrollbar?: boolean
   focusSignal?: number
   onRepainted?: () => void
+  onOutput?: () => void
+  maxCols?: number
+  copiesToClipboard?: boolean
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
   onRepaintedRef.current = onRepainted
+  const onOutputRef = useRef(onOutput)
+  onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
@@ -83,6 +93,10 @@ export function TerminalView({
     if (el.clientWidth === 0 || el.clientHeight === 0) return
     try {
       exitSyncWindow(term)
+      const cellWidth = term.dimensions?.css.cell.width
+      if (maxCols && cellWidth) {
+        el.style.maxWidth = `${Math.ceil(maxCols * cellWidth) + CAP_SLACK_AGAINST_FIT_ROUNDING_PX}px`
+      }
       fit.fit()
       window.api.terminal.resize(id, term.cols, term.rows)
       screenSizedToPane(id)
@@ -94,7 +108,7 @@ export function TerminalView({
         }, ADOPTED_REPAINT_AFTER_MS)
       }
     } catch {}
-  }, [id, forceRepaint])
+  }, [id, forceRepaint, maxCols])
 
   useEffect(() => {
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
@@ -137,6 +151,7 @@ export function TerminalView({
     term.loadAddon(new WebLinksAddon(activateTerminalLink))
     // CC§12
     suppressXtversionReply(term)
+    if (copiesToClipboard) copyOsc52ToClipboard(term, window.api.terminal.copy)
     term.open(ref.current!)
     termRef.current = term
     fitRef.current = fit
@@ -205,7 +220,12 @@ export function TerminalView({
     const compScreen = compView?.closest('.xterm-screen') as HTMLElement | null
     const compositionHelper = (
       term as unknown as {
-        _core?: { _compositionHelper?: { updateCompositionElements(): void } }
+        _core?: {
+          _compositionHelper?: {
+            updateCompositionElements(): void
+            _isSendingComposition?: boolean
+          }
+        }
       }
     )._core?._compositionHelper
 
@@ -258,6 +278,7 @@ export function TerminalView({
         commitGrace = true
         onUserInputRef.current?.()
         window.api.terminal.write(id, data)
+        if (compositionHelper) compositionHelper._isSendingComposition = false
         setTimeout(() => {
           commitGrace = false
         }, 0)
@@ -273,8 +294,12 @@ export function TerminalView({
     ta?.addEventListener('compositionend', onCompEnd)
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown') onUserInputRef.current?.()
-      // CC§12
+      if (e.type === 'keydown') {
+        onUserInputRef.current?.()
+        // PLATFORM§22
+        if (compositionHelper?._isSendingComposition === false) commitGrace = false
+      }
+      // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
         return false
@@ -310,8 +335,9 @@ export function TerminalView({
       if (ackedUtf16Units >= ACK_FLUSH_AT_UTF16_UNITS) flushAck()
       else if (!ackTimer) ackTimer = setTimeout(flushAck, ACK_FLUSH_AFTER_MS)
     }
-    const offData = window.api.terminal.onData((d) => {
-      if (d.id === id) term.write(d.data, () => noteConsumed(d.data.length))
+    const offData = window.api.terminal.onData(id, (data) => {
+      term.write(data, () => noteConsumed(data.length))
+      onOutputRef.current?.()
     })
     window.api.terminal.attach(id)
     // PLATFORM§22
@@ -352,6 +378,7 @@ export function TerminalView({
         }
         if (!wasHidden) return
         wasHidden = false
+        fitWhenSettled()
         forceRepaint()
       },
       { threshold: 0 }
@@ -379,7 +406,7 @@ export function TerminalView({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint])
+  }, [id, safeFit, forceRepaint, copiesToClipboard])
 
   useEffect(() => {
     const term = termRef.current

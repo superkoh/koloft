@@ -4,16 +4,12 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
-import {
-  removeCodexOpenShim,
-  writeCodexOpenShim,
-  type CodexOpenShim
-} from '../../src/main/openShimScript'
+import { removeOpenShim, writeOpenShim, type OpenShim } from '../../src/main/openShimScript'
 
 let base: string
 let cwd: string
 let recordingRealOpenDir: string
-let shim: CodexOpenShim
+let shim: OpenShim
 
 beforeEach(() => {
   base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-cxopen-')))
@@ -28,12 +24,12 @@ beforeEach(() => {
     '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$ARGS_OUT"\nexit 0\n',
     { mode: 0o755 }
   )
-  shim = writeCodexOpenShim(path.join(base, 'codex-open'), randomUUID(), undefined)
+  shim = writeOpenShim(path.join(base, 'codex-open'), randomUUID(), undefined)
 })
 
 afterEach(() => {
   if (fs.existsSync(shim.requestDir)) fs.chmodSync(shim.requestDir, 0o700)
-  removeCodexOpenShim(shim)
+  removeOpenShim(shim)
   fs.rmSync(base, { recursive: true, force: true })
 })
 
@@ -113,7 +109,7 @@ describe('Codex open shim dotfile folder', () => {
         path.join(userDir, '.zprofile'),
         `export PATH="${path.join(base, 'user-bin')}:$PATH"\n`
       )
-      const run = writeCodexOpenShim(
+      const run = writeOpenShim(
         path.join(base, `codex-open-${own}`),
         randomUUID(),
         own === 'zdotdir' ? userDir : undefined
@@ -127,7 +123,7 @@ describe('Codex open shim dotfile folder', () => {
         expect(openPath, own).toBe(path.join(run.shimDir, 'open'))
         expect(pathLine.split(':'), own).toContain(path.join(base, 'user-bin'))
       } finally {
-        removeCodexOpenShim(run)
+        removeOpenShim(run)
       }
     }
   })

@@ -34,9 +34,16 @@ export async function routeSession(
               .filter((w) => !w.recoveryResourceId)
               .map((w) => w.name)
           : [],
-        titles: [...rows].sort((a, b) => b.mtime - a.mtime).map((r) => r.title)
+        sessions: [...rows]
+          .sort((a, b) => b.mtime - a.mtime)
+          .map((r) => ({ id: r.id, title: r.title }))
       }))
   )
   if (signal.aborted) return null
-  return parseRoute(await deps.assist({ ...routeJob(list, message), signal }), list)
+  const reply = await deps.assist({ ...routeJob(list, message), signal })
+  const route = parseRoute(reply, list)
+  if (!route && reply !== null) {
+    console.error('[koloft] ⌘P router reply named no usable route:', reply.slice(0, 2000))
+  }
+  return route
 }

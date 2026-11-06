@@ -8,17 +8,18 @@ import {
   type JSX,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import type { ArtifactView } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
-import { basename, previewKindForPath } from '@shared/preview'
+import { basename, previewKindForPath, stateAfterReadError } from '@shared/preview'
 import { resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
-import { parseUnifiedDiff } from '../inlineDiff'
+import { parseUnifiedDiff } from '@shared/unifiedDiff'
 import { highlightCode, langForPath } from '../highlight'
+import '../artifactPane.css'
 
 interface Sym {
   name: string
@@ -83,7 +84,7 @@ const VIEW_SCROLLER = '.code-body, .md-body, .idiff'
 const GIVE_UP_RESTORE_MS = 4000
 const HEADING_AT_TOP_SLACK_PX = 8
 
-async function fileExists(p: string): Promise<boolean> {
+export async function fileExists(p: string): Promise<boolean> {
   try {
     await window.api.preview.readText(p)
     return true
@@ -308,12 +309,8 @@ export function ArtifactPane({
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = String((err as Error)?.message ?? '')
-        if (msg.includes('KOLOFT_READ_FAILED') || msg.includes('KOLOFT_NOT_FILE'))
-          setState('missing')
-        else if (msg.includes('KOLOFT_TOO_LARGE')) setState('tooLarge')
-        else if (msg.includes('KOLOFT_BINARY')) setState('binary')
-        else if (firstReadOfPath) setState('error')
+        const next = stateAfterReadError(String((err as Error)?.message ?? ''), firstReadOfPath)
+        if (next) setState(next)
       })
     return () => {
       cancelled = true
@@ -634,7 +631,7 @@ export function ArtifactPane({
             title="Dismiss"
             aria-label="Dismiss"
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}

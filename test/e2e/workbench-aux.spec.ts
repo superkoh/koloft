@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import type { Locator } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import {
   auxIcon,
@@ -32,29 +31,16 @@ function shellOpenPinnedAheadOfSystemOpen(env: E2EEnv, cwd: string, target: stri
   return `export PATH="${env.shimDir}:${env.fakeBin}:$PATH"; hash -r; cd '${cwd}'; open ${target}`
 }
 
-function styleOf(loc: Locator, prop: string): Promise<string> {
-  return loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop) as Promise<string>
-}
-
-const pressEvenThoughAriaDisabled = { force: true }
-
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
 
 test.describe('Workbench titlebar toggle, and the panel seam with the retired aux column', () => {
-  test('T-AUX-01: the Workbench icon owns the panel — a greyed but real button that swallows a press without a session, lit with one', async ({
+  test('T-AUX-01: the Workbench icon owns the panel — lit with a session, and a press shuts it', async ({
     page,
     env
   }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     const workbench = auxIcon(page, 'Workbench')
-
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
-    await expect(workbench).toHaveAttribute('aria-disabled', 'true')
-    expect(await styleOf(workbench, 'opacity')).toBe('0.35')
-    await workbench.click(pressEvenThoughAriaDisabled)
-    await page.waitForTimeout(1000)
-    await expect(workbenchPanel(page)).toBeHidden()
 
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible()
@@ -150,14 +136,14 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
     const calls = await waitForCalls(env, 2)
     const [sessA, sessB] = calls
     await wsRows(page, 'ws-a').first().click()
-    await expect(page.locator('.ws-tab.active')).toHaveCount(1)
+    await expect(page.locator('.ws .ws-tab.active')).toHaveCount(1)
 
     await sendShortcut(app, 'shortcut:restart-session')
     const after = await waitForCalls(env, 3)
     const i = after[2].argv.indexOf('--resume')
     expect(after[2].argv[i + 1]).toBe(sessA.sessionId)
     expect(processAlive(sessB.pid)).toBe(true)
-    await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toHaveCount(2)
+    await expect(page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })).toHaveCount(2)
   })
 
   test('T-MIG-08: a v2 layout with the retired terminal mode, its strip and the island block upgrades to v6 — workspaces and entry kept, strip and island dropped, panel collapsed but usable', async ({

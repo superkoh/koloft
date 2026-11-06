@@ -41,26 +41,11 @@ describe('remoteKeyFromForm', () => {
 
 describe('workspaceMenuCount', () => {
   it('adds only the worktree item for a checkout — fetching lives in the git panel', () => {
-    const plain = { canBind: false, canTalk: false }
-    expect(workspaceMenuCount({ missing: false, isGit: true, ...plain })).toBe(6)
-    expect(workspaceMenuCount({ missing: false, isGit: false, ...plain })).toBe(5)
-  })
-
-  it('a workspace with no conductor yet also offers to bind a Discord channel', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true, canBind: true, canTalk: false })).toBe(
-      7
-    )
-  })
-
-  it('with Assist on, a workspace also offers Talk to Assist', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true, canBind: true, canTalk: true })).toBe(
-      8
-    )
+    expect(workspaceMenuCount({ missing: false, isGit: true })).toBe(6)
+    expect(workspaceMenuCount({ missing: false, isGit: false })).toBe(5)
   })
 
   it('a deleted folder offers only Remove', () => {
-    expect(workspaceMenuCount({ missing: true, isGit: false, canBind: true, canTalk: true })).toBe(
-      1
-    )
+    expect(workspaceMenuCount({ missing: true, isGit: false })).toBe(1)
   })
 })

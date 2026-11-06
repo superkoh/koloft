@@ -1,30 +1,95 @@
-import { useCallback, useEffect, useState, type JSX } from 'react'
-import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
-import type { AccountKind, AccountView } from '@shared/types'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
+import type {
+  AccountKind,
+  AccountView,
+  BackendId,
+  LoginProgress,
+  SignInBackend,
+  SignInFailure
+} from '@shared/types'
+import {
+  BACKEND_OF_SIGN_IN_FOLDER,
+  SIGN_IN_FOLDER_KINDS,
+  SIGN_IN_FOLDER_OF,
+  isSignInFolderKind
+} from '@shared/types'
+import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
-import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
-import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+import { useInstalledBackends } from '../../useInstalledBackends'
+import {
+  ACCOUNT_KINDS_OF,
+  METERED_NOTE,
+  measuredAt,
+  needsSignInAgain,
+  windowLabel
+} from '@shared/accountUsage'
+
+// AGY§5
+const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
+  codex: 'codex login',
+  muse: 'muse login',
+  agy: 'agy'
+}
+import {
+  ApiKeyBadge,
+  Meter,
+  QuotaMeters,
+  ageLabel,
+  codexBalanceLabel,
+  noLimitsLabel,
+  probeErrorLabel,
+  resetLabel
+} from '../accountMeter'
+import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
+import '../../accounts.css'
 
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
+
+type PaneForm = { signIn: SignInBackend; again?: string } | { paste: AccountKind }
+
+const loginRunning = (progress: LoginProgress | null): boolean =>
+  progress !== null && progress.phase !== 'failed'
+
+const scrollIntoViewOnOpen = (form: HTMLDivElement | null): void =>
+  form?.scrollIntoView({ block: 'nearest' })
 
 export function AccountsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
+  const clearLogin = useStore((s) => s.clearLogin)
+  const failed = useSignInFailure()
   const update = useSettingsUpdate()
 
   const [accounts, setAccounts] = useState<AccountView[]>([])
   // ADR-0002
-  const [adding, setAdding] = useState<AccountKind | null>(null)
+  const [form, setForm] = useState<PaneForm | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
-  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
-  const claudeAccounts = accounts.filter((a) => a.kind !== 'codex-home')
-  const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
+  const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(refreshBeat.current), [])
+  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const dismissFailure = (): void => {
+    if (failed) window.api.accounts.dismissSignInFailure()
+  }
+  const openForm = (next: PaneForm): void => {
+    if (login && !claudeLoginRunning) clearLogin()
+    dismissFailure()
+    setForm(next)
+  }
+  const openClaudeSignIn = (again?: string): void => {
+    if (claudeLoginRunning) return
+    dismissFailure()
+    setForm(null)
+    beginLogin(again)
+  }
+  const signIn = form && 'signIn' in form ? form : null
+  const adding = form && 'paste' in form ? form.paste : null
 
   useEffect(() => {
     let alive = true
@@ -54,6 +119,7 @@ export function AccountsPane(): JSX.Element {
 
   const row = (a: AccountView): JSX.Element => {
     const key = `${a.kind}:${a.name}`
+    const folderBackend = isSignInFolderKind(a.kind) ? BACKEND_OF_SIGN_IN_FOLDER[a.kind] : null
     return (
       <AccountRow
         key={key}
@@ -73,43 +139,62 @@ export function AccountsPane(): JSX.Element {
         }}
         onRelogin={
           a.kind === 'oauth'
-            ? () => beginLogin(a.name)
-            : a.kind === 'codex-home'
-              ? () => setCodexSignIn({ again: a.name })
+            ? () => openClaudeSignIn(a.name)
+            : folderBackend
+              ? () => openForm({ signIn: folderBackend, again: a.name })
               : undefined
         }
       />
     )
   }
 
-  const section = (list: AccountView[], empty: string, foot: JSX.Element): JSX.Element => (
-    <div className="acct-section">
-      {list.length === 0 ? (
-        <div className="acct-empty">{empty}</div>
-      ) : (
-        <div className="acct-list">{list.map(row)}</div>
-      )}
-      <div className="acct-foot">{foot}</div>
-    </div>
-  )
+  const section = (backend: BackendId, empty: string, foot: JSX.Element): JSX.Element => {
+    const list = accounts.filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
+    return (
+      <div className="acct-section">
+        {list.length === 0 ? (
+          <div className="acct-empty">{empty}</div>
+        ) : (
+          <div className="acct-list">{list.map(row)}</div>
+        )}
+        <div className="acct-foot">{foot}</div>
+        {backend === 'claude' && login && <LoginDialog key={login.reauthName ?? ''} />}
+        {signIn?.signIn === backend ? (
+          <SignInDialog
+            key={signIn.again ?? ''}
+            backend={signIn.signIn}
+            again={signIn.again}
+            onClose={() => setForm(null)}
+          />
+        ) : (
+          failed?.backend === backend && <SignInFailedCard failed={failed} />
+        )}
+        {adding && ACCOUNT_KINDS_OF[backend].includes(adding) && (
+          <AddAccountDialog key={adding} kind={adding} onClose={() => setForm(null)} />
+        )}
+      </div>
+    )
+  }
 
   const runRefresh = async (): Promise<void> => {
+    clearTimeout(refreshBeat.current)
     setRefresh('busy')
     try {
       setAccounts(await window.api.accounts.probe())
     } finally {
       setRefresh('done')
-      setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
+      refreshBeat.current = setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
     }
   }
 
   return (
     <>
       <div className="set-ph">
-        <h3>Claude accounts</h3>
+        <h3>Accounts</h3>
         <p>
-          Every session in Koloft runs on an account below, never on the login already on this Mac.
-          Each new claude picks the least-used one.
+          Every session in Koloft runs on an account from its agent’s section below, never on the
+          login already on this Mac. Each new session picks its agent’s least-used sign-in, and an
+          API key only when every sign-in is at its limit.
         </p>
       </div>
 
@@ -117,73 +202,117 @@ export function AccountsPane(): JSX.Element {
         <div className="set-lab">
           <b>Skip permission prompts</b>
           <small>
-            Adds <code>--dangerously-skip-permissions</code> when Koloft injects an account — never
-            overrides permission flags you pass yourself.
+            Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft
+            injects an account, starts Muse with <code>:unrestricted</code>, and starts new Codex
+            sessions with <code>-a never -s danger-full-access</code> — never overrides permission
+            flags you pass yourself.
           </small>
         </div>
         <Switch
           checked={settings.skipPermissions}
-          onChange={(on) => update({ skipPermissions: on })}
+          onChange={(on) =>
+            update(
+              on
+                ? { skipPermissions: true, skipPermissionsAgreed: true }
+                : { skipPermissions: false }
+            )
+          }
         />
       </div>
       <div className="set-row">
         <div className="set-lab">
+          <b>Account usage</b>
+          <small>
+            Reads again, right now, how much every enabled account of every agent has used.
+          </small>
+        </div>
+        <button className="mini" disabled={refresh === 'busy'} onClick={() => void runRefresh()}>
+          <IconReload size={14} />{' '}
+          {refresh === 'busy' ? 'Refreshing…' : refresh === 'done' ? '✓ Updated' : 'Refresh usage'}
+        </button>
+      </div>
+
+      <div className="set-grp">Claude</div>
+      <div className="set-row">
+        <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
-            Off, accounts are picked purely by 5h / 7d load — use that when fable is nearly spent
-            and one account is taking every session.
+            Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
+            that when fable is nearly spent and one account is taking every session.
           </small>
         </div>
         <Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />
       </div>
 
       {section(
-        claudeAccounts,
+        'claude',
         'No accounts yet — add one below. Claude sessions start only once there is one.',
         <>
           <button
             className="mini"
-            onClick={() => beginLogin()}
+            onClick={() => openClaudeSignIn()}
             title="Runs claude setup-token in the background and stores the token for you"
           >
-            <LuGlobe size={14} /> Sign in
+            <IconWebPage size={14} /> Sign in
           </button>
-          <button className="mini" onClick={() => setAdding('oauth')}>
-            <LuPlus size={14} /> Paste token
-          </button>
-          <button
-            className="mini acct-refresh"
-            disabled={refresh === 'busy'}
-            onClick={() => void runRefresh()}
-            title="Probe every enabled account now"
-          >
-            <LuRefreshCw size={14} />{' '}
-            {refresh === 'busy'
-              ? 'Refreshing…'
-              : refresh === 'done'
-                ? '✓ Updated'
-                : 'Refresh usage'}
+          <button className="mini" onClick={() => openForm({ paste: 'oauth' })}>
+            <IconPlus size={14} /> Paste token
           </button>
         </>
       )}
 
       <div className="set-grp">Codex</div>
       {section(
-        codexAccounts,
-        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in, and every Codex session picks the least-used one.',
-        <button
-          className="mini"
-          onClick={() => setCodexSignIn({})}
-          title="Runs codex login in a terminal tab for a new Codex account"
-        >
-          <LuGlobe size={14} /> Sign in to Codex
-        </button>
+        'codex',
+        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
+        <>
+          <button
+            className="mini"
+            onClick={() => openForm({ signIn: 'codex' })}
+            title="Runs codex login in a terminal tab for a new Codex account"
+          >
+            <IconWebPage size={14} /> Sign in to Codex
+          </button>
+          <button className="mini" onClick={() => openForm({ paste: 'codex-home' })}>
+            <IconPlus size={14} /> Paste API key
+          </button>
+        </>
       )}
-      {codexSignIn && (
-        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+      <div className="set-grp">Muse</div>
+      {section(
+        'muse',
+        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
+        <>
+          <button
+            className="mini"
+            onClick={() => openForm({ signIn: 'muse' })}
+            title="Runs muse login in a terminal tab for a new Muse account"
+          >
+            <IconWebPage size={14} /> Sign in to Muse
+          </button>
+          <button className="mini" onClick={() => openForm({ paste: 'muse-home' })}>
+            <IconPlus size={14} /> Paste API key
+          </button>
+        </>
       )}
-      {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
-      {login && <LoginDialog />}
+      <div className="set-grp">Antigravity</div>
+      {section(
+        'agy',
+        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
+        <>
+          <button
+            className="mini"
+            onClick={() => openForm({ signIn: 'agy' })}
+            title="Runs agy in a terminal tab for a new Antigravity account"
+          >
+            <IconWebPage size={14} /> Sign in with Google
+          </button>
+          <button className="mini" onClick={() => openForm({ paste: 'agy-home' })}>
+            <IconPlus size={14} /> Paste Gemini API key
+          </button>
+        </>
+      )}
+      <GitAccountsSection />
     </>
   )
 }
@@ -237,10 +366,10 @@ export function LoginDialog(): JSX.Element | null {
     clearLogin()
   }
 
-  const running = progress !== null && progress.phase !== 'failed'
+  const running = loginRunning(progress)
 
   return (
-    <div className="acct-add">
+    <div className="acct-add" ref={scrollIntoViewOnOpen}>
       <div className="acct-add-title">{reauthName ? `Sign in again ${reauthName}` : 'Sign in'}</div>
       {!running && (
         <input
@@ -324,50 +453,86 @@ export function LoginDialog(): JSX.Element | null {
   )
 }
 
-// CODEX§15
-export function CodexSignInDialog({
+function useSignInFailure(): SignInFailure | null {
+  const [failure, setFailure] = useState<SignInFailure | null>(null)
+  useEffect(() => {
+    let alive = true
+    const off = window.api.accounts.onSignInFailure(setFailure)
+    void window.api.accounts.signInFailure().then((f) => {
+      if (alive) setFailure(f)
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [])
+  return failure
+}
+
+export function SignInFailedDialog(): JSX.Element | null {
+  const failed = useSignInFailure()
+  return failed && <SignInFailedCard failed={failed} />
+}
+
+function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
+  return (
+    <SignInDialog
+      key={`${failed.backend}:${failed.name}`}
+      backend={failed.backend}
+      again={failed.again ? failed.name : undefined}
+      failed={failed}
+      onClose={() => window.api.accounts.dismissSignInFailure()}
+    />
+  )
+}
+
+export function SignInDialog({
+  backend,
   again,
+  failed,
   onClose
 }: {
+  backend: SignInBackend
   again?: string
+  failed?: SignInFailure
   onClose(): void
 }): JSX.Element {
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
-  const [name, setName] = useState(again ?? '')
+  const openSignInTab = useStore((s) => s.openSignInTab)
+  const [name, setName] = useState(again ?? failed?.name ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { installed } = useInstalledBackends()
+  const label = BACKEND_LABEL[backend]
+  const command = SIGN_IN_COMMAND[backend]
+  const installsFirst = installed !== null && !backendAvailable(installed, backend)
+  const shared =
+    backend === 'agy'
+      ? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'
+      : `Your ${label} settings and trusted folders are shared by every account.`
 
   const start = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     const nm = name.trim()
-    const r = await window.api.accounts.codexSignIn(nm, !!again)
+    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[backend], nm, !!again)
     setBusy(false)
     if (!r.ok) {
       setError(
         r.error === 'invalid-name'
           ? INVALID_ACCOUNT_NAME
-          : r.error === 'duplicate'
-            ? 'A Codex account already has that name'
-            : 'Codex is not available on this Mac'
+          : `A ${label} account already has that name`
       )
       return
     }
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `Codex sign in: ${nm}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    openSignInTab(r, `${label} sign in: ${nm}`)
     onClose()
   }
 
   return (
-    <div className="acct-add">
-      <div className="acct-add-title">{again ? `Sign in again ${again}` : 'Sign in to Codex'}</div>
+    <div className="acct-add" ref={failed ? undefined : scrollIntoViewOnOpen}>
+      <div className="acct-add-title">
+        {again ? `Sign in again ${again}` : `Sign in to ${label}`}
+      </div>
       <input
         type="text"
         placeholder="Name this account (e.g. work)"
@@ -377,19 +542,26 @@ export function CodexSignInDialog({
         autoFocus={!again}
         readOnly={!!again}
       />
+      {failed && (
+        <div className="acct-login-state bad">
+          <div>Sign-in did not complete.</div>
+          {failed.tail && <pre className="acct-login-tail">{failed.tail}</pre>}
+        </div>
+      )}
       {error && <div className="acct-add-err">{error}</div>}
       <div className="acct-add-actions">
         <button className="mini" onClick={onClose} disabled={busy}>
           Cancel
         </button>
         <button className="mini" onClick={() => void start()} disabled={busy || !name.trim()}>
-          Sign in
+          {failed ? 'Try again' : 'Sign in'}
         </button>
       </div>
       <span className="field-hint">
-        Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish
-        the sign-in there; the tab closes itself when it is done and the account joins the pool.
-        Your Codex settings and trusted folders are shared by every account.
+        Koloft opens a terminal tab that runs <code>{command}</code> for this account only.
+        {installsFirst && ` ${label} is not on this Mac yet, so the tab installs it first.`} Finish
+        the sign-in there; the tab closes itself when <code>{command}</code> ends. Signed in, the
+        account joins the pool; if not, this page says so. {shared}
       </span>
     </div>
   )
@@ -414,8 +586,9 @@ function AccountRow({
 }): JSX.Element {
   const u = a.usage
   const now = Date.now()
-  const measuredAt = u?.at ?? a.limits?.at
-  const stale = measuredAt !== undefined ? ageLabel(measuredAt, now) : null
+  const at = measuredAt(a)
+  const stale = at !== undefined ? ageLabel(at, now) : null
+  const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
@@ -426,7 +599,7 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
+        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
         {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
         {a.kind === 'oauth' && a.fable === 'yes' && (
           <span
@@ -454,13 +627,13 @@ function AccountRow({
           </button>
         )}
         <button className="acct-x" title="Delete account" onClick={onAskRemove}>
-          <LuX size={12} />
+          <IconClose size={12} />
         </button>
       </div>
       {confirming && (
         <div className="acct-confirm">
           <span>
-            {a.kind === 'codex-home' ? (
+            {SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
               <>
                 Delete <b>{a.name}</b>? Its sign-in folder stays on disk, so its sessions stay in
                 your history.
@@ -479,10 +652,14 @@ function AccountRow({
           </button>
         </div>
       )}
-      {a.kind === 'codex-home' ? (
+      {a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
+        <QuotaMeters quota={a.quota} now={now} />
+      ) : SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
+          ) : a.apiKey && !a.probeError ? (
+            <span className="acct-note">{METERED_NOTE}</span>
           ) : a.limits && a.limits.windows.length > 0 ? (
             a.limits.windows.map((w) => (
               <Meter
@@ -493,9 +670,7 @@ function AccountRow({
               />
             ))
           ) : (
-            <span className="acct-note">
-              {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-            </span>
+            <span className="acct-note">{noLimitsLabel(a)}</span>
           )}
           {a.status === 'ok' && a.limits?.windows[0]?.resetsAt ? (
             <span className="acct-note">
@@ -503,6 +678,7 @@ function AccountRow({
               {resetLabel(a.limits.windows[0].resetsAt, now)}
             </span>
           ) : null}
+          {codexBalance && <span className="acct-note">{codexBalance}</span>}
         </div>
       ) : a.kind === 'custom' ? (
         <div className="acct-meters">
@@ -514,13 +690,11 @@ function AccountRow({
         </div>
       ) : a.kind === 'apikey' ? (
         <div className="acct-meters">
-          <span className="acct-note">
-            Metered — used only when every subscription is rate-limited
-          </span>
+          <span className="acct-note">{METERED_NOTE}</span>
         </div>
       ) : u ? (
         <div className="acct-meters">
-          <Meter label="5h" v={u.u5} win="5h" />
+          {u.has5h && <Meter label="5h" v={u.u5} win="5h" />}
           <Meter label="7d" v={u.u7} win="7d" />
           {u.hasOi && <Meter label="fable" v={u.uoi} win="oi" soi={u.soi} />}
           {/* CC§7 */}
@@ -550,6 +724,7 @@ export function AddAccountDialog({
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const openSignInTab = useStore((s) => s.openSignInTab)
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -560,9 +735,20 @@ export function AddAccountDialog({
       secret,
       kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
     )
-    setBusy(false)
     // ADR-0002
     setSecret('')
+    if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
+      const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
+      setBusy(false)
+      if (!setup.ok) {
+        setError('Saved, but agy could not be opened — use Sign in again on its row')
+        return
+      }
+      openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+      onClose()
+      return
+    }
+    setBusy(false)
     if (r.ok || r.account) {
       onClose()
     } else {
@@ -579,10 +765,20 @@ export function AddAccountDialog({
   }
 
   const title =
-    kind === 'oauth' ? 'Paste token' : kind === 'apikey' ? 'Add API key' : 'Add custom endpoint'
+    kind === 'oauth'
+      ? 'Paste token'
+      : kind === 'apikey'
+        ? 'Add API key'
+        : kind === 'codex-home'
+          ? 'Add OpenAI API key'
+          : kind === 'muse-home'
+            ? 'Add Muse API key'
+            : kind === 'agy-home'
+              ? 'Add Gemini API key'
+              : 'Add custom endpoint'
 
   return (
-    <div className="acct-add">
+    <div className="acct-add" ref={scrollIntoViewOnOpen}>
       <div className="acct-add-title">{title}</div>
       <input
         type="text"
@@ -590,6 +786,7 @@ export function AddAccountDialog({
         value={name}
         onChange={(e) => setName(e.target.value)}
         spellCheck={false}
+        autoFocus
       />
       {kind === 'custom' && (
         <>
@@ -616,7 +813,13 @@ export function AddAccountDialog({
             ? 'sk-ant-oat01-… (from claude setup-token)'
             : kind === 'apikey'
               ? 'sk-ant-api03-…'
-              : 'Key issued by that endpoint'
+              : kind === 'codex-home'
+                ? 'sk-proj-… (OpenAI API key)'
+                : kind === 'muse-home'
+                  ? 'Meta API key'
+                  : kind === 'agy-home'
+                    ? 'Gemini API key'
+                    : 'Key issued by that endpoint'
         }
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
@@ -633,12 +836,23 @@ export function AddAccountDialog({
             busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
           }
         >
-          {busy ? 'Verifying…' : 'Verify and save'}
+          {SIGN_IN_FOLDER_KINDS.includes(kind)
+            ? busy
+              ? 'Saving…'
+              : 'Save'
+            : busy
+              ? 'Verifying…'
+              : 'Verify and save'}
         </button>
       </div>
       <span className="field-hint">
-        What you paste is used only to verify and to write the Keychain entry — never echoed, never
-        written to a file. A failed check still saves the account, marked UNVERIFIED.
+        {kind === 'codex-home'
+          ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
+          : kind === 'muse-home'
+            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Muse does not check the key here: a wrong one shows as signed in and fails once a session starts.'
+            : kind === 'agy-home'
+              ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
+              : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}

@@ -8,6 +8,7 @@ import { artifactBody, openFileTab, WORKBENCH } from './helpers/workbench'
 
 const EVERY_DNS_LOOKUP_FAILS = '--host-resolver-rules=MAP * ~NOTFOUND'
 const SUB_PIXEL_ROUNDING_PX = 1
+const FIRST_SCREEN_BUDGET_MS = 300
 
 const SAMPLES = path.join(__dirname, 'fixtures', 'md-preview')
 
@@ -52,6 +53,46 @@ function fenceBody(md: string): string {
   const m = /```[a-z]*\n([\s\S]*?)```/.exec(md)
   if (!m) throw new Error('sample has no fenced block')
   return m[1]
+}
+
+interface FirstScreenTimes {
+  start?: number
+  shown?: number
+}
+
+async function timeFirstScreen(page: Page, marker: string): Promise<void> {
+  await page.evaluate(
+    ({ item, marker }) => {
+      const t: FirstScreenTimes = {}
+      ;(window as unknown as { __firstScreen: FirstScreenTimes }).__firstScreen = t
+      document.addEventListener(
+        'click',
+        (e) => {
+          const hit = (e.target as Element).closest(item)
+          if (t.start === undefined && hit?.textContent?.includes('Open file…')) {
+            t.start = performance.now()
+          }
+        },
+        true
+      )
+      new MutationObserver((_, obs) => {
+        if (t.start === undefined) return
+        if (!document.querySelector('.md-body')?.textContent?.includes(marker)) return
+        t.shown = performance.now()
+        obs.disconnect()
+      }).observe(document.body, { childList: true, subtree: true, characterData: true })
+    },
+    { item: WORKBENCH.newMenuItem, marker }
+  )
+}
+
+async function firstScreenMsSinceOpenFile(page: Page): Promise<number> {
+  const t = await page.evaluate(
+    () => (window as unknown as { __firstScreen: FirstScreenTimes }).__firstScreen
+  )
+  expect(t.start, 'the "Open file…" click was seen').toBeDefined()
+  expect(t.shown, 'the first screen was seen').toBeDefined()
+  return Math.round(t.shown! - t.start!)
 }
 
 function globalFlag(page: Page, name: string): Promise<unknown> {
@@ -383,7 +424,7 @@ test.describe('Markdown preview non-functional discipline: inert, self-contained
     }
   })
 
-  test('BB-N16 a text-only document does not load the diagram and formula code (its <300 ms first-screen half stays a manual perf check)', async ({
+  test('BB-N16 a text-only document does not load the diagram and formula code, and its first screen shows within 300 ms of "Open file…"', async ({
     app,
     page,
     env
@@ -394,8 +435,12 @@ test.describe('Markdown preview non-functional discipline: inert, self-contained
 
     const lines: string[] = []
     for (let i = 1; i <= 1000; i++) lines.push(i % 10 === 0 ? '' : `nfr-n16 plain line ${i}`)
+    await timeFirstScreen(page, 'nfr-n16 plain line 1')
     await openDoc(page, env, 'nfr-n16-plain.md', lines.join('\n'))
     await expect(mdBody(page)).toContainText('nfr-n16 plain line 1', { timeout: 30_000 })
+    const firstScreenMs = await firstScreenMsSinceOpenFile(page)
+    test.info().annotations.push({ type: 'first-screen-ms', description: String(firstScreenMs) })
+    expect(firstScreenMs).toBeLessThan(FIRST_SCREEN_BUDGET_MS)
     await page.waitForTimeout(2000)
 
     expect(urls.filter((u) => /mermaid|katex/i.test(u))).toEqual([])

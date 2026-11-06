@@ -8,8 +8,7 @@
       name="description"
       content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/install/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
@@ -36,25 +35,38 @@
       content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -79,9 +91,9 @@
         <h2>Install</h2>
         <p>
           Get the <code>.dmg</code> (the disk image a Mac app comes in) from
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Open it and
-          drag Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so
-          it opens with a normal double-click.
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>. Open it and drag
+          Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so it
+          opens with a normal double-click.
         </p>
 
         <h3>Or one line in Terminal</h3>
@@ -91,26 +103,37 @@
         </p>
         <!-- prettier-ignore -->
         <p class="command">
-          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
-          <button type="button" class="copy" data-copy="cmd-install">Copy</button>
+          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft/<wbr>main/<wbr>install.sh | bash</code>
+          <button type="button" class="copy" data-copy="cmd-install">
+              <span class="idle"><svg class="icon" aria-hidden="true"><use href="../icons.svg#copy" /></svg> Copy</span><span class="done"><svg class="icon" aria-hidden="true"><use href="../icons.svg#check" /></svg> Copied</span>
+            </button>
         </p>
 
         <h3>What you need</h3>
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>
-            Claude Code, or the Codex CLI (command-line tool), already installed. Each Koloft
-            version names the oldest Claude Code and Codex it works with, and updates an older one
-            for you (see <a href="#updates">Updates</a> below).
+            one of the agents: Claude Code, the Codex CLI (command-line tool), Meta's Muse Code or
+            Google's Antigravity CLI. The first screen of the welcome says which ones are on this
+            Mac. For one that is not, press its Install button and a terminal tab runs the tool's
+            official installer. Signing in on the welcome also installs the tool first when it is
+            missing. Settings ▸ Welcome ▸ Show welcome again brings the welcome back. Later, Sign in
+            to Codex, Sign in to Muse or Antigravity's Sign in with Google in Settings ▸ Accounts
+            does the same for a tool the Mac still lacks. Each Koloft version says how old each
+            agent may be, and updates an older one for you (see
+            <a href="#updates">Updates</a> below).
           </li>
           <li>
-            a Claude or Codex login to add to Koloft: every session runs on one (see
-            <a href="../accounts/">accounts</a>)
+            a Claude, Codex, Muse or Antigravity login to add to Koloft: every session runs on one
+            (see <a href="../accounts/">accounts</a>)
           </li>
           <li>
-            if you like: <code>gh</code>, GitHub's own command-line tool, signed in, for a folder's
-            open issue and pull request counts, a branch's checks, and <code>koloft gh</code> for
-            Assist on Discord
+            git and <code>gh</code> (GitHub's own command-line tool)
+            <mark class="hl">come with Koloft</mark>. If your Mac already has its own, Koloft uses
+            yours. Sign in to gh yourself (<code>gh auth login</code>), or add a
+            <a href="../accounts/#git-accounts">git account</a> in Koloft and pick it for the
+            folder. That gives you a folder's open issue and pull request counts, a branch's checks,
+            and <code>koloft gh</code> for your sessions and your butler
           </li>
           <li>
             if you like: a Discord account, for the <a href="../discord/">butler on Discord</a>
@@ -125,11 +148,12 @@
           <a href="../changelog/">changelog</a>.
         </p>
         <p>
-          Koloft also keeps Claude Code and Codex new enough. If yours is older than this version
-          works with, Koloft runs <code>claude update</code> or <code>codex update</code> for you.
-          For Claude, this runs in the tab each time a session starts. For Codex, it runs once each
-          time Koloft opens, with a small message. If that does not bring it up to date, Koloft asks
-          you to run the update yourself.
+          Koloft also keeps the agents new enough. If yours is older than this version works with,
+          Koloft runs the tool's own update for you, such as <code>claude update</code> or
+          <code>codex update</code>. For Claude, this runs in the tab each time a session starts.
+          For Codex, Muse Code and Antigravity CLI, it runs once each time Koloft opens, with a
+          small message. If that does not bring it up to date, Koloft asks you to run the update
+          yourself.
         </p>
 
         <h2 id="what-it-talks-to">What it talks to</h2>
@@ -153,17 +177,36 @@
                   <code>api.anthropic.com</code>
                 </td>
                 <td>
-                  each account's room left, as a session starts and every 5 minutes. Through
+                  each account's room left, as Koloft opens, as a session starts, and when Settings
+                  or the usage panel opens. Through
                   <code>claude</code>, the small jobs of
-                  <a href="../accounts/#assist">Koloft Assist</a> when it runs on Claude
+                  <a href="../accounts/#assist">Assist</a> when it runs on Claude
                 </td>
               </tr>
               <tr>
                 <td><code>api.github.com,</code><br /><code>github.com</code></td>
                 <td>
                   a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
-                  request counts, a branch's checks, and what Assist on Discord asks with
-                  <code>koloft gh</code>
+                  request counts, a branch's checks, and what a session or your butler runs with
+                  <code>koloft gh</code>; and, for a remote folder's machine that lacks them,
+                  <code>gh</code> itself and the sign-in tool (Git Credential Manager); a GitHub
+                  <a href="../accounts/#git-accounts">git account</a>'s sign-in, and its token check
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>gitlab.com,</code><br /><code>api.bitbucket.org,</code><br /><code
+                    >dev.azure.com,</code
+                  ><br /><code>codeberg.org,</code><br />or your own git server
+                </td>
+                <td>
+                  the server of a <a href="../accounts/#git-accounts">git account</a> you add, only
+                  after you add one there. To check its token and read your username: when you add
+                  it, when Koloft starts, every 6 hours, when Settings ▸ Accounts opens, and when
+                  the server turns the token down during a git call (an account added as Other
+                  server is never checked). To see whether it can push to a folder's repository:
+                  when you add a folder, and when the git panel's Account list opens. Bitbucket also
+                  reaches <code>bitbucket.org</code> for the browser sign-in
                 </td>
               </tr>
               <tr>
@@ -174,13 +217,29 @@
               </tr>
               <tr>
                 <td>
-                  <code>claude.ai,</code><br /><code>nodejs.org,</code><br /><code
-                    >unofficial-builds.nodejs.org</code
-                  >
+                  <code>claude.ai,</code><br /><code>chatgpt.com,</code><br /><code
+                    >dev.meta.ai,</code
+                  ><br /><code>antigravity.google</code>
                 </td>
                 <td>
-                  only to put <code>claude</code> and Node on a remote folder's machine (the third
-                  on an old Linux)
+                  the official installers of <code>claude</code>, <code>codex</code>,
+                  <code>muse</code> and <code>agy</code>, only when you ask for a tool this Mac
+                  lacks: its Install button on the welcome, its "Click to install." card when you
+                  set up Assist, or signing in to it (on the welcome or in Settings ▸ Accounts)
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>claude.ai,</code><br /><code>dev.meta.ai,</code><br /><code
+                    >antigravity.google,</code
+                  ><br /><code>nodejs.org,</code><br /><code>unofficial-builds.nodejs.org</code>
+                </td>
+                <td>
+                  only to put <code>claude</code>, <code>muse</code>, <code>agy</code> and Node on a
+                  remote folder's machine (<code>unofficial-builds.nodejs.org</code> only on an old
+                  Linux); <code>codex</code> and, for Claude Code sessions,
+                  <code>playwright-cli</code> come from <code>npm</code> (Node's package tool),
+                  which fetches them from npm's own site
                 </td>
               </tr>
               <tr>
@@ -193,7 +252,8 @@
               <tr>
                 <td><code>discord.com,</code><br /><code>gateway.discord.gg</code></td>
                 <td>
-                  only once you paste a bot token; see <a href="../discord/">A butler on Discord</a>
+                  only once your bot is set up; see
+                  <a href="../discord/">A butler on Discord</a>
                 </td>
               </tr>
               <tr>
@@ -208,15 +268,20 @@
         <p>A few more details:</p>
         <ul class="dash">
           <li>
-            an API key, or an account on your own endpoint, gets the same tiny message there, only
-            to check it still works
+            a Claude API key (a pay-per-use key) or an account on another server that works like
+            Claude's, added by an older Koloft, gets the same tiny message there, only to check it
+            still works
           </li>
           <li>
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>
-            with <a href="../accounts/#assist">Koloft Assist</a> on Codex, its small jobs go through
-            <code>codex</code> to OpenAI, the same way a Codex session does
+            with <a href="../accounts/#assist">Assist</a> on Codex, Muse or Antigravity, its small
+            jobs go through that tool to OpenAI, Meta or Google, the same way a session does
+          </li>
+          <li>
+            a Muse or Antigravity account's allowance is read by running <code>muse</code> or
+            <code>agy</code> itself; that call is the tool's own, like Codex's
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
           <li>
@@ -224,17 +289,18 @@
             tool fetches its own update, from the place it was installed from
           </li>
           <li>
-            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
-            from that machine's own package manager, which may ask for its sudo password (the admin
-            password)
+            for a remote folder, <code>bash</code>, <code>tmux</code>, <code>rsync</code> and
+            <code>python3</code> (for Muse) come from that machine's own package manager, which may
+            ask for its sudo password (the admin password)
           </li>
           <li>
             the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
           </li>
           <li>
-            with a bot token pasted in Settings ▸ Discord, your messages, and your sessions'
-            replies, questions and approvals, go to your own bot; files you send are fetched from
-            the address Discord gives for them (its own file host)
+            with a bot set up in Settings ▸ Discord, your messages and your butler's replies, its
+            questions and its helpers' questions, the replies, questions and copies of a session you
+            gave a room, and the 🔑 cards for a session's password or code go to your own bot. Files
+            you send are fetched from Discord's own file host
           </li>
         </ul>
         <p>
@@ -243,27 +309,28 @@
           that copies files).
         </p>
         <p>
-          Claude Code talks to Anthropic and Codex talks to OpenAI by themselves, when you log in
-          and every time you send a message. That traffic is theirs, not Koloft's, and this list
-          does not cover it. Koloft also asks Codex how much of each account's limit is left. Codex
-          makes that call itself, through <code>codex app-server</code>.
+          Claude Code talks to Anthropic, Codex to OpenAI, Muse Code to Meta and Antigravity to
+          Google by themselves, when you log in and every time you send a message. That traffic is
+          theirs, not Koloft's, and this list does not cover it. Koloft also asks Codex how much of
+          each account's limit is left. Codex makes that call itself, through
+          <code>codex app-server</code>.
         </p>
 
         <h2>Questions</h2>
         <dl class="qa">
-          <dt><span>Does Koloft replace Claude Code or Codex?</span></dt>
+          <dt><span>Does Koloft replace Claude Code, Codex, Muse Code or Antigravity?</span></dt>
           <dd>
             <span
-              >No. It runs the real <code>claude</code> and <code>codex</code> tools you already
-              have, and shows their own screen, untouched. Koloft adds the list, the Workbench and
-              the note around it.</span
+              >No. It runs the real <code>claude</code>, <code>codex</code>, <code>muse</code> and
+              <code>agy</code> tools you already have, and shows their own screen, untouched. Koloft
+              adds the list, the Workbench and the note around it.</span
             >
           </dd>
           <dt><span>Does it cost anything?</span></dt>
           <dd>
             <span
-              >Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, just
-              as they do without Koloft.</span
+              >Koloft is free. The agents use your own Anthropic, OpenAI, Meta or Google account,
+              just as they do without Koloft.</span
             >
           </dd>
           <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
@@ -297,24 +364,42 @@
           <a href="https://github.com/superkoh/koloft/blob/main/SECURITY.md">SECURITY.md</a> first.
         </p>
 
-        <p class="next">back to the start -&gt; <a href="../">home</a></p>
+        <p class="next">Back to the start → <a href="../">home</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

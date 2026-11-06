@@ -4,19 +4,28 @@ import os from 'os'
 import path from 'path'
 import { once } from 'events'
 import WebSocket from 'ws'
-import {
+import type { CodexFrame } from '../../src/main/codexTransport'
+
+const PROCESS_SAMPLE_MS = 1000
+process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
+const {
   CodexRpc,
   codexEnvironment,
   createCodexTransport,
-  type CodexFrame
-} from '../../src/main/codexTransport'
+  DEFAULT_MAX_FRAME,
+  readFrame,
+  TUI_STALLED_AFTER_MS
+} = await import('../../src/main/codexTransport')
+type CodexRpc = InstanceType<typeof CodexRpc>
 
 let directory: string
 let binary: string
 const cleanups: (() => Promise<void>)[] = []
-const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = 1500
+const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = PROCESS_SAMPLE_MS * 1.5
 const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
 const LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO = 3
+const RUNS_SO_ONE_BUSY_MOMENT_CANNOT_DECIDE = 3
+const PLUGIN_LIST_PAST_32_MB = 33 * 1024 * 1024
 
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-wire-test-'))
@@ -27,9 +36,11 @@ beforeEach(async () => {
 const {spawn} = require('child_process');
 const readline = require('readline');
 let initialized = false;
+const seen = [];
 const out = obj => process.stdout.write(JSON.stringify(obj) + '\\n');
 readline.createInterface({input:process.stdin}).on('line', line => {
  const f=JSON.parse(line);
+ seen.push(f.params?.extraRoots ? f.method + ' ' + f.params.extraRoots.join(',') : f.method);
  if(f.method==='initialize') {out({id:f.id,result:{userAgent:'fake'}});return;}
  if(f.method==='initialized') {initialized=true;return;}
  if(f.id===991 && !f.method) {out({method:'approval/received',params:f.result});return;}
@@ -40,11 +51,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  if(mode==='partial') {process.stdout.write('{');process.exit(0);return;}
  if(mode==='oversize') {process.stdout.write('x'.repeat(2000));return;}
  if(mode==='approval') {out({id:991,method:'item/commandExecution/requestApproval',params:{command:'echo ok'}});return;}
+ if(mode==='question') {out({id:992,method:'item/tool/requestUserInput',params:{threadId:'t',questions:[{id:'colour',question:'Red or Green?'}],isBlocking:false,autoResolutionMs:120000}});return;}
  if(mode==='tree') {
    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000)"],{detached:true,stdio:'ignore'});
    child.unref();
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
+ if(mode==='unread') {process.stdout.write('{"id":"plugin-list-1","result":not json}\\n');out({id:f.id,result:{}});return;}
+ if(mode==='burst') {for(let i=0;i<f.params.count;i++) out({method:'burst',params:{i,pad:'x'.repeat(f.params.bytes)}});return;}
  if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
@@ -52,7 +66,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    process.stdout.write(bytes.subarray(0,offset));
    setTimeout(()=>process.stdout.write(bytes.subarray(offset)),15);return;
  }
- out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
+ out({id:f.id,result:{data:[],params:f.params,seen,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
 });
 process.stdin.on('end',()=>process.exit(0));
 `,
@@ -75,6 +89,15 @@ async function connect(url: string): Promise<WebSocket> {
   const socket = new WebSocket(`ws+unix://${url.slice('unix://'.length)}:/`)
   await once(socket, 'open')
   return socket
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function nextFrame(socket: WebSocket): Promise<CodexFrame> {
@@ -108,6 +131,22 @@ describe('Codex stdio reads', () => {
     await expect(client.request('turn/start', {})).rejects.toThrow('does not allow')
   })
 
+  // CODEX§24
+  it('lets a side connection ask the two checks a search makes of each thread: which of its own words hold the term, and whether Codex indexed it', async () => {
+    const client = rpc()
+    const occurrences = await client.request<{ params: unknown }>('thread/searchOccurrences', {
+      threadId: 't',
+      searchTerm: 'zsh',
+      limit: 1
+    })
+    const turns = await client.request<{ params: unknown }>('thread/turns/list', {
+      threadId: 't',
+      limit: 1
+    })
+    expect(occurrences.params).toEqual({ threadId: 't', searchTerm: 'zsh', limit: 1 })
+    expect(turns.params).toEqual({ threadId: 't', limit: 1 })
+  })
+
   it('reads a frame spanning many pipe reads in time that grows with its size, not its square (catches O(n²), never pins speed)', async () => {
     const SMALL_BYTES = 12 * 1024 * 1024
     const SIZE_RATIO = 8
@@ -123,8 +162,15 @@ describe('Codex stdio reads', () => {
       expect(reply.pad.length).toBe(bytes)
       return performance.now() - started
     }
+    const fastestMs = async (bytes: number): Promise<number> => {
+      let best = Infinity
+      for (let i = 0; i < RUNS_SO_ONE_BUSY_MOMENT_CANNOT_DECIDE; i++) {
+        best = Math.min(best, await readMs(bytes))
+      }
+      return best
+    }
     const small = await readMs(SMALL_BYTES)
-    const big = await readMs(SIZE_RATIO * SMALL_BYTES)
+    const big = await fastestMs(SIZE_RATIO * SMALL_BYTES)
     expect(big / small, `${Math.round(small)}ms then ${Math.round(big)}ms`).toBeLessThan(
       SIZE_RATIO * LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO
     )
@@ -149,6 +195,25 @@ describe('Codex stdio reads', () => {
     await expect(
       rpc({ maxFrameBytes: 1024 }).request('thread/read', { mode: 'oversize' })
     ).rejects.toThrow('size limit')
+  })
+
+  // CODEX§28
+  it('a read whose app-server exits as it starts, as one does beside another starting in a home no app-server has used yet, is answered by a second app-server', async () => {
+    const diedOnce = path.join(directory, 'died-once')
+    const diesOnFirstStart = path.join(directory, 'codex-dies-once')
+    await fs.writeFile(
+      diesOnFirstStart,
+      `#!${process.execPath}
+const fs = require('fs');
+if (!fs.existsSync(${JSON.stringify(diedOnce)})) { fs.writeFileSync(${JSON.stringify(diedOnce)}, ''); process.exit(1); }
+require(${JSON.stringify(binary)});
+`,
+      { mode: 0o700 }
+    )
+    const client = new CodexRpc({ binary: diesOnFirstStart, cwd: directory })
+    cleanups.push(() => client.close())
+    const reply = await client.request<{ params: unknown }>('thread/list', { cursor: 'next' })
+    expect(reply.params).toEqual({ cursor: 'next' })
   })
 
   it('preserves user auth/config but removes enclosing session markers', async () => {
@@ -265,30 +330,240 @@ describe('Codex TUI transport', () => {
     await expect(fs.stat(socketPath)).rejects.toThrow()
   })
 
-  it('disconnecting the TUI stops its server and detached tool child', async () => {
+  // CODEX§34
+  it('a TUI that drops and connects again gets a new app-server, started only once the old one and its detached tool child have ended, which takes its initialize', async () => {
     let disconnected!: () => void
     const done = new Promise<void>((resolve) => {
       disconnected = resolve
     })
     const errors: Error[] = []
+    let replaced = 0
     const transport = await createCodexTransport({
       binary,
       cwd: directory,
       onFrame: () => {},
       onDisconnect: disconnected,
+      onServerReplaced: () => replaced++,
       onError: (e) => errors.push(e)
     })
     cleanups.push(() => transport.stop())
     const socket = await connect(transport.url)
     await handshake(socket)
-    const reply = nextFrame(socket)
+    let reply = nextFrame(socket)
     socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'tree' } }))
     const { result } = (await reply) as { result: { pid: number; child: number } }
     await new Promise((resolve) => setTimeout(resolve, CHILD_SIGTERM_HANDLER_INSTALL_MS))
     socket.close()
     await done
-    for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()
+    const again = await connect(transport.url)
+    expect([result.pid, result.child].filter((pid) => processAlive(pid))).toEqual([])
+    await handshake(again)
+    reply = nextFrame(again)
+    again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 3,
+      result: { seen: ['initialize', 'initialized', 'thread/read'] }
+    })
+    expect(replaced).toBe(1)
     expect(errors).toEqual([])
+  })
+
+  // CODEX§34
+  it('an app-server that dies after it served the TUI drops the TUI without an error notice, and the TUI that connects again gets a new app-server', async () => {
+    const errors: Error[] = []
+    let replaced = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onServerReplaced: () => replaced++,
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const dropped = once(socket, 'close')
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+    await dropped
+    const again = await connect(transport.url)
+    await handshake(again)
+    const reply = nextFrame(again)
+    again.send(JSON.stringify({ id: 3, method: 'thread/read', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 3,
+      result: { seen: ['initialize', 'initialized', 'thread/read'] }
+    })
+    expect(replaced).toBe(1)
+    expect(errors).toEqual([])
+  })
+
+  // CODEX§34
+  it('an app-server that keeps dying is replaced three times, and the fourth death ends the connection', async () => {
+    const errors: Error[] = []
+    let replaced = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onServerReplaced: () => replaced++,
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    for (let death = 1; death <= 4; death++) {
+      const socket = await connect(transport.url)
+      await handshake(socket)
+      const dropped = once(socket, 'close')
+      socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+      await dropped
+    }
+    expect(replaced).toBe(3)
+    await expect(connect(transport.url)).rejects.toThrow()
+    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
+  })
+
+  // CODEX§34
+  it('a remote screen that connects again gets a new line to the same app-server on the machine, and a remote app-server that dies ends the connection, since only the machine can start one', async () => {
+    let failure!: (error: Error) => void
+    let lines = 0
+    let upstreams = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      upstream: (frame, failed) => {
+        failure = failed
+        upstreams++
+        return {
+          ready: Promise.resolve(),
+          limit: DEFAULT_MAX_FRAME,
+          write: (raw) => {
+            const f = JSON.parse(raw.toString()) as CodexFrame
+            if (f.method === 'initialize')
+              frame(readFrame(Buffer.from(JSON.stringify({ id: f.id, result: {} })))!)
+          },
+          stop: () => Promise.resolve(),
+          newScreen: () => lines++
+        }
+      }
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const closed = once(socket, 'close')
+    socket.close()
+    await closed
+    const again = await connect(transport.url)
+    await handshake(again)
+    expect({ lines, upstreams }).toEqual({ lines: 1, upstreams: 1 })
+    const dropped = once(again, 'close')
+    failure(new Error('Codex on the machine is no longer running'))
+    await dropped
+    await expect(connect(transport.url)).rejects.toThrow()
+  })
+
+  it('an app-server that dies before it ever answered the TUI ends the connection', async () => {
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onError: (e) => errors.push(e)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    const dropped = once(socket, 'close')
+    socket.send(JSON.stringify({ id: 1, method: 'thread/read', params: {} }))
+    socket.send(JSON.stringify({ method: 'initialized' }))
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'crash' } }))
+    await dropped
+    await expect(connect(transport.url)).rejects.toThrow()
+    expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('app-server exited')])
+  })
+
+  it('a reply the observer does not want reaches the TUI as Codex wrote it, without being read, while one it wants is read', async () => {
+    const observed: CodexFrame[] = []
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      },
+      observes: (_direction, head) => head.replyTo !== 'plugin-list-1',
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const raw: string[] = []
+    const both = new Promise<void>((resolve) =>
+      socket.on('message', (bytes) => {
+        if (raw.push(bytes.toString()) === 2) resolve()
+      })
+    )
+    socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
+    await both
+    expect(raw).toEqual(['{"id":"plugin-list-1","result":not json}', '{"id":"mine","result":{}}'])
+    expect(observed).toContainEqual({ id: 'mine', result: {} })
+    expect(observed.some((frame) => frame.id === 'plugin-list-1')).toBe(false)
+    expect(errors).toEqual([])
+  })
+
+  // CODEX§1
+  it('a reply past 32 MB, as the plugin list a signed-in TUI asks for (24 MB and growing) would be, reaches the TUI whole and keeps the connection', async () => {
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(
+      JSON.stringify({
+        id: 'plugin-list-1',
+        method: 'thread/read',
+        params: { mode: 'big', bytes: PLUGIN_LIST_PAST_32_MB }
+      })
+    )
+    const dropped = once(socket, 'close').then(() => 'the TUI lost its connection')
+    const got = await Promise.race([reply, dropped])
+    expect(got).toMatchObject({ id: 'plugin-list-1' })
+    expect((got as { result: { pad: string } }).result.pad).toHaveLength(PLUGIN_LIST_PAST_32_MB)
+    expect(errors).toEqual([])
+  }, 30_000)
+
+  // CODEX§20
+  it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner with no timer, while the observer sees what Codex sent', async () => {
+    const observed: CodexFrame[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      }
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const question = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'question' } }))
+    expect(await question).toEqual({
+      id: 992,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 't',
+        questions: [{ id: 'colour', question: 'Red or Green?' }],
+        isBlocking: true,
+        autoResolutionMs: null
+      }
+    })
+    expect(observed).toContainEqual(
+      expect.objectContaining({ id: 992, params: expect.objectContaining({ isBlocking: false }) })
+    )
   })
 
   it('an observer cannot rewrite TUI requests or stop their delivery by throwing', async () => {
@@ -334,6 +609,32 @@ describe('Codex TUI transport', () => {
     expect(seen.map((f) => f.id)).toEqual([0, 'after'])
   })
 
+  // CODEX§17
+  it("Koloft's skills folder reaches the app-server right after the TUI's initialized, ahead of the thread the TUI starts next, and its answer never reaches the TUI", async () => {
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      skillRoots: ['/koloft/plugin/skills']
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/start', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 2,
+      result: {
+        seen: [
+          'initialize',
+          'initialized',
+          'skills/extraRoots/set /koloft/plugin/skills',
+          'thread/start'
+        ]
+      }
+    })
+  })
+
   it("an error answer fails Koloft's request and is not saved up for a TUI that connects later", async () => {
     const transport = await createCodexTransport({ binary, cwd: directory, onFrame: () => {} })
     cleanups.push(() => transport.stop())
@@ -344,7 +645,79 @@ describe('Codex TUI transport', () => {
     expect(await first).toMatchObject({ id: 'start' })
   })
 
-  it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {
+  const BURST_FRAME_LIMIT = 256 * 1024
+  const BURST_REPLY_BYTES = 200 * 1024
+  const BURST_REPLIES = 8
+
+  async function tuiThatStopsReading(): Promise<{
+    socket: WebSocket
+    errors: Error[]
+    burst(id: number, count: number): void
+    burstReachedKoloft(): number
+  }> {
+    const errors: Error[] = []
+    let reached = 0
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      maxFrameBytes: BURST_FRAME_LIMIT,
+      onFrame: (direction, frame) => {
+        if (direction === 'server' && frame.method === 'burst') reached++
+      },
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    socket.pause()
+    return {
+      socket,
+      errors,
+      burst: (id, count) =>
+        socket.send(
+          JSON.stringify({
+            id,
+            method: 'thread/read',
+            params: { mode: 'burst', count, bytes: BURST_REPLY_BYTES }
+          })
+        ),
+      burstReachedKoloft: () => reached
+    }
+  }
+
+  // CODEX§1
+  it('a TUI that reads slower than a burst of replies far over the size limit together, as the Codex TUI asking for its plugin list several times at once, keeps its connection and gets every reply', async () => {
+    const { socket, errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    const seen: number[] = []
+    socket.on('message', (bytes) =>
+      seen.push(((JSON.parse(bytes.toString()) as CodexFrame).params as { i: number }).i)
+    )
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() =>
+      expect(burstReachedKoloft() === BURST_REPLIES || errors.length > 0).toBe(true)
+    )
+    expect(errors).toEqual([])
+    socket.resume()
+    await vi.waitFor(() => expect(seen).toHaveLength(BURST_REPLIES))
+    expect(seen).toEqual([...Array(BURST_REPLIES).keys()])
+    expect(errors).toEqual([])
+  })
+
+  it('a TUI that has taken nothing for 30 s while far behind loses its connection when Codex sends it more', async () => {
+    const { errors, burst, burstReachedKoloft } = await tuiThatStopsReading()
+    burst(2, BURST_REPLIES)
+    await vi.waitFor(() => expect(burstReachedKoloft()).toBe(BURST_REPLIES))
+    const now = performance.now()
+    const later = vi.spyOn(performance, 'now').mockReturnValue(now + TUI_STALLED_AFTER_MS + 1000)
+    try {
+      burst(3, 1)
+      await vi.waitFor(() => expect(errors.map((e) => e.message).join()).toMatch(/took none/))
+    } finally {
+      later.mockRestore()
+    }
+  })
+
+  it('rejects oversized peer input by dropping that connection instead of hanging on a partial write', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({
       binary,

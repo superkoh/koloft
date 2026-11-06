@@ -1,0 +1,977 @@
+import { execFile } from 'child_process'
+import { randomUUID } from 'crypto'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import type {
+  AccountStatus,
+  GitAccount,
+  GitAccountSuggestion,
+  GitAccountView,
+  GitLoginProgress,
+  GitLoginStart,
+  GitMachine,
+  GitPlatform,
+  GitRepoPick,
+  GitTokenAdd,
+  GitTokenAddResult,
+  WorkspaceGitAccount,
+  WorkspaceGitSsh
+} from '@shared/types'
+import {
+  GITHUB_DOT_COM,
+  GIT_LOGIN_RE,
+  gitAccountId,
+  gitAccountUrl,
+  gitHostOf,
+  gitPlatformName,
+  gitSignIn,
+  gitSshKeysPage,
+  isGhPlatform
+} from '@shared/gitAccountOps'
+import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
+import {
+  dismissSuggestion,
+  listGitMachines,
+  listGitAccounts,
+  listGitPicks,
+  removeGitAccount,
+  setDefaultGitAccount,
+  setGitPick,
+  setGitPickSshKey,
+  suggestionDismissed,
+  upsertGitAccount
+} from './gitAccounts'
+import { GitAccountChecks, type AccountHealth } from './gitAccountChecks'
+import { suggestFor } from './gitAccountSuggest'
+import { GitAuthRequests, type GitAuthRequest, type GitCredential } from './gitAuthRequests'
+import {
+  GITHUB_URL,
+  apiTargetOf,
+  credentialUrlOf,
+  gitAccountsDir,
+  gitConfigEnv,
+  rewriteConfigText,
+  sshKeyConfigText,
+  sshKeyPath,
+  withoutConfigEntries,
+  writeGitAccountConfigs
+} from './gitConfigFile'
+import { loginFromSshGreeting, SSH_SAFE_OPTIONS, sshSetting } from './gitClues'
+import {
+  httpsTurnedAway,
+  REMOTE_URLS,
+  remoteUrlsOf,
+  rewriteRulesFor,
+  type HttpsTurnedAway,
+  type RepoRemotes
+} from './gitSshRemotes'
+import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
+import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
+import { GitRepoKeys } from './gitRepoKey'
+import { GitMachineAccounts, throughTempStore, type MachineRun } from './gitMachineAccounts'
+import type { GhResult } from './prChecks'
+import type { GitRunResult } from './gitSteps'
+import { pushAccess } from './githubApi'
+import {
+  githubApiBase,
+  identify,
+  missingScopeOn,
+  pushAccessOn,
+  type Identity
+} from './gitPlatformApi'
+import { GithubLogin } from './githubLogin'
+
+const CLUE_COMMAND_KILL_MS = 10_000
+const REQUEST_DIR = /^koloft-git-(\d+)-/
+const SSH_KEY_REFUSED = /Permission denied \(publickey/
+const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
+  'use',
+  'only-one-can-push',
+  'default-can-push'
+]
+
+export function newGitRequestDir(): string {
+  return `/tmp/koloft-git-${process.pid}-${randomUUID()}`
+}
+
+export function sweepStaleGitRequestDirs(alive: (pid: number) => boolean): void {
+  let names: string[] = []
+  try {
+    names = fs.readdirSync('/tmp')
+  } catch {
+    return
+  }
+  for (const n of names) {
+    const pid = Number(REQUEST_DIR.exec(n)?.[1])
+    if (pid && pid !== process.pid && !alive(pid))
+      fs.rmSync(path.join('/tmp', n), { recursive: true, force: true })
+  }
+}
+
+function runForClue(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string }
+): Promise<GitRunResult> {
+  return new Promise((resolve) => {
+    const child = execFile(
+      cmd,
+      args,
+      { cwd: opts.cwd, env: opts.env, timeout: CLUE_COMMAND_KILL_MS },
+      (err, stdout, stderr) => {
+        const code = (err as { code?: unknown } | null)?.code
+        resolve({
+          code: !err ? 0 : typeof code === 'number' ? code : null,
+          stdout: String(stdout),
+          stderr: String(stderr)
+        })
+      }
+    )
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(opts.input ?? '')
+  })
+}
+
+function readText(p: string): string | null {
+  try {
+    return fs.readFileSync(p, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+function identityFailure(platform: GitPlatform, me: Identity & { ok: false }): string {
+  const who = gitPlatformName(platform)
+  if (me.error === 'offline')
+    return `${who} could not be reached to read the new account. Check the connection and try again.`
+  if (me.error === 'expired') return `${who} did not accept the new sign-in. Try again.`
+  return `${who} did not say which account signed in. Try again.`
+}
+
+export interface GitAccountServiceDeps {
+  userData: string
+  requestDir: string
+  gitHelper: string
+  ghBin: string | undefined
+  gcmBin: string | undefined
+  gcmNamespacePrefix: string
+  baseEnv(): Promise<NodeJS.ProcessEnv>
+  repoOf(wsPath: string): Promise<{ owner: string; name: string } | null>
+  openInBrowser(url: string): void
+  progress(p: GitLoginProgress): void
+  accountsChanged(views: GitAccountView[]): void
+  picksChanged(): void
+  runOnMachine: MachineRun
+}
+
+interface GcmRun {
+  run: GcmSignIn
+  account: GcmAccount
+  machine?: string
+  url?: string
+}
+
+export class GitAccountService {
+  private keys: GitRepoKeys
+  private readonly master: string
+  private accounts: GitAccount[] = []
+  private picks: GitRepoPick[] = []
+  private machines = new Map<string, Pick<GitMachine, 'accounts' | 'picks'>>()
+  private onMachine: GitMachineAccounts
+  private signingFor: string | undefined
+  private checkingMachine: object | null = null
+  private machineSyncs = new Map<string, Promise<boolean>>()
+  private offline = new Set<string>()
+  private found = new Map<string, GitAccountSuggestion>()
+  private orgBlocked = new Map<string, { id: string; org: string }>()
+  private remotes = new Map<string, RepoRemotes>()
+  private sshHosts = new Map<string, Promise<string | null>>()
+  private scanned = new Map<string, string>()
+  private httpsRefused = new Map<string, HttpsTurnedAway>()
+  private publicKeys = new Map<string, string>()
+  private requests: GitAuthRequests
+  private checks: GitAccountChecks
+  private login: GithubLogin
+  private gcm: CredentialManager
+  private gcmRun: GcmRun | null = null
+  private loginEnv: NodeJS.ProcessEnv = { ...process.env }
+
+  constructor(private d: GitAccountServiceDeps) {
+    this.onMachine = new GitMachineAccounts(d.runOnMachine)
+    this.keys = new GitRepoKeys(undefined, async (machine, paths) =>
+      this.accountsIn(machine).length
+        ? this.onMachine.repoKeys(machine, paths)
+        : paths.map(() => null)
+    )
+    this.master = this.reload()
+    this.gcm = new CredentialManager({
+      bin: d.gcmBin,
+      stateDir: path.join(gitAccountsDir(d.userData), 'gcm'),
+      env: () => this.loginEnv
+    })
+    this.checks = new GitAccountChecks({
+      accounts: () => this.accounts,
+      health: (a) => this.health(a),
+      setStatus: (id, status) => this.setStatus(id, status),
+      setOffline: (id, offline) => {
+        if (offline === this.offline.has(id)) return
+        if (offline) this.offline.add(id)
+        else this.offline.delete(id)
+        this.accountsChanged()
+      }
+    })
+    this.requests = new GitAuthRequests({
+      credential: (req) => this.credential(req),
+      ghToken: (id) => this.ghToken(id),
+      rejected: (id) => this.rejected(id)
+    })
+    this.login = new GithubLogin({
+      ghBin: d.ghBin,
+      userData: d.userData,
+      openInBrowser: d.openInBrowser,
+      progress: d.progress,
+      signedIn: (url, token) =>
+        this.signedIn(url === GITHUB_DOT_COM ? 'github' : 'ghes', url, { token }, this.signingFor)
+    })
+  }
+
+  private signInStoreRoot(): string {
+    return path.join(gitAccountsDir(this.d.userData), 'machine-sign-in')
+  }
+
+  start(): void {
+    fs.rmSync(this.signInStoreRoot(), { recursive: true, force: true })
+    fs.mkdirSync(this.d.requestDir, { recursive: true, mode: 0o700 })
+    this.requests.watch(this.d.requestDir)
+    this.checks.start()
+    void this.d.baseEnv().then((env) => (this.loginEnv = env))
+  }
+
+  stop(): void {
+    this.login.cancel()
+    this.loginCancel()
+    fs.rmSync(this.d.requestDir, { recursive: true, force: true })
+  }
+
+  // ADR-0033
+  configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    return gitConfigEnv(env, this.master)
+  }
+
+  private reload(): string {
+    this.accounts = listGitAccounts()
+    this.picks = listGitPicks()
+    this.machines = new Map(
+      Object.entries(listGitMachines()).map(([m, { accounts, picks }]) => [
+        m,
+        { accounts, picks: picks.map((p) => ({ ...p, repo: formatRemoteKey(m, p.repo) })) }
+      ])
+    )
+    const texts = new Map<string, string>()
+    for (const p of this.picks) {
+      const rules = this.remotes.get(p.repo)?.rules
+      if (p.sshKey) texts.set(p.repo, sshKeyConfigText(this.keyPath(p.account)))
+      else if (rules) texts.set(p.repo, rewriteConfigText(rules))
+    }
+    return writeGitAccountConfigs(
+      gitAccountsDir(this.d.userData),
+      this.picks,
+      this.accounts,
+      this.d.gitHelper,
+      texts
+    )
+  }
+
+  private keyPath(id: string): string {
+    return sshKeyPath(gitAccountsDir(this.d.userData), id)
+  }
+
+  private machineOf(repo: string | null): string | undefined {
+    return repo ? parseRemoteKey(repo)?.host : undefined
+  }
+
+  private accountsIn(machine: string | undefined): GitAccount[] {
+    return machine ? (this.machines.get(machine)?.accounts ?? []) : this.accounts
+  }
+
+  private picksIn(machine: string | undefined): GitRepoPick[] {
+    return machine ? (this.machines.get(machine)?.picks ?? []) : this.picks
+  }
+
+  private pickOf(repo: string | null): GitRepoPick | undefined {
+    return this.picksIn(this.machineOf(repo)).find((p) => p.repo === repo)
+  }
+
+  private pickFor(repo: string | null): GitAccount | undefined {
+    return this.account(this.pickOf(repo)?.account, this.machineOf(repo))
+  }
+
+  private async sshHostname(
+    dest: string,
+    port: string | undefined,
+    sshG: (args: string[]) => Promise<GitRunResult>,
+    machine = ''
+  ): Promise<string | null> {
+    const key = `${machine} ${dest} ${port ?? ''}`
+    let known = this.sshHosts.get(key)
+    if (!known) {
+      known = sshG(['-G', ...(port ? ['-p', port] : []), dest]).then((g) => {
+        const host = (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
+        if (!host) this.sshHosts.delete(key)
+        return host
+      })
+      this.sshHosts.set(key, known)
+    }
+    return known
+  }
+
+  // PLATFORM§53 ADR-0035
+  private async scanRemotes(repo: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+    const a = this.pickFor(repo)
+    if (!a) return false
+    const config = await fs.promises.stat(path.join(repo, 'config')).catch(() => null)
+    const stamp = `${a.id} ${config?.mtimeMs}`
+    if (this.scanned.get(repo) === stamp) return false
+    const listed = await runForClue('git', ['-C', repo, 'config', '--get-regexp', REMOTE_URLS], {
+      env: withoutConfigEntries(env)
+    })
+    const found = await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), (dest, port) =>
+      this.sshHostname(dest, port, (args) => runForClue('ssh', args, { env }))
+    )
+    if (this.pickFor(repo)?.id !== a.id) return false
+    this.scanned.set(repo, stamp)
+    this.remotes.set(repo, found)
+    return true
+  }
+
+  fetchFailed(wsPath: string, stderr: string): void {
+    const repo = this.keys.known(wsPath)
+    if (repo) void this.httpsFailed(repo, stderr)
+  }
+
+  // ADR-0035
+  private async httpsFailed(repo: string, stderr: string): Promise<void> {
+    const pick = this.pickOf(repo)
+    const a = this.account(pick?.account)
+    if (!a || pick?.sshKey || !this.remotes.get(repo)?.ssh) return
+    const turned = httpsTurnedAway(stderr, a.platform)
+    if (!turned) return
+    if (fs.existsSync(this.keyPath(a.id))) return this.useKey(repo)
+    if (this.httpsRefused.get(repo) === turned) return
+    this.httpsRefused.set(repo, turned)
+    this.d.picksChanged()
+  }
+
+  async makeSshKey(wsPath: string): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    const a = this.pickFor(repo)
+    if (!repo || !a) return
+    const key = this.keyPath(a.id)
+    if (!fs.existsSync(key)) {
+      fs.mkdirSync(path.dirname(key), { recursive: true, mode: 0o700 })
+      const made = await runForClue(
+        'ssh-keygen',
+        ['-q', '-t', 'ed25519', '-N', '', '-C', `${a.login}@koloft`, '-f', key],
+        {}
+      )
+      if (made.code !== 0) return
+    }
+    await this.useKey(repo)
+  }
+
+  // ADR-0035
+  private async useKey(repo: string): Promise<void> {
+    setGitPickSshKey(repo, 'unchecked')
+    this.httpsRefused.delete(repo)
+    this.changed()
+    await this.checkKey(repo)
+  }
+
+  async checkSshKey(wsPath: string): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    if (repo) await this.checkKey(repo)
+  }
+
+  // PLATFORM§48 PLATFORM§53
+  private async checkKey(repo: string): Promise<void> {
+    const a = this.pickFor(repo)
+    const ssh = this.remotes.get(repo)?.ssh
+    if (!a || !ssh) return
+    const hello = await runForClue(
+      'ssh',
+      [
+        ...SSH_SAFE_OPTIONS,
+        '-i',
+        this.keyPath(a.id),
+        '-o',
+        'IdentitiesOnly=yes',
+        ...(ssh.port ? ['-p', ssh.port] : []),
+        ssh.dest
+      ],
+      { env: await this.d.baseEnv() }
+    )
+    if (this.pickFor(repo)?.id !== a.id) return
+    const login = loginFromSshGreeting(hello)
+    if (!login && !SSH_KEY_REFUSED.test(hello.stderr)) return this.d.picksChanged()
+    setGitPickSshKey(repo, login?.toLowerCase() === a.login.toLowerCase() ? 'works' : 'not-taken')
+    this.changed()
+  }
+
+  private publicKeyOf(id: string): string {
+    const known = this.publicKeys.get(id) ?? readText(`${this.keyPath(id)}.pub`)?.trim()
+    if (known) this.publicKeys.set(id, known)
+    return known ?? ''
+  }
+
+  private sshView(repo: string, a: GitAccount): WorkspaceGitSsh | undefined {
+    const state = this.pickOf(repo)?.sshKey
+    if (state && state !== 'works') {
+      return {
+        kind: 'key',
+        publicKey: this.publicKeyOf(a.id),
+        keysPage: gitSshKeysPage(a),
+        notTakenYet: state === 'not-taken'
+      }
+    }
+    const turned = this.httpsRefused.get(repo)
+    return turned && { kind: 'https-refused', sshOnly: turned === 'ssh-only' }
+  }
+
+  private account(id: string | undefined, machine?: string): GitAccount | undefined {
+    return this.accountsIn(machine).find((a) => a.id === id)
+  }
+
+  private async secret(a: GitAccount): Promise<GitCredential | null> {
+    if (a.gcmNamespace) {
+      const cred = await this.gcm.get(a)
+      return cred && a.platform === 'gitea' ? { ...cred, username: a.login } : cred
+    }
+    const token = await gitTokenRead(a.host, a.login)
+    return token ? { username: a.login, password: token } : null
+  }
+
+  private async token(a: GitAccount): Promise<string | null> {
+    return (await this.secret(a))?.password ?? null
+  }
+
+  // PLATFORM§46
+  private async credential(req: GitAuthRequest): Promise<GitCredential | null> {
+    const a = this.account(req.account)
+    if (!a) return null
+    const server = new URL(credentialUrlOf(a))
+    if (req.host.toLowerCase() !== server.host || `${req.protocol}:` !== server.protocol)
+      return null
+    return this.secret(a)
+  }
+
+  private async ghToken(id: string): Promise<string | null> {
+    const a = this.account(id)
+    return a && isGhPlatform(a.platform) ? this.token(a) : null
+  }
+
+  private rejected(id: string): void {
+    const a = this.account(id)
+    if (a?.platform === 'other') this.setStatus(id, 'expired')
+    else if (a) void this.checks.checkOne(id)
+  }
+
+  private async health(a: GitAccount): Promise<AccountHealth> {
+    if (a.platform === 'other') return 'unknown'
+    const token = await this.token(a)
+    if (!token && !a.gcmNamespace) return 'unknown'
+    const me = await identify(apiTargetOf(a), token ?? '')
+    if (me.ok) return token ? 'ok' : 'unknown'
+    if (me.error === 'failed') return 'unknown'
+    return me.error
+  }
+
+  async refreshRepoKeys(workspaces: string[]): Promise<void> {
+    const env = await this.d.baseEnv()
+    const [, scanned] = await Promise.all([
+      this.keys.refresh(workspaces),
+      Promise.all(this.picks.map((p) => this.scanRemotes(p.repo, env)))
+    ])
+    if (scanned.includes(true)) this.reload()
+    this.accountsChanged()
+  }
+
+  views(): GitAccountView[] {
+    const usedBy = (a: GitAccount, machine?: string): string[] =>
+      this.picksIn(machine)
+        .filter((p) => p.account === a.id)
+        .flatMap((p) => this.keys.workspacesOf(p.repo))
+    return [
+      ...this.accounts.map((a) => ({
+        ...a,
+        usedBy: usedBy(a),
+        ...(this.offline.has(a.id) && { checkError: 'offline' as const })
+      })),
+      ...[...this.machines].flatMap(([machine, m]) =>
+        m.accounts.map((a) => ({ ...a, usedBy: usedBy(a, machine), machine }))
+      )
+    ]
+  }
+
+  private accountsChanged(): void {
+    this.d.accountsChanged(this.views())
+  }
+
+  private changed(): void {
+    this.reload()
+    this.found.clear()
+    this.accountsChanged()
+    this.d.picksChanged()
+  }
+
+  private async changedOn(machine: string): Promise<boolean> {
+    this.reload()
+    return this.syncMachine(machine).finally(() => this.changed())
+  }
+
+  private setStatus(id: string, status: AccountStatus): void {
+    const a = this.account(id)
+    if (!a) return
+    upsertGitAccount({ ...a, status })
+    this.changed()
+  }
+
+  pickableOnMachine(wsPath: string): boolean {
+    const machine = parseRemoteKey(wsPath)?.host
+    return !!machine && this.accountsIn(machine).length > 0
+  }
+
+  pickedAccount(root: string): string | undefined {
+    const repo = this.keys.known(root)
+    const id = this.pickFor(repo)?.id
+    const machine = this.machineOf(repo)
+    return id && machine ? `${machine} ${id}` : id
+  }
+
+  workspaceAccount(wsPath: string): WorkspaceGitAccount | undefined {
+    const repo = this.keys.known(wsPath)
+    const a = this.pickFor(repo)
+    if (!repo || !a) return undefined
+    const blocked = this.orgBlocked.get(repo)
+    const ssh = this.sshView(repo, a)
+    return {
+      id: a.id,
+      login: a.login,
+      host: a.host,
+      platform: a.platform,
+      ...(a.author && { author: a.author }),
+      status: a.status,
+      sharedWith: this.keys.workspacesOf(repo).filter((p) => p !== wsPath),
+      ...(blocked?.id === a.id && { pushBlockedByOrg: blocked.org }),
+      ...(ssh && { ssh })
+    }
+  }
+
+  private async envFor(account: GitAccount | undefined): Promise<NodeJS.ProcessEnv | undefined> {
+    const token = account?.platform === 'github' ? await this.token(account) : null
+    if (!token) return undefined
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    for (const k of GH_TOKEN_VARIABLES) delete env[k]
+    return { ...env, GH_TOKEN: token, GH_HOST: 'github.com' }
+  }
+
+  async ghEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
+    if (parseRemoteKey(root)) return undefined
+    return this.envFor(this.pickFor(await this.keys.resolve(root)))
+  }
+
+  // ADR-0036
+  async machineGh(root: string, args: string[]): Promise<GhResult | null> {
+    const at = parseRemoteKey(root)
+    const a = at && this.pickFor(await this.keys.resolve(root))
+    if (!at || !a || !isGhPlatform(a.platform)) return null
+    return this.onMachine.gh(at.host, at.path, args)
+  }
+
+  async ghEnvForRepo(
+    slug: string | undefined,
+    workspaces: string[]
+  ): Promise<NodeJS.ProcessEnv | undefined> {
+    for (const ws of slug ? workspaces.filter((w) => !parseRemoteKey(w)) : []) {
+      const picked = this.pickFor(this.keys.known(ws))
+      const repo = picked && (await this.d.repoOf(ws))
+      if (repo && `${repo.owner}/${repo.name}` === slug) return this.envFor(picked)
+    }
+    return this.envFor(this.accounts.find((a) => a.platform === 'github' && a.default))
+  }
+
+  private newAccount(
+    platform: GitPlatform,
+    url: string,
+    me: { login: string; author?: GitAccount['author'] },
+    secret: { token: string } | { gcmNamespace: string },
+    machine?: string
+  ): { account: GitAccount; before: GitAccount | undefined } {
+    const host = gitHostOf(url)
+    const id = gitAccountId(host, me.login)
+    const before = this.account(id, machine)
+    return {
+      before,
+      account: {
+        id,
+        platform,
+        url,
+        host,
+        login: me.login,
+        ...(me.author && { author: me.author }),
+        ...('gcmNamespace' in secret && { gcmNamespace: secret.gcmNamespace }),
+        default: false,
+        status: 'ok',
+        addedAt: before?.addedAt ?? Date.now()
+      }
+    }
+  }
+
+  private async save(
+    platform: GitPlatform,
+    url: string,
+    me: { login: string; author?: GitAccount['author'] },
+    secret: { token: string } | { gcmNamespace: string }
+  ): Promise<GitAccount> {
+    const { account, before } = this.newAccount(platform, url, me, secret)
+    if ('token' in secret) {
+      if (!(await gitTokenWrite(account.host, me.login, secret.token)))
+        throw new Error('keychain write failed')
+    }
+    upsertGitAccount(account)
+    if (before?.gcmNamespace && before.gcmNamespace !== account.gcmNamespace)
+      void this.gcm.erase(before)
+    if (before && !before.gcmNamespace && 'gcmNamespace' in secret)
+      void gitTokenDelete(before.host, before.login)
+    this.offline.delete(account.id)
+    this.changed()
+    return account
+  }
+
+  // ADR-0036
+  private async saveOnMachine(
+    machine: string,
+    platform: GitPlatform,
+    url: string,
+    me: { login: string; author?: GitAccount['author'] },
+    secret: { token: string } | { gcmNamespace: string; store: string }
+  ): Promise<void> {
+    const { account, before } = this.newAccount(platform, url, me, secret, machine)
+    const sent =
+      'token' in secret
+        ? await this.onMachine.writeToken(machine, account, secret.token)
+        : await this.onMachine.moveGcmStore(machine, secret.store)
+    if (!sent) throw new Error('machine write failed')
+    upsertGitAccount(account, machine)
+    if (before && before.gcmNamespace !== account.gcmNamespace)
+      await this.onMachine.forget(machine, before)
+    const synced = await this.changedOn(machine)
+    if (synced && (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))))
+      return
+    await this.forgetOnMachine(machine, account)
+    throw new Error('machine setup failed')
+  }
+
+  private async signedIn(
+    platform: GitPlatform,
+    url: string,
+    secret: { token: string } | { gcmNamespace: string; cred: GitCredential; store?: string },
+    machine?: string
+  ): Promise<{ ok: true; login: string } | { ok: false; message: string }> {
+    const token = 'token' in secret ? secret.token : secret.cred.password
+    const me = await identify(apiTargetOf({ platform, url }), token)
+    if (!me.ok) return { ok: false, message: identityFailure(platform, me) }
+    const kept =
+      'token' in secret ? secret : { gcmNamespace: secret.gcmNamespace, store: secret.store ?? '' }
+    try {
+      if (machine) await this.saveOnMachine(machine, platform, url, me, kept)
+      else await this.save(platform, url, me, kept)
+    } catch {
+      return {
+        ok: false,
+        message: machine
+          ? `Koloft could not set the account up on ${machine}.`
+          : 'Koloft could not save the account.'
+      }
+    }
+    return { ok: true, login: me.login }
+  }
+
+  async loginStart(platform: GitPlatform, raw: string, machine?: string): Promise<GitLoginStart> {
+    if (this.gcmRun || this.login.running || this.checkingMachine)
+      return { ok: false, error: 'busy' }
+    const url = gitAccountUrl(platform, raw)
+    const how = url && gitSignIn(platform, url)
+    if (!url || !how || how === 'token') return { ok: false, error: 'bad-url' }
+    if (how === 'browser' && !this.gcm.available()) return { ok: false, error: 'no-gcm' }
+    if (machine) {
+      const check = {}
+      this.checkingMachine = check
+      let cancelled = false
+      const ready = await this.onMachine.ready(machine, how === 'browser').finally(() => {
+        cancelled = this.checkingMachine !== check
+        if (!cancelled) this.checkingMachine = null
+      })
+      if (cancelled) return { ok: false, error: 'busy' }
+      if (!ready.ok) return ready
+    }
+    this.signingFor = machine
+    if (how === 'gh') return this.login.start(url)
+    return this.gcmLogin(platform, url, machine)
+  }
+
+  // PLATFORM§50 ADR-0034 ADR-0036
+  private gcmLogin(platform: GitPlatform, url: string, machine?: string): GitLoginStart {
+    const namespace = `${this.d.gcmNamespacePrefix}-${randomUUID()}`
+    const account = { platform, url, gcmNamespace: namespace }
+    this.d.progress({ phase: 'browser' })
+    const g = { account, machine } as GcmRun
+    this.gcmRun = g
+    const signIn = async (store?: string): Promise<void> => {
+      g.run = this.gcm.signIn(
+        account,
+        (opened) => {
+          g.url = opened
+          if (this.gcmRun === g) this.d.progress({ phase: 'browser', url: opened })
+        },
+        store
+      )
+      const r = await g.run.done
+      if (this.gcmRun !== g) return
+      const fail = (message: string): void => {
+        this.gcmRun = null
+        if (!machine) void this.gcm.erase(account)
+        this.d.progress({ phase: 'failed', message })
+      }
+      if ('error' in r) return fail(`Sign-in did not finish${r.error ? `: ${r.error}` : '.'}`)
+      const saved = await this.signedIn(
+        platform,
+        url,
+        { gcmNamespace: namespace, cred: r, store },
+        machine
+      )
+      if (this.gcmRun !== g) return
+      if (!saved.ok) return fail(saved.message)
+      this.gcmRun = null
+      this.d.progress({ phase: 'saved', login: saved.login })
+    }
+    void (machine ? throughTempStore(this.signInStoreRoot(), signIn) : signIn())
+    return { ok: true }
+  }
+
+  loginCancel(): void {
+    this.login.cancel()
+    this.checkingMachine = null
+    const g = this.gcmRun
+    if (!g) return
+    this.gcmRun = null
+    g.run.cancel()
+    if (!g.machine) void g.run.done.then(() => this.gcm.erase(g.account))
+  }
+
+  loginBrowser(): void {
+    if (this.gcmRun?.url) this.d.openInBrowser(this.gcmRun.url)
+    else this.login.openInBrowser()
+  }
+
+  checkAll(): void {
+    void this.checks.checkAll()
+  }
+
+  async addToken(add: GitTokenAdd): Promise<GitTokenAddResult> {
+    const url = gitAccountUrl(add.platform, add.url)
+    if (!url) return { ok: false, error: 'bad-url' }
+    if (add.machine) {
+      const ready = await this.onMachine.ready(add.machine, false)
+      if (!ready.ok) return ready.error === 'machine' ? ready : { ok: false, error: 'failed' }
+    }
+    let me: { login: string; author?: GitAccount['author'] }
+    if (add.platform === 'other') {
+      const login = add.username?.trim() ?? ''
+      if (!GIT_LOGIN_RE.test(login)) return { ok: false, error: 'rejected' }
+      me = { login }
+    } else {
+      const found = await identify(apiTargetOf({ platform: add.platform, url }), add.token)
+      if (!found.ok)
+        return { ok: false, error: found.error === 'expired' ? 'rejected' : found.error }
+      const scope = missingScopeOn(add.platform, found.scopes)
+      if (scope) return { ok: false, error: 'missing-scope', scope }
+      me = found
+    }
+    try {
+      if (add.machine)
+        await this.saveOnMachine(add.machine, add.platform, url, me, { token: add.token })
+      else await this.save(add.platform, url, me, { token: add.token })
+    } catch {
+      return { ok: false, error: 'failed' }
+    }
+    return { ok: true, login: me.login }
+  }
+
+  private async forgetOnMachine(machine: string, a: GitAccount): Promise<void> {
+    await this.onMachine.forget(machine, a)
+    removeGitAccount(a.id, machine)
+    await this.changedOn(machine)
+  }
+
+  async remove(id: string, machine?: string): Promise<void> {
+    const a = this.account(id, machine)
+    if (!a) return
+    if (machine) return this.forgetOnMachine(machine, a)
+    if (a.gcmNamespace) await this.gcm.erase(a)
+    else await gitTokenDelete(a.host, a.login)
+    for (const f of [this.keyPath(a.id), `${this.keyPath(a.id)}.pub`]) fs.rmSync(f, { force: true })
+    this.publicKeys.delete(a.id)
+    removeGitAccount(a.id)
+    this.offline.delete(a.id)
+    this.changed()
+  }
+
+  makeDefault(id: string, machine?: string): void {
+    setDefaultGitAccount(id, machine)
+    this.reload()
+    this.accountsChanged()
+  }
+
+  // PLATFORM§53 ADR-0035 ADR-0036
+  private syncMachine(machine: string): Promise<boolean> {
+    const after = this.machineSyncs.get(machine) ?? Promise.resolve(true)
+    const next = after.then(() => this.syncMachineNow(machine)).catch(() => false)
+    this.machineSyncs.set(machine, next)
+    return next
+  }
+
+  private async syncMachineNow(machine: string): Promise<boolean> {
+    const picks = this.picksIn(machine).map((p) => ({ ...p, repo: parseRemoteKey(p.repo)!.path }))
+    const hostname = (dest: string, port?: string): Promise<string | null> =>
+      this.sshHostname(dest, port, (args) => this.onMachine.clueSsh(machine, args), machine)
+    const listed = await this.onMachine.remoteUrlsOfEach(
+      machine,
+      picks.map((p) => p.repo)
+    )
+    if (!listed) return false
+    const texts = new Map(
+      await Promise.all(
+        picks.map(async (p, i): Promise<[string, string]> => {
+          const a = this.account(p.account, machine)
+          const found = a && (await rewriteRulesFor(a, remoteUrlsOf(listed[i]), hostname))
+          return [p.repo, found ? rewriteConfigText(found.rules) : '']
+        })
+      )
+    )
+    return this.onMachine.sync(machine, this.accountsIn(machine), picks, texts)
+  }
+
+  async pick(wsPath: string, id: string | null): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    if (!repo) return
+    const at = parseRemoteKey(repo)
+    setGitPick(at?.path ?? repo, id, at?.host)
+    this.keys.set(wsPath, repo)
+    if (at) return void (await this.changedOn(at.host))
+    this.orgBlocked.delete(repo)
+    this.httpsRefused.delete(repo)
+    this.remotes.set(repo, { rules: [] })
+    this.scanned.delete(repo)
+    this.changed()
+    const account = this.account(id ?? undefined)
+    if (account && isGhPlatform(account.platform)) void this.checkOrgAccess(wsPath, repo, account)
+    if (await this.scanRemotes(repo, await this.d.baseEnv())) this.reload()
+  }
+
+  private async checkOrgAccess(wsPath: string, repo: string, account: GitAccount): Promise<void> {
+    const where = await this.d.repoOf(wsPath)
+    const token = where && (await this.token(account))
+    if (!where || !token) return
+    const access = await pushAccess(
+      token,
+      where.owner,
+      where.name,
+      githubApiBase(apiTargetOf(account))
+    )
+    if (access.kind !== 'org-blocked' || this.pickFor(repo) !== this.account(account.id)) return
+    this.orgBlocked.set(repo, { id: account.id, org: access.org })
+    this.d.picksChanged()
+  }
+
+  private async suggestNow(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
+    const env = await this.d.baseEnv()
+    return suggestFor(
+      wsPath,
+      { network },
+      {
+        git: (cwd, args, opts) => runForClue('git', args, { cwd, ...opts }),
+        ssh: (args) => runForClue('ssh', args, { env }),
+        readFile: async (p) => readText(p),
+        home: os.homedir(),
+        env,
+        githubUrl: GITHUB_URL,
+        accounts: () => this.accounts,
+        serverOf: credentialUrlOf,
+        token: (a) => this.token(a),
+        pushAccess: pushAccessOn
+      }
+    )
+  }
+
+  // ADR-0036
+  private async suggestOnMachine(
+    machine: string,
+    dir: string,
+    network: boolean
+  ): Promise<GitAccountSuggestion> {
+    const facts = await this.onMachine.factsFor(machine)
+    if (!facts) return { kind: 'off' }
+    const clues = await this.onMachine.cluesIn(machine, dir)
+    return suggestFor(
+      dir,
+      { network: network && facts.timeout, pushChecks: false },
+      {
+        ...clues,
+        home: facts.home,
+        githubUrl: GITHUB_URL,
+        accounts: () => this.accountsIn(machine),
+        serverOf: credentialUrlOf,
+        token: async () => null,
+        pushAccess: pushAccessOn
+      }
+    )
+  }
+
+  async suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
+    const repo = await this.keys.resolve(wsPath)
+    if (!repo) return { kind: 'off' }
+    const at = parseRemoteKey(repo)
+    const dismissed = suggestionDismissed(at?.path ?? repo, at?.host)
+    const cached = this.found.get(wsPath)
+    const ask = network && !dismissed
+    const dir = parseRemoteKey(wsPath)
+    const s =
+      !network && cached
+        ? cached
+        : at && dir
+          ? await this.suggestOnMachine(at.host, dir.path, ask)
+          : await this.suggestNow(wsPath, ask)
+    if (s !== cached && (!network || s.kind !== 'none')) this.found.set(wsPath, s)
+    return dismissed && s.kind !== 'off' ? { kind: 'none', host: s.host } : s
+  }
+
+  async dismiss(wsPath: string): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    if (!repo) return
+    const at = parseRemoteKey(repo)
+    dismissSuggestion(at?.path ?? repo, at?.host)
+  }
+
+  async autoPickNewWorkspace(wsPath: string): Promise<void> {
+    const machine = parseRemoteKey(wsPath)?.host
+    if (this.accountsIn(machine).length === 0) return
+    const repo = await this.keys.resolve(wsPath)
+    if (!repo || this.pickFor(repo)) return
+    const s = await this.suggest(wsPath, true)
+    if (!PICKED_WITHOUT_ASKING.includes(s.kind) || !('login' in s)) return
+    const account = this.account(gitAccountId(s.host, s.login), machine)
+    if (account) await this.pick(wsPath, account.id)
+  }
+}

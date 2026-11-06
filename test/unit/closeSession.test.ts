@@ -12,22 +12,25 @@ import {
 } from '../../src/renderer/src/closeSession'
 
 describe('unexpectedExitWanted', () => {
-  const crash = { exitCode: 1 }
-  it('wants the line for an ordinary claude tab that ended badly', () => {
+  const crash = { exitCode: 1, unexpected: true as const }
+  it('keeps an ordinary claude tab that main says ended badly on its own', () => {
     expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, crash)).toBe(true)
-    expect(unexpectedExitWanted({ kind: 'claude' }, { exitCode: 0, signal: 9 })).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'claude' }, crash)).toBe(true)
   })
   it('reports Codex crashes using its own source', () => {
     expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
-    expect(unexpectedExitNotice(crash, 'codex')).toContain('Codex')
+    expect(unexpectedExitNotice(crash, 'codex', true)).toContain('Codex')
   })
-  it('does not want it for a clean exit, or for a tab that is not a conversation', () => {
-    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, { exitCode: 0 })).toBe(false)
+  it('does not want it for an exit main did not call unexpected, or for a tab that is not a conversation', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, {})).toBe(false)
     expect(unexpectedExitWanted({ kind: 'terminal' }, crash)).toBe(false)
     expect(unexpectedExitWanted(undefined, crash)).toBe(false)
   })
-  it('stands aside for a scheduled run that never bound, but not for one that did', () => {
+  it('stands aside for a scheduled run that never started, but keeps one main says had started, though a fresh run’s tab carries no session id of its own', () => {
     expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash)).toBe(false)
+    expect(
+      unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, { ...crash, runStarted: true })
+    ).toBe(true)
     expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash)).toBe(true)
   })
 })
@@ -83,6 +86,11 @@ describe('closeTabIntent (D3 ⌘W gate)', () => {
   it('closes a PENDING launch silently — ⌘W stays its Cancel (T-KEY-02)', () => {
     const pending = sess('t1', { sessionId: '', status: 'working' })
     expect(closeTabIntent(tab('t1'), [pending])).toEqual({ kind: 'close' })
+  })
+
+  it('closes a kept tab whose agent died at once, even while the session list has not yet heard it stopped working', () => {
+    const kept = { ...tab('t1'), ended: { note: 'killed (signal 9)' } }
+    expect(closeTabIntent(kept, [sess('t1', { status: 'working' })])).toEqual({ kind: 'close' })
   })
 
   it('closes a tab whose session is already gone', () => {
@@ -167,13 +175,33 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
 // PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude')).toContain('signal 9')
-    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude')).toContain('exit code 1')
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true)).toBe(
+      'Claude session ended: killed by signal 9'
+    )
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', true)).toBe(
+      'Claude session ended unexpectedly (exit code 1)'
+    )
+  })
+
+  it('says the agent closed before the session started when the tab never bound one, keeping the code as the only clue left', () => {
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', false)).toBe(
+      'Claude closed before the session started (exit code 1)'
+    )
+    expect(unexpectedExitNotice({ exitCode: 3 }, 'codex', false)).toBe(
+      'Codex closed before the session started (exit code 3)'
+    )
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'codex', false)).toBe(
+      'Codex closed before the session started (killed by signal 9)'
+    )
   })
 
   // ADR-0030
-  it('says Claude did not start for want of an account when the claude shim refused it, since the tab and its message are gone at once', () => {
-    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude')).toBe(
+  it('says what is wrong with the Claude accounts when the claude shim refused a start, and the general line when main found nothing wrong with them', () => {
+    const accountIssue = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    expect(
+      unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT, accountIssue }, 'claude', false)
+    ).toBe(accountIssue)
+    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude', false)).toBe(
       SHIM_FOUND_NO_ACCOUNT_NOTICE
     )
   })

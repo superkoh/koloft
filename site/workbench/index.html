@@ -8,8 +8,7 @@
       name="description"
       content="Each Koloft session tab gets a Workbench beside it: the files the session changed, a file browser, web tabs, a shell, and one plain-text note per folder."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/workbench/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="The Workbench — Koloft" />
@@ -36,25 +35,38 @@
       content="Each Koloft session tab gets a Workbench beside it: the files the session changed, a file browser, web tabs, a shell, and one plain-text note per folder."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/" aria-current="page">workbench</a>
           <a href="../agents/">agents</a>
@@ -72,7 +84,8 @@
         <p>
           An agent edits files, starts a server, tells you to look at a page. In a plain terminal
           you open a second window for each of those, and lose track of which belongs to which chat.
-          In Koloft every session tab has a Workbench beside it. The agent's own terminal stays
+          In Koloft every session tab has a Workbench beside it, and so does
+          <a href="#folder-workbench">each folder</a>. The agent's own terminal stays
           <mark class="hl">untouched</mark> next to it.
         </p>
         <p>
@@ -91,7 +104,6 @@
               height="350"
               alt="The folded Workbench card: 6 files, +7 −2, and under Docs three Markdown files: release-0.5.md, storm-alerts.md and NOTES.md"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the card you see with the Workbench folded</figcaption>
         </figure>
@@ -103,7 +115,9 @@
         <ul class="dash">
           <li>
             Files: <code>N files</code> with the lines added and removed, or
-            <code>No changes</code>.
+            <code>No changes</code>. When git has nothing to compare, as in a folder git does not
+            track or one with no commit yet, just <code>Files</code>. With the Workbench open, the
+            Files tab at the top left reads the same.
           </li>
           <li>
             Docs: the Markdown and HTML files the agent wrote, or opened for you with
@@ -112,11 +126,11 @@
             its skills, are left out.
           </li>
           <li>
-            Once a turn ends, <a href="../accounts/#assist">Koloft Assist</a> looks at it and keeps
-            only the docs meant for you to read: a report, a plan, a write-up. A draft of text the
-            agent posts somewhere else, like a pull request body, drops off the card a few seconds
-            later. A doc the reply points you to is added, even if the agent did not write it. With
-            Assist off, every doc the agent wrote stays listed.
+            Once a turn ends, <a href="../accounts/#assist">Assist</a> looks at it and keeps only
+            the docs meant for you to read: a report, a plan, a write-up. A draft of text the agent
+            posts somewhere else, like a pull request body, drops off the card a few seconds later.
+            A doc the reply points you to is added, even if the agent did not write it. With Assist
+            off, every doc the agent wrote stays listed.
           </li>
           <li>
             A Markdown file opens in Browse, shown the way it looks. An HTML file opens as a web
@@ -125,10 +139,10 @@
           <li>When the window is too narrow for the card and the terminal both, the card hides.</li>
         </ul>
         <p>
-          A Codex session gets the same card, and so does a Claude session on a
+          A Codex session gets the same card, and so does a session on a
           <a href="../remote/">remote folder</a>, Assist's pick included. On a remote folder the
-          line count catches up at most every ten seconds, and an HTML file opens as its source, not
-          as a page.
+          line count catches up at most every ten seconds, and an HTML file opens as a web page read
+          from the machine.
         </p>
 
         <h2>Files ▸ Changes</h2>
@@ -162,7 +176,6 @@
                 alt="The Changes list: four files the session touched on the left, and the diffs of forecast.ts and server.ts on the right, added lines in green and removed lines in red"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the four files this session touched, with every diff in one scroll; the one you click is
@@ -172,9 +185,12 @@
 
         <h2>Files ▸ Browse</h2>
         <p>
-          The whole folder as a tree. A switch shows the files git ignores too. Once a Claude
-          session writes to its scratchpad (its own folder for working files), that folder shows
-          here too, on a remote machine as well.
+          The whole folder as a tree. A switch shows the files git ignores too. Some agents keep a
+          folder of their own outside your project. It shows here too, as <code>Scratchpad</code>,
+          on a remote machine as well. For Claude, it is its scratchpad (its folder for working
+          files). For Codex, it is the pictures the session made. For Antigravity, it is the
+          session's plans and its <code>scratch</code> folder. It shows once the session has put
+          something there. Muse keeps no such folder.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 756 / 870">
@@ -194,7 +210,6 @@
                 alt="The Browse tree of the tidewatch folder on the left, and README.md shown as a rendered page on the right"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the folder tree, with README.md open as a rendered page<span class="phone-only">
@@ -209,6 +224,11 @@
             Markdown, images and PDF, shown the way they look. An HTML file opens as a web tab.
           </li>
           <li>the diff, or the plain source</li>
+          <li>
+            a link in a file (<code>path:line</code>, or a Markdown link to another file) opens that
+            file in the same tab. If another tab already shows it, that tab comes forward at the
+            line, and the tab you clicked in closes, unless it has unsaved edits
+          </li>
           <li>
             an editor: <kbd>⌘S</kbd> saves. If the file changed on disk meanwhile, it will not
             quietly write over it. If the session ends while a file is not saved, a box asks at
@@ -228,8 +248,26 @@
           you used longest ago.
         </p>
         <p>
+          A sign-in popup (what a page opens when you click "Continue with Google", say) opens as a
+          small Koloft window, so the sign-in can hand its result back to the page. Its address bar
+          shows the full address: you can select and copy it, not type in it. It shows a lock for
+          https, and <code>Not secure</code> for plain http or a refused certificate. A local
+          address such as <code>localhost</code>, and a page that failed to load, get neither.
+          <kbd>⌘W</kbd> closes the window, and so does closing the tab that opened it. On a
+          <a href="../remote/#localhost">remote folder</a>, a sign-in popup from a
+          <code>localhost</code> page loads the machine's page too.
+        </p>
+        <p>
+          Any other popup goes where a link to it would go: a web page opens as a new web tab, and a
+          mail link goes to your Mac.
+        </p>
+        <p>
           Typing in the address bar suggests this project's pages first, the ones you visit most on
-          top (up to six).
+          top (up to six). A file path typed there opens that file: an HTML file as a web page, any
+          other file the Workbench can show as a file tab. So does a file name from the session's
+          folder (its worktree, in a worktree session), like <code>index.html</code> or
+          <code>src/app.ts</code>. On a <a href="../remote/">remote folder</a> the file comes from
+          the machine, and an HTML file opens as a web page there too. Plain words run a search.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 776 / 960">
@@ -246,10 +284,9 @@
                 width="1322"
                 height="792"
                 loading="lazy"
-                alt="A web tab in the Workbench showing a local API docs page at localhost:4173, with an address bar and back, forward and reload buttons"
+                alt="A web tab in the Workbench showing a local API docs page at localhost:4173, with an address bar, back, forward and reload buttons, and the button that picks a part of the page"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the project's own docs page, served on localhost, in a web tab<span class="phone-only">
@@ -258,11 +295,63 @@
           </figcaption>
         </figure>
 
+        <h3 id="pick">Point the agent at one part of a page</h3>
+        <p>
+          To the right of the address field is a button. Its tip reads
+          <code>Pick an element and paste it into the session</code>. Click it and move the mouse
+          over the page: the part under the mouse lights up. Click that part (the click does not
+          reach the page). Koloft puts this in the session's input box, without sending it:
+        </p>
+        <ul class="dash">
+          <li>a first line, <code>Element picked in the Workbench browser</code></li>
+          <li>
+            the page's address and title, and the frame's address if the part sits in a frame (a
+            page inside the page)
+          </li>
+          <li>the part's name, like <code>button#buy.primary</code>, its size and where it sits</li>
+          <li>the path of a picture of it (a PNG file), when Koloft can take one</li>
+          <li>
+            its HTML, cut after 4,000 characters, and its CSS as the page really drew it: size,
+            margins, colours, font and the like
+          </li>
+        </ul>
+        <p>
+          Add what you want done and press <kbd>⏎</kbd>; your cursor is already back in the
+          terminal. To stop picking without pasting anything, press <kbd>Esc</kbd>, click the button
+          again, or click anywhere else in Koloft; picking also stops if the page goes to a new
+          address. While the session waits for your OK, has ended, or the page is not showing, the
+          button is greyed and its tip says why.
+        </p>
+        <p>
+          Every agent gets the same paste. On a <a href="../remote/">remote folder</a>, the picture
+          is copied to that machine, into <code>~/.koloft/element-picks</code>, and the paste names
+          that path. Koloft deletes each picture after about a day. On a remote machine, it deletes
+          old pictures the next time it saves a new one there.
+        </p>
+
         <h2>Terminal tabs</h2>
         <p>
           While the session is running, <kbd>⌃`</kbd> opens a shell in its folder (up to eight). Run
           a test or check git there, and leave the agent's terminal to the agent.
         </p>
+        <ul class="dash">
+          <li>
+            A one-time question to an agent is fine there, such as <code>claude -p</code>,
+            <code>codex exec</code>, <code>muse exec</code> or <code>agy -p</code>. In a folder on
+            your Mac it runs on an account Koloft picks from
+            <a href="../accounts/">Settings ▸ Accounts</a>, the way a session does, never on the
+            login this Mac already has. With no account it can use, it stops and says why. The first
+            line says which account, like <code>koloft: → work · 5h 12% · 7d 40%</code>. For Codex,
+            Muse and Antigravity: if every account of that agent is at its limit (every Codex
+            account, say), a second line says so, and it still runs on the one that resets first. If
+            you added an <a href="../accounts/#api-keys">API key account</a> for that agent, it runs
+            on the key instead, and the first line ends in <code>(API key, metered)</code>.
+          </li>
+          <li>
+            In a <a href="../remote/">remote folder</a> the shell runs on the other machine, and
+            those commands use that machine's own login.
+          </li>
+        </ul>
 
         <figure class="shot" style="--ar: 1720 / 600; --ar-phone: 730 / 440">
           <div class="frame">
@@ -281,7 +370,6 @@
                 alt="A terminal tab named zsh in the tidewatch folder, after running ls and git log"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             a shell of your own, in the same folder as the session<span class="phone-only">
@@ -329,13 +417,39 @@
         </ul>
         <p>
           The checks need <code>gh</code> (GitHub's command-line tool) signed in; without it the
-          line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. The
-          same on a Codex session. On a <a href="../remote/">remote folder</a> the commit and push
-          run on the remote machine, and <code>gh</code> runs on your Mac.
+          line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. In
+          a folder picked for a <a href="../accounts/#git-accounts">git account</a>, gh reads them
+          as that account instead. The same on a Codex session. On a
+          <a href="../remote/">remote folder</a> the commit and push run on the remote machine, and
+          <code>gh</code> runs on your Mac.
         </p>
 
-        <h2>The note</h2>
-        <p>One plain-text note per folder. Sessions come and go; the note stays.</p>
+        <h2 id="folder-workbench">A folder's own Workbench</h2>
+        <p>
+          Each folder in the sessions list has a Workbench too, one that belongs to no session.
+          Click the folder's own row: the folder's start page shows (the one with buttons to start a
+          new session), and the Workbench button on the right (or
+          <kbd>⇧⌘B</kbd>) opens that folder's Workbench. It has Files of the folder, file tabs and
+          web tabs, and no terminal. It stays closed until you open it, and its tabs come back when
+          Koloft starts again.
+        </p>
+        <p>
+          In a GitHub project, a click on the open issues or open pull requests count (on the
+          folder's row, or in its <a href="../sessions/#git-panel">git panel</a>) opens that list on
+          GitHub in this Workbench. A session that was on screen keeps running; click its row to go
+          back. Click the same count again and the same tab comes forward. On a
+          <a href="../remote/">remote folder</a> it works the same, and the counts are greyed while
+          the machine is not connected.
+        </p>
+
+        <h2 id="note">The note</h2>
+        <p>
+          One plain-text note per folder. Sessions come and go; the note stays. A
+          <a href="../remote/">remote folder</a>'s note is kept on your Mac. Your
+          <a href="../accounts/#butler">butler</a> has a note of its own,
+          <code>Notes · Alfred</code> (with the name you gave it), shown while the butler or one of
+          its helpers is in front.
+        </p>
         <figure class="shot is-narrow" style="--ar: 530 / 600">
           <div class="frame">
             <img
@@ -345,7 +459,6 @@
               loading="lazy"
               alt="The note for the tidewatch folder: a short plain-text to-do list"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the note sits under the folder's sessions. <kbd>⌥⌘N</kbd> jumps into it. It saves itself
@@ -363,30 +476,44 @@
             <s class="struck">cover the agent's terminal</s>
             <span class="why">(it sits beside it)</span>
           </li>
-          <li>
-            <s class="struck">show a Codex scratchpad</s>
-            <span class="why">(only Claude sessions have one)</span>
-          </li>
         </ul>
 
-        <p class="next">next page -&gt; <a href="../agents/">Agents can use Koloft too</a></p>
+        <p class="next">Next page → <a href="../agents/">Agents can use Koloft too</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

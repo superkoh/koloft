@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuChevronDown, LuChevronUp, LuCopy, LuNotebookPen } from 'react-icons/lu'
-import { basename } from '@shared/preview'
+import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
+import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { editRefusal, EditPane } from './EditPane'
 import { beginEdit, getEntry } from '../editRegistry'
@@ -15,6 +15,12 @@ export interface NotesIslandProps {
   onReturnFocus: () => void
 }
 
+function emptyNoteLine(butlersNote: boolean, butler: string, agentTools: boolean): string {
+  if (butlersNote)
+    return `Notes for ${butler}.${agentTools ? ` ${butler} and its helpers can read and add to them.` : ''} Kept by Koloft on this Mac.`
+  return `Notes for this folder.${agentTools ? ' Every session here can read and add to them.' : ''} Kept by Koloft on this Mac, not in the folder.`
+}
+
 export function NotesIsland({
   wsPath,
   height,
@@ -26,6 +32,8 @@ export function NotesIsland({
   const [path, setPath] = useState<{ ws: string; file: string } | null>(null)
   const [body, setBody] = useState<{ ws: string; failure: string | null } | null>(null)
   const showToast = useStore((s) => s.showToast)
+  const butler = useStore((s) => s.settings.butler.name)
+  const agentTools = useStore((s) => s.settings.agentTools)
 
   useEffect(() => {
     setPath(null)
@@ -85,14 +93,16 @@ export function NotesIsland({
   const file = path && path.ws === wsPath ? path.file : null
 
   return (
-    <div className="island isl-notes" style={folded ? undefined : { height }}>
+    <div className="island isl-dock isl-notes" style={folded ? undefined : { height }}>
       <div className="wb-bar">
         <span className="wb-title" title={file ?? wsPath}>
           <span className="ic">
-            <LuNotebookPen size={14} />
+            <IconNotes size={14} />
           </span>
           <span className="nm">Notes</span>
-          <span className="dir">&nbsp;· {basename(wsPath)}</span>
+          <span className="dir">
+            &nbsp;· {wsPath === GLOBAL_SCOPE ? butler : scopeName(wsPath)}
+          </span>
         </span>
         <button
           className="icobtn"
@@ -106,7 +116,7 @@ export function NotesIsland({
             showToast('Copied path')
           }}
         >
-          <LuCopy size={14} />
+          <IconCopy size={14} />
         </button>
         <button
           className="icobtn"
@@ -115,7 +125,7 @@ export function NotesIsland({
           onMouseDown={(e) => e.preventDefault()}
           onClick={onToggleFold}
         >
-          {folded ? <LuChevronUp size={14} /> : <LuChevronDown size={14} />}
+          {folded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
         </button>
       </div>
       {!folded && (
@@ -138,6 +148,7 @@ export function NotesIsland({
               tabId={NOTES_TAB}
               prose
               autosave
+              placeholder={emptyNoteLine(wsPath === GLOBAL_SCOPE, butler, agentTools)}
               focusNonce={focusNonce}
               onSaved={() => {}}
             />

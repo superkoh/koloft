@@ -1,35 +1,33 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
-import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
+import {
+  AddAccountDialog,
+  LoginDialog,
+  SignInDialog,
+  SignInFailedDialog
+} from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
-// CC§9 CODEX§15
+// CC§9 CODEX§15 MUSE§1 AGY§2
 export const ASSIST_RUNS_ON: Record<BackendId, string> = {
   claude: 'Haiku, about 750 tokens a job',
-  codex: 'GPT-6 Luna, a few thousand tokens a job'
+  codex: 'GPT-6 Luna, a few thousand tokens a job',
+  muse: 'Muse’s default model',
+  agy: 'Antigravity’s default model, plus a short title call, per job'
 }
 
 export const ASSIST_COST_LINE =
   'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
 
 function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
-  const addTab = useStore((s) => s.addTab)
-  const showSignInTab = useStore((s) => s.showSignInTab)
+  const openSignInTab = useStore((s) => s.openSignInTab)
   const install = async (): Promise<void> => {
     const r = await window.api.sessions.installTool(backend)
-    if (!r) return
-    showSignInTab(r.tabId)
-    addTab({
-      id: r.tabId,
-      kind: 'shell',
-      title: `Install ${BACKEND_LABEL[backend]}`,
-      cwd: r.cwd,
-      alive: true
-    })
+    if (r) openSignInTab(r, `Install ${BACKEND_LABEL[backend]}`)
   }
   return (
     <button className="choice" onClick={() => void install()}>
@@ -64,27 +62,24 @@ export function AssistSetup({
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
-  const setBypassAccepted = useStore((s) => s.setBypassAccepted)
   const update = useSettingsUpdate()
-  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
+  const [signIn, setSignIn] = useState<{
+    backend: Exclude<BackendId, 'claude'>
+    again?: string
+  } | null>(null)
   const [pasting, setPasting] = useState(false)
 
   const pick = (b: BackendId, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
-    else setCodexSignIn({ again })
-  }
-  const acceptBypass = async (): Promise<void> => {
-    if (await window.api.accounts.acceptBypass()) setBypassAccepted(true)
-    else update({ skipPermissions: false })
+    else setSignIn({ backend: b, again })
   }
 
   if (setup.noTool)
     return (
       <div className="assist-setup">
         <InstallHint>
-          Koloft runs Claude Code or Codex, and this Mac has neither yet. Pick one to install: a
-          terminal opens and runs its official installer. Nothing else to set up first.
+          {`Koloft runs ${productList(SESSION_BACKENDS, 'or')}, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.`}
         </InstallHint>
       </div>
     )
@@ -130,15 +125,14 @@ export function AssistSetup({
       {setup.askBypass && (
         <>
           <div className="quiet">
-            Koloft starts Claude sessions without asking you before each file change or command. Is
-            that OK?
+            Koloft starts sessions without asking you before each file change or command. Is that
+            OK?
           </div>
           <div className="ob-choices">
-            <button className="choice" onClick={() => void acceptBypass()}>
+            <button className="choice" onClick={() => update({ skipPermissionsAgreed: true })}>
               <span className="choice-t">Yes, don’t ask</span>
               <span className="choice-d">
-                Koloft tells Claude you agreed, so a session started in the background never stops
-                at its warning.
+                Koloft remembers your answer. Your own Claude settings stay as they are.
               </span>
             </button>
             <button className="choice" onClick={() => update({ skipPermissions: false })}>
@@ -148,9 +142,15 @@ export function AssistSetup({
           </div>
         </>
       )}
-      {login && <LoginDialog />}
-      {codexSignIn && (
-        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+      {login && <LoginDialog key={login.reauthName ?? ''} />}
+      {signIn ? (
+        <SignInDialog
+          backend={signIn.backend}
+          again={signIn.again}
+          onClose={() => setSignIn(null)}
+        />
+      ) : (
+        <SignInFailedDialog />
       )}
       {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
     </div>

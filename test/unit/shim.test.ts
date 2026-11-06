@@ -22,12 +22,19 @@ let pickDir: string
 let base: string
 let realBin: string
 let fakeKeychainDir: string
+let gitAuthDir: string
+let gitHelper: string
+let ghWrapper: string
 
 beforeAll(() => {
-  ;({ shimDir, regDir, pickDir } = setupShim())
+  gitAuthDir = path.join(os.tmpdir(), `koloft-shim-git-${process.pid}`)
+  ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(
+    gitAuthDir,
+    '/nonexistent-butler-folder'
+  ))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  for (const bin of ['claude', 'codex']) {
+  for (const bin of ['claude', 'codex', 'muse', 'agy']) {
     fs.writeFileSync(
       path.join(realBin, bin),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
@@ -56,6 +63,7 @@ afterAll(() => {
   fs.rmSync(base, { recursive: true, force: true })
   fs.rmSync(realBin, { recursive: true, force: true })
   fs.rmSync(fakeKeychainDir, { recursive: true, force: true })
+  fs.rmSync(gitAuthDir, { recursive: true, force: true })
 })
 
 beforeEach(() => {
@@ -136,7 +144,7 @@ const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOK
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' = 'claude'
+  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
 ): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -156,7 +164,8 @@ function runShim(
 function runShimPick(
   args: string[],
   answer: Record<string, unknown>,
-  extraEnv: Record<string, string> = {}
+  extraEnv: Record<string, string> = {},
+  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
 ): Promise<ShimRun> {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -176,7 +185,7 @@ function runShimPick(
     fs.renameSync(`${resPath}.tmp`, resPath)
   }, 20)
   return new Promise((resolve) => {
-    const child = spawn(path.join(shimDir, 'claude'), args, { cwd, env })
+    const child = spawn(path.join(shimDir, bin), args, { cwd, env })
     let stderr = ''
     child.stderr.on('data', (c) => (stderr += c))
     child.on('close', (status) => {
@@ -239,21 +248,29 @@ describe('claude shim (registration — unchanged behavior)', () => {
   })
 
   // CC§13
-  it("hands claude Koloft's skill plugin and Koloft's prompt on the tab's own launches, but not on -p or a claude started by the tab's claude", () => {
+  it("hands claude Koloft's two skill plugins and Koloft's prompt on the tab's own launches, only the koloft-docs plugin with agent tools off, and none on -p or a claude started by the tab's claude", () => {
     const plugin = {
+      KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin',
       KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
       KOLOFT_AGENT_PROMPT: '/koloft/agent-plugin/koloft-prompt.md'
     }
+    const pluginDirs = (realArgs: string[]): string[] =>
+      realArgs.flatMap((a, i) => (realArgs[i - 1] === '--plugin-dir' ? [a] : []))
     for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678'], ['--resume']]) {
       const { realArgs } = runShim(args, plugin)
-      const at = realArgs!.indexOf('--plugin-dir')
-      expect(realArgs![at + 1], args.join(' ')).toBe('/koloft/agent-plugin')
+      expect(pluginDirs(realArgs!), args.join(' ')).toEqual([
+        '/koloft/docs-plugin',
+        '/koloft/agent-plugin'
+      ])
       const prompt = realArgs!.indexOf('--append-system-prompt-file')
       expect(realArgs![prompt + 1], args.join(' ')).toBe('/koloft/agent-plugin/koloft-prompt.md')
     }
     expect(runShim([], { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }).realArgs).not.toContain(
       '--append-system-prompt-file'
     )
+    const agentToolsOff = runShim([], { KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin' }).realArgs!
+    expect(pluginDirs(agentToolsOff)).toEqual(['/koloft/docs-plugin'])
+    expect(agentToolsOff).not.toContain('--append-system-prompt-file')
     expect(runShim(['-p', 'hello'], plugin).realArgs).toEqual(['-p', 'hello'])
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })
@@ -457,6 +474,29 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realEnv?.ANTHROPIC_BASE_URL).toBe('https://proxy.test')
     expect(r.realEnv?.ANTHROPIC_MODEL).toBeUndefined()
     expect(r.realEnv?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBeUndefined()
+  })
+
+  it('a --model Koloft put on the line (a scheduled job, koloft session new) yields to a custom endpoint that pins its own model, and stays for one that does not', async () => {
+    token('glm', 'endpoint-key-fixture')
+    const pinned = await runShimPick(['-w', 'job-1', '--model', 'opus', '--effort', 'high'], {
+      account: 'glm',
+      kind: 'custom',
+      banner: 'koloft: → glm (custom endpoint · glm-5.2)',
+      baseUrl: 'https://example.test/api/anthropic',
+      model: 'glm-5.2'
+    })
+    expect(pinned.realArgs).not.toContain('--model')
+    expect(pinned.realArgs).not.toContain('opus')
+    expect(pinned.realArgs).toEqual(expect.arrayContaining(['-w', 'job-1', '--effort', 'high']))
+
+    token('proxy', 'proxy-key')
+    const open = await runShimPick(['--model', 'opus'], {
+      account: 'proxy',
+      kind: 'custom',
+      banner: 'koloft: → proxy (custom endpoint)',
+      baseUrl: 'https://proxy.test'
+    })
+    expect(open.realArgs).toEqual(expect.arrayContaining(['--model', 'opus']))
   })
 
   it('-p gets the token but NEVER the flag, and still does not register', async () => {
@@ -678,11 +718,10 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
   )
 
   it.each([
-    [['exec', 'say hi']],
-    [['-m', 'gpt-5', 'exec', 'say hi']],
-    [['review', '--uncommitted']],
     [['login']],
+    [['logout']],
     [['mcp', 'list']],
+    [['migrate-nfs-db', '--staging-dir', '/tmp/codex-db']],
     [['resume', '--help']],
     [['--version']],
     [['-h']]
@@ -693,12 +732,205 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     expect(r.realArgs).toEqual(args)
   })
 
-  it("outside a Koloft terminal (a session's own shell) even a bare codex passes through", () => {
-    const r = runCodex([])
-    expect(r.status).toBe(0)
-    expect(r.stderr).not.toContain('⛔')
-    expect(r.realArgs).toEqual([])
+  it.each([[[]], [['exec', 'say hi']]])(
+    "outside a Koloft terminal (a session's own shell) codex %j passes through with no account pick",
+    (args) => {
+      const r = runCodex(args)
+      expect(r.status).toBe(0)
+      expect(r.stderr).not.toContain('⛔')
+      expect(r.realArgs).toEqual(args)
+      expect(r.realEnv?.CODEX_HOME).toBeUndefined()
+    }
+  )
+})
+
+// ADR-0030
+describe('codex, muse and agy in a Koloft terminal run on an account from Settings ▸ Accounts, never on the Mac’s own login', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [['exec', 'say hi']],
+    [['-m', 'gpt-5', 'exec', 'say hi']],
+    [['e', 'say hi']],
+    [['review', '--uncommitted']],
+    [['mcp-server']]
+  ])(
+    'codex %j gets the picked account’s CODEX_HOME, not a key the shell exported, and shows its line',
+    async (args) => {
+      const r = await runShimPick(
+        args,
+        { account: 'cx1', home: '/koloft/codex-homes/cx1', banner: 'koloft: → cx1 · 7d 12%' },
+        { ...UTIL, CODEX_API_KEY: 'from-a-profile', OPENAI_API_KEY: 'from-a-profile' },
+        'codex'
+      )
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+      expect(r.realEnv?.CODEX_HOME).toBe('/koloft/codex-homes/cx1')
+      expect(r.realEnv?.CODEX_API_KEY).toBeUndefined()
+      expect(r.realEnv?.OPENAI_API_KEY).toBeUndefined()
+      expect(r.stderr).toContain('koloft: → cx1 · 7d 12%')
+      expect(fs.readdirSync(pickDir)).toHaveLength(0)
+    }
+  )
+
+  it.each([
+    ['codex', ['exec', '--help']],
+    ['muse', ['exec', '-h']],
+    ['agy', ['-p', '--help']],
+    ['agy', ['mcp', 'add', 'srv', '--', 'npx', 'tool', '-p', '3000']],
+    ['agy', ['--model', '-p', 'mcp', 'list']]
+  ] as const)(
+    '%s %j never reaches the model, so it asks for no account and runs as it is',
+    (bin, args) => {
+      const r = runShim([...args], UTIL, bin)
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
+
+  it('codex: the all-accounts-limited notice prints as its own line', async () => {
+    const r = await runShimPick(
+      ['exec', 'say hi'],
+      {
+        account: 'cx1',
+        home: '/h/cx1',
+        banner: 'koloft: → cx1',
+        warning: 'every one is at its limit'
+      },
+      UTIL,
+      'codex'
+    )
+    expect(r.stderr.split('\n')).toContain('every one is at its limit')
   })
+
+  it.each([
+    ['codex', ['exec', 'say hi']],
+    ['muse', ['exec', 'say hi']],
+    ['agy', ['-p', 'say hi']]
+  ] as const)('%s with no usable account is refused and never starts', async (bin, args) => {
+    const r = await runShimPick([...args], { account: null }, UTIL, bin)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain(NO_USABLE_ACCOUNT[bin])
+    expect(r.realArgs).toBeNull()
+  })
+
+  it('codex outside a Koloft tab (no pick watcher) is refused rather than run on this Mac’s login', () => {
+    const r = runShim(['exec', 'say hi'], UTIL, 'codex')
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain('codex runs here only inside a Koloft tab')
+    expect(r.realArgs).toBeNull()
+  })
+
+  // MUSE§21
+  it('muse exec gets the picked account’s config folder and file sign-in, and the Workbench browser’s address set, empty when the terminal has none, so the owner’s Playwright MCP still starts', async () => {
+    const pick = { account: 'm1', home: '/koloft/muse-homes/m1', banner: 'koloft: → m1' }
+    const r = await runShimPick(['exec', 'say hi'], pick, UTIL, 'muse')
+    expect(r.status).toBe(0)
+    expect(r.realArgs).toEqual(['exec', 'say hi'])
+    expect(r.realEnv?.XDG_CONFIG_HOME).toBe('/koloft/muse-homes/m1')
+    expect(r.realEnv?.TBH_CREDENTIAL_BACKEND).toBe('file')
+    expect(r.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('')
+    const withBrowser = await runShimPick(
+      ['exec', 'say hi'],
+      pick,
+      { ...UTIL, PLAYWRIGHT_MCP_CDP_ENDPOINT: 'ws://127.0.0.1:9/cdp/x' },
+      'muse'
+    )
+    expect(withBrowser.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe('ws://127.0.0.1:9/cdp/x')
+  })
+
+  it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key, not even one the shell exported', async () => {
+    const r = await runShimPick(
+      ['--model', 'x', '-p', 'say hi'],
+      { account: 'g1', home: '/koloft/agy-homes/g1', banner: 'koloft: → g1' },
+      { ...UTIL, GEMINI_API_KEY: 'from-a-profile' },
+      'agy'
+    )
+    expect(r.status).toBe(0)
+    expect(r.realArgs0).toEqual([
+      '--gemini_dir=/koloft/agy-homes/g1',
+      '--model',
+      'x',
+      '-p',
+      'say hi'
+    ])
+    expect(r.realEnv?.WSL_INTEROP).toBe('koloft')
+    expect(r.realEnv?.GEMINI_API_KEY).toBeUndefined()
+  })
+
+  it('agy -p on a key account gets the key from this build’s Keychain, never on stdio', async () => {
+    fs.writeFileSync(path.join(fakeKeychainDir, 'k1'), 'AIza-NEVER-ON-STDIO')
+    const r = await runShimPick(
+      ['-p', 'say hi'],
+      { account: 'k1', home: '/koloft/agy-homes/k1', banner: 'koloft: → k1', kind: 'apikey' },
+      UTIL,
+      'agy'
+    )
+    expect(r.status).toBe(0)
+    expect(r.realEnv?.GEMINI_API_KEY).toBe('AIza-NEVER-ON-STDIO')
+    expect(r.stderr).not.toContain('NEVER-ON-STDIO')
+    expect(fs.readFileSync(path.join(shimDir, 'agy'), 'utf8')).toContain('"koloft-dev-agy-home"')
+  })
+
+  it('agy -p on a key account whose key is missing is refused', async () => {
+    const r = await runShimPick(
+      ['-p', 'say hi'],
+      { account: 'ghost', home: '/h/ghost', kind: 'apikey' },
+      UTIL,
+      'agy'
+    )
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain('could not read the key of ghost')
+    expect(r.realArgs).toBeNull()
+  })
+})
+
+describe('muse guard (Koloft terminal hard block — the same funnel as claude and codex, MUSE§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([[[]], [['fix the bug']], [['--approval-mode', 'never', 'resume', 'abc']]])(
+    'an interactive form %j in a Koloft terminal is refused before the real muse runs',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(1)
+      expect(r.stderr).toContain("Start interactive Muse from the sidebar's ＋ (⌘N).")
+      expect(r.realArgs).toBeNull()
+    }
+  )
+
+  it.each([[['--model', 'x', 'config']], [['login']], [['--version']]])(
+    'a form that opens no TUI %j passes through untouched',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
+})
+
+describe('agy guard (Koloft terminal hard block — the same funnel as claude, codex and muse, AGY§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [[]],
+    [['-i', 'fix the bug']],
+    [['--model', 'models', '-c']],
+    [['--conversation', 'abc']]
+  ])('an interactive form %j in a Koloft terminal is refused before the real agy runs', (args) => {
+    const r = runShim(args, UTIL, 'agy')
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain("Start interactive Antigravity from the sidebar's ＋ (⌘N).")
+    expect(r.realArgs).toBeNull()
+  })
+
+  it.each([[['mcp', 'list']], [['update']], [['--version']]])(
+    'a form that opens no TUI %j passes through untouched',
+    (args) => {
+      const r = runShim(args, UTIL, 'agy')
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
 })
 
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {
@@ -928,15 +1160,39 @@ describe('claude shim (nested Koloft instances)', () => {
   }, 30_000)
 })
 
+describe('git credential helper and gh wrapper', () => {
+  it("are written next to the claude shim, so the shim dir puts Koloft's gh first on a session's PATH, and both reach Koloft through this launch's git request dir", () => {
+    expect(ghWrapper).toBe(path.join(shimDir, 'gh'))
+    expect(path.dirname(gitHelper)).toBe(shimDir)
+    for (const f of [ghWrapper, gitHelper]) expect(fs.statSync(f).mode & 0o111).toBe(0o111)
+    fs.mkdirSync(gitAuthDir, { recursive: true })
+    const r = spawnSync(gitHelper, ['github.com/bob', 'erase'], {
+      input: 'protocol=https\nhost=github.com\n\n'
+    })
+    expect(r.status).toBe(0)
+    const drops = fs.readdirSync(gitAuthDir)
+    expect(drops).toHaveLength(1)
+    expect(JSON.parse(fs.readFileSync(path.join(gitAuthDir, drops[0]), 'utf8'))).toEqual({
+      kind: 'rejected',
+      account: 'github.com/bob',
+      protocol: 'https',
+      host: 'github.com'
+    })
+  })
+})
+
 describe('claude shim (Koloft browser endpoint)', () => {
   const endpointAt = (port: number): string => `ws://127.0.0.1:${port}/cdp/${'a'.repeat(32)}`
 
-  it('exports the browser endpoint to the launched claude even with the account balancer off, re-reads the per-tab file on every launch so a changed port reaches an already-open tab, names the playwright-cli session after the tab so two tabs never share one cli daemon, and gives none of it to a utility shell', () => {
+  it('exports the browser endpoint to the launched claude even with the account balancer off, re-reads the per-tab file on every launch so a changed port reaches an already-open tab, names the playwright-cli session after the tab so two tabs never share one cli daemon, sends its snapshots and screenshots to a folder of the tab under the temp folder instead of the workspace, and gives none of it to a utility shell', () => {
     const cdpDir = fs.mkdtempSync(path.join(base, 'cdp-'))
-    const cdpEnv = { KOLOFT_CDP_DIR: cdpDir }
+    const cdpEnv = { KOLOFT_CDP_DIR: cdpDir, TMPDIR: '/tmp-of-the-mac/' }
 
     const beforeEndpoint = runShim([], cdpEnv)
     expect(beforeEndpoint.realEnv?.PLAYWRIGHT_CLI_SESSION).toBe('koloft-tab-shim')
+    expect(beforeEndpoint.realEnv?.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+      '/tmp-of-the-mac/koloft-playwright/tab-shim'
+    )
 
     fs.writeFileSync(path.join(cdpDir, 'tab-shim'), endpointAt(1111))
     const first = runShim([], cdpEnv)
@@ -956,5 +1212,6 @@ describe('claude shim (Koloft browser endpoint)', () => {
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_CLI_SESSION).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
+    expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_OUTPUT_DIR).toBeUndefined()
   })
 })

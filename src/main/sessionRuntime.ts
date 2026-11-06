@@ -31,7 +31,8 @@ export interface StatusSignals {
 export function deriveStatus(signals: StatusSignals, now: number): SessionStatus | undefined {
   const { turn, background } = signals
   if (!turn) return undefined
-  if (turn === 'working' || turn === 'approval') return turn
+  if (turn === 'working') return turn
+  if (turn === 'approval' || turn === 'input') return 'approval'
   if (
     turn === 'ended' &&
     (signals.heldByBackground || background.some((item) => item.state === 'working'))

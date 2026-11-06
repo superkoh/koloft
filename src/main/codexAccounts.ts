@@ -1,6 +1,15 @@
 import fs from 'fs'
 import path from 'path'
-import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
+import { homeRoom, usableAccounts, type HomeRoom } from '@shared/accountUsage'
+import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
+import { joinProjectTables } from './codexTrust'
+import {
+  SCORE_PER_LIVE_SESSION,
+  liveSessionsPerAccount,
+  soonest,
+  type LaunchedSession
+} from './accountPicker'
+import { leximaxFinalists, weekUse } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -23,7 +32,15 @@ export function codexHomes(userData: string): string[] {
   }
 }
 
-const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions']
+const FOLDERS_EVERY_HOME_SHARES = [
+  'sessions',
+  'archived_sessions',
+  'skills',
+  'rules',
+  'generated_images'
+]
+const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
+const SPLIT_CONFIG_KEPT_AS = 'config.toml.before-shared'
 
 function newerThan(a: string, b: string): boolean {
   const there = fs.statSync(b, { throwIfNoEntry: false })
@@ -57,11 +74,19 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
   const sharedHome = path.dirname(sharedConfig)
   for (const folder of FOLDERS_EVERY_HOME_SHARES)
     shareFolder(path.join(home, folder), path.join(sharedHome, folder))
+  for (const file of OWNER_FILES_EVERY_HOME_READS) {
+    const theirs = path.join(sharedHome, file)
+    const own = path.join(home, file)
+    if (fs.existsSync(theirs) && !fs.lstatSync(own, { throwIfNoEntry: false }))
+      fs.symlinkSync(theirs, own)
+  }
   const config = path.join(home, 'config.toml')
-  try {
-    fs.lstatSync(config)
-    return
-  } catch {}
+  const existing = fs.lstatSync(config, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) return
+  if (existing) {
+    joinProjectTables(sharedConfig, fs.readFileSync(config, 'utf8'))
+    fs.renameSync(config, path.join(home, SPLIT_CONFIG_KEPT_AS))
+  }
   fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
   fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
   fs.symlinkSync(sharedConfig, config)
@@ -81,27 +106,107 @@ function limitWindow(value: unknown): CodexLimitWindow | undefined {
 
 // CODEX§15
 export function limitsFrom(reply: unknown, at: number): CodexLimits | undefined {
-  const limits = (reply as { rateLimits?: Record<string, unknown> } | null)?.rateLimits
+  const r = reply as {
+    rateLimits?: Record<string, unknown>
+    rateLimitResetCredits?: unknown
+  } | null
+  const limits = r?.rateLimits
   if (!limits) return undefined
   const windows = [limitWindow(limits.primary), limitWindow(limits.secondary)].filter(
     (w): w is CodexLimitWindow => !!w
   )
-  return { windows: windows.sort((a, b) => a.minutes - b.minutes), at }
+  const credits = creditsFrom(limits.credits)
+  const resets = resetsFrom(r.rateLimitResetCredits)
+  return {
+    windows: windows.sort((a, b) => a.minutes - b.minutes),
+    at,
+    ...(limits.rateLimitReachedType != null && { reached: true }),
+    ...(credits && { credits }),
+    ...(resets && { resets })
+  }
 }
 
-function heaviest(limits: CodexLimits): number {
-  return Math.max(0, ...limits.windows.map((w) => w.used))
+function creditsFrom(value: unknown): CodexLimits['credits'] {
+  if (!value || typeof value !== 'object') return undefined
+  const c = value as Record<string, unknown>
+  const balance = typeof c.balance === 'string' ? Number(c.balance) : NaN
+  if (c.unlimited === true) return { unlimited: true }
+  return Number.isFinite(balance) ? { unlimited: false, balance } : undefined
 }
 
-export class CodexAccountPicker {
+function resetsFrom(value: unknown): CodexLimits['resets'] {
+  if (!value || typeof value !== 'object') return undefined
+  const s = value as { availableCount?: unknown; credits?: unknown }
+  if (typeof s.availableCount !== 'number') return undefined
+  const expiries = (Array.isArray(s.credits) ? s.credits : [])
+    .filter((c) => c?.status === 'available' && typeof c.expiresAt === 'number')
+    .map((c) => c.expiresAt as number)
+  return {
+    available: s.availableCount,
+    ...(expiries.length > 0 && { firstExpiresAt: Math.min(...expiries) })
+  }
+}
+
+function bindingWeek(room: HomeRoom, nowSec: number): { use: number; resetsAt: number } {
+  return room.longWindows.reduce(
+    (heaviest, w) => {
+      const use = weekUse(w.used, w.resetsAt ?? 0, nowSec)
+      return use > heaviest.use ? { use, resetsAt: w.resetsAt ?? 0 } : heaviest
+    },
+    { use: -1, resetsAt: 0 }
+  )
+}
+
+export class HomeAccountPicker {
   private turn = 0
 
-  pick(accounts: AccountView[]): AccountView | undefined {
-    const pool = accounts.filter((a) => a.kind === 'codex-home' && a.enabled && a.status === 'ok')
-    if (pool.length === 0) return undefined
-    const measured = pool.filter((a) => a.limits && heaviest(a.limits) < 1)
-    if (measured.length > 0)
-      return measured.reduce((best, a) => (heaviest(a.limits!) < heaviest(best.limits!) ? a : best))
-    return pool[this.turn++ % pool.length]
+  constructor(private kind: SignInFolderKind) {}
+
+  pick(
+    accounts: AccountView[],
+    resumedOn?: string,
+    launched: LaunchedSession[] = []
+  ): AccountView | undefined {
+    const usable = usableAccounts(accounts, [this.kind])
+    if (usable.length === 0) return undefined
+    const nowSec = Math.floor(Date.now() / 1000)
+    const all = usable.map((a) => ({ a, room: homeRoom(a, nowSec) }))
+    const subscriptions = all.filter(({ a }) => !a.apiKey)
+    const keys = all.filter(({ a }) => a.apiKey)
+    const everySubscriptionFull = subscriptions.every(({ room }) => room?.walled)
+    const rooms = keys.length > 0 && everySubscriptionFull ? keys : subscriptions
+    const same = rooms.find(({ a }) => a.name === resumedOn)
+    if (same && (!same.room || same.room.keepsResumedSession)) return same.a
+    const live = liveSessionsPerAccount(launched, undefined)
+    const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
+    const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
+    const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
+      ({ a, room }) => {
+        const week = room ? bindingWeek(room, nowSec) : { use: 0, resetsAt: 0 }
+        return {
+          a,
+          score: {
+            s1:
+              Math.max(0, week.use) +
+              (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION,
+            s2: 0,
+            tiebreak: week.resetsAt > nowSec ? week.resetsAt : 0
+          }
+        }
+      }
+    )
+    if (ranked.length > 0) {
+      const finalists = leximaxFinalists(ranked)
+      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
+    }
+    if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
+    return soonest(rooms, ({ room }) => room?.backAt || Infinity).a
+  }
+
+  peek(accounts: AccountView[]): AccountView | undefined {
+    const turn = this.turn
+    const picked = this.pick(accounts)
+    this.turn = turn
+    return picked
   }
 }

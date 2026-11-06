@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import { LuFile, LuFolder, LuFolderOpen, LuStar, LuX } from 'react-icons/lu'
+import { IconClose, IconFile, IconFolder, IconFolderOpen, IconStar } from '../icons'
 import type {
   ContentHit,
   DirEntry,
@@ -20,6 +20,7 @@ import type {
 } from '@shared/types'
 import { HIDDEN_BY_DEFAULT_NAMES } from '@shared/types'
 import { basename } from '@shared/preview'
+import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
   NO_MATCHES,
@@ -52,6 +53,7 @@ import {
   showIgnoredKey
 } from './filesModel'
 import '../browseView.css'
+import '../fileTree.css'
 
 export function ignoredTitle(name: string): string {
   return HIDDEN_BY_DEFAULT_NAMES.has(name)
@@ -76,13 +78,14 @@ export interface BrowseViewProps {
   onNewFileDone: (created: EditCreateResult | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   sideWidth: number
+  refreshNonce: number
   active?: boolean
 }
 
 function FolderIcon({ open }: { open?: boolean }): JSX.Element {
   return (
     <span className="ft-icon" aria-hidden>
-      {open ? <LuFolderOpen size={13} /> : <LuFolder size={13} />}
+      {open ? <IconFolderOpen size={13} /> : <IconFolder size={13} />}
     </span>
   )
 }
@@ -90,7 +93,7 @@ function FolderIcon({ open }: { open?: boolean }): JSX.Element {
 function FileIcon(): JSX.Element {
   return (
     <span className="ft-icon" aria-hidden>
-      <LuFile size={13} />
+      <IconFile size={13} />
     </span>
   )
 }
@@ -166,6 +169,7 @@ export function BrowseView({
   onNewFileDone,
   onContextMenu,
   sideWidth,
+  refreshNonce,
   active = true
 }: BrowseViewProps): JSX.Element {
   const [children, setChildren] = useState<Record<string, DirEntry[]>>({})
@@ -180,6 +184,7 @@ export function BrowseView({
   const [bmOpen, setBmOpen] = useState(true)
   const [recentOpen, setRecentOpen] = useState(true)
   const [fsTick, setFsTick] = useState(0)
+  const [treeLive, setTreeLive] = useState(true)
 
   const [query, setQuery] = useState('')
   const [searchMode, setSearchMode] = useState<SearchMode>('name')
@@ -209,7 +214,8 @@ export function BrowseView({
   showIgnoredRef.current = showIgnored
 
   const home = window.api.home
-  const scratchpadDir = session?.details?.claude?.scratchpadDir
+  const scratchpadDir = session?.scratchpadDir
+  const backendId = session?.backendId
 
   const loadDir = useCallback(async (dir: string): Promise<void> => {
     if (loadedRef.current.has(dir)) return
@@ -240,6 +246,14 @@ export function BrowseView({
     }
   }, [])
 
+  const relist = useCallback(
+    (dir: string): void => {
+      loadedRef.current.delete(dir)
+      void loadDir(dir)
+    },
+    [loadDir]
+  )
+
   const firstRoot = useRef(root)
   useEffect(() => {
     if (firstRoot.current === root) {
@@ -252,6 +266,7 @@ export function BrowseView({
     setErrors(new Set())
     setLoading(new Set())
     setKbdRow(null)
+    setTreeLive(true)
     setScratchOpen(true)
     setExtOpen(true)
     const flag = loadFlag(showIgnoredKey(root))
@@ -268,53 +283,88 @@ export function BrowseView({
   }, [active, expanded, loadDir])
 
   useEffect(() => {
+    let watching = true
+    window.api.fs.watchDir(root).then((live) => {
+      if (watching) setTreeLive(live)
+    })
     const off = window.api.fs.onDirChange((changed) => {
       if (changed !== root) return
       setFsTick((x) => x + 1)
     })
-    return off
+    return () => {
+      watching = false
+      off()
+      window.api.fs.unwatchDir(root)
+    }
   }, [root])
 
-  const relistOwedWhileHidden = useRef(false)
+  const watchedDirs = useRef(new Set<string>())
+  // PLATFORM§57
   useEffect(() => {
-    if (fsTick === 0) return
+    const want = new Set(active && !treeLive ? [...expanded].filter((d) => d !== root) : [])
+    for (const d of watchedDirs.current) {
+      if (want.has(d)) continue
+      window.api.fs.unwatchDir(d)
+      watchedDirs.current.delete(d)
+    }
+    for (const d of want) {
+      if (watchedDirs.current.has(d)) continue
+      window.api.fs.watchDir(d)
+      watchedDirs.current.add(d)
+    }
+  }, [active, treeLive, expanded, root])
+  useEffect(() => {
+    const watched = watchedDirs.current
+    const off = window.api.fs.onDirChange((changed) => {
+      if (watched.has(changed)) relist(changed)
+    })
+    return off
+  }, [relist])
+  useEffect(() => {
+    const watched = watchedDirs.current
+    return () => {
+      for (const d of watched) window.api.fs.unwatchDir(d)
+      watched.clear()
+    }
+  }, [])
+
+  const relistOwedWhileHidden = useRef(false)
+  const refreshNonceAtMount = useRef(refreshNonce)
+  useEffect(() => {
+    if (fsTick === 0 && refreshNonce === refreshNonceAtMount.current) return
     if (!active) {
       relistOwedWhileHidden.current = true
       return
     }
     relistOwedWhileHidden.current = false
-    for (const d of expandedRef.current) {
-      loadedRef.current.delete(d)
-      void loadDir(d)
-    }
-  }, [fsTick, active, loadDir])
+    for (const d of expandedRef.current) relist(d)
+  }, [fsTick, refreshNonce, active, relist])
 
   useEffect(() => {
     if (!active || !relistOwedWhileHidden.current) return
     relistOwedWhileHidden.current = false
-    for (const d of expandedRef.current) {
-      loadedRef.current.delete(d)
-      void loadDir(d)
-    }
-  }, [active, loadDir])
+    for (const d of expandedRef.current) relist(d)
+  }, [active, relist])
 
   // CC§2
   const scratchTimerRef = useRef<{ dir: string; t: ReturnType<typeof setTimeout> } | null>(null)
+  const agyScratch =
+    backendId === 'agy' && scratchpadDir ? `${scratchpadDir}/${AGY_SCRATCH_FOLDER}` : undefined
   useEffect(() => {
     if (!active || !scratchpadDir) return
     const pending = scratchTimerRef.current
     if (pending?.dir === scratchpadDir) return
     if (pending) clearTimeout(pending.t)
     const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => {
-      loadedRef.current.delete(scratchpadDir)
-      void loadDir(scratchpadDir)
+      relist(scratchpadDir)
+      if (agyScratch) relist(agyScratch)
     }
     const t = setTimeout(() => {
       scratchTimerRef.current = null
       relistScratchpadWithoutRelistingEveryExpandedDir()
     }, SCRATCHPAD_RELIST_THROTTLE_MS)
     scratchTimerRef.current = { dir: scratchpadDir, t }
-  }, [active, scratchpadDir, session?.updatedAt, loadDir])
+  }, [active, scratchpadDir, agyScratch, session?.updatedAt, relist])
   useEffect(
     () => () => {
       if (scratchTimerRef.current) clearTimeout(scratchTimerRef.current.t)
@@ -322,25 +372,27 @@ export function BrowseView({
     []
   )
 
-  // CC§2 PLATFORM§28
+  // CC§2 PLATFORM§28 AGY§8
   const scratchLive = !!scratchpadDir && (children[scratchpadDir]?.length ?? 0) > 0
   useEffect(() => {
     const dir = scratchpadDir
     if (!active || !dir) return
-    loadedRef.current.delete(dir)
-    void loadDir(dir)
+    const relistWithScratch = (): void => {
+      relist(dir)
+      if (agyScratch) relist(agyScratch)
+    }
+    relistWithScratch()
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed) => {
       if (changed !== dir) return
-      loadedRef.current.delete(dir)
-      void loadDir(dir)
+      relistWithScratch()
       setFsTick((x) => x + 1)
     })
     return () => {
       off()
       window.api.fs.unwatchDir(dir)
     }
-  }, [active, scratchpadDir, scratchLive, root, loadDir])
+  }, [active, scratchpadDir, agyScratch, scratchLive, root, relist])
 
   const idx = useMemo(() => sessionIndex(session, root), [session, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
@@ -348,8 +400,14 @@ export function BrowseView({
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
 
   const scratchEntries = useMemo(
-    () => scratchpadEntries(scratchpadDir ? children[scratchpadDir] : undefined, scratchpadDir),
-    [children, scratchpadDir]
+    () =>
+      scratchpadEntries(
+        scratchpadDir ? children[scratchpadDir] : undefined,
+        scratchpadDir,
+        backendId,
+        children
+      ),
+    [children, scratchpadDir, backendId]
   )
   const scratchListed = useMemo(() => {
     const s = new Set<string>()
@@ -514,15 +572,14 @@ export function BrowseView({
       if (!dir) return null
       try {
         const created = await window.api.edit.create(dir, name)
-        loadedRef.current.delete(dir)
-        void loadDir(dir)
+        relist(dir)
         onNewFileDone(created)
         return null
       } catch (err) {
         return createRefusal(String((err as Error)?.message ?? ''))
       }
     },
-    [newFileDir, loadDir, onNewFileDone]
+    [newFileDir, relist, onNewFileDone]
   )
 
   useEffect(() => {
@@ -551,18 +608,11 @@ export function BrowseView({
     bodyRef.current?.querySelector('.ft-node.active')?.scrollIntoView({ block: 'nearest' })
   }, [current, expanded])
 
-  const scrolledRow = useRef<string | null>(null)
+  const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')
   useEffect(() => {
-    const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('.ft-node') ?? [])
-    let focused: HTMLElement | undefined
-    for (const n of rows) {
-      const on = kbdRow !== null && n.dataset.rowId === kbdRow
-      n.classList.toggle('kbd-focus', on)
-      if (on) focused = n
-    }
-    if (focused && scrolledRow.current !== kbdRow) focused.scrollIntoView({ block: 'nearest' })
-    scrolledRow.current = kbdRow
-  })
+    if (kbdRow)
+      bodyRef.current?.querySelector('.ft-node.kbd-focus')?.scrollIntoView({ block: 'nearest' })
+  }, [kbdRow])
 
   const onTreeKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('.ft-node') ?? [])
@@ -604,7 +654,8 @@ export function BrowseView({
           (isActive ? ' active' : '') +
           (isLive ? ' live' : '') +
           (opts?.forced ? ' bv-forced' : '') +
-          (opts?.ignored ? ' ignored' : '')
+          (opts?.ignored ? ' ignored' : '') +
+          kbdCls(section + ':' + p)
         }
         data-path={p}
         data-row-id={section + ':' + p}
@@ -620,7 +671,7 @@ export function BrowseView({
         {opts?.loc ? <span className="ft-loc">{midTruncate(opts.loc)}</span> : null}
         {bookmarkSet.has(p) && (
           <span className="bv-bm" title="Bookmarked" aria-label="Bookmarked">
-            <LuStar size={10} />
+            <IconStar size={10} />
           </span>
         )}
         {added || removed ? (
@@ -665,7 +716,8 @@ export function BrowseView({
             'ft-node ft-dir' +
             (isOpen ? ' open' : '') +
             (changedDirs.has(p) ? ' has-changes' : '') +
-            (ignored ? ' ignored' : '')
+            (ignored ? ' ignored' : '') +
+            kbdCls(section + ':' + p)
           }
           data-dir="1"
           data-kind="dir"
@@ -698,7 +750,10 @@ export function BrowseView({
     const entries = children[dir]
     if (!entries)
       return loading.has(dir) ? <div className="ft-hint bv-loading">Loading…</div> : <></>
-    const visible = section === 'scratchpad' ? scratchpadEntries(entries, scratchpadDir) : entries
+    const visible =
+      section === 'scratchpad'
+        ? scratchpadEntries(entries, scratchpadDir, backendId, children)
+        : entries
     const hidden = hiddenTouchedUnder(dir, visible, idx.touchedInProject)
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)
@@ -722,7 +777,9 @@ export function BrowseView({
           <div key={section + ':' + n.path}>
             <div
               className={
-                'ft-node ft-dir open bv-forced' + (changedDirs.has(n.path) ? ' has-changes' : '')
+                'ft-node ft-dir open bv-forced' +
+                (changedDirs.has(n.path) ? ' has-changes' : '') +
+                kbdCls(section + ':' + n.path)
               }
               data-dir="1"
               data-kind="dir"
@@ -757,7 +814,7 @@ export function BrowseView({
     extra?: { title?: string; ctx?: boolean }
   ): JSX.Element => (
     <div
-      className={'ft-node ft-dir ' + cls + (open ? ' open' : '')}
+      className={'ft-node ft-dir ' + cls + (open ? ' open' : '') + kbdCls(section + ':head')}
       data-dir="1"
       data-kind="section"
       data-path={id}
@@ -822,7 +879,7 @@ export function BrowseView({
               title="Clear query"
               aria-label="Clear query"
             >
-              <LuX size={14} />
+              <IconClose size={14} />
             </button>
           )}
           <div className="ft-mode" role="group" aria-label="Search mode">
@@ -989,7 +1046,9 @@ export function BrowseView({
 
           <div className="bv-sec" data-section="tree">
             <div
-              className={'ft-node ft-dir ft-root' + (rootOpen ? ' open' : '')}
+              className={
+                'ft-node ft-dir ft-root' + (rootOpen ? ' open' : '') + kbdCls('tree:' + root)
+              }
               data-dir="1"
               data-kind="dir"
               data-path={root}

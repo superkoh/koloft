@@ -1,0 +1,114 @@
+.modal-backdrop.palette-top {
+  align-items: flex-start;
+  padding-top: 16vh;
+}
+.modal.palette {
+  width: 600px;
+  border-radius: 16px;
+  background: var(--bg-1);
+  box-shadow:
+    var(--shadow-lg),
+    0 24px 90px -36px var(--fable-line);
+}
+.pal-ask {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 22px 24px 20px;
+}
+.pal-glyph {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  color: var(--fable);
+  flex: none;
+}
+.pal-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  max-height: 40vh;
+  field-sizing: content;
+  resize: none;
+  padding: 0;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 28px;
+  color: var(--fg);
+}
+.pal-field::placeholder {
+  color: var(--fg-faint);
+}
+.pal-ask.waiting .pal-field {
+  color: var(--fg-dim);
+}
+.pal-results {
+  border-top: 1px solid var(--line);
+  padding: 6px;
+  max-height: 360px;
+  overflow: hidden auto;
+}
+.pal-results .restore-list {
+  max-height: none;
+}
+.pal-results .restore-row.hot {
+  background: var(--bg-3);
+}
+.pal-count {
+  padding: 8px 12px 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+.pal-status {
+  border-top: 1px solid var(--line);
+  padding: 12px 24px;
+}
+.pal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.pal-tips {
+  margin-right: auto;
+  white-space: nowrap;
+}
+.pal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: none;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pal-pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pal-pill .k {
+  opacity: 0.6;
+  font-size: 10.5px;
+}
+.pal-pill.go {
+  border-color: var(--fable-line);
+  background: var(--fable-soft);
+  color: var(--fg);
+}
+.pal-pill-glyph {
+  color: var(--fable);
+}

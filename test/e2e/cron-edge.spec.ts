@@ -7,9 +7,15 @@ import {
   expect,
   expectNoToastAtAnyMomentOfAWindow,
   launchApp,
+  osOutlets,
   pendingAttention
 } from './helpers/app'
-import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  seedClaudeTrust,
+  seedNoClaudeAccountButStillSetUp,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addWorkspace,
   closeMenu,
@@ -29,6 +35,7 @@ import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
 import { EDIT, closeDiscardingEdits, editReady, typeAtEnd } from './helpers/editPane'
 import { browseRow, rowMenu, showBrowse } from './helpers/workbench'
+import { noAccountLine } from '../../src/shared/accountUsage'
 
 const JOB = 'Nightly report'
 const TASK = '/daily-report'
@@ -215,6 +222,8 @@ function edWorktreeArg(argv: string[]): string | undefined {
 }
 
 test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overlaps, misses, failed starts, the start deadline, a broken store, form refusals, workspace removal', () => {
+  test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
+
   test('BB-E01: a due while the last run is still open is skipped, and skips fold into one line', async ({
     env
   }) => {
@@ -420,8 +429,8 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
 
       await page.waitForTimeout(NO_LEFTOVER_ROW_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
-      await expect(page.locator('.ws-tab-cron')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab-cron')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(1)
 
       fs.rmSync(env.claudeExitFile)
@@ -433,11 +442,11 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
-  test('BB-E08: a run that never starts is stopped at the deadline, without constructing an OS notification in background test mode', async ({
+  test('BB-E08: a run that never starts is stopped at the deadline, and an OS notification names the job and says it did not start', async ({
     env
   }) => {
     test.setTimeout(240_000)
-    gitInit(env.workspaces.a)
+    fs.rmSync(path.join(env.home, '.claude.json'))
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = '5000'
     const hangFile = path.join(env.home, 'fake-claude-hang')
 
@@ -452,11 +461,9 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       const [call] = await waitForCalls(env, 1)
 
       await edExpectToast(page, `⏰ ${JOB} could not start: Claude did not start`)
-      expect(
-        await app.evaluate(
-          () => (globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount ?? 0
-        )
-      ).toBe(0)
+      expect((await osOutlets(app)).notifications).toEqual([
+        { title: JOB, body: 'Could not start — Claude did not start' }
+      ])
       // CC§9
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
@@ -465,7 +472,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
             'start one session here first'
         )
       await expect.poll(() => termIds(page), { timeout: 15_000 }).toEqual(idsBefore)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
       await expect.poll(() => processAlive(call.pid), { timeout: 15_000 }).toBe(false)
 
       fs.rmSync(hangFile)
@@ -488,10 +495,42 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await edCreateJob(page)
       await edRunNow(page)
 
-      await edExpectToast(page, `⏰ ${JOB} could not start: no usable account`)
+      const noClaudeAccount = noAccountLine([], 'claude')
+      await edExpectToast(page, `⏰ ${JOB} could not start: ${noClaudeAccount}`)
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
-        .toBe('Could not start — no usable account')
+        .toBe(`Could not start — ${noClaudeAccount}`)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-E37: a job saved with no agent runs in Claude, so with Claude switched off in Settings ▸ Sessions it does not start and History says Claude is turned off', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      sessionMethods: {
+        defaultBackend: 'codex',
+        enabled: { claude: false, codex: true, muse: true, agy: true }
+      }
+    })
+    edWriteStore(env, [{ name: JOB, schedule: { kind: 'daily', at: '03:00' } }])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      await edOpenDialog(page, 'ws-a')
+      await edRunNow(page)
+
+      await edExpectToast(
+        page,
+        `⏰ ${JOB} could not start: Claude is turned off in Settings ▸ Sessions`
+      )
+      await expect
+        .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })
+        .toBe('Could not start — Claude is turned off in Settings ▸ Sessions')
       expect(readCalls(env)).toHaveLength(0)
     } finally {
       await app.close().catch(() => {})
@@ -892,6 +931,61 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
+  test('BB-E36: History shows every job, newest first and named; a click on a card marks it and shows just that job, a second click shows all again', async ({
+    env
+  }) => {
+    gitInit(env.workspaces.a)
+
+    const now = Date.now()
+    const daysAgo = (n: number): number => now - n * 24 * 60 * 60_000
+    const at = edHHMM(new Date(now + CLEAR_OF_BOOT_TICK_MISS_WINDOW_MS))
+    edWriteStore(env, [
+      {
+        name: 'A',
+        schedule: { kind: 'daily', at },
+        history: [
+          { dueAt: daysAgo(1), state: 'closed' },
+          { dueAt: daysAgo(3), state: 'closed' }
+        ]
+      },
+      {
+        name: 'B',
+        schedule: { kind: 'daily', at },
+        history: [{ dueAt: daysAgo(2), state: 'finished' }]
+      }
+    ])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      const dlg = await edOpenDialog(page, 'ws-a')
+      const label = dlg.locator('.hist .flabel')
+      const marked = dlg.locator('.job-row.on')
+
+      await expect(label).toHaveText('History · all jobs')
+      await expect(edHistRows(page).locator('.hist-job')).toHaveText(['A', 'B', 'A'])
+      expect(await edHistStates(page)).toEqual([
+        'Closed by you',
+        'Done — closed itself',
+        'Closed by you'
+      ])
+      await expect(marked).toHaveCount(0)
+
+      await edCard(page, 'B').locator('.job-name').click()
+      await expect(label).toHaveText('History · B')
+      await expect(marked).toHaveCount(1)
+      await expect(marked.locator('.job-name')).toHaveText('B')
+      expect(await edHistStates(page)).toEqual(['Done — closed itself'])
+      await expect(edHistRows(page).locator('.hist-job')).toHaveCount(0)
+
+      await edCard(page, 'B').locator('.job-name').click()
+      await expect(label).toHaveText('History · all jobs')
+      await expect(marked).toHaveCount(0)
+      await expect(edHistRows(page)).toHaveCount(3)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   async function edDirtyEditor(page: Page, ed: EditFixture): Promise<void> {
     await showBrowse(page)
     const dir = browseRow(page, ed.configDir)
@@ -949,7 +1043,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     const claudeJson = path.join(env.home, '.claude.json')
-    expect(fs.existsSync(claudeJson)).toBe(false)
+    fs.rmSync(claudeJson)
 
     const first = await edLaunch(env)
     try {

@@ -27,6 +27,7 @@ export function usage(p: Partial<UsageSnapshot>): UsageSnapshot {
     r7: 0,
     roi: 0,
     overage: '?',
+    has5h: true,
     hasOi: false,
     at: NOW_MS,
     ...p

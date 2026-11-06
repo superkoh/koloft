@@ -86,6 +86,18 @@ describe('koloft requests from a session', () => {
     expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
   })
 
+  it('a --help among the words answers with the guide and runs nothing, so it is never taken as an answer or a message; after -- it is a word', async () => {
+    const r = requests()
+    const tabId = tabOf(process.pid, 1)
+    await r.answer(dir, 'req-a.json', { tabId, argv: ['echo', 'fix-login', '--help'], cwd: '/w' })
+    await r.answer(dir, 'req-b.json', { tabId, argv: ['--help'], cwd: '/w' })
+    expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(calls).toEqual([])
+    await r.answer(dir, 'req-c.json', { tabId, argv: ['echo', 'a', '--', '--help'], cwd: '/w' })
+    expect(reply('c')).toEqual({ exit: 0, text: 'a -- --help' })
+  })
+
   it('an unknown command is refused with exit code 2 and points at koloft help', async () => {
     const tabId = tabOf(process.pid, 1)
     await requests().answer(dir, 'req-a.json', { tabId, argv: ['frobnicate', 'x'], cwd: '/w' })

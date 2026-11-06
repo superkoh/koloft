@@ -4,15 +4,21 @@
 
 # Koloft
 
-[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft-releases?label=release&color=blue)](https://github.com/superkoh/koloft-releases/releases)
+[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft?label=release&color=blue)](https://github.com/superkoh/koloft/releases)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
 
+**[Website](https://koloft.ai)** · **[Download for Mac](https://github.com/superkoh/koloft/releases/latest)** · [Features](https://koloft.ai/features/) · [Changelog](https://koloft.ai/changelog/)
+
 </div>
 
-A macOS desktop app that runs and manages **Claude Code** and **Codex** (the `claude` and
-`codex` command-line tools).
+A free Mac app for **Claude Code** and **Codex** (the `claude` and `codex` command-line
+tools). You start a session with one plain sentence and follow it in one window, or hear
+from it on your phone when it needs you. Your agents start sessions of their own, drive a
+browser of their own, and report back.
+
+![Koloft: ⌘P, one sentence typed, and a real Claude Code session starts in its own worktree](.github/assets/start-a-session.gif)
 
 You pick a **workspace** (a folder, usually a git checkout). Koloft lists every Claude
 Code and Codex session that folder already has, straight from each tool's own storage,
@@ -20,30 +26,67 @@ and lets you start new ones or resume old ones. Each session gets a **Workbench*
 beside its terminal: the files the agent changed, a file browser, web pages, and a
 shell.
 
-![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right showing the changes the agent made](.github/assets/screenshot.png)
+![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right with a web page the agent opened and clicked](.github/assets/screenshot.png)
 
 ## What you get
 
-- **Workspace sidebar** — pin folders as workspaces. Under each one, its sessions
-  appear with a title, a status dot (working / waiting for you / done) and how long ago
-  they ran. Nothing is imported: the list is what Claude Code and Codex themselves wrote
-  to disk, and Koloft keeps only a list of which sessions are its own. A session you
-  started from a plain terminal is one right-click ▸ `Restore session…` away.
+- **Workspace sidebar** — pin folders as workspaces (drag a folder's name to reorder;
+  ⌘B hides the sidebar). Under each one, its sessions appear with a title, a status
+  light (working / waiting for you / done, and `↻ N` while N things it started still run
+  in the background) and how long ago they ran. A session an agent started hangs under
+  the session that started it. Nothing is imported: the list is what Claude Code and
+  Codex themselves wrote to disk, and Koloft keeps only a list of which sessions are its
+  own. A session you started from a plain terminal is one right-click ▸
+  `Restore session…` away.
+- **Red dots** — a small red dot after a session's name means it is calling you: its
+  turn is done, it waits for your OK, or it quit on its own. The number on the Dock icon
+  counts the dots, and ⌘J (`View ▸ Next Waiting Session`) takes you to the session with
+  the oldest one.
+- **Sessions sleep, wake and come back** — about half an hour after a session goes
+  quiet it goes to sleep: its program stops, but its row, tab, screen and Workbench stay,
+  and a click or a message wakes it in the same tab. Quit Koloft and open it again, and
+  every session comes back the way it was. Right-click a row ▸ `Keep running` and that
+  session never sleeps, and starts again in the background each time Koloft opens.
 - **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
   selected workspace with the default method set in `Settings ▸ Sessions`; clicking an
-  old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
-  session in an isolated git worktree. A workspace's right-click menu holds
-  the low-traffic doors: restore a session from history, fetch origin, remove the
-  workspace. When the checkout is behind `origin`, a badge on the row says by how much
-  and offers a fast-forward pull.
+  old row resumes it; `New Worktree Session…` (⇧⌘N) runs the session in an isolated git
+  worktree, and its dialog also lists the repository's open issues and pull requests to
+  start from. Each worktree session gets `KOLOFT_PORT_OFFSET` (1–99) so its dev servers
+  do not collide, and the files a `.worktreeinclude` lists are copied into each new
+  worktree. A workspace's right-click menu holds the low-traffic doors: restore a session
+  from history, scheduled jobs, remove the workspace.
+- **Git panel** — hover a folder's branch sign: how far it is behind `origin` (also a
+  badge on the row), `Fetch now`, a fast-forward `Pull`, and the repository's open issue
+  and pull request counts.
+- **Git accounts per repository** — add git logins for GitHub, GitHub Enterprise, GitLab,
+  Bitbucket, Azure DevOps, Gitea / Forgejo / Codeberg or any other git server, and pick
+  one per repository in its git panel. Every Claude Code and Codex session there pushes
+  and fetches as that account (on GitHub and GitHub Enterprise, `gh` runs as it too). A
+  folder with no pick keeps your own git and gh setup.
+- **⌘P** — type what a session should do and ⏎ starts it where Assist picks; the same
+  box jumps to any session and searches every chat.
+- **Assist** — Koloft's own AI, run by one of your accounts. It does small jobs for
+  Koloft, such as picking where a ⌘P session starts.
+- **Discord** — a bot of your own on your Discord server, so you can talk to Koloft's
+  butler (Koloft's own AI session, the first row of the sessions list) from your phone:
+  it answers you in its channel and reaches your sessions for you. Set up in
+  `Settings ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
-    and **Browse**, a tree of the workspace including Claude's scratchpad.
+    and **Browse**, a tree of the workspace. A folder the agent keeps outside the project
+    shows there too, as `Scratchpad`: Claude's scratchpad, the pictures a Codex session
+    made, or an Antigravity session's own files (its plans, task lists and `scratch`
+    folder). Muse keeps none.
   - File tabs: rendered Markdown / images / PDF, a diff view, the source, and an
     editor with ⌘S save. An HTML file opens as a web tab.
   - Web tabs: a real in-app browser (logins, downloads, popups, Chrome extensions) so an
     agent's `open <url>` never has to leave the app.
   - Terminal tabs: a shell in the session's directory (`View ▸ New Terminal Tab`, ⌃`).
+
+  Each hunk in Changes has `✎ comment` in its header, which puts that hunk and your note
+  into the session's input box. In a GitHub project a GitHub button sits next to Files:
+  the pull request and its checks, commit and push, and a failing check sent to the
+  session. ⇧⌘B folds the Workbench down to a small card beside the terminal.
 
   ![The Workbench's Browse view: the workspace's file tree with a Markdown file shown rendered beside it](.github/assets/screenshot-browse.png)
 - **A note per workspace** — a plain-text note in its own island under the sessions
@@ -52,13 +95,20 @@ shell.
   session go.
 - **Scheduled jobs** — a workspace's right-click menu has `Scheduled jobs…`: start a
   Claude or Codex session on a timer with a first message. In a git workspace every run
-  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types into a session — the first message is handed to `claude`
-  or `codex` directly, and everything after it is yours.
-- **Multi-account balancing** — register several Claude subscription accounts and
-  several Codex sign-ins. Every launch looks at their live rate limits and starts on the
-  account with the most room left. A Claude API (application programming interface) key
-  or a custom endpoint can join the pool too; Koloft reads no allowance for those, so it
-  uses them only once every subscription has hit its limit, or when you have none. The
+  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types
+  into a session — the first message is handed to `claude` or `codex` directly, and
+  everything after it is yours. A finished run waits in the sidebar for you, unless the
+  job says `When done ▸ Close it`; then the run cleans up after itself.
+- **The `koloft` command** — every session Koloft starts gets a `koloft` command: show a
+  file, page or diff in its Workbench, add to the workspace note, set up scheduled jobs,
+  and start, message and read other sessions. A bundled `playwright-cli` drives the
+  session's own web tabs.
+- **Multi-account balancing** — register several Claude, Codex, Muse and Antigravity
+  accounts. Every launch looks at their live rate limits and starts on the account that
+  has used the least. A pasted Codex, Muse or Antigravity API (application programming
+  interface) key is paid for each use, so it is only a backup. A Claude API key or
+  custom endpoint added by an older Koloft still works as a backup too, but Settings no
+  longer adds a new one. The
   topbar shows the pool's remaining allowance. These
   are meant to be *your own* accounts — please check that how you use them fits
   Anthropic's and OpenAI's terms, which is between you and them.
@@ -73,19 +123,22 @@ shell.
   one. Koloft installs what the machine is missing (Node, `claude`) over the same
   connection. The Workbench works there too — its files, changes, edits and shell are
   the machine's — with a few gaps for now: images and PDFs from the machine do not
-  preview, an agent's `open <url>` and the agent-driven browser do not reach the
-  Workbench, and the session cannot be renamed from Koloft.
+  preview, an agent's `open <url>` does not reach the Workbench, only a Claude Code
+  session drives its browser, never to the Mac's own files or local servers, and the
+  session cannot be renamed from Koloft.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
   in place; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
   first time each situation comes up (both re-openable from `Settings ▸ Welcome`), a
   `Settings ▸ Shortcuts` page listing every key and what it does where the caret is,
-  and clocks for the timezones you pick in the title bar.
+  clocks for the timezones you pick in the title bar, a terminal font that comes with
+  Koloft (JetBrainsMono Nerd Font), a reminder with each prompt so Claude keeps replying
+  in your language, and `View ▸ Keep Mac Awake`.
 
 ## Install (macOS, Apple Silicon)
 
 Download the `.dmg` from
-[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+[Releases](https://github.com/superkoh/koloft/releases), open it, and drag Koloft
 to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
 it opens with a normal double-click.
 
@@ -93,7 +146,7 @@ Or in one line from the terminal, which fetches the latest dmg and copies `Kolof
 into `/Applications`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 ```
 
 ## How it works
@@ -138,12 +191,11 @@ src/
 
 Browser tools normally launch a Chromium of their own — a second browser, with its own
 empty cookie jar, that you cannot see. Koloft offers its own instead: every local Claude
-session is started with a Chrome debugging endpoint pointing at that session's web tabs.
-Codex sessions and Claude sessions in a remote workspace do not get one yet; an
-`open <url>` from a local Codex session still lands in its Workbench.
+and Codex session is started with a Chrome debugging endpoint pointing at that session's
+web tabs. Sessions in a remote workspace do not get one yet.
 
-Both variables below are set for the session's Claude, so the agent — and anything the
-agent runs — sees them. A terminal tab in the Workbench is not that environment and has
+Both variables below are set for the session's Claude or Codex, so the agent — and
+anything the agent runs — sees them. A terminal tab in the Workbench is not that environment and has
 neither.
 
 - **playwright-mcp and the Playwright CLI — nothing to configure.** Both read
@@ -223,9 +275,10 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
   CLI once it is installed (on by default; a switch here turns it off).
 - **Accounts** — turn on multi-account mode and add accounts.
   - Claude: run the official `claude setup-token` login from inside the app, or paste an
-    OAuth token. You can also add an API key, or a custom endpoint (another server that
-    speaks the same API: its address, its key and, if you want, its model); these two are
-    used only once every subscription has hit its limit, or when you have none. Each
+    OAuth token. An API key or custom endpoint (another server that speaks the same API)
+    added by an older Koloft still works as a backup, used only when you have no
+    subscription Koloft can use, or when Koloft has just read every subscription and
+    each is told to wait 30 minutes or more; Settings no longer adds a new one. Each
     launch then gets the least-loaded account's credentials injected by the shim. These
     secrets live in the macOS Keychain, never in `settings.json`. Two more
     switches, for Claude launches: skip permission prompts, and prefer accounts that
@@ -233,7 +286,18 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
   - Codex: `Sign in to Codex` runs `codex login` in a terminal tab. Each Codex account is
     its own Codex home folder inside Koloft's app data, holding that login; all of them
     share your Codex settings and trusted folders. New Codex sessions start on the
-    least-used one.
+    least-used one. `Paste API key` adds an OpenAI API key (paid for each use) as a
+    backup, used only when no Codex sign-in can be used or every one is at its limit.
+  - Muse and Antigravity: `Sign in to Muse` or `Sign in with Google` runs the agent's own
+    sign-in in a terminal tab, and each account keeps it in its own folder. A pasted
+    Muse API key or Gemini API key is the same backup as Codex's.
+  - Git accounts: add one for GitHub or GitHub Enterprise (a one-time code and the
+    server's sign-in page in your own browser, or a pasted token), GitLab.com, Bitbucket
+    or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
+    (a pasted token), or any other server (its address, your username and a token, kept
+    without checking). Tokens live in the Keychain. Pick one per repository in its git
+    panel's `Account` part; a folder with no pick keeps the machine's own git and gh
+    setup.
 
   With the mode off, sessions run a bare `claude` or `codex` on whatever login the
   machine already has.
@@ -253,7 +317,6 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 - Sessions Koloft did not launch are listed and can be resumed, but their live status
   (working / waiting) is only known for sessions started from Koloft, because the status
   comes from the hooks (Claude) or the relay (Codex) Koloft puts in at launch.
-- Codex does not run in remote workspaces yet.
 - When a worktree session exits from an unchanged worktree, Claude Code removes the
   worktree and moves the session's transcript under the root checkout, so the row moves
   there. A session that never got a message has no transcript at all, so its row goes
@@ -275,10 +338,12 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
-| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, so the balancer can pick the least-loaded one: when Koloft opens, as a session starts (a reading from the last 30 seconds is reused), when Settings opens, when the topbar usage panel opens and its last reading is over 5 minutes old, and on `Refresh usage`; a Claude API key added by an older Koloft is only checked that it still works (an old custom endpoint is checked the same way, at its own server) |
+| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
+| `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
-| `claude.ai`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second (or, on an old Linux, the third); `bash`, `tmux` and `rsync` come from the machine's own package manager |
+| `claude.ai`, `chatgpt.com`, `dev.meta.ai`, `antigravity.google` | the official installers of `claude`, `codex`, `muse` and `agy`, only when you click a tool's card on the welcome steps to install it, or sign in to a tool this Mac lacks in Settings ▸ Accounts |
+| `claude.ai`, `dev.meta.ai`, `antigravity.google`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude`, `muse` and `agy` from their official installers, Node from `nodejs.org` (or, on an old Linux, the unofficial build); `codex` and, for Claude Code sessions, `playwright-cli` come from `npm`, which fetches them from npm's own site; `bash`, `tmux`, `rsync` and `python3` come from the machine's own package manager |
 | `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
 | `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |

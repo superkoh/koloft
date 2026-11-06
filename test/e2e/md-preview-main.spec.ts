@@ -500,6 +500,33 @@ test.describe('rich Markdown preview, main flow — black-box: each assertion is
     await expect(line12).toBeInViewport({ timeout: 20_000 })
   })
 
+  test('BB-M13 a "path:line" to a file already open in another tab lands on that tab at the line, and the tab the link was in closes', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const sample = writeFile(env, 'sample.ts', sampleTs())
+    writeFile(env, 'bbm13open.md', '# BB-M13\n\nThe error is on line sample.ts:30 here.\n')
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await openFileTab(page, env, sample)
+    await expect(artifactTitle(page)).toHaveText('sample.ts', { timeout: 30_000 })
+    await openFileTab(page, env, path.join(env.workspaces.a, 'bbm13open.md'))
+    await expect(mdBody(page)).toBeVisible({ timeout: 30_000 })
+
+    await mdBody(page)
+      .locator('a.md-fileref', { hasText: 'sample.ts:30' })
+      .click({ timeout: 30_000 })
+
+    await expect(artifactTitle(page)).toHaveText('sample.ts', { timeout: 30_000 })
+    await expect(artifactBody(page).getByText('bbmline-30').first()).toBeInViewport({
+      timeout: 20_000
+    })
+    await expect(page.locator(WORKBENCH.tab)).toHaveCount(2)
+    await expect(page.locator(WORKBENCH.tab, { hasText: 'bbm13open.md' })).toHaveCount(0)
+  })
+
   test('BB-M14 a backticked "path:line" is clickable too', async ({ app, page, env }) => {
     test.setTimeout(180_000)
     writeFile(env, 'sample.ts', sampleTs())

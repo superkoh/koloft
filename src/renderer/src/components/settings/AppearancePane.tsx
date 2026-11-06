@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuMinus, LuPlus } from 'react-icons/lu'
+import { IconMinus, IconPlus } from '../../icons'
 import { clampFontSize } from '@shared/settingsOps'
 import { useStore } from '../../store'
 import { Switch } from './Switch'
@@ -31,7 +31,7 @@ export function AppearancePane(): JSX.Element {
     <>
       <div className="set-ph">
         <h3>Appearance</h3>
-        <p>Terminal fonts, and how Claude sessions present themselves.</p>
+        <p>Terminal fonts, and how sessions present themselves.</p>
       </div>
 
       <div className="set-grp">Terminal font</div>
@@ -66,7 +66,7 @@ export function AppearancePane(): JSX.Element {
         </div>
         <div className="set-stepper">
           <button aria-label="Smaller" onClick={() => commitSize(settings.fontSize - 1)}>
-            <LuMinus size={13} />
+            <IconMinus size={13} />
           </button>
           <input
             type="number"
@@ -81,7 +81,7 @@ export function AppearancePane(): JSX.Element {
             }}
           />
           <button aria-label="Larger" onClick={() => commitSize(settings.fontSize + 1)}>
-            <LuPlus size={13} />
+            <IconPlus size={13} />
           </button>
         </div>
       </div>
@@ -106,21 +106,11 @@ export function AppearancePane(): JSX.Element {
       <div className="set-grp">Session display</div>
       <div className="set-row">
         <div className="set-lab">
-          <b>Show cost &amp; context usage</b>
+          <b>Built-in status line</b>
           <small>
-            Adds a second line to each Claude session — a context-window ring, percent, and running
-            cost (an estimate). Off returns rows to a single line.
-          </small>
-        </div>
-        <Switch checked={settings.showUsage} onChange={(on) => update({ showUsage: on })} />
-      </div>
-      <div className="set-row">
-        <div className="set-lab">
-          <b>Built-in Claude statusline</b>
-          <small>
-            Renders Koloft&rsquo;s bundled <code>ccstatusline</code> under the prompt of every
-            Claude session started in a tab, overriding your own <code>statusLine</code> setting for
-            that session. Applies to newly started sessions; off leaves your own settings in charge.
+            Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and
+            Antigravity session, in place of the one you set yourself (Muse Code cannot take one).
+            Applies to sessions started after a change; off brings back your own setting.
           </small>
         </div>
         <Switch
@@ -138,6 +128,21 @@ export function AppearancePane(): JSX.Element {
           </small>
         </div>
         <Switch checked={settings.gitAutoFetch} onChange={(on) => update({ gitAutoFetch: on })} />
+      </div>
+      <div className={'set-row child' + (settings.gitAutoFetch ? '' : ' off')}>
+        <div className="set-lab">
+          <b>Auto-pull the default branch</b>
+          <small>
+            After each background fetch, fast-forwards a workspace that sits on its default branch
+            with a clean tree and no local commits. Skipped while a session in that checkout is
+            working on a task, and tried again on the next fetch.
+          </small>
+        </div>
+        <Switch
+          checked={settings.gitAutoPull}
+          disabled={!settings.gitAutoFetch}
+          onChange={(on) => update({ gitAutoPull: on })}
+        />
       </div>
     </>
   )

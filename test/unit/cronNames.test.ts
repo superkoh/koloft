@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { hasWordChar, isValidModelName, slugOf, worktreeBase } from '@shared/cronNames'
+import {
+  hasWordChar,
+  isRunFolderOf,
+  isValidModelName,
+  slugOf,
+  worktreeBase
+} from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
 describe('slugOf', () => {
@@ -17,7 +23,7 @@ describe('slugOf', () => {
   it('cuts to 48 characters and still leaves a name a branch can use', () => {
     const s = slugOf('a'.repeat(70))
     expect(s).toHaveLength(48)
-    expect(isValidWorktreeName(worktreeBase({ name: 'a'.repeat(70) }, Date.now()))).toBe(true)
+    expect(isValidWorktreeName(worktreeBase('a'.repeat(70), Date.now()))).toBe(true)
   })
 
   it('never answers with an empty string', () => {
@@ -60,13 +66,22 @@ describe('isValidModelName', () => {
 describe('worktreeBase', () => {
   it('stamps the due time on the local wall clock', () => {
     const due = new Date(2026, 8, 2, 21, 0, 0, 0)
-    expect(worktreeBase({ name: 'Nightly Report' }, due.getTime())).toBe(
-      'nightly-report-260902-2100'
-    )
+    expect(worktreeBase('Nightly Report', due.getTime())).toBe('nightly-report-260902-2100')
   })
 
   it('pads every part to two digits', () => {
     const due = new Date(2026, 0, 5, 9, 7, 0, 0)
-    expect(worktreeBase({ name: 'x' }, due.getTime())).toBe('x-260105-0907')
+    expect(worktreeBase('x', due.getTime())).toBe('x-260105-0907')
+  })
+})
+
+describe('isRunFolderOf', () => {
+  it('knows a run folder by its date stamp, so a job whose name begins with another job’s is never mistaken for it', () => {
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100-2')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100-a3f9')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-v2-260902-2100')).toBe(false)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-notes')).toBe(false)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902')).toBe(false)
   })
 })

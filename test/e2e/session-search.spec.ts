@@ -3,12 +3,22 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, type E2EEnv } from './helpers/env'
+import { codexCalls } from './helpers/codex'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  museSaid,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   readCalls,
   resumedId,
   runIn,
   centerTerm,
+  closeActiveTab,
+  newSessionInWith,
   seedJsonl,
   sendShortcut,
   startSessionIn,
@@ -18,8 +28,17 @@ import {
   wsRows
 } from './helpers/p1'
 import {
+  agyReady,
+  boundRemoteSession,
+  installCodexOnFakeRemote,
   installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
+  liveTmuxSessions,
+  machineAgyCalls,
+  machineHome,
+  machineMuseCalls,
   mirrorProjectDir,
   REMOTE_HOST,
   REMOTE_WS_NAME,
@@ -52,6 +71,25 @@ async function searchFor(app: ElectronApplication, page: Page, term: string): Pr
 
 function hit(dialog: Locator, title: string): Locator {
   return dialog.locator('.restore-row', { hasText: title })
+}
+
+async function remoteHit(
+  app: ElectronApplication,
+  page: Page,
+  term: string,
+  title: string,
+  brand: string
+): Promise<Locator> {
+  await expect(async () => {
+    const dialog = await searchFor(app, page, term)
+    await expect(hit(dialog, title)).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 60_000 })
+  const found = hit(searchDialog(page), title)
+  await expect(found.locator('.restore-meta')).toContainText(
+    `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+  )
+  await expect(found.getByRole('img', { name: brand, exact: true })).toBeVisible()
+  return found
 }
 
 function appendReply(file: string, text: string): void {
@@ -107,16 +145,6 @@ function seedCodexThread(env: E2EEnv, cwd: string, name: string, reply: string):
   return id
 }
 
-function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-}
-
 test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by its words, in every workspace and backend, and opens it', () => {
   test('⌥⏎ turns the typed words into a search inside the palette, Esc goes back to the plain palette with the words kept, and a second Esc closes it', async ({
     app,
@@ -166,6 +194,40 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
       expect(readCalls(env)).toHaveLength(0)
 
       await row.click()
+      await expect(dialog).toHaveCount(0)
+      const [call] = await waitForCalls(env, 1)
+      expect(resumedId(call)).toBe(found)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('while typing, before any ⌥⏎, a session that only mentions the words shows under "In conversations" with the words around the match, and ↓ ⏎ resumes it', async ({
+    env
+  }) => {
+    const found = seedJsonl(env, env.workspaces.a, { summary: 'Benchmarks of the week' })
+    appendReply(
+      transcriptFile(env.home, env.workspaces.a, found),
+      'I traced the crash to ZEBRA-needle-7 inside parse.ts and added a guard.'
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+
+      await sendShortcut(app, 'shortcut:command-palette')
+      const dialog = searchDialog(page)
+      await dialog.getByRole('textbox', { name: 'Ask or jump' }).fill('zebra-needle')
+      const group = dialog.getByRole('group', { name: 'In conversations' })
+      const row = group.locator('.cb-row', { hasText: 'Benchmarks of the week' })
+      await expect(row.locator('.note b')).toHaveText('ZEBRA-needle', { timeout: 30_000 })
+      await expect(dialog.locator('.cb-row.hot')).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+
+      await page.keyboard.press('ArrowDown')
+      await expect(row).toHaveClass(/\bhot\b/)
+      await page.keyboard.press('Enter')
       await expect(dialog).toHaveCount(0)
       const [call] = await waitForCalls(env, 1)
       expect(resumedId(call)).toBe(found)
@@ -238,7 +300,7 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
     }
   })
 
-  test('a local Codex thread is found through its app-server by what the model said, and resumes in Codex on click', async ({
+  test('a local Codex thread is found through its app-server by what the model said, never by the environment block Codex adds itself, and resumes in Codex on click', async ({
     env
   }) => {
     installCodex(env)
@@ -257,7 +319,10 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const dialog = await searchFor(app, page, 'OTTER-needle-3')
         await expect(hit(dialog, 'Codex seeded thread')).toBeVisible({ timeout: 2000 })
       }).toPass({ timeout: 30_000 })
-      const row = hit(searchDialog(page), 'Codex seeded thread')
+      const onlyInTheEnvironmentBlock = await searchFor(app, page, 'ZSH')
+      await expect(onlyInTheEnvironmentBlock.locator('.pal-count')).toHaveText('No matches')
+
+      const row = hit(await searchFor(app, page, 'OTTER-needle-3'), 'Codex seeded thread')
       await expect(row.getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
       await expect(row.locator('.restore-snippet b')).toHaveText('otter-needle-3')
       await row.click()
@@ -306,6 +371,154 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const last = calls[calls.length - 1]
         expect(resumedId(last)).toBe(remote)
         expect(last.cwd).toBe(remoteDir(env))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Muse session on an ssh machine is found by words said after its title, read from its log on the machine, named with its host, and resumes there', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installMuse(env)
+      installFakeRemote(env)
+      installMuseOnMachine(env)
+      seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
+        const [{ sessionId }] = machineMuseCalls(env)
+        await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await runIn(page, centerTerm(page), 'Muse plans on the build machine')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Muse plans on the build machine'
+        })
+        await expect(row).toHaveCount(1)
+        await runIn(page, centerTerm(page), 'where is the wolf-needle-6')
+        await expect
+          .poll(() => museSaid(env, sessionId, machineHome(env)).join('\n'), { timeout: 30_000 })
+          .toContain('where is the wolf-needle-6')
+        await closeActiveTab(app, page)
+        await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        const found = await remoteHit(
+          app,
+          page,
+          'wolf-NEEDLE-6',
+          'Muse plans on the build machine',
+          'Muse'
+        )
+        await expect(found.locator('.restore-snippet b')).toHaveText('wolf-needle-6')
+        await found.click()
+
+        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(2)
+        expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', sessionId])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Antigravity session on an ssh machine is found by words said after its title, in its mirrored transcript, named with its host, and resumes there', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installAgy(env)
+      installFakeRemote(env)
+      installRemoteAgy(env)
+      seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+        await agyReady(page)
+        await runIn(page, centerTerm(page), 'Antigravity plans on the build machine')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Antigravity plans on the build machine'
+        })
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        const { id } = await boundRemoteSession(page, 'agy')
+        await runIn(page, centerTerm(page), 'where is the moth-needle-4')
+        const mirrored = path.join(
+          env.userData,
+          'remote',
+          REMOTE_HOST,
+          'agy-gemini',
+          'antigravity-cli',
+          'brain',
+          id,
+          '.system_generated',
+          'logs',
+          'transcript.jsonl'
+        )
+        await expect
+          .poll(() => fs.readFileSync(mirrored, 'utf8'), { timeout: 60_000 })
+          .toContain('Answer to: where is the moth-needle-4')
+        await closeActiveTab(app, page)
+        await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(`k-${id}`)
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        const found = await remoteHit(
+          app,
+          page,
+          'MOTH-needle-4',
+          'Antigravity plans on the build machine',
+          'Antigravity'
+        )
+        await expect(found.locator('.restore-snippet b')).toHaveText('moth-needle-4')
+        await found.click()
+
+        await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
+        expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${id}`)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Codex thread on an ssh machine is found by its title, named with its host, and resumes there', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installCodexOnFakeRemote(env)
+      installFakeRemote(env)
+      seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
+      fs.writeFileSync(
+        path.join(machineHome(env), 'fake-codex-next-title'),
+        'Codex plans on the build machine'
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Codex plans on the build machine'
+        })
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+        const [{ sessionId: thread }] = codexCalls(env)
+        await closeActiveTab(app, page)
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        const found = await remoteHit(
+          app,
+          page,
+          'codex PLANS on the build',
+          'Codex plans on the build machine',
+          'Codex'
+        )
+        await expect(searchDialog(page).locator('.pal-count')).toHaveText('1 conversation')
+        await found.click()
+
+        await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(2)
+        expect(codexCalls(env)[1]).toMatchObject({ method: 'thread/resume', sessionId: thread })
       } finally {
         await quitAndClose(app)
       }

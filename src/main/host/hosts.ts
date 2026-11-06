@@ -1,23 +1,18 @@
-import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { keyedOn, parseRemoteKey } from '@shared/remoteKey'
 import type { BackendSessionInfo, ClaudeSessionInfo } from '@shared/types'
 import type { Host } from './host'
 
 // ADR-0025
 export function publicClaudeSession({
-  jsonlPath,
-  scratchpadDir,
+  jsonlPath: _jsonlPath,
   ...s
 }: ClaudeSessionInfo): BackendSessionInfo {
   const machine = s.remote?.host
-  const keyed = (p: string | undefined): string | undefined =>
-    machine && p?.startsWith('/') ? formatRemoteKey(machine, p) : p
-  const info: BackendSessionInfo = {
-    ...s,
-    details: { claude: { jsonlPath, scratchpadDir: keyed(scratchpadDir) } }
-  }
-  if (!machine) return info
+  const keyed = (p: string | undefined): string | undefined => keyedOn(machine, p)
+  if (!machine) return s
   return {
-    ...info,
+    ...s,
+    scratchpadDir: keyed(s.scratchpadDir),
     treeRoot: keyed(s.treeRoot) ?? s.treeRoot,
     lastTouched: keyed(s.lastTouched),
     lastWritten: keyed(s.lastWritten),
@@ -37,6 +32,11 @@ export class Hosts<Machine extends Host> {
   of(p: string): Host {
     const key = parseRemoteKey(p)
     return key ? this.machine(key.host) : this.local
+  }
+
+  machineOf(p: string): Machine | undefined {
+    const key = parseRemoteKey(p)
+    return key ? this.machine(key.host) : undefined
   }
 
   machine(name: string): Machine {

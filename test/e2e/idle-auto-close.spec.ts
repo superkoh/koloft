@@ -1,8 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import type { Locator } from '@playwright/test'
+import type { Terminal } from '@xterm/xterm'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  centerTerm,
   focusOwner,
   processAlive,
   readCalls,
@@ -22,8 +24,12 @@ import { seedSettings } from './helpers/env'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS = 3000
 const ONE_CLOSE_WINDOW_WITH_MARGIN_MS = 4000
+// CC§12
+const FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON =
+  '\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006h'
+const OLD_SCREEN_FOCUS_OUT_AND_MOUSE_MOVE = '\x1b[O\x1b[<35;10;10M'
 
-test('an idle session goes to sleep quietly once its needs-you mark is seen (window focus is not a rule): its process ends but its row, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it', async ({
+test('an idle session goes to sleep quietly, its needs-you mark unseen and kept: its process ends but its row, red dot, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes, and one typed after, reach it with nothing from the mouse moves and focus reports its old screen sent', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -38,7 +44,7 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Idle A')
     await startSessionIn(page, 'ws-a')
@@ -60,14 +66,6 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Open C')).toHaveClass(/\bactive\b/)
 
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
-    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
-    expect(processAlive(a.pid)).toBe(true)
-
-    await row('Idle A').click()
-    await row('Unsaved B').click()
-    await row('Open C').click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
-    await expect(row('Open C')).toHaveClass(/\bactive\b/)
 
     const asleepTab = await row('Idle A').getAttribute('data-tab-id')
     await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
@@ -75,6 +73,8 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Idle A')).toHaveClass(/\bst-idle\b/)
     await expect(row('Idle A')).not.toHaveClass(/\bactive\b/)
     expect(await row('Idle A').getAttribute('data-tab-id')).toBe(asleepTab)
+    expect((await pendingAttention(page)).map((e) => e.tabId)).toContain(asleepTab)
+    await expect(row('Idle A').locator('.ws-tab-unread')).toHaveCount(1)
     const frozen = await terminalText(page, asleepTab!)
     expect(frozen).toContain(a.sessionId)
     expect(frozen).not.toContain('Resume this session with')
@@ -89,9 +89,22 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Open C')).not.toHaveClass(/\bcold\b/)
     expect(readCalls(env)).toHaveLength(3)
 
+    await page.evaluate(
+      ([id, modes]) => {
+        const terms = (window as unknown as { __koloftTerms: Record<string, Terminal> })
+          .__koloftTerms
+        terms[id].write(modes)
+      },
+      [asleepTab!, FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON]
+    )
     await row('Idle A').click()
     await expect(row('Idle A')).toHaveClass(/\bactive\b/)
     await expect.poll(() => focusOwner(page)).toBe('tui')
+    const screen = (await centerTerm(page).boundingBox())!
+    await page.mouse.move(screen.x + 20, screen.y + 20)
+    await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2, {
+      steps: 15
+    })
     await page.keyboard.type('/answer typed while waking')
     await page.keyboard.press('Enter')
     const calls = await waitForCalls(env, 4)
@@ -101,14 +114,26 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect
       .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
       .toContain('answered: typed while waking')
-    expect(await termIds(page)).not.toContain(asleepTab)
+    await page.evaluate(
+      ([id, reports]) => window.api.terminal.write(id, reports),
+      [asleepTab!, OLD_SCREEN_FOCUS_OUT_AND_MOUSE_MOVE]
+    )
+    await page.evaluate(
+      (id) => window.api.terminal.write(id, '/answer after the handover\r'),
+      wokenTab!
+    )
+    await expect
+      .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
+      .toContain('answered: after the handover')
+    await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
     await expect(wsRows(page, 'ws-a')).toHaveCount(2)
   } finally {
     await quitAndClose(app)
   }
 })
 
-test('a Keep running session never goes to sleep for being idle, while an unmarked one beside it does', async ({
+// CC§9
+test('a session that wakes into Claude asking whether to trust its folder shows that question within seconds instead of its old screen, and the answer typed into it lets the session carry on in that tab', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -121,7 +146,70 @@ test('a Keep running session never goes to sleep for being idle, while an unmark
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
+
+    setNextSessionTitle(env, 'Asks trust A')
+    await startSessionIn(page, 'ws-a')
+    const [a] = await waitForCalls(env, 1)
+    setNextSessionTitle(env, 'Open B')
+    await startSessionIn(page, 'ws-b')
+    await waitForCalls(env, 2)
+
+    await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
+    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
+    await expect(row('Asks trust A')).toHaveClass(/\bst-idle\b/)
+    const before = new Set(await termIds(page))
+
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), a.sessionId)
+    await row('Asks trust A').click()
+    const calls = await waitForCalls(env, 3)
+    expect(resumedId(calls[2])).toBe(a.sessionId)
+    let woken = ''
+    await expect
+      .poll(async () => (woken = (await termIds(page)).find((id) => !before.has(id)) ?? ''))
+      .not.toBe('')
+    await expect
+      .poll(
+        () =>
+          page.evaluate((id) => {
+            const terms = (window as unknown as { __koloftTerms: Record<string, Terminal> })
+              .__koloftTerms
+            const wrap = terms[id]?.element?.closest('.term-wrap') as HTMLElement | null
+            return !!wrap && wrap.style.display !== 'none' && wrap.style.visibility !== 'hidden'
+          }, woken),
+        { timeout: 15_000 }
+      )
+      .toBe(true)
+    expect(await terminalText(page, woken)).toContain('Quick safety check')
+    await expect.poll(() => focusOwner(page)).toBe('tui')
+
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(row('Asks trust A')).toHaveAttribute('data-tab-id', woken, { timeout: 30_000 })
+    await page.keyboard.type('/answer after trusting')
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(() => terminalText(page, woken), { timeout: 30_000 })
+      .toContain('answered: after trusting')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+test('a Keep running session never goes to sleep for being idle, while an ordinary one beside it does, needs-you mark and all', async ({
+  env
+}) => {
+  test.setTimeout(120_000)
+  env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+  env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS)
+  seedSettings(env, { hintsOff: true })
+
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await waitBooted(page)
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Resident A')
     await startSessionIn(page, 'ws-a')
@@ -138,10 +226,6 @@ test('a Keep running session never goes to sleep for being idle, while an unmark
     await waitForCalls(env, 3)
 
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
-    await row('Resident A').click()
-    await row('Idle C').click()
-    await row('Open B').click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await expect.poll(() => processAlive(c.pid), { timeout: 40_000 }).toBe(false)
     expect(processAlive(a.pid)).toBe(true)

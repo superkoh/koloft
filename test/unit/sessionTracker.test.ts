@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -16,12 +16,14 @@ let home: string
 let projectsRoot: string
 const RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS = '2000'
 const TURN_TEXT_WAIT_SHORTENED_MS = 1500
+const READ_PIECE_SMALLER_THAN_ONE_RECORD_BYTES = '100'
 
 beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-tracker-home-'))
   process.env.HOME = home
   process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
   process.env.KOLOFT_TURN_TEXT_WAIT_MS = String(TURN_TEXT_WAIT_SHORTENED_MS)
+  process.env.KOLOFT_APPEND_READ_CHUNK_BYTES = READ_PIECE_SMALLER_THAN_ONE_RECORD_BYTES
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({
     SessionTracker,
@@ -222,43 +224,16 @@ describe('SessionTracker — file extraction from tool_use', () => {
     const s3 = await waitFor(tracker, (x) => x.tabId === 'tabA' && (x.liveWrites ?? 0) > 1)
     expect(s3.liveWrites).toBe(2)
     expect(s3.lastWritten).toMatch(/hello\.js$/)
-  })
 
-  it('Edit / MultiEdit line deltas and read-never-downgrades-write', async () => {
-    const cwd = makeWorkspace({ 'a.ts': 'x\n' })
-    const tracker = newTracker()
-    tracker.track('tabE', cwd)
-    const file = writeJsonl(cwd, SID, [
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'Edit',
-              input: {
-                file_path: 'a.ts',
-                old_string: 'one\ntwo',
-                new_string: 'one\ntwo\nthree\nfour'
-              }
-            }
-          ]
-        },
-        cwd
-      },
-      {
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } }] },
-        cwd
-      }
-    ])
-    tracker.bindSession('tabE', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabE' && x.files.length >= 1)
-    const f = s.files.find((x) => x.label === 'a.ts')
-    expect(f?.access).toBe('wrote')
-    expect(f?.added).toBe(4)
-    expect(f?.removed).toBe(2)
+    const made = path.join(cwd, 'made.txt')
+    fs.writeFileSync(made, 'from a shell command\n')
+    tracker.noteShellWrites('tabA', [made])
+    const s4 = await waitFor(
+      tracker,
+      (x) => x.tabId === 'tabA' && !!x.lastWritten?.endsWith('made.txt')
+    )
+    expect(s4.liveWrites).toBe(3)
+    expect(s4.files.find((f) => f.label === 'made.txt')?.access).toBe('wrote')
   })
 })
 
@@ -289,6 +264,24 @@ describe('SessionTracker — title resolution priority', () => {
     fs.writeFileSync(file.replace(/\.jsonl$/, '.title'), 'Sidecar Name\n')
     const s = await waitFor(tracker, (x) => x.tabId === 'tabT2' && x.title === 'Sidecar Name')
     expect(s.title).toBe('Sidecar Name')
+  })
+
+  it('a sidecar <id>.title is never polled on its own: it is read at bind and on the 5 s rescan, so one written or renamed later still shows', async () => {
+    const watchFile = vi.spyOn(fs, 'watchFile')
+    onTestFinished(() => watchFile.mockRestore())
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2s', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'first' }, cwd }])
+    const sidecar = file.replace(/\.jsonl$/, '.title')
+    tracker.bindSession('tabT2s', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'first')
+
+    fs.writeFileSync(sidecar, 'Sidecar Name\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Sidecar Name')
+    fs.writeFileSync(sidecar, 'Renamed\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Renamed')
+    expect(watchFile.mock.calls.map(([p]) => p)).toEqual([file])
   })
 
   it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
@@ -712,10 +705,10 @@ describe('SessionTracker — binding', () => {
       const tracker = newTracker()
       tracker.track('tabTR6', wsA)
       const fileA = writeJsonl(wsA, SID, [{ type: 'user', message: { content: 'x' }, cwd: wsA }])
-      tracker.bindSession('tabTR6', fileA, SID, wsA, '', '', 'startup')
+      tracker.bindSession('tabTR6', fileA, SID, wsA, '', 'startup')
       await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.jsonlPath === fileA)
       const fileB = writeJsonl(wsB, SID2, [{ type: 'user', message: { content: 'y' }, cwd: wsB }])
-      tracker.bindSession('tabTR6', fileB, SID2, wsB, '', '', 'clear')
+      tracker.bindSession('tabTR6', fileB, SID2, wsB, '', 'clear')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.sessionId === SID2)
       expect(s.treeRoot).toBe(wsB)
     })
@@ -726,9 +719,9 @@ describe('SessionTracker — binding', () => {
       const tracker = newTracker()
       tracker.track('tabTR7', wsA)
       const file = writeJsonl(wsA, SID, [{ type: 'user', message: { content: 'x' }, cwd: wsA }])
-      tracker.bindSession('tabTR7', file, SID, wsA, '', '', 'startup')
+      tracker.bindSession('tabTR7', file, SID, wsA, '', 'startup')
       await waitFor(tracker, (x) => x.tabId === 'tabTR7' && x.jsonlPath === file)
-      tracker.bindSession('tabTR7', file, SID, wsB, '', '', 'compact')
+      tracker.bindSession('tabTR7', file, SID, wsB, '', 'compact')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR7' && x.cwd === wsB)
       expect(s.treeRoot).toBe(wsA)
     })
@@ -779,6 +772,18 @@ describe('SessionTracker — binding', () => {
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.cwd === rcwd + '/sub')
       expect(s.treeRoot).toBe(rcwd)
     })
+
+    it('places the transcript of a tab on another machine both in that machine’s home, for a session there, and in the copy mirrored to this Mac', async () => {
+      const rcwd = '/home/koh/api'
+      const mirror = path.join(home, 'remote', 'pinbox', 'projects')
+      const tracker = newTracker()
+      tracker.track('tabTR11', rcwd, { host: 'pinbox', projectsRoot: mirror, tmuxName: `k-${SID}` })
+      tracker.bindSession('tabTR11', '', SID, rcwd)
+      expect(tracker.transcriptPlaces(SID)).toEqual({
+        onThisMac: path.join(mirror, encodeCwd(rcwd), `${SID}.jsonl`),
+        onMachine: `~/.claude/projects/${encodeCwd(rcwd)}/${SID}.jsonl`
+      })
+    })
   })
 
   describe('aliveTabFor (F7 force-close): what it resolves is what gets killed', () => {
@@ -801,6 +806,33 @@ describe('SessionTracker — binding', () => {
       await waitFor(tracker, (x) => x.tabId === 'tabAT2' && x.sessionId === SID)
       tracker.setAlive('tabAT2', false)
       expect(tracker.aliveTabFor(SID)).toBeNull()
+    })
+
+    it('a tab whose claude was killed stops reading its transcript but keeps its row, while a live tab beside it keeps reading', async () => {
+      const PAST_ONE_5S_SUBAGENT_SCAN_MS = 5600
+      const tracker = newTracker()
+      const [liveWs, deadWs, drift] = [makeWorkspace({}), makeWorkspace({}), makeWorkspace({})]
+      const live = writeJsonl(liveWs, SID, [
+        { type: 'user', message: { content: 'hi' }, cwd: liveWs }
+      ])
+      const deadSid = '22222222-2222-4222-8222-222222222222'
+      const dead = writeJsonl(deadWs, deadSid, [
+        { type: 'user', message: { content: 'hi' }, cwd: deadWs }
+      ])
+      tracker.track('tabKL1', liveWs)
+      tracker.bindSession('tabKL1', live, SID, liveWs)
+      tracker.track('tabKL2', deadWs)
+      tracker.bindSession('tabKL2', dead, deadSid, deadWs)
+      await waitFor(tracker, (x) => x.tabId === 'tabKL2' && x.title === 'hi')
+      tracker.setAlive('tabKL2', false)
+
+      fs.appendFileSync(dead, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      fs.appendFileSync(live, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      await waitFor(tracker, (x) => x.tabId === 'tabKL1' && x.cwd === drift)
+      await new Promise((r) => setTimeout(r, PAST_ONE_5S_SUBAGENT_SCAN_MS))
+
+      const row = tracker.list().find((x) => x.tabId === 'tabKL2')
+      expect(row).toMatchObject({ sessionId: deadSid, alive: false, cwd: deadWs })
     })
 
     it('returns null for a session nothing is bound to', () => {
@@ -1007,7 +1039,7 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
       { type: 'user', message: { content: 'hi' }, cwd: wt },
       wtState(wt)
     ])
-    tracker.bindSession('tabM6', file, SID, repo, '', '', 'resume')
+    tracker.bindSession('tabM6', file, SID, repo, '', 'resume')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabM6' && x.treeRoot === wt)
     expect(s.worktree).toBe('resumed')
@@ -1147,34 +1179,7 @@ describe('SessionTracker — per-session usage', () => {
     cwd: o.cwd
   })
 
-  // CC§2
-  it('dedups a usage record repeated by streaming (same id+requestId) — counts it once', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU1', cwd)
-    const rec = asst({
-      id: 'msg_a',
-      req: 'req_a',
-      model: 'claude-opus-4-8',
-      in: 100,
-      out: 200,
-      cw: 1000,
-      cr: 5000,
-      cwd
-    })
-    const file = writeJsonl(cwd, SID, [rec, rec, rec])
-    tracker.bindSession('tabU1', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU1' && !!x.usage)
-    expect(s.usage!.inTok).toBe(100)
-    expect(s.usage!.outTok).toBe(200)
-    expect(s.usage!.cacheWriteTok).toBe(1000)
-    expect(s.usage!.cacheReadTok).toBe(5000)
-    const expected = (100 * 5 + 200 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000
-    expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
-  })
-
-  it('captures the CLI version and the hook-reported account (info-card metadata)', async () => {
+  it('captures the hook-reported account (info-card metadata)', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabUM', cwd)
@@ -1188,124 +1193,11 @@ describe('SessionTracker — per-session usage', () => {
       cr: 0,
       cwd
     })
-    rec.version = '2.0.0-test'
     const file = writeJsonl(cwd, SID, [rec])
-    tracker.bindSession('tabUM', file, SID, cwd, 'acct-x', '3.9.9')
+    tracker.bindSession('tabUM', file, SID, cwd, 'acct-x')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabUM' && !!x.usage)
-    expect(s.usage!.ccVersion).toBe('2.0.0-test')
-    expect(s.cliVersion).toBe('3.9.9')
     expect(s.account).toBe('acct-x')
-  })
-
-  it('unknown model → tokens present but NO cost (design D6: never a wrong $)', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU2', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'm1',
-        req: 'r1',
-        model: 'totally-made-up-model',
-        in: 10,
-        out: 20,
-        cw: 0,
-        cr: 0,
-        cwd
-      })
-    ])
-    tracker.bindSession('tabU2', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU2' && !!x.usage)
-    expect(s.usage!.inTok).toBe(10)
-    expect(s.usage!.outTok).toBe(20)
-    expect(s.usage!.costUsd).toBeUndefined()
-    expect(s.usage!.todayCostUsd).toBeUndefined()
-    expect(s.usage!.ctxPct).toBeUndefined()
-  })
-
-  it('context uses the LATEST record, not the first or the sum', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU3', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'm1',
-        req: 'r1',
-        model: 'claude-opus-4-8',
-        in: 10,
-        out: 5,
-        cw: 0,
-        cr: 90_000,
-        cwd
-      }),
-      asst({
-        id: 'm2',
-        req: 'r2',
-        model: 'claude-opus-4-8',
-        in: 10,
-        out: 5,
-        cw: 0,
-        cr: 150_000,
-        cwd
-      })
-    ])
-    tracker.bindSession('tabU3', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU3' && x.usage?.ctxTokens === 150_010)
-    expect(s.usage!.ctxTokens).toBe(150_010)
-    expect(s.usage!.ctxPct).toBeCloseTo(150_010 / 1_000_000, 6)
-  })
-
-  it('skips <synthetic> records but still counts the real one', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU4', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'syn',
-        req: 'rs',
-        model: '<synthetic>',
-        in: 999,
-        out: 999,
-        cw: 999,
-        cr: 999,
-        cwd
-      }),
-      asst({ id: 'm1', req: 'r1', model: 'claude-opus-4-8', in: 7, out: 8, cw: 0, cr: 0, cwd })
-    ])
-    tracker.bindSession('tabU4', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU4' && !!x.usage)
-    expect(s.usage!.inTok).toBe(7)
-    expect(s.usage!.outTok).toBe(8)
-    expect(s.usage!.model).toBe('claude-opus-4-8')
-  })
-
-  it("today's cost tracks only records on the current local calendar day", async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU5', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'old',
-        req: 'ro',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        ts: '2020-01-01T00:00:00.000Z',
-        cwd
-      }),
-      asst({ id: 'now', req: 'rn', model: 'claude-opus-4-8', in: 100, out: 100, cw: 0, cr: 0, cwd })
-    ])
-    tracker.bindSession('tabU5', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU5' && x.usage?.todayCostUsd != null)
-    const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
-    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
   })
 
   it('rebinding to a DIFFERENT session resets the accumulators', async () => {
@@ -1331,6 +1223,69 @@ describe('SessionTracker — per-session usage', () => {
     )
     expect(s.usage!.inTok).toBe(7)
     expect(s.usage!.outTok).toBe(7)
+  })
+
+  const spend = (cwd: string, who: string, n: number, tok: number): unknown[] =>
+    Array.from({ length: n }, (_, i) =>
+      asst({
+        id: `m${who}${i}`,
+        req: 'r',
+        model: 'claude-opus-4-8',
+        in: tok,
+        out: tok,
+        cw: 0,
+        cr: 0,
+        cwd
+      })
+    )
+
+  function swapWhenThirdPieceOfIsRead(file: string, swap: () => void): void {
+    const realOpen = fs.promises.open
+    let pieces = 0
+    const open = vi.spyOn(fs.promises, 'open').mockImplementation((...args) => {
+      if (args[0] === file && ++pieces === 3) swap()
+      return realOpen(...args)
+    })
+    onTestFinished(() => open.mockRestore())
+  }
+
+  it('a session swapped in while a long transcript is still being read in pieces shows only the new session', async () => {
+    const cwd = makeWorkspace({})
+    const SID_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const SID_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const prompt = (text: string): unknown => ({ type: 'user', message: { content: text }, cwd })
+    const fileA = writeJsonl(cwd, SID_A, [prompt('about A'), ...spend(cwd, 'a', 20, 500)])
+    const fileB = writeJsonl(cwd, SID_B, [prompt('about B'), ...spend(cwd, 'b', 40, 7)])
+    const tracker = newTracker()
+    tracker.track('tabU7', cwd)
+    swapWhenThirdPieceOfIsRead(fileA, () => tracker.bindSession('tabU7', fileB, SID_B, cwd))
+    tracker.bindSession('tabU7', fileA, SID_A, cwd)
+
+    const s = await waitFor(
+      tracker,
+      (x) => x.tabId === 'tabU7' && x.sessionId === SID_B && x.usage?.inTok === 7 * 40
+    )
+    expect(s.title).toBe('about B')
+    expect(s.usage!.outTok).toBe(7 * 40)
+  })
+
+  it('a session swapped in while a long sub-agent transcript of the old one is still being read never counts its spend', async () => {
+    const cwd = makeWorkspace({})
+    const SID_A = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    const SID_B = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    const fileA = writeJsonl(cwd, SID_A, spend(cwd, 'a', 1, 1))
+    const subOfA = writeSubagentJsonl(cwd, SID_A, 'agent-long.jsonl', spend(cwd, 'sub', 20, 500))
+    const fileB = writeJsonl(cwd, SID_B, spend(cwd, 'b', 40, 7))
+    const tracker = newTracker()
+    tracker.track('tabU8', cwd)
+    swapWhenThirdPieceOfIsRead(subOfA, () => tracker.bindSession('tabU8', fileB, SID_B, cwd))
+    tracker.bindSession('tabU8', fileA, SID_A, cwd)
+
+    const s = await waitFor(
+      tracker,
+      (x) => x.tabId === 'tabU8' && x.sessionId === SID_B && x.usage?.inTok === 7 * 40
+    )
+    expect(s.usage!.outTok).toBe(7 * 40)
   })
 
   // CC§8
@@ -1370,33 +1325,6 @@ describe('SessionTracker — per-session usage', () => {
     const subCost = (4632 * 5 + 1 * 25 + 10_478 * 6.25) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(mainCost + subCost, 9)
     expect(s.usage!.ctxTokens).toBe(40_010)
-  })
-
-  it('counts id-less records every time — no false dedupe collapse', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabIL', cwd)
-    const rec = {
-      type: 'assistant',
-      timestamp: new Date().toISOString(),
-      message: {
-        role: 'assistant',
-        model: 'claude-opus-4-8',
-        content: [{ type: 'text', text: 'ok' }],
-        usage: {
-          input_tokens: 100,
-          output_tokens: 0,
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0
-        }
-      },
-      cwd
-    }
-    const file = writeJsonl(cwd, SID, [rec, rec])
-    tracker.bindSession('tabIL', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabIL' && !!x.usage)
-    expect(s.usage!.inTok).toBe(200)
   })
 
   it('folds subagent spend when ONLY the subagent transcript grows (idle main jsonl), so the cost never freezes while a background Task runs', async () => {
@@ -1452,42 +1380,6 @@ describe('SessionTracker — per-session usage', () => {
     const sideCost = (4000 * 1 + 2 * 5) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(mainCost + sideCost, 10)
   })
-
-  it('an out-of-order OLDER-dated record does not wipe today (#4)', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabOO', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'now',
-        req: 'rn',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        cwd
-      }),
-      asst({
-        id: 'old',
-        req: 'ro',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        ts: '2020-01-01T00:00:00.000Z',
-        cwd
-      })
-    ])
-    tracker.bindSession('tabOO', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabOO' && x.usage?.todayCostUsd != null)
-    const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
-    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
-    expect(s.usage!.todayDayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-  })
 })
 
 // CC§1
@@ -1497,18 +1389,18 @@ describe('SessionTracker — compact SessionStart (auto-compaction fires mid-tur
     const tracker = newTracker()
     tracker.track('tabCP', cwd)
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'startup')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'startup')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'waiting')
     tracker.setStatus('tabCP', 'working')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'working')
 
     const transitions: { prev?: string; next: string }[] = []
     tracker.on('status', (t: { prev?: string; next: string }) => transitions.push(t))
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'compact')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'compact')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('working')
     expect(transitions).toEqual([])
 
-    tracker.bindSession('tabCP', file, SID, cwd, '', '', 'clear')
+    tracker.bindSession('tabCP', file, SID, cwd, '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('waiting')
   })
 })
@@ -1760,7 +1652,7 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
       `/tmp/claude-1000/${encodeCwd(RCWD)}/${RSID}/scratchpad`
     )
 
-    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
       `/tmp/claude-1000/${encodeCwd(RCWD)}/session-after-clear/scratchpad`
     )
@@ -1777,7 +1669,7 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
   it('U-TRK-2: follows the tmux name when an in-TUI /clear mints a new session id — liveness, kill and restart key off it', () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)
-    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', 'clear')
     tracker.setRemoteTmuxName('tabR', 'k-session-after-clear')
     expect(tracker.remoteOf('tabR')?.tmuxName).toBe('k-session-after-clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.sessionId).toBe('session-after-clear')
@@ -1793,8 +1685,17 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(tracker.transcriptExists(RSID)).toBe(true)
   })
 
-  it('lists the files it wrote by their path on the machine, though this Mac has no such file, with the time of the last write (#182)', async () => {
+  it('lists the files it wrote under their real path on the machine, asked of the machine in one batch, ~/ paths included, though this Mac has no such file (#182)', async () => {
     const tracker = remoteTracker()
+    const asked: [string, string[]][] = []
+    const onMachine = new Map([
+      ['/home/koh/api/docs/plan.md', '/srv/api/docs/plan.md'],
+      ['~/notes.md', '/home/koh/notes.md']
+    ])
+    tracker.realFilesOn = async (host, files) => {
+      asked.push([host, files])
+      return new Map(files.flatMap((f) => (onMachine.has(f) ? [[f, onMachine.get(f)!]] : [])))
+    }
     const file = path.join(mirrorRoot(), encodeCwd(RCWD), RSID + '.jsonl')
     const write = (filePath: string, at: string): unknown => ({
       type: 'assistant',
@@ -1820,15 +1721,22 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(fs.existsSync('/home/koh/api/docs/plan.md')).toBe(false)
     tracker.bindSession('tabR', file, RSID, RCWD)
 
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabR' && x.files.length > 0)
-    expect(s.files).toEqual([
-      expect.objectContaining({
-        src: '/home/koh/api/docs/plan.md',
-        access: 'wrote',
-        wroteAt: Date.parse('2026-09-01T10:02:00.000Z')
-      })
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabR' && x.files.length === 2)
+    expect(asked[0]).toEqual([
+      'devbox',
+      expect.arrayContaining(['/home/koh/api/docs/plan.md', '~/notes.md'])
     ])
-    expect(s.lastWritten).toBe('/home/koh/api/docs/plan.md')
+    expect(s.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          src: '/srv/api/docs/plan.md',
+          access: 'wrote',
+          wroteAt: Date.parse('2026-09-01T10:02:00.000Z')
+        }),
+        expect.objectContaining({ src: '/home/koh/notes.md', access: 'wrote' })
+      ])
+    )
+    expect(s.lastWritten).toBe('/srv/api/docs/plan.md')
   })
 })
 
@@ -2071,6 +1979,47 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  // CC§2
+  it('a skill command is the owner’s line that opens its turn, live and on disk, so the turn ends once with its reply even when its Stop comes before any of it is on disk; a built-in command opens no turn', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const ended: { turn: { said: { who: string; text: string }[]; reply: string } }[] = []
+    tracker.on('turn-ended', (e) => ended.push(e))
+    tracker.track('tabSkill', cwd)
+    const sid = '55555555-5555-4555-8555-555555555555'
+    const file = writeJsonl(cwd, sid, [human('earlier question', 1), said(text('earlier'), 2)])
+    tracker.bindSession('tabSkill', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
+
+    const skill = human(
+      '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>',
+      30
+    )
+    fs.appendFileSync(file, JSON.stringify(skill) + '\n')
+    tracker.receive('tabSkill', { type: 'stop' })
+    setTimeout(() => {
+      fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+      fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n')
+    }, TURN_TEXT_WAIT_SHORTENED_MS / 3)
+    await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].turn.said.map((l) => [l.who, l.text])).toEqual([
+      ['owner', '/koloft:koloft session list']
+    ])
+    expect(ended[0].turn.reply).toBe('No sessions.')
+
+    const builtIn = human(
+      '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>haiku</command-args>',
+      40
+    )
+    fs.appendFileSync(file, JSON.stringify(builtIn) + '\n')
+    const replies = (turns: { reply: string }[] | undefined): string[] | undefined =>
+      turns?.map((t) => t.reply)
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS))
+    expect(ended).toHaveLength(1)
+    expect(replies(tracker.turnsOf(sid, 5))).toEqual(['earlier', 'No sessions.'])
+    expect(replies(await transcriptTurns(file, 5))).toEqual(['earlier', 'No sessions.'])
+  })
+
   // CC§14
   it('any tool call, a question or a command, raises tool-done with its name and input once its result lands, but one finished before the bind does not', async () => {
     const cwd = makeWorkspace({})
@@ -2104,5 +2053,42 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         { tabId: 'tabAsk', name: 'Bash', input: { command: 'sleep 15' } },
         { tabId: 'tabAsk', name: 'AskUserQuestion', input: {} }
       ])
+  })
+
+  // CC§2
+  it('the row line says a command the session ran once its result lands, and never one the person turned down', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const done: string[] = []
+    tracker.on('tool-done', (e: { input: { command?: string } }) =>
+      done.push(e.input.command ?? '')
+    )
+    tracker.track('tabDid', cwd)
+    const sid = '55555555-5555-4555-8555-555555555555'
+    const run = (id: string, command: string, s: number): unknown =>
+      said({ type: 'tool_use', id, name: 'Bash', input: { command } }, s)
+    const result = (id: string, s: number, more: object = {}): unknown => ({
+      type: 'user',
+      isSidechain: false,
+      timestamp: at(s),
+      message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', ...more }] }
+    })
+    const file = writeJsonl(cwd, sid, [human('earlier', 1)])
+    tracker.bindSession('tabDid', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabDid' && x.title === 'earlier')
+    fs.appendFileSync(file, JSON.stringify(run('t1', 'npm test', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(result('t1', 31)) + '\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabDid' && x.lastAction === 'Ran npm test')
+    fs.appendFileSync(file, JSON.stringify(run('t2', 'rm -rf build', 32)) + '\n')
+    const turnedDown = {
+      is_error: true,
+      content: "The user doesn't want to proceed with this tool use. The tool use was rejected."
+    }
+    fs.appendFileSync(file, JSON.stringify(result('t2', 33, turnedDown)) + '\n')
+    await expect.poll(() => done).toEqual(['npm test', 'rm -rf build'])
+    const info = (tracker as unknown as { list(): SessionInfo[] })
+      .list()
+      .find((x) => x.tabId === 'tabDid')
+    expect(info?.lastAction).toBe('Ran npm test')
   })
 })

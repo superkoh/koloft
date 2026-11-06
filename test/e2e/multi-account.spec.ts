@@ -4,15 +4,22 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import type { AccountView } from '../../src/shared/types'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, osOutlets, quitAndClose } from './helpers/app'
 import {
+  E2E_AGY_ACCOUNT,
+  E2E_CLAUDE_ACCOUNT,
+  E2E_CODEX_ACCOUNT,
+  E2E_MUSE_ACCOUNT,
+  installAgy,
+  installCodex,
+  installMuse,
   seededAccount as acct,
   seedNoClaudeAccountButStillSetUp,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
-import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
-import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
+import { centerTerm, clickAppMenuItem, openMenu, startSessionIn, waitBooted } from './helpers/p1'
+import { noAccountLine, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
   alpha: 'sk-ant-oat01-fixture-alpha',
@@ -55,6 +62,7 @@ interface BucketScript {
   u7?: number
   uoi?: number
   s5?: string
+  no5h?: boolean
   status?: number
   hang?: boolean
   answerAfterMs?: number
@@ -92,13 +100,17 @@ async function startProbeMock(): Promise<ProbeMock> {
       }
       res.writeHead(200, {
         'content-type': 'application/json',
-        'anthropic-ratelimit-unified-5h-utilization': String(s.u5 ?? 0.1),
+        ...(s.no5h
+          ? {}
+          : {
+              'anthropic-ratelimit-unified-5h-utilization': String(s.u5 ?? 0.1),
+              'anthropic-ratelimit-unified-5h-status': s.s5 ?? 'allowed',
+              'anthropic-ratelimit-unified-5h-reset': String(nowSec + 7200)
+            }),
         'anthropic-ratelimit-unified-7d-utilization': String(s.u7 ?? 0.2),
         'anthropic-ratelimit-unified-7d_oi-utilization': String(s.uoi ?? 0.3),
-        'anthropic-ratelimit-unified-5h-status': s.s5 ?? 'allowed',
         'anthropic-ratelimit-unified-7d-status': 'allowed',
         'anthropic-ratelimit-unified-7d_oi-status': 'allowed',
-        'anthropic-ratelimit-unified-5h-reset': String(nowSec + 7200),
         'anthropic-ratelimit-unified-7d-reset': String(nowSec + 200000),
         'anthropic-ratelimit-unified-7d_oi-reset': String(nowSec + 200000)
       })
@@ -196,7 +208,7 @@ function claudeAccounts(page: Page): Locator {
   return page.locator('.acct-section').first()
 }
 
-test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
+test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), Paste token replacing the Sign in form inside the Claude section, an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -225,11 +237,14 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await expect(
       claudeAccounts(page).locator('.acct-foot button', { hasText: 'Custom endpoint' })
     ).toHaveCount(0)
-    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(3)
+    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(2)
 
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Paste token' }).click()
+    await expect(page.locator('.acct-add')).toHaveCount(1)
+    await expect(claudeAccounts(page).locator('.acct-add-title')).toHaveText('Paste token')
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
@@ -250,15 +265,9 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await openSettings(page)
     await expect(page.locator('.acct-row.off')).toHaveCount(1)
 
-    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' }).click()
-    await expect(
-      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Updated' })
-    ).toBeVisible({
-      timeout: 15_000
-    })
-    await expect(
-      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' })
-    ).toBeVisible({
+    await page.getByRole('button', { name: 'Refresh usage' }).click()
+    await expect(page.getByRole('button', { name: 'Updated' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('button', { name: 'Refresh usage' })).toBeVisible({
       timeout: 15_000
     })
 
@@ -290,6 +299,34 @@ test('E2: a session whose Koloft account cannot be read does not start, and says
       timeout: 30_000
     })
     expect(readCalls(env)).toEqual([])
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+// ADR-0030
+test('E2b: a Claude tab reopened after its only account was turned off while Koloft was shut says what is wrong with the accounts, not the general line', async ({
+  env
+}) => {
+  test.setTimeout(150_000)
+  let { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(
+      page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+    ).toBeVisible({ timeout: 40_000 })
+    await quitAndClose(app)
+    const turnedOff = { ...acct(E2E_CLAUDE_ACCOUNT, 'apikey'), enabled: false }
+    seedSettings(env, { accounts: [turnedOff] })
+    ;({ app, page } = await launchConfigured(env))
+    const accountIssue = noAccountLine(
+      await page.evaluate(() => window.api.accounts.list()),
+      'claude'
+    )
+    expect(accountIssue).toMatch(/^No Claude account can be used/)
+    await expect(page.locator('.toast')).toContainText(accountIssue, { timeout: 30_000 })
+    await expect(centerTerm(page)).toContainText(`[Koloft] ${accountIssue}`)
   } finally {
     await app.close().catch(() => {})
   }
@@ -582,7 +619,7 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
       )
       expect(pct).toBeGreaterThan(30)
       expect(pct).toBeLessThan(50)
-      const firstAcct = (await pop.locator('.tbu-rows .tbu-row').first().boundingBox())!
+      const firstAcct = (await pop.locator('.tbu-rows .tbu-row:not(.pool)').first().boundingBox())!
       expect((await pool.boundingBox())!.y).toBeLessThan(firstAcct.y)
     } finally {
       await app.close().catch(() => {})
@@ -628,6 +665,53 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
     }
   })
 
+  // CC§7
+  test('pool: an account that answers with no 5-hour bucket (a verified Ultra) is measured, shows “—” for 5h, and stays out of the pool’s 5h mean; once no account has one, the 5h column goes', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const mock = await startProbeMock()
+    mock.script.set(TOKENS.alpha, { u5: 0.2, u7: 0.2 })
+    mock.script.set(TOKENS.bravo, { u5: 0.6, u7: 0.2 })
+    mock.script.set(TOKENS.charlie, { no5h: true, u7: 0.5 })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+    seedPool(env)
+    const { app, page } = await launchConfigured(env)
+    try {
+      const capsule = page.locator('.tbu')
+      await capsule.waitFor({ state: 'visible' })
+      await expect.poll(() => mock.requests.length, { timeout: 20_000 }).toBe(4)
+      await expect(capsule.locator('.tbu-bar:not(.total) .tbu-fill')).toHaveCount(3)
+
+      await capsule.hover()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop).toBeVisible()
+      const pool = pop.locator('.tbu-row.pool')
+      await expect(pool.locator('.tbu-pool-meta')).toContainText('3 measured')
+      await expect(pool.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('40%')
+      const charlie = pop.locator('.tbu-row', { hasText: 'charlie' })
+      await expect(charlie.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('—')
+      await expect(charlie).toContainText('no 5-hour limit')
+      await expect(charlie.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('50%')
+
+      for (const t of [TOKENS.alpha, TOKENS.bravo]) mock.script.set(t, { no5h: true, u7: 0.3 })
+      await pop.locator('.tbu-act', { hasText: 'Probe now' }).click()
+      await expect(pop.locator('.tbu-colhead')).not.toContainText('5h', { timeout: 20_000 })
+      await expect(pop.locator('.acct-meter[data-win="5h"]')).toHaveCount(0)
+      await expect(pop.locator('.tbu-colhead')).toContainText('7d')
+
+      await page.mouse.move(5, 5)
+      await openSettings(page)
+      const row = claudeAccounts(page).locator('.acct-row', { hasText: 'charlie' })
+      await expect(row.locator('.acct-meter[data-win="7d"]')).toBeVisible()
+      await expect(row.locator('.acct-meter[data-win="5h"]')).toHaveCount(0)
+      await expect(row).not.toContainText('5h resets')
+    } finally {
+      await app.close().catch(() => {})
+      await mock.close()
+    }
+  })
+
   test('pool: with only one account measured (enabled is not enough) there is no total bar and no aggregate', async ({
     env
   }) => {
@@ -660,33 +744,33 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
   })
 })
 
-test('E6: probe outage degrades to round-robin fast — never a blocked launch', async ({
-  env,
-  app,
-  page
-}) => {
+test('E6: probe outage degrades to round-robin fast — never a blocked launch', async ({ env }) => {
   test.setTimeout(120_000)
   env.launchEnv.KOLOFT_PROBE_BASE_URL = 'http://127.0.0.1:1'
   seedPool(env)
-  await waitBooted(page)
-  const t0 = Date.now()
-  await startSessionIn(page, 'ws-a')
-  const [call] = await waitForCalls(env, 1, 20_000)
-  expect(Date.now() - t0).toBeLessThan(15_000)
-  expect(call.oauthToken).not.toBeNull()
-  await expect(centerTerm(page)).toContainText('round-robin', { timeout: 10_000 })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    const t0 = Date.now()
+    await startSessionIn(page, 'ws-a')
+    const [call] = await waitForCalls(env, 1, 20_000)
+    expect(Date.now() - t0).toBeLessThan(15_000)
+    expect(call.oauthToken).not.toBeNull()
+    await expect(centerTerm(page)).toContainText('round-robin', { timeout: 10_000 })
+  } finally {
+    await app.close().catch(() => {})
+  }
 })
 
 test('E6b: HUNG probe server → main answers within its 2s budget (round-robin), not a bare exec', async ({
-  env,
-  app,
-  page
+  env
 }) => {
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   for (const t of Object.values(TOKENS)) mock.script.set(t, { hang: true })
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   seedPool(env)
+  const { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
@@ -696,19 +780,20 @@ test('E6b: HUNG probe server → main answers within its 2s budget (round-robin)
       timeout: 10_000
     })
   } finally {
+    await app.close().catch(() => {})
     await mock.close()
   }
 })
 
 test('E7: leak scan — no token bytes in the renderer, the scrollback or userData', async ({
-  env,
-  page
+  env
 }) => {
   test.setTimeout(150_000)
   const mock = await startProbeMock()
   mock.script.set(TOKENS.bravo, { u5: 0.1 })
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   seedPool(env)
+  const { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
@@ -723,6 +808,7 @@ test('E7: leak scan — no token bytes in the renderer, the scrollback or userDa
     const picks = path.join(env.userData, 'picks')
     if (fs.existsSync(picks)) expect(fs.readdirSync(picks)).toEqual([])
   } finally {
+    await app.close().catch(() => {})
     await mock.close()
   }
 })
@@ -752,43 +838,67 @@ test('E8: a token exported by the user’s shell rc never stands in for a Koloft
   }
 })
 
-test('E9: a restarted (resumed) session re-balances to the now-lighter account — every launch picks afresh, and a manual refresh changes the next pick', async ({
-  env
-}) => {
-  test.setTimeout(150_000)
-  const mock = await startProbeMock()
-  mock.script.set(TOKENS.alpha, { u5: 0.9 })
-  mock.script.set(TOKENS.bravo, { u5: 0.1 })
-  mock.script.set(TOKENS['charlie'], { u5: 0.95 })
-  env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedPool(env)
-  const { app, page } = await launchConfigured(env)
-  try {
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
-    const [first] = await waitForCalls(env, 1)
-    expect(first.oauthToken).toBe(TOKENS.bravo)
-    await expect(
-      page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
-    ).toBeVisible({ timeout: 40_000 })
-
-    mock.script.set(TOKENS.bravo, { u5: 0.97 })
-    mock.script.set(TOKENS.alpha, { u5: 0.05 })
-    await page.evaluate(() => window.api.accounts.probe())
-
-    await app.evaluate(({ Menu }) => {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    })
-    const calls = await waitForCalls(env, 2, 45_000)
-    expect(calls[1].argv).toContain('--resume')
-    expect(calls[1].oauthToken).toBe(TOKENS.alpha)
-  } finally {
-    await app.close().catch(() => {})
-    await mock.close()
+const RESUMES = [
+  {
+    title:
+      'E9a: a session resumed by Restart Session stays on the account it ran on while that account is at most 95% used, even when another is now lighter',
+    quitKoloft: false,
+    bravoThen: { u5: 0.5, u7: 0.95 },
+    lands: 'bravo'
+  },
+  {
+    title:
+      'E9b: a session resumed by quitting and reopening Koloft stays on the account it ran on while that account is at most 95% used, even when another is now lighter',
+    quitKoloft: true,
+    bravoThen: { u5: 0.5, u7: 0.95 },
+    lands: 'bravo'
+  },
+  {
+    title:
+      'E9: a restarted (resumed) session leaves its account once that account is past 95% used, for the now-lighter one — and a manual refresh changes the next pick',
+    quitKoloft: false,
+    bravoThen: { u5: 0.97 },
+    lands: 'alpha'
   }
-})
+] as const
+
+for (const resume of RESUMES) {
+  test(resume.title, async ({ env }) => {
+    test.setTimeout(150_000)
+    const mock = await startProbeMock()
+    mock.script.set(TOKENS.alpha, { u5: 0.9 })
+    mock.script.set(TOKENS.bravo, { u5: 0.1 })
+    mock.script.set(TOKENS['charlie'], { u5: 0.95 })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+    seedPool(env)
+    let { app, page } = await launchConfigured(env)
+    try {
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const [first] = await waitForCalls(env, 1)
+      expect(first.oauthToken).toBe(TOKENS.bravo)
+      await expect(
+        page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+      ).toBeVisible({ timeout: 40_000 })
+
+      mock.script.set(TOKENS.bravo, resume.bravoThen)
+      mock.script.set(TOKENS.alpha, { u5: 0.05 })
+      await page.evaluate(() => window.api.accounts.probe())
+
+      if (resume.quitKoloft) {
+        await quitAndClose(app)
+        ;({ app, page } = await launchConfigured(env))
+      } else await clickAppMenuItem(app, page, 'restart-session')
+      const calls = await waitForCalls(env, 2, 45_000)
+      expect(calls[1].argv).toContain('--resume')
+      expect(calls[1].argv).toContain(first.sessionId)
+      expect(calls[1].oauthToken).toBe(TOKENS[resume.lands])
+    } finally {
+      await app.close().catch(() => {})
+      await mock.close()
+    }
+  })
+}
 
 test('E11: an expired account recovers in place via “Sign in again”, keeping its position and the user’s disable', async ({
   env
@@ -847,6 +957,63 @@ test('E11: an expired account recovers in place via “Sign in again”, keeping
   }
 })
 
+test('a Codex, Muse or Antigravity account found signed out leaves the pool with the same OS notification an expired Claude account gets, once', async ({
+  env
+}) => {
+  installCodex(env)
+  installMuse(env)
+  installAgy(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const statuses = async (): Promise<(string | undefined)[]> => {
+      const views = await page.evaluate(() => window.api.accounts.probe())
+      return [E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT, E2E_AGY_ACCOUNT].map(
+        (name) => views.find((a) => a.name === name)?.status
+      )
+    }
+    expect(await statuses()).toEqual(['ok', 'ok', 'ok'])
+    const notifiedBefore = (await osOutlets(app)).notifications.length
+
+    fs.rmSync(path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'))
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      '{}'
+    )
+    fs.rmSync(
+      path.join(
+        env.userData,
+        'agy-homes',
+        E2E_AGY_ACCOUNT,
+        'antigravity-cli',
+        'cache',
+        'onboarding.json'
+      )
+    )
+    expect(await statuses()).toEqual(['expired', 'expired', 'expired'])
+    const notified = (await osOutlets(app)).notifications.slice(notifiedBefore)
+    expect(notified).toHaveLength(3)
+    expect(notified).toEqual(
+      expect.arrayContaining(
+        [
+          ['Codex', E2E_CODEX_ACCOUNT],
+          ['Muse', E2E_MUSE_ACCOUNT],
+          ['Antigravity', E2E_AGY_ACCOUNT]
+        ].map(([label, name]) => ({
+          title: `${label} account expired`,
+          body: `Account ${name} expired and left the pool — sign in again from Settings to restore it`
+        }))
+      )
+    )
+
+    expect(await statuses()).toEqual(['expired', 'expired', 'expired'])
+    expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore + 3)
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
 test('E10: guided login captures the printed token (even wrapped at 80 columns) from a hidden pty into the Keychain and the pool, sending the auth page to the user’s own browser', async ({
   env
 }) => {
@@ -867,7 +1034,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await openSettings(page)
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
-    const tabsBefore = await page.locator('.ws-tab').count()
+    const tabsBefore = await page.locator('.ws .ws-tab').count()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
@@ -889,7 +1056,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     expect(acct.fable).toBe('yes')
 
     await expect(page.locator('.acct-login-state.ok')).toContainText('Saved bravo')
-    expect(await page.locator('.ws-tab').count()).toBe(tabsBefore)
+    expect(await page.locator('.ws .ws-tab').count()).toBe(tabsBefore)
 
     await expect
       .poll(() =>

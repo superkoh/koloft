@@ -1,19 +1,21 @@
 import type {
+  BaseChoice,
   ContentHit,
   CronEffort,
   DirEntry,
   EditCreateResult,
   EditOpenResult,
   EditWriteResult,
-  GitNumstatMap,
-  GitStatusMap,
+  GitChanges,
   LaunchPermission,
   SearchHit,
   SkillSuggestion
 } from '@shared/types'
+import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
 import type { GitRunResult } from '../gitSteps'
+import type { GitOut } from '../resumePlan'
 import type { RemoteTab } from '../sessionTracker'
 
 export interface ShowIgnored {
@@ -38,7 +40,10 @@ export interface ClaudeLaunch {
   effort?: CronEffort
   permission?: LaunchPermission
   firstPrompt?: string
+  ownerWords?: string
   name?: string
+  role?: string
+  conductor?: boolean
 }
 
 export interface MachineTab {
@@ -48,6 +53,7 @@ export interface MachineTab {
   hookMirror: string
   attachTo?: string
   pickKey?: string
+  skipsPermissionChecks: boolean
 }
 
 export type ClaudeLaunchPlan =
@@ -59,10 +65,14 @@ export type ClaudeLaunchPlan =
       shell?: string
       launchCommand: (tabId: string) => string
       resized?: (tabId: string, cols: number, rows: number) => void
+      conductor: boolean
       extraEnv?: {
         KOLOFT_FIRST_PROMPT?: string
         KOLOFT_SESSION_NAME?: string
         KOLOFT_PORT_OFFSET?: string
+        KOLOFT_AGENT_PLUGIN?: string
+        KOLOFT_AGENT_PROMPT?: string
+        KOLOFT_DOCS_PLUGIN?: string
       }
       machine?: MachineTab
     }
@@ -70,6 +80,7 @@ export type ClaudeLaunchPlan =
 export interface Host {
   listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
   dirExists(dir: string): Promise<boolean>
+  dirExistsOrThrow(dir: string): Promise<boolean>
   makeDir(dir: string): Promise<boolean>
   search(
     root: string,
@@ -81,13 +92,12 @@ export interface Host {
     q: string,
     opts?: ShowIgnored
   ): Promise<{ hits: ContentHit[]; truncated: boolean }>
-  diffBase(root: string): Promise<string | null>
-  gitStatus(root: string, base?: string): Promise<GitStatusMap>
-  gitNumstat(root: string, base?: string): Promise<GitNumstatMap>
+  gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
   gitDiff(root: string, base?: string): Promise<GitDiffResult>
   gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   readText(file: string): Promise<string>
+  readBytes(file: string): Promise<Buffer>
   openForEdit(file: string): Promise<EditOpenResult>
   writeText(
     file: string,
@@ -109,9 +119,10 @@ export interface Host {
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
-  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null>
+  gitOut: GitOut
   gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup
+  freshness: FreshnessRunner
 }

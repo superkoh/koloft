@@ -29,6 +29,10 @@ const mocks = vi.hoisted(() => {
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
 
 import { PtyManager, foregroundName, tabInstancePid } from '../../src/main/ptyManager'
+import { CODEX_TAB_ENV } from '../../src/main/codexSessions'
+
+const SHIM = { hookSettings: (): undefined => undefined }
+const SHIM_WITH_HOOKS = { hookSettings: (id: string) => `/koloft/hooks/${id}.json` }
 
 const POLLUTANTS = {
   CLAUDE_CODE_ENTRYPOINT: 'cli',
@@ -43,6 +47,7 @@ const POLLUTANTS = {
   KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
   KOLOFT_AGENT_DIR: '/parent-koloft/agent',
   KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
+  KOLOFT_DOCS_PLUGIN: '/parent-koloft/docs-plugin',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -79,7 +84,7 @@ function spawnedEnv(): Record<string, string> {
 describe('PtyManager per-tab environment', () => {
   it("strips inherited env that would mislead a tab: a nested claude would skip its transcript, a parent Koloft's dirs would grow ghost rows in the parent, and a parent's ANT_ACCOUNT would mislabel every tab", () => {
     const mgr = new PtyManager()
-    mgr.create({ kind: 'shell', cwd: os.tmpdir() })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
     const env = spawnedEnv()
     for (const k of Object.keys(POLLUTANTS)) expect(env[k]).toBeUndefined()
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
@@ -90,8 +95,7 @@ describe('PtyManager per-tab environment', () => {
     mgr.shimDir = '/koloft/shim'
     mgr.regDir = '/koloft/reg'
     mgr.openDir = '/koloft/opens'
-    mgr.makeHookSettings = (id) => `/koloft/hooks/${id}.json`
-    const handle = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    const handle = mgr.create({ kind: 'claude', koloftShim: SHIM_WITH_HOOKS, cwd: os.tmpdir() })
     const env = spawnedEnv()
     expect(env.PATH.startsWith('/koloft/shim:')).toBe(true)
     expect(env.KOLOFT_TAB_ID).toBe(handle.id)
@@ -103,38 +107,47 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it('hands the koloft request folder to every tab but a Codex one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
-    const allowKoloft: boolean[] = []
+  it("hands the koloft request folder to every tab that runs Koloft's shim and to none that brings its own tools, and each skill plugin only to a launch that brings it", () => {
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
       const mgr = new PtyManager()
+      mgr.shimDir = '/koloft/shim'
       mgr.agentDir = '/koloft/agent'
-      mgr.makeHookSettings = (id, allow) => {
-        allowKoloft.push(allow)
-        return `/koloft/hooks/${id}.json`
-      }
       mgr.create(args)
       return spawnedEnv()
     }
-    const plain = envFor({ kind: 'claude', cwd: os.tmpdir() })
+    const plain = envFor({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(plain.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
     expect(plain.KOLOFT_AGENT_PLUGIN).toBeUndefined()
     const plugged = envFor({
       kind: 'claude',
+      koloftShim: SHIM,
       cwd: os.tmpdir(),
-      extraEnv: { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+      extraEnv: {
+        KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
+        KOLOFT_DOCS_PLUGIN: '/koloft/docs-plugin'
+      }
     })
     expect(plugged.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
-    expect(allowKoloft).toEqual([false, true])
-    expect(envFor({ kind: 'shell', cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR).toBe(
-      '/koloft/agent'
-    )
-    expect(envFor({ kind: 'codex', cwd: os.tmpdir() }).KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(plugged.KOLOFT_DOCS_PLUGIN).toBe('/koloft/docs-plugin')
+    expect(plain.KOLOFT_DOCS_PLUGIN).toBeUndefined()
+    expect(
+      envFor({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR
+    ).toBe('/koloft/agent')
+    const own = envFor({
+      kind: 'muse',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      executable: '/bin/muse',
+      processEnv: { PATH: '/own/tools' }
+    })
+    expect(own.KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(own.PATH).toBe('/own/tools')
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {
     const mgr = new PtyManager()
-    mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     const env = spawnedEnv()
     expect(env.KOLOFT_UTIL).toBe('1')
     expect(env.KOLOFT_AUX).toBeUndefined()
@@ -144,7 +157,7 @@ describe('PtyManager per-tab environment', () => {
     process.env.KOLOFT_UTIL = '1'
     try {
       const mgr = new PtyManager()
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_UTIL).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_UTIL
@@ -156,7 +169,7 @@ describe('PtyManager per-tab environment', () => {
     process.env.KOLOFT_AUX_TITLE = 'somebody else’s session'
     try {
       const mgr = new PtyManager()
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_AUX).toBeUndefined()
       expect(spawnedEnv().KOLOFT_AUX_TITLE).toBeUndefined()
     } finally {
@@ -171,8 +184,12 @@ describe('PtyManager per-tab environment', () => {
     mgr.regDir = '/koloft/reg'
     mgr.openDir = '/koloft/opens'
     mgr.pickDir = '/koloft/picks'
-    mgr.makeHookSettings = (id) => `/koloft/hooks/${id}.json`
-    const handle = mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    const handle = mgr.create({
+      kind: 'shell',
+      koloftShim: SHIM_WITH_HOOKS,
+      cwd: os.tmpdir(),
+      util: true
+    })
     const env = spawnedEnv()
     expect(env.KOLOFT_SESSION_DIR).toBeUndefined()
     expect(env.KOLOFT_HOOK_SETTINGS).toBeUndefined()
@@ -189,27 +206,30 @@ describe('PtyManager per-tab environment', () => {
     process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT = process.env.KOLOFT_BROWSER_CDP
     process.env.PLAYWRIGHT_CLI_SESSION = 'koloft-parent-tab'
     process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS = '1'
+    process.env.PLAYWRIGHT_MCP_OUTPUT_DIR = '/tmp/koloft-playwright/koloft-parent-tab'
     try {
       const mgr = new PtyManager()
-      mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+      mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
       const env = spawnedEnv()
       expect(env.KOLOFT_CDP_DIR).toBeUndefined()
       expect(env.KOLOFT_BROWSER_CDP).toBeUndefined()
       expect(env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBeUndefined()
       expect(env.PLAYWRIGHT_CLI_SESSION).toBeUndefined()
       expect(env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
+      expect(env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_CDP_DIR
       delete process.env.KOLOFT_BROWSER_CDP
       delete process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT
       delete process.env.PLAYWRIGHT_CLI_SESSION
       delete process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS
+      delete process.env.PLAYWRIGHT_MCP_OUTPUT_DIR
     }
   })
 
   it('forces a UTF-8 locale when none is inherited', () => {
     const mgr = new PtyManager()
-    mgr.create({ kind: 'shell', cwd: os.tmpdir() })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(spawnedEnv().LANG).toBe('en_US.UTF-8')
   })
 
@@ -218,12 +238,12 @@ describe('PtyManager per-tab environment', () => {
     process.env.KOLOFT_KEYCHAIN_FILE = '/stale/keychain.json'
     try {
       delete process.env.KOLOFT_TEST_BACKGROUND
-      new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+      new PtyManager().create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_KEYCHAIN_FILE).toBeUndefined()
 
       mocks.spawn.mockClear()
       process.env.KOLOFT_TEST_BACKGROUND = '1'
-      new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+      new PtyManager().create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_KEYCHAIN_FILE).toBe('/stale/keychain.json')
     } finally {
       delete process.env.KOLOFT_KEYCHAIN_FILE
@@ -236,13 +256,25 @@ describe('PtyManager per-tab environment', () => {
 describe('PtyManager handles after the pty exits', () => {
   it('keeps an exited pty findable through get() until reapDead() runs at teardown, so a late SessionStart hook for a tab that just died still finds its handle', () => {
     const mgr = new PtyManager()
-    const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    const h = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     mocks.state.exit?.({ exitCode: 0 })
     expect(mgr.get(h.id)).toBe(h)
     expect(h.alive).toBe(false)
 
     mgr.reapDead()
     expect(mgr.get(h.id)).toBeUndefined()
+  })
+
+  it('says a pty ended by kill() was ended by Koloft, and one that exited on its own was not — the line between a closed tab and an unexpected exit', () => {
+    const mgr = new PtyManager()
+    const exits: { endedByKoloft: boolean }[] = []
+    mgr.on('exit', (e) => exits.push(e))
+    const killed = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    mgr.kill(killed.id)
+    mocks.state.exit?.({ exitCode: 0, signal: 1 })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+    mocks.state.exit?.({ exitCode: 1 })
+    expect(exits.map((e) => e.endedByKoloft)).toEqual([true, false])
   })
 })
 
@@ -251,7 +283,7 @@ describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {
     vi.useFakeTimers()
     try {
       const mgr = new PtyManager()
-      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      const h = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       let ready = false
       let checks = 0
       const isReady = (): boolean => {
@@ -287,7 +319,7 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
     const write = vi.spyOn(mocks.proc, 'write')
     try {
       const mgr = new PtyManager()
-      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      const h = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       write.mockClear()
       await mgr.paste(h.id, 'a.md\n```diff\n+b\n```\n')
       expect(write.mock.calls.map(([d]) => d)).toEqual([
@@ -303,7 +335,7 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
     const write = vi.spyOn(mocks.proc, 'write')
     try {
       const mgr = new PtyManager()
-      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      const h = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       write.mockClear()
       const note = 'keep the old name 🙂 because\n'.repeat(12) + 'reply with one word'
       const done = mgr.paste(h.id, 'hunk\n\n', note)
@@ -325,6 +357,36 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
   })
 })
 
+it("puts a tab's account line above the program's first output, once, the way the Claude shim prints its own before claude starts", () => {
+  const mgr = new PtyManager()
+  const seen: string[] = []
+  mgr.on('data', (d: { data: string }) => seen.push(d.data))
+  mgr.create({
+    kind: 'muse',
+    koloftShim: false,
+    cwd: os.tmpdir(),
+    banner: 'koloft: → ann · 5h 10%'
+  })
+  expect(seen).toEqual([])
+  mocks.state.data!('\x1b[6n')
+  mocks.state.data!('prompt')
+  expect(seen).toEqual(['koloft: → ann · 5h 10%\r\n\x1b[6n', 'prompt'])
+})
+
+// CC§12
+it("tells which tab got input, so a remote tab's sync wakes, but not for a mouse move or a focus change", () => {
+  const mgr = new PtyManager()
+  const typed: string[] = []
+  mgr.on('typed', (tabId: string) => typed.push(tabId))
+  const tab = mgr.create({ kind: 'codex', ...CODEX_TAB_ENV, cwd: os.tmpdir() })
+  mgr.write(tab.id, '\x1b[<35;10;5M\x1b[<35;11;5M')
+  mgr.write(tab.id, '\x1b[I')
+  expect(typed).toEqual([])
+  mgr.write(tab.id, 'h')
+  mgr.write(tab.id, '\x1b[<0;3;4Mx')
+  expect(typed).toEqual([tab.id, tab.id])
+})
+
 describe('PtyManager types the PATH line and the launch line once the login shell reads', () => {
   const SETUP = 'export PATH="/koloft/shim:$PATH"; hash -r 2>/dev/null; clear'
   const LAUNCH = 'exec claude --resume abc'
@@ -342,13 +404,16 @@ describe('PtyManager types the PATH line and the launch line once the login shel
 
   const BOTH = [SETUP + '\r' + LAUNCH + '\r']
   const typed = (): string[] => write.mock.calls.map(([d]) => d)
-  const launch = (launchCommand = LAUNCH): void => {
-    new PtyManager().create({
-      kind: 'claude',
+  const launch = (launchCommand = LAUNCH, kind: 'claude' | 'shell' = 'claude') => {
+    const mgr = new PtyManager()
+    const tab = mgr.create({
+      kind,
+      koloftShim: SHIM,
       cwd: os.tmpdir(),
       setupCommand: SETUP,
       launchCommand: () => launchCommand
     })
+    return (data: string): void => mgr.write(tab.id, data)
   }
 
   it('types nothing while the rc files still run, then both lines in order the moment the line editor turns on bracketed paste, and nothing again', () => {
@@ -399,17 +464,72 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false))
   })
 
-  it('types nothing into a pty Koloft did not start a shell in', () => {
-    new PtyManager().create({ kind: 'codex', cwd: os.tmpdir(), executable: '/bin/codex' })
+  it('holds what a person types before the two lines and sends it right after them, in order, so it reaches the agent and not the PATH line', () => {
+    const type = launch()
+    type('h')
+    type('\x1b[I')
+    type('ello\r')
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual([BOTH[0] + 'hello\r'])
+    type('!')
+    expect(typed()).toEqual([BOTH[0] + 'hello\r', '!'])
+  })
+
+  it('sends the held keys after the two lines on the late fallback too', () => {
+    const type = launch()
+    type('hi')
+    vi.advanceTimersByTime(1600)
+    expect(typed()).toEqual([BOTH[0] + 'hi'])
+  })
+
+  it("lets the terminal's own answers to the shell's questions through at once, so an rc file waiting on one never stalls", () => {
+    const type = launch()
+    type('\x1b[12;1R')
+    type('\x1b[?1;2c')
+    type('\x1b]11;rgb:0000/0000/0000\x1b\\')
+    type('x')
+    expect(typed()).toEqual(['\x1b[12;1R', '\x1b[?1;2c', '\x1b]11;rgb:0000/0000/0000\x1b\\'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed().at(-1)).toBe(BOTH[0] + 'x')
+  })
+
+  it('lets Ctrl+C through at once and drops what it cancels, since one queued behind the launch line would throw that line away', () => {
+    const type = launch()
+    type('rm stuff')
+    type('\x03')
+    type('hi')
+    expect(typed()).toEqual(['\x03'])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(['\x03', BOTH[0] + 'hi'])
+  })
+
+  it('holds keys in a plain terminal Koloft types a line into too, so the PATH line and the ssh line reach the shell whole', () => {
+    const type = launch(LAUNCH, 'shell')
+    type('ls\r')
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual([BOTH[0] + 'ls\r'])
+  })
+
+  it('types nothing into a pty Koloft did not start a shell in, and holds none of its keys', () => {
+    const mgr = new PtyManager()
+    const tab = mgr.create({
+      kind: 'codex',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      executable: '/bin/codex'
+    })
+    mgr.write(tab.id, 'h')
     mocks.state.data?.('\x1b[?2004h')
     vi.runAllTimers()
-    expect(typed()).toEqual([])
+    expect(typed()).toEqual(['h'])
   })
 })
 
 describe('tabInstancePid', () => {
   it('answers process.pid for an id PtyManager.create() minted and null for a malformed id, so a registration from another live Koloft is left alone', () => {
-    const h = new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+    const h = new PtyManager().create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(tabInstancePid(h.id)).toBe(process.pid)
     expect(tabInstancePid(`pty-${(98765).toString(36)}-3`)).toBe(98765)
     expect(tabInstancePid('tab-1')).toBeNull()
@@ -429,7 +549,7 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
     process.env.KOLOFT_PORT_OFFSET = '7'
     try {
       const mgr = new PtyManager()
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_FIRST_PROMPT).toBeUndefined()
       expect(spawnedEnv().KOLOFT_SESSION_NAME).toBeUndefined()
       expect(spawnedEnv().KOLOFT_PORT_OFFSET).toBeUndefined()
@@ -444,6 +564,7 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
     const mgr = new PtyManager()
     mgr.create({
       kind: 'claude',
+      koloftShim: SHIM,
       cwd: os.tmpdir(),
       extraEnv: {
         KOLOFT_FIRST_PROMPT: '/daily-report',
@@ -451,7 +572,7 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
         KOLOFT_PORT_OFFSET: '42'
       }
     })
-    mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(envOf(0).KOLOFT_FIRST_PROMPT).toBe('/daily-report')
     expect(envOf(0).KOLOFT_SESSION_NAME).toBe('Nightly report')
     expect(envOf(0).KOLOFT_PORT_OFFSET).toBe('42')
@@ -463,9 +584,10 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
   it('ignores any other key someone puts in that object, so a PATH there cannot undo the shim line', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
-    mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     mgr.create({
       kind: 'claude',
+      koloftShim: SHIM,
       cwd: os.tmpdir(),
       extraEnv: {
         KOLOFT_FIRST_PROMPT: '/daily-report',
@@ -481,9 +603,10 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
   it('leaves PATH exactly as the tab would have had it', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
-    mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     mgr.create({
       kind: 'claude',
+      koloftShim: SHIM,
       cwd: os.tmpdir(),
       extraEnv: { KOLOFT_FIRST_PROMPT: '/daily-report' }
     })
@@ -504,7 +627,7 @@ describe('PtyManager utility-shell process title', () => {
   it('reports a utility shell’s foreground process as it changes', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
-    const h = mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    const h = mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     mocks.state.processName = 'node'
     vi.advanceTimersByTime(2000)
     expect(seen).toEqual([{ id: h.id, name: 'node' }])
@@ -513,7 +636,7 @@ describe('PtyManager utility-shell process title', () => {
   it('reports each name once — an idle shell is silent', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
-    mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     vi.advanceTimersByTime(2000)
     vi.advanceTimersByTime(2000)
     expect(seen.map((t) => t.name)).toEqual(['zsh'])
@@ -523,7 +646,7 @@ describe('PtyManager utility-shell process title', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
     mocks.state.processName = '/bin/zsh'
-    mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     vi.advanceTimersByTime(2000)
     expect(seen.map((t) => t.name)).toEqual(['zsh'])
   })
@@ -531,7 +654,7 @@ describe('PtyManager utility-shell process title', () => {
   it('never polls a pty that is not a utility shell', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
-    mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
     mocks.state.processName = 'node'
     vi.advanceTimersByTime(10_000)
     expect(seen).toEqual([])
@@ -541,7 +664,7 @@ describe('PtyManager utility-shell process title', () => {
   it('survives a foreground-process read that answers undefined instead of crashing main from the poll timer', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
-    mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     vi.advanceTimersByTime(2000)
     mocks.state.processName = undefined
     expect(() => vi.advanceTimersByTime(2000)).not.toThrow()
@@ -551,10 +674,35 @@ describe('PtyManager utility-shell process title', () => {
     expect(seen.map((t) => t.name)).toEqual(['zsh', 'node'])
   })
 
+  it('names a utility shell on another machine only from what the machine says, never from the ssh this Mac runs it through', () => {
+    const mgr = new PtyManager()
+    const seen = titles(mgr)
+    const cwds: { id: string; cwd: string }[] = []
+    mgr.on('cwd', (c: { id: string; cwd: string }) => cwds.push(c))
+    const h = mgr.create({
+      kind: 'shell',
+      koloftShim: SHIM,
+      cwd: os.tmpdir(),
+      util: true,
+      utilMachine: 'box'
+    })
+    mocks.state.processName = 'ssh'
+    mocks.state.data?.(`\x1b]7;file://${os.hostname()}/Users/me\x07`)
+    vi.advanceTimersByTime(10_000)
+    expect(seen).toEqual([])
+    expect(cwds).toEqual([])
+    mgr.shellOnMachineSaid('box', h.id, 'bash', '/home/u/proj')
+    mgr.shellOnMachineSaid('box', h.id, 'bash', '/home/u/proj')
+    mgr.shellOnMachineSaid('other-box', h.id, 'top', '/srv')
+    mgr.shellOnMachineSaid('box', h.id, '/usr/bin/vim', '/home/u/a dir')
+    expect(seen.map((t) => t.name)).toEqual(['bash', 'vim'])
+    expect(cwds.map((c) => c.cwd)).toEqual(['ssh://box/home/u/proj', 'ssh://box/home/u/a dir'])
+  })
+
   it('stops polling once the shell exits', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
-    mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
     vi.advanceTimersByTime(2000)
     mocks.state.exit?.({ exitCode: 0 })
     mocks.state.processName = 'node'
@@ -574,7 +722,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
   it('reports a utility shell’s directory when its OSC 7 says it moved', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
-    const h = mgr.create({ kind: 'shell', cwd: '/tmp', util: true })
+    const h = mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: '/tmp', util: true })
     mocks.state.data?.(`$ cd /var/log\r\n${report('/var/log')}`)
     expect(seen).toEqual([{ id: h.id, cwd: '/var/log' }])
     expect(mgr.get(h.id)?.cwd).toBe('/var/log')
@@ -583,7 +731,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
   it('stays silent while the shell keeps reporting the directory it is already in', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
-    const h = mgr.create({ kind: 'shell', cwd: '/tmp', util: true })
+    const h = mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: '/tmp', util: true })
     mocks.state.data?.(report('/tmp'))
     mocks.state.data?.(report('/tmp'))
     expect(seen).toEqual([])
@@ -594,7 +742,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
   it('reassembles a report torn across two pty chunks', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
-    mgr.create({ kind: 'shell', cwd: '/tmp', util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: '/tmp', util: true })
     const whole = report('/tmp/torn')
     mocks.state.data?.(whole.slice(0, 12))
     expect(seen).toEqual([])
@@ -605,7 +753,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
   it('never tracks a pty that is not a utility shell', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
-    mgr.create({ kind: 'claude', cwd: '/tmp' })
+    mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: '/tmp' })
     mocks.state.data?.(report('/var/log'))
     expect(seen).toEqual([])
   })
@@ -614,7 +762,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
     const mgr = new PtyManager()
     const chunks: string[] = []
     mgr.on('data', (d: { data: string }) => chunks.push(d.data))
-    mgr.create({ kind: 'shell', cwd: '/tmp', util: true })
+    mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: '/tmp', util: true })
     const chunk = `ls\r\n${report('/tmp/x')}`
     mocks.state.data?.(chunk)
     expect(chunks).toEqual([chunk])
@@ -646,13 +794,12 @@ describe('Codex native terminal isolation', () => {
     mgr.openDir = '/koloft/open'
     mgr.pickDir = '/koloft/accounts'
     mgr.cdpDir = '/koloft/cdp'
-    const hooks = vi.fn(() => '/koloft/hooks')
-    mgr.makeHookSettings = hooks
     const originalHome = process.env.CODEX_HOME
     process.env.CODEX_HOME = '/chosen/codex/config'
     try {
       mgr.create({
         kind: 'codex',
+        ...CODEX_TAB_ENV,
         cwd: '/repo',
         executable: '/bin/codex',
         argv: ['--remote', 'unix:///private/session.sock']
@@ -664,7 +811,6 @@ describe('Codex native terminal isolation', () => {
       ]
       expect(binary).toBe('/bin/codex')
       expect(args).toEqual(['--remote', 'unix:///private/session.sock'])
-      expect(hooks).not.toHaveBeenCalled()
       expect(Object.keys(options.env).filter((k) => k.startsWith('KOLOFT_'))).toEqual([])
       expect(options.env.CODEX_HOME).toBe('/chosen/codex/config')
       expect(options.env.PATH?.split(':')).not.toContain(mgr.shimDir)

@@ -1,6 +1,8 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type JSX,
@@ -8,10 +10,11 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import { createPortal } from 'react-dom'
-import { LuAlignLeft, LuPencil, LuRotateCw, LuSearch } from 'react-icons/lu'
+import { IconEdit, IconOutline, IconReload, IconSearch } from '../icons'
 import '../filesView.css'
 import type {
   ArtifactView,
+  BaseChoice,
   EditFingerprint,
   GitNumstatMap,
   GitStatusMap,
@@ -23,6 +26,8 @@ import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
+import { FullWidthButton } from './WorkbenchBars'
+import { keepCaretInSessionTerminal } from '../keys'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
@@ -36,11 +41,11 @@ import {
   relOf,
   saveList,
   splitPath,
-  type BaseChoice,
   type ChangeFilters,
   type FilesMenu,
   type FilesTab
 } from './filesModel'
+import '../fileTree.css'
 
 export const READING_TAB_ID = 'files:reading'
 
@@ -198,48 +203,88 @@ export function useFilesController(tabId: string | null, root: string | null): F
     setReadingCaps((prev) => (sameCaps(prev, caps) ? prev : caps))
   }, [])
 
-  return {
-    tabId,
-    view,
-    setView,
-    baseChoice,
-    setBaseChoice,
-    filters,
-    setFilters,
-    menu,
-    setMenu,
-    searchOpen,
-    toggleSearch,
-    searchFocusNonce,
-    anchor,
-    scrollToFile: useCallback(
-      (rel: string) => setAnchor((a) => ({ rel, nonce: (a?.nonce ?? 0) + 1 })),
-      []
-    ),
-    refreshNonce,
-    refresh: useCallback(() => setRefreshNonce((n) => n + 1), []),
-    readingView,
-    setReadingView: setReadingViewRaw,
-    readingCaps,
-    reportReadingCaps,
-    readingReloadNonce,
-    reloadReading: useCallback(() => setReadingReloadNonce((n) => n + 1), []),
-    outlineOpen,
-    setOutlineOpen,
-    recents,
-    bookmarks,
-    toggleBookmark,
-    openInReadingArea
-  }
+  const scrollToFile = useCallback(
+    (rel: string) => setAnchor((a) => ({ rel, nonce: (a?.nonce ?? 0) + 1 })),
+    []
+  )
+  const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
+  const reloadReading = useCallback(() => setReadingReloadNonce((n) => n + 1), [])
+
+  return useMemo(
+    () => ({
+      tabId,
+      view,
+      setView,
+      baseChoice,
+      setBaseChoice,
+      filters,
+      setFilters,
+      menu,
+      setMenu,
+      searchOpen,
+      toggleSearch,
+      searchFocusNonce,
+      anchor,
+      scrollToFile,
+      refreshNonce,
+      refresh,
+      readingView,
+      setReadingView: setReadingViewRaw,
+      readingCaps,
+      reportReadingCaps,
+      readingReloadNonce,
+      reloadReading,
+      outlineOpen,
+      setOutlineOpen,
+      recents,
+      bookmarks,
+      toggleBookmark,
+      openInReadingArea
+    }),
+    [
+      tabId,
+      view,
+      setView,
+      baseChoice,
+      setBaseChoice,
+      filters,
+      menu,
+      searchOpen,
+      toggleSearch,
+      searchFocusNonce,
+      anchor,
+      scrollToFile,
+      refreshNonce,
+      refresh,
+      readingView,
+      readingCaps,
+      reportReadingCaps,
+      readingReloadNonce,
+      reloadReading,
+      outlineOpen,
+      recents,
+      bookmarks,
+      toggleBookmark,
+      openInReadingArea
+    ]
+  )
 }
 
 export interface FilesBarProps {
   c: FilesController
   changedCount: number
-  fullBtn: JSX.Element
+  full: boolean
+  onToggleFull: () => void
+  sessionOwned: boolean
 }
 
-export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Element {
+export const FilesBar = memo(function FilesBar({
+  c,
+  changedCount,
+  full,
+  onToggleFull,
+  sessionOwned
+}: FilesBarProps): JSX.Element {
   const closeOnEsc = (e: ReactKeyboardEvent): void => {
     if (e.key === 'Escape') c.setMenu(null)
   }
@@ -249,6 +294,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
         <button
           className={c.view === 'changes' ? 'on' : undefined}
           aria-pressed={c.view === 'changes'}
+          onMouseDown={keepCaretInSessionTerminal}
           onClick={() => c.setView('changes')}
         >
           Changes{changedCount > 0 && <span className="n">{changedCount}</span>}
@@ -256,12 +302,13 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
         <button
           className={c.view === 'browse' ? 'on' : undefined}
           aria-pressed={c.view === 'browse'}
+          onMouseDown={keepCaretInSessionTerminal}
           onClick={() => c.setView('browse')}
         >
           Browse
         </button>
       </div>
-      <span className="wb-title" />
+      <span className="cv-gap" />
       {c.view === 'changes' ? (
         <>
           <div className="seg">
@@ -292,13 +339,13 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
           aria-label="Search files"
           onClick={c.toggleSearch}
         >
-          <LuSearch size={14} />
+          <IconSearch size={14} />
         </button>
       )}
       <button className="icobtn" onClick={c.refresh} title="Reload" aria-label="Reload">
-        <LuRotateCw size={14} />
+        <IconReload size={14} />
       </button>
-      {fullBtn}
+      <FullWidthButton full={full} onToggle={onToggleFull} />
 
       {c.menu?.kind === 'base' && (
         <div
@@ -353,15 +400,17 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
             ]}
             onPick={(v) => c.setFilters({ ...c.filters, status: v as ChangeFilters['status'] })}
           />
-          <FilterGroup
-            label="Ownership"
-            value={c.filters.owner}
-            options={[
-              ['all', 'All changes'],
-              ['session', 'This session wrote']
-            ]}
-            onPick={(v) => c.setFilters({ ...c.filters, owner: v as ChangeFilters['owner'] })}
-          />
+          {sessionOwned && (
+            <FilterGroup
+              label="Ownership"
+              value={c.filters.owner}
+              options={[
+                ['all', 'All changes'],
+                ['session', 'This session wrote']
+              ]}
+              onPick={(v) => c.setFilters({ ...c.filters, owner: v as ChangeFilters['owner'] })}
+            />
+          )}
           <FilterGroup
             label="Type"
             value={c.filters.type}
@@ -376,7 +425,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
       )}
     </div>
   )
-}
+})
 
 function FilterGroup({
   label,
@@ -418,6 +467,8 @@ export interface FilesBodyProps {
   git: GitStatusMap
   numstat: GitNumstatMap
   base: string | null | undefined
+  firstReadFailed: boolean
+  onReread: () => void
   active: boolean
   onBody: (el: HTMLElement | null) => void
   onOpenWeb: (path: string) => void
@@ -429,7 +480,7 @@ export interface FilesBodyProps {
   onReturnFocus: () => void
 }
 
-export function FilesBody({
+export const FilesBody = memo(function FilesBody({
   c,
   root,
   rootMissing,
@@ -437,6 +488,8 @@ export function FilesBody({
   git,
   numstat,
   base,
+  firstReadFailed,
+  onReread,
   active,
   onBody,
   onOpenWeb,
@@ -538,11 +591,13 @@ export function FilesBody({
           root={root}
           sideWidth={shownSideWidth}
           base={base}
+          firstReadFailed={firstReadFailed}
           git={git}
           numstat={numstat}
           filters={c.filters}
           session={session}
           refreshNonce={c.refreshNonce}
+          onReread={onReread}
           anchor={c.anchor}
           active={active}
           onOpenWeb={onOpenWeb}
@@ -567,6 +622,7 @@ export function FilesBody({
             recents={c.recents}
             bookmarks={c.bookmarks}
             sideWidth={shownSideWidth}
+            refreshNonce={c.refreshNonce}
             onOpen={openPath}
             onEdit={onEdit}
             newFileDir={newFileDir}
@@ -625,7 +681,7 @@ export function FilesBody({
         ))(c.menu)}
     </div>
   )
-}
+})
 
 function ReadingArea({
   c,
@@ -690,6 +746,7 @@ function ReadingArea({
                 className={v === caps.current ? 'on' : undefined}
                 aria-pressed={v === caps.current}
                 disabled={v === 'diff' && !caps.hasDiff}
+                onMouseDown={keepCaretInSessionTerminal}
                 onClick={() => c.setReadingView(v)}
               >
                 {v === 'render' ? 'Rendered' : v === 'diff' ? 'Diff' : 'Source'}
@@ -698,7 +755,7 @@ function ReadingArea({
           </div>
         )}
         <button className="icobtn" onClick={c.reloadReading} title="Reload" aria-label="Reload">
-          <LuRotateCw size={14} />
+          <IconReload size={14} />
         </button>
         <button
           className="icobtn wb-edit"
@@ -707,7 +764,7 @@ function ReadingArea({
           disabled={!probe.can}
           onClick={() => onEdit(file.src)}
         >
-          <LuPencil size={13} />
+          <IconEdit size={13} />
         </button>
         <button
           className={'icobtn' + (c.outlineOpen ? ' on' : '')}
@@ -716,7 +773,7 @@ function ReadingArea({
           disabled={!caps.hasOutline}
           onClick={() => c.setOutlineOpen(!c.outlineOpen)}
         >
-          <LuAlignLeft size={14} />
+          <IconOutline size={14} />
         </button>
       </div>
       <div className="wb-host fv-read-host">
