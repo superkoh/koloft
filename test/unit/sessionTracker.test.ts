@@ -920,19 +920,23 @@ describe('SessionTracker — run-state', () => {
   })
 
   // CC§12 CC§14
-  it("while claude's terminal shows a dialog the row waits on you whatever a hook or the transcript says, and a permission hook read just after the dialog closed is not taken", async () => {
+  it("while claude's terminal shows a dialog the row waits on you whatever a hook or the transcript says, goes back to its own turn once the dialog leaves, and a permission hook read just after the dialog closed is not taken", async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
-    let dialog: 'on-screen' | 'just-closed' | undefined
-    tracker.terminalDialog = () => dialog
+    let justClosed = false
+    tracker.dialogJustClosed = () => justClosed
     tracker.track('tabD', cwd)
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
     tracker.bindSession('tabD', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabD' && x.status === 'waiting' && !!x.title)
-    tracker.receive('tabD', { type: 'prompt' })
 
-    dialog = 'on-screen'
-    tracker.dialogDrawn('tabD')
+    tracker.showDialog('tabD', true)
+    expect(tracker.statusOf('tabD')).toBe('approval')
+    tracker.showDialog('tabD', false)
+    expect(tracker.statusOf('tabD')).toBe('waiting')
+
+    tracker.receive('tabD', { type: 'prompt' })
+    tracker.showDialog('tabD', true)
     expect(tracker.statusOf('tabD')).toBe('approval')
     tracker.receive('tabD', { type: 'prompt' })
     fs.appendFileSync(
@@ -954,13 +958,16 @@ describe('SessionTracker — run-state', () => {
     await waitFor(tracker, (x) => x.tabId === 'tabD' && !!x.usage)
     expect(tracker.statusOf('tabD')).toBe('approval')
 
-    dialog = 'just-closed'
+    tracker.receive('tabD', { type: 'notify', need: 'approval' })
+    justClosed = true
+    tracker.showDialog('tabD', false)
+    expect(tracker.statusOf('tabD')).toBe('approval')
     tracker.dialogAnswered('tabD')
     expect(tracker.statusOf('tabD')).toBe('working')
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
     expect(tracker.statusOf('tabD')).toBe('working')
 
-    dialog = undefined
+    justClosed = false
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
     expect(tracker.statusOf('tabD')).toBe('approval')
   })

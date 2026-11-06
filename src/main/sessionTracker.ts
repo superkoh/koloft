@@ -19,7 +19,6 @@ import {
   type RealFilesOnMachine
 } from './realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
-import type { TerminalDialog } from './claudeDialogWatch'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
@@ -526,7 +525,7 @@ export class SessionTracker extends SessionRuntime {
       sessionId
     )
   leftBehind?: (sessionId: string) => boolean
-  terminalDialog?: (tabId: string) => TerminalDialog | undefined
+  dialogJustClosed?: (tabId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
 
@@ -619,7 +618,7 @@ export class SessionTracker extends SessionRuntime {
 
   receive(tabId: string, event: SessionEvent): void {
     // CC§14
-    if (event.type === 'notify' && this.terminalDialog?.(tabId) === 'just-closed') return
+    if (event.type === 'notify' && this.dialogJustClosed?.(tabId)) return
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
       if (t) this.compaction(t, event)
@@ -662,11 +661,6 @@ export class SessionTracker extends SessionRuntime {
     return true
   }
 
-  // CC§12 CC§14
-  dialogDrawn(tabId: string): void {
-    if (this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, 'approval')
-  }
-
   // CC§14
   dialogAnswered(tabId: string): void {
     if (this.turnNow(tabId) === 'approval') this.recordHookTurn(tabId, 'working')
@@ -685,9 +679,7 @@ export class SessionTracker extends SessionRuntime {
 
   private applyStatus(t: Tracked, turn: Turn, heldByBackground = false): void {
     if (this.tracked.get(t.info.tabId) !== t) return
-    // CC§12
-    const shown = this.terminalDialog?.(t.info.tabId) === 'on-screen' ? 'approval' : turn
-    this.recordTurn(t.info.tabId, shown, heldByBackground)
+    this.recordTurn(t.info.tabId, turn, heldByBackground)
   }
 
   protected override statusChanged(tabId: string, status: SessionStatus): void {
