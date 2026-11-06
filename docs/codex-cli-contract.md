@@ -482,10 +482,16 @@ keeping logins in its file): sections 1 (`initialize` keys, `thread/list` keys a
 `account/login/start` and `LoginAccountParams` byte-identical; the schema adds the
 server notification `thread/section/changed {threadId, sectionId}` (#58380, not seen in a
 turn and not read by Koloft), the `requiredHumanApproval` initialize capability with a
-`humanCommand` command-approval kind that only a client sending that capability is given
-(#58045; Koloft sends none, so it gets none — **inferred, not checked**), the
-experimental client method `thread/guardianReview`, and an audio input given by
-`fileId`; no server request is added and nothing is removed), 5 (one process, no shared
+`humanCommand` command-approval kind ("A managed checkpoint requiring a fresh human
+decision", only `accept`, `decline` and `cancel` valid) that only a client sending that
+capability is given (#58045). Koloft's own `initialize` does not send it, but the 0.167.0
+TUI's does (`{"requiredHumanApproval":true,"experimentalApi":true,…}`, read off the
+relay log), so a tab can get one: it comes as `item/commandExecution/requestApproval`,
+which Koloft counts as an ask, and Koloft answers it as any approval, with `y` or Esc
+in the TUI. Its screen and keys were not probed (it needs a managed `prompt-user`
+command rule). The schema also adds the experimental client method
+`thread/guardianReview` and an audio input given by `fileId`; no server request is
+added and nothing is removed), 5 (one process, no shared
 daemon from an app-server Koloft's way), 13/14 (`model/list` the same eight models, all
 priced, default `gpt-6.1-sol`; the token-usage fields and the rollout record types of a
 turn unchanged; #58091's new defaults for memory extraction, `gpt-6-luna` and
@@ -500,7 +506,8 @@ Ctrl+L the same), 26 (the MCP tool question, there), 27/30 (the same four events
 stdin keys and `cwd`; a `PreToolUse` hook that sleeps 8 s still holds the command 8 s, a
 deny still blocks it), 28 (not fixed, there), 34 (a TUI whose app-server dies reconnects
 and resumes the same thread) and the command and patch approvals of section 3 (the same
-wire, screen and `y` / Esc keys; #58281's inline patch review showed no new key) were
+wire and screen; `y` approves and Esc cancels; #58281's inline patch review showed no
+new key) were
 measured again, and the same e2e specs passed, the remote ones (E-SSH-23/24/25) too.
 `app-server --help`, `exec --help`, `resume --help`, `queue --help`, `doctor --help` and
 `update --help` are byte-identical to 0.166.0's; `codex --help` and `agents --help`
@@ -509,7 +516,7 @@ differ (§18). Not reached on 0.167.0: a Guardian review (#58368; the probe thre
 terminal-detected image features (#58261, #58270; Koloft reports `Apple_Terminal`, so
 they are **inferred, not checked**, to stay off). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
 1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
-approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
+approval keys `1`, Enter and `3`; `y` and Esc were rechecked on 0.167.0), 4, 9 (the trust question before connecting), 12 (`fileChange` /
 `commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
 `app-server --help`, `exec --help` and `resume --help` are byte-identical on 0.161.0,
 0.162.1 and 0.163.0 (2026-10-16). On 0.164.0 (2026-10-23) `--help` adds
@@ -1914,7 +1921,9 @@ Codex's own full-screen screen from one that prints and exits.
   `codex agents` on 0.167.0 started `app-server --listen unix:// --managed-daemon` and
   `app-server daemon pid-update-loop` from `$CODEX_HOME/packages/app-server-daemon/`,
   and both were still running after the TUI quit. A bare `agents` on 0.166.0 was not
-  run.
+  run. Koloft starts no `agents`: a Workbench terminal refuses it as a line that opens
+  the TUI (`agents` is not on `CODEX_SUBCOMMANDS_WITHOUT_A_TUI`, `shim.ts`; read from
+  the code, not run), and a Codex tab's own line is never `agents`.
 - **Subcommands that print or run and exit:** `exec` (alias `e`, "Run Codex
   non-interactively"), `review` ("non-interactively"), `login`, `logout`, `mcp`, `plugin`,
   `mcp-server`, `app-server`, `remote-control`, `app` (opens the Desktop app),
@@ -2265,12 +2274,14 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   initialized`, -32600), and the screen said "Failed to start TUI session picker: failed
   to connect to remote app server". On 0.167.0 there was only ever one connection and the
   picker opened (`Resume a previous session … enter resume ⌃a archive esc exit …`),
-  sending `thread/turns/list`, `thread/items/list` and `thread/loaded/list`, none of them
-  read by Koloft. Picking another thread sent `thread/resume` and then
-  `thread/unsubscribe` of the old one, as `/resume <id>` does; picking the thread already
-  open showed `Already viewing <rollout path>` and sent nothing. Koloft answers a second
-  connection with 409 (`codexTransport.ts`), so in a Koloft tab the picker failed before
-  0.167.0 and works from it — both **inferred, not checked** in Koloft itself.
+  sending `thread/turns/list`, `thread/items/list` and `thread/loaded/list`, none of
+  them among the methods Koloft watches on a tab's connection (`codexObservation.ts`).
+  Picking another thread sent `thread/resume` and then `thread/unsubscribe` of the old
+  one, in the order `/resume <id>` sends them; picking the thread already open showed
+  `Already viewing <rollout path>` and sent nothing. Koloft answers a second connection
+  with 409 (`codexTransport.ts`), so in a Koloft tab the picker failed before 0.167.0 and
+  opens from it, and Koloft follows a pick as it follows `/resume <id>` — all three
+  **inferred, not checked** in Koloft itself.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
   more turns, one each, right after it; between turns the thread status went `idle`
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
@@ -2318,8 +2329,9 @@ How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` wi
   `/usr/local/lib/node_modules` and failed with EACCES on both (`codex update` exit 1,
   "failed with status exit status: 243"). So it never reaches the copy Koloft installs on
   a machine under `$HOME/.koloft/codex-cli` (§16), which Koloft checks by version at
-  each start. That the standalone way now starts from `/` too is **inferred, not
-  checked**.
+  each start. On the Mac, Koloft runs `codex update` itself (`updateCodex`) only for a
+  Codex older than its minimum; that run on 0.167.0's npm way, and the standalone way
+  starting from `/` too, are **inferred, not checked**.
 
 ## 23. A bracketed paste lands in the composer unsent
 
@@ -2370,10 +2382,13 @@ message" (3 runs).
   mode", and the CR sent `thread/shellCommand {command: "echo BANGPASTE"}`, which never
   reaches the model. What 0.167.0 changed (#58412): `x!echo BANGDEL` with the `x`
   deleted afterwards stays an ordinary draft, where 0.166.0 turned it into
-  `! echo BANGDEL` in Shell mode. Koloft never deletes a character it typed, and every
-  Koloft message to a Codex session goes through `thread/queue/add` (§17), not the
-  composer; what Koloft pastes into a Codex composer (a picked element, a hunk comment,
-  failing checks) does not start with `!`.
+  `! echo BANGDEL` in Shell mode. Koloft never deletes a character it typed. A message
+  from Koloft to a Codex session (`koloft session send`, a Discord line) goes through
+  `thread/queue/add` (§17), not the composer. Three things are pasted into the composer:
+  a picked element (starts `Element picked in the Workbench browser`, `elementPick.ts`),
+  failing checks (starts `CI check "…"`, `prChecks.ts`) and a hunk comment, which starts
+  with the file's path (`hunkPrompt`, `changesModel.ts`), so a comment on a file whose
+  name starts with `!` would run as a shell command; nothing guards that case.
 - Not run: the paste in a remote Codex tab. Its TUI runs on the Mac too (§16,
   ADR-0039), so the paste never crosses ssh or tmux; only the message the TUI then
   sends the app-server on the machine does.
