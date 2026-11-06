@@ -140,6 +140,7 @@ export interface FakeDiscord {
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
   callbacks: FakeCallback[]
+  followUps: FakeCallback[]
   threads: FakeThread[]
   archived: string[]
   postsBeforeArchive: number[]
@@ -165,6 +166,7 @@ const ONE_MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)$/
 const TYPING_ROUTE = /^\/channels\/(\d+)\/typing$/
 const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
 const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
+const FOLLOW_UP_ROUTE = new RegExp(`^/webhooks/${FAKE_APPLICATION_ID}/token-(\\d+)$`)
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
 const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
@@ -239,6 +241,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     history: {},
     commands: [],
     callbacks: [],
+    followUps: [],
     threads: [],
     archived: [],
     postsBeforeArchive: [],
@@ -445,6 +448,12 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       const body = JSON.parse((await bodyOf(req)).toString()) as Omit<FakeCallback, 'interactionId'>
       fake.callbacks.push({ interactionId: callback[1], ...body })
       return { status: 204 }
+    }
+    const followUp = FOLLOW_UP_ROUTE.exec(route)
+    if (followUp && req.method === 'POST') {
+      const data = JSON.parse((await bodyOf(req)).toString()) as FakeCallback['data']
+      fake.followUps.push({ interactionId: followUp[1], type: 0, data })
+      return { status: 200, body: { id: String(++nextId) } }
     }
     const reaction = REACTION_ROUTE.exec(route)
     if (reaction) {

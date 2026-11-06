@@ -22,7 +22,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
-import { ANSWER_NOT_TAKEN } from '../../src/main/koloftInbox'
+import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
@@ -243,7 +243,7 @@ test('an Allow pressed on a card that the Claude Code session ignores stays in N
   const app = await launchApp(env)
   try {
     const { card } = await allowFromItsCard(await app.firstWindow(), 'make test')
-    await expect(card).toContainText(ANSWER_NOT_TAKEN, {
+    await expect(card).toContainText(ANSWER_NOT_TAKEN_ON_A_CARD, {
       timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
     })
   } finally {

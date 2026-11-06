@@ -55,6 +55,7 @@ export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right 
 export const A_TAKEN_ANSWER_SHOWS_WITHIN_MS = 15_000
 export const ANSWER_ON_ITS_WAY =
   'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
+export const ANSWER_NOT_TAKEN = 'Koloft sent your answer, but the session still waits for it.'
 // MUSE§3
 export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
   'It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.'
@@ -184,6 +185,7 @@ export class DiscordRelay {
   private quietReplies = new Set<string>()
   private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
+  private awaitingTaken = new Map<string, Set<(taken: boolean) => void>>()
   private held = new Set<string>()
   private unreadable = new Set<string>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
@@ -287,28 +289,18 @@ export class DiscordRelay {
     }
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
-    if (
-      !refusal &&
-      command === undefined &&
-      tab &&
-      this.heldInTerminal(tab) &&
-      this.dialogOpen(tab)
-    ) {
-      void this.answerSession(tab, m.content).then((error) => {
+    if (refusal) {
+      this.say(m.channelId, refusal, m.id)
+      dest.seen(m.id)
+      return
+    }
+    const answering = command === undefined && tab ? this.answerDialog(tab, m) : undefined
+    if (tab && answering) {
+      void answering.catch(errorText).then((error) => {
         if (error) return this.say(m.channelId, error, m.id)
         this.answersDiscord(tab, 'turn')
         this.react(m, DELIVERED, true)
       })
-      dest.seen(m.id)
-      return
-    }
-    const answered = command === undefined && !!tab && this.answerDialog(tab, m)
-    if (refusal || answered) {
-      if (refusal) this.say(m.channelId, refusal, m.id)
-      else {
-        if (tab) this.answersDiscord(tab, 'turn')
-        this.react(m, DELIVERED, true)
-      }
       dest.seen(m.id)
       return
     }
@@ -660,11 +652,37 @@ export class DiscordRelay {
     await this.d.type(tab, keys)
   }
 
-  async answerSession(tab: string, reply: string): Promise<string | undefined> {
-    return (await this.answerWatched(tab, reply)).error
+  answerSession(tab: string, reply: string): Promise<string | undefined> {
+    return this.answerTaken(tab, () => this.sendAnswer(tab, reply))
   }
 
-  async answerWatched(tab: string, reply: string): Promise<SentAnswer> {
+  // CC§14 CODEX§3 MUSE§11 AGY§14
+  private async answerTaken(
+    tab: string,
+    send: () => Promise<SentAnswer>
+  ): Promise<string | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let resolve!: (taken: boolean) => void
+    const took = new Promise<boolean>((r) => (resolve = r))
+    const waiting = this.awaitingTaken.get(tab) ?? new Set()
+    const settle = (taken: boolean): void => {
+      clearTimeout(timer)
+      waiting.delete(settle)
+      if (!waiting.size && this.awaitingTaken.get(tab) === waiting) this.awaitingTaken.delete(tab)
+      resolve(taken)
+    }
+    this.awaitingTaken.set(tab, waiting.add(settle))
+    const sent = await send().catch((e: unknown) => {
+      settle(false)
+      throw e
+    })
+    if (!sent.watch) settle(sent.error === undefined)
+    if (sent.error !== undefined) return sent.error
+    if (waiting.has(settle)) timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+    return (await took) ? undefined : ANSWER_NOT_TAKEN
+  }
+
+  private async sendAnswer(tab: string, reply: string): Promise<SentAnswer> {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
@@ -722,6 +740,7 @@ export class DiscordRelay {
   }
 
   dialogGone(tab: string, closed: boolean): void {
+    for (const settle of this.awaitingTaken.get(tab) ?? []) settle(true)
     const ask = this.asks.get(tab)
     if (ask && !ask.hook && (closed || ask.typedAt !== undefined)) this.asks.delete(tab)
   }
@@ -744,49 +763,44 @@ export class DiscordRelay {
     return !!ask && !ask.hook && !(this.d.turnOver(tab) && !this.d.awaitsInput(tab))
   }
 
-  private answerDialog(tab: string, m: DiscordMessage): boolean {
-    const ask = this.openAsk(tab)
-    if (ask?.hook) {
-      this.answer(tab, hookAnswer(ask.payload, m.content))
-      this.d.answered(tab, m.content)
-      return true
-    }
+  private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
+    if (this.openAsk(tab)?.hook || this.heldInTerminal(tab))
+      return this.answerSession(tab, m.content)
     this.asks.delete(tab)
     const asked = this.codexAsks.get(tab)
-    if (asked === undefined) return false
+    if (asked === undefined) return undefined
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
     const keys = answerKeysOf(this.d.backendOf(tab))
     if (!open || open.id !== asked || !keys) {
       this.codexAsks.delete(tab)
-      return false
+      return undefined
     }
-    void this.d.answerInPlace(tab, m.content).then((inPlace) => {
-      if (inPlace === false) return this.answerOpenByKeys(tab, m, open, keys)
+    return this.answerTaken(tab, async () => {
+      const inPlace = await this.d.answerInPlace(tab, m.content)
+      if (inPlace === false) return this.answerOpenByKeys(tab, m.content, open, keys)
       this.codexAsks.delete(tab)
-      if (inPlace.error) this.say(m.channelId, inPlace.error, m.id)
-      else this.d.answered(tab, m.content)
+      if (inPlace.error === undefined) this.d.answered(tab, m.content)
+      return inPlace
     })
-    return true
   }
 
-  private answerOpenByKeys(
+  private async answerOpenByKeys(
     tab: string,
-    m: DiscordMessage,
+    reply: string,
     open: CodexApproval | CodexQuestion,
     keys: AnswerKeys
-  ): void {
+  ): Promise<SentAnswer> {
     if ('questions' in open) {
-      const answers = questionAnswers(open, m.content)
-      if (answers)
-        void this.press(tab, answerKeys(keys, open, answers)).then(() =>
-          this.d.answered(tab, m.content)
-        )
-      else this.say(m.channelId, cannotAnswer(open), m.id)
-      return
+      const answers = questionAnswers(open, reply)
+      if (!answers) return { error: cannotAnswer(open) }
+      await this.press(tab, answerKeys(keys, open, answers))
+    } else {
+      const key = codexKeyFor(reply)
+      if (!key) return { error: CODEX_NEEDS_YES_OR_NO }
+      await this.press(tab, [key])
     }
-    const key = codexKeyFor(m.content)
-    if (key) void this.press(tab, [key]).then(() => this.d.answered(tab, m.content))
-    else this.say(m.channelId, CODEX_NEEDS_YES_OR_NO, m.id)
+    this.d.answered(tab, reply)
+    return { watch: true }
   }
 
   forget(tab: string): void {

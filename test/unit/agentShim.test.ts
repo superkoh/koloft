@@ -6,7 +6,12 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import {
+  AGENT_SHIM_WAITS_MS,
+  CLAUDE_AGENT_SHIM,
+  REMOTE_AGENT_SHIM,
+  writeAgentShim
+} from '../../src/main/agentShim'
 import {
   AgentRequests,
   answered,
@@ -33,7 +38,11 @@ const verbs: AgentVerbs = {
     received.push({ argv: args, tabId: caller.tabId })
     return answered(args[0] ?? '')
   },
-  fail: () => refused('it broke: "x"', 3)
+  fail: () => refused('it broke: "x"', 3),
+  session: async () => {
+    await new Promise((r) => setTimeout(r, AGENT_SHIM_WAITS_MS + 500))
+    return answered('Answered Fix login.')
+  }
 }
 
 const session = (tabId: string): SessionInfo => ({
@@ -107,6 +116,17 @@ describe('koloft command in a Claude session', () => {
     expect(r.status).toBe(0)
     expect(fs.readdirSync(agentDir)).toEqual([])
   })
+
+  it('koloft session answer waits past the usual wait, while Koloft watches the session take the answer', async () => {
+    listen(agentDir)
+    const r = await run(
+      path.join(shimDir, 'koloft'),
+      ['session', 'answer', 'x', 'yes'],
+      claudeEnv()
+    )
+    expect(r.stdout).toBe('Answered Fix login.\n')
+    expect(r.status).toBe(0)
+  }, 30_000)
 
   it('prints a refusal on stderr and exits with the code Koloft gave', async () => {
     listen(agentDir)

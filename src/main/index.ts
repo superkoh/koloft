@@ -1989,8 +1989,7 @@ const koloftInbox = new KoloftInbox({
     return s && { tabId: s.tabId, backend: s.backendId }
   },
   askOf: inboxAskOf,
-  answer: async (tabId, reply) =>
-    discordRelay ? discordRelay.answerWatched(tabId, reply) : { error: STILL_STARTING },
+  answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
   butlerSide,
   watching: () => attention.watching()
 })
@@ -2009,7 +2008,6 @@ const claudeDialogs = new ClaudeDialogWatch({
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
-  koloftInbox.askEnded(tabId)
   discordRelay?.dialogGone(tabId, dialogClosed)
 }
 
@@ -3837,6 +3835,7 @@ app.whenReady().then(() => {
       return discordRelay.answerSession(tabId, reply)
     },
     respond: (i, body) => link.respond(i, body),
+    followUp: (i, privateText) => link.followUp(i, privateText),
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons

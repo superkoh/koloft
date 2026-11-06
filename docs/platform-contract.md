@@ -2138,6 +2138,11 @@ Gateway (the live connection that pushes events):
     (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
   - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
     and callback type 7 replaced the card: the buttons went and the new text showed.
+  - From the docs, not measured: a button press answered with callback `{type: 6}`
+    (deferred update, no loading state) counts as answered within 3 s, leaves the card
+    as it is, and its token then takes a follow-up `POST /webhooks/{app}/{token}` with
+    `flags: 64` for 15 minutes; the card itself is changed by the bot's own
+    `PATCH /channels/{channel}/messages/{message}`.
   - A message the owner posted in an archived thread went through, and the thread came
     back into the list.
   - A fenced code block does not keep columns on a phone held upright: a table with

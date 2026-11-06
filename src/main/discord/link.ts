@@ -528,6 +528,14 @@ export class DiscordLink {
   }
 
   // PLATFORM§39
+  followUp(i: DiscordInteraction, privateText: string): Promise<unknown> {
+    return this.api().request('POST', `/webhooks/${this.applicationId}/${i.token}`, {
+      content: privateText,
+      flags: ONLY_THE_SENDER_SEES_IT
+    })
+  }
+
+  // PLATFORM§39
   async registerCommands(guildIds: string[], commands: SlashCommandSpec[]): Promise<void> {
     const appId = this.applicationId
     const api = this.rest

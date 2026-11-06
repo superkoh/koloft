@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { cardMessages, type Card } from './cards'
+import type { Card } from './cards'
 import type { Choice, DialogView } from './dialog'
 import { privately, type DiscordInteraction } from './link'
 
@@ -11,7 +11,8 @@ const ANSWER_SHOWN_UP_TO = 200
 export const answeredWith = (reply: string): string =>
   `✅ Answered: ${reply.length > ANSWER_SHOWN_UP_TO ? `${reply.slice(0, ANSWER_SHOWN_UP_TO)}…` : reply}`
 const ID_PREFIX = 'ask:'
-const UPDATE_MESSAGE = 7
+// PLATFORM§39
+const UPDATE_MESSAGE_LATER = 6
 
 export interface PlacedAsk {
   channelId: string
@@ -33,6 +34,7 @@ export interface ButtonDeps {
   dialogText(tabId: string): Promise<string | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
+  followUp(i: DiscordInteraction, privateText: string): Promise<unknown>
   edit(placed: PlacedAsk, card: Card): Promise<void>
 }
 
@@ -96,14 +98,11 @@ export class AskButtons {
       return
     }
     this.asks.delete(id)
+    await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
     const error = await this.d.answer(ask.tabId, choice.reply)
-    if (error) {
-      this.asks.set(id, ask)
-      await this.d.respond(i, privately(error))
-      return
-    }
-    const answered = cardMessages(this.settledCard(ask, `✅ ${choice.label}`))
-    await this.d.respond(i, { type: UPDATE_MESSAGE, data: answered[answered.length - 1] })
+    this.asks.set(id, ask)
+    if (error) await this.d.followUp(i, error)
+    else this.settle(id, `✅ ${choice.label}`)
   }
 
   forget(tabId: string, footer = SESSION_CLOSED): void {

@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AttentionEvent } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
 import {
-  ANSWER_NOT_TAKEN,
+  ANSWER_NOT_TAKEN_ON_A_CARD,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
   type KoloftInboxDeps
 } from '../../src/main/koloftInbox'
 import { inboxVerb } from '../../src/main/agentInbox'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
+import { ANSWER_NOT_TAKEN, SHOWS_NO_DIALOG } from '../../src/main/discord/relay'
 import type { AgentCaller } from '../../src/main/agentRequests'
 
 function host(): InboxHost {
@@ -53,8 +53,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     askOf: async () => twoQuestions,
     answer: async (tabId, reply) => {
       answered.push([tabId, reply])
-      setTimeout(() => koloft.askEnded(tabId), 0)
-      return { watch: true }
+      return undefined
     },
     butlerSide: () => false,
     watching: () => null,
@@ -186,7 +185,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
   })
 
   it('an answer the session no longer shows a dialog for ends as done elsewhere', async () => {
-    const w = world({ answer: async () => ({ error: SHOWS_NO_DIALOG }) })
+    const w = world({ answer: async () => SHOWS_NO_DIALOG })
     w.mark([asking])
     expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toMatchObject({ elsewhere: true })
   })
@@ -198,78 +197,13 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.answered).toEqual([['t1', '2\n3']])
   })
 
-  describe('an answer typed into a session as keys counts only once the session shows it took it', () => {
-    beforeEach(() => vi.useFakeTimers())
-    afterEach(() => vi.useRealTimers())
-
-    const pressRed = { answers: { q0: ['o0'], q1: ['o1'] } }
-
-    for (const [what, given] of [
-      ['a question', pressRed],
-      ['an approval', { pick: 'yes' }]
-    ] as const)
-      it(`keys the session ignores for ${what} end as not taken, and the card sends the owner to the session instead of offering a retry`, async () => {
-        const w = world({ answer: async () => ({ watch: true }) })
-        w.mark([asking])
-        const result = w.koloft.answer('s-t1', given)
-        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-        expect(await result).toEqual({ ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false })
-      })
-
-    it('an answer that shows up late, but in time, counts as answered', async () => {
-      const w = world({
-        answer: async (tabId) => {
-          setTimeout(() => w.koloft.askEnded(tabId), 10_000)
-          return { watch: true }
-        }
-      })
-      w.mark([asking])
-      const result = w.koloft.answer('s-t1', pressRed)
-      await vi.advanceTimersByTimeAsync(10_000)
-      expect(await result).toEqual({ ok: true })
-    })
-
-    it('two answers waiting on one tab both count once the session shows it took them', async () => {
-      const w = world({ answer: async () => ({ watch: true }) })
-      w.mark([asking])
-      const first = w.koloft.answer('s-t1', { pick: 'yes' })
-      const second = w.koloft.answer('s-t1', pressRed)
-      await vi.advanceTimersByTimeAsync(1)
-      w.koloft.askEnded('t1')
-      expect(await first).toEqual({ ok: true })
-      expect(await second).toEqual({ ok: true })
-    })
-
-    it('an answer the session took in place, not as keys, counts at once', async () => {
-      const w = world({ answer: async () => ({}) })
-      w.mark([asking])
-      expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toEqual({ ok: true })
-    })
-
-    it('the wait starts once every key is typed, so a long answer that takes its keys is not called ignored', async () => {
-      const typing = A_TAKEN_ANSWER_SHOWS_WITHIN_MS + 1000
-      const w = world({
-        answer: async (tabId) => {
-          await new Promise((r) => setTimeout(r, typing))
-          setTimeout(() => w.koloft.askEnded(tabId), 1000)
-          return { watch: true }
-        }
-      })
-      w.mark([asking])
-      const result = w.koloft.answer('s-t1', pressRed)
-      await vi.advanceTimersByTimeAsync(typing + 1000)
-      expect(await result).toEqual({ ok: true })
-    })
-
-    it('an answer the session takes while its keys are still going in counts as answered', async () => {
-      const w = world({
-        answer: async (tabId) => {
-          w.koloft.askEnded(tabId)
-          return { watch: true }
-        }
-      })
-      w.mark([asking])
-      expect(await w.koloft.answer('s-t1', pressRed)).toEqual({ ok: true })
+  it('an answer the session did not take ends as failed, and the card sends the owner to the session instead of offering a retry', async () => {
+    const w = world({ answer: async () => ANSWER_NOT_TAKEN })
+    w.mark([asking])
+    expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toEqual({
+      ok: false,
+      why: ANSWER_NOT_TAKEN_ON_A_CARD,
+      retryHelps: false
     })
   })
 })
@@ -289,7 +223,7 @@ describe('koloft inbox — a session posts and moves its own cards', () => {
       sessionOfTab: () => undefined,
       liveTabOf: () => undefined,
       askOf: async () => undefined,
-      answer: async () => ({}),
+      answer: async () => undefined,
       butlerSide: () => false,
       watching: () => null
     })
