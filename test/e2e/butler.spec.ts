@@ -630,6 +630,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
       const said = await koloftSays(page, `session read ${codexId}`)
       expect(said).toContain('owner: Codex fixture session')
       expect(said).toContain('assistant: Codex fixture answered: Codex fixture session')
+      const defaultHomeLoaded = path.join(env.launchEnv.CODEX_HOME!, 'fake-codex-loaded', codexId)
+      expect(fs.existsSync(defaultHomeLoaded)).toBe(false)
     } finally {
       await close()
     }
