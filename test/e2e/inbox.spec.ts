@@ -62,8 +62,8 @@ function typeInto(page: Page, tabId: string, line: string): Promise<void> {
   return page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tabId, line])
 }
 
-function peerMessages(env: E2EEnv): string {
-  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+function peerMessages(env: E2EEnv, home = env.home): string {
+  const file = path.join(home, 'fake-claude-peer.jsonl')
   return fs.existsSync(file)
     ? fs
         .readFileSync(file, 'utf8')
@@ -526,14 +526,13 @@ for (const remote of [false, true]) {
       if (remote) await addRemoteWorkspace(page, env)
       const ws = remote ? REMOTE_WS_NAME : 'ws-a'
       await startSessionIn(page, ws, { remote })
-      const row = wsRows(page, ws).first()
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
-      const tabId = (await row.getAttribute('data-tab-id')) as string
-
+      await expect(wsRows(page, ws).first()).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
       await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
       await pickNotYet(page, /Answer to: Shall I merge PR #12\?/)
       await expect
-        .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .poll(() => peerMessages(env, remote ? machineHome(env) : env.home), {
+          timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+        })
         .toContain('Merge PR #12? «Not yet»')
       await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
     } finally {
@@ -542,14 +541,17 @@ for (const remote of [false, true]) {
   })
 }
 
+const fileText = (file: string): string =>
+  fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+
 const OTHER_AGENTS = [
   {
     name: 'Codex',
     backend: 'codex',
     install: (env: E2EEnv) => installCodex(env),
+    startsOnFirstLine: false,
     said: /Codex fixture answered: Shall I merge PR #12\?/,
-    got: async (env: E2EEnv) =>
-      fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
   },
   {
     name: 'Muse',
@@ -558,8 +560,9 @@ const OTHER_AGENTS = [
       installMuse(env)
       trustInMuse(env, env.workspaces.a)
     },
+    startsOnFirstLine: false,
     said: /echo: Shall I merge PR #12\?/,
-    got: undefined
+    got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
   },
   {
     name: 'Antigravity',
@@ -568,13 +571,14 @@ const OTHER_AGENTS = [
       installAgy(env)
       trustInAgy(env, env.workspaces.a)
     },
+    startsOnFirstLine: true,
     said: /Answer to: Shall I merge PR #12\?/,
-    got: undefined
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
   }
 ] as const
 
 for (const agent of OTHER_AGENTS) {
-  test(`a finished turn of a ${agent.name} session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+  test(`a finished turn of a session in ${agent.name} the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
     env
   }) => {
     fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
@@ -584,16 +588,20 @@ for (const agent of OTHER_AGENTS) {
       const page = await app.firstWindow()
       await waitBooted(page)
       await newSessionInWith(page, 'ws-a', agent.name)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.backendId === agent.backend
-      )!.tabId as string
-      await typeInto(page, tabId, 'Shall I merge PR #12?')
+      const tabOf = async (): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === agent.backend
+        )?.tabId
+      if (agent.startsOnFirstLine) {
+        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
+      } else {
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await typeInto(page, (await tabOf()) as string, 'Shall I merge PR #12?')
+      }
       await pickNotYet(page, agent.said)
+      const tabId = (await tabOf()) as string
       await expect
-        .poll(() => (agent.got ? agent.got(env) : terminalText(page, tabId)), {
-          timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
-        })
+        .poll(() => agent.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
         .toContain('Merge PR #12? «Not yet»')
       await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
     } finally {
