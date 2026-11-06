@@ -226,7 +226,7 @@ function linesPerQuestion(qs: Question[], reply: string): string[] | undefined {
   return all.length === qs.length ? all : undefined
 }
 
-// CC§14 AGY§14
+// AGY§14
 function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
   return [String(q.options.length + 1), ...typedPieces(text), '\r']
 }
@@ -234,31 +234,39 @@ function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
 // CC§14
 const NEXT_QUESTION_AFTER_TICKS = '\t'
 const SUBMIT_ON_THE_REVIEW_PAGE = '1'
+const APPROVE_THE_PLAN_FROM_ANY_ROW = 'Shift-Tab'
 
 const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
 
+const rowsUnderTheOptions = (q: Question): number => (q.multiSelect ? 3 : 2)
+
 // CC§14
-function questionKeys(q: Question, line: string): string[] {
-  const picks = picksFor(q, line)
-  if (!q.multiSelect) return picks ? picks.map(String) : ownWordsAfterTheLastOption(q, line)
-  if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
+function backToTheFirstQuestion(qs: Question[]): string[] {
+  const toTheBottomRow = Math.max(...qs.map((q) => q.options.length + rowsUnderTheOptions(q)))
+  const ontoAnOption = Math.max(...qs.map(rowsUnderTheOptions))
   return [
-    ...presses('Down', q.options.length),
-    ...typedPieces(line),
-    NEXT_QUESTION_AFTER_TICKS,
-    '\r'
+    ...presses('Down', toTheBottomRow),
+    ...presses('Up', ontoAnOption),
+    ...presses('Shift-Tab', qs.length)
   ]
 }
 
 // CC§14
-function emptyFieldAndHighlightTheFirstOption(q: Question): string[] {
-  const rowsUnderTheOptions = q.multiSelect ? 3 : 2
+function emptyTheOwnWordsField(q: Question): string[] {
   return [
-    ...presses('Down', q.options.length + rowsUnderTheOptions),
-    ...presses('Up', rowsUnderTheOptions - 1),
-    CLEAR_TO_LINE_START,
-    ...presses('Up', q.options.length)
+    ...presses('Down', q.options.length + rowsUnderTheOptions(q)),
+    ...presses('Up', rowsUnderTheOptions(q) - 1),
+    CLEAR_TO_LINE_START
   ]
+}
+
+// CC§14
+function questionKeys(q: Question, line: string): string[] {
+  const picks = picksFor(q, line)
+  const moveOn = q.multiSelect ? [NEXT_QUESTION_AFTER_TICKS] : []
+  return picks
+    ? [...emptyTheOwnWordsField(q), ...presses('Up', 1), ...picks.map(String), ...moveOn]
+    : [...emptyTheOwnWordsField(q), ...typedPieces(line), ...moveOn, '\r']
 }
 
 // CC§14
@@ -268,12 +276,16 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
-    const keys = [
-      ...qs.slice(0, 1).flatMap(emptyFieldAndHighlightTheFirstOption),
-      ...qs.flatMap((q, i) => questionKeys(q, lines[i]!))
-    ]
-    return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }
+    const answers = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    return {
+      ok: true,
+      value: drawsTabs(qs)
+        ? [...backToTheFirstQuestion(qs), ...answers, SUBMIT_ON_THE_REVIEW_PAGE]
+        : answers
+    }
   }
+  if (p.tool_name === 'ExitPlanMode' && YES.test(text))
+    return { ok: true, value: [CLEAR_TO_LINE_START, ...keysFor([APPROVE_THE_PLAN_FROM_ANY_ROW])] }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
   return fail(YES_OR_NO_BY_KEYS)

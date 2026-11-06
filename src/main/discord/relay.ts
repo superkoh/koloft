@@ -67,6 +67,8 @@ export const unreadableInRoom = (butler: string, lobby: string | undefined): str
 export const answerItFirst = (name: string): string =>
   `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
+export const STARTED_IN_THE_TERMINAL =
+  'You already started on this question in the terminal, so Koloft leaves it to you there.'
 
 const answerKeysOf = (backend: BackendId | undefined): AnswerKeys | undefined =>
   backend && backend !== 'claude' ? ANSWER_KEYS[backend] : undefined
@@ -137,7 +139,8 @@ export interface RelayDeps {
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   asksChanged(tabId: string): void
-  type(tabId: string, keys: string[]): Promise<void>
+  type(tabId: string, keys: string[], stillWanted?: () => boolean): Promise<void>
+  touchedSinceAsked(tabId: string): boolean
   queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
@@ -687,6 +690,8 @@ export class DiscordRelay {
         return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: howToAnswer(question) }
+      // CODEX§20 MUSE§11 AGY§14
+      if (this.d.touchedSinceAsked(tab)) return { error: STARTED_IN_THE_TERMINAL }
       this.d.answered(tab, reply)
       await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return { watch: true }
@@ -714,7 +719,9 @@ export class DiscordRelay {
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
     this.d.answered(tab, reply)
-    await this.d.type(tab, keys.value).catch((error: unknown) => {
+    // CC§14
+    const stillOpen = watch ? (): boolean => this.asks.get(tab) === ask : undefined
+    await this.d.type(tab, keys.value, stillOpen).catch((error: unknown) => {
       ask.typedAt = undefined
       throw error
     })
@@ -777,7 +784,10 @@ export class DiscordRelay {
   ): void {
     if ('questions' in open) {
       const answers = questionAnswers(open, m.content)
-      if (answers)
+      // CODEX§20 MUSE§11 AGY§14
+      if (answers && this.d.touchedSinceAsked(tab))
+        this.say(m.channelId, STARTED_IN_THE_TERMINAL, m.id)
+      else if (answers)
         void this.press(tab, answerKeys(keys, open, answers)).then(() =>
           this.d.answered(tab, m.content)
         )

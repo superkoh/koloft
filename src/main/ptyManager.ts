@@ -376,8 +376,8 @@ export class PtyManager extends EventEmitter {
     return turn
   }
 
-  type(id: string, keys: string[]): Promise<void> {
-    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  type(id: string, keys: string[], stillWanted?: () => boolean): Promise<void> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys, stillWanted))
   }
 
   paste(id: string, text: string, typedAfter = ''): Promise<void> {

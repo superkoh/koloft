@@ -4,9 +4,14 @@ import { sleep } from './codexTransport'
 const SUBMIT_AFTER_TEXT_MS = 300
 
 // CC§12
-export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
+export async function typeKeys(
+  write: (data: string) => void,
+  keys: string[],
+  stillWanted: () => boolean = () => true
+): Promise<void> {
   for (const [i, key] of keys.entries()) {
     if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
+    if (!stillWanted()) return
     write(key)
   }
 }
@@ -40,6 +45,11 @@ const ONLY_THE_TERMINALS_OWN_ANSWERS =
 
 export function onlyTheTerminalsOwnAnswers(data: string): boolean {
   return ONLY_THE_TERMINALS_OWN_ANSWERS.test(data)
+}
+
+export function pressesAKey(data: string): boolean {
+  const keys = withoutMouseAndFocusReports(data)
+  return keys !== '' && !onlyTheTerminalsOwnAnswers(keys)
 }
 
 export const CLEAR_TO_LINE_START = '\x15'

@@ -511,7 +511,13 @@ import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
+import {
+  bracketedPaste,
+  pressesAKey,
+  typedPieces,
+  typeKeys,
+  withoutMouseAndFocusReports
+} from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -3945,7 +3951,11 @@ app.whenReady().then(() => {
       showAskOnItsRow(tabId)
       void ownerAsleep.asks(tabId)
     },
-    type: (tabId, keys) => ptyMgr.type(tabId, keys),
+    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    touchedSinceAsked: (tabId) => {
+      const asked = tracker.askedAt(tabId)
+      return asked !== undefined && (keyPressedAt.get(tabId) ?? 0) >= asked
+    },
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
@@ -5904,6 +5914,7 @@ function askUnreadablySoon(tabId: string): void {
 }
 
 const touchedAt = new Map<string, number>()
+const keyPressedAt = new Map<string, number>()
 const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
 
 function ownerTouched(tabId: string): void {
@@ -6328,6 +6339,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
     if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
     if (ownerTyped(data)) ownerTouched(id)
+    if (pressesAKey(data)) keyPressedAt.set(id, Date.now())
     writeToTab(id, data)
   })
   ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
@@ -6337,6 +6349,7 @@ function registerIpc(): void {
     if (guard?.isBackground(id)) void guard.free(id)
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
+    keyPressedAt.set(id, Date.now())
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })

@@ -830,6 +830,7 @@ const untilExists = (file) =>
   })
 const DOWN_KEYS = ['\x1b[B', '\x1bOB']
 const UP_KEYS = ['\x1b[A', '\x1bOA']
+const BACK_A_TAB = '\x1b[Z'
 // CC§14
 function questionDialogKeys(questions) {
   const reviewPage = questions.length > 1 || questions[0].multiSelect
@@ -872,6 +873,7 @@ function questionDialogKeys(questions) {
       return
     }
     if (typing) {
+      if (key === BACK_A_TAB) return
       if (key === '\x15') s.words = ''
       else if (q.multiSelect && key === '\t') {
         typing = false
@@ -879,6 +881,13 @@ function questionDialogKeys(questions) {
       } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
       else if (key === '\r') next()
       else s.words += key
+      return
+    }
+    if (key === BACK_A_TAB) {
+      if (row < options && at > 0) {
+        at -= 1
+        row = 0
+      }
       return
     }
     if (row === chatRow) return
@@ -899,6 +908,11 @@ function questionDialogKeys(questions) {
     }
   }
   return (key) => {
+    if (at === questions.length && reviewPage && key === BACK_A_TAB) {
+      at -= 1
+      row = 0
+      return undefined
+    }
     if (at === questions.length) return reviewPage && key === '1' ? answers() : undefined
     press(key)
     return at === questions.length && !reviewPage ? answers() : undefined

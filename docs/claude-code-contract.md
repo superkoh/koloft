@@ -2830,9 +2830,8 @@ below was one run.
   - So Down N+2 times, then Up N+1 times (N+3 and N+2 for a many-pick question), each
     its own write, leaves the highlight on option 1 from any start: from the start, after
     two or three Downs, after a paste, after a fullscreen click on the field, and on a
-    two-question dialog after a paste (7 runs, each picked option 1). Two keys that
-    arrive in one read count as one (above); the extra Down covers that, the Ups have no
-    such room.
+    two-question dialog after a paste (7 runs, each picked option 1). How keys that
+    arrive in one read are taken: see the 2.1.319 bullet below.
   - A many-pick question whose field holds pasted text keeps it ticked: after the keys
     above, `1`, Tab, `1` sent `"Apple, hello"`.
   - Ctrl+U (0x15) with the highlight on the field empties it, and an emptied many-pick
@@ -2844,8 +2843,54 @@ below was one run.
     Ctrl+U alone still emptied it (`Purple` sent; Ctrl+E then Ctrl+U the same), so the
     cursor is back at the end once the highlight returns.
   - A `Bash` dialog (`--permission-mode default`; `1. Yes` … `4. No`, every row
-    numbered) took `1` with the highlight moved down to row 3: the command ran. A plan
-    dialog was not run.
+    numbered) took `1` with the highlight moved down to row 3: the command ran.
+- **The later tabs of a dialog, keys that arrive together, and an answer at the Mac
+  while Koloft types.** 2026-11-05, CC 2.1.319 (the native binary), the setup of the
+  bullet above, with OSC 7501 answered and logging hooks; one run per line.
+  - With question 1 answered in the terminal (or Right or Tab pressed), Koloft's run of
+    2.1.318 (question 1's reset, `2`, `2`, `1`) picked on tab 2 and then pressed `2` on
+    the review page, which is `Cancel`: "User declined to answer questions".
+  - Shift+Tab or Left on an option row or on the review page goes back one tab; on tab 1
+    it stays. On the own-words field or on `Chat about this` Shift+Tab does nothing, and
+    Left moves the field's cursor. A tab gone back to opens with its highlight on row 1
+    and its pick marked (`1. Red ✔`); a digit there picks again and moves on.
+  - So Koloft presses Down as often as the longest tab has rows, Up as often as the
+    most rows any tab has under its options (onto an option row), and Shift+Tab once per
+    question; then, per question, Down to the bottom, Up onto the field, Ctrl+U, and
+    either Up once and the digits (Tab after many-pick ticks) or the own words typed
+    into the emptied field and Enter (Tab, Enter on a many-pick). 7 of 7 runs sent what
+    was asked: untouched; the person on tab 2 with `hello` in its field; on tab 2's
+    `Chat about this`; on the review page's `Cancel`; a one-pick and a many-pick
+    question with question 1 answered and a paste on tab 2; own words on both tabs from
+    tab 2's field; a many-pick question with its highlight on `Submit`. Own words typed
+    straight into the emptied field sent them (`Purple`; `Mango` Tab Enter on a
+    many-pick; `Purple` Enter then `1`, `1` sent `Purple` / `Small`).
+  - Picks the person ticked on a many-pick question are toggled by Koloft's digits: `1`
+    in the terminal, then Koloft's run for `Apple`, sent "The user did not answer the
+    questions."
+  - Keys written while claude was stopped (SIGSTOP, the writes 300 ms apart, SIGCONT):
+    two Ups from the field moved two rows; four Ups from `Chat about this` moved one row,
+    into the field. Once the highlight lands on the field, the rest of that read goes
+    into it, so a run loses keys only past the field, where its Ctrl+U is due anyway.
+  - The dialog's 7501 frame, `state=blocked:kind=question:msg=<base64 "answer: <first
+    question> (<options>)">`, stays the same across tabs; the next frame comes when it
+    is answered or cancelled. A `1` typed at the Mac answered it and `state=working`
+    came 20 ms later; the rest of a run typed after that landed in the prompt box: a
+    draft `my draft` was replaced by a recalled prompt, emptied by Ctrl+U, and `2` was
+    left there. So Koloft stops its keys once the dialog shows closed.
+- **A plan dialog with its highlight moved.** 2026-11-05, CC 2.1.319, the setup above,
+  `--permission-mode plan`, the fake API writing the plan file named in the system
+  prompt with `Write` and then calling `ExitPlanMode` with `{}`; one run per line. Its
+  rows: `1. Yes, and use auto mode` (`1. Yes, and switch to BYPASS PERMISSIONS …` with
+  `--allow-dangerously-skip-permissions`), `2. Yes, manually approve edits`, `3. Tell
+  Claude what to change` ("shift+tab to approve with this feedback"). Row 3 is a text
+  field: with the highlight there (Down twice, or Up once from row 1), `1` is typed into
+  it (`❯ 3. 1`) and nothing is sent. Down from row 3 wraps to row 1. Shift+Tab approved
+  from rows 1, 2 and 3 alike, in an auto and a bypass session, as option 1 does (the
+  footer then read auto mode / bypass permissions), and sent the field's text with it
+  (`{"type":"text","text":"hello"}` next to the `tool_result`); Ctrl+U empties the field
+  and does nothing on rows 1–2, so Ctrl+U then Shift+Tab approved with no text (5 runs).
+  Esc on row 3, empty or holding text, rejected the plan and kept plan mode.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
