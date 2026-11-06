@@ -585,62 +585,85 @@ const OTHER_AGENTS = [
 
 const RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS = 120_000
 
-for (const remote of [false, true]) {
-  test(`a question${remote ? ' of a remote Claude Code session' : ' and a finished turn of Claude Code'} still waiting on the owner ${remote ? 'stays' : 'stay'} in Needs you across a Koloft restart, and the question then sends the owner to its tab`, async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    if (remote) installFakeRemote(env)
-    let app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      if (remote) {
-        await addRemoteWorkspace(page, env)
-      } else {
-        await startSessionIn(page, 'ws-a')
-        await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, {
-          timeout: 30_000
-        })
-        await runIn(page, centerTerm(page), '/answer Shall I merge it?')
-      }
-      const ws = remote ? REMOTE_WS_NAME : 'ws-b'
-      await startSessionIn(page, ws, { remote })
-      const asker = wsRows(page, ws).first()
-      await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
-      await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
-      await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
-      await openInbox(page)
-      if (!remote)
-        await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({
-          timeout: 15_000
-        })
-      await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
-    } finally {
-      await quitAndClose(app)
-    }
+test('a question and a finished turn of Claude Code still waiting on the owner stay in Needs you across a Koloft restart, and the question then shows its options and sends the owner to its tab', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/answer Shall I merge it?')
+    await startSessionIn(page, 'ws-b')
+    const asker = wsRows(page, 'ws-b').first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({ timeout: 15_000 })
+    await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
+  } finally {
+    await quitAndClose(app)
+  }
 
-    fs.writeFileSync(
-      path.join(remote ? machineHome(env) : env.home, 'fake-claude-delay'),
-      String(RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS)
-    )
-    app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await openInbox(page)
-      if (!remote)
-        await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({
-          timeout: 15_000
-        })
-      const question = inboxCard(page, 'asks a question')
-      await expect(question).toContainText('Which colour?\n1. Red\n2. Green')
-      await expectSentToItsTab(question)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-}
+  fs.writeFileSync(
+    path.join(env.home, 'fake-claude-delay'),
+    String(RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS)
+  )
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await openInbox(page)
+    await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({ timeout: 15_000 })
+    const question = inboxCard(page, 'asks a question')
+    await expect(question).toContainText(/Which colour\?\s+1\. Red\b.*\s+2\. Green\b/)
+    await expectSentToItsTab(question)
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+test('a question a remote Claude Code session still shows after a Koloft restart is still a card in Needs you, and picking an answer there reaches the session', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  installFakeRemote(env)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await addRemoteWorkspace(page, env)
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
+  } finally {
+    await quitAndClose(app)
+  }
+
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    const tabId = (await asker.getAttribute('data-tab-id')) as string
+    await openInbox(page)
+    await page.locator('.inbox-page .ibx-choice', { hasText: 'Green' }).click({ timeout: 30_000 })
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .toMatch(/Picked: Green/)
+    await expect(inboxCard(page, 'asks a question')).toHaveCount(0)
+  } finally {
+    await quitAndClose(app)
+  }
+})
 
 async function expectSentToItsTab(card: Locator): Promise<void> {
   await expect(card).toContainText(ASK_NO_LONGER_ON_SCREEN, { timeout: 15_000 })
