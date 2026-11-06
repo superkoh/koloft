@@ -14,6 +14,7 @@ const MINUTE_MS = 60_000
 export const THIS_MAC = ''
 
 export interface AskedOwner {
+  id: string
   question: boolean
   questions: number
   text: string
@@ -105,8 +106,8 @@ export class OwnerAsleep {
   private settled = new Set<string>()
   private everMarked = new Set<string>()
   private generation = 0
-  private answering = new Set<string>()
-  private askedWhileAnswering = new Set<string>()
+  private answering = new Map<string, { askedAgain: boolean }>()
+  private lastAnsweredDialog = new Map<string, string>()
 
   constructor(
     private readonly d: OwnerAsleepDeps,
@@ -135,6 +136,7 @@ export class OwnerAsleep {
     this.since = since
     if (since !== null && sleptAt === null) {
       this.keepAnswered([])
+      this.lastAnsweredDialog.clear()
       for (const tabId of this.d.tabs()) void this.asks(tabId)
     }
     if (since === null && sleptAt !== null) {
@@ -179,30 +181,35 @@ export class OwnerAsleep {
     return this.asleep() && !this.d.awakeTabs().includes(tabId)
   }
 
-  async asks(tabId: string, stillShowingUntaken?: string): Promise<void> {
+  async asks(tabId: string): Promise<void> {
     if (!this.answersFor(tabId)) return
-    if (this.answering.has(tabId)) return void this.askedWhileAnswering.add(tabId)
-    this.answering.add(tabId)
-    let untaken: string | undefined
+    const answering = this.answering.get(tabId)
+    if (answering) return void (answering.askedAgain = true)
+    const run = { askedAgain: false }
+    this.answering.set(tabId, run)
     try {
-      const asked = await this.d.asked(tabId)
-      if (!asked || asked.text === stillShowingUntaken) return
-      const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
-      for (const reply of repliesTo(asked)) {
-        entry.failed = await this.d.answer(tabId, reply)
-        if (entry.failed === ANSWER_NOT_TAKEN) {
-          untaken = asked.text
-          break
-        }
-        if (entry.failed === undefined) {
-          entry.gave = reply
-          break
-        }
-      }
-      this.keepAnswered([...this.answered, entry])
+      do {
+        run.askedAgain = false
+        await this.answerShowing(tabId)
+      } while (run.askedAgain && this.answersFor(tabId))
     } finally {
       this.answering.delete(tabId)
     }
-    if (this.askedWhileAnswering.delete(tabId)) await this.asks(tabId, untaken)
+  }
+
+  private async answerShowing(tabId: string): Promise<void> {
+    const asked = await this.d.asked(tabId)
+    if (!asked || asked.id === this.lastAnsweredDialog.get(tabId)) return
+    this.lastAnsweredDialog.set(tabId, asked.id)
+    const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
+    for (const reply of repliesTo(asked)) {
+      entry.failed = await this.d.answer(tabId, reply)
+      if (entry.failed === ANSWER_NOT_TAKEN) break
+      if (entry.failed === undefined) {
+        entry.gave = reply
+        break
+      }
+    }
+    this.keepAnswered([...this.answered, entry])
   }
 }

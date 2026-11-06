@@ -636,6 +636,10 @@ export class DiscordRelay {
     return this.openAsk(tab)?.payload
   }
 
+  askedAt(tab: string): number | undefined {
+    return this.openAsk(tab)?.at
+  }
+
   heldAsk(tab: string): AskPayload | undefined {
     const ask = this.openAsk(tab)
     return ask?.hook ? ask.payload : undefined

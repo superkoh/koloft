@@ -16,8 +16,19 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
 let setups = 0
 afterAll(() => fs.rmSync(userData, { recursive: true, force: true }))
 
-const question = (text: string, questions = 1): AskedOwner => ({ question: true, questions, text })
-const approval = (text: string): AskedOwner => ({ question: false, questions: 0, text })
+let dialogs = 0
+const question = (text: string, questions = 1): AskedOwner => ({
+  id: `${++dialogs}`,
+  question: true,
+  questions,
+  text
+})
+const approval = (text: string): AskedOwner => ({
+  id: `${++dialogs}`,
+  question: false,
+  questions: 0,
+  text
+})
 
 function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null) {
   let now = 0
@@ -72,6 +83,7 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     down,
     machines,
     reports,
+    settle,
     fallAsleep,
     wakeAfter
   }
@@ -117,7 +129,7 @@ describe('owner asleep', () => {
     expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
-  it('a second question asked while Koloft waits to see its first answer taken is answered once that wait ends', async () => {
+  it('a second dialog asked while Koloft waits to see its first answer taken is answered once that wait ends, even when it asks the same thing', async () => {
     const t = setup()
     let landed: (() => void) | undefined
     t.d.answer = async (tabId, reply) => {
@@ -127,37 +139,57 @@ describe('owner asleep', () => {
       return undefined
     }
     await t.fallAsleep()
-    t.asks.set('a', question('Blue or red?'))
+    t.asks.set('a', approval('npm test'))
     const first = t.asleep.asks('a')
-    await new Promise((r) => setTimeout(r, 0))
+    await t.settle()
     landed?.()
-    t.asks.set('a', approval('npm publish'))
+    t.asks.set('a', approval('npm test'))
     await t.asleep.asks('a')
     await first
     expect(t.replies).toEqual([
-      ['a', OWNER_ASLEEP_ANSWER],
+      ['a', 'yes'],
       ['a', 'yes']
     ])
     await t.wakeAfter(HOUR_MS)
     expect(t.reports[0]).toContain(
-      '"Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
+      '2. "Session a" asked to be allowed: "npm test"; Koloft allowed it.'
     )
   })
 
-  it('the same question still showing after an answer not seen taken gets no second answer, though the session signalled again during the wait', async () => {
-    const t = setup()
-    let ended: (() => void) | undefined
-    t.d.answer = async (tabId, reply) => {
-      t.replies.push([tabId, reply])
-      if (t.replies.length === 1) await new Promise<void>((r) => (ended = r))
-      return ANSWER_NOT_TAKEN
+  it('a dialog Koloft already answered gets no second answer when the session signals it again, during the wait or after, whether or not the answer was seen taken', async () => {
+    for (const outcome of [undefined, ANSWER_NOT_TAKEN]) {
+      const t = setup()
+      let ended: (() => void) | undefined
+      t.d.answer = async (tabId, reply) => {
+        t.replies.push([tabId, reply])
+        if (t.replies.length === 1) await new Promise<void>((r) => (ended = r))
+        return outcome
+      }
+      await t.fallAsleep()
+      t.asks.set('a', question('Blue or red?'))
+      const first = t.asleep.asks('a')
+      await t.settle()
+      await t.asleep.asks('a')
+      ended?.()
+      await first
+      await t.asleep.asks('a')
+      expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
     }
+  })
+
+  it('a question that shows while Koloft is still looking for one on that tab is answered too', async () => {
+    const t = setup()
     await t.fallAsleep()
-    t.asks.set('a', question('Blue or red?'))
+    let looked: (() => void) | undefined
+    t.d.asked = async (tabId) => {
+      const showing = t.asks.get(tabId)
+      if (!looked) await new Promise<void>((r) => (looked = r))
+      return showing
+    }
     const first = t.asleep.asks('a')
-    await new Promise((r) => setTimeout(r, 0))
+    t.asks.set('a', question('Blue or red?'))
     await t.asleep.asks('a')
-    ended?.()
+    looked?.()
     await first
     expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
