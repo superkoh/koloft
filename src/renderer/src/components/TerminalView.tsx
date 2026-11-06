@@ -19,6 +19,7 @@ const ADOPTED_REPAINT_AFTER_MS = 1000
 const ACK_FLUSH_AT_UTF16_UNITS = 64 * 1024
 const ACK_FLUSH_AFTER_MS = 100
 const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
+const ENTER_PRESSED_BEFORE_THE_COMMIT_ECHO = '\r'
 export const NO_FOCUS_SIGNAL = 0
 
 export function TerminalView({
@@ -332,7 +333,7 @@ export function TerminalView({
     window.api.terminal.attach(id)
     // PLATFORM§22
     const inputSub = term.onData((data) => {
-      if (composing || commitGrace) return
+      if (composing || (commitGrace && data !== ENTER_PRESSED_BEFORE_THE_COMMIT_ECHO)) return
       window.api.terminal.write(id, data)
     })
 

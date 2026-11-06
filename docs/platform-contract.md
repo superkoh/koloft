@@ -1106,6 +1106,14 @@ recorded; inferred, not checked.
    by one `setTimeout(0)` drains it without losing the text: xterm's
    `_finalizeComposition` reads the textarea in its own `setTimeout(0)`, queued first
    because its listener was added first (defect 6), so it has sent the text by then.
+8. A key whose keydown is handled before that `setTimeout(0)` runs — the commit and the
+   key queued together on a busy renderer — makes `CompositionHelper.keydown` call
+   `_finalizeComposition(false)`, which sends the composition text through `onData` at
+   once, and then the key's own data follows on the same keydown. So a window that
+   swallows `onData` until the timer drops that key too. Measured 2026-11-06 on
+   6.1.0-beta.302 in the e2e suite: CDP `Input.insertText` and an Enter
+   `Input.dispatchKeyEvent` sent without waiting between them lost the Enter 3 of 3
+   times while the window swallowed everything (ime-composition.spec.ts).
 
 State in the shipped `@xterm/xterm` 6.1.0-beta.302 (read 2026-09-24 in
 `src/browser/input/CompositionHelper.ts`): `updateCompositionElements` still returns

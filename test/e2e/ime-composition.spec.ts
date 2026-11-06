@@ -46,8 +46,17 @@ async function commit(cdp: CDPSession, text: string): Promise<void> {
   await cdp.send('Input.insertText', { text })
 }
 
+async function commitWithEnterRightBehindIt(cdp: CDPSession, text: string): Promise<void> {
+  const enter = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }
+  await Promise.all([
+    cdp.send('Input.insertText', { text }),
+    cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', ...enter }),
+    cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...enter })
+  ])
+}
+
 test.describe('Chinese input method: an Enter pressed while a word is still being composed picks the word and submits nothing', () => {
-  test('in a session terminal, the Enter inside the composition sends nothing; the next Enter sends the line with the word', async ({
+  test('in a session terminal, the Enter inside the composition sends nothing; the next Enter sends the line with the word, even when it lands right behind the commit', async ({
     page,
     env
   }) => {
@@ -59,8 +68,7 @@ test.describe('Chinese input method: an Enter pressed while a word is still bein
     await centerTerm(page).click()
     await page.keyboard.type('say ')
     const cdp = await composeThenPressEnter(page, PINYIN)
-    await commit(cdp, HANZI)
-    await page.keyboard.press('Enter')
+    await commitWithEnterRightBehindIt(cdp, HANZI)
 
     await expect
       .poll(() => claudePrompts(transcript), { timeout: 30_000 })
