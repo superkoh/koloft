@@ -8,7 +8,9 @@ import {
   AddAccountDialog,
   LoginDialog,
   SignInDialog,
-  SignInFailedDialog
+  SignInFailedDialog,
+  loginRunning,
+  type PaneForm
 } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
@@ -62,17 +64,28 @@ export function AssistSetup({
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
+  const clearLogin = useStore((s) => s.clearLogin)
   const update = useSettingsUpdate()
-  const [signIn, setSignIn] = useState<{
-    backend: Exclude<BackendId, 'claude'>
-    again?: string
-  } | null>(null)
-  const [pasting, setPasting] = useState(false)
+  // ADR-0002
+  const [form, setForm] = useState<PaneForm | null>(null)
+  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const openForm = (next: PaneForm): void => {
+    if (login && !claudeLoginRunning) clearLogin()
+    window.api.accounts.dismissSignInFailure()
+    setForm(next)
+  }
+  const openClaudeSignIn = (again: string | undefined): void => {
+    if (claudeLoginRunning) return
+    window.api.accounts.dismissSignInFailure()
+    setForm(null)
+    beginLogin(again)
+  }
+  const signIn = form && 'signIn' in form ? form : null
 
   const pick = (b: BackendId, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
-    else if (b === 'claude') beginLogin(again)
-    else setSignIn({ backend: b, again })
+    else if (b === 'claude') openClaudeSignIn(again)
+    else openForm({ signIn: b, again })
   }
 
   if (setup.noTool)
@@ -117,7 +130,7 @@ export function AssistSetup({
       <div className="quiet">
         {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs
         without AI. Have a Claude token?{' '}
-        <button className="ob-link" onClick={() => setPasting(true)}>
+        <button className="ob-link" onClick={() => openForm({ paste: 'oauth' })}>
           Paste it
         </button>
         .
@@ -145,14 +158,17 @@ export function AssistSetup({
       {login && <LoginDialog key={login.reauthName ?? ''} />}
       {signIn ? (
         <SignInDialog
-          backend={signIn.backend}
+          key={signIn.again ?? ''}
+          backend={signIn.signIn}
           again={signIn.again}
-          onClose={() => setSignIn(null)}
+          onClose={() => setForm(null)}
         />
       ) : (
         <SignInFailedDialog />
       )}
-      {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
+      {form && 'paste' in form && (
+        <AddAccountDialog kind={form.paste} onClose={() => setForm(null)} />
+      )}
     </div>
   )
 }
