@@ -772,9 +772,31 @@ const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
 const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
 const ESC = /\x1b/g
-process.stdin.on('data', (chunk) =>
+// CC§12
+const STATUS_REPLY = /\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)/
+const STATUS_QUERY_WAITS_MS = 1000
+const statusQueried = !!process.env.KOLOFT_FAKE_PROGRAM_STATUS && process.stdin.isTTY
+let reportsState = false
+const reportState = (body) => {
+  if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
+}
+const stopStatusQuery = () => {
+  if (!dialogKey) process.stdin.setRawMode(false)
+}
+if (statusQueried) {
+  process.stdin.setRawMode(true)
+  process.stdout.write('\x1b]7501;?\x07')
+  setTimeout(stopStatusQuery, STATUS_QUERY_WAITS_MS)
+}
+process.stdin.on('data', (chunk) => {
+  if (statusQueried && STATUS_REPLY.test(String(chunk))) {
+    reportsState = true
+    stopStatusQuery()
+    chunk = String(chunk).replace(STATUS_REPLY, '')
+    if (!chunk) return
+  }
   dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
-)
+})
 process.stdin.on('end', () => typedLines.end())
 // CC§14
 function keysOnTheDialog(answerOnceDone) {
@@ -783,17 +805,29 @@ function keysOnTheDialog(answerOnceDone) {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
     // PLATFORM§35
     if (paneRaw) fs.writeFileSync(paneRaw, '')
+    reportState('state=blocked:kind=permission')
+    const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
+      if (fs.existsSync(dropKey)) return void fs.rmSync(dropKey, { force: true })
       const answer = answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
       if (paneRaw) fs.rmSync(paneRaw, { force: true })
+      reportState('state=working')
       resolve(answer)
     }
   })
 }
 const keyOnTheDialog = () => keysOnTheDialog((key) => key)
+const untilExists = (file) =>
+  new Promise((resolve) => {
+    const tick = setInterval(() => {
+      if (!fs.existsSync(file)) return
+      clearInterval(tick)
+      resolve()
+    }, 200)
+  })
 const DOWN_KEYS = ['\x1b[B', '\x1bOB']
 const UP_KEYS = ['\x1b[A', '\x1bOA']
 // CC§14
@@ -1507,22 +1541,17 @@ function handleLine(line) {
   if (text.startsWith('/later ')) {
     const later = text.slice('/later '.length)
     const marker = path.join(home, 'go-later')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(marker).then(() => {
       fs.rmSync(marker, { force: true })
       handleLine(later)
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
     return
   }
   if (text.startsWith('/open-later ')) {
     const target = text.slice('/open-later '.length).trim()
     if (!target) return void process.stdout.write('> ')
-    const marker = path.join(home, 'go-open')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(path.join(home, 'go-open')).then(() => {
       try {
         cp.execFileSync('open', [target], {
           cwd,
@@ -1530,7 +1559,7 @@ function handleLine(line) {
           env: openEnvRoutingPastShimToRecordingFakeOpen()
         })
       } catch {}
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed open ${target}\r\n> `)
     return
   }
@@ -1668,7 +1697,7 @@ function handleLine(line) {
             message: `Claude needs your permission to use ${name}`
           })
       }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
-      picked = keyed(await key)
+      picked = await keyed(await key)
     }
     append([
       {
@@ -1719,11 +1748,15 @@ function handleLine(line) {
   if (text.startsWith('/bash ')) {
     const command = text.slice('/bash '.length)
     const ran = `Ran: ${command}`
+    const runs = async () => {
+      if (command.startsWith('slow ')) await untilExists(path.join(home, 'go-run'))
+      return ran
+    }
     return ask(
       'Bash',
       { command, description: 'A command' },
       () => ran,
-      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+      (key) => (key === '1' ? runs() : `Denied: key ${JSON.stringify(key)}`)
     )
   }
   if (text === '/need-approval') {

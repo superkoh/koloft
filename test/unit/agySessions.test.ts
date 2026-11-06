@@ -1126,7 +1126,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     ]
   })
 
-  it("presses the key agy's own dialog takes when its API does not answer: 1 runs a command, 4 declines it, 2 declines a file", async () => {
+  it("presses the key agy's own dialog takes when its API does not answer, and says it went in as keys: 1 runs a command, 4 declines it, 2 declines a file", async () => {
     const id = await boundTab()
     const ask = async (name: string, args: Record<string, unknown>, msg: string): Promise<void> => {
       hook(id, 'PreToolUse', { toolCall: { name, args } })
@@ -1135,14 +1135,16 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     }
     await ask('run_command', { CommandLine: 'rm -rf build' }, 'Approve RunCommand: rm -rf build')
     expect(sessions.openApproval(id)).toMatchObject({ command: 'rm -rf build' })
-    expect(await sessions.answer(id, 'maybe')).toBe('an Antigravity approval takes yes or no.')
-    expect(await sessions.answer(id, 'no')).toBeUndefined()
+    expect(await sessions.answer(id, 'maybe')).toEqual({
+      error: 'an Antigravity approval takes yes or no.'
+    })
+    expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     await ask('run_command', { CommandLine: 'ls' }, 'Approve RunCommand: ls')
-    expect(await sessions.answer(id, 'yes')).toBeUndefined()
+    expect(await sessions.answer(id, 'yes')).toEqual({ watch: true })
     const file = path.join(repo, 'a.md')
     await ask('write_to_file', { TargetFile: file }, `Approve WriteToFile: Write: ${file}`)
     expect(sessions.openApproval(id)).toMatchObject({ command: file })
-    expect(await sessions.answer(id, 'no')).toBeUndefined()
+    expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     expect(pty.write.mock.calls).toEqual([
       [id, '4'],
       [id, '1'],
@@ -1160,7 +1162,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
       await hooksTaken(id)
       say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
       expect(sessions.openApproval(id)).toMatchObject({ command: file })
-      expect(await sessions.answer(id, 'no')).toBeUndefined()
+      expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     }
   })
 
@@ -1212,7 +1214,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     ])
     expect(await sessions.answer(id, 'banana')).toBe(false)
     expect(sent('HandleCascadeUserInteraction')).toEqual([])
-    expect(await sessions.answer(id, 'banana\nMedium, please')).toBeUndefined()
+    expect(await sessions.answer(id, 'banana\nMedium, please')).toEqual({})
     expect(sent('HandleCascadeUserInteraction')).toEqual([
       {
         cascadeId: A,
@@ -1319,7 +1321,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
     expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
-    expect(await sessions.answer(id, 'yes')).toBeUndefined()
+    expect(await sessions.answer(id, 'yes')).toEqual({})
     expect(sent('SendUserCascadeMessage')).toEqual([
       {
         cascadeId: A,
@@ -1453,7 +1455,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     ])
     expect(sessions.list()[0].nativeSessionId).toBe(A)
     await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
-    expect(await sessions.answer(id, 'yes')).toBeUndefined()
+    expect(await sessions.answer(id, 'yes')).toEqual({ watch: true })
     expect(pty.write).toHaveBeenCalledWith(id, '1')
     mirrored(id, [
       { conversation_id: A, agent_state: 'working' },

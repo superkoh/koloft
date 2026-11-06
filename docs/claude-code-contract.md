@@ -2306,6 +2306,16 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   carries, which in 2.1.306 covers 2.1.296–2.1.304, so it is no longer in its strings.
   Since Codex CLI 0.163.0 the Codex TUI writes OSC 7501 too, with no query first and
   only `state` and `app=codex` (`docs/codex-cli-contract.md` §25).
+- **Run on 2.1.318, Koloft's own reply turns the reports on.** 2026-11-05, a python pty
+  (120×40) through Koloft's shim, a scratch `CLAUDE_CONFIG_DIR`, haiku,
+  `--permission-mode default`; 6 runs. The query came 0.8–2.0 s after start; answered with
+  `ESC ] 7501 ; ? BEL` (5 runs) or with Koloft's `PROGRAM_STATUS_REPLY` (`?:states=…:kinds=…`
+  ended by ST, 1 run), `state=working:app=claude-code` followed at once. A permission
+  dialog drew as `state=blocked:app=claude-code:kind=permission:msg=<base64 "approve Bash:
+  <command>">` (`"approve plan"` for `ExitPlanMode`), 20 ms before the `PermissionRequest`
+  hook. In the strings the reports gate only these frames and the bare `state=clear`
+  written on exit; nothing else claude draws or sends depends on them. Behind tmux the
+  query never reaches Koloft (MUSE§6, measured on muse), so remote tabs get no frames.
 - **Since 2.1.305 a permission rule that does nothing shows as a warning row under the
   banner, and the long warning goes to the debug log.** On 2.1.306 a deny
   `Write(/etc/**)` drew `⚠ Deny rule Write(/etc/**) never matches · use Edit(/etc/**)`
@@ -2764,8 +2774,36 @@ below was one run.
   transcript about 1 s after Koloft typed the digit, and the tab went on. In real use on
   0.63.1 the same kind of digit typed from a card once drew no `tool_result` at all (the
   owner answered in the terminal 2 min 42 s later); the cause was not reproduced. The
-  next bullet holds four ways to get that same result; which one the owner met is not
-  known.
+  bullet "A digit picks only while the highlight is on a numbered option" below holds four
+  ways to get that same result; which one the owner met is not known.
+- **What shows a permission dialog was answered, and when.** 2026-11-05, CC 2.1.318, the
+  setup of the §12 run on 2.1.318 (logging hooks on `PreToolUse`, `PermissionRequest`,
+  `PostToolUse`, `Notification`, `Stop`, `UserPromptSubmit`; the transcript tailed), one
+  run each, the key 3 s after the dialog drew:
+  - `1` on a `Bash` dialog for a 25-second command: OSC 7501 `state=working` 20 ms
+    later, and nothing else — no hook, no transcript record — until the command ended
+    25 s on (`PostToolUse`, then the `tool_result`, whose record carries
+    `permissionDecision`). `PreToolUse` had fired before the dialog, not after the yes.
+  - Esc on the same dialog: `state=idle` 70 ms later and, 0.3 s after the key, a
+    `tool_result` with `is_error: true` ("The user doesn't want to proceed with this tool
+    use…") and a `[Request interrupted by user for tool use]` user record; no `Stop`.
+  - `1` on an `ExitPlanMode` dialog: `state=working` 10 ms later, `PostToolUse` at 30 ms,
+    the `tool_result` "User has approved your plan…" at 0.2 s. Esc on it: `state=idle`, and
+    the same rejected `tool_result` and interrupt record as the Bash one, at 0.3 s.
+  So a no and a plan answer reach the transcript at once; a yes to a slow tool shows only
+  in OSC 7501 until the tool ends.
+- **The same through Koloft.** 2026-11-05, CC 2.1.318, the hand-test sandbox, a real local
+  Claude tab (Sonnet 5.5) with "Skip permission prompts" off; 1 run. The tab started in
+  auto mode (its banner: "Auto mode is now Claude Code's default permission mode"), which
+  ran a 45-second `python3 -c "import time; time.sleep(45)…"` Bash call with no dialog;
+  one Shift+Tab gave "⏸ manual mode on", and the same call then drew the Bash dialog. Its
+  Inbox card's Allow moved it to Done as Answered 5.0 s after the press (the undo), while
+  that call's `tool_result` came 43 s later.
+- **The `Bash` dialog lists four choices on 2.1.318:** `1. Yes`, `2. Yes, and don’t ask
+  again for: <prefix> *`, `3. Yes, and switch to auto mode · auto mode handles these
+  prompts for you`, `4. No` (above it "Tip: auto mode handles these prompts for you"). `3`
+  ran the command and switched the session to auto mode. Koloft presses only `1` and Esc
+  (`claudeKeysFor`), which mean the same as before.
 - **A digit picks only while the highlight is on a numbered option; where the highlight
   goes.** 2026-11-05, CC 2.1.318 (the native binary), a python pty 120×40 drawn through
   `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`, no hook, a local fake Messages API

@@ -14,16 +14,16 @@ import {
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type Question
+  type Question,
+  type SentAnswer
 } from './discord/dialog'
-import { SHOWS_NO_DIALOG } from './discord/relay'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, SHOWS_NO_DIALOG } from './discord/relay'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
 const DETAILS_RETRY_MS = 1500
-export const A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS = 15_000
 export const ANSWER_NOT_TAKEN =
-  'Koloft sent your answer, but the session still shows the question. Open the session and answer it there.'
+  'Koloft sent your answer, but the session still waits for it. Open the session and answer it there.'
 
 export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
@@ -48,7 +48,7 @@ export interface KoloftInboxDeps {
   sessionOfTab(tabId: string): AskedSession | undefined
   liveTabOf(ref: string): { tabId: string; backend: BackendId } | undefined
   askOf(tabId: string): Promise<KoloftAsk | undefined>
-  answer(tabId: string, reply: string): Promise<string | undefined>
+  answer(tabId: string, reply: string): Promise<SentAnswer>
   butlerSide(tabId: string): boolean
   watching(): string | null
 }
@@ -319,7 +319,7 @@ export function exitCard(m: AttentionEvent, s: AskedSession): InboxCardInput {
 export class KoloftInbox {
   private building = new Set<string>()
   private finished = new Map<string, { reply: string; forTheOwner: boolean }>()
-  private answering = new Map<string, (taken: boolean) => void>()
+  private answering = new Map<string, Set<(taken: boolean) => void>>()
 
   constructor(private d: KoloftInboxDeps) {
     d.inbox.register(KOLOFT_SOURCE)
@@ -423,46 +423,51 @@ export class KoloftInbox {
     if (!live || !this.d.marks().some((m) => m.tabId === live.tabId && m.kind === 'approval'))
       return ANSWERED_ELSEWHERE
     let reply = given.pick
-    let taken: { took: Promise<boolean>; typed(): void } | undefined
     if (reply === undefined) {
       const ask = await this.d.askOf(live.tabId)
       if (ask?.kind !== 'question') return ANSWERED_ELSEWHERE
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
-      if (live.backend === 'claude') taken = this.answerTaken(live.tabId)
     }
-    const error = await this.d.answer(live.tabId, reply).catch((e: unknown) => {
-      this.answering.get(live.tabId)?.(false)
+    const taken = this.answerTaken(live.tabId)
+    const sent = await this.d.answer(live.tabId, reply).catch((e: unknown) => {
+      taken.settle(false)
       throw e
     })
-    if (error !== undefined) this.answering.get(live.tabId)?.(false)
-    if (error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
-    if (error !== undefined) return { ok: false, why: error }
-    taken?.typed()
-    if (taken && !(await taken.took)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
+    if (!sent.watch) taken.settle(sent.error === undefined)
+    if (sent.error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
+    if (sent.error !== undefined) return { ok: false, why: sent.error }
+    taken.typed()
+    if (!(await taken.took)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
-  questionAnswered(tabId: string): void {
-    this.answering.get(tabId)?.(true)
+  askEnded(tabId: string): void {
+    for (const settle of this.answering.get(tabId) ?? []) settle(true)
   }
 
-  // CC§14
-  private answerTaken(tabId: string): { took: Promise<boolean>; typed(): void } {
+  // CC§14 CODEX§3 MUSE§11 AGY§14
+  private answerTaken(tabId: string): {
+    took: Promise<boolean>
+    typed(): void
+    settle(answered: boolean): void
+  } {
     let timer: ReturnType<typeof setTimeout> | undefined
     let resolve!: (answered: boolean) => void
     const took = new Promise<boolean>((r) => (resolve = r))
+    const waiting = this.answering.get(tabId) ?? new Set()
     const settle = (answered: boolean): void => {
       clearTimeout(timer)
-      if (this.answering.get(tabId) === settle) this.answering.delete(tabId)
+      waiting.delete(settle)
+      if (!waiting.size && this.answering.get(tabId) === waiting) this.answering.delete(tabId)
       resolve(answered)
     }
-    this.answering.set(tabId, settle)
+    this.answering.set(tabId, waiting.add(settle))
     const typed = (): void => {
-      if (this.answering.get(tabId) === settle)
-        timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_REACHES_THE_TRANSCRIPT_WITHIN_MS)
+      if (waiting.has(settle))
+        timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
     }
-    return { took, typed }
+    return { took, typed, settle }
   }
 
   rebound(oldRef: string, newKey: string): void {

@@ -19,6 +19,8 @@ import {
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
+  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
+  ANSWER_ON_ITS_WAY,
   unreadableInRoom,
   type Destination,
   type RelayDeps
@@ -134,6 +136,7 @@ function setup(
     pendingQuestion: () => undefined,
     answerable: async () => undefined,
     answerInPlace: async () => false,
+    showsDialogsClosing: () => false,
     regDir: dir,
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
@@ -536,14 +539,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   const BASH = { tool_name: 'Bash', tool_input: { command: 'rm -rf build', description: 'Clean' } }
 
   // CC§14
-  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints', async () => {
+  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints, to be checked in the transcript', async () => {
     const { relay, posts, asksChanged } = setup()
     const watcher = await watchAsksOnceArmed(relay, asksChanged)
     drop(hookFile(MANAGED, 'ask'), QUESTION)
     await vi.waitFor(() => expect(asksChanged).toEqual([MANAGED]))
     expect(posts).toEqual([])
     expect(relay.dialog(MANAGED)?.text).toBe('Which?\n1. A\n2. B')
-    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
+    expect(await relay.answerWatched(MANAGED, '2')).toEqual({ watch: true })
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8'))).toMatchObject({
       hookSpecificOutput: { decision: { updatedInput: { answers: { 'Which?': 'B' } } } }
     })
@@ -588,7 +591,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§14
-  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over', async () => {
+  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over; the same question asked again takes an answer at once', async () => {
     let status: SessionStatus = 'working'
     const { relay, writes, asksChanged } = setup({}, [], { status: () => status })
     const one = {
@@ -602,7 +605,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'Purple')).toBeUndefined()
     expect(writes.map((w) => w.data)).toEqual([...TO_OPTION_1_OF_TWO, '3', 'Purple', '\r'])
     expect(writes.at(-1)!.at - writes.at(-2)!.at).toBeGreaterThanOrEqual(290)
-    expect(await relay.answerSession(MANAGED, '1')).toBe(SHOWS_NO_DIALOG)
+    expect(await relay.answerSession(MANAGED, '1')).toBe(ANSWER_ON_ITS_WAY)
 
     relay.onAsk(MANAGED, one)
     status = 'approval'
@@ -618,6 +621,38 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'maybe later')).toContain('only answer yes or no')
     relay.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
+  })
+
+  // CC§12 CC§14
+  it('a Claude dialog answered by keys stays open until the session shows it closed, and a second answer meanwhile is told to wait; a yes whose closing Koloft cannot see is dropped once typed, a no is not', async () => {
+    vi.useFakeTimers()
+    try {
+      let closingShows = true
+      const { relay, writes } = setup({}, [], {
+        status: () => 'approval',
+        showsDialogsClosing: () => closingShows
+      })
+      relay.onAsk(MANAGED, BASH)
+      expect(await relay.answerWatched(MANAGED, 'yes')).toEqual({ watch: true })
+      expect(relay.dialog(MANAGED)?.text).toContain('rm -rf build')
+      expect(await relay.answerSession(MANAGED, 'yes')).toBe(ANSWER_ON_ITS_WAY)
+      expect(writes.map((w) => w.data)).toEqual(['1'])
+
+      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+      expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
+      relay.dialogGone(MANAGED, false)
+      expect(relay.dialog(MANAGED)).toBeUndefined()
+
+      closingShows = false
+      relay.onAsk(MANAGED, BASH)
+      expect(await relay.answerWatched(MANAGED, 'yes')).toEqual({ watch: false })
+      expect(relay.dialog(MANAGED)).toBeUndefined()
+      relay.onAsk(MANAGED, BASH)
+      expect(await relay.answerWatched(MANAGED, 'no')).toEqual({ watch: true })
+      expect(relay.dialog(MANAGED)).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // CODEX§3 CODEX§20
