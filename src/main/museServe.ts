@@ -198,9 +198,19 @@ export function museAsk(reply: unknown): MuseAsk {
 
 // MUSE§11
 function museQuestion(q: Record<string, unknown>): Question[] {
-  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return []
+  const mode = record(q.selection).mode
+  if (typeof q.question !== 'string' || (mode !== 'single' && mode !== 'multiple')) return []
   const options = labelsOf(q.options)
-  return options.length ? [{ question: q.question, options, ownWords: true }] : []
+  return options.length
+    ? [
+        {
+          question: q.question,
+          options,
+          ownWords: true,
+          ...(mode === 'multiple' && { multiSelect: true as const })
+        }
+      ]
+    : []
 }
 
 // MUSE§5

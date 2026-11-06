@@ -134,7 +134,7 @@ export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
   const [only, ...more] = a.questions
   return {
     text: a.questions.map(questionText).join('\n\n'),
-    choices: only && !more.length ? optionChoices(only) : []
+    choices: only && !more.length && !only.multiSelect ? optionChoices(only) : []
   }
 }
 
@@ -403,19 +403,27 @@ const ONE_LINE_PER_PICK = 'Reply with one line per question: the number or the n
 
 export function howToAnswer(q: Asked): string {
   const ownWords = q.questions.some((x) => x.ownWords)
-  if (q.questions.length > 1) return ownWords ? ONE_LINE_PER_QUESTION : ONE_LINE_PER_PICK
+  const several = q.questions.some((x) => x.multiSelect)
+  if (q.questions.length > 1)
+    return several
+      ? ONE_LINE_PER_QUESTION_SOME_PICK_SEVERAL
+      : ownWords
+        ? ONE_LINE_PER_QUESTION
+        : ONE_LINE_PER_PICK
+  if (several) return PICK_SEVERAL
   return ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
 }
 
 export function cannotAnswer(q: Asked): string {
-  return q.questions.length === 1 && !q.questions[0]?.ownWords ? NO_OWN_WORDS : howToAnswer(q)
+  const [only, ...more] = q.questions
+  return only && !more.length && !only.ownWords && !only.multiSelect ? NO_OWN_WORDS : howToAnswer(q)
 }
 
-export type QuestionAnswer = { pick: number } | { words: string }
+export type QuestionAnswer = { pick: number } | { picks: number[] } | { words: string }
 
 function answerTo(q: Question, line: string): QuestionAnswer | undefined {
-  const pick = pickOf(q, line)
-  if (pick) return { pick }
+  const picks = picksFor(q, line)
+  if (picks) return q.multiSelect ? { picks } : { pick: picks[0]! }
   return q.ownWords && line ? { words: line } : undefined
 }
 
@@ -436,6 +444,7 @@ export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | und
 
 export interface AnswerKeys {
   pick(n: number): string[]
+  ticks?(q: Question, picks: number[]): string[]
   words(q: Question, text: string): string[]
   submit(answers: QuestionAnswer[]): string[]
 }
@@ -447,23 +456,45 @@ const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
   '\r'
 ]
 
+const SPACE = ' '
+
+// MUSE§11
+function museTicks(q: Question, picks: number[]): string[] {
+  const submitRow = q.options.length + 2
+  return [...picks.flatMap((n) => [String(n), SPACE]), String(submitRow), '\r']
+}
+
 // MUSE§11
 function museReviewKeys(answers: QuestionAnswer[]): string[] {
-  return answers.length > 1 || answers.some((a) => 'words' in a) ? ['\r'] : []
+  return answers.length > 1 || answers.some((a) => !('pick' in a)) ? ['\r'] : []
 }
+
+// AGY§14
+const agyTicks = (_q: Question, picks: number[]): string[] => [...picks.map(String), '\r']
 
 // CODEX§20 MUSE§11 AGY§14
 export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
   codex: { pick: (n) => [String(n)], words: noteUnderNoneOfTheAbove, submit: () => [] },
-  muse: { pick: (n) => [String(n), '\r'], words: noteUnderNoneOfTheAbove, submit: museReviewKeys },
-  agy: { pick: (n) => [String(n)], words: ownWordsAfterTheLastOption, submit: () => [] }
+  muse: {
+    pick: (n) => [String(n), '\r'],
+    ticks: museTicks,
+    words: noteUnderNoneOfTheAbove,
+    submit: museReviewKeys
+  },
+  agy: {
+    pick: (n) => [String(n)],
+    ticks: agyTicks,
+    words: ownWordsAfterTheLastOption,
+    submit: () => []
+  }
+}
+
+function keysOf(keys: AnswerKeys, q: Question, a: QuestionAnswer): string[] {
+  if ('pick' in a) return keys.pick(a.pick)
+  if ('picks' in a) return keys.ticks!(q, a.picks)
+  return keys.words(q, a.words)
 }
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
-  return [
-    ...answers.flatMap((a, i) =>
-      'pick' in a ? keys.pick(a.pick) : keys.words(q.questions[i]!, a.words)
-    ),
-    ...keys.submit(answers)
-  ]
+  return [...answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a)), ...keys.submit(answers)]
 }

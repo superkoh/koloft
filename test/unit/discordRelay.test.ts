@@ -9,6 +9,7 @@ import type { DiscordMessage } from '../../src/main/discord/link'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN,
+  codexDialog,
   NO_OWN_WORDS,
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
@@ -916,6 +917,55 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     ])
     question = { id: 'u2', questions: [one, one] }
     expect(await pressed('2\n1')).toEqual(['2', '\r', '1', '\r', '\r'])
+  })
+
+  // MUSE§11 AGY§14
+  it('a Muse or Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each agent ticks: Muse a digit and Space for each, then its Submit row and review page; Antigravity each digit, then Enter; own words go in as for one pick', async () => {
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+      ownWords: true as const,
+      multiSelect: true as const
+    }
+    const colour = {
+      question: 'Which colour?',
+      options: [{ label: 'Red' }, { label: 'Blue' }],
+      ownWords: true as const
+    }
+    let backend: 'muse' | 'agy' = 'muse'
+    let question: CodexQuestion = { id: 'u1', questions: [fruits] }
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => backend,
+      pendingQuestion: () => question
+    })
+    const pressed = async (reply: string): Promise<string[]> => {
+      writes.length = 0
+      expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
+      return writes.map((w) => w.data)
+    }
+    expect(codexDialog(question).choices).toEqual([])
+    expect(await pressed('cherry, 1')).toEqual(['1', ' ', '3', ' ', '5', '\r', '\r'])
+    expect(await pressed('A ripe mango')).toEqual([
+      '\x1b[B',
+      '\x1b[B',
+      '\x1b[B',
+      '\t',
+      'A ripe mango',
+      '\r',
+      '\r'
+    ])
+    question = { id: 'u2', questions: [fruits, colour] }
+    expect(await relay.answerSession(MANAGED, '1, 3')).toBe(
+      'Reply with one line per question: a number (or several, split by commas, where it takes more than one) or your own answer.'
+    )
+    expect(await pressed('1, 3\n2')).toEqual(['1', ' ', '3', ' ', '5', '\r', '2', '\r', '\r'])
+
+    backend = 'agy'
+    question = { id: 'hook:1', questions: [fruits] }
+    expect(await pressed('cherry, 1')).toEqual(['1', '3', '\r'])
+    expect(await pressed('A ripe mango')).toEqual(['4', 'A ripe mango', '\r'])
+    question = { id: 'hook:2', questions: [fruits, colour] }
+    expect(await pressed('1, 3\n2')).toEqual(['1', '3', '\r', '2'])
   })
 })
 

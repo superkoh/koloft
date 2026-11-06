@@ -859,8 +859,30 @@ only downloaded the public release.
   "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
   `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
-  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
-  not tried.
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true` (a single-pick
+  question has no such key).
+- **A question that takes several picks: digits tick, Enter sends.** agy 1.5.1 (sha256
+  `d2b02615…9565`, the binary of the bullets below), Docker `--network none`
+  (`agy-a-img`, tmux 3.3a, 160×50), a fake Gemini server answering with `ask_question`
+  (`is_multi_select: true`, options Apple / Banana / Cherry), keys by `tmux send-keys`
+  300 ms apart from 1.2 s after `blocked`, the tool result read from the model's next
+  request, 2026-11-06; two runs per line unless marked. The box reads `1. [ ] Apple` …
+  `4. Write-in...` and "↑/↓ Navigate · space Toggle · enter Submit · esc Skip"; a ticked
+  row shows `[x]`. A digit moves to that row and toggles it, and sends nothing (the step
+  stayed waiting 8 s); Enter sends. `1`, `3`, Enter and `3`, `1`, Enter both sent `A1:
+  Apple, Cherry` (option order); Space, Down, Down, Space, Enter the same; `1`, `1`, Enter
+  or Enter alone sent `A1: ` (empty); a digit above the options did nothing. Write-in:
+  `4` (or Enter on its row) opens "Your answer:" under the list with the ticks kept, and
+  Enter there sends at once: `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks
+  first, then the write-in, `A1: Apple, A ripe mango`. With two questions and the
+  several-pick one first, its footer says "enter Submit" but Enter goes to "Question
+  2/2", whose digit then sends both: `1`, `3`, Enter, `2` sent `A1: Apple, Cherry\nA2:
+  Medium`; with it second, `2`, then its ticks and Enter, sent `A1: Medium\nA2: Apple,
+  Cherry`. Keys in one `send-keys` burst (`1 3 Enter`) were all taken. Through the
+  Connect API (§16), `responses: [{question, selectedOptionIds: ["1","3"]}]` sent `A1:
+  Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
+  time. An option whose own text holds a comma runs into the next one (`Red, dark` and
+  `Blue` sent `A1: Red, dark, Blue`).
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake

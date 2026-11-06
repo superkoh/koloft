@@ -15,7 +15,7 @@ describe('what a waiting Muse session asks', () => {
   })
 
   // MUSE§11
-  it('takes every question that picks one option, each open to the owner’s own words, and nothing when one of them picks several', () => {
+  it('takes every question, each open to the owner’s own words, one that picks several marked so', () => {
     const question = {
       id: 'color',
       question: 'Which colour?',
@@ -42,6 +42,6 @@ describe('what a waiting Muse session asks', () => {
           }
         ]
       })
-    ).toEqual({})
+    ).toEqual({ question: { id: 'u3', questions: [taken, { ...taken, multiSelect: true }] } })
   })
 })
