@@ -987,6 +987,24 @@ the sandbox refuses to exec the setuid binary at all, before any password questi
 Codex's own default (`read-only`) refuses it too, and that a command Codex runs outside
 the sandbox after an approval reaches sudo: **inferred, not checked**.
 
+**Under `danger-full-access` a command has no terminal, unless the model asks for one.**
+2026-11-05, codex-cli 0.166.0, a Node client on `codex app-server --stdio` started the
+way Koloft starts it (`detached: true`, pipes), a throwaway `CODEX_HOME` with a made-up
+API key, a stand-in Responses server answering one `exec_command`, `approval_policy =
+"never"`, `sandbox_mode = "danger-full-access"`, Koloft's sudo wrapper first on `PATH`
+through `ZDOTDIR`: with `{cmd}` the command's `(exec </dev/tty)` failed, `ps` showed tty
+`??` (stat `Ss`), and the wrapper's `sudo -A` ran the askpass, which called `koloft
+secret sudo Password: /usr/bin/sudo -A -k true`. With `{cmd, tty: true}` the command got
+a pty of its own (`ttys111`, `Ss+`), `/dev/tty` opened, and the real sudo printed
+`Password:` into that pty, where only the model reads it; the turn ended "Process
+running". The same two runs on Linux (the arm64 musl build in a Debian bookworm container,
+sudo 1.9.13p3, a user with a password), the app-server started as a remote tab's is
+(`setsid nohup codex app-server --listen …` from a script run under a pty, which then
+exited) and reached over WebSocket: no tty (`?`, `Ss`) and `koloft secret sudo [sudo]
+password for kuser: …`; with `tty: true`, `pts/0` and sudo's prompt in it. So a Codex
+tab's sudo wrapper must not take an open `/dev/tty` for the owner's terminal. Whether a
+real model picks `tty: true` for sudo: not probed.
+
 **A thread's own folder outside the workspace is `$CODEX_HOME/generated_images/<thread
 id>/`, and only images go there.** 2026-10-31, codex-cli 0.166.0, a Node client on `codex
 app-server --stdio` in a throwaway `CODEX_HOME` holding a copy of this Mac's login

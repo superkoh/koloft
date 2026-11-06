@@ -1255,6 +1255,19 @@ only downloaded the public release.
 - `--sandbox` in Docker: every command failed (`fork/exec /usr/local/bin/agy:
   operation not permitted`, or with a privileged container `connecting to sandbox
   server: … connection reset by peer`). A Linux machine outside Docker: not probed.
+- **Every `run_command` gets a pty of its own.** 2026-11-05, agy 1.5.1 Linux arm64
+  (manifest build, sha512 checked), Docker with no network, a non-root user with a
+  password and sudo 1.9.13p3, a fake Gemini server answering one `run_command`, Koloft's
+  sudo wrapper first on `PATH`; the TUI under a python pty and inside tmux 160×50, each
+  with no flag (the command approved with `1`) and with `--dangerously-skip-permissions`:
+  in all four, `bash -c` led a new session whose stdin, stdout and stderr were `pts/1`
+  (`ps` stat `Ss+`) while agy held `pts/0`, `(exec </dev/tty)` succeeded, and the real
+  sudo printed `[sudo] password for u:` into that pty. The TUI showed only "Running
+  command..."; the prompt reached the model's tool result and the task log
+  `<gemini_dir>/antigravity-cli/brain/<id>/.system_generated/tasks/task-N.log`. About
+  10 s in (with `WaitMsBeforeAsync` 30000) the command became a background task, and when
+  it ended agy sent the model a `<SYSTEM_MESSAGE>` with its exit and output. So a `/dev/tty`
+  that opens inside agy's command is never the owner's terminal. macOS: not probed.
 
 ## §26 Approval modes
 
