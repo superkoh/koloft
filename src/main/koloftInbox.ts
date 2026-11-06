@@ -429,11 +429,16 @@ export class KoloftInbox {
       reply = replyFor(asQuestions(ask.questions, live.backend), given.answers)
       if (reply === undefined) return { ok: false, why: 'Some question has no answer yet' }
     }
-    const sent = await this.d.answer(live.tabId, reply)
+    const taken = this.answerTaken(live.tabId)
+    const sent = await this.d.answer(live.tabId, reply).catch((e: unknown) => {
+      taken.settle(false)
+      throw e
+    })
+    if (!sent.watch) taken.settle(sent.error === undefined)
     if (sent.error === SHOWS_NO_DIALOG) return ANSWERED_ELSEWHERE
     if (sent.error !== undefined) return { ok: false, why: sent.error }
-    if (sent.watch && !(await this.answerTaken(live.tabId)))
-      return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
+    taken.typed()
+    if (!(await taken.took)) return { ok: false, why: ANSWER_NOT_TAKEN, retryHelps: false }
     return { ok: true }
   }
 
@@ -442,18 +447,27 @@ export class KoloftInbox {
   }
 
   // CC§14 CODEX§3 MUSE§11 AGY§14
-  private answerTaken(tabId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const waiting = this.answering.get(tabId) ?? new Set()
-      const settle = (took: boolean): void => {
-        clearTimeout(timer)
-        waiting.delete(settle)
-        if (!waiting.size) this.answering.delete(tabId)
-        resolve(took)
-      }
-      const timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-      this.answering.set(tabId, waiting.add(settle))
-    })
+  private answerTaken(tabId: string): {
+    took: Promise<boolean>
+    typed(): void
+    settle(answered: boolean): void
+  } {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let resolve!: (answered: boolean) => void
+    const took = new Promise<boolean>((r) => (resolve = r))
+    const waiting = this.answering.get(tabId) ?? new Set()
+    const settle = (answered: boolean): void => {
+      clearTimeout(timer)
+      waiting.delete(settle)
+      if (!waiting.size && this.answering.get(tabId) === waiting) this.answering.delete(tabId)
+      resolve(answered)
+    }
+    this.answering.set(tabId, waiting.add(settle))
+    const typed = (): void => {
+      if (waiting.has(settle))
+        timer = setTimeout(() => settle(false), A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+    }
+    return { took, typed, settle }
   }
 
   rebound(oldRef: string, newKey: string): void {

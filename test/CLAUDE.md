@@ -101,8 +101,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
     whole line), `/long <n>` (a
     reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` (more questions after
-    `||`; a question starting `+` takes several picks, and such a dialog takes CC's keys
-    for it, CC§14) and `/bash <command>`
+    `||`; a question starting `+` takes several picks; the dialog takes CC's keys, one
+    per read: Down and Up move its highlight over the options, the own-words row and
+    the chat row as CC's do, a digit on the own-words row is typed there and Ctrl+U
+    empties it, CC§14) and `/bash <command>`
     (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
     leaves the dialog on screen: it fires a permission Notification and takes one key, a

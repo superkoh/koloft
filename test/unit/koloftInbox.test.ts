@@ -245,6 +245,32 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
       w.mark([asking])
       expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toEqual({ ok: true })
     })
+
+    it('the wait starts once every key is typed, so a long answer that takes its keys is not called ignored', async () => {
+      const typing = A_TAKEN_ANSWER_SHOWS_WITHIN_MS + 1000
+      const w = world({
+        answer: async (tabId) => {
+          await new Promise((r) => setTimeout(r, typing))
+          setTimeout(() => w.koloft.askEnded(tabId), 1000)
+          return { watch: true }
+        }
+      })
+      w.mark([asking])
+      const result = w.koloft.answer('s-t1', pressRed)
+      await vi.advanceTimersByTimeAsync(typing + 1000)
+      expect(await result).toEqual({ ok: true })
+    })
+
+    it('an answer the session takes while its keys are still going in counts as answered', async () => {
+      const w = world({
+        answer: async (tabId) => {
+          w.koloft.askEnded(tabId)
+          return { watch: true }
+        }
+      })
+      w.mark([asking])
+      expect(await w.koloft.answer('s-t1', pressRed)).toEqual({ ok: true })
+    })
   })
 })
 

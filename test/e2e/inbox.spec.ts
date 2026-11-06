@@ -26,6 +26,7 @@ import { ANSWER_NOT_TAKEN } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
+const KEYS_READ_APART_MS = 300
 
 function inboxCard(page: Page, title: string | RegExp) {
   return page.locator('.inbox-page .ibx-item', {
@@ -79,7 +80,7 @@ function codexAnswers(env: E2EEnv): unknown[] {
 }
 
 for (const remote of [false, true]) {
-  test(`a question a ${remote ? 'remote ' : ''}Claude Code session asks is a card in the Inbox; picking an answer there reaches the session once the 5-second undo is over, and the card moves to Done as Answered`, async ({
+  test(`a question a ${remote ? 'remote ' : ''}Claude Code session asks is a card in the Inbox; picking an answer there reaches the session once the 5-second undo is over, even with the owner's arrow keys left on the own-words row, and the card moves to Done as Answered`, async ({
     env
   }) => {
     if (remote) installFakeRemote(env)
@@ -96,6 +97,13 @@ for (const remote of [false, true]) {
 
       await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
       await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+        .toContain('dialog on screen')
+      for (let i = 0; i < 2; i++) {
+        await page.evaluate((id) => window.api.terminal.write(id, '\x1b[B'), tabId)
+        await page.waitForTimeout(KEYS_READ_APART_MS)
+      }
       await openInbox(page)
       const card = inboxCard(page, 'asks a question')
       await expect(card.locator('.ibx-choice', { hasText: 'Green' })).toBeVisible({

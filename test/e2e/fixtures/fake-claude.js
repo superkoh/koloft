@@ -829,8 +829,10 @@ const untilExists = (file) =>
     }, 200)
   })
 const DOWN_KEYS = ['\x1b[B', '\x1bOB']
+const UP_KEYS = ['\x1b[A', '\x1bOA']
 // CC§14
-function tabbedQuestionKeys(questions) {
+function questionDialogKeys(questions) {
+  const reviewPage = questions.length > 1 || questions[0].multiSelect
   const state = questions.map(() => ({
     ticked: new Set(),
     words: '',
@@ -852,38 +854,54 @@ function tabbedQuestionKeys(questions) {
           ...(s.words && !s.wordsUnticked ? [s.words] : [])
         ].join(', ')
       : s.words || q.labels[s.pick - 1]
-  return (key) => {
-    if (at === questions.length)
-      return key === '1' ? questions.map((q, i) => answerOf(q, state[i])).join(', ') : undefined
+  const answers = () => questions.map((q, i) => answerOf(q, state[i])).join(', ')
+  const press = (key) => {
     const q = questions[at]
     const s = state[at]
     const options = q.labels.length
+    const chatRow = q.multiSelect ? options + 2 : options + 1
     const tick = (n) => (s.ticked.has(n) ? s.ticked.delete(n) : s.ticked.add(n))
+    const moved = DOWN_KEYS.includes(key)
+      ? Math.min(row + 1, chatRow)
+      : UP_KEYS.includes(key)
+        ? (row || options + 1) - 1
+        : undefined
+    if (moved !== undefined) {
+      row = moved
+      typing = row === options
+      return
+    }
     if (typing) {
-      if (q.multiSelect && key === '\t') {
+      if (key === '\x15') s.words = ''
+      else if (q.multiSelect && key === '\t') {
         typing = false
         row = options + 1
       } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
       else if (key === '\r') next()
       else s.words += key
-      return undefined
+      return
     }
+    if (row === chatRow) return
     if (/^\d$/.test(key) && Number(key) >= 1 && Number(key) <= options) {
       if (q.multiSelect) tick(Number(key))
       else {
         s.pick = Number(key)
+        s.words = ''
         next()
       }
-    } else if (!q.multiSelect && key === String(options + 1)) typing = true
-    else if (q.multiSelect && DOWN_KEYS.includes(key)) {
-      row = Math.min(row + 1, options + 1)
-      typing = row === options
+    } else if (!q.multiSelect && key === String(options + 1)) {
+      typing = true
+      row = options
     } else if (q.multiSelect && key === '\t') next()
     else if (q.multiSelect && key === '\r') {
       if (row === options + 1) next()
       else tick(row + 1)
     }
-    return undefined
+  }
+  return (key) => {
+    if (at === questions.length) return reviewPage && key === '1' ? answers() : undefined
+    press(key)
+    return at === questions.length && !reviewPage ? answers() : undefined
   }
 }
 const rl = readline.createInterface({ input: typedLines })
@@ -1718,16 +1736,13 @@ function handleLine(line) {
         multiSelect: q.multiSelect
       }))
     }
-    const [first] = questions
     const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
       (updated) => pickedText(Object.values(updated.answers).join(', ')),
       pickedText,
-      questions.length > 1 || first.multiSelect
-        ? tabbedQuestionKeys(questions)
-        : (key) => first.labels[Number(key) - 1] ?? key
+      questionDialogKeys(questions)
     )
   }
   if (text.startsWith('/bash ')) {

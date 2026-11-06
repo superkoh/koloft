@@ -665,24 +665,20 @@ export class DiscordRelay {
   }
 
   async answerWatched(tab: string, reply: string): Promise<SentAnswer> {
-    const sent = await this.answerNow(tab, reply)
-    if (sent.error === undefined) this.d.answered(tab, reply)
-    return sent
-  }
-
-  private async answerNow(tab: string, reply: string): Promise<SentAnswer> {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
       const inPlace = await this.d.answerInPlace(tab, reply)
       if (inPlace !== false) {
         this.codexAsks.delete(tab)
+        if (inPlace.error === undefined) this.d.answered(tab, reply)
         return inPlace
       }
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
         if (!key) return { error: takesYesOrNo(label) }
+        this.d.answered(tab, reply)
         await this.press(tab, [key])
         return { watch: true }
       }
@@ -691,6 +687,7 @@ export class DiscordRelay {
         return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
       const answers = questionAnswers(question, reply)
       if (!answers) return { error: howToAnswer(question) }
+      this.d.answered(tab, reply)
       await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return { watch: true }
     }
@@ -706,6 +703,7 @@ export class DiscordRelay {
     const watch = claudeResultComesAtOnce(ask.payload, reply) || this.d.showsDialogsClosing(tab)
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
+      this.d.answered(tab, reply)
       return { watch }
     }
     if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return { error: SHOWS_NO_DIALOG }
@@ -715,6 +713,7 @@ export class DiscordRelay {
     if (!keys.ok) return { error: keys.error }
     if (watch) ask.typedAt = Date.now()
     else this.asks.delete(tab)
+    this.d.answered(tab, reply)
     await this.d.type(tab, keys.value).catch((error: unknown) => {
       ask.typedAt = undefined
       throw error

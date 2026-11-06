@@ -3,7 +3,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
-import { keysFor, typedPieces } from '../typeKeys'
+import { CLEAR_TO_LINE_START, keysFor, typedPieces } from '../typeKeys'
 import type { CardButton } from './cards'
 
 interface Option {
@@ -235,16 +235,29 @@ function ownWordsAfterTheLastOption(q: Question, text: string): string[] {
 const NEXT_QUESTION_AFTER_TICKS = '\t'
 const SUBMIT_ON_THE_REVIEW_PAGE = '1'
 
+const presses = (key: string, n: number): string[] => keysFor(Array<string>(n).fill(key))
+
 // CC§14
 function questionKeys(q: Question, line: string): string[] {
   const picks = picksFor(q, line)
   if (!q.multiSelect) return picks ? picks.map(String) : ownWordsAfterTheLastOption(q, line)
   if (picks) return [...picks.map(String), NEXT_QUESTION_AFTER_TICKS]
   return [
-    ...keysFor(q.options.map(() => 'Down')),
+    ...presses('Down', q.options.length),
     ...typedPieces(line),
     NEXT_QUESTION_AFTER_TICKS,
     '\r'
+  ]
+}
+
+// CC§14
+function emptyFieldAndHighlightTheFirstOption(q: Question): string[] {
+  const rowsUnderTheOptions = q.multiSelect ? 3 : 2
+  return [
+    ...presses('Down', q.options.length + rowsUnderTheOptions),
+    ...presses('Up', rowsUnderTheOptions - 1),
+    CLEAR_TO_LINE_START,
+    ...presses('Up', q.options.length)
   ]
 }
 
@@ -255,7 +268,10 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
     if (!lines) return fail(askHow(p))
-    const keys = qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    const keys = [
+      ...qs.slice(0, 1).flatMap(emptyFieldAndHighlightTheFirstOption),
+      ...qs.flatMap((q, i) => questionKeys(q, lines[i]!))
+    ]
     return { ok: true, value: drawsTabs(qs) ? [...keys, SUBMIT_ON_THE_REVIEW_PAGE] : keys }
   }
   if (YES.test(text)) return { ok: true, value: ['1'] }
