@@ -920,7 +920,7 @@ const attention = new AttentionTracker((pending, event) => {
   retractStaleOsNotifications(pending)
   if (event) routeAttentionEvent(event)
   awayDigest?.marked()
-  if (!quitCommitted) koloftInbox.sync()
+  koloftInbox.sync()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -1977,7 +1977,7 @@ const inbox = new Inbox(
       queueMicrotask(() => {
         inboxPushQueued = false
         const now = inbox.snapshot()
-        saveInbox(now)
+        if (!quitCommitted) saveInbox(now)
         sendToRenderer(CH.inbox.changed, now)
       })
     }

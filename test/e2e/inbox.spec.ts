@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   installAgy,
@@ -29,7 +29,7 @@ import {
   installFakeRemote,
   machineHome
 } from './helpers/remote'
-import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
+import { ANSWER_NOT_TAKEN_ON_A_CARD, ASK_NO_LONGER_ON_SCREEN } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
@@ -550,6 +550,8 @@ const OTHER_AGENTS = [
     backend: 'codex',
     install: (env: E2EEnv) => installCodex(env),
     startsOnFirstLine: false,
+    askLine: 'please approve',
+    askTitle: 'wants to run a command',
     said: /Codex fixture answered: Shall I merge PR #12\?/,
     got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
   },
@@ -561,6 +563,8 @@ const OTHER_AGENTS = [
       trustInMuse(env, env.workspaces.a)
     },
     startsOnFirstLine: false,
+    askLine: '/approve',
+    askTitle: 'wants to run a command',
     said: /echo: Shall I merge PR #12\?/,
     got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
   },
@@ -572,6 +576,8 @@ const OTHER_AGENTS = [
       trustInAgy(env, env.workspaces.a)
     },
     startsOnFirstLine: true,
+    askLine: '/ask Which colour?|Red|Green',
+    askTitle: 'asks a question',
     said: /Answer to: Shall I merge PR #12\?/,
     got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
   }
@@ -628,53 +634,94 @@ for (const remote of [false, true]) {
           timeout: 15_000
         })
       const question = inboxCard(page, 'asks a question')
-      await expect(question).toContainText('Which colour?')
-      await expect(question).toContainText('Open the session and answer it there')
-      await expect(question.locator('.ibx-choice')).toHaveCount(0)
-      await expect(question.locator('.ibx-btn')).toHaveText(['Dismiss'])
-      await expect(question.locator('.ibx-link')).toHaveText(['Open session ›'])
+      await expect(question).toContainText('Which colour?\n1. Red\n2. Green')
+      await expectSentToItsTab(question)
     } finally {
       await quitAndClose(app)
     }
   })
 }
 
+async function expectSentToItsTab(card: Locator): Promise<void> {
+  await expect(card).toContainText(ASK_NO_LONGER_ON_SCREEN, { timeout: 15_000 })
+  await expect(card.locator('.ibx-choice')).toHaveCount(0)
+  await expect(card.locator('.ibx-btn')).toHaveText(['Dismiss'])
+  await expect(card.locator('.ibx-link')).toHaveText(['Open session ›'])
+}
+
+async function sayToTheAgent(
+  page: Page,
+  agent: (typeof OTHER_AGENTS)[number],
+  line: string
+): Promise<void> {
+  if (agent.startsOnFirstLine) return runIn(page, centerTerm(page), line)
+  await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+  const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.backendId === agent.backend
+  )?.tabId as string
+  await typeInto(page, tabId, line)
+}
+
+async function acrossARestart(
+  env: E2EEnv,
+  agent: (typeof OTHER_AGENTS)[number],
+  line: string,
+  before: (page: Page) => Promise<void>,
+  after: (page: Page) => Promise<void>
+): Promise<void> {
+  agent.install(env)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', agent.name)
+    await sayToTheAgent(page, agent, line)
+    await openInbox(page)
+    await before(page)
+  } finally {
+    await quitAndClose(app)
+  }
+
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    await openInbox(page)
+    await after(page)
+  } finally {
+    await quitAndClose(app)
+  }
+}
+
 for (const agent of OTHER_AGENTS) {
+  test(`a question or command of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart, and then sends the owner to its tab`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    await acrossARestart(
+      env,
+      agent,
+      agent.askLine,
+      (page) =>
+        expect(
+          inboxCard(page, agent.askTitle).locator('.ibx-btn, .ibx-choice').first()
+        ).toBeVisible({ timeout: 30_000 }),
+      (page) => expectSentToItsTab(inboxCard(page, agent.askTitle))
+    )
+  })
+
   test(`a finished turn of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart`, async ({
     env
   }) => {
     test.setTimeout(150_000)
-    agent.install(env)
-    let app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await newSessionInWith(page, 'ws-a', agent.name)
-      if (agent.startsOnFirstLine) {
-        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
-      } else {
-        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === agent.backend
-        )?.tabId as string
-        await typeInto(page, tabId, 'Shall I merge PR #12?')
-      }
-      await openInbox(page)
-      await expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 30_000 })
-    } finally {
-      await quitAndClose(app)
-    }
-
-    app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      await openInbox(page)
-      await expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 15_000 })
-    } finally {
-      await quitAndClose(app)
-    }
+    await acrossARestart(
+      env,
+      agent,
+      'Shall I merge PR #12?',
+      (page) => expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 30_000 }),
+      (page) => expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 15_000 })
+    )
   })
 
   test(`a finished turn of a session in ${agent.name} the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({

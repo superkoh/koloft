@@ -4,7 +4,7 @@ import { Inbox, type InboxHost } from '../../src/main/inbox'
 import { pickToPress } from '../../src/shared/inbox'
 import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
-  ASK_GONE_WITH_A_RESTART,
+  ASK_NO_LONGER_ON_SCREEN,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -94,7 +94,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
   })
 
-  it('a question still waiting when Koloft restarts stays in Needs you, showing what it asked and sending the owner to its tab, and closes once the session works again', async () => {
+  it('a question still waiting when its session stops (a Koloft restart, a tab restart) stays in Needs you, showing what it asked with its options and sending the owner to its tab, and closes once the session works again', async () => {
     const w = world()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
@@ -103,8 +103,12 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
       state: 'needs-you',
       actions: [],
       blocks: [
-        { type: 'quote', who: 'It asked', text: 'Which colour?\nWhich sizes?' },
-        { type: 'text', text: ASK_GONE_WITH_A_RESTART }
+        {
+          type: 'quote',
+          who: 'It asked',
+          text: 'Which colour?\n1. Red\n2. Blue\n\nWhich sizes?\n1. S\n2. M\n3. L'
+        },
+        { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }
       ]
     })
     w.mark([])
