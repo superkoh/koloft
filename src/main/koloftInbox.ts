@@ -76,7 +76,7 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
 }
 
 export const ASK_NO_LONGER_ON_SCREEN =
-  'Its session stopped since, so this no longer shows there and cannot be answered from here. Open the session and reply to it.'
+  'Its session stopped after asking, so this no longer shows there and cannot be answered here. Open the session and reply to it.'
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
