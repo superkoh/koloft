@@ -893,6 +893,32 @@ only downloaded the public release.
   box under the ask. On 1.5.1 the opening `blocked:kind=auth` frame of §10 did not come;
   the first frame was `idle`. Not probed: the file-deny key `2`; macOS.
 
+- **A question the person already pressed keys in.** agy 1.5.1 (the binary of the bullet
+  above, sha256 `d2b02615…9565`, copied into `agy-a-img`), the same setup, a fresh
+  `--gemini_dir` per run, one question (Apple / Banana) or two (fruit, size), keys by
+  `tmux send-keys` 300 ms apart, a paste by `load-buffer` + `paste-buffer -p`,
+  2026-11-05; one run per line, two where marked.
+  - A digit picks by its number wherever the highlight is: after Down ×1, ×2 (on
+    "Write-in..."), ×3 (it stops there), Up ×1 (it stops on row 1), Home or PageUp
+    (neither moves it), or a paste (the text is dropped), `2` sent `A1: Banana`, and
+    `3`, `Purple`, Enter sent `A1: Purple`.
+  - With "Your answer:" open (Enter on Write-in, ×2; with `hello` typed, ×2), `2` was
+    typed into it and nothing was sent, the frame staying `blocked`; `3`, `Purple`,
+    Enter sent `A1: 3Purple` / `A1: hello3Purple`.
+  - With two questions, question 1 answered in the terminal: `2`, `2` sent `A1: Apple\nA2:
+    Medium`, the second `2` left in the input box; with → pressed to question 2 (×2):
+    `A1: User Skipped\nA2: Medium`.
+  - Keys that undo this: Esc in "Your answer:" goes back to the list (empty or not; the
+    text is gone when it is opened again), while Esc on the list skips the question
+    (`A1: User Skipped`); Ctrl+U empties the box and does nothing on the list; ← on an
+    option row goes back one question, keeping its pick, and does nothing on question 1
+    or inside the box. Ctrl+U, `N+1`, Ctrl+U, Esc, then ← once per later question
+    brought back question 1's list from every state tried (15 runs, each answered as
+    asked) — but only when every question has the same number of options, since a digit
+    above `N+1` opens nothing and the Esc then skips. Koloft does the same as for Codex
+    and Muse instead: once the person pressed a key in a question since it was asked, it
+    leaves it to them and presses nothing.
+
 ## §15 Typing into it
 
 - A bracketed paste lands in the input box unsent; Enter sends it. Plain text then CR

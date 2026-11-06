@@ -486,6 +486,29 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `auto_resolution_ms` (60000–240000) and says: "On a goal-carried run, omitting
   auto_resolution_ms still arms a fixed 300000 millisecond whole-prompt safety deadline;
   other runs keep no deadline when it is omitted." A call that sets it was not tried.
+- **A question the person already pressed keys in.** Measured 2026-11-05 on `Muse Code
+  1.4.11 (1.4.11-R6667.1)` (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker
+  `--network none`, a python3 pty 160×50 answering the cursor, colour and 7501 queries,
+  the screen read through `pyte`, the fake `/responses` model above, `--approval-judge
+  off --trust-workspace`, a fresh `XDG_CONFIG_HOME` per run; one question (Apple /
+  Banana) or two (fruit, color); the person's keys 0.5 s apart, then Koloft's 300 ms
+  apart; one run per line, two where marked.
+  - A digit picks by its number wherever the highlight is: after Down ×1, ×2, ×3 (Down
+    from the last row wraps to row 1), Up ×1 (wraps to row 3), Home or PageUp (neither
+    moves it), or a bracketed paste (it lands nowhere), `2` Enter sent `selected_label:
+    "Banana"`.
+  - With the note open (Down ×2, Tab, ×2; with `hello` typed in it, ×2), `2` went into
+    the note and Enter put up the review page with "note: 2" (`hello2`) and "Submit
+    answers" picked; nothing was sent in 15 s and the frame stayed `blocked`.
+  - Koloft's own-words keys count from where the highlight is: from row 2, `Apple` with
+    the note; from row 3 or after Up, `Banana` with it (×2); with the note open and
+    `hello` in it, `Banana` with `note: "helloPurple"` (×2).
+  - With two questions, question 1 answered in the terminal (×2) or → pressed to
+    question 2 (×2): Koloft's first `2` Enter answered question 2, and the rest submitted
+    the review page with question 1 as the person left it (`Apple`, taken from its
+    highlight when unanswered); the last Enter landed in the empty input box.
+  - So once the person pressed a key in a question since it was asked, Koloft leaves it
+    to them and presses nothing.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting
