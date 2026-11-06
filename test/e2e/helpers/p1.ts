@@ -944,7 +944,12 @@ export function islandBorderColors(
   })
 }
 
+const scrollIntoViewBeforeTheClickSoTheListsScrollEventCannotCloseTheMenu = (
+  target: Locator
+): Promise<void> => target.scrollIntoViewIfNeeded()
+
 export async function openMenu(page: Page, target: Locator): Promise<Locator> {
+  await scrollIntoViewBeforeTheClickSoTheListsScrollEventCannotCloseTheMenu(target)
   await target.click({ button: 'right' })
   const menu = page.locator('.menu')
   await expect(menu).toBeVisible()
