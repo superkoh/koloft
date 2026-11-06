@@ -278,8 +278,10 @@
               <tr>
                 <td>asks you a question</td>
                 <td>
-                  <code>“…” asks a question</code>, marked High. Pick an option, or type your own
-                  words when the question lets you, and the answer goes to the session.
+                  <code>“…” asks a question</code> (or <code>“…” asks 2 questions</code>), marked
+                  High. Pick an option, or type your own words when the question lets you. One
+                  question is sent as you pick; for several, or one where you may pick more than
+                  one, press <code>Send answers</code>.
                 </td>
               </tr>
               <tr>
@@ -305,8 +307,8 @@
                   recommended one) picks up where it left off. <code>Hand to a new session</code>
                   starts a new session of the same agent on its work, with the note you type.
                   <code>Close it for good</code> asks you to confirm; the session then starts once
-                  more only to wrap up, and closes its tab, its worktree and its branch. That last
-                  button is only there on this Mac.
+                  more only to wrap up, and closes its tab, and its worktree and branch if it has
+                  them.
                 </td>
               </tr>
             </tbody>
@@ -320,10 +322,10 @@
           </li>
           <li>
             After you press a button, you have 5 seconds to press <code>Undo</code>. Then Koloft
-            sends it. Koloft's own cards then move to <code>Done</code>, except
-            <code>Close it for good</code>, whose card waits in <code>In progress</code> while the
-            session wraps up; a card an agent made moves where that agent said. If the session did
-            not take your answer, the card stays and says
+            sends it. Koloft's own cards move to <code>Done</code>. A
+            <code>Close it for good</code> card waits in <code>In progress</code> while the session
+            wraps up. A card an agent made moves where that agent said. If a session did not take
+            your answer to a question or an OK, the card stays and says
             <code
               >Koloft sent your answer, but the session still waits for it. Open the session and
               answer it there.</code
@@ -332,7 +334,8 @@
           <li>
             Answer in the tab instead, or from Discord, and the card closes by itself as
             <code>Handled in its tab</code>. A finished-turn card closes as
-            <code>It went on</code> once the session works again.
+            <code>It went on</code> once its <a href="#red-dots">red dot</a> goes, as when the
+            session works again or you close its tab.
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in
@@ -625,9 +628,10 @@
 
         <h2 id="the-sidebar">The sidebar</h2>
         <p>
-          The first row of the list is your <a href="../accounts/#butler">butler</a>,
-          <code>Alfred · Butler</code>, above every folder. When the session tab you are looking at
-          goes away, Koloft shows the butler, unless that session ended before it ever started.
+          Under the <a href="#inbox">Inbox</a> row comes your
+          <a href="../accounts/#butler">butler</a>, <code>Alfred · Butler</code>, above every
+          folder. When the session tab you are looking at goes away, Koloft shows the butler, unless
+          that session ended before it ever started.
         </p>
         <p>
           When the Mac is busy (macOS says memory is tight, or the processors have been very busy

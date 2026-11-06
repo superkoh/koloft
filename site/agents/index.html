@@ -83,8 +83,9 @@
 
         <p>
           An agent lives in its terminal. On its own it cannot put a file in front of you, leave a
-          line for tomorrow's session, or use the browser you are signed into. Koloft gives it two
-          things: <mark class="hl">a koloft command</mark>, and the web tabs in its own Workbench.
+          line for tomorrow's session, or use the browser you are signed into. Koloft gives it
+          <mark class="hl">a koloft command</mark>, the web tabs in its own Workbench, and a skill
+          for writing documents.
         </p>
 
         <h2>The koloft command</h2>
@@ -123,16 +124,15 @@
         </p>
         <ul class="dash">
           <li>
-            <code>sudo</code> (the admin command) — a <code>sudo</code> the agent runs opens a
-            <code>Sudo password</code> box over that session's terminal, with the command it runs
-            (not a <code>sudo -n</code> or <code>sudo -S</code>, which are told not to ask). This is
-            so even when the command got a terminal of its own, as Codex, Muse and Antigravity
-            commands can. Type the password and press <code>Pass on</code>
-            <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox and Muse's
-            sandbox on the Mac still refuse <code>sudo</code> themselves: Codex gets the box only
-            for a command that runs outside its sandbox, as with Skip permission prompts on; Muse
-            only in a command it marks as needing more rights. A <code>sudo</code> you type in a
-            shell tab asks in that tab
+            <code>sudo</code> (the admin command) — when the agent runs <code>sudo</code> and it
+            needs your password, a <code>Sudo password</code> box opens over that session's
+            terminal, with the command it runs. In Codex, Muse and Antigravity this is so even when
+            the command got a terminal of its own. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>. Codex's sandbox, and Muse's
+            sandbox on the Mac, still block <code>sudo</code>. Codex gets the box only for a command
+            that runs outside its sandbox, as with Skip permission prompts on. Muse gets it only for
+            a command it marks as needing more rights. A <code>sudo</code> you type in a shell tab
+            asks in that tab
           </li>
           <li>
             <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
@@ -250,8 +250,9 @@
             <code>koloft session screen</code>, <code>koloft session keys</code> and
             <code>koloft session answer</code> — see what an open session's terminal shows, press
             keys in it as you would at the Mac, or answer the question it is showing: pick an option
-            number, say yes or no, or type your own words if the question lets you. It says the
-            question is answered only once the session took the answer; if not, it says
+            number, say yes or no, or type your own words if the question lets you.
+            <code>koloft session answer</code> says the question is answered only once the session
+            took the answer; if not, it says
             <code>Koloft sent your answer, but the session still waits for it.</code>
           </li>
           <li>
@@ -293,7 +294,8 @@
           <li>
             <code>koloft inbox add &lt;key&gt; -- '&lt;card JSON&gt;'</code> — put up a card: a
             title, a level (<code>high</code>, <code>normal</code> or <code>low</code>), what to
-            show, buttons and links. A button can send a message back to the session
+            show, buttons and links. A button can send a message back to the session, or start a new
+            session
           </li>
           <li>
             <code>koloft inbox update</code>, <code>move</code>, <code>delete</code> and
@@ -303,17 +305,8 @@
         </ul>
         <p>
           When you press a button, the session gets a message that starts
-          <code class="nowrap">(From Inbox:</code>, with your own words in it, and is told whether
-          to move the card itself.
-        </p>
-
-        <h3 id="docs">Writing documents</h3>
-        <p>
-          Every session Koloft starts, on this Mac and on a remote folder's machine, also gets a
-          skill called <code>koloft-docs</code>. It tells the agent how to write a document a person
-          will read (a product plan, a design, a README, a report, a memo…): put the main point
-          first, lose no detail, use tables and diagrams where they help. The session still has this
-          skill with "Let agents use Koloft" off.
+          <code class="nowrap">(From Inbox:</code>, with what you typed on the card, if anything,
+          and is told whether to move the card itself.
         </p>
 
         <h3 id="gh">GitHub</h3>
@@ -357,6 +350,15 @@
           </figcaption>
         </figure>
 
+        <h2 id="docs">A skill for writing documents</h2>
+        <p>
+          Every session Koloft starts, on this Mac and on a remote folder's machine, also gets a
+          skill called <code>koloft-docs</code>. It tells the agent how to write a document a person
+          will read (a product plan, a design, a README, a report, a memo…): put the main point
+          first, lose no detail, use tables and diagrams where they help. It keeps this skill even
+          when "Let agents use Koloft" is off.
+        </p>
+
         <h2>Your browser, for the agent</h2>
         <p>
           Browser tools for agents normally start a browser of their own. It is a second browser you
@@ -383,11 +385,11 @@
           <li>
             playwright-mcp: nothing to set up. It reads
             <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session, so it
-            opens a tab in Koloft and not a browser of its own. If Claude Code has a Playwright MCP
-            entry it would load for that folder (your user-wide list, the folder's own entry, or a
-            <code>.mcp.json</code> in the folder or above it), its tools run without asking first
-            while the switch is on; your other MCP servers still ask, and a <code>deny</code> or
-            <code>ask</code> rule you wrote for it still wins.
+            opens a tab in Koloft and not a browser of its own. While the switch is on, its tools
+            run without asking first. That counts any Playwright MCP entry Claude Code would load
+            for that folder: your user-wide list, the folder's own entry, or a
+            <code>.mcp.json</code> in the folder or above it. Your other MCP servers still ask, and
+            a <code>deny</code> or <code>ask</code> rule you wrote for it still wins.
           </li>
           <li>
             your own Playwright script: one line, with the address in
