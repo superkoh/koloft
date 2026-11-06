@@ -9,6 +9,7 @@ import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from './discord/dialog'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
@@ -57,6 +58,7 @@ ${afterWrite}waits=0
 limit=${waitsMs / pollMs}
 [ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
 [ "$1" = discord ] && [ "$2" = shot ] && limit=${PAGE_PICTURES_REACH_DISCORD_WITHIN_MS / pollMs}
+[ "$1" = session ] && [ "$2" = answer ] && limit=${(waitsMs + A_TAKEN_ANSWER_SHOWS_WITHIN_MS) / pollMs}
 [ "$1" = session ] && [ "$2" = new ] && limit=${Math.ceil(ASSIST_TITLES_AND_GIT_ADDS_THE_WORKTREE_WITHIN_MS / pollMs)}
 while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then

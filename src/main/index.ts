@@ -1133,7 +1133,7 @@ const ownerAsleep = new OwnerAsleep(
       const questions = questionsOf(claude).length
       return { question: questions > 0, questions, text: claudeDialog(claude).text }
     },
-    answer: async (tabId, reply) => discordRelay?.answerSession(tabId, reply) ?? STILL_STARTING,
+    answer: answerSession,
     titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
     changedSince: (since) => awayDigest?.changedSince(since) ?? [],
     report: (text) => discordRelay?.tell(butlerDestination(), text),
@@ -1918,10 +1918,7 @@ const sessionDeps: SessionVerbDeps = {
   deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
-  answer: async (tabId, reply) => {
-    if (!discordRelay) return STILL_STARTING
-    return discordRelay.answerSession(tabId, reply)
-  },
+  answer: answerSession,
   undelivered: (callerTab, target, why) => {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
@@ -2011,8 +2008,7 @@ const koloftInbox = new KoloftInbox({
     return s && { tabId: s.tabId, backend: s.backendId }
   },
   askOf: inboxAskOf,
-  answer: async (tabId, reply) =>
-    discordRelay ? discordRelay.answerWatched(tabId, reply) : { error: STILL_STARTING },
+  answer: answerSession,
   butlerSide,
   watching: () => attention.watching()
 })
@@ -2032,8 +2028,11 @@ const claudeDialogs = new ClaudeDialogWatch({
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
   questionSeen.delete(tabId)
-  koloftInbox.askEnded(tabId)
   discordRelay?.dialogGone(tabId, dialogClosed)
+}
+
+async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
+  return discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING
 }
 
 const agentRequests = new AgentRequests({
@@ -3863,11 +3862,9 @@ app.whenReady().then(() => {
   const buttons = new AskButtons({
     owner: () => butlerNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
-    answer: async (tabId, reply) => {
-      if (!discordRelay) return STILL_STARTING
-      return discordRelay.answerSession(tabId, reply)
-    },
+    answer: answerSession,
     respond: (i, body) => link.respond(i, body),
+    followUp: (i, privateText) => link.followUp(i, privateText),
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons

@@ -27,8 +27,8 @@ import {
   installFakeRemote,
   machineHome
 } from './helpers/remote'
-import { ANSWER_NOT_TAKEN } from '../../src/main/koloftInbox'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/relay'
+import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const KEYS_READ_APART_MS = 300
@@ -259,7 +259,7 @@ for (const remote of [false, true]) {
     const app = await launchApp(env)
     try {
       const { card } = await allowFromItsCard(await app.firstWindow(), env, remote, 'make test')
-      await expect(card).toContainText(ANSWER_NOT_TAKEN, {
+      await expect(card).toContainText(ANSWER_NOT_TAKEN_ON_A_CARD, {
         timeout: ANSWER_WAITS_FOR_THE_UNDO_MS + A_TAKEN_ANSWER_SHOWS_WITHIN_MS
       })
     } finally {

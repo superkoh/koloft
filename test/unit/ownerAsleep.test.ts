@@ -9,6 +9,7 @@ import {
   type AskedOwner,
   type OwnerAsleepDeps
 } from '../../src/main/ownerAsleep'
+import { ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
 
 const HOUR_MS = 60 * 60_000
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-asleep-'))
@@ -102,6 +103,18 @@ describe('owner asleep', () => {
       ['a', '1'],
       ['b', `${OWNER_ASLEEP_ANSWER}\n${OWNER_ASLEEP_ANSWER}`]
     ])
+  })
+
+  it('an answer typed in that the session was not seen to take is not followed by another, so a second answer never lands in the session', async () => {
+    const t = setup()
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      return ANSWER_NOT_TAKEN
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Pick one'))
+    await t.asleep.asks('a')
+    expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
   it('a question showing while the owner is awake is left to them', async () => {

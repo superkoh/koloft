@@ -2,6 +2,7 @@ import fs from 'fs'
 import { FROM_KOLOFT } from './crossSessionMessage'
 import { digestLine, quoteOf, type DigestItem } from './awayDigest'
 import { writeWholeBeforeVisible } from './jsonDrops'
+import { ANSWER_NOT_TAKEN } from './discord/dialog'
 
 export const OWNER_ASLEEP_ANSWER =
   'The owner is asleep and cannot answer. Choose the option you recommend, note the choice in your report, and go on. If that choice cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords), do not make it: leave it for the owner and go on with the rest.'
@@ -186,6 +187,7 @@ export class OwnerAsleep {
       const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
       for (const reply of repliesTo(asked)) {
         entry.failed = await this.d.answer(tabId, reply)
+        if (entry.failed === ANSWER_NOT_TAKEN) break
         if (entry.failed === undefined) {
           entry.gave = reply
           break

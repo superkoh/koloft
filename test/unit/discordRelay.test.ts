@@ -7,6 +7,8 @@ import type { SessionStatus } from '../../src/shared/types'
 import type { Turn } from '../../src/shared/turns'
 import type { DiscordMessage } from '../../src/main/discord/link'
 import {
+  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
+  ANSWER_NOT_TAKEN,
   NO_OWN_WORDS,
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
@@ -20,7 +22,6 @@ import {
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
-  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_ON_ITS_WAY,
   unreadableInRoom,
   type Destination,
@@ -67,6 +68,7 @@ function setup(
   const sent: { tab: string; content: string }[] = []
   const placed: { buttons: string[]; messageId: string }[] = []
   const answered: { tab: string; reply: string }[] = []
+  const session = { takesKeys: true }
   const conductor: Destination = {
     channelId: CHANNEL,
     name: 'Assist',
@@ -127,8 +129,15 @@ function setup(
       return true
     },
     asksChanged: (t) => asksChanged.push(t),
-    type: (_t, keys, stillWanted) =>
-      typeKeys((data) => writes.push({ data, at: Date.now() }), keys, stillWanted),
+    type: async (t, keys, stillWanted) => {
+      const typed = await typeKeys(
+        (data) => writes.push({ data, at: Date.now() }),
+        keys,
+        stillWanted
+      )
+      if (typed && session.takesKeys) relay.dialogGone(t, false)
+      return typed
+    },
     touchedSinceAsked: () => false,
     ownerTouchedSince: () => false,
     queueDrained: () => true,
@@ -145,8 +154,10 @@ function setup(
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
   }
+  const relay = new DiscordRelay(deps)
   return {
-    relay: new DiscordRelay(deps),
+    relay,
+    session,
     conductor,
     posts,
     sent,
@@ -159,6 +170,16 @@ function setup(
     placed,
     answered
   }
+}
+
+function answerItTakes(
+  relay: DiscordRelay,
+  tab: string,
+  reply: string
+): Promise<string | undefined> {
+  const answered = relay.answerSession(tab, reply)
+  relay.dialogGone(tab, false)
+  return answered
 }
 
 const HOOK = '4242'
@@ -542,14 +563,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   const BASH = { tool_name: 'Bash', tool_input: { command: 'rm -rf build', description: 'Clean' } }
 
   // CC§14
-  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints, to be checked in the transcript', async () => {
+  it('a local Claude dialog is kept with its full text and posts nothing in Discord, and koloft session answer writes the answer the waiting hook prints, which counts as taken at once', async () => {
     const { relay, posts, asksChanged } = setup()
     const watcher = await watchAsksOnceArmed(relay, asksChanged)
     drop(hookFile(MANAGED, 'ask'), QUESTION)
     await vi.waitFor(() => expect(asksChanged).toEqual([MANAGED]))
     expect(posts).toEqual([])
     expect(relay.dialog(MANAGED)?.text).toBe('Which?\n1. A\n2. B')
-    expect(await relay.answerWatched(MANAGED, '2')).toEqual({ watch: true })
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8'))).toMatchObject({
       hookSpecificOutput: { decision: { updatedInput: { answers: { 'Which?': 'B' } } } }
     })
@@ -594,7 +615,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§14
-  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over; the same question asked again takes an answer at once', async () => {
+  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over; the same question asked again takes an answer', async () => {
     let status: SessionStatus = 'working'
     const { relay, writes, asksChanged } = setup({}, [], { status: () => status })
     const one = {
@@ -608,7 +629,6 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'Purple')).toBeUndefined()
     expect(writes.map((w) => w.data)).toEqual([...TO_THE_EMPTIED_FIELD_OF_TWO, 'Purple', '\r'])
     expect(writes.at(-1)!.at - writes.at(-2)!.at).toBeGreaterThanOrEqual(290)
-    expect(await relay.answerSession(MANAGED, '1')).toBe(ANSWER_ON_ITS_WAY)
 
     relay.onAsk(MANAGED, one)
     status = 'approval'
@@ -652,16 +672,17 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
         tool_name: 'AskUserQuestion',
         tool_input: { questions: [question('One?'), question('Two?')] }
       }
-      const { relay, writes } = setup({}, [], { status: () => 'approval' })
+      const { relay, writes, session } = setup({}, [], { status: () => 'approval' })
+      session.takesKeys = false
       relay.onAsk(MANAGED, two)
       const first = relay.answerSession(MANAGED, '1\n1')
       await vi.advanceTimersByTimeAsync(60_000)
-      expect(await first).toBeUndefined()
+      expect(await first).toBe(ANSWER_NOT_TAKEN)
       const firstRun = writes.map((w) => w.data)
       expect(firstRun).not.toContain('\x1b[Z')
       const second = relay.answerSession(MANAGED, '2\n2')
       await vi.advanceTimersByTimeAsync(60_000)
-      expect(await second).toBeUndefined()
+      expect(await second).toBe(ANSWER_NOT_TAKEN)
       expect(writes.slice(firstRun.length).map((w) => w.data)).toContain('\x1b[Z')
     } finally {
       vi.useRealTimers()
@@ -757,32 +778,40 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§12 CC§14
-  it('a Claude dialog answered by keys stays open until the session shows it closed, and a second answer meanwhile is told to wait; a yes whose closing Koloft cannot see is dropped once typed, a no is not', async () => {
+  it('a Claude dialog answered by keys stays open until the session shows it closed, a second answer meanwhile is told to wait, and the first is told it was not taken if it never closes; a yes whose closing Koloft cannot see counts once typed, a no waits', async () => {
     vi.useFakeTimers()
     try {
       let closingShows = true
-      const { relay, writes } = setup({}, [], {
+      const { relay, writes, session } = setup({}, [], {
         status: () => 'approval',
         showsDialogsClosing: () => closingShows
       })
+      session.takesKeys = false
       relay.onAsk(MANAGED, BASH)
-      expect(await relay.answerWatched(MANAGED, 'yes')).toEqual({ watch: true })
+      const first = relay.answerSession(MANAGED, 'yes')
+      await vi.advanceTimersByTimeAsync(0)
       expect(relay.dialog(MANAGED)?.text).toContain('rm -rf build')
       expect(await relay.answerSession(MANAGED, 'yes')).toBe(ANSWER_ON_ITS_WAY)
       expect(writes.map((w) => w.data)).toEqual(['1'])
 
       await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
-      expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
+      expect(await first).toBe(ANSWER_NOT_TAKEN)
+      const again = relay.answerSession(MANAGED, 'yes')
+      await vi.advanceTimersByTimeAsync(0)
       relay.dialogGone(MANAGED, false)
+      expect(await again).toBeUndefined()
       expect(relay.dialog(MANAGED)).toBeUndefined()
 
       closingShows = false
       relay.onAsk(MANAGED, BASH)
-      expect(await relay.answerWatched(MANAGED, 'yes')).toEqual({ watch: false })
+      expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
       expect(relay.dialog(MANAGED)).toBeUndefined()
       relay.onAsk(MANAGED, BASH)
-      expect(await relay.answerWatched(MANAGED, 'no')).toEqual({ watch: true })
+      const no = relay.answerSession(MANAGED, 'no')
+      await vi.advanceTimersByTimeAsync(0)
       expect(relay.dialog(MANAGED)).toBeDefined()
+      relay.dialogGone(MANAGED, false)
+      expect(await no).toBeUndefined()
     } finally {
       vi.useRealTimers()
     }
@@ -887,6 +916,115 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     ])
     question = { id: 'u2', questions: [one, one] }
     expect(await pressed('2\n1')).toEqual(['2', '\r', '1', '\r', '\r'])
+  })
+})
+
+describe('DiscordRelay: an answer typed as keys counts only once the session shows it took it', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const COLOUR: CodexQuestion = {
+    id: 'q1',
+    questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]
+  }
+
+  function codexAsking(more: Partial<RelayDeps> = {}, approval?: { id: number }) {
+    const s = setup({}, [], {
+      backendOf: () => 'codex',
+      pendingApproval: () => approval,
+      pendingQuestion: () => (approval ? undefined : COLOUR),
+      ...more
+    })
+    s.session.takesKeys = false
+    return s
+  }
+
+  for (const [what, approval, reply] of [
+    ['a question', undefined, '2'],
+    ['an approval', { id: 7 }, 'yes']
+  ] as const)
+    it(`keys the session ignores for ${what} are reported as not taken`, async () => {
+      const { relay, writes } = codexAsking({}, approval)
+      const answered = relay.answerSession(TAB, reply)
+      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+      expect(writes).not.toEqual([])
+      expect(await answered).toBe(ANSWER_NOT_TAKEN)
+    })
+
+  it('an answer that shows up late, but in time, counts as answered', async () => {
+    const { relay } = codexAsking()
+    const answered = relay.answerSession(TAB, '2')
+    await vi.advanceTimersByTimeAsync(10_000)
+    relay.dialogGone(TAB, false)
+    expect(await answered).toBeUndefined()
+  })
+
+  it('two answers waiting on one tab both count once the session shows it took them', async () => {
+    const { relay } = codexAsking()
+    const first = relay.answerSession(TAB, '1')
+    const second = relay.answerSession(TAB, '2')
+    await vi.advanceTimersByTimeAsync(1)
+    relay.dialogGone(TAB, false)
+    expect(await first).toBeUndefined()
+    expect(await second).toBeUndefined()
+  })
+
+  it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
+    const { relay } = codexAsking()
+    const answered = relay.answerSession(TAB, '2')
+    await vi.advanceTimersByTimeAsync(0)
+    relay.forget(TAB)
+    expect(await answered).toBe(ANSWER_NOT_TAKEN)
+  })
+
+  it('an answer the session took in place, not as keys, counts at once', async () => {
+    const { relay, writes } = codexAsking({ answerInPlace: async () => ({}) })
+    expect(await relay.answerSession(TAB, '2')).toBeUndefined()
+    expect(writes).toEqual([])
+  })
+
+  it('the wait starts once every key is typed, so an answer slow to go in that the session takes is not called ignored', async () => {
+    const typing = A_TAKEN_ANSWER_SHOWS_WITHIN_MS + 1000
+    const { relay } = codexAsking({
+      answerable: () => new Promise((r) => setTimeout(r, typing))
+    })
+    const answered = relay.answerSession(TAB, '2')
+    await vi.advanceTimersByTimeAsync(typing + 1000)
+    relay.dialogGone(TAB, false)
+    expect(await answered).toBeUndefined()
+  })
+
+  it('an answer the session takes while its keys are still going in counts as answered', async () => {
+    const several: CodexQuestion = {
+      id: 'q2',
+      questions: [COLOUR.questions[0], COLOUR.questions[0]]
+    }
+    const { relay, writes } = codexAsking({ pendingQuestion: () => several })
+    const answered = relay.answerSession(TAB, '2\n1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(writes).toHaveLength(1)
+    relay.dialogGone(TAB, false)
+    await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS * 2)
+    expect(await answered).toBeUndefined()
+    expect(writes.length).toBeGreaterThan(1)
+  })
+
+  it('a reply in Discord to a Codex card is marked delivered only once the session took it; one it did not take is answered that it still waits, and the turn its keys may still start still answers in Discord', async () => {
+    let asked = COLOUR
+    const { relay, posts, reactions, session } = codexAsking({ pendingQuestion: () => asked })
+    relay.codexAsked(TAB, asked)
+    relay.onMessage(message('601', OWNER, '2'))
+    await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+    expect(posts.at(-1)).toEqual({ text: ANSWER_NOT_TAKEN, replyTo: '601' })
+    expect(reactions).not.toContain('601 +✅')
+    expect(relay.answeringDiscord(TAB)).toBe(true)
+
+    session.takesKeys = true
+    asked = { ...COLOUR, id: 'q3' }
+    relay.codexAsked(TAB, asked)
+    relay.onMessage(message('602', OWNER, '2'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reactions).toContain('602 +✅')
   })
 })
 
@@ -1058,7 +1196,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     })
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
-    expect(await relay.answerSession(HELPER, '1')).toBeUndefined()
+    expect(await answerItTakes(relay, HELPER, '1')).toBeUndefined()
 
     away = false
     helperQuestion = undefined

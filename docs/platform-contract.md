@@ -2144,6 +2144,18 @@ Gateway (the live connection that pushes events):
     Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
     up either. A table written as a bold line per row with a `>` quote line per cell
     read well.
+- **A button press answered later** — measured 2026-11-06 with the test bot on the test
+  server (a Node script: REST plus its own Gateway connection, intents `GUILDS`), the owner
+  pressing a plain button on the Discord app:
+  - The press arrived as `INTERACTION_CREATE` type 3 carrying `application_id`. Callback
+    `{type: 6}` (deferred update) answered 204, 0.4 s after the press; Discord showed no
+    "interaction failed".
+  - 5 s later a follow-up `POST /webhooks/{application_id}/{token}` with `flags: 64`
+    answered 200 with `flags: 64`, and the owner saw it as a message only they could see.
+  - The bot's own `PATCH /channels/{channel}/messages/{message}` with new text and
+    `components: []` answered 200; a `GET` of the message then had the new text, an
+    `edited_timestamp` and no components. The owner saw the buttons go; that the new
+    text showed on the phone at once was not seen.
 - **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
   on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
   name change within a few seconds answered `429` with `retry_after` 599.6 s, though

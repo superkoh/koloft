@@ -322,6 +322,9 @@ export function claudeKeysFor(
   return fail(YES_OR_NO_BY_KEYS)
 }
 
+export const A_TAKEN_ANSWER_SHOWS_WITHIN_MS = 15_000
+export const ANSWER_NOT_TAKEN = 'Koloft sent your answer, but the session still waits for it.'
+
 export interface SentAnswer {
   error?: string
   watch?: boolean
