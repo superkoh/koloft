@@ -46,9 +46,9 @@ export class ClaudeDialogWatch {
         next !== w.blocked &&
         (next !== undefined || STATES_AFTER_A_DIALOG.has(state))
       const dialog = next !== undefined && DIALOG_KINDS.has(kind ?? '')
-      if (w.dialog && (left || !dialog)) w.dialogLeftAt = Date.now()
       w.blocked = next
       if (dialog !== w.dialog) {
+        if (!dialog) w.dialogLeftAt = Date.now()
         w.dialog = dialog
         this.d.dialogShown(tabId, dialog)
       }

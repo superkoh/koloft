@@ -663,7 +663,7 @@ export class SessionTracker extends SessionRuntime {
 
   // CC§14
   dialogAnswered(tabId: string): void {
-    if (this.turnNow(tabId) === 'approval') this.recordHookTurn(tabId, 'working')
+    if (this.turnNow(tabId) !== 'working') this.recordHookTurn(tabId, 'working')
   }
 
   setStatus(tabId: string, status: SessionStatus): void {

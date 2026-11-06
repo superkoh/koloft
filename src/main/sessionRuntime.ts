@@ -118,6 +118,7 @@ export class SessionRuntime extends EventEmitter {
   }
 
   showDialog(tabId: string, onScreen: boolean): void {
+    if (!onScreen && !this.entries.has(tabId)) return
     const e = this.entry(tabId)
     e.dialogOnScreen = onScreen
     this.evaluate(tabId, e, Date.now())

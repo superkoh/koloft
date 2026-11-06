@@ -920,7 +920,7 @@ describe('SessionTracker — run-state', () => {
   })
 
   // CC§12 CC§14
-  it("while claude's terminal shows a dialog the row waits on you whatever a hook or the transcript says, goes back to its own turn once the dialog leaves, and a permission hook read just after the dialog closed is not taken", async () => {
+  it("while claude's terminal shows a dialog the row waits on you whatever a hook or the transcript says, goes back to its own turn once the dialog leaves, works again once it is answered whatever a hook made of it, and a permission hook read just after the dialog closed is not taken", async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     let justClosed = false
@@ -970,6 +970,11 @@ describe('SessionTracker — run-state', () => {
     justClosed = false
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
     expect(tracker.statusOf('tabD')).toBe('approval')
+
+    await tracker.reportTurnEnd('tabD')
+    expect(tracker.statusOf('tabD')).toBe('waiting')
+    tracker.dialogAnswered('tabD')
+    expect(tracker.statusOf('tabD')).toBe('working')
   })
 
   // CC§2
