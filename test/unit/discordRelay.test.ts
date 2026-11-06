@@ -959,15 +959,24 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     expect(await answered).toBeUndefined()
   })
 
-  it('two answers waiting on one tab both count once the session shows it took them', async () => {
-    const { relay } = codexAsking()
-    const first = relay.answerSession(TAB, '1')
-    const second = relay.answerSession(TAB, '2')
-    await vi.advanceTimersByTimeAsync(1)
-    relay.dialogGone(TAB, false)
-    expect(await first).toBeUndefined()
-    expect(await second).toBeUndefined()
-  })
+  for (const [what, approval] of [
+    ['question', undefined],
+    ['approval', { id: 7 }]
+  ] as const)
+    it(`a second answer to one Codex ${what} while the first is on its way is told to wait and presses nothing; once the first is not taken, a new answer goes in`, async () => {
+      const { relay, writes } = codexAsking({}, approval)
+      const first = relay.answerSession(TAB, approval ? 'yes' : '1')
+      expect(await relay.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(writes).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+      expect(await first).toBe(ANSWER_NOT_TAKEN)
+      const again = relay.answerSession(TAB, approval ? 'yes' : '1')
+      await vi.advanceTimersByTimeAsync(1)
+      relay.dialogGone(TAB, false)
+      expect(await again).toBeUndefined()
+      expect(writes).toHaveLength(2)
+    })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
     const { relay } = codexAsking()
