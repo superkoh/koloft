@@ -3,10 +3,12 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installMuse,
   museCalls,
   museSaid,
+  trustInAgy,
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
@@ -60,8 +62,8 @@ function typeInto(page: Page, tabId: string, line: string): Promise<void> {
   return page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tabId, line])
 }
 
-function peerMessages(env: E2EEnv): string {
-  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+function peerMessages(env: E2EEnv, home = env.home): string {
+  const file = path.join(home, 'fake-claude-peer.jsonl')
   return fs.existsSync(file)
     ? fs
         .readFileSync(file, 'utf8')
@@ -501,3 +503,109 @@ test('a session that ends its turn waiting on the owner is a card with its last 
     timeout: 15_000
   })
 })
+
+const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
+
+async function pickNotYet(page: Page, quoted: RegExp): Promise<void> {
+  await openInbox(page)
+  const card = cardQuoting(page, quoted)
+  await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: 30_000 })
+  await card.locator('.ibx-choice', { hasText: 'Not yet' }).click()
+}
+
+for (const remote of [false, true]) {
+  test(`a finished turn of a ${remote ? 'remote ' : ''}Claude Code session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, ws, { remote })
+      await expect(wsRows(page, ws).first()).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
+      await pickNotYet(page, /Answer to: Shall I merge PR #12\?/)
+      await expect
+        .poll(() => peerMessages(env, remote ? machineHome(env) : env.home), {
+          timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+        })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
+const fileText = (file: string): string =>
+  fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+
+const OTHER_AGENTS = [
+  {
+    name: 'Codex',
+    backend: 'codex',
+    install: (env: E2EEnv) => installCodex(env),
+    startsOnFirstLine: false,
+    said: /Codex fixture answered: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
+  },
+  {
+    name: 'Muse',
+    backend: 'muse',
+    install: (env: E2EEnv) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    startsOnFirstLine: false,
+    said: /echo: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
+  },
+  {
+    name: 'Antigravity',
+    backend: 'agy',
+    install: (env: E2EEnv) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    startsOnFirstLine: true,
+    said: /Answer to: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
+  }
+] as const
+
+for (const agent of OTHER_AGENTS) {
+  test(`a finished turn of a session in ${agent.name} the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    agent.install(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', agent.name)
+      const tabOf = async (): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === agent.backend
+        )?.tabId
+      if (agent.startsOnFirstLine) {
+        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
+      } else {
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await typeInto(page, (await tabOf()) as string, 'Shall I merge PR #12?')
+      }
+      await pickNotYet(page, agent.said)
+      const tabId = (await tabOf()) as string
+      await expect
+        .poll(() => agent.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}

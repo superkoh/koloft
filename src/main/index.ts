@@ -602,7 +602,7 @@ import {
 import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
+import { NewsJudge, judgeTurn, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
@@ -750,10 +750,10 @@ function allSessions(): SessionInfo[] {
 }
 
 const newsJudge = new NewsJudge({
-  isNews: (turn) => onlyNews(assist, turn),
+  judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
   markFyi: (tabId) => attention.markFyi(tabId),
-  judged: (tabId, news) => koloftInbox.judged(tabId, news)
+  judged: (tabId, verdict) => koloftInbox.judged(tabId, verdict)
 })
 
 // CC§14

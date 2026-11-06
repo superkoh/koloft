@@ -1,8 +1,10 @@
 import type { AttentionEvent, BackendId } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { ReplyChoices, Verdict } from './turnNews'
 import {
   CARD_SESSION,
   type InboxAnswers,
+  type InboxBlock,
   type InboxCard,
   type InboxCardInput,
   type InboxQuestion
@@ -211,10 +213,28 @@ function lastWords(said: string): string {
   return chars.length > LAST_WORDS_SHOWN ? `…${chars.slice(-LAST_WORDS_SHOWN).join('')}` : said
 }
 
+function replyBlock(choices: ReplyChoices | undefined): InboxBlock {
+  if (!choices) return { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+  return {
+    type: 'choice',
+    id: 'reply',
+    questions: [
+      {
+        id: 'q',
+        text: choices.question,
+        multi: false,
+        ownAnswer: true,
+        options: choices.options.map((label, i) => ({ id: `o${i}`, label }))
+      }
+    ]
+  }
+}
+
 export function doneCard(
   m: AttentionEvent,
   s: AskedSession,
-  reply: string | undefined
+  reply: string | undefined,
+  choices?: ReplyChoices
 ): InboxCardInput {
   const said = reply?.trim()
   return {
@@ -234,7 +254,7 @@ export function doneCard(
             }
           ]
         : []),
-      { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+      replyBlock(choices)
     ],
     actions: [
       {
@@ -352,15 +372,15 @@ export class KoloftInbox {
     this.finished.set(tabId, { reply, forTheOwner: !handedOff && !this.d.butlerSide(tabId) })
   }
 
-  judged(tabId: string, news: boolean): void {
+  judged(tabId: string, verdict: Verdict): void {
     const turn = this.finished.get(tabId)
     this.finished.delete(tabId)
-    if (news || !turn?.forTheOwner || this.d.watching() === tabId) return
+    if (verdict.news || !turn?.forTheOwner || this.d.watching() === tabId) return
     const m = this.d.marks().find((x) => x.tabId === tabId && x.kind === 'turn-done' && !x.fyi)
     const s = this.d.sessionOfTab(tabId)
     if (!m?.sessionId || !s || this.d.inbox.find(KOLOFT, signalKey(m))) return
     try {
-      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply))
+      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply, verdict.choices))
     } catch {}
   }
 
