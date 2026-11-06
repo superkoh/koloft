@@ -35,6 +35,7 @@ import { isComposing } from '../keys'
 import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
 import { relTime } from '../sessionRows'
+import { useDismissOnOutside } from './WorkspaceSidebar'
 import '../inbox.css'
 
 const TAB_NAME: Record<InboxState, string> = {
@@ -221,12 +222,7 @@ export function InboxPage(): JSX.Element {
     return () => clearInterval(t)
   }, [waiting])
 
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [menu])
+  useDismissOnOutside(!!menu, setMenu)
 
   const minute = Math.floor(now / CLOCK_TICK_MS)
   const { counts, facets, list, keys } = useMemo(() => {
@@ -335,7 +331,7 @@ export function InboxPage(): JSX.Element {
       setMenu(null)
     }
     return (
-      <span className="ibx-fwrap" key={name} onMouseDown={(e) => e.stopPropagation()}>
+      <span className="ibx-fwrap" key={name} onClick={(e) => e.stopPropagation()}>
         <button
           className={'ibx-pill' + (v ? ' on' : '') + (open ? ' open' : '')}
           onClick={() => setMenu(open ? null : { kind: 'filter', name })}
@@ -417,7 +413,7 @@ export function InboxPage(): JSX.Element {
                 Clear all
               </button>
             )}
-            <span className="ibx-fwrap" onMouseDown={(e) => e.stopPropagation()}>
+            <span className="ibx-fwrap" onClick={(e) => e.stopPropagation()}>
               <button
                 className={
                   'ibx-pill' + (tab === 'closed' ? ' dis' : '') + (sortOpen ? ' open' : '')
@@ -552,7 +548,6 @@ function Head({
       </div>
       <button
         className={'ibx-dots' + (open ? ' on' : '')}
-        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation()
           setMenu(open ? null : { kind: 'level', card: card.id })
@@ -561,7 +556,7 @@ function Head({
         ⋯
       </button>
       {open && (
-        <div className="ibx-menu" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ibx-menu" onClick={(e) => e.stopPropagation()}>
           {INBOX_LEVELS.map((l) => (
             <div
               key={l}
@@ -889,15 +884,17 @@ function Card({
           <button
             className="ibx-btn"
             disabled={!ready}
-            onMouseDown={stop}
-            onClick={() => setMenu(moreOpen ? null : { kind: 'more', card: card.id })}
+            onClick={(e) => {
+              stop(e)
+              setMenu(moreOpen ? null : { kind: 'more', card: card.id })
+            }}
           >
             More ▾
           </button>
         )}
         {[...out].reverse().map(button)}
         {moreOpen && (
-          <div className="ibx-menu up" onMouseDown={stop}>
+          <div className="ibx-menu up" onClick={stop}>
             {more.map((a) => (
               <div
                 key={a.id}
