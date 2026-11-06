@@ -453,7 +453,7 @@ export function LoginDialog(): JSX.Element | null {
   )
 }
 
-function useSignInFailure(): SignInFailure | null {
+export function useSignInFailure(): SignInFailure | null {
   const [failure, setFailure] = useState<SignInFailure | null>(null)
   useEffect(() => {
     let alive = true
@@ -474,7 +474,7 @@ export function SignInFailedDialog(): JSX.Element | null {
   return failed && <SignInFailedCard failed={failed} />
 }
 
-function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
+export function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
   return (
     <SignInDialog
       key={`${failed.backend}:${failed.name}`}

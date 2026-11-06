@@ -737,7 +737,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-22: in the Assist question from the butler row, with no account yet, only one sign-in or paste form shows at a time: Claude’s, Paste it, Codex’s, Muse’s or Antigravity’s, each opened closing the one before', async ({
+  test('T-OB-22: in the Assist question from the butler row, with no account yet, only one sign-in or paste form shows at a time: Claude’s, Paste it, Codex’s, Muse’s or Antigravity’s, each opened closing the one before, and one opened while Claude’s sign-in runs taking its place', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -776,6 +776,12 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await onlyForm('Paste token')
       await choice('Claude').click()
       await onlyForm('Sign in')
+
+      await assist.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await assist.getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(assist.locator('.acct-login-state')).toBeVisible()
+      await choice('Codex').click()
+      await onlyForm('Sign in to Codex')
     } finally {
       await quitAndClose(app)
     }

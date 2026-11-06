@@ -8,8 +8,9 @@ import {
   AddAccountDialog,
   LoginDialog,
   SignInDialog,
-  SignInFailedDialog,
+  SignInFailedCard,
   loginRunning,
+  useSignInFailure,
   type PaneForm
 } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
@@ -65,26 +66,30 @@ export function AssistSetup({
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
   const clearLogin = useStore((s) => s.clearLogin)
+  const failed = useSignInFailure()
   const update = useSettingsUpdate()
-  // ADR-0002
   const [form, setForm] = useState<PaneForm | null>(null)
   const claudeLoginRunning = !!login && loginRunning(login.progress)
-  const openForm = (next: PaneForm): void => {
+  const closeForms = (): void => {
     if (login && !claudeLoginRunning) clearLogin()
-    window.api.accounts.dismissSignInFailure()
+    if (failed) window.api.accounts.dismissSignInFailure()
+    setForm(null)
+  }
+  const openForm = (next: PaneForm): void => {
+    closeForms()
     setForm(next)
   }
   const openClaudeSignIn = (again: string | undefined): void => {
-    if (claudeLoginRunning) return
-    window.api.accounts.dismissSignInFailure()
-    setForm(null)
-    beginLogin(again)
+    closeForms()
+    if (!claudeLoginRunning) beginLogin(again)
   }
   const signIn = form && 'signIn' in form ? form : null
 
   const pick = (b: BackendId, again: string | undefined): void => {
-    if (setup.usable[b]) update({ assist: { on: true, backend: b } })
-    else if (b === 'claude') openClaudeSignIn(again)
+    if (setup.usable[b]) {
+      closeForms()
+      update({ assist: { on: true, backend: b } })
+    } else if (b === 'claude') openClaudeSignIn(again)
     else openForm({ signIn: b, again })
   }
 
@@ -155,19 +160,19 @@ export function AssistSetup({
           </div>
         </>
       )}
-      {login && <LoginDialog key={login.reauthName ?? ''} />}
-      {signIn ? (
+      {form && 'paste' in form ? (
+        <AddAccountDialog kind={form.paste} onClose={() => setForm(null)} />
+      ) : signIn ? (
         <SignInDialog
-          key={signIn.again ?? ''}
+          key={`${signIn.signIn}:${signIn.again ?? ''}`}
           backend={signIn.signIn}
           again={signIn.again}
-          onClose={() => setForm(null)}
+          onClose={() => setForm((open) => (open === signIn ? null : open))}
         />
+      ) : login ? (
+        <LoginDialog key={login.reauthName ?? ''} />
       ) : (
-        <SignInFailedDialog />
-      )}
-      {form && 'paste' in form && (
-        <AddAccountDialog kind={form.paste} onClose={() => setForm(null)} />
+        failed && <SignInFailedCard failed={failed} />
       )}
     </div>
   )
