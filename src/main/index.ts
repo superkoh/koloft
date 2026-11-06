@@ -1938,7 +1938,8 @@ const sessionCommand = sessionVerb(sessionDeps)
 const inbox = new Inbox(
   {
     now: () => Date.now(),
-    sendToSession: (ref, text) => sessionCommand.sendFromInbox(ref, text),
+    sendToSession: (ref, text, toItsOwnSession) =>
+      sessionCommand.sendFromInbox(ref, text, toItsOwnSession),
     answerSession: (ref, given) => koloftInbox.answer(ref, given),
     startSession: async (spec, card, onReply) => {
       const started = await sessionCommand.startFromInbox(

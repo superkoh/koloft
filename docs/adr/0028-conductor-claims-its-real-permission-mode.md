@@ -40,19 +40,25 @@ socket by accident (a `koloft session send` is wrapped as "From the session …"
 starts with `[Discord]`); a program set on pretending to be the
 owner can read an id, and nothing stops it.
 
-## The owner's words from an Inbox card
+## A message from an Inbox card button
 
-**Decision**: a button on an Inbox card that sends the owner's words to a Claude session
-(Send on a "waits for you" card, or a card action of type `session`) claims the receiving
-session's own class, read once Koloft has the tab — after waking it, when it was closed
-— just as the Discord relay does. The sender is the owner pressing a button at the Mac,
-not another session, so this is not the rejected "always claim bypass" either. Claiming
-`prompting` had every message to a bypass session held behind the dialog, with the owner
-pressing Deliver in the session's own tab, so the Inbox saved them nothing.
+**Decision**: when the owner presses a card button that sends a message to the card's own
+Claude session (Send on a "waits for you" card, or any card action whose `session` is
+the card's), the message claims that session's own class, read once Koloft has the tab
+— after waking it, when it was closed — as the Discord relay does. The words are the
+owner's answers inside text written by Koloft or by that same session (a session's
+`koloft inbox add` card is always its own), so no session pushes work into another one,
+and this is not the rejected "always claim bypass". Claiming `prompting` held every such
+message to a bypass session behind the dialog, and the owner had to press Deliver in the
+session's own tab, so the Inbox saved them nothing.
+**Rejected**: claiming the receiver's class for every card button. A card action may name
+another session and carry text the posting session wrote; claiming the receiver's class
+there would let a session that asks before each command push its text into one that never
+asks, the moment the owner presses a harmless-looking label. Such a message claims
+`prompting`, and a bypass receiver holds it.
 **Limit**: the class is the one the session was launched with. A session the owner
 switched to another mode mid-session (Shift+Tab) still holds the message: only the Assist
-takes `crossSessionInbound: "accept"`, and giving it to every session would let any
-session's message through to any other.
+takes `crossSessionInbound: "accept"`.
 
 **Codex and Muse Assists, by the words instead of an id**: a message reaches them as plain
 text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while

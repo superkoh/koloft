@@ -47,7 +47,6 @@ import {
   FROM_KOLOFT,
   crossSessionLine,
   fitsACrossSessionMessage,
-  wrappedLine,
   type ModeClass
 } from './crossSessionMessage'
 import {
@@ -1019,7 +1018,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
   tabMoved(oldTabId: string, newTabId: string): void
-  sendFromInbox(ref: string, text: string): Promise<SendResult>
+  sendFromInbox(ref: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
   startFromInbox(
     aboutRef: string | undefined,
     spec: StartSpec,
@@ -1031,6 +1030,14 @@ export function sessionVerb(d: SessionVerbDeps): {
   const names = launchNames(d)
   let queued = 0
   let lined = 0
+  const peerLineFrom = (
+    modeFor: (tab: string) => ModeClass,
+    text: string,
+    sender: string
+  ): ((tab: string) => string) => {
+    const id = `koloft-${sender}-${++lined}`
+    return (tab) => crossSessionLine(modeFor(tab), text, id)
+  }
   const replyOwed = new Map<string, OwedReply>()
   const inboxOwed = new Map<string, (reply: string) => void>()
   const messagedBy = new Map<string, Set<string>>()
@@ -1149,16 +1156,14 @@ export function sessionVerb(d: SessionVerbDeps): {
   ): Promise<AgentReply> => {
     const route = messagingOf(t.backend, !!t.remote)
     const typed = route === 'typed'
-    const line =
-      route !== 'peerLine'
-        ? undefined
-        : crossSessionLine(d.modeOf(caller.tabId), text, `koloft-session-${++lined}`)
-    if (line === null)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
       return refused(
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
         EXIT_USAGE
       )
-    const lineFor = line === undefined ? undefined : () => line
+    const callerMode = d.modeOf(caller.tabId)
+    const lineFor =
+      route === 'peerLine' ? peerLineFrom(() => callerMode, text, 'session') : undefined
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     const assist = fromAssist ? caller.session.sessionId : undefined
     if (t.tabId && !busy) {
@@ -1499,16 +1504,19 @@ export function sessionVerb(d: SessionVerbDeps): {
     return sessionTarget(d, open?.sessionId ?? ref)
   }
 
-  const sendFromInbox = async (ref: string, text: string): Promise<SendResult> => {
+  const sendFromInbox = async (
+    ref: string,
+    text: string,
+    toItsOwnSession: boolean
+  ): Promise<SendResult> => {
     const t = targetOf(ref)
     if (!t) return { ok: false, why: `There is no session ${ref} any more` }
     const route = messagingOf(t.backend, !!t.remote)
     if (route === 'peerLine' && !fitsACrossSessionMessage(text))
       return { ok: false, why: 'The message holds text the session cannot take' }
-    const id = `koloft-inbox-${++lined}`
     // ADR-0028
-    const lineFor =
-      route === 'peerLine' ? (tab: string) => wrappedLine(d.modeOf(tab), text, id) : undefined
+    const modeFor = (tab: string): ModeClass => (toItsOwnSession ? d.modeOf(tab) : 'prompting')
+    const lineFor = route === 'peerLine' ? peerLineFrom(modeFor, text, 'inbox') : undefined
     const woke = !t.tabId
     const busy = route === 'typed' && !!t.tabId && !(await d.ready(t.tabId, 0, true))
     const until =

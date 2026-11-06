@@ -54,7 +54,7 @@ export type StartSpec = Omit<Extract<InboxRun, { type: 'new-session' }>, 'type'>
 
 export interface InboxHost {
   now(): number
-  sendToSession(session: string, text: string): Promise<SendResult>
+  sendToSession(session: string, text: string, toItsOwnSession: boolean): Promise<SendResult>
   answerSession(
     session: string,
     answer: { answers?: InboxAnswers[string]; pick?: string }
@@ -452,7 +452,8 @@ export class Inbox {
           }
         return { outcome: 'done', text: 'Answered — it is working again' }
       }
-      const sent = await this.host.sendToSession(to, wrap(run.message ?? ''))
+      // ADR-0028
+      const sent = await this.host.sendToSession(to, wrap(run.message ?? ''), to === card.session)
       if (!sent.ok)
         return { outcome: 'failed', text: sent.why ?? 'Koloft could not reach the session' }
       this.grant(card, action, sent.session ?? to)

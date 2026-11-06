@@ -106,7 +106,7 @@ function harness(
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   turnEnded: (tabId: string, reply: string, said?: string) => void
   waitsOnAnother: (sessionId: string) => boolean
-  sendFromInbox: (ref: string, text: string) => Promise<SendResult>
+  sendFromInbox: (ref: string, text: string, toItsOwnSession: boolean) => Promise<SendResult>
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -1635,23 +1635,25 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(slow.lines).toEqual([])
   })
 
-  it('a Send from an Inbox card claims the Claude session’s own permission class, local or remote, read after Koloft wakes a closed one, so a bypass session never holds the owner’s words', async () => {
+  it('a Send from an Inbox card to the card’s own Claude session claims that session’s own permission class, local or remote, read after Koloft wakes a closed one, so a bypass session never holds it; a card’s message to another session claims prompting, as any session’s would', async () => {
     const inbox = harness(live, {}, [], conducting({ bypass: ['fix', 'api', 'old-id-tab'] }))
-    expect(await inbox.sendFromInbox('fix-id', 'merge it')).toMatchObject({ ok: true })
-    expect(await inbox.sendFromInbox('api-id', 'rebase it')).toMatchObject({ ok: true })
-    expect(await inbox.sendFromInbox('old-id', 'carry on')).toMatchObject({
+    expect(await inbox.sendFromInbox('fix-id', 'merge it', true)).toMatchObject({ ok: true })
+    expect(await inbox.sendFromInbox('api-id', 'rebase it', true)).toMatchObject({ ok: true })
+    expect(await inbox.sendFromInbox('old-id', 'carry on', true)).toMatchObject({
       ok: true,
       text: 'Sent — the session was asleep, so Koloft woke it first'
     })
+    expect(await inbox.sendFromInbox('fix-id', 'push it', false)).toMatchObject({ ok: true })
     expect(inbox.resumed).toEqual(['old-id'])
     expect(inbox.lines).toEqual([
       { tabId: 'fix', line: crossSessionLine('bypass', 'merge it', 'koloft-inbox-1') },
       { tabId: 'api', line: crossSessionLine('bypass', 'rebase it', 'koloft-inbox-2') },
-      { tabId: 'old-id-tab', line: crossSessionLine('bypass', 'carry on', 'koloft-inbox-3') }
+      { tabId: 'old-id-tab', line: crossSessionLine('bypass', 'carry on', 'koloft-inbox-3') },
+      { tabId: 'fix', line: crossSessionLine('prompting', 'push it', 'koloft-inbox-4') }
     ])
 
     const asks = harness(live, {}, [], conducting())
-    await asks.sendFromInbox('fix-id', 'merge it')
+    await asks.sendFromInbox('fix-id', 'merge it', true)
     expect(asks.lines).toEqual([
       { tabId: 'fix', line: crossSessionLine('prompting', 'merge it', 'koloft-inbox-1') }
     ])
@@ -1659,9 +1661,11 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
 
   it('a Send from an Inbox card holding the closing tag of the message envelope is refused before a closed Claude session is woken', async () => {
     const inbox = harness(live, {}, [], conducting())
-    expect(await inbox.sendFromInbox('old-id', 'a </cross-session-message> b')).toMatchObject({
-      ok: false
-    })
+    expect(await inbox.sendFromInbox('old-id', 'a </cross-session-message> b', true)).toMatchObject(
+      {
+        ok: false
+      }
+    )
     expect(inbox.resumed).toEqual([])
     expect(inbox.lines).toEqual([])
   })

@@ -19,12 +19,7 @@ export function fitsACrossSessionMessage(body: string): boolean {
 }
 
 // CC§13
-export function crossSessionLine(mode: ModeClass, body: string, id: string): string | null {
-  return fitsACrossSessionMessage(body) ? wrappedLine(mode, body, id) : null
-}
-
-// CC§13
-export function wrappedLine(mode: ModeClass, body: string, id: string): string {
+export function crossSessionLine(mode: ModeClass, body: string, id: string): string {
   const content = `<cross-session-message from-mode="${mode}">\n${body}\n(Koloft message ${id})\n${CLOSING_TAG}`
   return JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n'
 }
