@@ -117,6 +117,51 @@ describe('owner asleep', () => {
     expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
+  it('a second question asked while Koloft waits to see its first answer taken is answered once that wait ends', async () => {
+    const t = setup()
+    let landed: (() => void) | undefined
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      t.asks.delete(tabId)
+      if (t.replies.length === 1) await new Promise<void>((r) => (landed = r))
+      return undefined
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    const first = t.asleep.asks('a')
+    await new Promise((r) => setTimeout(r, 0))
+    landed?.()
+    t.asks.set('a', approval('npm publish'))
+    await t.asleep.asks('a')
+    await first
+    expect(t.replies).toEqual([
+      ['a', OWNER_ASLEEP_ANSWER],
+      ['a', 'yes']
+    ])
+    await t.wakeAfter(HOUR_MS)
+    expect(t.reports[0]).toContain(
+      '"Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
+    )
+  })
+
+  it('the same question still showing after an answer not seen taken gets no second answer, though the session signalled again during the wait', async () => {
+    const t = setup()
+    let ended: (() => void) | undefined
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      if (t.replies.length === 1) await new Promise<void>((r) => (ended = r))
+      return ANSWER_NOT_TAKEN
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    const first = t.asleep.asks('a')
+    await new Promise((r) => setTimeout(r, 0))
+    await t.asleep.asks('a')
+    ended?.()
+    await first
+    expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
+  })
+
   it('a question showing while the owner is awake is left to them', async () => {
     const t = setup()
     t.asks.set('a', question('Blue or red?'))

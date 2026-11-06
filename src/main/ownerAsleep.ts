@@ -106,6 +106,7 @@ export class OwnerAsleep {
   private everMarked = new Set<string>()
   private generation = 0
   private answering = new Set<string>()
+  private askedWhileAnswering = new Set<string>()
 
   constructor(
     private readonly d: OwnerAsleepDeps,
@@ -178,16 +179,21 @@ export class OwnerAsleep {
     return this.asleep() && !this.d.awakeTabs().includes(tabId)
   }
 
-  async asks(tabId: string): Promise<void> {
-    if (!this.answersFor(tabId) || this.answering.has(tabId)) return
+  async asks(tabId: string, stillShowingUntaken?: string): Promise<void> {
+    if (!this.answersFor(tabId)) return
+    if (this.answering.has(tabId)) return void this.askedWhileAnswering.add(tabId)
     this.answering.add(tabId)
+    let untaken: string | undefined
     try {
       const asked = await this.d.asked(tabId)
-      if (!asked) return
+      if (!asked || asked.text === stillShowingUntaken) return
       const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
       for (const reply of repliesTo(asked)) {
         entry.failed = await this.d.answer(tabId, reply)
-        if (entry.failed === ANSWER_NOT_TAKEN) break
+        if (entry.failed === ANSWER_NOT_TAKEN) {
+          untaken = asked.text
+          break
+        }
         if (entry.failed === undefined) {
           entry.gave = reply
           break
@@ -197,5 +203,6 @@ export class OwnerAsleep {
     } finally {
       this.answering.delete(tabId)
     }
+    if (this.askedWhileAnswering.delete(tabId)) await this.asks(tabId, untaken)
   }
 }
