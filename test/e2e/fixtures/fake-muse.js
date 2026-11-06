@@ -562,6 +562,20 @@ function tui() {
       const turnId = turn(prompt)
       return later(() => say(turnId, `echo: ${prompt}`, prompt))
     }
+    // MUSE§9
+    if (text === '/compact') {
+      logRecord(session.id, 'runtime.command.accepted', {
+        command_kind: 'context.compact.manual'
+      })
+      return later(() => {
+        logRecord(session.id, 'context.compact.manual.outcome', {
+          terminal_outcome: 'compacted'
+        })
+        fire('PostCompact', { trigger: 'manual' })
+        fire('SessionStart', { source: 'compact' })
+        inputBox()
+      })
+    }
     if (text === '/usage') {
       const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))
       const box = [

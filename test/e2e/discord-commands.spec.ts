@@ -143,8 +143,8 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  // AGY§8
-  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and what it ran is posted soon after', async ({
+  // AGY§8 AGY§23
+  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and the panel it drew is posted in its channel soon after; /compact then compacts it and posts Done.', async ({
     env
   }) => {
     installAgy(env)
@@ -168,7 +168,78 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model/)])
+        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model:\n[\s\S]*Select model/)])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // CODEX§21
+  test('D-CMD-1 with a Codex butler: /run /status types it into the butler and posts its screen in its channel, since Codex draws /status only there; /compact runs Codex’s compaction turn and posts Done.', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'codex' } })
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.interact(OWNER, 'run', { command: '/status' })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([
+          expect.stringMatching(
+            /^⌨️ \*\*Alfred\*\* ran \/status:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Model: fake-codex/
+          )
+        ])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
+      const wire = fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+      expect(wire).toContain('"method":"thread/compact/start"')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // MUSE§9 MUSE§19
+  test('D-CMD-1 with a Muse butler: /run /usage types it into the butler and posts its screen in its channel, since Muse draws a command’s output only there; /compact compacts it and posts Done.', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'muse' } })
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.interact(OWNER, 'run', { command: '/usage' })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([
+          expect.stringMatching(
+            /^⌨️ \*\*Alfred\*\* ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
+          )
+        ])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
     } finally {
       await quitAndClose(app)
       await fake.close()
