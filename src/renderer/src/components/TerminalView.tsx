@@ -19,7 +19,6 @@ const ADOPTED_REPAINT_AFTER_MS = 1000
 const ACK_FLUSH_AT_UTF16_UNITS = 64 * 1024
 const ACK_FLUSH_AFTER_MS = 100
 const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
-const KEYCODES_XTERM_KEEPS_COMPOSING_ON = new Set([16, 17, 18, 20, 229])
 export const NO_FOCUS_SIGNAL = 0
 
 export function TerminalView({
@@ -244,7 +243,6 @@ export function TerminalView({
 
     let composing = false
     let commitGrace = false
-    let dropXtermsCommitEcho = false
     let clampRaf = 0
     let clearTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -265,7 +263,6 @@ export function TerminalView({
     const onCompStart = (): void => {
       composing = true
       commitGrace = false
-      dropXtermsCommitEcho = false
       try {
         compositionHelper?.updateCompositionElements()
       } catch {}
@@ -281,6 +278,7 @@ export function TerminalView({
         commitGrace = true
         onUserInputRef.current?.()
         window.api.terminal.write(id, data)
+        if (compositionHelper) compositionHelper._isSendingComposition = false
         setTimeout(() => {
           commitGrace = false
         }, 0)
@@ -296,7 +294,11 @@ export function TerminalView({
     ta?.addEventListener('compositionend', onCompEnd)
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown') onUserInputRef.current?.()
+      if (e.type === 'keydown') {
+        onUserInputRef.current?.()
+        // PLATFORM§22
+        commitGrace = false
+      }
       // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
@@ -310,15 +312,6 @@ export function TerminalView({
           if (e.type === 'keydown') pendingPunct = true
           return false
         }
-      }
-      // PLATFORM§22
-      if (
-        e.type === 'keydown' &&
-        commitGrace &&
-        !KEYCODES_XTERM_KEEPS_COMPOSING_ON.has(e.keyCode)
-      ) {
-        commitGrace = false
-        dropXtermsCommitEcho = compositionHelper?._isSendingComposition === true
       }
       return true
     })
@@ -349,12 +342,7 @@ export function TerminalView({
     window.api.terminal.attach(id)
     // PLATFORM§22
     const inputSub = term.onData((data) => {
-      if (composing) return
-      if (dropXtermsCommitEcho) {
-        dropXtermsCommitEcho = false
-        return
-      }
-      if (commitGrace) return
+      if (composing || commitGrace) return
       window.api.terminal.write(id, data)
     })
 
