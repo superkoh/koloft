@@ -23,12 +23,14 @@ import {
   type InboxAnswers,
   type InboxBlock,
   type InboxCard,
+  type InboxCounts,
   type InboxLevel,
   type InboxLink,
   type InboxSort,
   type InboxState
 } from '@shared/inbox'
 import { useStore } from '../store'
+import { IconInbox } from '../icons'
 import { isComposing } from '../keys'
 import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
@@ -56,6 +58,7 @@ const CLOCK_TICK_MS = 60_000
 const FLY_MS = 620
 const SLIDE_MS = 380
 const MOST_BUTTONS_IN_A_ROW = 3
+const ONE_TURN_MS = 6000
 
 type Menu =
   | { kind: 'level'; card: string }
@@ -138,17 +141,60 @@ function tagOf(card: InboxCard): string {
   return [card.sourceName, ...Object.values(card.where)].join(' · ')
 }
 
+function waitingLine({ badge, high, byState }: InboxCounts): string {
+  const low = byState['needs-you'] - badge
+  if (!badge) return low ? `${low} low, no rush` : 'Nothing needs you'
+  const line = `${badge} need${badge === 1 ? 's' : ''} you`
+  return high ? `${line} · ${high} high` : line
+}
+
+function lastArrival(cards: InboxCard[]): number {
+  let at = 0
+  for (const c of cards)
+    if (c.state === 'needs-you' && levelOf(c) !== 'low') at = Math.max(at, c.stateSince)
+  return at
+}
+
 export function InboxRow(): JSX.Element {
   const open = useStore((s) => s.inboxOpen)
   const cards = useStore((s) => s.inbox.cards)
   const c = inboxCounts(cards, Date.now())
+  const entry = useRef<HTMLDivElement>(null)
+  const turn = useRef<Animation>(undefined)
+  const arrivedUpTo = useRef(Date.now())
+  const arrival = lastArrival(cards)
+  useEffect(() => {
+    if (arrival <= arrivedUpTo.current) return
+    arrivedUpTo.current = arrival
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    turn.current?.cancel()
+    turn.current = entry.current?.animate(
+      [{ '--ibx-a': '0deg' }, { '--ibx-a': '360deg' }],
+      ONE_TURN_MS
+    )
+  }, [arrival])
   return (
     <div className="ibx-entry-wrap">
       <div
-        className={'ibx-entry' + (open ? ' on' : '')}
+        ref={entry}
+        className={'ibx-entry' + (c.badge > 0 ? ' lit' : '') + (open ? ' on' : '')}
         onClick={() => useStore.getState().setInboxOpen(true)}
       >
-        <span className="ibx-entry-name">Inbox</span>
+        <svg className="ibx-ink-defs" aria-hidden>
+          <linearGradient id="ibx-ink" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="var(--accent)" />
+            <stop offset="1" stopColor="var(--fable)" />
+          </linearGradient>
+        </svg>
+        <span className="ibx-entry-icon">
+          <IconInbox size={18} fill="url(#ibx-ink)" />
+        </span>
+        <span className="ibx-entry-text">
+          <span className="ibx-entry-name">Inbox</span>
+          <span className="ws-tab-sub">
+            <span>{waitingLine(c)}</span>
+          </span>
+        </span>
         {c.badge > 0 && <span className={'ibx-count' + (c.high ? ' high' : '')}>{c.badge}</span>}
       </div>
     </div>
