@@ -4,7 +4,7 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AGY_LIST_JS, historyEntries, type SummaryRow } from '../../src/main/agyStore'
-import { AGY_LIST_FILE, listAgyCmd } from '../../src/main/remote/agyTab'
+import { AGY_BRAIN_FLAGS, AGY_LIST_FILE, listAgyCmd } from '../../src/main/remote/agyTab'
 import { writeSummaries } from './helpers/agyStore'
 
 let home: string
@@ -54,4 +54,34 @@ describe('the command Koloft runs on a remote machine to list its Antigravity co
       expect.objectContaining({ id: 'c1', name: 'On the box', cwd: '/home/me/proj' })
     ])
   })
+})
+
+it('the pull of a machine’s agy brain brings each conversation’s artifacts, their sidecars and its transcript, and nothing else, so a plan waiting for review can be read on the Mac (AGY§8 AGY§19)', () => {
+  const src = path.join(home, 'brain')
+  for (const f of [
+    'c1/implementation_plan.md',
+    'c1/implementation_plan.md.metadata.json',
+    'c1/.system_generated/logs/transcript.jsonl',
+    'c1/.system_generated/logs/transcript_full.jsonl',
+    'c1/.system_generated/steps/3/output.txt',
+    'c1/scratch/run.md',
+    'c1/notes.txt'
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(src, f)), { recursive: true })
+    fs.writeFileSync(path.join(src, f), 'x')
+  }
+  const dst = path.join(home, 'mirror')
+  const r = spawnSync('rsync', ['-a', ...AGY_BRAIN_FLAGS, `${src}/`, `${dst}/`], {
+    encoding: 'utf8'
+  })
+  expect(r.stderr).toBe('')
+  const mirrored = fs
+    .readdirSync(dst, { recursive: true, encoding: 'utf8' })
+    .filter((f) => fs.statSync(path.join(dst, f)).isFile())
+    .sort()
+  expect(mirrored).toEqual([
+    'c1/.system_generated/logs/transcript.jsonl',
+    'c1/implementation_plan.md',
+    'c1/implementation_plan.md.metadata.json'
+  ])
 })

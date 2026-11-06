@@ -1382,9 +1382,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const plan = waiting[0]
     if (!plan) return
     const askId = `plan:${id}:${plan}`
+    const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
+      approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
     this.changedSoon()

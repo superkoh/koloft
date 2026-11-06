@@ -1309,11 +1309,12 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
+  it('a plan waiting for review carries its own text, and approving it sends agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
     apiAnswers = true
     trajectory = waitingStep({})
     const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
     fs.mkdirSync(brain, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'implementation_plan.md'), '# Plan\n\n1. Do the thing.\n')
     fs.writeFileSync(
       path.join(brain, 'implementation_plan.md.metadata.json'),
       JSON.stringify({ summary: 'x', requestFeedback: true })
@@ -1324,7 +1325,11 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     )
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
-    expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
+    expect(sessions.openApproval(id)).toMatchObject({
+      command: 'implementation_plan.md',
+      reason: '# Plan\n\n1. Do the thing.',
+      plan: true
+    })
     expect(await sessions.answer(id, 'yes')).toEqual({})
     expect(sent('SendUserCascadeMessage')).toEqual([
       {

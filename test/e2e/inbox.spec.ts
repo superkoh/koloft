@@ -3,10 +3,12 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installMuse,
   museCalls,
   museSaid,
+  trustInAgy,
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
@@ -71,6 +73,18 @@ function peerMessages(env: E2EEnv): string {
         .join('\n')
         .replace(/\\n/g, '\n')
     : ''
+}
+
+function agyMessages(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-agy-api.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l) as { method: string; body: { items?: { text?: string }[] } })
+    .filter((c) => c.method === 'SendUserCascadeMessage')
+    .flatMap((c) => (c.body.items ?? []).map((i) => i.text ?? ''))
 }
 
 function codexAnswers(env: E2EEnv): unknown[] {
@@ -371,6 +385,32 @@ test('a command a Muse session wants to run is a card in the Inbox; Allow there 
       .poll(() => museSaid(env, museId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
       .toContain('Ran: ls -la')
     await expect(await doneStatus(page, 'wants to run a command')).toContainText('Answered')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+// AGY§19
+test('a plan an Antigravity session waits on is a card quoting the whole plan; Approve there tells agy the plan is approved and moves the card to Done as Answered', async ({
+  env
+}) => {
+  installAgy(env)
+  trustInAgy(env, env.workspaces.a)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', 'Antigravity')
+    await runIn(page, centerTerm(page), '/plan')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    await openInbox(page)
+    const card = inboxCard(page, 'asks you to approve a plan')
+    await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
+    await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    await expect
+      .poll(() => agyMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .toContain('[Approved] implementation_plan.md')
+    await expect(await doneStatus(page, 'asks you to approve a plan')).toContainText('Answered')
   } finally {
     await quitAndClose(app)
   }
