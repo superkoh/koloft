@@ -48,6 +48,7 @@ import {
   showBrowse,
   showChanges,
   shownPaths,
+  viewedButton,
   waitGitQuiet,
   wbTabs,
   workbenchIcon,
@@ -82,13 +83,11 @@ const rowOf = (page: Page, rel: string): Locator => page.locator(`${CV.row}[data
 const blockOf = (page: Page, rel: string): Locator =>
   page.locator(`${CV.block}[data-path="${rel}"]`)
 const stream = (page: Page): Locator => page.locator(CV.stream)
-const viewedBtn = (blk: Locator): Locator =>
-  blk.locator('.cv-blk-hd button', { hasText: /^✓ Viewed$/ })
 
 async function expectViewed(page: Page, rel: string): Promise<void> {
   const blk = blockOf(page, rel)
   await expect(blk).toHaveAttribute('data-viewed', '1', { timeout: 30_000 })
-  await expect(viewedBtn(blk)).toHaveAttribute('aria-pressed', 'true')
+  await expect(viewedButton(blk)).toHaveAttribute('aria-pressed', 'true')
   await expect(blk.locator(CV.hunk)).toHaveCount(0)
   await expect(blk.locator('.cv-note')).toHaveCount(0)
   await expect(rowOf(page, rel)).toHaveAttribute('data-viewed', '1')
@@ -331,16 +330,16 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     const x = blockOf(page, 'src/change-1.ts')
     const y = blockOf(page, 'src/change-2.ts')
-    await viewedBtn(x).click()
+    await viewedButton(x).click()
     await expectViewed(page, 'src/change-1.ts')
     const seg = x.locator(CV.blockSeg)
     await expect(seg.locator('button', { hasText: /^Diff$/ })).toBeDisabled()
     await expect(seg.locator('button', { hasText: /^Source$/ })).toBeDisabled()
     await expect(seg.locator('button', { hasText: '↗ New tab' })).toBeEnabled()
     await expect(page.locator(`${CV.total} .cv-total-n`)).toHaveText('2 files · 1 viewed')
-    await viewedBtn(y).click()
+    await viewedButton(y).click()
     await expect(y).toHaveAttribute('data-viewed', '1')
-    await viewedBtn(y).click()
+    await viewedButton(y).click()
     await expect(y.locator(CV.hunk)).toHaveCount(1)
     await expect(rowOf(page, 'src/change-2.ts').locator('.bv-bm')).toHaveCount(0)
 
@@ -363,7 +362,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       const x2 = blockOf(page2, 'src/change-1.ts')
       await expect(x2.locator(CV.hunk)).toHaveCount(2, { timeout: 30_000 })
       await expect(x2).not.toHaveAttribute('data-viewed', '1')
-      await expect(viewedBtn(x2)).toHaveAttribute('aria-pressed', 'false')
+      await expect(viewedButton(x2)).toHaveAttribute('aria-pressed', 'false')
       await expect(rowOf(page2, 'src/change-1.ts').locator('.bv-bm')).toHaveCount(0)
       await expect(page2.locator(`${CV.total} .cv-total-n`)).toHaveText('2 files')
     } finally {
@@ -951,7 +950,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
           .poll(() => shownPaths(page), { timeout: 30_000 })
           .toEqual(['src/agent-notes.ts'])
         await waitStream(page, 1)
-        await viewedBtn(blockOf(page, 'src/agent-notes.ts')).click()
+        await viewedButton(blockOf(page, 'src/agent-notes.ts')).click()
         await expectViewed(page, 'src/agent-notes.ts')
 
         const row = wsRows(page, 'ws-a').first()

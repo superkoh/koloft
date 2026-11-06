@@ -193,6 +193,14 @@
   color: var(--git-c);
 }
 
+.bv-bm {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
 .ft-delta {
   flex: 0 0 auto;
   font-family: var(--mono);

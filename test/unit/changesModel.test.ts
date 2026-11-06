@@ -9,11 +9,14 @@ import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
   baseArg,
+  VIEWED_MARKS_KEPT_PER_FOLDER,
   baseUnresolved,
   buildEntries,
+  canMarkViewed,
   classifyKind,
   commentBlocked,
   emptyStreamMessage,
+  flagCutTail,
   flipViewed,
   groupByDir,
   hunkPrompt,
@@ -239,37 +242,54 @@ describe('mergeSections keeps identity for what did not move (FR-58)', () => {
 
 describe('the viewed mark (#251) — a file stays viewed only while its diff is the one it was marked on', () => {
   const s = (text: string): DiffSection => ({ rel: 'a.ts', text, binary: false, renameFrom: null })
-  const set = (...paths: string[]): ChangeEntry[] =>
-    paths.map((p) => ({ path: p }) as unknown as ChangeEntry)
 
   it('marks, then unmarks on a second press', () => {
-    const marked = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
+    const marked = flipViewed({}, '/w/a.ts', s('one'))
     expect([...viewedNow(marked, { '/w/a.ts': s('one') })]).toEqual(['/w/a.ts'])
-    const unmarked = flipViewed(marked, '/w/a.ts', s('one'), set('/w/a.ts'))
+    const unmarked = flipViewed(marked, '/w/a.ts', s('one'))
     expect(viewedNow(unmarked, { '/w/a.ts': s('one') }).size).toBe(0)
   })
 
   it('drops the mark once the diff text differs, and brings it back when the same text returns (a base switched away and back)', () => {
-    const marks = flipViewed({}, '/w/a.ts', s('vs HEAD'), set('/w/a.ts'))
+    const marks = flipViewed({}, '/w/a.ts', s('vs HEAD'))
     expect(viewedNow(marks, { '/w/a.ts': s('vs merge-base') }).size).toBe(0)
     expect(viewedNow(marks, { '/w/a.ts': s('vs HEAD') }).size).toBe(1)
   })
 
   it('pressing a file whose mark no longer matches marks its new diff instead of clearing it', () => {
-    const old = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
-    const next = flipViewed(old, '/w/a.ts', s('two'), set('/w/a.ts'))
+    const old = flipViewed({}, '/w/a.ts', s('one'))
+    const next = flipViewed(old, '/w/a.ts', s('two'))
     expect(viewedNow(next, { '/w/a.ts': s('two') }).size).toBe(1)
   })
 
-  it('reads no mark for a file whose diff is not loaded', () => {
-    const marks = flipViewed({}, '/w/a.ts', s('one'), set('/w/a.ts'))
+  it('reads no mark for a file whose diff is not loaded, or was cut short, since a change past the cut would go unseen', () => {
+    const marks = flipViewed({}, '/w/a.ts', s('one'))
     expect(viewedNow(marks, {}).size).toBe(0)
+    expect(viewedNow(marks, { '/w/a.ts': { ...s('one'), truncated: true } }).size).toBe(0)
+    expect(canMarkViewed({ ...s('one'), truncated: true })).toBe(false)
+    expect(canMarkViewed(undefined)).toBe(false)
   })
 
-  it('forgets marks of files that left the change set, but keeps marks of files a filter only hides', () => {
-    const marks = { '/w/gone.ts': 1, '/w/hidden.md': 2 }
-    const next = flipViewed(marks, '/w/a.ts', s('one'), set('/w/a.ts', '/w/hidden.md'))
-    expect(Object.keys(next).sort()).toEqual(['/w/a.ts', '/w/hidden.md'])
+  it('keeps the marks of files the current base does not list, so pressing one under vs HEAD leaves a merge-base-only mark alone', () => {
+    const marks = flipViewed({}, '/w/committed.ts', s('vs merge-base'))
+    const next = flipViewed(marks, '/w/a.ts', s('one'))
+    expect(viewedNow(next, { '/w/committed.ts': s('vs merge-base') }).size).toBe(1)
+  })
+
+  it('keeps only the newest marks once a folder holds more than its cap', () => {
+    let marks = {}
+    for (let i = 0; i <= VIEWED_MARKS_KEPT_PER_FOLDER; i++)
+      marks = flipViewed(marks, `/w/f${i}.ts`, s(`f${i}`))
+    expect(Object.keys(marks)).toHaveLength(VIEWED_MARKS_KEPT_PER_FOLDER)
+    expect(Object.keys(marks)).not.toContain('/w/f0.ts')
+    expect(Object.keys(marks)).toContain(`/w/f${VIEWED_MARKS_KEPT_PER_FOLDER}.ts`)
+  })
+
+  it('counts the last section of a truncated aggregate diff as cut, and leaves an untruncated one alone', () => {
+    const secs = [s('one'), { ...s('two'), rel: 'b.ts' }]
+    expect(flagCutTail(secs, false)).toBe(secs)
+    const cut = flagCutTail(secs, true)
+    expect(cut.map((x) => !!x.truncated)).toEqual([false, true])
   })
 })
 

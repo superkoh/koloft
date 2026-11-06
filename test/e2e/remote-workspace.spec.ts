@@ -100,6 +100,7 @@ import {
   showBrowse,
   showChanges,
   shownPaths,
+  viewedButton,
   wbActiveTab
 } from './helpers/workbench'
 
@@ -760,7 +761,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       const block = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"]')
       await expect(block.locator('.cv-hunk')).toHaveCount(1, { timeout: 30_000 })
-      await block.locator('.cv-blk-hd button', { hasText: /^✓ Viewed$/ }).click()
+      await viewedButton(block).click()
       await expect(block).toHaveAttribute('data-viewed', '1')
       await expect(block.locator('.cv-hunk')).toHaveCount(0)
 

@@ -37,6 +37,7 @@ import {
   wbTabByTitle,
   wbTabTitles,
   wbTabs,
+  viewedButton,
   wbUnreadTabs,
   workbenchPanel
 } from './helpers/workbench'
@@ -135,7 +136,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     }
   })
 
-  test('a click on a view switch inside the Changes tab (Diff / Source, Changes / Browse) leaves the caret in the session terminal, so the next typed line reaches the session', async ({
+  test('a click on a view switch inside the Changes tab (Diff / Source, ✓ Viewed, Changes / Browse) leaves the caret in the session terminal, so the next typed line reaches the session', async ({
     page,
     env
   }) => {
@@ -151,6 +152,13 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
       .locator('.seg[aria-label="Block view"] button', { hasText: 'Source' })
     await blockSource.click({ timeout: 30_000 })
     await expect(blockSource).toHaveAttribute('aria-pressed', 'true')
+    expect(await focusOwner(page)).toBe('tui')
+
+    const viewed = viewedButton(
+      page.locator(`${WORKBENCH.panel} .cv-blk[data-path="docs/page.html"]`)
+    )
+    await viewed.click()
+    await expect(viewed).toHaveAttribute('aria-pressed', 'true')
     expect(await focusOwner(page)).toBe('tui')
 
     const browse = page.locator(`${WORKBENCH.panel} .seg[aria-label="Files view"] button`, {

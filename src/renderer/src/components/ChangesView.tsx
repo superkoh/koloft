@@ -16,7 +16,7 @@ import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
 import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
-import { GIT_LETTER, loadList, saveList, viewedKey, type ChangeFilters } from './filesModel'
+import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
 import { isComposing, keepCaretInSessionTerminal } from '../keys'
 import { IconCheck } from '../icons'
@@ -26,15 +26,19 @@ import {
   baseArg,
   baseUnresolved,
   buildEntries,
+  canMarkViewed,
   commentBlocked,
   emptyStreamMessage,
+  flagCutTail,
   flipViewed,
   groupByDir,
   hunkPrompt,
   isBigDiff,
+  loadViewed,
   mergeSections,
   nearViewport,
   passesFilters,
+  saveViewed,
   sectionsByPath,
   splitAggregateDiff,
   splitHunks,
@@ -44,10 +48,8 @@ import {
   writtenPaths,
   type ChangeEntry,
   type DiffSection,
-  type HunkPrompt,
-  type ViewedMarks
+  type HunkPrompt
 } from './changesModel'
-import '../browseView.css'
 import '../changesView.css'
 import '../fileTree.css'
 import '../inlineDiff.css'
@@ -101,9 +103,6 @@ const IDLE_LOAD: LoadState = {
 function scrollStreamOnly(stream: HTMLElement, block: HTMLElement): void {
   stream.scrollTop = block.offsetTop
 }
-
-const loadViewed = (root: string): ViewedMarks =>
-  Object.fromEntries(loadList<[string, number]>(viewedKey(root)))
 
 export function ChangesView(props: ChangesViewProps): JSX.Element {
   const {
@@ -163,19 +162,15 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const groups = useMemo(() => groupByDir(shown), [shown])
   const totals = useMemo(() => totalDelta(shown), [shown])
 
-  const [marks, setMarks] = useState<ViewedMarks>(() => loadViewed(root))
-  useEffect(() => setMarks(loadViewed(root)), [root])
-  const marksRef = useRef(marks)
-  marksRef.current = marks
-  const entriesRef = useRef(entries)
-  entriesRef.current = entries
-  const viewed = useMemo(() => viewedNow(marks, sections), [marks, sections])
+  const [marksFor, setMarksFor] = useState(() => ({ root, marks: loadViewed(root) }))
+  if (marksFor.root !== root) setMarksFor({ root, marks: loadViewed(root) })
+  const viewed = useMemo(() => viewedNow(marksFor.marks, sections), [marksFor, sections])
   const viewedShown = useMemo(() => shown.filter((e) => viewed.has(e.path)).length, [shown, viewed])
   const toggleViewed = useCallback(
     (path: string, section: DiffSection): void => {
-      const next = flipViewed(marksRef.current, path, section, entriesRef.current)
-      saveList(viewedKey(root), Object.entries(next))
-      setMarks(next)
+      const marks = flipViewed(loadViewed(root), path, section)
+      saveViewed(root, marks)
+      setMarksFor({ root, marks })
     },
     [root]
   )
@@ -238,7 +233,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       if (cancelled || mine !== seq.current) return
       const { text, truncated, notRepo, toplevel } = res
       const paths = Object.keys(git)
-      const secs = splitAggregateDiff(text)
+      const secs = flagCutTail(splitAggregateDiff(text), truncated)
       const map = sectionsByPath(secs, paths, toplevel)
       const wanted = truncated
         ? []
@@ -656,8 +651,7 @@ const ChangeBlock = memo(function ChangeBlock({
     [parsable, folded, viewed, diffText]
   )
 
-  const body = ((): JSX.Element | null => {
-    if (viewed) return null
+  const body = ((): JSX.Element => {
     if (view === 'source') {
       return (
         <BlockSource path={entry.path} seen={seen} version={section?.text} nonce={sourceNonce} />
@@ -758,14 +752,16 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={viewed ? 'on' : undefined}
             aria-pressed={viewed}
-            disabled={!section}
+            disabled={!canMarkViewed(section)}
             title={
               viewed
                 ? 'Viewed — uncheck to show the diff again'
                 : 'Mark this file as viewed and fold its diff'
             }
             onMouseDown={keepCaretInSessionTerminal}
-            onClick={() => section && onToggleViewed(entry.path, section)}
+            onClick={() => {
+              if (canMarkViewed(section)) onToggleViewed(entry.path, section)
+            }}
           >
             ✓ Viewed
           </button>
@@ -794,8 +790,12 @@ const ChangeBlock = memo(function ChangeBlock({
           </button>
         </div>
       </div>
-      {body}
-      {cut && !viewed && <div className="cv-note">{MSG.fileCutOff}</div>}
+      {!viewed && (
+        <>
+          {body}
+          {cut && <div className="cv-note">{MSG.fileCutOff}</div>}
+        </>
+      )}
     </div>
   )
 })
