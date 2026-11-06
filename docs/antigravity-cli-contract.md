@@ -361,7 +361,9 @@ only downloaded the public release.
   `WSL_DISTRO_NAME`, `WSL_INTEROP`; sign-in reads the three SSH variables and, with any
   one set, does not open the browser (it shows the URL and the paste field only); copy
   reads `SSH_CONNECTION` only and with it skips `pbcopy` and sends only OSC 52, so the
-  Mac clipboard is not changed; agy's terminal detection (`ssh=` in its log) reads the
+  Mac clipboard is not changed unless the terminal acts on OSC 52 (the binary also
+  holds the tmux passthrough wrapper `Ptmux;` next to `]52;c;`, `strings`, 2026-11-05);
+  agy's terminal detection (`ssh=` in its log) reads the
   three SSH variables; usage reports to Google read all five (they then say "SSH" or
   "WSL"). With `WSL_DISTRO_NAME` or `WSL_INTEROP`, sign-in, copy, copy-on-select,
   image paste and the escape codes agy sends were the same as with no variable. The

@@ -1645,6 +1645,12 @@ hooks.UserPromptSubmit=…` and `-c hooks.PostToolUse=…` gave keys
 `trusted_hash` into the machine's `CODEX_HOME/config.toml` with `awk` and `printf`, twice
 over, left one table each, and the machine's 0.162.0 then listed both hooks `trusted`.
 
+**A copy in the TUI goes through the terminal as OSC 52 when no system clipboard is
+reached.** The binary holds a native clipboard, a tmux clipboard and an OSC 52 fallback
+(`native clipboard: …; OSC 52 fallback: …`), writes OSC 52 to `/dev/tty`, and wraps it
+for tmux passthrough (`ESC Ptmux; … ESC \`). Which of them it picks on a machine with
+no display: read from the Mac's codex binary's `strings` (2026-11-05), not run.
+
 Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it

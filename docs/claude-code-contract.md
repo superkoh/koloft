@@ -2369,6 +2369,13 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   removed. A prompt handed over as a launch argument and holding such a character is
   cleaned and sent without review, or put back in the box for review when it starts
   with `/`: read from `strings` only, inferred, not checked.
+- **How a copy reaches the clipboard.** When Claude Code sees an ssh login it skips the
+  system tool (`pbcopy` on macOS; `wl-copy`, `xclip` or `xsel` on Linux) and relies on
+  the terminal; with no ssh it runs that tool. Either way it then writes the text out as
+  OSC 52 — inside tmux both bare and wrapped for tmux passthrough, and through
+  `tmux load-buffer -w -` too. Its debug log says which: `clipboard: setClipboard
+  mux=… ssh=… native=… emit=…`. Read from the 2.1.318 binary's `strings` (2026-11-05);
+  not run.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

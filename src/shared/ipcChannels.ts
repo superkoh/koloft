@@ -4,6 +4,7 @@ export const CH = {
     create: 'terminal:create',
     write: 'terminal:write',
     paste: 'terminal:paste',
+    copy: 'terminal:copy',
     ack: 'terminal:ack',
     attach: 'terminal:attach',
     flowStats: 'terminal:flowStats',
