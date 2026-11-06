@@ -2029,14 +2029,14 @@ const claudeDialogs = new ClaudeDialogWatch({
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  permissionDrawn: (tabId) => tracker.permissionDrawn(tabId),
+  dialogDrawn: (tabId) => tracker.dialogDrawn(tabId),
   closed: (tabId, stateAfter) => {
     askEnded(tabId, true)
     void askButtons?.check(tabId)
     if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
-tracker.permissionOnScreen = (tabId) => claudeDialogs.showsPermission(tabId)
+tracker.terminalDialog = (tabId) => claudeDialogs.dialog(tabId)
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)

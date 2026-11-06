@@ -19,6 +19,7 @@ import {
   type RealFilesOnMachine
 } from './realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
+import type { TerminalDialog } from './claudeDialogWatch'
 import { claudeToolDid } from './rowActivity'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
@@ -525,7 +526,7 @@ export class SessionTracker extends SessionRuntime {
       sessionId
     )
   leftBehind?: (sessionId: string) => boolean
-  permissionOnScreen: (tabId: string) => boolean = () => false
+  terminalDialog?: (tabId: string) => TerminalDialog | undefined
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
 
@@ -617,6 +618,8 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    // CC§14
+    if (event.type === 'notify' && this.terminalDialog?.(tabId) === 'just-closed') return
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
       if (t) this.compaction(t, event)
@@ -628,9 +631,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
-    // CC§12
-    if (turn === 'working' && this.permissionOnScreen(tabId)) this.recordHookTurn(tabId, 'approval')
-    else if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
+    if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
     else if (turn)
       void this.reportTurnEnd(tabId, event.type === 'stop' ? event.reported : undefined)
@@ -662,7 +663,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§12 CC§14
-  permissionDrawn(tabId: string): void {
+  dialogDrawn(tabId: string): void {
     if (this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, 'approval')
   }
 
@@ -684,7 +685,9 @@ export class SessionTracker extends SessionRuntime {
 
   private applyStatus(t: Tracked, turn: Turn, heldByBackground = false): void {
     if (this.tracked.get(t.info.tabId) !== t) return
-    this.recordTurn(t.info.tabId, turn, heldByBackground)
+    // CC§12
+    const shown = this.terminalDialog?.(t.info.tabId) === 'on-screen' ? 'approval' : turn
+    this.recordTurn(t.info.tabId, shown, heldByBackground)
   }
 
   protected override statusChanged(tabId: string, status: SessionStatus): void {

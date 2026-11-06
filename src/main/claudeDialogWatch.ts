@@ -1,9 +1,11 @@
 import { PROGRAM_STATUS_REPLY, ProgramStatusParser } from './programStatus'
 
+export type TerminalDialog = 'on-screen' | 'just-closed'
+
 export interface ClaudeDialogWatchDeps {
   watchedProcess(tabId: string): object | undefined
   reply(tabId: string, text: string): void
-  permissionDrawn(tabId: string): void
+  dialogDrawn(tabId: string): void
   closed(tabId: string, stateAfter: string): void
 }
 
@@ -11,11 +13,14 @@ interface Watched {
   process: object
   parser: ProgramStatusParser
   reporting: boolean
-  blocked?: string
-  permission?: boolean
+  blocked?: { msg: string; kind?: string }
+  closedAt?: number
 }
 
 const STATES_AFTER_A_DIALOG = new Set(['working', 'idle', 'done'])
+// CC§12 CC§14
+const DIALOG_KINDS = new Set(['permission', 'question'])
+export const A_HOOK_LINE_FIRED_BEFORE_THE_ANSWER_LANDS_WITHIN_MS = 5_000
 
 // CC§12 CC§14
 export class ClaudeDialogWatch {
@@ -35,30 +40,40 @@ export class ClaudeDialogWatch {
     if (asked) this.d.reply(tabId, PROGRAM_STATUS_REPLY)
     for (const { state, kind, msg } of states) {
       w.reporting = true
+      const was = w.blocked?.msg
       const next = state === 'blocked' ? (msg ?? '') : undefined
       const left =
-        w.blocked !== undefined &&
-        next !== w.blocked &&
+        was !== undefined &&
+        next !== was &&
         (next !== undefined || STATES_AFTER_A_DIALOG.has(state))
-      const drawn = next !== undefined && next !== w.blocked
-      w.blocked = next
-      w.permission = next !== undefined && kind === 'permission'
-      if (left) this.d.closed(tabId, state)
-      if (drawn && kind === 'permission') this.d.permissionDrawn(tabId)
+      const drawn = next !== undefined && next !== was
+      w.blocked = next === undefined ? undefined : { msg: next, kind }
+      if (left) {
+        w.closedAt = Date.now()
+        this.d.closed(tabId, state)
+      }
+      if (drawn && DIALOG_KINDS.has(kind ?? '')) this.d.dialogDrawn(tabId)
     }
   }
 
   showsDialogsClosing(tabId: string): boolean {
-    const w = this.tabs.get(tabId)
-    return !!w?.reporting && w.process === this.d.watchedProcess(tabId)
+    return !!this.current(tabId)?.reporting
   }
 
-  showsPermission(tabId: string): boolean {
-    const w = this.tabs.get(tabId)
-    return !!w?.permission && w.process === this.d.watchedProcess(tabId)
+  dialog(tabId: string): TerminalDialog | undefined {
+    const w = this.current(tabId)
+    if (!w) return undefined
+    if (DIALOG_KINDS.has(w.blocked?.kind ?? '')) return 'on-screen'
+    const since = w.closedAt === undefined ? Infinity : Date.now() - w.closedAt
+    return since < A_HOOK_LINE_FIRED_BEFORE_THE_ANSWER_LANDS_WITHIN_MS ? 'just-closed' : undefined
   }
 
   forget(tabId: string): void {
     this.tabs.delete(tabId)
+  }
+
+  private current(tabId: string): Watched | undefined {
+    const w = this.tabs.get(tabId)
+    return w?.process === this.d.watchedProcess(tabId) ? w : undefined
   }
 }

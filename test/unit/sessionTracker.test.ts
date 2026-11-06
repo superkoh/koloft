@@ -919,6 +919,52 @@ describe('SessionTracker — run-state', () => {
     expect(s.status).toBe('working')
   })
 
+  // CC§12 CC§14
+  it("while claude's terminal shows a dialog the row waits on you whatever a hook or the transcript says, and a permission hook read just after the dialog closed is not taken", async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    let dialog: 'on-screen' | 'just-closed' | undefined
+    tracker.terminalDialog = () => dialog
+    tracker.track('tabD', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
+    tracker.bindSession('tabD', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabD' && x.status === 'waiting' && !!x.title)
+    tracker.receive('tabD', { type: 'prompt' })
+
+    dialog = 'on-screen'
+    tracker.dialogDrawn('tabD')
+    expect(tracker.statusOf('tabD')).toBe('approval')
+    tracker.receive('tabD', { type: 'prompt' })
+    fs.appendFileSync(
+      file,
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg_dialog',
+          model: 'claude-opus-4-8',
+          content: [
+            { type: 'tool_use', id: 'toolu_dialog', name: 'Bash', input: { command: 'ls' } }
+          ],
+          usage: { input_tokens: 1, output_tokens: 1 }
+        },
+        cwd
+      }) + '\n'
+    )
+    await waitFor(tracker, (x) => x.tabId === 'tabD' && !!x.usage)
+    expect(tracker.statusOf('tabD')).toBe('approval')
+
+    dialog = 'just-closed'
+    tracker.dialogAnswered('tabD')
+    expect(tracker.statusOf('tabD')).toBe('working')
+    tracker.receive('tabD', { type: 'notify', need: 'approval' })
+    expect(tracker.statusOf('tabD')).toBe('working')
+
+    dialog = undefined
+    tracker.receive('tabD', { type: 'notify', need: 'approval' })
+    expect(tracker.statusOf('tabD')).toBe('approval')
+  })
+
   // CC§2
   it('an assistant record flushed just after Stop does not bounce a waiting dot', async () => {
     const cwd = makeWorkspace({})
