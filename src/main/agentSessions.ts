@@ -46,6 +46,8 @@ import {
   FROM_A_SESSION,
   FROM_KOLOFT,
   crossSessionLine,
+  fitsACrossSessionMessage,
+  wrappedLine,
   type ModeClass
 } from './crossSessionMessage'
 import {
@@ -1091,13 +1093,14 @@ export function sessionVerb(d: SessionVerbDeps): {
   const sendNow = async (
     t: Target,
     text: string,
-    line: string | undefined,
+    lineFor: ((tab: string) => string) | undefined,
     until: number,
     from: string,
     assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
+    const line = lineFor?.(tab)
     const owed = assist
       ? {
           owner: assist,
@@ -1155,6 +1158,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
         EXIT_USAGE
       )
+    const lineFor = line === undefined ? undefined : () => line
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     const assist = fromAssist ? caller.session.sessionId : undefined
     if (t.tabId && !busy) {
@@ -1163,7 +1167,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const sent = await sendNow(
         t,
         text,
-        line,
+        lineFor,
         Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
         caller.session.sessionId,
         assist
@@ -1173,7 +1177,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     void sendNow(
       t,
       text,
-      line,
+      lineFor,
       Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
       caller.session.sessionId,
       assist
@@ -1499,18 +1503,19 @@ export function sessionVerb(d: SessionVerbDeps): {
     const t = targetOf(ref)
     if (!t) return { ok: false, why: `There is no session ${ref} any more` }
     const route = messagingOf(t.backend, !!t.remote)
-    const line =
-      route === 'peerLine'
-        ? crossSessionLine('prompting', text, `koloft-inbox-${++lined}`)
-        : undefined
-    if (line === null) return { ok: false, why: 'The message holds text the session cannot take' }
+    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
+      return { ok: false, why: 'The message holds text the session cannot take' }
+    const id = `koloft-inbox-${++lined}`
+    // ADR-0028
+    const lineFor =
+      route === 'peerLine' ? (tab: string) => wrappedLine(d.modeOf(tab), text, id) : undefined
     const woke = !t.tabId
     const busy = route === 'typed' && !!t.tabId && !(await d.ready(t.tabId, 0, true))
     const until =
       Date.now() +
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
     try {
-      await sendNow(t, text, line, until, INBOX_SENDER)
+      await sendNow(t, text, lineFor, until, INBOX_SENDER)
       return {
         ok: true,
         session: t.key,

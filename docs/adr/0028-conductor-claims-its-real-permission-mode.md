@@ -40,6 +40,20 @@ socket by accident (a `koloft session send` is wrapped as "From the session …"
 starts with `[Discord]`); a program set on pretending to be the
 owner can read an id, and nothing stops it.
 
+## The owner's words from an Inbox card
+
+**Decision**: a button on an Inbox card that sends the owner's words to a Claude session
+(Send on a "waits for you" card, or a card action of type `session`) claims the receiving
+session's own class, read once Koloft has the tab — after waking it, when it was closed
+— just as the Discord relay does. The sender is the owner pressing a button at the Mac,
+not another session, so this is not the rejected "always claim bypass" either. Claiming
+`prompting` had every message to a bypass session held behind the dialog, with the owner
+pressing Deliver in the session's own tab, so the Inbox saved them nothing.
+**Limit**: the class is the one the session was launched with. A session the owner
+switched to another mode mid-session (Shift+Tab) still holds the message: only the Assist
+takes `crossSessionInbound: "accept"`, and giving it to every session would let any
+session's message through to any other.
+
 **Codex and Muse Assists, by the words instead of an id**: a message reaches them as plain
 text (queued for Codex, typed for Muse), with no id their hook can see (CODEX§33), while
 another program can reach them the same way — `codex queue` for Codex (CODEX§33); for
