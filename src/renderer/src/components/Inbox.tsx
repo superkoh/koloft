@@ -29,6 +29,7 @@ import {
   type InboxState
 } from '@shared/inbox'
 import { useStore } from '../store'
+import { IconInbox } from '../icons'
 import { isComposing } from '../keys'
 import { everyWorkspaceRows } from '../butlerRows'
 import { openSessionRow, visitTab } from '../sessionClick'
@@ -138,6 +139,12 @@ function tagOf(card: InboxCard): string {
   return [card.sourceName, ...Object.values(card.where)].join(' · ')
 }
 
+function waitingLine(waiting: number, high: number): string {
+  if (!waiting) return 'Nothing needs you'
+  const line = `${waiting} need${waiting === 1 ? 's' : ''} you`
+  return high ? `${line} · ${high} high` : line
+}
+
 export function InboxRow(): JSX.Element {
   const open = useStore((s) => s.inboxOpen)
   const cards = useStore((s) => s.inbox.cards)
@@ -145,10 +152,24 @@ export function InboxRow(): JSX.Element {
   return (
     <div className="ibx-entry-wrap">
       <div
-        className={'ibx-entry' + (open ? ' on' : '')}
+        className={'ibx-entry' + (c.badge > 0 ? ' lit' : '') + (open ? ' on' : '')}
         onClick={() => useStore.getState().setInboxOpen(true)}
       >
-        <span className="ibx-entry-name">Inbox</span>
+        <svg className="ibx-ink-defs" aria-hidden>
+          <linearGradient id="ibx-ink" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="var(--accent)" />
+            <stop offset="1" stopColor="var(--fable)" />
+          </linearGradient>
+        </svg>
+        <span className="ibx-entry-icon">
+          <IconInbox size={18} fill="url(#ibx-ink)" />
+        </span>
+        <span className="ibx-entry-text">
+          <span className="ibx-entry-name">Inbox</span>
+          <span className="ws-tab-sub">
+            <span>{waitingLine(c.byState['needs-you'], c.high)}</span>
+          </span>
+        </span>
         {c.badge > 0 && <span className={'ibx-count' + (c.high ? ' high' : '')}>{c.badge}</span>}
       </div>
     </div>
