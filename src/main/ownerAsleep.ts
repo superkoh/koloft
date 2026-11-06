@@ -105,7 +105,7 @@ export class OwnerAsleep {
   private settled = new Set<string>()
   private everMarked = new Set<string>()
   private generation = 0
-  private answering = new Set<string>()
+  private answering = new Map<string, { askedAgain: boolean }>()
 
   constructor(
     private readonly d: OwnerAsleepDeps,
@@ -179,23 +179,38 @@ export class OwnerAsleep {
   }
 
   async asks(tabId: string): Promise<void> {
-    if (!this.answersFor(tabId) || this.answering.has(tabId)) return
-    this.answering.add(tabId)
+    if (!this.answersFor(tabId)) return
+    const answering = this.answering.get(tabId)
+    if (answering) return void (answering.askedAgain = true)
+    const run = { askedAgain: false }
+    this.answering.set(tabId, run)
+    let answeredText: string | undefined
     try {
-      const asked = await this.d.asked(tabId)
-      if (!asked) return
-      const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
-      for (const reply of repliesTo(asked)) {
-        entry.failed = await this.d.answer(tabId, reply)
-        if (entry.failed === ANSWER_NOT_TAKEN) break
-        if (entry.failed === undefined) {
-          entry.gave = reply
-          break
-        }
-      }
-      this.keepAnswered([...this.answered, entry])
+      do {
+        run.askedAgain = false
+        answeredText = await this.answerShowing(tabId, answeredText)
+      } while (run.askedAgain && this.answersFor(tabId))
     } finally {
       this.answering.delete(tabId)
     }
+  }
+
+  private async answerShowing(
+    tabId: string,
+    answeredText: string | undefined
+  ): Promise<string | undefined> {
+    const asked = await this.d.asked(tabId)
+    if (!asked || asked.text === answeredText) return answeredText
+    const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
+    for (const reply of repliesTo(asked)) {
+      entry.failed = await this.d.answer(tabId, reply)
+      if (entry.failed === ANSWER_NOT_TAKEN) break
+      if (entry.failed === undefined) {
+        entry.gave = reply
+        break
+      }
+    }
+    this.keepAnswered([...this.answered, entry])
+    return asked.text
   }
 }

@@ -72,6 +72,7 @@ function setup(over: Partial<OwnerAsleepDeps> = {}, since: number | null = null)
     down,
     machines,
     reports,
+    settle,
     fallAsleep,
     wakeAfter
   }
@@ -114,6 +115,70 @@ describe('owner asleep', () => {
     await t.fallAsleep()
     t.asks.set('a', question('Pick one'))
     await t.asleep.asks('a')
+    expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
+  })
+
+  it('a second question asked while Koloft waits to see its first answer taken is answered once that wait ends', async () => {
+    const t = setup()
+    let landed: (() => void) | undefined
+    t.d.answer = async (tabId, reply) => {
+      t.replies.push([tabId, reply])
+      t.asks.delete(tabId)
+      if (t.replies.length === 1) await new Promise<void>((r) => (landed = r))
+      return undefined
+    }
+    await t.fallAsleep()
+    t.asks.set('a', question('Blue or red?'))
+    const first = t.asleep.asks('a')
+    await t.settle()
+    landed?.()
+    t.asks.set('a', approval('npm publish'))
+    await t.asleep.asks('a')
+    await first
+    expect(t.replies).toEqual([
+      ['a', OWNER_ASLEEP_ANSWER],
+      ['a', 'yes']
+    ])
+    await t.wakeAfter(HOUR_MS)
+    expect(t.reports[0]).toContain(
+      '2. "Session a" asked to be allowed: "npm publish"; Koloft allowed it.'
+    )
+  })
+
+  it('a dialog Koloft already answered gets no second answer when the session signals it again during the wait, whether or not the answer was seen taken', async () => {
+    for (const outcome of [undefined, ANSWER_NOT_TAKEN]) {
+      const t = setup()
+      let ended: (() => void) | undefined
+      t.d.answer = async (tabId, reply) => {
+        t.replies.push([tabId, reply])
+        if (t.replies.length === 1) await new Promise<void>((r) => (ended = r))
+        return outcome
+      }
+      await t.fallAsleep()
+      t.asks.set('a', question('Blue or red?'))
+      const first = t.asleep.asks('a')
+      await t.settle()
+      await t.asleep.asks('a')
+      ended?.()
+      await first
+      expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
+    }
+  })
+
+  it('a question that shows while Koloft is still looking for one on that tab is answered too', async () => {
+    const t = setup()
+    await t.fallAsleep()
+    let looked: (() => void) | undefined
+    t.d.asked = async (tabId) => {
+      const showing = t.asks.get(tabId)
+      if (!looked) await new Promise<void>((r) => (looked = r))
+      return showing
+    }
+    const first = t.asleep.asks('a')
+    t.asks.set('a', question('Blue or red?'))
+    await t.asleep.asks('a')
+    looked?.()
+    await first
     expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
