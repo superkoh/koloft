@@ -774,6 +774,7 @@ function Card({
   const can = (a: InboxAction): boolean => ready && answersComplete(card, a, answers)
   const when = <span className="ibx-time">{relTime(card.happenedAt ?? card.stateSince, now)}</span>
   const stop = (e: MouseEvent): void => e.stopPropagation()
+  const actsRow = useRef<HTMLDivElement>(null)
 
   const undo = p?.step === 'waiting' && (
     <button className="ibx-undo" onClick={() => window.api.inbox.undo(card.id)}>
@@ -806,7 +807,7 @@ function Card({
     const first = out[0]
     const needsOpen = !first || first.style === 'danger' || !!first.takes?.length
     const openUnlessInActs = (e: MouseEvent): void => {
-      if (!(e.target as HTMLElement).closest('.ibx-acts')) onOpen()
+      if (!actsRow.current?.contains(e.target as Node)) onOpen()
     }
     return (
       <div className="ibx-item" data-cid={card.id} onClick={openUnlessInActs}>
@@ -814,7 +815,7 @@ function Card({
         <div className="ibx-what">{card.title}</div>
         <div className="ibx-foot">
           {when}
-          <div className="ibx-acts">
+          <div className="ibx-acts" ref={actsRow}>
             {undo ||
               spinning ||
               (needsOpen ? (
