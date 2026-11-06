@@ -119,9 +119,9 @@ describe('Koloft Assist', () => {
       const cases = answers.map((step, i) => `  ${i + 1}) ${step} ;;`).join('\n')
       fs.writeFileSync(
         bin,
-        `#!/bin/sh\ntries() { wc -l < ${JSON.stringify(count)} | tr -d ' '; }\n` +
+        `#!/bin/sh\ncount_tries() { wc -l < ${JSON.stringify(count)} | tr -d ' '; }\n` +
           `cat > /dev/null\necho x >> ${JSON.stringify(count)}\n` +
-          `n=$(tries)\ncase "$n" in\n${cases}\nesac\n`,
+          `n=$(count_tries)\ncase "$n" in\n${cases}\nesac\n`,
         { mode: 0o755 }
       )
       return { bin, tries: () => read(count)?.trim().split('\n').length ?? 0 }
@@ -152,7 +152,7 @@ describe('Koloft Assist', () => {
 
     it('still takes the first try’s answer when it comes in after the second try started', async () => {
       const codex = codexThatAnswersOnTry([
-        'until [ "$(tries)" -ge 2 ]; do sleep 0.05; done; echo From the first try',
+        `until [ "$(count_tries)" -ge 2 ]; do sleep 0.05; done; sleep ${(0.4 * LIMIT_MS) / 1000}; echo From the first try`,
         'exec sleep 30'
       ])
       const reply = await (await lateAssist(codex.bin))(JOB)
