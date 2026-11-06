@@ -726,14 +726,12 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     await openThePortItLists(app, page, port)
   })
 
-  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell, and an Antigravity session leaves out agy’s own ports', async ({
+  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell', async ({
     env
   }) => {
     installCodex(env)
     installMuse(env)
     trustInMuse(env, env.workspaces.a)
-    installAgy(env)
-    trustInAgy(env, env.workspaces.a)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -750,9 +748,26 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(musePort)}`)
       await expect.poll(() => answers(musePort), { timeout: 30_000 }).toBe(true)
       await openThePortItLists(app, page, musePort)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
+  test('WB-T29: an Antigravity session’s + menu leaves out the ports agy itself listens on', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
       await newSessionInWith(page, 'ws-a', 'Antigravity')
-      await expect(wsRows(page, 'ws-a')).toHaveCount(3, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), 'warm up')
+      await expect(wsRows(page, 'ws-a').filter({ hasText: 'warm up' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
       await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
       await expect((await newTabMenuPorts(page)).locator('.mi.head')).toHaveText(
         'No listening ports'

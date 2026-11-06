@@ -1920,7 +1920,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           })
           .toEqual([codexPort])
 
-        await startSessionIn(page, 'kt-key', { remote: true })
+        await startSessionIn(page, 'kt-key', { remote: true, method: 'Claude' })
         const tabs = await wsRows(page, 'kt-key').evaluateAll((rows) =>
           rows.map((r) => r.getAttribute('data-tab-id'))
         )
