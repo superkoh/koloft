@@ -3,16 +3,15 @@ import os from 'os'
 import path from 'path'
 import {
   HIDDEN_BY_DEFAULT_NAMES,
+  type BaseChoice,
   type DirEntry,
   type EditCreateResult,
   type EditFingerprint,
   type EditWriteResult,
-  type GitNumstatMap,
-  type GitStatusMap,
+  type GitChanges,
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { portOffset } from '@shared/worktreeName'
@@ -22,15 +21,26 @@ import {
   bytesToWrite,
   checkNewFileName,
   editOpenResult,
-  looksBinary,
-  sameFingerprint
+  isFingerprint,
+  looksBinary
 } from '../fileEdit'
-import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
+import {
+  GIT_TIMEOUT_MS,
+  coalesce,
+  gitOps,
+  numstatFrom,
+  statusFrom,
+  type GitOps
+} from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
-import { remoteShCommand } from '../remote/install'
+import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
+import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
+  claudeTabSpec,
   killSessionCmd,
+  machineToolProgram,
+  renameSessionCmd,
   resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
@@ -48,15 +58,45 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
+  backgroundOptions,
   ensureControlDir,
+  machineOutOfReach,
+  needsSignIn,
   problemOf,
   sshLinkBroke,
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
+import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { remoteMuseHooks, sessionStartContext } from '../museHooks'
+import {
+  discordSaidLine,
+  HOLD_FILE,
+  NOTICE_THIS_TURN,
+  noticeLine,
+  OWNER_ASLEEP_FILE,
+  ownerAsleepMarker,
+  remoteDiscordIdsFile,
+  remoteDiscordSaidFile,
+  remoteNoticeFile,
+  type NoticeFile
+} from '../hooks'
 import { claudeArgv } from '../claudeArgs'
+import type { SummaryRow } from '../agyStore'
+import {
+  AGY_HELD_ELSEWHERE_EXIT,
+  AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
+  agyHeldCmd,
+  agySendCmd,
+  listAgyCmd,
+  parseAgyConfig,
+  readAgyConfigCmd,
+  type AgyMachineLaunch,
+  type AgyMachinePlan,
+  type RemoteAgyConfig
+} from '../remote/agyTab'
 import { listSkills, type SkillFs } from '../skillList'
-import { worktreeNameAround } from '../resumePlan'
+import { worktreeNameAround, type GitOut } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -69,19 +109,55 @@ export interface MachineClaudeDeps {
   controlDir: string
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
+  firstHeartbeatDone(): Promise<void>
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
-  pickAccount(launchKey: string): Promise<MachineAccount | undefined>
+  pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
+  noAccountMessage(): string
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
+}
+
+export interface MuseMachineLaunch {
+  cwd: string
+  fallbackCwd?: string
+  resumeSessionId?: string
+  account: { name: string; auth(): string }
+  banner?: string
+  args: string[]
+  sandboxed: boolean
+  trust: string[]
+  trustIf?: string
+  context?: string
+  koloftSkill: boolean
+  portOffset?: number
+  ownerWords?: string
+  holdWhileBusy?: boolean
+}
+
+export interface MuseMachinePlan {
+  attach: boolean
+  tmuxName(tabId: string): string
+  launchCommand(tabId: string): string
+  resized(tabId: string, cols: number, rows: number): void
 }
 
 export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
+  watch(path: string, onChange: (stamp: string) => void): void
+  unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
+}
+
+function machinePermission(
+  spec: ClaudeLaunch,
+  skipPermissions: boolean
+): ClaudeLaunch['permission'] {
+  if (spec.permission && spec.permission !== 'default') return spec.permission
+  return skipPermissions ? 'bypass' : undefined
 }
 
 // CC§9
@@ -96,47 +172,57 @@ export function machineClaudeArgs(
     worktree: spec.worktree,
     model: spec.model,
     effort: spec.effort,
-    permission:
-      spec.permission && spec.permission !== 'default'
-        ? spec.permission
-        : skipPermissions
-          ? 'bypass'
-          : undefined
+    permission: machinePermission(spec, skipPermissions)
   })
   if (!argv.ok) return argv
-  const unwatched = !spec.resumeSessionId && spec.firstPrompt !== undefined
+  const fresh = !spec.resumeSessionId
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
-      ...(unwatched && spec.name ? ['--name', spec.name] : []),
-      ...(unwatched && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
+      ...(fresh && spec.name ? ['--name', spec.name] : []),
+      ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }
 }
 
-const TRUST_CWD_JS = [
+const CLAUDE_TRUST_JS = [
   'const fs=require("fs"),path=require("path");',
   'const [f,d]=process.argv.slice(1);',
+  'let top=null;',
+  'for(let x=d;;x=path.dirname(x)){',
+  'let s;try{s=fs.lstatSync(path.join(x,".git"))}catch(e){}',
+  'if(s&&(s.isDirectory()||s.isFile())){top=x;if(s.isFile())try{',
+  'const l=fs.readFileSync(path.join(x,".git"),"utf8").split("\\n").find((l)=>l.startsWith("gitdir:"));',
+  'const g=path.resolve(x,l.slice(7).trim());',
+  'top=path.dirname(path.resolve(g,fs.readFileSync(path.join(g,"commondir"),"utf8").trim()));',
+  'try{top=fs.realpathSync(top)}catch(e){}',
+  '}catch(e){top=x}break}',
+  'if(path.dirname(x)===x)break}',
+  'const trusted=(p)=>{',
+  'const ok=(x)=>p[x]&&p[x].hasTrustDialogAccepted===true;',
+  'if(top!==null&&d!==top&&!d.startsWith(top.endsWith("/")?top:top+"/"))return ok(d);',
+  'for(let x=d;;x=path.dirname(x)){',
+  'if(ok(x))return true;',
+  'if(x===top||path.dirname(x)===x)return false}};'
+].join('')
+
+const TRUST_CWD_JS = [
+  CLAUDE_TRUST_JS,
   'let j={};',
   'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
   'const p=(j.projects=j.projects||{});',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)break}',
+  'if(trusted(p))process.exit(0);',
   'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
   'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
   'fs.renameSync(f+".koloft",f)'
 ].join('')
 
 const TRUSTED_JS = [
-  'const fs=require("fs"),path=require("path");',
-  'const [f,d]=process.argv.slice(1);',
+  CLAUDE_TRUST_JS,
   'let p={};',
   'try{p=JSON.parse(fs.readFileSync(f,"utf8")).projects||{}}catch(e){}',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)process.exit(1)}'
+  'process.exit(trusted(p)?0:1)'
 ].join('')
 
 const NOT_TRUSTED = 1
@@ -147,8 +233,13 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-// PLATFORM§37
-const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
+  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code, Codex or Muse session there first'
+const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
+const WHOLE_FILE_READ_MS = 120_000
+const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4
+
+const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
 const EXIT_GONE = 44
 const EXIT_NOT_FILE = 45
@@ -179,12 +270,22 @@ export function parseFingerprint(line: string): EditFingerprint | null {
   return Number.isFinite(mtimeMs) && Number.isFinite(bytes) ? { mtimeMs, size: bytes } : null
 }
 
-function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
-  const nl = buf.indexOf(0x0a)
-  return nl < 0
-    ? { header: buf.toString('utf8'), body: Buffer.alloc(0) }
-    : { header: buf.toString('utf8', 0, nl), body: buf.subarray(nl + 1) }
+function lineAt(buf: Buffer, at: number): [string, number] {
+  const nl = buf.indexOf(0x0a, at)
+  return nl < 0 ? [buf.toString('utf8', at), buf.length] : [buf.toString('utf8', at, nl), nl + 1]
 }
+
+function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
+  const [header, body] = lineAt(buf, 0)
+  return { header, body: buf.subarray(body) }
+}
+
+const REAL_FILES = `while IFS= read -r f; do
+  case $f in '~/'*) p=$HOME/\${f#\\~/} ;; *) p=$f ;; esac
+  [ -f "$p" ] || continue
+  r=$(realpath "$p" 2>/dev/null || readlink -f "$p" 2>/dev/null) || r=
+  printf '%s\\0%s\\0' "$f" "\${r:-$p}"
+done`
 
 const LIST_DIR = `cd "$1" 2>/dev/null || exit 0
 for f in .* *; do
@@ -281,12 +382,10 @@ d=-; [ -w "$(dirname "$1")" ] && d=w
 printf '%s %s %s\\n' "$f" "$w" "$d"
 cat "$1"`
 
-const FINGERPRINT_ONLY = `p=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
-[ -e "$p" ] || { [ -d "$(dirname "$p")" ] && exit ${EXIT_GONE}; exit ${EXIT_DIR_GONE}; }
-[ -f "$p" ] || exit ${EXIT_NOT_FILE}
-${FINGERPRINT}
-fp "$p"`
+const ANY_FINGERPRINT = '-'
+const NO_FINGERPRINT = 'none'
 
+// PLATFORM§37
 const WRITE_IF_UNCHANGED = `p=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
 [ -e "$p" ] || { [ -d "$(dirname "$p")" ] && exit ${EXIT_GONE}; exit ${EXIT_DIR_GONE}; }
 [ -f "$p" ] || exit ${EXIT_NOT_FILE}
@@ -294,7 +393,8 @@ ${FINGERPRINT}
 t="$(dirname "$p")/.$(basename "$p").koloft-tmp-$$"
 cp -p "$p" "$t" 2>/dev/null || exit ${EXIT_NO_PERM}
 cat > "$t" || { rm -f "$t"; exit ${EXIT_WRITE_FAILED}; }
-if [ "$2" != - ] && [ "$(fp "$p")" != "$2" ]; then rm -f "$t"; printf 'stale '; fp "$p"; exit 0; fi
+if [ "$2" != ${ANY_FINGERPRINT} ] && ! fp "$p" | awk -v ms="$2" -v sz="$3" '{ same = $1 * 1000 == ms && $2 == sz } END { exit !same }'
+then rm -f "$t"; printf 'stale '; fp "$p"; exit 0; fi
 mv -f "$t" "$p" || { rm -f "$t"; exit ${EXIT_WRITE_FAILED}; }
 printf 'ok '; fp "$p"`
 
@@ -309,21 +409,94 @@ fp "$t"`
 
 const GIT = `GIT_OPTIONAL_LOCKS=0 git "$@"`
 
-const DIFF_BASE = `r=$1
-g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
-def=
-ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
-  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
-if [ -z "$def" ]; then
-  for c in origin/main origin/master main master; do
-    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+const GIT_IN_REPO = `g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }`
+
+const DEFAULT_REF = `dr() {
+  ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+    g rev-parse --verify --quiet "$ref" >/dev/null && { printf '%s' "$ref"; return 0; }
+  for c in "$@"; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { printf '%s' "$c"; return 0; }
   done
-fi
-if [ -n "$def" ]; then
-  mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
-fi
-g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
+  return 1
+}`
+
+const MERGE_BASE = `${DEFAULT_REF}
+db() {
+  def=$(dr origin/main origin/master main master)
+  if [ -n "$def" ]; then
+    mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; return 0; }
+  fi
+  g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
+  return 0
+}`
+
+const DIFF_BASE = `r=$1
+${GIT_IN_REPO}
+${MERGE_BASE}
+db
 exit 0`
+
+const CHANGES_GONE = 'gone'
+const CHANGES_NOT_A_REPO = 'norepo'
+const CHANGES_REPO = 'repo'
+
+// PLATFORM§37
+const CHANGES = `r=$1
+${GIT_IN_REPO}
+${MERGE_BASE}
+[ -d "$r" ] || { echo ${CHANGES_GONE}; exit 0; }
+top=$(g rev-parse --show-toplevel) || { echo ${CHANGES_NOT_A_REPO}; exit 0; }
+if [ "$2" = head ]; then b=HEAD; else b=$(db); fi
+o=$(mktemp) || exit 1
+trap 'rm -f "$o"' EXIT
+part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
+printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
+ns=1 nb=1
+if [ -n "$b" ]; then
+  part nameStatus g diff --name-status -z "$b" --; ns=$c
+  part vsBase g diff "$b" --numstat -z --; nb=$c
+fi
+part others g -C "$top" ls-files --others --exclude-standard -z --full-name
+part unmerged g -C "$top" ls-files -u -z --full-name
+[ "$ns" = 0 ] || part porcelain g status --porcelain=v1 -z
+[ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
+exit 0`
+
+const CHANGES_GIT_QUERIES_IN_A_ROW = 9
+
+function parseChanges(stdout: Buffer): GitChanges | null {
+  const [state, afterState] = lineAt(stdout, 0)
+  if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
+    return { base: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
+  if (state !== CHANGES_REPO) return null
+  const [base, afterBase] = lineAt(stdout, afterState)
+  const [toplevel, afterTop] = lineAt(stdout, afterBase)
+  const parts = new Map<string, string | null>()
+  for (let at = afterTop; at < stdout.length;) {
+    const [header, body] = lineAt(stdout, at)
+    const [name, code, bytes] = header.split(/\s+/)
+    const end = body + Number(bytes)
+    if (!Number.isInteger(end) || end > stdout.length) return null
+    parts.set(name, code === '0' ? stdout.toString('utf8', body, end) : null)
+    at = end
+  }
+  const out = (name: string): string | null => parts.get(name) ?? null
+  return {
+    base: base || null,
+    status: statusFrom(toplevel, {
+      nameStatus: out('nameStatus'),
+      others: out('others'),
+      porcelain: out('porcelain'),
+      unmerged: out('unmerged')
+    }),
+    numstat: numstatFrom(toplevel, {
+      vsBase: out('vsBase'),
+      cached: out('cached'),
+      unstaged: out('unstaged')
+    }),
+    missing: false
+  }
+}
 
 const SKILL_FILES = `printf '%s\\0' "$HOME"
 for b in "$1" "$HOME"; do
@@ -355,14 +528,100 @@ function skillFsOf(files: Map<string, string>): SkillFs {
   }
 }
 
-const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
-SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
+const NETWORK_ENV = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
+SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes"`
+
+const NETWORK_GIT = `${NETWORK_ENV} git "$@"`
+
+// PLATFORM§30
+const FRESHNESS = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+${FINGERPRINT}
+br=$(g rev-parse --abbrev-ref HEAD) && head=$(g rev-parse HEAD) || exit 1
+def=$(dr origin/main origin/master)
+l=0; [ -f "$r/.git" ] && l=1
+s=0; [ -e "$r/.gitmodules" ] && s=1
+fh=$(fp "$r/.git/FETCH_HEAD" 2>/dev/null) || fh=-
+printf '%s\\n%s\\n%s\\n%s %s\\n%s\\n' "$br" "$head" "$def" "$l" "$s" "$fh"
+[ "$br" != HEAD ] && [ -n "$def" ] || exit 0
+f=-
+if [ "$2" = 1 ]; then
+  if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
+  then f=1; else f=0; fi
+fi
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) && t=$(g rev-parse "$def") || exit 1
+printf '%s\\n%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}" "$t"`
+
+const PULLED = 'KOLOFT_PULLED'
+
+const FAST_FORWARD = `r=$1 from=$3
+${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2"
+ok=$?
+n=$(git -C "$r" rev-list --count "$from..HEAD" 2>/dev/null) || n=0
+printf '\\n${PULLED} %s\\n' "$n"
+( set -- "$r" 0
+${FRESHNESS}
+)
+exit $ok`
+
+export function parseFreshness(stdout: string): GitSnapshot | null {
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty, defHead] =
+    stdout.split('\n')
+  if (!branch || !head || fetchHead === undefined) return null
+  const [linked, subs] = flags.split(' ')
+  const snapshot: GitSnapshot = {
+    branch,
+    head,
+    defRef,
+    linked: linked === '1',
+    hasSubmodules: subs === '1',
+    tracking: null
+  }
+  if (fetched === undefined || fetched === '') return snapshot
+  const lr = parseLeftRight(counts ?? '')
+  if (!lr) return null
+  return {
+    ...snapshot,
+    tracking: {
+      fetched: fetched === '-' ? null : fetched === '1',
+      fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
+      ...lr,
+      dirty: dirty === 'dirty',
+      defHead: defHead ?? ''
+    }
+  }
+}
+
+const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
+const NOTE_DISCORD_ID = `mkdir -p "${REMOTE_HOOK_DIR}" && printf '%s\\n' "$2" >> "${remoteDiscordIdsFile('$1')}"`
+const NOTE_DISCORD_SAID = `mkdir -p "${REMOTE_HOOK_DIR}" && cat >> "${remoteDiscordSaidFile('$1')}"`
+const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+IFS= read -r fresh; IFS= read -r merged
+t="$fresh"; k=fresh
+[ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
+printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
+
+const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
+cat > "$f.part" && mv -f "$f.part" "$f"`
+
+const SAVE_PICK = `d="$HOME/.koloft/element-picks"
+mkdir -p "$d" && cd "$d" || exit 1
+find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
+cat > "$1.part" && mv -f "$1.part" "$1" && printf '%s/%s' "$(pwd -P)" "$1"`
 
 const RESIZE_SETTLE_MS = 200
+
+const REMOTE_FILE_LIST_FRESH_MS = 30_000
+
+// PLATFORM§35
+const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
 export class SshHost implements Host {
   readonly github: GithubLookup
@@ -370,6 +629,9 @@ export class SshHost implements Host {
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
+  private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
+  private wholeReads = 0
+  private wholeReadsWaiting: (() => void)[] = []
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -414,18 +676,45 @@ export class SshHost implements Host {
     })
   }
 
-  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
-    return this.runGit(GIT, root, args, timeoutMs)
-  }
+  gitOut: GitOut = (root, args, timeoutMs, onFailure) =>
+    this.runGit(GIT, root, args, timeoutMs, onFailure)
 
   private async runGit(
     script: string,
     root: string,
     args: string[],
-    timeoutMs?: number
+    timeoutMs?: number,
+    onFailure?: (stderr: string) => void
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
+    if (r.code !== 0) onFailure?.(r.stderr)
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  readonly freshness: FreshnessRunner = {
+    measure: async (root, fetchTimeoutMs) => {
+      const r = await this.sh(FRESHNESS, [this.bare(root), fetchTimeoutMs === null ? '0' : '1'], {
+        timeoutMs: (fetchTimeoutMs ?? 0) + GIT_TIMEOUT_MS
+      })
+      return {
+        snapshot: r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null,
+        enoent: false
+      }
+    },
+    pull: async (root, defBranch, from, timeoutMs) => {
+      const r = await this.sh(FAST_FORWARD, [this.bare(root), defBranch, from], { timeoutMs })
+      const stdout = r.stdout.toString('utf8')
+      const tail = PULLED_TAIL.exec(stdout)
+      return {
+        ok: r.code === 0,
+        stdout: tail ? stdout.slice(0, tail.index) : stdout,
+        stderr: r.stderr,
+        timedOut: r.code === null,
+        enoent: false,
+        count: tail ? Number(tail[1]) : 0,
+        after: tail ? parseFreshness(tail[2]) : null
+      }
+    }
   }
 
   async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
@@ -467,12 +756,46 @@ export class SshHost implements Host {
     return items.map((item) => ({ ...item, path: this.keyed(item.path) }))
   }
 
+  private testDir(dir: string) {
+    return this.sh('test -d "$1"', [this.bare(dir)])
+  }
+
   async dirExists(dir: string): Promise<boolean> {
-    return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
+    return (await this.testDir(dir)).code === 0
+  }
+
+  async dirExistsOrThrow(dir: string): Promise<boolean> {
+    const r = await this.testDir(dir)
+    if (sshLinkBroke(r)) throw new Error(problemOf(r))
+    return r.code === 0
+  }
+
+  async sessionDirThere(dir: string): Promise<boolean> {
+    const r = await this.testDir(dir)
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+    return r.code === 0 || sshLinkBroke(r)
+  }
+
+  async reachOrThrow(): Promise<void> {
+    const r = await this.sh('true', [])
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
+  }
+
+  async makeDir(dir: string): Promise<boolean> {
+    return (await this.sh('mkdir -- "$1"', [this.bare(dir)])).code === 0
   }
 
   async fileExists(file: string): Promise<boolean> {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
+  }
+
+  async realFiles(files: string[]): Promise<Map<string, string>> {
+    const r = await this.sh(REAL_FILES, [], { input: Buffer.from(files.join('\n') + '\n') })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    const out = new Map<string, string>()
+    const parts = r.stdout.toString('utf8').split('\0')
+    for (let i = 0; i + 1 < parts.length; i += 2) out.set(parts[i], parts[i + 1])
+    return out
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -480,12 +803,24 @@ export class SshHost implements Host {
     if (!q) return { hits: [], truncated: false }
     const showIgnored = !!opts?.showIgnored
     const bareRoot = this.bare(root)
-    const r = await this.sh(SEARCH_FILES, [bareRoot, showIgnored ? '1' : '0'], {
-      timeoutMs: GIT_TIMEOUT_MS
-    })
-    const found = r.code === 0 ? parseSearchFiles(r.stdout.toString('utf8')) : []
+    const found = (await this.fileList(bareRoot, showIgnored)) ?? []
     const ranked = rankFiles(found, bareRoot, q, showIgnored)
     return { ...ranked, hits: this.keyedPaths(ranked.hits) }
+  }
+
+  private fileList(bareRoot: string, showIgnored: boolean) {
+    const key = `${bareRoot}\0${showIgnored}`
+    const cached = this.fileLists.get(key)
+    if (cached) return cached
+    const listed = this.sh(SEARCH_FILES, [bareRoot, showIgnored ? '1' : '0'], {
+      timeoutMs: GIT_TIMEOUT_MS
+    }).then((r) => (r.code === 0 ? parseSearchFiles(r.stdout.toString('utf8')) : null))
+    const forget = (): void => {
+      if (this.fileLists.get(key) === listed) this.fileLists.delete(key)
+    }
+    this.fileLists.set(key, listed)
+    void listed.then((files) => (files ? setTimeout(forget, REMOTE_FILE_LIST_FRESH_MS) : forget()))
+    return listed
   }
 
   async searchContent(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -502,16 +837,16 @@ export class SshHost implements Host {
     return { ...found, hits: this.keyedPaths(found.hits) }
   }
 
-  diffBase(root: string): Promise<string | null> {
-    return this.git.diffBase(this.bare(root))
-  }
-
-  async gitStatus(root: string, base?: string): Promise<GitStatusMap> {
-    return this.keyedMap(await this.git.gitStatus(this.bare(root), base))
-  }
-
-  async gitNumstat(root: string, base?: string): Promise<GitNumstatMap> {
-    return this.keyedMap(await this.git.gitNumstat(this.bare(root), base))
+  gitChanges(root: string, base: BaseChoice): Promise<GitChanges> {
+    const bareRoot = this.bare(root)
+    return coalesce(['ssh', this.machine, 'changes', bareRoot, base].join('\0'), async () => {
+      const r = await this.sh(CHANGES, [bareRoot, base], {
+        timeoutMs: GIT_TIMEOUT_MS * CHANGES_GIT_QUERIES_IN_A_ROW
+      })
+      const got = r.code === 0 ? parseChanges(r.stdout) : null
+      if (!got) throw new Error(problemOf(r))
+      return { ...got, status: this.keyedMap(got.status), numstat: this.keyedMap(got.numstat) }
+    })
   }
 
   async gitDiff(root: string, base?: string) {
@@ -527,8 +862,8 @@ export class SshHost implements Host {
     return this.git.gitFileDiffFull(this.bare(file), base, untracked)
   }
 
-  private async readWithHeader(file: string, maxBytes: number) {
-    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)])
+  private async readWithHeader(file: string, maxBytes: number, timeoutMs?: number) {
+    const r = await this.sh(READ_TEXT, [this.bare(file), String(maxBytes)], { timeoutMs })
     if (r.code !== 0) throw failure(r, 'KOLOFT_READ_FAILED')
     const { header, body } = headerAndBody(r.stdout)
     const parts = header.split(' ')
@@ -543,6 +878,19 @@ export class SshHost implements Host {
     })
     if (looksBinary(body)) throw new Error('KOLOFT_BINARY')
     return body.toString('utf8')
+  }
+
+  async readBytes(file: string): Promise<Buffer> {
+    while (this.wholeReads >= WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS)
+      await new Promise<void>((free) => this.wholeReadsWaiting.push(free))
+    this.wholeReads++
+    try {
+      const read = this.readWithHeader(file, WHOLE_FILE_MAX_BYTES, WHOLE_FILE_READ_MS)
+      return (await read).body
+    } finally {
+      this.wholeReads--
+      this.wholeReadsWaiting.shift()?.()
+    }
   }
 
   async openForEdit(file: string) {
@@ -567,18 +915,13 @@ export class SshHost implements Host {
   ): Promise<EditWriteResult> {
     if (typeof text !== 'string') throw new Error('KOLOFT_WRITE_FAILED')
     if (Buffer.byteLength(text, 'utf8') > EDIT_WRITE_MAX_BYTES) throw new Error('KOLOFT_TOO_LARGE')
-    const force = opts?.force === true
-    const bare = this.bare(file)
-    let seen = '-'
-    if (!force) {
-      const r = await this.sh(FINGERPRINT_ONLY, [bare])
-      if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
-      seen = r.stdout.toString('utf8').trim()
-      const fp = parseFingerprint(seen)
-      if (!fp) throw new Error('KOLOFT_WRITE_FAILED')
-      if (!sameFingerprint(expect, fp)) return this.staleResult(file, fp)
-    }
-    const r = await this.sh(WRITE_IF_UNCHANGED, [bare, seen], {
+    const want =
+      opts?.force === true
+        ? [ANY_FINGERPRINT, ANY_FINGERPRINT]
+        : isFingerprint(expect)
+          ? [String(expect.mtimeMs), String(expect.size)]
+          : [NO_FINGERPRINT, NO_FINGERPRINT]
+    const r = await this.sh(WRITE_IF_UNCHANGED, [this.bare(file), ...want], {
       input: bytesToWrite(text, opts?.eol)
     })
     if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
@@ -593,21 +936,35 @@ export class SshHost implements Host {
     checkNewFileName(name)
     const r = await this.sh(CREATE_FILE, [this.bare(dir), name])
     if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
+    this.fileLists.clear()
     const [created, fpLine] = r.stdout.toString('utf8').split('\n')
     const fp = parseFingerprint(fpLine ?? '')
     if (!created || !fp) throw new Error('KOLOFT_WRITE_FAILED')
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  watchDir(): boolean {
+  // PLATFORM§57
+  watchDir(dir: string, onChange: (dir: string) => void): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir))
     return false
   }
 
-  unwatchDir(): void {}
+  unwatchDir(dir: string): void {
+    this.deps.unwatch(this.bare(dir))
+  }
 
-  watchFile(): void {}
+  watchFile(
+    file: string,
+    onChange: (file: string, fp: { mtimeMs: number; size: number }) => void
+  ): void {
+    this.deps.watch(this.bare(file), (stamp) =>
+      onChange(file, parseFingerprint(stamp) ?? GONE_FROM_DISK)
+    )
+  }
 
-  unwatchFile(): void {}
+  unwatchFile(file: string): void {
+    this.deps.unwatch(this.bare(file))
+  }
 
   shell(cwd: string): ShellLaunch {
     return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
@@ -630,8 +987,60 @@ export class SshHost implements Host {
     return kill
   }
 
-  async answerAgent(requestId: string, reply: string): Promise<void> {
-    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  async endedByKoloft(sessionId: string): Promise<boolean> {
+    await this.kills.get(tmuxSessionName(sessionId))
+    return this.killedSessions.has(sessionId)
+  }
+
+  async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
+    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
+  }
+
+  async answerAgent(requestId: string, reply: string | null): Promise<void> {
+    if (reply === null) await this.sh(TAKE_AWAY_AGENT_REQUEST, [requestId])
+    else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  }
+
+  async savePick(name: string, png: Buffer): Promise<string> {
+    const r = await this.sh(SAVE_PICK, [name], { input: png })
+    if (r.code !== 0) throw new Error(problemOf(r))
+    return r.stdout.toString('utf8')
+  }
+
+  // ADR-0028
+  async noteDiscordId(tabId: string, id: string): Promise<void> {
+    const r = await this.sh(NOTE_DISCORD_ID, [tabId, id])
+    if (r.code !== 0) throw new Error(problemOf(r))
+  }
+
+  // ADR-0028
+  async noteDiscordSaid(tabId: string, text: string): Promise<void> {
+    const r = await this.sh(NOTE_DISCORD_SAID, [tabId], {
+      input: Buffer.from(discordSaidLine(text))
+    })
+    if (r.code !== 0) throw new Error(problemOf(r))
+  }
+
+  async markOwnerAsleep(awakeTabs: string[] | null): Promise<boolean> {
+    const r = awakeTabs
+      ? await this.sh(MARK_OWNER_ASLEEP, [], { input: Buffer.from(ownerAsleepMarker(awakeTabs)) })
+      : await this.sh(`rm -f "${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"`, [])
+    return r.code === 0
+  }
+
+  notice(tabId: string): NoticeFile {
+    const file = remoteNoticeFile(tabId)
+    return {
+      leave: async (fresh, merged) => {
+        const both = `${noticeLine(fresh)}\n${merged === undefined ? '' : noticeLine(merged)}\n`
+        const r = await this.sh(leaveNoticeOnMachine(file), [], { input: Buffer.from(both) })
+        if (r.code !== 0) throw new Error(problemOf(r))
+        return r.stdout.toString('utf8') === 'merged' ? 'merged' : 'fresh'
+      },
+      drop: async () => {
+        await this.sh(`rm -f "${file}" "${file}${NOTICE_THIS_TURN}"`, [])
+      }
+    }
   }
 
   // CC§9 ADR-0026
@@ -644,6 +1053,122 @@ export class SshHost implements Host {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
+  // MUSE§17
+  async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
+    const d = this.deps.claude
+    await this.sshReady()
+    const sid = spec.resumeSessionId
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const auth = attach ? undefined : spec.account.auth()
+    const tmuxName = (tabId: string): string =>
+      sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const pkg = d.machinePackage()
+    const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
+    const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
+    return {
+      attach,
+      tmuxName,
+      launchCommand: (tabId) => {
+        const tabDir = tabPackageDir(d.userData, tabId)
+        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const files: Record<string, string> = {
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contextFile,
+            spec.holdWhileBusy ? `${remoteMachineDir(pkg.name)}/${HOLD_FILE}` : undefined
+          )
+        }
+        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        if (auth !== undefined) files[`${tabId}.auth.json`] = auth
+        writeTabPackage(tabDir, {
+          tabId,
+          tmuxName: tmuxName(tabId),
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          fallbackCwd: bareOrNot(spec.fallbackCwd),
+          banner: '',
+          portOffset: spec.portOffset,
+          ownerWords: spec.ownerWords,
+          program: machineToolProgram(
+            'muse',
+            museRunLines({
+              tabId,
+              account: spec.account.name,
+              banner: spec.banner,
+              args: spec.args,
+              sandboxed: spec.sandboxed,
+              trust: spec.trust.map((p) => this.bare(p)),
+              trustIf: bareOrNot(spec.trustIf),
+              koloftSkill: spec.koloftSkill
+            }),
+            files
+          )
+        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
+      },
+      resized: this.resized
+    }
+  }
+
+  private async sshReady(): Promise<void> {
+    await this.deps.sshEnvReady?.()
+    ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  // PLATFORM§35
+  private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
+    await this.deps.claude.firstHeartbeatDone()
+    const mode = launchMode({
+      alive: this.deps.claude.alive(),
+      killed: this.killedSessions,
+      sessionId: sid
+    })
+    this.killedSessions.delete(sid)
+    await this.kills.get(tmuxSessionName(sid))
+    return mode
+  }
+
+  private tabLaunchLine(
+    machine: MachinePackage,
+    tabDir: string,
+    tabId: string,
+    mode: 'start' | 'attach'
+  ): string {
+    return launchLine({
+      host: this.machine,
+      sshOptions: sshOptions(this.deps.claude.controlDir, false),
+      machine,
+      tabDir,
+      tabId,
+      mode
+    })
+  }
+
+  // MUSE§10
+  async museTrusts(dir: string): Promise<boolean> {
+    return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
+  }
+
+  async runScript(script: string, args: string[]): Promise<string | null> {
+    const r = await this.sh(script, args, { timeoutMs: GIT_TIMEOUT_MS })
+    return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  // MUSE§5 MUSE§17
+  museServe(args: string[]): { binary: string; args: string[] } {
+    const d = this.deps.claude
+    ensureControlDir(d.controlDir)
+    return {
+      binary: 'ssh',
+      args: [
+        ...backgroundOptions(this.machine, d.controlDir),
+        this.machine,
+        remoteShCommand('MUSE_NO_AUTO_UPDATE=1 exec muse serve "$@"', args)
+      ]
+    }
+  }
+
   async listSkills(root: string): Promise<SkillSuggestion[]> {
     const bareRoot = this.bare(root)
     const r = await this.sh(SKILL_FILES, [bareRoot])
@@ -654,18 +1179,74 @@ export class SshHost implements Host {
     return listSkills(skillFsOf(files), bareRoot, home)
   }
 
+  async readAgyConfig(account: string): Promise<RemoteAgyConfig> {
+    await this.deps.sshEnvReady?.()
+    const r = await this.deps.run(readAgyConfigCmd(account))
+    if (needsSignIn(r)) throw new Error(AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN)
+    if (sshLinkBroke(r)) throw new Error(problemOf(r))
+    return parseAgyConfig(r.stdout.toString('utf8'))
+  }
+
+  async agyHeldElsewhere(conversationId: string): Promise<boolean> {
+    return (await this.deps.run(agyHeldCmd(conversationId))).code === AGY_HELD_ELSEWHERE_EXIT
+  }
+
+  async agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean> {
+    const r = await this.deps.run(agySendCmd(tmuxName, conversationId), {
+      input: Buffer.from(text),
+      timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
+    })
+    return r.code === 0
+  }
+
+  async agyConversations(): Promise<SummaryRow[]> {
+    const r = await this.deps.run(listAgyCmd(this.deps.claude.machinePackage().name))
+    if (r.code !== 0) throw new Error(problemOf(r))
+    const rows: unknown = JSON.parse(r.stdout.toString('utf8') || '[]')
+    return Array.isArray(rows) ? (rows as SummaryRow[]) : []
+  }
+
+  async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
+    const d = this.deps.claude
+    await this.sshReady()
+    const sid = spec.resumeId
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const pkg = d.machinePackage()
+    const tabDir = tabPackageDir(d.userData, spec.tabId)
+    return {
+      attach,
+      tmuxName,
+      spawnCwd: os.homedir(),
+      shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+      resized: this.resized,
+      launchCommand: () => {
+        writeTabPackage(tabDir, {
+          tabId: spec.tabId,
+          tmuxName,
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          banner: '',
+          env: spec.env,
+          portOffset: spec.portOffset,
+          program: attach ? { ...spec.program, files: {} } : spec.program
+        })
+        return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
+      }
+    }
+  }
+
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.deps.sshEnvReady?.()
-    ensureControlDir(d.controlDir)
+    await this.sshReady()
+    await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
-    const mode = launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid })
-    this.killedSessions.delete(sid)
+    const mode = await this.attachOrStart(sid)
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -673,39 +1254,43 @@ export class SshHost implements Host {
     const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
-    await this.kills.get(tmuxName)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
-    const account = pickKey ? await d.pickAccount(pickKey) : undefined
+    const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
-    if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    if (pickKey && !account) throw new Error(d.noAccountMessage())
+    // CC§9
+    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
+    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
     return {
       ok: true,
       spawnCwd: os.homedir(),
       cwd: spec.root,
+      conductor: !!spec.conductor,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd,
-          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? '',
-          env: account?.env,
-          portOffset: worktree ? portOffset(worktree) : undefined,
-          settings: d.hookSettings(tabId, machineDir, agentTools),
-          agentPlugin: agentTools,
-          claudeArgs: args.args
-        })
-        return launchLine({
-          host: this.machine,
-          sshOptions: sshOptions(d.controlDir, false),
-          machine: pkg,
+        writeTabPackage(
           tabDir,
-          tabId,
-          mode
-        })
+          claudeTabSpec(
+            {
+              tabId,
+              tmuxName,
+              machineName: pkg.name,
+              cwd,
+              fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
+              banner: account?.banner ?? '',
+              env: account?.env,
+              portOffset: worktree ? portOffset(worktree) : undefined,
+              ownerWords: spec.ownerWords
+            },
+            {
+              settings: d.hookSettings(tabId, machineDir, agentTools),
+              agentPlugin: agentTools,
+              claudeArgs
+            }
+          )
+        )
+        return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,
       machine: {
@@ -718,7 +1303,8 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        pickKey
+        pickKey,
+        skipsPermissionChecks: machinePermission(spec, settings.skipPermissions) === 'bypass'
       }
     }
   }

@@ -7,14 +7,17 @@ those sessions straight from each tool's own storage (`~/.claude/projects`; for 
 `thread/list` on each `CODEX_HOME`'s app-server, `docs/codex-cli-contract.md` §1, §15)
 and hangs one helper panel — the Workbench: changed files, a file browser, web pages,
 a shell — off each session, and one plain-text note
-off each workspace (the Notes island under the sessions list; the Workbench is the
-session's, the note is the workspace's).
+off each workspace (the Notes island under the sessions list).
+Each session tab has its Workbench, keyed by the tab; each workspace row has one too —
+Files of the workspace folder and web pages, no shell, and no agent drives it. The note
+stays the workspace's, in the sidebar.
 A session tab is not a session: the tab is the terminal `claude` or `codex` runs in, and
 `/clear`, a resume or a restart swaps the session inside it while the tab stays —
 the Workbench, its web pages and the shim's env are keyed by the tab.
 Judge every trade-off against that one idea.
-(Source lives in `superkoh/koloft`; installers in `superkoh/koloft-releases`, the list
-`install.sh` and the in-app updater read.)
+(Source and installers both live in `superkoh/koloft`, whose release list `install.sh`
+and the in-app updater read; `superkoh/koloft-releases` is the bridge older apps update
+through, and is never deleted — ADR-0037.)
 
 How each feature behaves is not written here — the code and its tests are the source
 of truth.
@@ -28,8 +31,8 @@ Working principles:
 - Write everything the simple way. All LLM output — session replies and every file
   it writes — must use plain, everyday words that even a five-year-old could follow,
   in whatever language it is writing; never pick a hard word where an easy one
-  works. When a picture says it better, draw one: a chart, diagram, or graph
-  (mermaid or ASCII in markdown) beats a wall of text. The first time an
+  works. Tell a change or choice by its case first: who does what, what they see.
+  A picture (mermaid or ASCII) beats a wall of text. The first time an
   abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
   document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
@@ -53,19 +56,34 @@ Working principles:
   interactions, state treatments and CSS classes exactly; never invent a parallel
   version or replace a screen for another session backend. A plan that changes a
   screen shows it as a local HTML mockup built from the app's CSS.
-- Every feature covers every kind of session tab: Claude Code and Codex, each in a
-  local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
-  A plan, design or PR says what each of the four does: the same thing, a named
+- Icons are Koloft's own, one style ("soft line"), all from `src/renderer/src/icons`.
+  A new icon is never taken or copied from an icon library and never hand-drawn as
+  SVG code: it is made with an image generation tool (Codex's `image_gen`), with
+  `src/renderer/src/icons/sheet-1.png` given as the style reference image, as a new
+  6 × 4 sheet of white glyphs on black, each glyph drawn from its purpose in the
+  app. Every glyph is designed near-square and fills its square — no strip-shaped
+  icon (a thin symbol such as a minus or an arrow sits inside a circle); the
+  script sizes each glyph so its larger side is 22 of the 24 units and evens its
+  line to 2 units. Commit the sheet next to the others, name its cells in
+  `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
+  `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
+  Only brand marks (Claude, Codex, Meta, Discord, GitHub) come from `react-icons/bs`;
+  a brand it lacks (Antigravity) is that brand's own mark, its path copied from
+  `@lobehub/icons-static-svg` (MIT) into react-icons' `GenIcon` — never a parent
+  company's mark in its place.
+- Every feature covers every kind of session tab: each agent in `SESSION_BACKENDS`,
+  in a local workspace and in a remote one reached over SSH (Secure Shell).
+  A plan, design or PR says what each kind does: the same thing, a named
   difference, or left out with the probe or missing data that forces it. A feature
   built and checked for local Claude Code alone is not done, and the e2e flows picked
-  for a change include the Codex and remote specs whenever the change reaches those
-  tabs.
+  for a change include the other agents' and remote specs whenever the change reaches
+  those tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, plus an
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
-  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// PLATFORM§3` — several may
+  - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
     share one line;
     in CSS `/* ADR-0007 */`, in JSX `{/* ADR-0007 */}`. Each must resolve to a
     `docs/adr/` file or a `##` section of that contract ledger.
@@ -76,7 +94,8 @@ Working principles:
   2. a test whose title states the rule;
   3. a measured fact about an external system → its contract ledger, cited from the
      code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
-     `docs/codex-cli-contract.md` (`CODEX§`), anything else — Electron, Node, macOS,
+     `docs/codex-cli-contract.md` (`CODEX§`), Muse Code `docs/muse-code-contract.md`
+     (`MUSE§`), Antigravity CLI `docs/antigravity-cli-contract.md` (`AGY§`), anything else — Electron, Node, macOS,
      git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
   4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when all
      four hold: it cannot be read from the code (names, types, tests); a smart
@@ -119,26 +138,34 @@ Working principles:
 - Finish the code, then review, then test. While code is still being written, only
   the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
   CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
-  diff is final, commit it, `git fetch origin`, run `/code-review low
-  origin/main...HEAD` and `/simplify` over the whole diff, fix what is real, and only
-  then pick and run the e2e flows, once — in a Workflow too, whose step agents run
-  only the fast checks. A cleanup commit that lands after a test round throws that
-  round away. `/code-review low` skips test files: on a test-only diff the what-ran
-  table says "did not apply", never "no findings". Playwright never builds: after the
-  last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
-  `out/`.
+  diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
+  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
+  edits until the reviews are in. Merge the reports, fix what is real (a run that failed
+  is rerun, or the what-ran table says how many of three came back), and only
+  then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
+  checks. A cleanup commit that lands after a test round throws that round away.
+  Playwright never builds: after the last `src/` change or merge of `main`, `npm run
+  build` first, or e2e tests the old `out/`.
+- The PR title becomes `main`'s commit subject on squash, and the release notes and
+  the site changelog sort by its type, so it reads `type(scope): what changed`, the
+  change in the user's words: `feat`, `fix` or `perf` for what a user meets,
+  `refactor`, `docs`, `test`, `chore`, `build` or `ci` for the rest. A plain-sentence
+  title lands untyped in the changelog (v0.41.0 shipped four); the `PR title` check
+  fails it.
 - The PR (pull request) body is a report for the owner deciding whether to merge. It
   opens with six lines, in this order:
   - **What it does** — one sentence, in the user's words, before any mechanism.
   - **What a user sees change** — a table, one row per case, today against after;
     or "no user-visible change".
   - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
-  - **How to see it in the shipped app** — what to click in an installed build, or
-    "no way from the app".
+  - **How to see it in the shipped app** — what to click in an installed build, and
+    for a changed screen or page a screenshot you took of it; or "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
-    never a check you could still run.
-  - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
-    build you drove could answer it.
+    never a check you could still run. Below high, it is not offered for merge: do
+    what makes it high first.
+  - **Hand-test before merging** — no, or yes: the one step only a person can do, and
+    why no suite, sandbox or dev build you drove could do it.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
@@ -152,13 +179,12 @@ Working principles:
   dev build you started. Ask first only to merge, release, push to `main` or delete
   on GitHub; an audit or review round changes nothing until the owner says so. The
   go to merge is also the go to clean up: wait for the PR's CI
-  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` (squash folds
-  the branch's commits into one) — the repo allows only squash and GitHub deletes the
-  PR's branch on merge, so never ask about either; `--delete-branch` fails in a
-  worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
-  deletes the worktree; `discard_changes: true`, as the squash
+  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` — the repo
+  allows only squash and GitHub deletes the PR's branch on merge, so never ask
+  about either; `--delete-branch` fails in a worktree. Then call ExitWorktree
+  (`remove` deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
-  the session was started in with `claude -w` (seen three times);
+  the session was started in with `claude -w`;
   never hand the owner a `git worktree remove` or `/exit` to run. A
   reply that ends a piece of work ends with what the owner must do next, or
   "nothing"; before going quiet on background work, say what runs and about how
@@ -166,13 +192,20 @@ Working principles:
   stop every Monitor and wake-up you armed, so the report stays the last message.
   Remove an agent's worktree with `git worktree remove -f -f <path>` (locked while
   its agent lives).
-- When work is split across agents or a Workflow: steps that only write code or run
-  tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
-  reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
+- When work is split across agents or a Workflow: every step goes to
+  `model: 'opus'` — writing code, running tests, reading and searching code,
+  design drafts, review along the way. Only the independent check of what the owner
+  will decide on (the plan, design or audit report above) goes to `model: 'fable'`:
+  a Fable agent costs about 2.5 times an Opus one. Its brief opens with the line
+  `Never consult the advisor tool.`, before the shell-rule block: a helper inherits
+  the session's advisor, which is Fable too, so asking it re-reads the whole check at
+  full Fable price; without the line 3 of 3 Fable checks asked it, with it 0 of 3.
+  Fan out by slices of work, never one agent per
   finding — a handful per phase — and say how many before launching. Every brief and
-  every Workflow step prompt starts with the shell-rule block below, word for word:
+  every Workflow step prompt starts with the shell-rule block below, word for word
+  (a Fable check's right after its advisor line):
   an Explore agent never sees this file, and agents whose brief lacked the block
-  were refused 2–3 times as often (211 agent transcripts). An agent
+  were refused 2–3 times as often. An agent
   writes only patches or code, in a scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
@@ -182,51 +215,57 @@ Working principles:
   paste a numbered list of cases and leave the person to work through it — they are
   at the keyboard, reading a plan costs them the attention the test needs, and a
   pasted list comes back as "some passed" with no record of which. Decisions go the
-  same way: one per question, your pick first, what each choice costs inside the
-  question — never a list of open questions at the end of a report. Automate every
+  same way: one per question, your pick first, each one's cost inside the
+  question — never a list; once the owner is back, ask them one by one. Automate every
   check you can — a suite, a dev build you drive; the owner hand-tests only a case
   that matters and truly cannot be automated (name it and say why), or a round the
-  owner asks for. One dev build at a time: stop every older one first, its Electron
+  owner asks for. Even then the AI does every step of the case the ladder in
+  `test/CLAUDE.md` (Hand tests) lets it do, asks the owner only for the step that
+  needs a person, and checks that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
   main process too (killing `electron-vite` alone leaves the window up). A dev build
   has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
   run, stays open.
-- Three setup steps, each with a silent failure mode:
+- Four setup steps, each with a silent failure mode:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
   - A fresh git worktree has no `node_modules` of its own and Node silently resolves up
     to the parent checkout's. A SessionStart hook (`scripts/worktree-deps.mjs`) runs
-    `npm ci`, `npm run rebuild` and the Electron download in the background the first
-    time a session starts in a worktree without `node_modules`, and wakes Claude only
-    if a step fails. When a worktree is entered mid-session no session starts, so run
-    those three by hand there.
+    `npm ci`, `npm run rebuild`, the Electron download and the `vendor/` download in
+    the background the first time a session starts in a worktree without
+    `node_modules`, and wakes Claude only if a step fails. When a worktree is entered
+    mid-session no session starts, so run those four by hand there.
   - `npm ci` and `npm install` do not fetch the Electron binary — run
-    `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
-    launch stalls on a silent download.
+    `node node_modules/electron/install.js` once, or the first launch stalls on a
+    silent download.
+  - `vendor/` (the git, gh and Git Credential Manager Koloft ships) is only downloaded
+    when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
+    quietly ships none of them and `bundled-git-gh.spec.ts` fails.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
-  binds you too, its last line aside — that one is for agents; your long text for
-  `gh` goes in a file (`--body-file`):
+  binds you too, its last line aside; long text for `gh` goes in a `--body-file`:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
-  - One plain command per Bash call, absolute paths. No loop, $(…) or shell
-    variable whose value lands in a command's arguments; no env -u.
+  - One plain command per Bash call, absolute paths. No loop, $(…)/`…` or shell
+    variable whose value lands in an argument; no env -u or HOME=.
+  - Also refused: a path outside the worktree inside a chain, a cd outside then
+    git, a shell name or builtin as an argument (grep -n "source" f, bash
+    --version, docker … sh -c), python3 - or sh <file> whose text names git
+    (a .github path counts).
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
-    sed -i, perl -pi or cat >.
-  - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
-    zsh prints "no matches found", the command never runs; the tool may
-    still report success.
-  - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
-  - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
-  - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
+    node -e, sed -i, perl -pi or cat >.
+  - Quote every glob, ? and sed ;: --include='*.ts', 'a?n=1', '1,8p;9,20p'.
+    Unquoted, it never runs (zsh: "no matches found"); the tool may still
+    report success.
+  - Quote a spaced path: '/a b', never /a\ b.
+  - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
+  - Grep/read only printed paths; else grep -rl 'word' src.
+  - No gh api -o; strings -o is offsets: use > file.
+  - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
+  - {0,N} spans: only /usr/bin/grep -o -E, N ≤ 255; grep (ugrep) fails.
   - Findings go in your final message; the harness refuses report files.
   ```
-
-  Also refused: a path outside the worktree inside a chain, a `cd` outside followed
-  by `git`, a bare shell name or builtin as an argument (`grep -n "source" f`,
-  `bash --version`), and `python3 -` or `sh <file>` whose text names git (a `.github`
-  path counts). An edit made through the shell also slips past the comment hook.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
@@ -235,9 +274,8 @@ Working principles:
   watch. Koloft is developed on the same Mac the automation runs on, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
   typed at that moment. The app's own e2e suite obeys the same rule by launching
-  hidden and never showing itself (`KOLOFT_TEST_BACKGROUND=1` in
-  `test/e2e/helpers/env.ts`, pinned by `test/e2e/background-launch.spec.ts`).
-- `README.md` is the human-facing product page (install, packaging, Gatekeeper). Don't
+  hidden and never showing itself.
+- `README.md` is the human-facing product page (install, packaging). Don't
   read it for context — the code is the source of truth; read it only when the task is
   editing the README itself. Test-layer seams and conventions live in `test/CLAUDE.md`.
 - No per-feature document survives its feature shipping — anywhere in the repo.
@@ -251,7 +289,7 @@ Working principles:
   → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  Claude Code, Codex and platform contract ledgers, the ADRs, and the roadmap),
+  contract ledgers, the ADRs, and the roadmap),
   never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather

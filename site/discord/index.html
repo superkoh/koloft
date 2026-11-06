@@ -6,10 +6,9 @@
     <title>A butler on Discord — Koloft</title>
     <meta
       name="description"
-      content="Talk to your Claude and Codex sessions from your phone. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
+      content="Talk to your butler, Koloft's own AI, from your phone; it reaches your sessions for you. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/discord/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -19,7 +18,7 @@
     <meta property="og:title" content="A butler on Discord — Koloft" />
     <meta
       property="og:description"
-      content="Talk to your Claude and Codex sessions from your phone. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
+      content="Talk to your butler, Koloft's own AI, from your phone; it reaches your sessions for you. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
     />
     <meta property="og:url" content="__SITE_URL__/discord/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -27,34 +26,47 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="A butler on Discord — Koloft" />
     <meta
       name="twitter:description"
-      content="Talk to your Claude and Codex sessions from your phone. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
+      content="Talk to your butler, Koloft's own AI, from your phone; it reaches your sessions for you. Your own private Discord bot carries the words to Koloft on your Mac. Nothing is hosted."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -70,18 +82,22 @@
         <h1 class="title">A butler on Discord</h1>
 
         <p>
-          Discord is a chat app for your phone and your computer. A conductor is a Claude or Codex
-          session on your Mac, tied to one Discord channel (a chat room). You write to the conductor
-          from your phone. It starts your other sessions, reads them, sends them messages, and
-          answers their questions the way you tell it to. It never does the work itself: it cannot
-          change your files, whatever your permission setting, so it passes each job on to a
-          session.
+          Discord is a chat app for your phone and your computer. Your
+          <a href="../accounts/#butler">butler</a>, called Alfred until you give it another name, is
+          Koloft's own AI: one Claude, Codex, Muse or Antigravity session on your Mac, first in the
+          sessions list. Give it a Discord channel (a chat room) and you can write to it from your
+          phone too. It reaches your sessions for you: it starts them, reads them, sends them
+          messages, and answers their questions the way you tell it to. Your other sessions stay off
+          Discord until you want to work on one from your phone: then your butler opens a
+          <a href="#rooms">room just for that session</a>. One exception: while you are away, a
+          session with no room that needs a password, a code or a sign-in sends a 🔑 card to your
+          butler's channel (see <a href="#secrets">below</a>).
         </p>
 
         <pre
           class="ascii"
           role="img"
-          aria-label="Your phone runs the Discord app. It talks to Discord on the internet, where your private server has one channel per conductor and one thread per session. Your Mac runs Koloft, signed in as your bot with its token. Messages in the channel go to the conductor. Messages in a thread go straight to that session. The conductor looks after the sessions."
+          aria-label="Your phone runs the Discord app. It talks to Discord on the internet, where your private server has one channel for your butler, and under it a room for each session you take to your phone. Your Mac runs Koloft, signed in as your bot with its token. Messages in the channel go to your butler, which reaches your sessions; messages in a room go to that session."
         >
 your phone
 +-----------------------------+
@@ -92,8 +108,10 @@ your phone
 Discord, on the internet
 +-----------------------------+
 | your private server         |
-|   one channel per conductor |
-|   one thread per session    |
+|   one channel, for your     |
+|   butler, and under it a    |
+|   room for each session you |
+|   take to your phone        |
 +-----------------------------+
               ^ |
               | v
@@ -101,403 +119,340 @@ your Mac
 +-----------------------------+
 | Koloft, signed in as your   |
 | bot with the bot's token    |
-|    |                |       |
-|  channel          thread    |
-|    v                v       |
-| conductor ---&gt; the session  |
+|          |                  |
+|       channel               |
+|          v                  |
+| your butler       rooms     |
+|          |          |       |
+|          v          v       |
+| your sessions               |
 +-----------------------------+
 </pre>
 
         <p>
           Nothing runs on a server of ours, and you make no account with us. The words travel
           through <mark class="hl">your own private bot</mark>. A bot is an account that a program
-          uses, not a person. You make it on Discord, and Koloft signs in as it. Until you paste the
-          bot's token, nothing connects.
+          uses, not a person. You make it on Discord, and Koloft signs in as it. Until Koloft has
+          the bot's token, nothing connects.
         </p>
 
-        <h2>Set it up</h2>
+        <h2 id="set-up">Set it up</h2>
         <p>
-          Open Settings ▸ Discord. Until you finish, it says "Discord is not set up yet." Click
-          <code>Set up Discord…</code> and a guide walks you through seven steps. When all are done
-          it says "✓ All 7 steps done".
+          Open Settings ▸ Discord and click <code>Set up with Alfred</code> (the button carries your
+          butler's name), or, with Assist on, type "set up Discord" in <kbd>⌘P</kbd>. Koloft starts
+          a helper of your butler. It runs on your butler's agent. If that agent is switched off in
+          Settings ▸ Sessions, it runs on your default agent instead. The helper opens the Discord
+          website in its browser and does each step it can; you sign in, type your password and pass
+          the "I am human" checks. Already have a bot? It can use it too. The steps are:
         </p>
         <ol>
           <li>
-            Make the app, on the Discord website. An app is Discord's box that holds a bot. Click
-            Open Developer Portal (Discord's website for making apps), then New Application, and
-            name it Koloft. The portal opens in your normal browser. Koloft's own browser gets
-            "Missing Access" there.
+            Make the app, on the Discord website. An app is Discord's box that holds a bot. Or pick
+            the app you already have.
           </li>
           <li>
-            Make the bot private and let it read messages. First set Installation ▸ Install Link to
-            None and save. Then turn Public Bot off, so only you can add it. Turn Message Content
-            Intent on: that is Discord's switch that lets a bot read what you type.
+            Get the bot's token. The token is the bot's password. Koloft reads it from the page
+            itself, so it never passes through the AI, and keeps it in the macOS Keychain (the Mac's
+            locked box for passwords). Once the token is in, Koloft turns on Message Content
+            (Discord's switch that lets a bot read what you type).
           </li>
           <li>
-            Copy the bot's token into Koloft. The token is the bot's password. Koloft keeps it in
-            the macOS Keychain (the Mac's locked box for passwords) and never shows it again.
-          </li>
-          <li>
-            Make a private server, in the Discord app. A server is your own space in Discord, with
+            Make a private server, if you have none. A server is your own space in Discord, with
             channels in it. Only you are in this one.
           </li>
           <li>
-            Add the bot to your server. Click Invite the bot. The invite asks for the rights the bot
-            needs, Manage Threads among them. If you added the bot before this, its role does not
-            get the new right on its own: open Server Settings ▸ Roles, pick the bot's role, and
-            under Permissions turn on Manage Threads.
+            Add the bot to your server. The invite asks for the rights the bot needs, making
+            channels among them.
           </li>
           <li>
-            Tell Koloft who you are. Send any message in your server, like "hi". It shows up in
-            Koloft with the sender's name. Click This is me (or Not me).
-          </li>
-          <li>
-            Make a channel and bind a conductor. Bind means tie the channel to a conductor. Click
-            Bind a channel…, pick Global or a folder, Claude or Codex, then the channel.
+            Make your butler's channel. Koloft makes #global in a category named after your bot, and
+            ties it to your butler.
           </li>
         </ol>
         <p>
-          After that, Settings ▸ Discord shows the bot token ("Stored in the macOS Keychain"), your
-          Discord account ("Only messages from this user reach a conductor."), the status ("The bot
-          reads only the bound channels."), and your bindings.
+          Koloft also needs to know who you are. If the bot's app is yours alone, Koloft already
+          knows: it is the app's owner. If a team owns the app, send any message in your server,
+          like "hi". It shows up in Settings ▸ Discord with the sender's name. Click This is me (or
+          Not me). After that, Settings ▸ Discord shows your Discord account ("Only messages from
+          this user reach Alfred."), the status ("The bot reads only the bound channel."), the
+          server, and the channel. Click Set up with Alfred again any time to fix a problem: the
+          steps that are done are skipped.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 730 / 600">
+        <figure class="shot" style="--ar: 1322 / 781; --ar-phone: 788 / 1180">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/r-discord-settings-phone2.webp"
-                width="730"
-                height="600"
+                srcset="../img/r-discord-settings-phone3.webp"
+                width="788"
+                height="1180"
               />
               <img
-                src="../img/r-discord-settings.webp"
+                src="../img/r-discord-settings4.webp"
                 width="1322"
-                height="792"
+                height="781"
                 loading="lazy"
-                alt="Koloft's Settings, Discord page: All 7 steps done; the bot token, stored in the macOS Keychain; your Discord account, You are sam; status, Connected as koloft-bot; two bindings, tidewatch (Claude, #tidewatch) and Global (Claude, #tidewatch-ops), each with Unbind; and a Bind a channel… button"
+                alt="Koloft's Settings, Discord page: a Set up with Alfred button, under Let Alfred set up Discord; your Discord account, You are sam; status, Connected as koloft-bot; server, The bot is in Tidewatch; and the channel, Alfred · Butler on #global, with Unbind and Change channel…"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            Settings ▸ Discord, all set up: the token in the Keychain, your account, and the bot
-            connected
+            Settings ▸ Discord, all set up: your account, the bot connected, and your butler's
+            channel
           </figcaption>
         </figure>
 
-        <h2>Bind a channel</h2>
-        <p>Each binding makes two choices:</p>
-        <ul class="dash">
-          <li>
-            Global or one folder. The Global conductor looks after every folder in the sessions
-            list. A folder's conductor looks after that folder only. Each folder binds one channel,
-            and Global binds one.
-          </li>
-          <li>Claude or Codex: which tool the conductor itself runs on.</li>
-        </ul>
-
-        <figure class="shot" style="--ar: 1200 / 719; --ar-phone: 700 / 690; --pos: 50% 31%">
-          <div class="frame">
-            <picture>
-              <source
-                media="(max-width: 760px)"
-                srcset="../img/s-discord-bind-phone.webp"
-                width="700"
-                height="690"
-              />
-              <img
-                src="../img/s-discord-bind.webp"
-                width="1200"
-                height="719"
-                loading="lazy"
-                alt="The Bind a Discord channel dialog. Scope: Global and tidewatch are already bound, harbor-site is picked. Conductor: Claude is picked, Codex is the other choice. Channel: #tidewatch and #tidewatch-ops are taken, #harbor-site is picked."
-              />
-            </picture>
-            <span class="tape" aria-hidden="true"></span>
-          </div>
-          <figcaption>
-            the Bind dialog: a scope, a tool for the conductor, then a channel; ones already bound
-            are greyed out
-          </figcaption>
-        </figure>
-        <p>There are three ways in:</p>
-        <ul class="dash">
-          <li>Settings ▸ Discord ▸ <code>Bind a channel…</code></li>
-          <li>
-            right-click a folder ▸ <code>Bind Discord channel…</code>
-            <span class="why">(there while that folder has no channel)</span>
-          </li>
-          <li>the <code>+</code> on the Conductors block</li>
-        </ul>
-
-        <figure class="shot is-narrow" style="--ar: 534 / 296">
-          <div class="frame">
-            <img
-              src="../img/t-conductors-live.webp"
-              width="534"
-              height="296"
-              loading="lazy"
-              alt="The Conductors block in the sidebar, with a + and a fold arrow. Two conductors: tidewatch, open, bound to #tidewatch, and Global, bound to #tidewatch-ops."
-            />
-            <span class="tape" aria-hidden="true"></span>
-          </div>
-          <figcaption>the Conductors block: the tidewatch conductor is open</figcaption>
-        </figure>
+        <h2>Its channel</h2>
         <p>
-          The Conductors block sits in the sidebar, under the sessions list and above Notes. It
-          shows up once you have a binding. Right-click a conductor there for a menu with:
+          Your butler has one channel. Under its name in the sessions list is that channel, or
+          <code>not on Discord</code>. To pick one, right-click the butler's row ▸
+          <code>Bind Discord channel…</code>, or click Settings ▸ Discord ▸
+          <code>Bind a channel…</code>. The dialog lists your server's channels, with a new one on
+          top that Koloft makes for you (<code>#global</code>, or <code>#global-2</code> when that
+          name is taken). Once it has one, the same menu has
+          <code>Change Discord channel…</code> and <code>Unbind Discord</code>
+          <span class="why">(only Discord goes; the butler and its conversation stay)</span>.
         </p>
-        <ul class="dash">
-          <li>Open</li>
-          <li>Change channel…</li>
-          <li>Switch to Codex next time <span class="why">(or Claude)</span></li>
-          <li>Start a fresh conductor</li>
-          <li>Unbind</li>
-        </ul>
         <p>
-          The conductor always runs on your Mac, even for a <a href="../remote/">remote folder</a>.
-          It runs in a folder of its own under Koloft's data folder, not in your workspace. It opens
-          as soon as Koloft connects to Discord, and it never goes to
-          <a href="../sessions/">sleep</a> the way an idle session does.
+          While your butler has a channel, it opens as soon as Koloft connects to Discord, and it
+          never goes to <a href="../sessions/#sleep">sleep</a> the way an idle session does.
+        </p>
+        <p>
+          Coming from an older Koloft, where each folder could have its own channel? The Global
+          channel, or else the one you wrote in last, becomes your butler's. The other channels are
+          left as they were, and no longer read. The session threads an older Koloft left under your
+          butler's channel are archived once (the <a href="#rooms">rooms</a> below are new, and are
+          left alone). Write in an old thread and Koloft answers
+          <code>Koloft no longer reads this thread. Talk to Alfred in #global.</code>
         </p>
 
         <h2>From your phone</h2>
 
-        <figure>
-          <pre
-            class="ascii"
-            role="img"
-            aria-label="A sketch of the tidewatch channel. A small card for the session fix flaky test says needs you, asked 2 minutes ago, tidewatch, Claude. Its thread holds a card: fix flaky test is waiting for you. Bash asks to run: npm test. Answer with a button, or write the answer here. Under it, two buttons, Yes and No. After you press Yes, the buttons go and the card ends with a tick and Yes."
-          >
-#tidewatch            (the channel)
-
-❓ fix flaky test · needs you,
-   asked 2 minutes ago
-   tidewatch · Claude
-   |
-   +-- thread: fix flaky test
-
-       ❓ fix flaky test is waiting
-          for you.
-       Bash asks to run:
-       npm test
-       Answer with a button, or
-       write the answer here.
-       [ Yes ]  [ No ]
-
-       after you press Yes, the
-       buttons go, and it ends:
-       ✅ Yes
-</pre>
-          <figcaption>
-            a sketch, not a screenshot: a session's card in the channel, and a question in its
-            thread
-          </figcaption>
-        </figure>
-
-        <h3>Talk to the conductor</h3>
+        <h3>Talk to your butler</h3>
         <p>
-          Write in the bound channel. Your message reaches the conductor with
+          Write in the channel. Your message reaches your butler with
           <span class="nowrap">"[Discord]"</span> in front. It gets a ⏳ while it waits its turn,
-          and a ✅ once it is in. If the conductor is not open, your first message starts it; the ⏳
-          stays until it is ready. Files you attach are saved on your Mac, and the conductor is told
-          where they are.
+          and a ✅ once it is in. If the butler is not open, your first message starts it; the ⏳
+          stays until it is ready. Files you attach are saved on your Mac for 7 days, and the butler
+          is told where they are. Its answer to what you wrote comes back to the channel, and while
+          it works on it the channel shows the bot typing.
+        </p>
+        <p>
+          When your butler asks you something, its card reads
+          <code>❓ Alfred is waiting for you.</code>, with a button per option when the question has
+          options. Once the question is answered, by a button, a typed reply or at the Mac, the card
+          loses its buttons and says how it ended, like <code>✅ Answered: 2</code>,
+          <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code>
         </p>
 
-        <h3>One thread per session</h3>
+        <h3 id="at-the-mac">While you use Koloft</h3>
         <p>
-          A thread is a side chat that hangs off one message. Each session the conductor looks after
-          gets its own. The channel shows one small card per session: its title, its folder, and
-          Claude or Codex. Under that card, the session's thread holds its news: finished, waiting
-          for you, closed, and the results of commands.
+          While you use Koloft (you typed, clicked, scrolled or moved the mouse in Koloft's window
+          in the last 5 minutes, and the screen is not locked), Discord stays quiet: you see your
+          butler in Koloft. Your butler does not post its replies to things you did not send from
+          Discord, and the bot does not type. A question it asks on its own waits, and comes to the
+          channel when you leave (the screen locks, or 5 minutes go by with no input in Koloft) if
+          it is still open. After the screen locks, you count as away until you use Koloft again.
+          Write from Discord and the answer still comes back there, questions included. If a
+          question was waiting when you write, its card comes first, and Koloft tells you your
+          message was not delivered: answer the question, then send your message again. A note that
+          your butler could not reach a session shows in Koloft, not in Discord. A session that
+          needs a password or a code asks in Koloft, and on Discord only if you are talking to it
+          from there (see <a href="#secrets">below</a>).
         </p>
         <p>
-          The card follows the session's light in the sidebar, and says how long ago that began:
+          While the <a href="../sessions/#asleep">moon</a> in the sidebar is on, Discord stays quiet
+          the same way. Any message, button press, form or slash command you send in your butler's
+          channel turns the moon off.
         </p>
-        <div class="typed-table stacked">
-          <table>
-            <thead>
-              <tr>
-                <th>card</th>
-                <th><a href="../sessions/#lights">sidebar light</a></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>🔄 working, started …</td>
-                <td>orange</td>
-              </tr>
-              <tr>
-                <td>❓ needs you, asked …</td>
-                <td>amber, or green with a <a href="../sessions/#red-dots">red dot</a></td>
-              </tr>
-              <tr>
-                <td>✅ turn done …</td>
-                <td>
-                  green; with "· work still running" when things it started still run in the
-                  background
-                </td>
-              </tr>
-              <tr>
-                <td>💤 idle, done …</td>
-                <td>dim green</td>
-              </tr>
-              <tr>
-                <td>⏹ closed …</td>
-                <td>grey</td>
-              </tr>
-              <tr>
-                <td>⚪ status unknown</td>
-                <td>a Codex session whose state Koloft cannot read</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+
+        <h3 id="your-sessions">Your sessions</h3>
         <p>
-          While a session works, its thread shows the bot typing; while the conductor works, its
-          channel does. For a session on another machine, the card is a few seconds behind, like
-          <a href="../remote/">the sidebar</a>.
+          A session in your folders does not post to Discord until it has a
+          <a href="#rooms">room</a>. When your butler hands a session work, Koloft hands the
+          session's reply back to the butler once its turn ends, and the butler tells you. A
+          question from a session with no room shows only at the Mac: ask your butler what it is
+          waiting on, and tell it what to pick or what to say. It reads the session's screen and
+          answers, or presses the keys, as you would at the Mac. See
+          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+        </p>
+        <p>
+          While you are away, Koloft tells your butler about your sessions, on your Mac and on
+          remote folders. When one finishes its turn, waits for an answer or an OK, or stops by
+          surprise, Koloft waits at least half a minute to gather what else happens, then sends it
+          all in one quiet message: which session, its folder, and, for a finished turn, the start
+          of its reply. Your butler decides whether you need to know, and writes to you in the
+          channel only if you do. Its answer to that message is not posted, and the bot does not
+          type. Left out: your butler's own helpers, a turn whose reply already went back to whoever
+          started the session, and a turn that only reports (see
+          <a href="../sessions/#red-dots">red dots</a>). While the
+          <a href="../sessions/#asleep">moon</a> is on, no such message goes out; when you are back,
+          your butler gets one note about the night instead, if anything happened.
+        </p>
+        <p>
+          A helper your butler started in its own folder is different: its questions come to the
+          channel, titled with its name and <code>(Alfred's helper)</code>. Like the butler's own,
+          they wait while you use Koloft. Press a button on the card to answer one. Words you type
+          in the channel go to your butler alone, never to a helper.
+        </p>
+
+        <h3 id="rooms">A session's own room</h3>
+        <p>
+          Want to go on with one session from your phone? Tell your butler, like "I'll take the
+          login fix". It opens that session's room and answers with its link. A room is a thread (a
+          side chat) under your butler's channel, named after the session. A session your butler
+          starts while it answers you on Discord gets its room at once. The room opens with a 📍
+          card: where the session is, whether it is working, and the last thing it said.
         </p>
         <ul class="dash">
           <li>
-            Type in a thread, and it goes straight to that session. If the session is asking you
-            something, your message is the answer.
+            What you write in the room goes to that session alone, and its reply comes back there.
+            Words in your butler's channel still go to your butler alone.
           </li>
           <li>
-            The thread takes the session's title from the sidebar, and changes when the title does.
-            After <code>/clear</code>, the session stays in the same thread.
+            Its questions come to the room as cards, with a button per option, like your butler's. A
+            question Koloft cannot read says
+            <code
+              >Koloft cannot read this question from here. Ask Alfred in #global to press its keys
+              for you.</code
+            >
           </li>
           <li>
-            When the session's tab closes, its thread is put away (archived). A session going to
-            sleep is not a close.
+            The rule for <a href="#at-the-mac">while you use Koloft</a> holds here too: a reply to
+            something you did not send from Discord is not posted, and a question waits until you
+            leave.
           </li>
           <li>
-            When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
-            <code>koloft session close</code>), its thread and its card are deleted. If the bot may
-            not delete threads, Koloft archives it instead and a small message asks you to give the
-            bot Manage Threads (step 5 above). This is the same for every kind of session.
+            <code>/run</code>, <code>/clear</code> and <code>/compact</code> typed in the room go to
+            that session.
           </li>
-        </ul>
-
-        <h3>Buttons</h3>
-        <p>When a session asks you something, its card has buttons:</p>
-        <ul class="dash">
-          <li>a question with one pick: "1. …", "2. …", one button per option</li>
-          <li>a request to run a tool: Yes / No</li>
-          <li>a plan: Approve / Reject</li>
+          <li>
+            Press a key in the session's terminal at the Mac, and the room folds away (Discord
+            archives it). It comes back when you ask your butler again or write in it.
+          </li>
+          <li>
+            It keeps the same room after <code>/clear</code>, a resume, a restart, or a restart of
+            Koloft. After <code>/clear</code> the room says
+            <code>🧹 Started over: it is a new conversation now, in this same room.</code>
+          </li>
+          <li>
+            When the session closes, the room says <code>⏹ Closed.</code> and folds away. Write in
+            it and the session starts again and gets your words. If the session stops by surprise,
+            the room says <code>⚠ It stopped unexpectedly.</code>
+          </li>
+          <li>
+            A helper your butler started in its own folder gets no room: its questions already come
+            to your butler's channel.
+          </li>
         </ul>
         <p>
-          After you press one, the card says "✅" and the label you pressed. A question with several
-          parts gets no buttons. See which sessions can take a typed answer below.
+          While you are away, or talking to the session from its room, what it shows you with
+          <code>koloft open</code> or <code>koloft diff</code> comes to the room too: a web page as
+          pictures (at most 10, top to bottom), a Markdown file as text with the file attached, any
+          other file as itself, and a diff as a picture of the changed lines. A file can be up to 20
+          MB (megabytes). A page on a remote folder's machine is not sent as a picture; the session
+          is told to describe it in words instead.
+        </p>
+        <p>
+          Rooms work for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+        </p>
+
+        <h3 id="secrets">Passwords and codes</h3>
+        <p>
+          Some things only you know, and they should not sit in a chat. When a session needs one, it
+          asks in its own tab in Koloft (see <a href="../agents/#secrets">how the agent asks</a>).
+          While you are away, or talking to that session from Discord, a 🔑 card comes too: to the
+          session's <a href="#rooms">room</a> if it has one, or else to your butler's channel. It is
+          headed with the session's name and its folder:
+        </p>
+        <ul class="dash">
+          <li>
+            <code>🔑 fix-login · tidewatch asks for your sudo password</code> (the Mac's admin
+            password), with the command it wants to run
+          </li>
+          <li>
+            <code
+              >🔑 &lt;session&gt; · &lt;folder&gt; asks you to fill in a field on a web page</code
+            >, with the page and the field
+          </li>
+          <li>
+            <code>🔑 &lt;session&gt; · &lt;folder&gt; needs the address a sign-in ends on</code>,
+            with the sign-in address to open on your phone
+          </li>
+        </ul>
+        <p>
+          Press <code>Enter it</code> and Discord opens a form. What you type goes to Koloft, which
+          passes it straight on: to <code>sudo</code>, into the page's field (and submits the form),
+          or to the session's machine, which opens the address. The session never sees it, and it
+          does not stay in the chat. The card then ends with <code>✅ Passed on.</code>, or
+          <code>⌛ Koloft stopped waiting.</code> if you did not answer in time, or
+          <code>⏹ The session closed.</code> The first answer wins, on the card or in Koloft. If you
+          answer at the Mac, the card says <code>✅ Answered in Koloft.</code> and loses its button;
+          if you press Cancel there, it says <code>⏹ Turned down in Koloft.</code>
+        </p>
+        <p>
+          While the <a href="../sessions/#asleep">moon</a> is on, no 🔑 card is sent: Koloft turns
+          the ask down and tells the session to skip that step.
         </p>
 
         <h3>Slash commands</h3>
         <p>
           A slash command is a command you type that starts with <code>/</code>. Discord shows three
-          once a channel is bound in your server:
+          once your butler has a channel. Each goes to your butler, or, used in a session's
+          <a href="#rooms">room</a>, to that session:
         </p>
         <ul class="dash">
           <li>
-            <code>/run</code> — type a command into a session, like <code>/context</code> or
-            <code>/model haiku</code>
+            <code>/run</code> — type a command into your butler, like <code>/context</code> or
+            <code>/model haiku</code> for a butler on Claude; each agent has its own commands
           </li>
-          <li><code>/clear</code> — start a new conversation in a session</li>
-          <li><code>/compact</code> — shrink a session's conversation; you may say what to keep</li>
+          <li><code>/clear</code> — start a new conversation with your butler</li>
+          <li>
+            <code>/compact</code> — shrink your butler's conversation; you may say what to keep
+          </li>
         </ul>
         <p>
-          Each has a session box that fills itself in as you type. Leave it out and the command goes
-          to the conductor, or, inside a thread, to that thread's session. A plain message that
-          starts with <code>/</code> runs where you typed it: in the channel, in the conductor; in a
-          thread, in that thread's session. A command waits until the conductor's turn ends, for up
-          to 10 minutes.
+          A plain message that starts with <code>/</code>, with no file attached, is typed into your
+          butler the same way. A command waits until the butler's turn ends, for up to 10 minutes.
+          What it printed comes back to the channel. While your butler's own question card waits, a
+          command is not typed: Koloft asks you to answer the question first.
         </p>
 
-        <h3>Files out</h3>
+        <h3>Files and pictures out</h3>
         <p>
-          The conductor can send you files. It runs
+          Your butler can send you files. It runs
           <code>koloft discord send &lt;file&gt;... -- "&lt;text&gt;"</code> with each file's full
           path, and the text part may be left out. Each file can be up to 20 MB (megabytes). Discord
           takes 10 files and 25 MB per message, so a bigger batch goes out as several messages.
         </p>
+        <p>
+          It can also send you a picture of a page with
+          <code>koloft discord shot &lt;HTML file or web address&gt;</code>. Koloft opens the page
+          out of sight and takes a picture of the whole page; a page taller than one picture comes
+          as several, top to bottom, at most 10.
+        </p>
+        <p>
+          What your butler shows you with <code>koloft open</code> or <code>koloft diff</code> comes
+          to its channel too, the same way a session's comes to its <a href="#rooms">room</a>.
+        </p>
+        <p>
+          While you <a href="#at-the-mac">use Koloft</a>, your butler cannot send files or pictures,
+          unless it is answering what you sent from Discord. It is told to show the file or page in
+          the Workbench instead.
+        </p>
 
-        <h3>What the conductor can do</h3>
         <p>
-          It works through the <a href="../agents/">koloft command</a>, plus a few verbs only a
-          conductor gets. In its folder, or in every folder for Global, it can:
-        </p>
-        <ul class="dash">
-          <li>start, read, message, resume and stop sessions</li>
-          <li>run a slash command in them, and see their screen</li>
-          <li>
-            answer their questions, and press keys in them as you would at the Mac: pick an option,
-            move through a menu, approve, refuse or cancel. Tell it what to pick and it does it,
-            instead of sending you to the Mac
-          </li>
-          <li>close the sessions it started</li>
-          <li>close any ended session it looks after on your Mac, when you ask</li>
-          <li>list your folders <span class="why">(Global only)</span></li>
-          <li>
-            check GitHub itself with <code>koloft gh</code>: is a pull request merged, how did its
-            checks go, what does an issue say; and open an issue when you ask for one
-            <span class="why"
-              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it: the reading
-              commands pr view, list, checks, diff; issue view, list; run view, list; and issue
-              create, with a title, a body and labels only. A folder's conductor gets that folder's
-              repository filled in; the Global one names it with
-              <code class="nowrap">--repo</code>)</span
-            >
-          </li>
-          <li>
-            keep its own memory
-            <span class="why"
-              >(a Claude conductor may write in its own memory folder, and nowhere else)</span
-            >
-          </li>
-        </ul>
-        <p>It cannot:</p>
-        <ul class="dash">
-          <li>
-            change your files, take a screenshot or drive a browser itself
-            <span class="why"
-              >(a Claude conductor is told no, with a message; a Codex conductor is held in its
-              sandbox, a box it cannot reach out of; either one asks a session to do it)</span
-            >
-          </li>
-          <li>
-            merge, comment on, close or edit anything on GitHub
-            <span class="why"
-              >(<code>koloft gh</code> refuses every command that writes, except opening an
-              issue)</span
-            >
-          </li>
-          <li>close an open session it did not start <span class="why">(stop it first)</span></li>
-          <li>
-            close a session on another machine
-            <span class="why">(Koloft cannot check what closing it there would lose)</span>
-          </li>
-          <li>
-            touch scheduled jobs or notes, if it is the Global conductor or a remote folder's
-            <span class="why">(a local folder's conductor can)</span>
-          </li>
-        </ul>
-        <p>
-          A Claude session the conductor starts follows your Skip permission prompts setting
-          (Settings ▸ Accounts), like any Claude session. A Codex session it starts runs with no
-          approvals and no sandbox if a Claude conductor started it with that setting on; otherwise
-          it starts the ordinary way, like one you start yourself.
-        </p>
-        <p>
-          A message you send while Koloft is closed gets one answer: "Koloft was offline, this
-          message was not delivered."
+          A message you send in your butler's channel while Koloft is closed gets one answer:
+          "Koloft was offline, this message was not delivered." One you send in a session's room
+          waits, and goes to that session, in order, once Koloft is back.
         </p>
 
         <h2>What Discord sees</h2>
         <p>
           Everything goes to Discord, at <code>discord.com/api/v10</code> and
           <code>gateway.discord.gg</code>, and files you attach come down from Discord's file
-          server. This is the text that leaves your Mac:
+          server. This is what leaves your Mac:
         </p>
         <div class="typed-table">
           <table>
@@ -509,151 +464,102 @@ your Mac
             </thead>
             <tbody>
               <tr>
-                <td>conductor replies</td>
-                <td>Every reply the conductor writes, whole, and its own question cards.</td>
-              </tr>
-              <tr>
-                <td>"finished" card</td>
+                <td>butler replies</td>
                 <td>
-                  The session's full reply for that turn, if it arrives within 7 seconds; otherwise
-                  the card has no reply.
+                  Every reply your butler writes, whole, and its own question cards; while you use
+                  Koloft, only its answers to what you sent from Discord. Never its answer to
+                  Koloft's quiet message about your sessions.
                 </td>
               </tr>
               <tr>
-                <td>"waiting" card</td>
+                <td>rooms</td>
                 <td>
-                  The question and its options. For an approval: the command it wants to run, the
-                  plan, or for any other tool its whole input. So for an Edit or a Write, that is
-                  the file's text.
+                  For a session you gave a room: its name, folder and agent, its replies and its
+                  question cards (held back while you use Koloft, as your butler's are), and copies
+                  of what it shows with <code>koloft open</code> or <code>koloft diff</code> while
+                  you are away or talking to it from there.
                 </td>
               </tr>
               <tr>
-                <td>"closed" card</td>
-                <td>Only the session's name.</td>
+                <td>helper questions</td>
+                <td>
+                  The question cards of the helpers your butler started in its own folder, held
+                  while you use Koloft like the butler's.
+                </td>
+              </tr>
+              <tr>
+                <td>files and pictures</td>
+                <td>
+                  What your butler sends with <code>koloft discord send</code> or shot; while you
+                  use Koloft, only when it answers what you sent from Discord.
+                </td>
+              </tr>
+              <tr>
+                <td>🔑 cards</td>
+                <td>
+                  The session's name and folder, and what it asks for (the command for sudo, the
+                  page and field, or the sign-in address), only while you are away or talking to
+                  that session from Discord. Never what you type into the form.
+                </td>
               </tr>
               <tr>
                 <td>command results</td>
                 <td>
-                  What <code>/run</code>, <code>/clear</code> or <code>/compact</code> printed, and
-                  the reply after it.
+                  What <code>/run</code>, <code>/clear</code> or <code>/compact</code> printed in
+                  your butler, or in a session through its room.
                 </td>
               </tr>
               <tr>
-                <td>session cards</td>
+                <td>typing</td>
                 <td>
-                  The session's title and folder (also in thread names), Claude or Codex, and its
-                  state (see the table above), edited each time the state changes. While it works, a
-                  typing signal every 8 seconds.
+                  While your butler works on what you sent, or while you are away, a typing signal
+                  every 8 seconds; none while it reads Koloft's quiet message about your sessions.
                 </td>
               </tr>
               <tr>
                 <td>errors</td>
-                <td>A short note when something goes wrong.</td>
+                <td>
+                  A short note when something goes wrong; while you use Koloft, a note that your
+                  butler could not reach a session shows in Koloft instead.
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p>
-          Long text is split into several messages, not cut short. Only a button label or a thread
-          name gets cut.
-        </p>
+        <p>A long reply is split into several messages.</p>
         <ul class="dash">
           <li>
-            Never the whole transcript (the written record of a session): only what the cards above
-            carry, and what the conductor writes.
-          </li>
-          <li>
-            Only your account, picked in step 6, is heard. Other people and bots are ignored, and
-            their commands and button presses refused.
+            Only your account, the one Settings ▸ Discord shows, is heard. Other people and bots are
+            ignored, and their commands and button presses refused.
           </li>
           <li>
             Discord still sends every message in the server to your Mac. Koloft drops the rest
             there, and none of it goes back out.
           </li>
           <li>
-            In step 6, before you pick yourself, anyone's message in the server shows up in Koloft,
-            so you can pick.
+            If a Discord team owns the bot's app, then until you pick yourself, the last message
+            anyone wrote in the server shows up in Settings ▸ Discord, so you can say whether it is
+            you.
           </li>
           <li>
-            "Waiting" and "closed" cards go out for every session in a bound folder (every folder,
-            under Global), not only the conductor's.
-          </li>
-          <li>
-            A "finished" card goes out once the conductor has touched that session, or once the
-            session has a thread.
-          </li>
-          <li>
-            A pasted token signs the bot in before you bind a channel. Until you bind one, it
-            ignores messages and shows no slash commands.
+            The token signs the bot in before you bind a channel. Until you bind one, it ignores
+            messages and shows no slash commands.
           </li>
         </ul>
-
-        <h2>Three kinds of session</h2>
-
-        <h3>Claude on your Mac</h3>
-        <ul class="dash">
-          <li>Every kind of question can be answered from your phone.</li>
-          <li>
-            A question with several parts has no buttons. Reply in the thread with one line per
-            question: a number, or your own answer.
-          </li>
-          <li>For a plan, you can also type what to change instead of yes.</li>
-        </ul>
-
-        <h3>Codex on your Mac</h3>
-        <ul class="dash">
-          <li>Your messages wait in line, and go in when Codex is ready.</li>
-          <li>Yes / No works, and so does one question that picks one option.</li>
-          <li>
-            Anything else, like several parts, free text or a secret, gets "Codex is asking
-            something Koloft cannot answer from here: it answers a yes-or-no approval, or one
-            question that picks one option from a list. The conductor can still answer this one by
-            pressing its keys." So tell the conductor what to pick.
-          </li>
-          <li>
-            What Codex shows only on its screen is not read back. The conductor can look with
-            <code>koloft session screen</code>.
-          </li>
-        </ul>
-
-        <h3>Claude on another machine</h3>
-        <ul class="dash">
-          <li>
-            Koloft answers by typing keys into its terminal. So it can answer Yes / No, or one
-            question with one pick. A question with several parts, or with several picks, gets no
-            buttons: tell the conductor what to pick.
-          </li>
-          <li>A plan takes yes or no only.</li>
-          <li>
-            A file you attach is left out, and the session is told why: "this session runs on
-            another machine". Your words still go in.
-          </li>
-          <li>
-            What the conductor sends it waits until the session's turn ends. What you type in its
-            thread goes in at once.
-          </li>
-        </ul>
-        <p>There is no fourth kind: Codex does not run on another machine.</p>
 
         <h2>What it won't do</h2>
         <ul class="dash">
           <li>
             <s class="struck">post your whole transcript</s>
             <span class="why"
-              >(one turn's reply and one tool's input do go out, as the cards above say)</span
+              >(no session's transcript, the written record of a session: only what your butler and
+              the sessions with a room write, and the cards above)</span
             >
           </li>
           <li>
-            <s class="struck">ring on start, close or a new state</s>
+            <s class="struck">post your sessions' news</s>
             <span class="why"
-              >(the "started" and "closed" cards, and every edit of a session's card, are
-              silent)</span
-            >
-          </li>
-          <li>
-            <s class="struck">answer Codex forms from a thread</s>
-            <span class="why"
-              >(several parts, free text or secrets: tell the conductor what to pick instead)</span
+              >(a session without a room posts nothing; ask your butler how one is doing)</span
             >
           </li>
           <li>
@@ -663,32 +569,44 @@ your Mac
               stopped, and both get every message)</span
             >
           </li>
-          <li>
-            <s class="struck">rename threads quickly</s>
-            <span class="why">(Discord's rule: two name changes in ten minutes)</span>
-          </li>
         </ul>
 
-        <p class="next">
-          next page -&gt; <a href="../install/">Install, update, what it talks to</a>
-        </p>
+        <p class="next">Next page → <a href="../install/">Install, update, what it talks to</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

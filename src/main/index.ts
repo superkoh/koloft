@@ -12,13 +12,14 @@ import {
   screen,
   Notification,
   webContents,
+  type BaseWindow,
   type WebContents
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
@@ -26,6 +27,51 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import { codexShowsAPanel } from './inputBox'
+import {
+  MuseSessions,
+  museShowsItsInputBox,
+  type MuseHomePick,
+  type MuseRemoteDeps
+} from './museSessions'
+import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
+import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
+import type { TreeIo } from './sessionWorktrees'
+import { museServersAmong } from './taskProcs'
+import { sharedProcessTable, type ProcessTable } from './processTable'
+import { AgySessions, type AgyHomePick } from './agySessions'
+import {
+  agyAccountEnv,
+  agyApiKeyRoute,
+  agyHomeOf,
+  agySignedIn,
+  oneShotAgyHome,
+  prepareAgyHome,
+  readAgyQuota,
+  setAgyApiKeyRoute
+} from './agyAccounts'
+import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import {
+  AGY_BRAIN_FLAGS,
+  AGY_HOOK_FILE,
+  AGY_LIST_FILE,
+  AGY_REMOTE_BRAIN,
+  AGY_STATUSLINE_FILE,
+  AGY_TITLE_FILE,
+  agyStatuslineScript
+} from './remote/agyTab'
+import { agyBackend } from './backends/agy'
+import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { homeKeyOnDisk } from './homeKeyOnDisk'
+import { museConfigHome, museHome } from './museSessionLog'
+import { watchHistoryOf } from './historyWatch'
+import { museSignIn, storeMuseKey } from './museServe'
+import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
+import { readMuseQuota } from './museQuota'
+import type { SessionsWithStore } from './storedSessions'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
+import { claudeAskLine, storedAskLine } from './rowActivity'
 import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
@@ -35,22 +81,28 @@ import {
   type OpenTab,
   type OpenTabs
 } from './openTabs'
+import { SessionAccounts } from './sessionAccounts'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  statusUnavailable,
-  SUPPORTED_PAIRS
+  messagingOf,
+  reachedBySendMessage,
+  preferredAssistBackend,
+  effectiveBackend,
+  turnedOffLine,
+  SESSION_BACKENDS
 } from '@shared/sessionBackend'
+import { butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker, type AttentionContext } from './attention'
+import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
-import { openUrlExternally, osOpenFallback } from './osOpen'
+import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
   authPromptFor,
   certHostOf,
@@ -61,57 +113,116 @@ import {
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
+  isUnderAnyRoot,
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, markAnswerable, pruneStale, setupHooks, writeTabHookSettings } from './hooks'
-import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
+import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
+import { stripTerminalCodes } from './terminalCodes'
+import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  HOLD_FILE,
+  HOOK_SCRIPT,
+  forgetAssistMarkers,
+  noteDiscordId,
+  noteDiscordSaid,
+  localNotice,
+  markAnswerable,
+  markOwnerAsleep,
+  noticeFile,
+  pruneStale,
+  quotedPrompt,
+  saidFile,
+  seedOwnerWords,
+  setupHooks,
+  writeTabHookSettings,
+  type NoticeFile
+} from './hooks'
+import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  backgroundOptions,
+  masterCommandOutlivingKoloft,
+  runMasterCommand,
   runSsh,
   runSshBytes,
-  sshOptions
+  problemOf,
+  sshOptions,
+  writeToMachineSocket
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
+import { BrowserTunnels } from './remote/browserTunnel'
+import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
+import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
+import {
+  ENSURE_CODEX_SH,
+  ENSURE_SH,
+  TMUX_CONF,
+  UTIL_BASH_LOGIN,
+  UTIL_BASH_LOGIN_FILE,
+  UTIL_SH,
+  remoteShCommand
+} from './remote/install'
+import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
+import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
+  DOCS_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
+  CLAUDE_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
   CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
-import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import {
+  browserForwardFile,
+  machinePackageBase,
+  pageForwardsFile,
+  mirrorAgyGemini,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  remoteShellPidFile,
+  tabPackageDir
+} from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { REMOTE_AGENT_SHIM } from './agentShim'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { REMOTE_OPEN_SHIM } from './openShimScript'
+import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
+import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
-  oncePerName,
-  readJsonDrop,
-  watchAndSweepJsonDrops,
-  watchJsonDrops,
-  writeWholeBeforeVisible
-} from './jsonDrops'
-import {
+  AGY_STATUSLINE_JS,
   bundlePath,
   DEFAULT_THEME,
   remoteWrapperScript,
   setupStatusline,
+  setupAgyStatusline,
   statusLineSetting
 } from './statusline'
+import { setupPlaywrightCli } from './playwrightCli'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  setupBundledGit,
+  stepAsideForTheUsersGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
   setSaveAvailable,
   setupAppMenu,
-  setWorkbenchAvailable
+  setWorkbenchAvailable,
+  type MenuShortcut
 } from './menu'
+import { openSignInWindow } from './signInWindow'
 import { applyKeepAwake } from './keepAwake'
 import {
   approve as approveQuit,
@@ -137,42 +248,71 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  allLimitedNotice,
+  type PickResponse
+} from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, type LiveSession } from './workspaces'
-import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
+import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import { rowsToAdopt } from '@shared/firstRun'
+import {
+  isWorkspaceWorkbenchKey,
+  workspaceOfWorkbenchKey,
+  sanitizeSessionWorkbench,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
+import {
+  dirExistsSync,
+  gitProbes,
+  worktreeHomeRoot,
+  worktreeNameAround,
+  type GitOut,
+  type ResumeProbes
+} from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
+import { museBackend } from './backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
-  acceptBypassWarning,
-  bypassWarningAccepted,
-  claudeJsonPath,
-  claudeSettingsPath
-} from './claudeTrust'
-import {
-  CodexAccountPicker,
+  HomeAccountPicker,
   codexHomeOf,
   codexHomes,
   limitsFrom,
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest } from './cronRunner'
+import {
+  CronRunner,
+  type LaunchRequest,
+  type LaunchResult,
+  type LeftTab,
+  type RunLeftovers
+} from './cronRunner'
+import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import { readTheMachine, signalLog } from './machineRoom'
+import { giveWay, readTaggedTable } from './machineTrees'
+import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
+import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
+import { SessionSync, type SyncSession } from './sessionSync'
 import {
   GithubLookup,
   ghOpenCounts,
   ghRead,
+  openCountsArgs,
+  parseOpenCounts,
   parseGithubFixture,
   type GithubOptions
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
+import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
+import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
@@ -181,20 +321,21 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor, realpathSafe } from './projectInfo'
-import { whatsNewDecision } from './releaseNotes'
-import {
-  checkForUpdates,
-  downloadAndInstall,
-  fetchPublishedReleases,
-  fixturePath,
-  releasePageUrl,
-  restartApp
-} from './updater'
+import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
+import { checkForUpdates, downloadAndInstall, releasePageUrl, restartApp } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
+import { busyInCheckout } from '@shared/freshnessOps'
 import {
+  aPageOnTheMachineAsks,
   canOpenExternally,
+  loopbackPortOf,
+  MACHINE_PAGE_SCHEME,
+  machinePageOf,
+  onMacPort,
+  PREVIEW_FILE_SCHEME,
+  previewFileOf,
+  webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
   type RouteDecision,
@@ -204,6 +345,12 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
+  relayEndpointOnMachine,
+  renewRelayEndpointOnMachine,
+  guestDrivenFromAnotherMachine,
+  originDrivenFromAnotherMachine,
+  notePageOpenedForAMachine,
+  openForMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -211,31 +358,56 @@ import {
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
+  relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { pickElement, pickText, stopPick } from './elementPick'
+import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
   permissionKeysFor,
+  permissionQueryAsk,
   type PermissionDetails,
   type PermissionName
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
-  ATTENTION_REASON,
+  attentionReason,
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
-  CODEX_PLACEHOLDER_TITLE,
+  PLACEHOLDER_TITLES,
   exitedAbnormally,
-  isHttpUrl
+  GIT_PLATFORMS,
+  isHttpUrl,
+  keychainNamespace,
+  SIGN_IN_FOLDER_KINDS,
+  BACKEND_OF_SIGN_IN_FOLDER,
+  isSignInFolderKind,
+  type SignInFolderKind,
+  type GitPlatform,
+  type GitTokenAdd
 } from '@shared/types'
+import {
+  ACCOUNT_KINDS_OF,
+  AUTO_PROBE_MS,
+  launchLine,
+  launchUsageProbe,
+  noAccountLine,
+  noAccountMessage,
+  SHIM_FOUND_NO_ACCOUNT_EXIT,
+  type LaunchUsageProbe
+} from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -252,12 +424,15 @@ import {
 import type {
   AccountAddResult,
   AccountKind,
+  QuotaBucket,
   AccountMeta,
   AccountView,
   ArtifactView,
   BackendId,
   CodexLimits,
-  CodexSignInResult,
+  CodexResetOutcome,
+  SignInResult,
+  SignInFailure,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -267,6 +442,8 @@ import type {
   BrowserCdpOpResult,
   ScreenAnswer,
   ScreenRequest,
+  TerminalExit,
+  UnexpectedExitScreen,
   BrowserOpenRequest,
   BrowserOverlayOpen,
   BrowserStripTarget,
@@ -275,17 +452,22 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   CronSaveInput,
-  ConductorSaveInput,
-  ConductorBinding,
+  ConductorOpenResult,
+  PaletteRequest,
+  ConductorSaveResult,
+  DiscordChannel,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
   ProjectInfo,
   SessionInfo,
+  BackendAvailability,
   AttentionEvent,
+  OsOutletsSeenByTests,
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  WorkspaceRows,
   SearchSnippet,
   SpawnedTab,
   AdoptableTab,
@@ -296,68 +478,165 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  WhatsNew,
   GitStepResult,
   PrChecks,
-  PrWorktreeResult
+  PrWorktreeResult,
+  WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { conductorFolder, Conductors } from './discord/conductors'
+import {
+  AgentRequests,
+  answered,
+  BUILTIN_VERBS,
+  errorText,
+  refused,
+  tabSpokenFor,
+  type AgentReply,
+  type AgentVerb
+} from './agentRequests'
+import { butlerHelperRole } from '@shared/agentGuide'
+import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
+import { sendPhoneCopy, shownOf, tooLarge } from './discord/phoneCopy'
+import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
+import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices } from './discord/notices'
-import { SessionThreads } from './discord/threads'
-import { LiveStatus } from './discord/liveStatus'
-import { AskButtons } from './discord/buttons'
-import { SlashCommands, type SlashTarget } from './discord/slash'
-import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys } from './typeKeys'
-import { MYSELF } from '@shared/slashCommands'
+import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
+import { secretVerb, type FieldPage } from './agentSecret'
+import { ButlerTyping } from './discord/butlerTyping'
 import {
+  machineOfShotPage,
+  onShotPageGone,
+  shootHtml,
+  shootPage,
+  shotSession
+} from './discord/pageShot'
+import { OldThreads } from './discord/oldThreads'
+import { roomLink, Rooms, whereOf, type RoomSubject } from './discord/rooms'
+import { accentOf } from './discord/cards'
+import { AskButtons } from './discord/buttons'
+import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
+import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
+import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import {
+  bracketedPaste,
+  clicksTheMouse,
+  pressesAKey,
+  typedPieces,
+  typeKeys,
+  withoutMouseAndFocusReports
+} from './typeKeys'
+import { CH, type Channel } from '@shared/ipcChannels'
+import {
+  claudeDialog,
   codexDialog,
+  isAskedCall,
+  questionsOf,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
-import { githubVerb } from './agentGithub'
+import { githubVerb, repoFlagOf } from './agentGithub'
+import { todoVerb } from './agentTodo'
+import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
-  claudePeerNames,
+  AGY_PROJECT_MCP_FILE,
+  PROJECT_MCP_FILE,
+  claudeServers,
+  codexServers,
+  foldersUpToRepoTop,
+  foldersUpToRoot,
+  jsonServers,
+  ownersClaudePlaywrightMcp,
+  textOrNull,
+  type ConfigText,
+  type McpServer
+} from './mcpServers'
+import {
+  LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudeShowsAPanel,
-  runningClaudePid,
-  whenMessagingSocket
+  claudeShowsAPanelOnMachine,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import { asPeerName, conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
+import {
+  asPeerName,
+  GLOBAL_SCOPE,
+  inviteLink,
+  isDiscordId,
+  NEW_CHANNEL_NAME,
+  scopeName
+} from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { inboxVerb } from './agentInbox'
+import { Inbox } from './inbox'
+import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {
-  sessionChoices,
+  askFromClaude,
+  askFromCodex,
+  inboxFooter,
+  where,
+  KoloftInbox,
+  type AskedSession,
+  type KoloftAsk
+} from './koloftInbox'
+import { ClaudeDialogWatch } from './claudeDialogWatch'
+import { INBOX_LEVELS, type InboxAnswers, type InboxLevel } from '@shared/inbox'
+import {
+  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
+  findSessionRow,
+  resolveWorkspace,
   sessionVerb,
-  targetIn,
   workspaceVerb,
+  type ButlerHelperTask,
   type ClosableSession,
+  type PlacedRow,
   type SessionScreen,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { writeLine } from './crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { koloftAssist } from './assist'
-import { closingTree, removeTree, whatIsLeft } from './sessionClose'
+import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
+import { isHandsOn, Presence } from './presence'
+import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
+import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
+import { koloftAssist, type AssistTarget } from './assist'
+import { createProject } from './newProject'
+import { routeSession } from './sessionRouter'
+import {
+  closingTree,
+  machineUnreachable,
+  removeTree,
+  tidyTree,
+  whatIsLeft,
+  type MergedHeads,
+  type TidyResult
+} from './sessionClose'
+import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import {
+  agentPluginFiles,
+  pluginSkills,
+  docsPluginFiles,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
+import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
 
 const BACKGROUND_TEST = process.env.KOLOFT_TEST_BACKGROUND === '1'
+const OFF_SCREEN_TEST = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !== '1'
 // PLATFORM§4
-if (BACKGROUND_TEST && process.platform === 'darwin') {
+if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
 }
@@ -375,8 +654,20 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
+const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
-let codexStartupError: string | undefined
+let museSessions: MuseSessions | null = null
+let agySessions: AgySessions | null = null
+const startupErrors: Partial<Record<BackendId, string>> = {}
+
+function storedSessions(): SessionsWithStore[] {
+  return [codexSessions, museSessions, agySessions].filter(
+    (s): s is CodexSessions | MuseSessions | AgySessions => !!s
+  )
+}
+function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
+  return storedSessions().find((s) => s.hasTab(tabId))
+}
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
@@ -385,62 +676,154 @@ const readerDocs = new ReaderDocs({
   assist: (job) => assist(job),
   session: sessionOfTab,
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
-  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+  changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
+    newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    discordNotices?.turnEnded(tabId, turn.reply)
+    const handedOff = sessionCommand.turnEnded(tabId, turn)
+    koloftInbox.turnEnded(tabId, turn.reply, handedOff)
+    awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
-  prompted: consumeOutletDedupe,
-  bound: (tabId, key) => {
-    attention.bound(tabId, key, attentionCtx())
+  prompted: (tabId) => {
+    claudeAsks.delete(tabId)
+    consumeOutletDedupe(tabId)
+    newsJudge.prompted(tabId)
+    awayDigest?.prompted(tabId)
+  },
+  bound: (tabId, key, idleCompaction) => {
+    claudeAsks.delete(tabId)
+    if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
-    conductors?.onBound(tabId, key)
-    discordThreads?.bound(tabId, key)
+    butler?.onBound(tabId, key)
+    if (butler?.isButlerTab(tabId)) {
+      ownerAsleep.awakeTabsChanged()
+      syncAnswerable()
+    }
+    discordTyping?.refresh(tabId)
+    void rooms?.bound(
+      tabId,
+      key,
+      async () => !idleCompaction && !(await sessionBackends.turns(key, 1).catch(() => [])).length
+    )
     startedSessions.bound(tabId, key)
+    koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
-  asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
+  exited: (tabId, subject) => attention.onExited(tabId, subject),
+  asked: (tabId, ask) => {
+    claudeAsks.set(tabId, ask)
+    koloftInbox.asked(tabId)
+    if (discordRelay) discordRelay.onAsk(tabId, ask)
+    else showAskOnItsRow(tabId)
+  },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
-sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
-sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
+sessionBackends.askingOf = (tabId) => {
+  if (tracker.statusOf(tabId) !== 'approval') return undefined
+  const owner = storedOwnerOf(tabId)
+  const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
+  if (stored) return storedAskLine(stored)
+  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
+  return ask && claudeAskLine(ask)
+}
+function showAskOnItsRow(tabId: string): void {
+  if (tracker.statusOf(tabId) === 'approval')
+    sendToRenderer(CH.sessions.update, onSessionsChanged())
+}
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
+sessionBackends.noAccountMessage = noAccountNow
+sessionBackends.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
+}
+
+const newsJudge = new NewsJudge({
+  isNews: (turn) => onlyNews(assist, turn),
+  awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
+  markFyi: (tabId) => attention.markFyi(tabId),
+  judged: (tabId, news) => koloftInbox.judged(tabId, news)
+})
+
+// CC§14
+function asksTheOwner(tabId: string): boolean {
+  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
+}
+
+type PanelOpen = (
+  tabId: string,
+  sessionId: string,
+  screen?: string[]
+) => Promise<boolean | undefined>
+
+function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
+  return async (tabId, _sessionId, screen) => {
+    const lines = screen ?? (await screenLines(tabId))
+    return lines && shows(lines)
+  }
+}
+
+const panelOpenOn: Record<BackendId, PanelOpen> = {
+  claude: async (tabId, sessionId) => {
+    if (!sessionId) return undefined
+    const host = tracker.remoteOf(tabId)?.host
+    if (!host) return claudeShowsAPanel(sessionId)
+    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
+    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
+  },
+  codex: panelOnScreen(codexShowsAPanel),
+  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
+  agy: async () => undefined
 }
 
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
-  asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
+  asking: asksTheOwner,
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
-  panelOpen: async (tabId) => {
+  panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
-    return claudeShowsAPanel(s.sessionId)
+    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
+    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
+  screen: screenLines,
   nextMirrorPull: (tabId) => {
-    const remote = tracker.remoteOf(tabId)
-    return remote && remoteSync?.nextPullDone(remote.host)
+    const host = remoteHostOfTab(tabId)
+    return host ? remoteSync?.nextPullDone(host) : undefined
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
-  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
-  post: (channelId, text) => discordRelay?.say(channelId, text),
-  card: (channelId, card) => discordRelay?.card(channelId, card)
+  typeNow: async (tabId, keys) => {
+    await typeKeys((data) => ptyMgr.write(tabId, data), keys)
+  },
+  // AGY§23
+  outputOnlyOnScreen: (tabId) =>
+    backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
+      ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
+      : undefined,
+  post: slashReply,
+  card: (to, card) =>
+    'channelId' in to
+      ? discordRelay?.card(to.channelId, card)
+      : to.tell(`${card.header}\n${card.body}`)
 })
+
+function slashReply(to: SlashReplyTo, text: string): void {
+  if ('channelId' in to) discordRelay?.say(to.channelId, text)
+  else to.tell(text)
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -451,18 +834,47 @@ tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
-    if (s.conductor || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+    if (
+      butler?.channelOfTab(s.tabId) ||
+      roomOfTab(s.tabId) ||
+      workspaceMgr?.isResident(s.sessionId)
+    )
+      held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
-async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers()
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer('sessions:leftovers', next)
+const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
+const closedSessionsStoppedUntil = new Map<string, number>()
+async function stopLeftoversOfClosedSessions(
+  found: Record<string, LeftoverProcess[]>
+): Promise<void> {
+  const now = Date.now()
+  for (const [sessionId, until] of closedSessionsStoppedUntil) {
+    if (until < now) closedSessionsStoppedUntil.delete(sessionId)
+    else if (found[sessionId]) {
+      const stopped = await Promise.all(found[sessionId].map((p) => stopLeftover(sessionId, p.pid)))
+      found[sessionId] = found[sessionId].filter((_, i) => !stopped[i])
+      if (!found[sessionId].length) delete found[sessionId]
+    }
+  }
+}
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+): Promise<void> {
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -475,49 +887,73 @@ interface ClaudeTabExit {
   leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
 }
 const claudeTabExits = new Map<string, ClaudeTabExit>()
-const sessionsLeavingTheirWorktree = new Set<string>()
+const closedTabs = new Map<string, LeftTab | null>()
+const treeRemovals = new TreeRemovals()
 
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
   if (!exit) {
-    if (ptyMgr.get(tabId)?.kind !== 'claude' || tracker.remoteOf(tabId)) return
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
+      return
     claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
   }
   if (!exit.watch.started(data)) return
   const session = tracker.infoOf(tabId)
+  const removalOutlivesKoloftsQuit = hostOfTab(tabId) === 'ssh'
   exit.leaving = {
     sessionId: session?.sessionId,
-    claudePid: ptyMgr.pidOf(tabId),
-    treeRoot: session?.treeRoot
+    ...(!removalOutlivesKoloftsQuit && {
+      claudePid: ptyMgr.pidOf(tabId),
+      treeRoot: session?.treeRoot
+    })
   }
-  if (session?.sessionId) sessionsLeavingTheirWorktree.add(session.sessionId)
-  sendToRenderer('tab:killedByMain', tabId)
-  workspaceMgr?.refresh()
+  if (session?.sessionId) workspaceMgr?.leavingWorktree(session.sessionId, tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
 }
 
 const attention = new AttentionTracker((pending, event) => {
   if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
-  sendToRenderer('attention:changed', pending)
+  sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
-  if (event && !event.resurrected) routeAttentionEvent(event)
+  if (event) routeAttentionEvent(event)
+  awayDigest?.marked()
+  koloftInbox.sync()
 }, loadLastRunAttention())
+attention.asleep = (tabId) => sleepers.has(tabId)
+attention.watching = () => (windowFocused() ? uiActiveTabId : null)
+attention.turnDone = (tabId) => newsJudge.marked(tabId)
+attention.waitsOnAnother = (tabId) => {
+  const me = sessionOfTab(tabId)
+  return (
+    !!me?.sessionId &&
+    waitsOnOtherWork(
+      me,
+      allSessions(),
+      (id) => startedSessions.parentOfRow(id),
+      (id) => sessionCommand.waitsOnAnother(id)
+    )
+  )
+}
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
+  const placeholder = Object.values(PLACEHOLDER_TITLES).includes(s.title)
   return s.title && !placeholder ? s.title : undefined
 }
 
+const tabLifecycle = new TabLifecycle()
 const sleepers = new Map<string, OpenTab>()
 const typedWhileAsleep = new Map<string, string>()
 const wokenAs = new Map<string, string>()
 let sleeperSeq = 0
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
+let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
@@ -535,13 +971,13 @@ function rememberOpenTabs(all = allSessions()): void {
   if (!openTabsFile || !openTabsRestored || quitCommitted) return
   const live = all.filter((s) => s.alive && s.sessionId).map(openTabOf)
   for (const h of ptyMgr.list()) {
-    if (!h.alive || !h.resumeSessionId || (h.kind !== 'claude' && h.kind !== 'codex')) continue
-    const remote = tracker.remoteOf(h.id)
+    const kind = backendIdOf(h.kind)
+    if (!h.alive || !h.resumeSessionId || !kind) continue
     live.push({
       sessionId: h.resumeSessionId,
-      kind: h.kind,
+      kind,
       title: '',
-      cwd: remote ? formatRemoteKey(remote.host, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -557,7 +993,9 @@ function onSessionsChanged(): SessionInfo[] {
   const all = allSessions()
   settleWokenSleepers(all)
   rememberOpenTabs(all)
+  sessionAccounts?.note(all)
   syncRelayBindings(all)
+  void sessionSync.observe(syncSessionsOf(all))
   return all
 }
 
@@ -589,17 +1027,23 @@ function sleepTab(tabId: string): void {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return killTabFromMain(tabId)
   addSleeper(tabId, openTabOf(s))
-  sendToRenderer('tab:slept', tabId)
+  sendToRenderer(CH.tab.slept, tabId)
   void stopTabProcess(tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   rememberOpenTabs()
+}
+
+function sleepingTabOf(sessionId: string): string | undefined {
+  for (const [tabId, t] of sleepers) if (t.sessionId === sessionId) return tabId
+  return undefined
 }
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   typedWhileAsleep.delete(tabId)
-  sendToRenderer('tab:killedByMain', tabId)
-  workspaceMgr?.onTrackerUpdate()
+  attention.clearKeepingExit(tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
+  tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
 
@@ -612,11 +1056,12 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     const newId = tabOfSession.get(t.sessionId)
     if (!newId || newId === oldId) continue
     sleepers.delete(oldId)
+    attention.rehome(oldId, newId)
     wokenAs.set(oldId, newId)
     woke = true
     void handOverTyping(oldId, newId)
   }
-  if (woke) workspaceMgr?.onTrackerUpdate()
+  if (woke) tabLifecycle.emit('woken')
 }
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
@@ -635,21 +1080,15 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
-  if (typed !== undefined) typedWhileAsleep.set(id, typed + data)
-  else ptyMgr.write(wokenAs.get(id) ?? id, data)
+  const woken = wokenAs.get(id)
+  if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
+  else if (woken) ptyMgr.write(woken, withoutMouseAndFocusReports(data))
+  else ptyMgr.write(id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
-  return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
-}
-function retitleDiscordThreads(sessions: SessionInfo[]): void {
-  if (!discordThreads) return
-  for (const s of sessions) {
-    const title = sidebarTitle(s)
-    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
-    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
-  }
+  return s?.sessionId ? sessionBackends.peerNames()(s) : null
 }
 function markedSessionsOf(wsPath: string): string[] {
   return attention
@@ -662,39 +1101,105 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-function attentionCtx(): AttentionContext {
-  let focused = false
-  try {
-    focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
-  } catch {}
-  return { windowFocused: focused, activeTabId: uiActiveTabId }
+const presence = new Presence({
+  now: Date.now,
+  macIdleSeconds: () => powerMonitor.getSystemIdleTime()
+})
+const AWAY_CHECKED_EVERY_MS = 30_000
+function handsOnKoloft(_e: unknown, input: { type: string }): void {
+  if (isHandsOn(input.type)) presence.handsOn()
+}
+const ownerAsleep = new OwnerAsleep(
+  {
+    machines: () => [
+      THIS_MAC,
+      ...new Set([
+        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
+    ],
+    mark: async (machine, awakeTabs) => {
+      if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
+      if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
+      return !!hookRegDir
+    },
+    awakeTabs: () => {
+      const tab = butler?.liveTab()
+      return tab ? [tab] : []
+    },
+    tabs: ptyTabIds,
+    asked: async (tabId) => {
+      const stored = await pendingAskOf(tabId)
+      if (stored) {
+        const questions = 'questions' in stored ? stored.questions.length : 0
+        return { question: questions > 0, questions, text: codexDialog(stored).text }
+      }
+      const claude =
+        discordRelay?.heldAsk(tabId) ??
+        (tracker.statusOf(tabId) === 'approval' ? discordRelay?.askOf(tabId) : undefined)
+      if (!claude) return undefined
+      const questions = questionsOf(claude).length
+      return { question: questions > 0, questions, text: claudeDialog(claude).text }
+    },
+    answer: answerSession,
+    titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
+    changedSince: (since) => awayDigest?.changedSince(since) ?? [],
+    report: (text) => discordRelay?.tell(butlerDestination(), text),
+    now: Date.now,
+    answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
+  },
+  loadSettings().ownerAsleepSince
+)
+
+function ownerCameBack(): void {
+  if (ownerAsleep.asleep()) commitSettings({ ownerAsleepSince: null })
 }
 
-function projectFolderName(tabId: string): string | undefined {
-  const root = sessionOfTab(tabId)?.treeRoot
+function ownerAway(): boolean {
+  if (ownerAsleep.asleep()) return false
+  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (BACKGROUND_TEST) return true
+  return presence.away()
+}
+
+function windowFocused(): boolean {
+  try {
+    return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+  } catch {
+    return false
+  }
+}
+
+function projectFolderName(event: AttentionEvent): string | undefined {
+  const root =
+    sessionOfTab(event.tabId)?.treeRoot ??
+    (event.sessionId ? workspaceMgr?.workspaceOf(event.sessionId) : undefined)
   return root ? path.basename(root) : undefined
 }
 
+const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
+  osOutletsSeenByTests
+
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
-  const text = dockBadgeText(pending.length, loadSettings().dockBadge, BACKGROUND_TEST)
-  if (text !== null) app.dock?.setBadge(text)
-}
-
-function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
-  uiActiveTabId = tabId
+  const text = dockBadgeText(pending.length, loadSettings().dockBadge)
+  if (OFF_SCREEN_TEST) osOutletsSeenByTests.dockBadge = text
+  else app.dock?.setBadge(text)
 }
 
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
-    pointFocusClearingAtTabBeforeFocusingWindow(tabId)
+    uiActiveTabId = tabId
     tracker.noteActivity(tabId)
     if (win.isMinimized()) win.restore()
     if (!win.isVisible()) win.show()
     win.focus()
     app.focus({ steal: true })
-    sendToRenderer('attention:activate-tab', { tabId })
+    sendToRenderer(CH.attention.activateTab, { tabId })
     return
   }
   createWindow()
@@ -703,7 +1208,6 @@ function activateTabFromNotification(tabId: string): void {
 
 // PLATFORM§4
 const osNotifications = new Map<string, Notification>()
-;(globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount = 0
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   for (const [tabId, n] of osNotifications) {
@@ -716,15 +1220,26 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   }
 }
 
-function showOsNotification(event: AttentionEvent): void {
-  const reason = ATTENTION_REASON[event.kind]
-  const folder = projectFolderName(event.tabId)
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  const n = new Notification({
+function osNotificationText(event: AttentionEvent): { title: string; body: string } {
+  const reason = attentionReason(event)
+  const folder = projectFolderName(event)
+  return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
     body: folder ? `${reason} · ${folder}` : reason
-  })
+  }
+}
+
+function osNotification(text: { title: string; body: string }): Notification | null {
+  if (OFF_SCREEN_TEST) {
+    osOutletsSeenByTests.notifications.push(text)
+    return null
+  }
+  return Notification.isSupported() ? new Notification(text) : null
+}
+
+function showOsNotification(event: AttentionEvent): void {
+  const n = osNotification(osNotificationText(event))
+  if (!n) return
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
@@ -741,10 +1256,7 @@ function showOsNotification(event: AttentionEvent): void {
 }
 
 function notifyPlain(title: string, body: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  new Notification({ title, body }).show()
+  osNotification({ title, body })?.show()
 }
 
 const OUTLET_FLAP_DEDUPE_MS = 5000
@@ -757,23 +1269,20 @@ function consumeOutletDedupe(tabId: string): void {
 }
 
 function routeAttentionEvent(event: AttentionEvent): void {
+  const decision = route(event, windowFocused(), loadSettings(), uiActiveTabId)
+  if (!decision.os && !decision.sound) return
   const outletKey = `${event.tabId}:${event.kind}`
   const lastAt = recentOutlets.get(outletKey)
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(
-    event,
-    { windowFocused: attentionCtx().windowFocused, backgroundTest: BACKGROUND_TEST },
-    loadSettings()
-  )
   if (decision.os) showOsNotification(event)
-  if (decision.sound) shell.beep()
+  if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
-function sendToRenderer(channel: string, ...args: unknown[]): boolean {
+function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   try {
     const win = mainWindow
     if (!win || win.isDestroyed()) return false
@@ -786,12 +1295,32 @@ function sendToRenderer(channel: string, ...args: unknown[]): boolean {
   }
 }
 
+const MENU_SHORTCUT_CHANNEL: {
+  [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
+} = {
+  'new-session': CH.shortcut.newSession,
+  'new-worktree-session': CH.shortcut.newWorktreeSession,
+  'close-tab': CH.shortcut.closeTab,
+  find: CH.shortcut.find,
+  'find-files': CH.shortcut.findFiles,
+  'check-update': CH.shortcut.checkUpdate,
+  'restart-session': CH.shortcut.restartSession,
+  'add-workspace': CH.shortcut.addWorkspace,
+  'new-terminal-tab': CH.shortcut.newTerminalTab,
+  save: CH.shortcut.save,
+  'focus-notes': CH.shortcut.focusNotes,
+  'next-waiting-session': CH.shortcut.nextWaitingSession,
+  'toggle-sidebar': CH.shortcut.toggleSidebar,
+  'open-settings': CH.shortcut.openSettings,
+  'command-palette': CH.shortcut.commandPalette
+}
+
 let webglRepairTimer: NodeJS.Timeout | undefined
 const WEBGL_REPAIR_BURST_DEBOUNCE_MS = 500
 function requestWebglRepair(): void {
   clearTimeout(webglRepairTimer)
   webglRepairTimer = setTimeout(
-    () => sendToRenderer('webgl:repair'),
+    () => sendToRenderer(CH.webgl.repair),
     WEBGL_REPAIR_BURST_DEBOUNCE_MS
   )
 }
@@ -800,16 +1329,46 @@ let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let githubCounts: GithubCountsSweep | null = null
+let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
+  hosts.machine(host).realFiles(files)
+tracker.realFilesOn = realFilesOn
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
+const browserTunnels = new BrowserTunnels({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
+  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
+  endpointOnMachine: relayEndpointOnMachine,
+  renewEndpointOnMachine: renewRelayEndpointOnMachine
+})
+const pageForwards = new PageForwards({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  macPortFree,
+  anyFreeMacPort,
+  forwardFile: (host) => pageForwardsFile(app.getPath('userData'), host)
+})
 let loginEnv: Promise<void> | null = null
+process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
   return (loginEnv ??= readLoginShell({ env: process.env })
-    .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
+    .then(({ env }) => {
+      Object.assign(process.env, sshEnvFromLogin(process.env, env))
+      if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      try {
+        if (gitFirstBin) stepAsideForTheUsersGit(gitFirstBin, env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
+    })
     .catch(() => undefined))
 }
 
@@ -817,64 +1376,120 @@ function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
+    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
+    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
+    [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
+    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
+    [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
+    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
+    [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
+    [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
+    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
+    [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
+    [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
+    [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
+    [AGY_LIST_FILE]: AGY_LIST_JS
   }
+  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
+  for (const [rel, text] of Object.entries(docsPluginFiles()))
+    pkgFiles[`${DOCS_PLUGIN_DIR}${rel}`] = text
   try {
-    pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
+    // PLATFORM§36
+    const bundleDir = path.dirname(bundlePath())
+    for (const name of fs.readdirSync(bundleDir))
+      pkgFiles[`statusline/${name}`] = fs.readFileSync(path.join(bundleDir, name))
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
     pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
     pkgFiles['statusline/run.sh'] = remoteWrapperScript()
+    pkgFiles['statusline/agy.cjs'] = AGY_STATUSLINE_JS
+    pkgFiles[AGY_STATUSLINE_FILE] = agyStatuslineScript()
   } catch (err) {
     console.error('[koloft] remote statusline bundle unreadable:', err)
   }
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
 
+let playwrightCliBin: string | undefined
+let fallbackBin: string | undefined
+let gitFirstBin: string | undefined
 let cronRunner: CronRunner | null = null
-let conductors: Conductors | null = null
+let butler: Butler | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
-let discordNotices: Notices | null = null
-let discordThreads: SessionThreads | null = null
-let discordLive: LiveStatus | null = null
+let discordTyping: ButlerTyping | null = null
+let awayDigest: AwayDigest | null = null
+let rooms: Rooms | null = null
 let askButtons: AskButtons | null = null
+let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
-let answerableRegDir: string | undefined
+let hookRegDir: string | undefined
+let guard: ResourceGuard | undefined
+let writeHookSettings:
+  | ((
+      tabId: string,
+      allowKoloft: boolean,
+      conductor: boolean,
+      playwrightServers?: string[]
+    ) => string)
+  | undefined
+const PLAIN_KOLOFT_SHIM = {
+  hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
+}
+let claudeAgentPlugin: string | undefined
+let claudeDocsPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
 
-// CODEX§3 CODEX§20
-async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
+function elementPicksDir(): string {
+  return path.join(app.getPath('userData'), 'element-picks')
+}
+
+async function savePickOnThisMac(png: Buffer): Promise<string> {
+  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
+  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
+  await fs.promises.writeFile(file, png)
+  return file
+}
+
+// CODEX§3 CODEX§20 MUSE§5
+async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const ask = codexSessions?.openApproval(tabId) ?? codexSessions?.openQuestion(tabId)
-    if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
+    const owner = storedOwnerOf(tabId)
+    const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
+    if (ask || !polls || !owner) return ask
     if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
 
 function syncAnswerable(): void {
-  if (!answerableRegDir || !conductors) return
+  const all = butler
+  if (!hookRegDir || !all) return
   for (const s of allSessions()) {
-    if (s.backendId !== 'claude' || !s.alive || s.remote) continue
-    const on =
-      discordConnected &&
-      (!!s.conductor || conductors.covers(sessionBackends.workspaceOfTab(s.tabId)))
+    if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
+    const on = ownerAsleep.answersFor(s.tabId) || (discordConnected && !!all.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
-    markAnswerable(answerableRegDir, s.tabId, on)
+    markAnswerable(hookRegDir, s.tabId, on)
   }
 }
 
@@ -883,10 +1498,7 @@ const BOOT_TIME = Date.now()
 let rendererReady = false
 
 // CC§7
-const usageViews = new Map<
-  string,
-  { usage?: UsageSnapshot; limits?: CodexLimits; probeError?: ProbeErrorKind }
->()
+const usageViews = new Map<string, Omit<AccountView, keyof AccountMeta>>()
 
 function viewKey(name: string, kind: AccountKind): string {
   return `${kind}:${name.toLowerCase()}`
@@ -897,15 +1509,14 @@ function accountViews(): AccountView[] {
 }
 
 function pushAccounts(): void {
-  sendToRenderer('accounts:update', accountViews())
+  sendToRenderer(CH.accounts.update, accountViews())
 }
 
-function notifyExpired(name: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  new Notification({
-    title: 'Claude account expired',
-    body: `Account ${name} expired and left the pool — sign in again from Settings to restore it`
-  }).show()
+function notifyExpired(name: string, label = 'Claude'): void {
+  notifyPlain(
+    `${label} account expired`,
+    `Account ${name} expired and left the pool — sign in again from Settings to restore it`
+  )
 }
 
 function foldProbeResult(
@@ -952,8 +1563,145 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function machineOfTab(tabId: string): string | undefined {
+  return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
+function hostOfTab(tabId: string): HostId {
+  return machineOfTab(tabId) ? 'ssh' : 'local'
+}
+
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
   return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
+}
+
+// CC§2
+function pinnedKeyOn(host: string, onMachine: string): string {
+  for (const pinned of workspaceMgr?.remoteTargets().find((t) => t.host === host)?.paths ?? []) {
+    const real = workspaceMgr?.realRemotePath({ host, path: pinned }) ?? pinned
+    if (onMachine === real || onMachine.startsWith(real + '/'))
+      return formatRemoteKey(host, pinned + onMachine.slice(real.length))
+  }
+  return formatRemoteKey(host, onMachine)
+}
+
+// ADR-0025 CC§3
+function projectInfoOnHost(cwd: string): ProjectInfo {
+  const key = parseRemoteKey(cwd)
+  if (!key) return projectInfoFor(cwd)
+  const worktreeName = worktreeNameAround(key.path)
+  let tree = key.path
+  while (worktreeName && !worktreeHomeRoot(tree)) tree = path.posix.dirname(tree)
+  const top = (worktreeName && worktreeHomeRoot(tree)) || key.path
+  const pinned = (workspaceMgr?.remoteTargets().find((t) => t.host === key.host)?.paths ?? [])
+    .filter((p) => top === p || top.startsWith(p + '/'))
+    .sort((a, b) => b.length - a.length)[0]
+  return {
+    root: formatRemoteKey(key.host, pinned ?? top),
+    treeRoot: formatRemoteKey(key.host, tree),
+    ...(worktreeName && { worktreeName })
+  }
+}
+
+function machineTreeIo(cwd: string): TreeIo {
+  const host = parseRemoteKey(cwd)!.host
+  const machine = hosts.machine(host)
+  return {
+    git: async (dir, args) => {
+      const r = await machine.gitRun(dir, args)
+      if (r.code === 0) return r.stdout.trimEnd()
+      throw Object.assign(new Error(r.stderr || 'git failed'), { code: r.code ?? undefined })
+    },
+    exists: (p) => machine.dirExists(p),
+    real: (p) => p,
+    keyed: (listed) => pinnedKeyOn(host, listed),
+    machine
+  }
+}
+
+const museOnMachines: MuseRemoteDeps = {
+  machine: (host) => hosts.machine(host),
+  hosts: () => workspaceMgr?.remoteTargets().map((t) => t.host) ?? [],
+  keyed: pinnedKeyOn,
+  mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host),
+  gone: (host, sessionId) =>
+    !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
+  connected: (host) => !!remoteSync?.connected(host),
+  poke: (host) => remoteSync?.pokeNow(host),
+  setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
+}
+
+function machineProbes(cwd: string): ResumeProbes {
+  const host = hosts.of(cwd)
+  return {
+    dirExists: (p) => host.dirExists(host.keyed(p)),
+    occupantOf: (dir) => sessionBackends.occupantOf(dir),
+    ...gitProbes(hostGitOut)
+  }
+}
+
+function remoteHostOfTab(tabId: string): string | undefined {
+  return ptyMgr.get(tabId)?.remoteHost
+}
+
+function projectRows(): WorkspaceRows[] {
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+}
+
+function butlerSide(tabId: string): boolean {
+  return (
+    !!butler?.isButlerTab(tabId) ||
+    sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+  )
+}
+
+async function mcpServersNow(): Promise<McpServer[]> {
+  const folders = [
+    ...(workspaceMgr?.pinnedPaths() ?? []).flatMap((w) => (isRemoteKey(w.path) ? [] : [w.path])),
+    conductorFolder(app.getPath('userData'))
+  ]
+  const walks = await Promise.all(
+    folders.map(async (onlyIn) => ({
+      onlyIn,
+      toRoot: foldersUpToRoot(onlyIn),
+      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
+    }))
+  )
+  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
+    Promise.all(
+      walks.flatMap((w) =>
+        w[walk].map(async (folder) => ({
+          onlyIn: w.onlyIn,
+          text: await textOrNull(path.join(folder, file))
+        }))
+      )
+    )
+  const museSettings = path.join(
+    museConfigHome(museSessions?.defaultEnv ?? process.env),
+    'muse',
+    'settings.json'
+  )
+  const [claudeJson, projectFiles, museProjectFiles, agyProjectFiles, codexToml, muse, agy] =
+    await Promise.all([
+      textOrNull(claudeJsonPath()),
+      inFolders(PROJECT_MCP_FILE, 'toRoot'),
+      inFolders(PROJECT_MCP_FILE, 'toRepoTop'),
+      inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
+      textOrNull(codexSharedConfig()),
+      textOrNull(museSettings),
+      textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+    ])
+  const claudeFolders = folders.map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
+  return [
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
+    ...codexServers(codexToml),
+    ...jsonServers('muse', [{ text: muse }, ...museProjectFiles]),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -961,32 +1709,31 @@ function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
-function notesFileOfPinned(workspace: string): string | undefined {
-  return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
-}
-
-function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
-  return (args, caller) => {
-    const reason = conductors?.noWorkspaceReason(caller.tabId)
-    return reason ? refused(`koloft: ${reason}`) : verb(args, caller)
-  }
+function notesFileOfScope(scope: string): string | undefined {
+  return scope === GLOBAL_SCOPE || workspaceMgr?.isPinned(scope)
+    ? ensureNotesFile(notesBaseDir(), scope)
+    : undefined
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) => {
-    const machine = tracker.remoteOf(tabId)?.host
-    return machine && !schemeOf(target)
-      ? openOnMachine(tabId, machine, target, view)
-      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+  open: async (tabId, target, view) => {
+    const machine = machineOfTab(tabId)
+    if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
+    const routed = routeFor(target, 'agent')
+    const decision: RouteDecision =
+      routed.reason === 'unsupported-target' && !schemeOf(target) && (await isRegularFile(target))
+        ? { dest: 'preview', target }
+        : routed
+    return openInWorkbench(tabId, decision, 'agent', target, view)
   },
+  copyToPhone,
   notesFileOf: (tabId) => {
-    const workspace = sessionBackends.workspaceOfTab(tabId)
-    return workspace ? notesFileOfPinned(workspace) : undefined
+    const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
+    return scope ? notesFileOfScope(scope) : undefined
   }
 })
 
-const assist = koloftAssist({
-  setting: () => loadSettings().assist,
+const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   claude: async () => {
     const env = await pickedAccountEnv()
     if (!env) return null
@@ -998,119 +1745,433 @@ const assist = koloftAssist({
     const binary = codexSessions.cliBinary
     if (!binary) return null
     return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  },
+  muse: async () => {
+    const picked = musePicker.pick(accountViews())
+    return picked ? ((await museServeFor(picked.name)) ?? null) : null
+  },
+  agy: () => agyOneShotTarget()
+}
+const assist = koloftAssist({
+  setting: () => loadSettings().assist,
+  enabled: (backend) => !turnedOffNow(backend),
+  target: (backend) => assistTargets[backend]()
+})
+const assistRuns = new Map<number, AbortController>()
+
+function turnedOffNow(backend: BackendId): string | null {
+  return loadSettings().sessionMethods.enabled[backend] ? null : turnedOffLine(backend)
+}
+
+function installedBackends(): Promise<BackendAvailability[]> {
+  return sessionBackends.availability((id) => ({
+    id,
+    available: false,
+    reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
+  }))
+}
+
+async function assistBackendChoice(): Promise<AssistBackendChoice> {
+  const settings = loadSettings()
+  return butlerStart(
+    preferredAssistBackend(settings),
+    {
+      enabled: settings.sessionMethods.enabled,
+      installed: await installedBackends(),
+      accounts: listAccounts()
+    },
+    butlerNameNow()
+  )
+}
+const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
+  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
+
+// CC§11
+async function liveClaudeRegistryOn(host: string): Promise<string> {
+  await loginEnvReady()
+  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+    controlDir: remoteControlDir
+  })
+  if (r.code !== 0) throw new Error(problemOf(r))
+  return r.stdout
+}
+
+// CC§13
+async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
+  const sessionId = sessionOfTab(tabId)?.sessionId
+  const host = tracker.remoteOf(tabId)?.host
+  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
+  if (!host) {
+    const socket = await whenMessagingSocket(sessionId, ms)
+    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+    return writeLineInTurn(socket, line)
   }
+  const socket = await whenMessagingSocketOnMachine(sessionId, ms, () => liveClaudeRegistryOn(host))
+  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
+  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
+    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
+  )
+}
+const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
+
+async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
+  if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
+  await codexSessions.queueMessage(tabId, text, clientId)
+}
+
+const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
+  Promise.all(
+    paths.map(async (onMachine) => {
+      const dir = formatRemoteKey(machine, onMachine)
+      const common = (await hosts.of(dir).gitOut(dir, COMMON_GIT_DIR))?.trim()
+      return common ? formatRemoteKey(machine, common) : null
+    })
+  )
+)
+
+function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
+  return all.flatMap((s) =>
+    s.alive && !s.butler && s.sessionId
+      ? [
+          {
+            tabId: s.tabId,
+            sessionId: s.sessionId,
+            title: s.title,
+            treeRoot: s.treeRoot,
+            files: s.files,
+            liveWrites: s.liveWrites
+          }
+        ]
+      : []
+  )
+}
+
+async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
+  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+}
+
+function noticeOf(tabId: string): NoticeFile | undefined {
+  const host = machineOfTab(tabId)
+  if (host) return hosts.machine(host).notice(tabId)
+  return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
+}
+
+const sessionSync = new SessionSync({
+  repoOf: (dir) => syncRepoKeys.resolve(dir),
+  gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
+  notice: noticeOf
 })
 
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-  allSessions: () => allSessions().filter((s) => !s.conductor),
+  allSessions: () => allSessions().filter((s) => !s.butler),
+  tabOpen: (tabId) => sessionBackends.ownerOfTab(tabId) !== undefined,
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: () => claudePeerNames(),
-  launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  peerNames: () => sessionBackends.peerNames(),
+  turnedOff: turnedOffNow,
+  launch: async (options) => {
+    const title = options.name ?? BACKEND_LABEL[options.kind]
+    return launchQuietTab(options, title, { launch: options })
+  },
+  waiting: {
+    list: () => guard?.queue.list() ?? [],
+    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
+    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
+    drop: (tabId) => !!guard?.queue.drop(tabId)
+  },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
-  whatIsLeft: whatClosingWouldLose,
-  closeSoon: (target) =>
-    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+  whatIsLeft: (target, waitUntil) => whatClosingWouldLose(target, undefined, waitUntil),
+  closeSoon: (inOrder, tellStarter) =>
+    setTimeout(async () => {
+      for (const target of inOrder) {
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
+          tell(`${target.title}: ${String(error)}`)
+          return false
+        })
+        if (!closed) return
+      }
+    }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  speaksForTheOwner: butlerSide,
+  butlerFolder: () => conductorFolder(app.getPath('userData')),
+  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
+  worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
-  touch: (tabId, key) => conductors?.touch(tabId, key),
-  conductorOf: conductorTarget,
+  transcriptPlaces: (key) => sessionBackends.transcriptPlaces(key),
+  quotedPrompt: (tabId) => {
+    const host = tracker.remoteOf(tabId)?.host
+    const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
+    return dir ? quotedPrompt(dir, tabId) : undefined
+  },
+  butlerTarget,
   resume: async (row) => {
-    const resumed = await resumeRow(row)
+    const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
-  ready: tabReady,
-  // CC§13
-  sendLine: async (tabId, line, ms) => {
-    const sessionId = sessionOfTab(tabId)?.sessionId
-    const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-    if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-    await writeLine(socket, line)
+  ready: tabTypable,
+  bound: tabBound,
+  asking: asksTheOwner,
+  sendLine: sendPeerLine,
+  press: async (tabId, keys) => {
+    butler?.firstWordsComing(tabId)
+    await ptyMgr.type(tabId, keys)
   },
-  press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
-  answer: async (tabId, reply) => {
-    if (!discordRelay) return STILL_STARTING
-    return discordRelay.answerSession(tabId, reply)
-  },
+  answer: answerSession,
   undelivered: (callerTab, target, why) => {
-    const caller = conductors?.bindingOfTab(callerTab)
-    const b = caller ?? (target.bindingId ? conductors?.binding(target.bindingId) : undefined)
+    const callerChannel = butler?.channelOfTab(callerTab)
+    const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!b) return void sendToRenderer('cron:toast', text)
-    discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
-    if (caller) discordRelay?.tell(conductorDestination(caller), `[Koloft] ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
+    else sendToRenderer(CH.cron.toast, text)
+    if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
-  started: (conductorTab, tabId, name, workspace, backend) => {
-    const b = conductors?.bindingOfTab(conductorTab)
-    if (!b) return
-    conductors?.touchWhenBound(conductorTab, tabId)
-    void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
+  command: async (callerTab, target, text, tellCaller) =>
+    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
+      ? commandIntoButler(text)
+      : typeCommandInto(target, text, { tell: tellCaller }),
+  screen: screenOf,
+  roomOf: (key) => {
+    const room = rooms?.ofKey(key)
+    if (!room) return undefined
+    return `room on Discord: ${roomLink(room.threadId)}${room.putDown ? ' (put down: the owner took it back at the Mac)' : ''}`
   },
-  command: async (callerTab, target, text) => {
-    const b = conductors?.bindingOfTab(callerTab)
-    if (!b) throw new Error(STILL_STARTING)
-    return target.bindingId === b.id ? commandIntoConductor(b, text) : commandInto(b, target, text)
+  roomForNew
+}
+const sessionCommand = sessionVerb(sessionDeps)
+
+const inbox = new Inbox(
+  {
+    now: () => Date.now(),
+    sendToSession: (ref, text, toItsOwnSession) =>
+      sessionCommand.sendFromInbox(ref, text, toItsOwnSession),
+    answerSession: (ref, given) => koloftInbox.answer(ref, given),
+    startSession: async (spec, card, onReply) => {
+      const started = await sessionCommand.startFromInbox(
+        card.session ?? undefined,
+        spec,
+        ownersPermission(),
+        onReply
+      )
+      const bound = started.session && sessionOfTab(started.session)?.sessionId
+      return bound ? { ...started, session: bound } : started
+    },
+    footer: (card, action) => inboxFooter(card, action.lets),
+    changed: () => {
+      if (inboxPushQueued) return
+      inboxPushQueued = true
+      queueMicrotask(() => {
+        inboxPushQueued = false
+        const now = inbox.snapshot()
+        saveInbox(now)
+        sendToRenderer(CH.inbox.changed, now)
+      })
+    }
   },
-  screen: screenOf
+  loadInbox()
+)
+let inboxPushQueued = false
+
+function liveSessionOf(ref: string): SessionInfo | undefined {
+  return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
+}
+
+function inboxSessionOfTab(tabId: string): AskedSession | undefined {
+  const s = sessionOfTab(tabId)
+  if (!s?.sessionId) return undefined
+  const ws = sessionBackends.workspaceOfTab(tabId)
+  return {
+    sessionId: s.sessionId,
+    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
+    backend: s.backendId,
+    workspace: ws ? scopeName(ws) : undefined,
+    machine: ws ? parseRemoteKey(ws)?.host : undefined
+  }
+}
+
+async function inboxAskOf(tabId: string): Promise<KoloftAsk | undefined> {
+  const claude = claudeAsks.get(tabId)
+  if (claude) return askFromClaude(claude)
+  const other = await pendingAskOf(tabId)
+  return other && askFromCodex(other)
+}
+
+const koloftInbox = new KoloftInbox({
+  inbox,
+  marks: () => attention.list(),
+  sessionOfTab: inboxSessionOfTab,
+  liveTabOf: (ref) => {
+    const s = liveSessionOf(ref)
+    return s && { tabId: s.tabId, backend: s.backendId }
+  },
+  askOf: inboxAskOf,
+  answer: answerSession,
+  butlerSide,
+  watching: () => attention.watching()
+})
+
+const claudeDialogs = new ClaudeDialogWatch({
+  watchedProcess: (tabId) => {
+    const pty = ptyMgr.get(tabId)
+    return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
+  },
+  reply: (tabId, text) => ptyMgr.write(tabId, text),
+  closed: (tabId) => {
+    askEnded(tabId, true)
+    void askButtons?.check(tabId)
+  }
+})
+
+function askEnded(tabId: string, dialogClosed = false): void {
+  claudeAsks.delete(tabId)
+  questionSeen.delete(tabId)
+  discordRelay?.dialogGone(tabId, dialogClosed)
+}
+
+async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
+  return discordRelay ? discordRelay.answerSession(tabId, reply) : STILL_STARTING
 }
 
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
-    cron: unlessWorkspacelessConductor(
-      cronVerb({
-        runner: () => cronRunner,
-        pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-        toast: (text) => sendToRenderer('cron:toast', text),
-        now: () => new Date()
-      })
-    ),
-    ...notesAndWorkbenchVerbs,
-    note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionVerb(sessionDeps),
-    workspace: workspaceVerb({
-      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
-      sidebar: () => workspaceMgr?.rows() ?? []
+    cron: cronVerb({
+      runner: () => cronRunner,
+      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+      resolveWorkspace: (ref) => {
+        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+        return found.ok ? { ok: true, value: found.value.path } : found
+      },
+      toast: (text) => sendToRenderer(CH.cron.toast, text),
+      now: () => new Date()
     }),
+    ...notesAndWorkbenchVerbs,
+    session: sessionCommand.verb,
+    inbox: inboxVerb({
+      inbox: () => inbox,
+      whereOf: (caller) => {
+        const s = inboxSessionOfTab(caller.tabId)
+        return s ? where(s) : {}
+      }
+    }),
+    workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
-      channelOf: (tabId) => conductors?.bindingOfTab(tabId)?.channel.channelId,
+      channelOf: (tabId) => butler?.channelOfTab(tabId),
+      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
-      }
+      },
+      shoot: shootPage,
+      status: () =>
+        setupStatusText(discordLink?.status() ?? DISCORD_OFF, butler?.discordSettings() ?? {}),
+      tokenFromPage: (tabId) =>
+        saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
+      reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
+      invite: () => {
+        const appId = discordLink?.status().applicationId
+        return appId ? inviteLink(appId) : null
+      },
+      bindNewChannel: bindWithNewChannel,
+      openRoom: openRoomByRef
+    }),
+    [SECRET_VERB]: secretVerb({
+      sessionTab: (tabId) => tabSpokenFor(tabId, ptyMgr.get(tabId) ?? { util: false }),
+      ask: (a) =>
+        secretAsks
+          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+          : Promise.resolve({ ended: 'timeout' }),
+      ownerAsleep: () => ownerAsleep.asleep(),
+      machine: machineOfTab,
+      pages: guestPagesOf,
+      showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
+      open: openSignInEndOn,
+      sleep
     }),
     gh: githubVerb({
-      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
-      folderOf: (scope) => conductorFolder(app.getPath('userData'), scope),
-      repoOf: async (scope) =>
-        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
-      // PLATFORM§1
-      run: (args) => loginEnvReady().then(() => ghRead(args))
+      // PLATFORM§1 ADR-0036
+      run: async (args, tabId, cwd) => {
+        await loginEnvReady()
+        const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
+        if (!workspace) {
+          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
+        }
+        const remote = parseRemoteKey(workspace)
+        if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
+        const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
+          ? formatRemoteKey(remote.host, cwd)
+          : workspace
+        const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
+        if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
+        return onMachine.code === 0
+          ? { ok: true, out: onMachine.stdout }
+          : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
+      }
+    }),
+    todo: todoVerb({
+      allowed: butlerSide,
+      sidebar: () => workspaceMgr?.rows() ?? [],
+      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+      sessions: () => allSessions().filter((s) => !s.butler),
+      asking: asksTheOwner,
+      asleep: (sessionId) => !!sleepingTabOf(sessionId),
+      workLeft: async (row, merged) => {
+        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+        return tree ? whatIsLeft(hostGitOut, tree, merged) : null
+      },
+      deleting: (row) => treeRemovals.has(row.cwd),
+      worktrees: sessionDeps.worktrees,
+      repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
+      pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
+      notes: () => loadSettings().todoNotes,
+      saveNote: (key, text) => {
+        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+        if (!text) delete todoNotes[key]
+        commitSettings({ todoNotes })
+      },
+      projectFiles: async (wsPath) =>
+        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+      readText: (file) => hosts.of(file).readText(file),
+      servers: mcpServersNow,
+      butlerFolder: sessionDeps.butlerFolder,
+      now: Date.now
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
   alive: pidAlive
 })
 
-async function pickForLaunch(tabId?: string): Promise<{
+async function pickForLaunch(
+  tabId?: string,
+  resumeSessionId?: string
+): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
 }> {
   let res: PickResponse
   try {
-    res = await picker.pick(tabId)
+    res = await picker.pick(tabId, sessionAccounts?.of('claude', resumeSessionId))
   } catch {
     res = { account: null, reason: 'no-usable' }
   }
@@ -1129,18 +2190,71 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => UtilTerminalPick | undefined
+> = {
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
+  agy: () => {
+    const picked = terminalPickOf(pickAgyHome())
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+  }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
+}
+
+const shimAccountRefusals = new Map<string, string>()
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
-  if (!obj.tabId || !ptyMgr.get(obj.tabId)) return
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
+  const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
+  if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
-  const { res, endpoint } = await pickForLaunch(obj.tabId)
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
+  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
+  if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
+  else shimAccountRefusals.delete(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -1151,13 +2265,18 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
 interface LoginWatch {
   name: string
   buf: string
-  startedAt: number
   sawUrl: boolean
   done: boolean
+  giveUp: NodeJS.Timeout
+  installing?: { carry: string }
 }
 const loginWatchers = new Map<string, LoginWatch>()
 const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
+const LOGIN_TIMED_OUT = 'Sign-in timed out'
+// CC§10
+const INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS = 20 * 60_000
+const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
@@ -1165,22 +2284,29 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
-function stripAnsi(s: string): string {
-  return s.replace(/\[[0-9;?]*[A-Za-z]/g, '').replace(/[()][AB0]/g, '')
-}
-
 function sendLoginProgress(p: LoginProgress): void {
-  sendToRenderer('accounts:login-progress', p)
+  sendToRenderer(CH.accounts.loginProgress, p)
 }
 
 function feedLoginWatcher(tabId: string, data: string): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
-  if (Date.now() - w.startedAt > LOGIN_TIMEOUT_MS) {
-    failLogin(tabId, 'Sign-in timed out')
-    return
+  if (w.installing) {
+    const seen = w.installing.carry + data
+    const rest = afterOutputStart(seen)
+    if (rest === null) {
+      w.installing.carry = outputStartCarry(seen)
+      w.giveUp.refresh()
+      w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
+      return
+    }
+    clearTimeout(w.giveUp)
+    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
+    w.installing = undefined
+    w.buf = ''
+    data = rest
   }
-  w.buf = (w.buf + stripAnsi(data)).slice(-LOGIN_BUF_MAX)
+  w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
   if (!m) {
     if (!w.sawUrl) {
@@ -1192,48 +2318,80 @@ function feedLoginWatcher(tabId: string, data: string): void {
     }
     return
   }
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   void completeLogin(tabId, w.name, m[0])
 }
 
-function failLogin(tabId: string, why: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
+function endLoginWatch(tabId: string, w: LoginWatch): void {
   w.done = true
   loginWatchers.delete(tabId)
+  clearTimeout(w.giveUp)
+}
+
+function failLogin(tabId: string, why: string, terminalKept = true): void {
+  const w = loginWatchers.get(tabId)
+  if (!w || w.done) return
+  endLoginWatch(tabId, w)
   const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
     tail: `${why}${tail ? `\n${tail}` : ''}`,
-    tabId,
-    cwd: ptyMgr.get(tabId)?.cwd
+    ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
   })
+}
+
+function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    failLogin(tabId, why, false)
+    try {
+      ptyMgr.kill(tabId)
+    } catch {}
+  }, ms)
 }
 
 function cancelGuidedLogin(tabId: string): void {
   const w = loginWatchers.get(tabId)
   if (!w) return
-  w.done = true
-  loginWatchers.delete(tabId)
+  endLoginWatch(tabId, w)
   try {
     ptyMgr.kill(tabId)
   } catch {}
 }
 
-function startGuidedLogin(name: string): string {
+function startGuidedLogin(name: string, installFirst: boolean): string {
   const handle = ptyMgr.create({
     kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd: os.homedir(),
     // CC§7
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
     rows: 50,
     setupCommand: setupLine(),
-    launchCommand: 'claude setup-token'
+    launchCommand: installFirst
+      ? installThen(
+          'claude',
+          (claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,
+          process.env.KOLOFT_TEST_TOOL_INSTALLER
+        )
+      : 'claude setup-token'
   })
-  loginWatchers.set(handle.id, { name, buf: '', startedAt: Date.now(), sawUrl: false, done: false })
+  loginWatchers.set(handle.id, {
+    name,
+    buf: '',
+    sawUrl: false,
+    done: false,
+    giveUp: installFirst
+      ? giveUpLoginAfter(
+          handle.id,
+          cronTestMs('KOLOFT_INSTALL_SILENCE_MS', INSTALL_SILENCE_LONGER_THAN_A_SLOW_DOWNLOAD_MS),
+          INSTALL_STALLED
+        )
+      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
+    ...(installFirst && { installing: { carry: '' } })
+  })
   loginPtys.add(handle.id)
+  if (installFirst) toolInstallPtys.add(handle.id)
   sendLoginProgress({ phase: 'starting', name })
   return handle.id
 }
@@ -1280,14 +2438,23 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
+let probeOnceTheRendererIsUp: LaunchUsageProbe = null
+
+function probeSignInFolderAccounts(): Promise<void> {
+  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
+    () => undefined
+  )
+}
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const enabled = listAccounts().filter((a) => a.enabled)
-    await Promise.all(
-      enabled.map(async (a) => {
-        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
+    const claude = listAccounts().filter(
+      (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
+    )
+    await Promise.all([
+      probeSignInFolderAccounts(),
+      ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -1298,7 +2465,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
         })
         foldProbeResult(a.name, a.kind, result)
       })
-    )
+    ])
     pushAccounts()
     return accountViews()
   })()
@@ -1308,6 +2475,11 @@ function probeAllForPanel(): Promise<AccountView[]> {
   }
   void round.then(release, release)
   return round
+}
+
+const LAUNCH_PROBES: Record<NonNullable<LaunchUsageProbe>, () => Promise<unknown>> = {
+  everyAccount: probeAllForPanel,
+  signInFoldersOnly: probeSignInFolderAccounts
 }
 
 async function addAccount(
@@ -1320,6 +2492,7 @@ async function addAccount(
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
+  if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
   if (kind === 'custom' && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
@@ -1348,29 +2521,45 @@ async function addAccount(
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
 }
 
-const codexPicker = new CodexAccountPicker()
-const codexSignInPtys = new Map<string, string>()
-const CODEX_LIMITS_STALE_MS = 5 * 60_000
+function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  const acct = findAccount(name, kind)
+  if (!acct) return
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status === acct.status) return
+  upsertAccountMeta({ ...acct, status })
+  if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
+}
+
+const codexPicker = new HomeAccountPicker('codex-home')
+const MUSE_QUOTA_FOLDER = 'muse-quota'
+const museProbedAt = new Map<string, number>()
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
 }
 
 // CODEX§15
-function pickCodexHome(): { account: string; home: string } | undefined {
+function pickCodexHome(
+  resumeSessionId?: string
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views)
-  if (!picked) return undefined
-  const stale = views.some(
-    (a) =>
-      a.kind === 'codex-home' &&
-      a.enabled &&
-      (!a.limits || Date.now() - a.limits.at > CODEX_LIMITS_STALE_MS)
+  const picked = codexPicker.pick(
+    views,
+    sessionAccounts?.of('codex', resumeSessionId),
+    codexSessions?.launchedSessions()
   )
-  if (stale) void probeCodexAccounts()
+  if (!picked) return undefined
+  const stale = (a: AccountView): boolean =>
+    a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'codex')
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -1379,15 +2568,28 @@ async function probeCodexAccount(name: string): Promise<void> {
   const key = viewKey(name, 'codex-home')
   try {
     const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
-    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
-    usageViews.set(key, {
-      limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
-    })
+    foldHomeSignIn(name, 'codex-home', r.signedIn)
+    usageViews.set(
+      key,
+      r.apiKey
+        ? { apiKey: true }
+        : {
+            limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+          }
+    )
   } catch {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
+}
+
+async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+  if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+  const outcome = await codexSessions
+    .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+    .catch((): CodexResetOutcome => 'failed')
+  await probeCodexAccount(name)
+  return outcome
 }
 
 let codexProbeRound: Promise<void> | null = null
@@ -1403,42 +2605,379 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult> {
-  const v = again
-    ? findAccount(name, 'codex-home')
-      ? 'ok'
-      : 'invalid-name'
-    : validateNewAccount(name, 'codex-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
-  if (!binary) return { ok: false, error: 'unavailable' }
-  const home = codexHomeOf(app.getPath('userData'), name)
-  prepareCodexHome(home, codexSharedConfig())
-  const acct = findAccount(name, 'codex-home')
+interface HomeSignInTab {
+  kind: SignInFolderKind
+  name: string
+  again: boolean
+  output: SignInOutput
+}
+const signInPtys = new Map<string, HomeSignInTab>()
+let signInFailure: SignInFailure | null = null
+
+function setSignInFailure(f: SignInFailure | null): void {
+  signInFailure = f
+  sendToRenderer(CH.accounts.signInFailure, f)
+}
+
+function forgetAccount(name: string, kind: AccountKind): void {
+  removeAccountMeta(name, kind)
+  usageViews.delete(viewKey(name, kind))
+  picker.forget(kind, name)
+  pushAccounts()
+}
+
+async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
+  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
+    () => false
+  )
+  const account = findAccount(s.name, s.kind)
+  if (!probeAnswered || !account || account.status === 'ok') return
+  if (!s.again) forgetAccount(s.name, s.kind)
+  setSignInFailure({
+    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    name: s.name,
+    again: s.again,
+    tail: s.output.tail()
+  })
+}
+
+function noteHomeAccount(name: string, kind: SignInFolderKind): void {
+  const acct = findAccount(name, kind)
   upsertAccountMeta({
     name,
-    kind: 'codex-home',
+    kind,
     enabled: acct?.enabled ?? true,
     fable: 'unknown',
     status: acct?.status ?? 'unverified',
     addedAt: acct?.addedAt ?? Date.now()
   })
   pushAccounts()
+}
+
+const homeLogin: Record<
+  SignInFolderKind,
+  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
+> = {
+  // CODEX§15
+  'codex-home': async (name) => {
+    const available = (await codexSessions?.availability())?.available
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
+  },
+  // MUSE§13
+  'muse-home': async (name) => ({
+    binary: (await museServeFor(name))?.binary,
+    env: museAccountEnv(museHomeFor(name))
+  }),
+  // AGY§5 AGY§7
+  'agy-home': async (name) => {
+    const binary = await agyBinary()
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    setAgyApiKeyRoute(home, !!apiKey)
+    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
+  }
+}
+
+const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
+  'codex-home': async (name) => {
+    await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+    await probeCodexAccount(name)
+  },
+  'muse-home': (name) => probeMuseAccount(name),
+  'agy-home': (name) => probeAgyAccount(name)
+}
+
+async function signInToHome(
+  kind: SignInFolderKind,
+  name: string,
+  again: boolean
+): Promise<SignInResult> {
+  const v = again
+    ? findAccount(name, kind)
+      ? 'ok'
+      : 'invalid-name'
+    : validateNewAccount(name, kind)
+  if (v !== 'ok') return { ok: false, error: v }
+  if (signInFailure) setSignInFailure(null)
+  const login = await homeLogin[kind](name)
+  noteHomeAccount(name, kind)
+  const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
+  const args = (login.args ?? ['login']).map(shq).join(' ')
+  // PLATFORM§63
+  const signIn = (quotedBinary: string): string =>
+    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
+  const tab = homeShellTab(
+    `${MARK_OUTPUT_START}; ` +
+      (login.binary
+        ? signIn(shq(login.binary))
+        : installThen(
+            BACKEND_OF_SIGN_IN_FOLDER[kind],
+            signIn,
+            process.env.KOLOFT_TEST_TOOL_INSTALLER
+          ))
+  )
+  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
+  if (!login.binary) toolInstallPtys.add(tab.tabId)
+  return { ok: true, ...tab }
+}
+
+const musePicker = new HomeAccountPicker('muse-home')
+const preparedMuseHomes = new Set<string>()
+
+// MUSE§2 MUSE§13
+function museHomeFor(name: string): string {
+  const home = museHomeOf(app.getPath('userData'), name)
+  if (preparedMuseHomes.has(home)) return home
+  const env = museSessions?.defaultEnv ?? process.env
+  prepareMuseHome(home, museConfigHome(env))
+  preparedMuseHomes.add(home)
+  return home
+}
+
+// ADR-0030 MUSE§13
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
+  const views = accountViews()
+  const picked = musePicker.pick(
+    views,
+    sessionAccounts?.of('muse', resumeSessionId),
+    museSessions?.launchedSessions()
+  )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
+  }
+}
+
+async function museServeFor(
+  name: string
+): Promise<{ binary: string; env: NodeJS.ProcessEnv } | undefined> {
+  const binary = (await museSessions?.availability())?.available && museSessions?.cliBinary
+  if (!binary) return undefined
+  return { binary, env: { ...museSessions?.defaultEnv, ...museAccountEnv(museHomeFor(name)) } }
+}
+
+// MUSE§13
+async function probeMuseAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'muse-home')
+  const serve = acct && (await museServeFor(name))
+  if (!acct || !serve) return
+  const key = viewKey(name, 'muse-home')
+  museProbedAt.set(name, Date.now())
+  try {
+    const signIn = await museSignIn(serve)
+    foldHomeSignIn(name, 'muse-home', signIn !== 'none')
+    if (signIn === 'apiKey') usageViews.set(key, { apiKey: true })
+    else if (signIn === 'none') usageViews.delete(key)
+    else {
+      const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
+      fs.mkdirSync(dir, { recursive: true })
+      const limits = await readMuseQuota(serve.binary, serve.env, dir, ptyMgr)
+      usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
+    }
+  } catch {
+    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+let museProbeRound: Promise<void> | null = null
+
+function probeMuseAccounts(): Promise<void> {
+  museProbeRound ??= Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'muse-home' && a.enabled)
+      .map((a) => probeMuseAccount(a.name))
+  ).then(() => {
+    museProbeRound = null
+  })
+  return museProbeRound
+}
+
+const agyPicker = new HomeAccountPicker('agy-home')
+const agyProbedAt = new Map<string, number>()
+const preparedAgyHomes = new Set<string>()
+
+function ownersGemini(): string {
+  return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
+}
+
+// AGY§4
+function agyHomeFor(name: string): string {
+  const home = agyHomeOf(app.getPath('userData'), name)
+  if (preparedAgyHomes.has(home)) return home
+  prepareAgyHome(home, ownersGemini())
+  preparedAgyHomes.add(home)
+  return home
+}
+
+async function agyApiKeyOf(name: string): Promise<string | undefined> {
+  return (await keychainRead('agy-home', name)) ?? undefined
+}
+
+// ADR-0030
+function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+  const views = accountViews()
+  const picked = onlyAsking
+    ? agyPicker.peek(views)
+    : agyPicker.pick(
+        views,
+        sessionAccounts?.of('agy', resumeSessionId),
+        agySessions?.launchedSessions()
+      )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+    void probeAgyAccounts()
+  return (
+    picked && {
+      account: picked.name,
+      home: agyHomeFor(picked.name),
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'agy')
+    }
+  )
+}
+
+// AGY§5 AGY§6
+async function probeAgyAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'agy-home')
+  if (!acct) return
+  agyProbedAt.set(name, Date.now())
+  const home = agyHomeFor(name)
+  const apiKey = await agyApiKeyOf(name)
+  const signedIn = agySignedIn(home, !!apiKey)
+  foldHomeSignIn(name, 'agy-home', signedIn)
+  const key = viewKey(name, 'agy-home')
+  if (apiKey) usageViews.set(key, { apiKey: true })
+  else if (signedIn) {
+    const quota = await agyUsage(home)
+    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+async function agyBinary(): Promise<string | undefined> {
+  return ((await agySessions?.availability())?.available && agySessions?.cliBinary) || undefined
+}
+
+async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
+  const binary = await agyBinary()
+  if (!binary) return undefined
+  return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
+}
+
+let agyProbeRound: Promise<void> | null = null
+
+function probeAgyAccounts(): Promise<void> {
+  agyProbeRound ??= Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'agy-home' && a.enabled)
+      .map((a) => probeAgyAccount(a.name))
+  ).then(() => {
+    agyProbeRound = null
+  })
+  return agyProbeRound
+}
+
+function markKeyAccountsSavedOnDisk(): void {
+  for (const a of listAccounts())
+    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](app.getPath('userData'), a.name))
+      usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
+}
+
+const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
+  // CODEX§15
+  'codex-home': async (name, key) => {
+    if (!codexSessions) throw new Error('Codex is not set up.')
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    await codexSessions.storeApiKey(home, key)
+  },
+  // MUSE§13
+  'muse-home': async (name, key) => {
+    const serve = await museServeFor(name)
+    if (!serve) throw new Error('Muse is not installed.')
+    await storeMuseKey(serve, key)
+  },
+  // AGY§6
+  'agy-home': async (name, key) => {
+    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+    setAgyApiKeyRoute(agyHomeFor(name), true)
+  }
+}
+
+async function addHomeKey(
+  kind: SignInFolderKind,
+  name: string,
+  key: string
+): Promise<AccountAddResult> {
+  try {
+    await storeHomeKey[kind](name, key)
+  } catch {
+    return { ok: false, error: 'unknown' }
+  }
+  noteHomeAccount(name, kind)
+  await probeHomeAccount[kind](name)
+  const account = accountViews().find((a) => a.kind === kind && a.name === name)
+  return { ok: account?.status === 'ok', account }
+}
+
+// AGY§6 AGY§20
+async function agyOneShotTarget(): Promise<AssistTarget | null> {
+  const picked = agyPicker.pick(accountViews())
+  const binary = await agyBinary()
+  if (!picked || !binary) return null
+  const apiKey = await agyApiKeyOf(picked.name)
+  const shot = oneShotAgyHome(
+    agyHomeFor(picked.name),
+    path.join(app.getPath('userData'), 'agy-one-shots'),
+    !!apiKey
+  )
+  return {
+    binary,
+    env: { ...agySessions?.defaultEnv, ...agyAccountEnv(apiKey) },
+    args: [`--gemini_dir=${shot.dir}`],
+    done: shot.done
+  }
+}
+
+function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
   const handle = ptyMgr.create({
     kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd,
     cols: 100,
     rows: 30,
-    launchCommand: `CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`
+    launchCommand
   })
-  codexSignInPtys.set(handle.id, name)
-  return { ok: true, tabId: handle.id, cwd }
+  return { tabId: handle.id, cwd }
+}
+
+const toolInstallPtys = new Set<string>()
+
+function installTool(backend: BackendId): { tabId: string; cwd: string } {
+  const tab = homeShellTab(
+    installThen(backend, () => 'exit', process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  )
+  toolInstallPtys.add(tab.tabId)
+  return tab
 }
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'koloft-file',
+    scheme: PREVIEW_FILE_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -1447,6 +2986,7 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true
     }
   },
+  { scheme: MACHINE_PAGE_SCHEME, privileges: { standard: true, secure: true } },
   // PLATFORM§15
   { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
@@ -1483,8 +3023,16 @@ function mimeOf(p: string): string {
     '.svg': 'image/svg+xml',
     '.webp': 'image/webp',
     '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
     '.css': 'text/css',
     '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.wasm': 'application/wasm',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
     '.json': 'application/json',
     '.txt': 'text/plain'
   }
@@ -1500,9 +3048,10 @@ const teardownKilledPtys = new Set<string>()
 
 function rendererTeardown(): void {
   rendererReady = false
-  cronRunner?.onRendererTeardown()
+  cronRunner?.onRendererTeardown((tabId) => !!ptyMgr.get(tabId)?.alive)
   closeAllDirWatchers()
   closeAllFileWatchers()
+  remoteSync?.unwatchAll()
   resetAllFlow()
   overlayListenerLost()
   if (uiActiveTabId !== null) activeTabBeforeReload = uiActiveTabId
@@ -1520,8 +3069,8 @@ function createWindow(): void {
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
-    ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...fullscreenOption(geo.fullScreen && !OFF_SCREEN_TEST),
+    show: !OFF_SCREEN_TEST,
     title: 'Koloft',
     backgroundColor: '#0e0e10',
     titleBarStyle: 'hiddenInset',
@@ -1543,6 +3092,7 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
+  mainWindow.webContents.on('input-event', handsOnKoloft)
   // PLATFORM§10
   let pressedInHost = false
   mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
@@ -1553,10 +3103,10 @@ function createWindow(): void {
     if (releaseWithoutHostPress) e.preventDefault()
   })
   // PLATFORM§5
-  if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
+  if (!OFF_SCREEN_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    BACKGROUND_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
   )
 
   // PLATFORM§5
@@ -1584,23 +3134,19 @@ function createWindow(): void {
   const WEBGL_REPAIR_BLUR_MS = 30_000
   let blurredAt = 0
   mainWindow.on('restore', requestWebglRepair)
-  mainWindow.on('enter-full-screen', () => sendToRenderer('window:fullscreen', true))
-  mainWindow.on('leave-full-screen', () => sendToRenderer('window:fullscreen', false))
+  mainWindow.on('enter-full-screen', () => sendToRenderer(CH.window.fullscreen, true))
+  mainWindow.on('leave-full-screen', () => sendToRenderer(CH.window.fullscreen, false))
   mainWindow.on('focus', () => {
     // PLATFORM§10
-    sendToRenderer('window:focus', true)
+    sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    void freshness?.sweep()
+    if (uiActiveTabId) attention.seen(uiActiveTabId)
+    void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
-    sendToRenderer('window:focus', false)
+    sendToRenderer(CH.window.focus, false)
     blurredAt = Date.now()
-    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -1617,55 +3163,64 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
-  protocol.handle('koloft-file', async (request) => {
-    const url = new URL(request.url)
-    const filePath = decodeURIComponent(url.pathname)
-    try {
-      const data = await fs.promises.readFile(filePath)
-      return new Response(new Uint8Array(data), {
-        headers: { 'content-type': mimeOf(filePath) }
-      })
-    } catch {
-      return new Response('Not found', { status: 404 })
-    }
+  presence.macLastUsed()
+  protocol.handle(PREVIEW_FILE_SCHEME, async (request) => {
+    const file = previewFileOf(request.url)
+    const data = file === null ? null : await bytesOfAFileHere(file)
+    if (!file || !data) return new Response('Not found', { status: 404 })
+    return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
   setupBrowserPartition()
+  setupPageShotPartition()
   updateDockBadge(attention.list())
   // PLATFORM§15
   setupExtensions({
     window: () => mainWindow,
     openTab: openExtensionTab,
-    ask: (request) => sendToRenderer('ext:permission-request', request)
+    ask: (request) => sendToRenderer(CH.ext.permissionRequest, request)
   })
-  onExtensionsChanged(() => sendToRenderer('ext:changed'))
+  onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
+  setupSecretLanding()
+  setupGuestForwardsEnd()
   setupGuestPopups()
   setupGuestContextMenu()
   muteGuestsUnderTest()
   setupGuestGestures()
   setupGuestLinkReports()
+  setupGuestPermissionQuery()
   setupPermissionCleanup()
   setupGuestBackgroundOpen()
   setupGuestAudioState()
   setupGuestFullscreen()
 
-  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim()
+  sweepStaleGitRequestDirs(pidAlive)
+  const gitRequestDir = newGitRequestDir()
+  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
+    gitRequestDir,
+    conductorFolder(app.getPath('userData'))
+  )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
+  try {
+    claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))
+  } catch (err) {
+    console.error('[koloft] the koloft-docs plugin could not be written:', err)
+  }
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
-    claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
+    claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
-  if (watchOpenRequests(openDir)) {
-    ptyMgr.openDir = openDir
-    sweepOpenRequests(openDir)
-  }
+  if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
+  const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
+  pruneElementPicks()
+  setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -1673,15 +3228,76 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
+  const agyStatusline = setupAgyStatusline(statusline)
+  const playwrightBin = setupPlaywrightCli()
+  playwrightCliBin = playwrightBin
+  fallbackBin = bundledGhDir()
+  if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+  gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
+  // PLATFORM§2
+  linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
+  removeStaleLoginDirs(app.getPath('userData'))
+  gitAccounts = new GitAccountService({
+    userData: app.getPath('userData'),
+    requestDir: gitRequestDir,
+    gitHelper,
+    ghBin: fallbackBin && path.join(fallbackBin, 'gh'),
+    gcmBin: bundledGcm(),
+    gcmNamespacePrefix: `${keychainNamespace(app.getName())}-git`,
+    baseEnv: () => loginEnvReady().then(() => ({ ...process.env })),
+    repoOf: async (wsPath) => {
+      const slug = await hosts.of(wsPath).github.ownerSlashName(wsPath)
+      const [owner, name] = slug?.split('/') ?? []
+      return owner && name ? { owner, name } : null
+    },
+    openInBrowser: (url) => void leaveForOS(url, 'url'),
+    progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
+    accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
+    picksChanged: () => {
+      void githubCounts?.sweep()
+      workspaceMgr?.restampLive()
+    },
+    runOnMachine: async (machine, script, args = [], opts = {}) => {
+      await loginEnvReady()
+      return runSsh(machine, remoteShCommand(script, args), {
+        controlDir: remoteControlDir,
+        timeoutMs: opts.timeoutMs,
+        ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
+      })
+    }
+  })
+  // ADR-0033
+  Object.assign(process.env, gitAccounts.configEnv(process.env))
+  gitAccounts.start()
+  writeHookSettings = (tabId, allowKoloft, conductor, playwrightServers) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
-      conductor
+      conductor,
+      !!guard?.isBackground(tabId),
+      playwrightServers
     )
-  answerableRegDir = hookPaths.regDir
+  hookRegDir = hookPaths.regDir
+  guard = new ResourceGuard({
+    regDir: hookPaths.regDir,
+    cores: os.cpus().length,
+    read: readTheMachine,
+    now: Date.now,
+    log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    heldDirs: () => remoteHookMirrors(),
+    freeOnMachine: freeOnMachine,
+    isRemote: (tabId) => !!machineOfTab(tabId),
+    changed: (state) => sendToRenderer(CH.machine.state, state),
+    readTrees: readTaggedTable,
+    giveWay: process.platform === 'darwin' ? giveWay : async () => {}
+  })
+  guard.start()
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
@@ -1696,7 +3312,7 @@ app.whenReady().then(() => {
         gate.onBacklog(utf16Units)
         continue
       }
-      if (!sendToRenderer('terminal:data', { id, data })) {
+      if (!sendToRenderer(CH.terminal.data, { id, data })) {
         gate.reset()
         pendingData.delete(id)
         continue
@@ -1716,107 +3332,166 @@ app.whenReady().then(() => {
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     // CC§12
     if (sleepers.has(d.id)) return
+    claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
-    sendToRenderer('terminal:processTitle', t)
+    sendToRenderer(CH.terminal.processTitle, t)
   })
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
-    sendToRenderer('terminal:cwd', c)
+    sendToRenderer(CH.terminal.cwd, c)
+  })
+  subscribeTabSubsystems(tabLifecycle, {
+    slash,
+    attention,
+    claude: claudeBackend,
+    tracker,
+    storedOwnerOf,
+    toast: (message) => sendToRenderer(CH.cron.toast, message),
+    typing: () => discordTyping,
+    relay: () => discordRelay,
+    buttons: () => askButtons,
+    secrets: () => secretAsks,
+    workspaces: () => workspaceMgr,
+    cron: () => cronRunner,
+    butler: () => butler
   })
   ptyMgr.on('exit', (e) => {
-    slash.closed(e.id)
-    if (!sleepers.has(e.id)) {
-      discordNotices?.closed(e.id)
-      discordLive?.closed(e.id)
+    const exited = ptyMgr.get(e.id)
+    if (!exited?.alive) claudeDialogs.forget(e.id)
+    // CC§12 CODEX§5 MUSE§1 AGY§1
+    const unexpected =
+      !e.endedByKoloft &&
+      !closedTabs.has(e.id) &&
+      !quitCommitted &&
+      exitedAbnormally(e) &&
+      !!backendIdOf(exited?.kind)
+    if (unexpected && exited) unexpectedExits.set(e.id, unexpectedExitHeading(exited, e))
+    const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
+    const restarting = closedTabs.get(e.id) === null
+    closedTabs.delete(e.id)
+    const exit: TabExit = {
+      tabId: e.id,
+      exitCode: e.exitCode,
+      signal: e.signal,
+      asleep: sleepers.has(e.id),
+      crashed: !quitCommitted && exitedAbnormally(e),
+      left: left ?? undefined,
+      ...(unexpected ? { unexpected } : {})
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
     for (const [id, t] of sleepers)
       if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
-    discordLive?.forget(e.id)
-    discordNotices?.forget(e.id)
-    discordRelay?.forget(e.id)
-    discordThreads?.forget(e.id)
-    askButtons?.forget(e.id)
-    if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
+    tabLifecycle.emit('exit', exit)
+    roomOfEndedTab(e.id, quitCommitted || exit.asleep || restarting, unexpected)
+    touchedAt.delete(e.id)
+    ownerTouchedAt.delete(e.id)
+    questionSeen.delete(e.id)
+    if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
+    if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
+    guard?.forget(e.id)
+    awayDigest?.forget(e.id)
+    forgetFreeOnMachine(e.id)
+    if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
     loginPtys.delete(e.id)
-    const codexAccount = codexSignInPtys.get(e.id)
-    if (codexAccount) {
-      codexSignInPtys.delete(e.id)
-      void probeCodexAccount(codexAccount)
+    if (toolInstallPtys.delete(e.id)) {
+      sessionBackends.forgetAvailability()
+      sendToRenderer(CH.sessions.toolsChanged)
+    }
+    const signingIn = signInPtys.get(e.id)
+    if (signingIn) {
+      signInPtys.delete(e.id)
+      void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
       return
     }
-    if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    attention.clear(e.id)
-    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
+    if (loginWatchers.has(e.id))
+      failLogin(
+        e.id,
+        loginWatchers.get(e.id)?.installing
+          ? 'Installing Claude Code failed'
+          : 'setup-token exited without printing a token'
+      )
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
       const { sessionId } = claudeExit.leaving
-      if (sessionId) sessionsLeavingTheirWorktree.delete(sessionId)
       const claudeSaid = claudeExit.watch.failure()
+      if (sessionId) workspaceMgr?.leftWorktree(sessionId, !claudeSaid)
       if (claudeSaid)
-        sendToRenderer('cron:toast', `Claude Code did not remove the worktree: ${claudeSaid}`)
-      workspaceMgr?.refresh()
+        sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
     if (held !== undefined) {
       pendingData.delete(e.id)
-      if (!sleepers.has(e.id)) sendToRenderer('terminal:data', { id: e.id, data: held })
+      if (!sleepers.has(e.id)) sendToRenderer(CH.terminal.data, { id: e.id, data: held })
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
-    tracker.setAlive(e.id, false)
-    if (codexSessions?.hasTab(e.id))
-      void codexSessions
-        .stop(e.id, e.signal ? -1 : e.exitCode)
-        .catch((error) => sendToRenderer('cron:toast', String(error)))
-    workspaceMgr?.launchEnded(e.id)
-    cronRunner?.onPtyExit(e.id)
-    conductors?.onPtyExit(e.id)
-    sendToRenderer('terminal:exit', e)
+    claudeAsks.delete(e.id)
+    const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
+    tabLifecycle.emit('teardown', exit)
+    const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
+    if (runStarted) sent.runStarted = true
+    const accountIssue = shimAccountRefusals.get(e.id)
+    shimAccountRefusals.delete(e.id)
+    // ADR-0030
+    if (accountIssue && !e.signal && e.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+      sent.accountIssue = accountIssue
+    sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
   tracker.on('update', () => {
     const all = onSessionsChanged()
-    sendToRenderer('sessions:update', all)
+    sendToRenderer(CH.sessions.update, all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
-    retitleDiscordThreads(all)
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
-    sendToRenderer('session:relocated', e)
+    sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
-  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
+  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
+    const ask = claudeAsks.get(tabId)
+    if (ask && isAskedCall(ask, call)) askEnded(tabId)
     discordRelay?.toolDone(tabId, call)
-  )
+    void askButtons?.check(tabId)
+  })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
-    void discordLive?.refresh(tabId)
+    if (!over) return
+    const workspace = pinnedWorkspaceOfTab(tabId)
+    if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
+    if (t.prev === 'approval') askEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
-    const conductor = !!conductors?.conductorOf(t.tabId)
-    if (conductor && (t.next === 'approval' || t.next === 'waiting'))
-      void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
-    discordNotices?.onStatus(t.tabId, t.prev, t.next)
-    void discordLive?.refresh(t.tabId)
-    if (!(conductor && t.next === 'waiting'))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
+    const onDiscord = !!butler?.channelOfTab(t.tabId)
+    const asksOnDiscord = !!askChannelOfTab(t.tabId)
+    if (t.next !== 'approval') discordRelay?.stoppedAsking(t.tabId)
+    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
+      void pendingAskOf(t.tabId).then((a) => {
+        if (a) return discordRelay?.codexAsked(t.tabId, a)
+        if (t.next === 'approval') askUnreadablySoon(t.tabId)
+      })
+    if (asksOnDiscord) void askButtons?.check(t.tabId)
+    discordTyping?.refresh(t.tabId)
+    if (t.next === 'approval') void ownerAsleep.asks(t.tabId)
+    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
+      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -1825,36 +3500,159 @@ app.whenReady().then(() => {
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
+  sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
+  const storedDeps = {
+    pty: ptyMgr,
+    runtime: tracker,
+    projectInfo: projectInfoOnHost,
+    remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
+    remoteTreeIo: machineTreeIo,
+    realFilesOn,
+    changed: () => {
+      const all = onSessionsChanged()
+      sendToRenderer(CH.sessions.update, all)
+      workspaceMgr?.onAdditionalSessionsChanged()
+    },
+    replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
+    events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
+    error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    noAccountMessage: noAccountNow,
+    holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
+    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
+    hookRegDir: hookPaths.regDir
+  }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
-      pty: ptyMgr,
-      runtime: tracker,
-      projectInfo: projectInfoFor,
-      changed: () => {
-        const all = onSessionsChanged()
-        sendToRenderer('sessions:update', all)
-        workspaceMgr?.onAdditionalSessionsChanged()
-        retitleDiscordThreads(all)
+      ...storedDeps,
+      machine: {
+        instance: codexMachineInstance(userData),
+        ready: loginEnvReady,
+        run: (host, cmd) =>
+          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+        sshArgs: (machine, background) => {
+          ensureControlDir(remoteControlDir)
+          return background
+            ? backgroundOptions(machine, remoteControlDir)
+            : sshOptions(remoteControlDir, false)
+        },
+        machinePackage,
+        tabDir: (tabId) => tabPackageDir(userData, tabId),
+        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        keyed: pinnedKeyOn,
+        mirrorDir: (host) => mirrorHookDir(userData, host),
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
-      replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
-      memberRemoved: (key) => discordThreads?.left(key),
-      leftWorktree: removeUntouchedCodexWorktree,
-      events: (tabId, event) => sessionBackends.observe(tabId, event),
-      error: (message) => sendToRenderer('cron:toast', message),
+      leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
+      replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
+      playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
+      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
       agent: {
-        enabled: () => agentToolsFor('codex', 'local'),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+        enabled: (host) => agentToolsFor('codex', host),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
+        skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        ghWrapper
       }
     })
   } catch (error) {
-    codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
+    startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  try {
+    museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
+      ...storedDeps,
+      remote: museOnMachines,
+      leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
+      openShimRoot: path.join(userData, 'muse-open'),
+      pickHome: pickMuseHome,
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
+      serversAmong: async (pid, commands) =>
+        museServersAmong(await sharedProcessTable.fresh(), pid, commands),
+      browserEndpoint: relayEndpoint,
+      playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
+      agent: {
+        enabled: (remote) => agentToolsFor('muse', remote ? 'ssh' : 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        ghWrapper
+      }
+    })
+  } catch (error) {
+    startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  try {
+    agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
+      ...storedDeps,
+      projectInfo: projectInfoOnHost,
+      remoteTreeIo: machineTreeIo,
+      remote: {
+        ...museOnMachines,
+        machine: (host) => hosts.machine(host),
+        mirrorGemini: (host) => mirrorAgyGemini(userData, host),
+        nextPull: (host) => {
+          if (!remoteSync) return Promise.resolve()
+          const pulled = remoteSync.nextPullDone(host)
+          remoteSync.pokeNow(host)
+          return pulled
+        },
+        machineName: () => machinePackage().name
+      },
+      leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
+      openShimRoot: path.join(userData, 'agy-open'),
+      scriptsDir: path.join(userData, 'agy-scripts'),
+      ownersGemini,
+      pickHome: pickAgyHome,
+      apiKeyOf: agyApiKeyOf,
+      builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
+      skipPermissions: () => loadSettings().skipPermissions,
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      browserEndpoint: relayEndpoint,
+      playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
+      agent: {
+        enabled: (remote) => agentToolsFor('agy', remote ? 'ssh' : 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        ghWrapper
+      }
+    })
+  } catch (error) {
+    startupErrors.agy = `Antigravity session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  if (agySessions) {
+    sessionBackends.register(agyBackend(agySessions, resumeProbes, machineProbes))
+    void agySessions
+      .availability()
+      .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
+  }
+  if (museSessions) {
+    sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
+    void museSessions
+      .availability()
+      .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -1863,11 +3661,22 @@ app.whenReady().then(() => {
         for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
         return codexSessions!.refreshHistory()
       })
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
+  for (const stored of [codexSessions, museSessions, agySessions])
+    if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
-    additionalRows: (wsPath) => codexSessions?.rows(wsPath) ?? [],
-    additionalMembers: () => codexSessions?.members() ?? new Set(),
+    additionalRows: (wsPath) =>
+      storedSessions().flatMap((stored) =>
+        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
+      ),
+    additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
+    additionalFolders: async () =>
+      (
+        await Promise.all(
+          storedSessions().map((stored) => stored.localHistoryFolders().catch(() => []))
+        )
+      ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
     saveLayout,
@@ -1875,7 +3684,8 @@ app.whenReady().then(() => {
     runningBindings: () => {
       const m = new Map<string, string>()
       for (const s of allSessions()) if (s.alive && s.sessionId) m.set(s.sessionId, s.tabId)
-      for (const [key, tabId] of codexSessions?.runningBindings() ?? []) m.set(key, tabId)
+      for (const stored of storedSessions())
+        for (const [key, tabId] of stored.runningBindings()) m.set(key, tabId)
       for (const [tabId, t] of sleepers) if (!m.has(t.sessionId)) m.set(t.sessionId, tabId)
       return m
     },
@@ -1894,13 +3704,16 @@ app.whenReady().then(() => {
       return m
     },
     pushRows: (payload) => {
-      sendToRenderer('workspace:rows', payload)
+      sendToRenderer(CH.workspace.rows, payload)
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
     github: (wsPath) => githubCounts?.get(wsPath),
+    gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
+    gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
+      void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
       void githubCounts?.sweep()
       claudeBackend.watchRemoteHookMirrors()
     },
@@ -1912,16 +3725,19 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!conductors?.conductorOf(id) || sessionsLeavingTheirWorktree.has(id),
+    hiddenRow: (id) => !!butler?.isButlerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
+    butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
-      conductors?.forgetGone(
+      butler?.forgetGone(
         (key) =>
-          ids.has(key) || (identityOf(key).backendId === 'codex' && !codexSessions?.threadGone(key))
+          ids.has(key) ||
+          (identityOf(key).backendId !== 'claude' &&
+            !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
     memberDropped: (sessionId, why) => {
-      discordThreads?.left(sessionId)
       try {
         fs.appendFileSync(
           path.join(app.getPath('userData'), 'dropped-sessions.log'),
@@ -1930,20 +3746,21 @@ app.whenReady().then(() => {
       } catch {}
     }
   })
-  conductors = new Conductors({
+  butler = new Butler({
     userData,
+    butler: () => loadSettings().butler,
     load: () => loadSettings().discord,
+    loadSession: () => loadSettings().butlerSession,
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
-    isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
-    backendEnabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+    saveSession: (butlerSession) => void commitSettings({ butlerSession }),
+    backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
-    runningElsewhere: async (backend, key) =>
-      backend === 'claude' && (await runningClaudePid(key)) !== null,
+    runningElsewhere: (backend, key) => sessionBackends.runningElsewhere(backend, key),
     transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
     start: (l) =>
       launchQuietTab(
@@ -1952,8 +3769,10 @@ app.whenReady().then(() => {
           cwd: l.cwd,
           role: l.role,
           conductor: true,
+          permission: ownersPermission(),
           trustFolder: true,
-          name: l.backend === 'claude' ? asPeerName(l.title) : undefined
+          firstPrompt: l.firstPrompt,
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
         },
         l.title
       ),
@@ -1964,6 +3783,7 @@ app.whenReady().then(() => {
         mode: 'direct',
         role: l.role,
         conductor: true,
+        permission: ownersPermission(),
         trustFolder: true
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
@@ -1974,135 +3794,123 @@ app.whenReady().then(() => {
         title: l.title,
         sessionId: l.key
       }
-      sendToRenderer('terminal:spawned', spawned)
+      sendToRenderer(CH.terminal.spawned, spawned)
       return res.id
     },
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
+    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
-  conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
-    owner: () => conductors?.owner(),
+    owner: () => butler?.owner(),
+    foundAppOwner: (owner) => butler?.setOwner(owner),
     push: (status) => {
-      sendToRenderer('discord:status', status)
+      sendToRenderer(CH.discord.status, status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
-    onMessage: (m) => discordRelay?.onMessage(m),
-    onInteraction: (i) => void interactions.handle(i),
+    onMessage: (m) => {
+      if (butler?.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
+        discordRelay?.onMessage(m)
+      else void oldThreads.onMessage(m)
+    },
+    onInteraction: (i) =>
+      void (butler?.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
+        ? interactions.handle(i)
+        : oldThreads.onInteraction(i)),
     onReady: () => {
-      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.id)
+      if (butler?.channel()) void butler.open()
       void discordRelay?.catchUp()
+      void oldThreads.archiveOnce()
       registerSlashCommands()
     },
     postFailed: (channelId, error) => {
-      const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
-      const text = `Koloft could not post to #${name} in Discord: ${error}`
-      sendToRenderer('cron:toast', text)
-      const { failing } = link.status()
-      const other = conductors
-        ?.bindings()
-        .find((b) => b.channel.channelId !== channelId && !failing[b.channel.channelId])
-      if (other) void link.post(other.channel.channelId, text).catch(() => undefined)
+      const channel = butler?.channel()
+      const name = channel?.channelId === channelId ? channel.name : channelId
+      sendToRenderer(CH.cron.toast, `Koloft could not post to #${name} in Discord: ${error}`)
     }
   })
   discordLink = link
-  const conductorsNow = conductors
-  const threads = new SessionThreads({
+  const butlerNow = butler
+  const roomsNow = new Rooms({
     link,
-    conductors: conductorsNow,
-    deleteFailed: (threadName, error) =>
-      sendToRenderer(
-        'cron:toast',
-        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
-      ),
-    opened: (tabId) => void discordLive?.refresh(tabId)
+    owner: () => butlerNow.owner(),
+    lobby: () => butlerNow.channel(),
+    rooms: () => butlerNow.rooms(),
+    save: (list) => butlerNow.saveRooms(list)
   })
-  discordThreads = threads
-  const conductorChannelOf = (tabId: string): string | undefined =>
-    conductorsNow.bindingOfTab(tabId)?.channel.channelId
-  discordLive = new LiveStatus({
+  rooms = roomsNow
+  const oldThreads = new OldThreads({
     link,
-    openerOf: (tabId) => threads.openerOf(tabId),
-    conductorChannelOf,
-    subject: async (tabId) => {
-      const s = sessionOfTab(tabId)
-      if (!s) return undefined
-      const name = (await discordShownName(s)) ?? s.title
-      return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
-    },
+    owner: () => butlerNow.owner(),
+    butlerName: butlerNameNow,
+    channel: () => butlerNow.channel(),
+    archived: () => butlerNow.oldThreadsArchived(),
+    markArchived: () => butlerNow.markOldThreadsArchived(),
+    isRoom: (threadId) => !!roomsNow.ofThread(threadId),
+    now: Date.now
+  })
+  discordTyping = new ButlerTyping({
+    link,
+    channelOf: (tabId) =>
+      discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
+        ? butlerNow.channelOfTab(tabId)
+        : undefined,
     status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    turnOver: (tabId) => tracker.turnOver(tabId),
-    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
-    const ask = await codexAskOf(tabId)
+    const ask = await pendingAskOf(tabId)
     return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
   }
   const buttons = new AskButtons({
-    owner: () => conductorsNow.owner(),
+    owner: () => butlerNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
-    answer: async (tabId, reply) => {
-      if (!discordRelay) return STILL_STARTING
-      return discordRelay.answerSession(tabId, reply)
-    },
-    respond: (i, body) => link.respond(i, body)
+    answer: answerSession,
+    respond: (i, body) => link.respond(i, body),
+    followUp: (i, privateText) => link.followUp(i, privateText),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
-  const interactions = new Interactions({
-    owner: () => conductorsNow.owner(),
-    routeOf: (channelId) => conductorsNow.routeOf(channelId),
-    choices: (b) => [
-      { name: `This channel’s conductor (${scopeName(b.scope)})`, value: MYSELF },
-      ...sessionChoices(sessionDeps, b.scope)
-    ],
-    run: async (b, session, text) => {
-      if (session === MYSELF) return commandIntoConductor(b, text)
-      const found = await targetIn(sessionDeps, b.scope, session)
-      if (!found.ok) throw new Error(found.error)
-      return commandInto(b, found.value, text)
+  const secrets = new SecretAsks({
+    owner: () => butlerNow.owner(),
+    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
+    show: (asks) => sendToRenderer(CH.secret.asks, asks),
+    askedOnlyInKoloft: (tabId) => attention.asksForASecret(tabId, attentionSubjectOf(tabId)),
+    ended: (tabId) => {
+      if (tracker.statusOf(tabId) !== 'approval') attention.secretAnswered(tabId)
     },
-    press: (i) => buttons.press(i),
+    place: async (tabId, card) => {
+      const channelId = roomOfTab(tabId) ?? butlerNow.channel()?.channelId
+      if (!channelId) return undefined
+      const name = await secretAskerName(tabId)
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
-  const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
-    const backend = identityOf(key).backendId
-    const liveTab = (): string | undefined => sessionBackends.get(backend).aliveTabFor(key)
-    const live = liveTab()
-    const shown = live && sessionOfTab(live)
-    const name =
-      (shown && sidebarTitle(shown)) ||
-      conductorsNow.threadOfChannel(threadId)?.thread.name ||
-      'The session'
-    return {
-      id: `thread:${threadId}`,
-      name,
-      conductor: false,
-      liveTab,
-      open: async () => {
-        const open = liveTab()
-        if (open) return open
-        const found = await targetIn(sessionDeps, b.scope, key)
-        if (!found.ok)
-          throw new Error(
-            `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
-          )
-        return found.value.tabId ?? found.value.open()
-      },
-      typeCommand: (tab, command) =>
-        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, threadId),
-      seen: (id) => conductorsNow.setThreadLastMessage(threadId, id)
-    }
-  }
+  secretAsks = secrets
+  const interactions = new Interactions({
+    owner: () => butlerNow.owner(),
+    ownerWrote: ownerCameBack,
+    run: async (text, channelId) =>
+      commandInto(
+        butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
+        text
+      ),
+    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
+    submit: (i) => secrets.submit(i),
+    respond: (i, body) => link.respond(i, body)
+  })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
     link,
@@ -2111,85 +3919,132 @@ app.whenReady().then(() => {
       if (!res.ok) throw new Error(`Discord answered ${res.status} to an attachment download.`)
       return Buffer.from(await res.arrayBuffer())
     },
-    owner: () => conductorsNow.owner(),
-    destinationOf: (channelId) => {
-      const route = conductorsNow.routeOf(channelId)
-      if (!route) return undefined
-      return route.sessionKey
-        ? sessionDestination(route.binding, channelId, route.sessionKey)
-        : conductorDestination(route.binding)
-    },
-    channels: () =>
-      conductorsNow.bindings().flatMap((b) => [
+    owner: () => butlerNow.owner(),
+    ownerAway,
+    ownerWrote: ownerCameBack,
+    butlerName: butlerNameNow,
+    destinationOf: (channelId) =>
+      butlerNow.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
+    channels: () => {
+      const channel = butlerNow.channel()
+      if (!channel) return []
+      return [
         {
-          channelId: b.channel.channelId,
-          lastMessageId: b.lastMessageId,
-          seen: (id: string) => conductorsNow.setLastMessage(b.id, id)
+          channelId: channel.channelId,
+          lastMessageId: butlerNow.lastMessageId(),
+          seen: (id: string) => butlerNow.setLastMessage(id)
         },
-        ...(b.threads ?? []).map((t) => ({
-          channelId: t.threadId,
-          lastMessageId: t.lastMessageId,
-          seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
-        }))
-      ]),
-    conductorChannelOf,
+        ...butlerNow.rooms().flatMap((r) => {
+          const dest = roomDestination(r.threadId)
+          return dest && r.keys.some((k) => rowOfKey(k))
+            ? [
+                {
+                  channelId: r.threadId,
+                  lastMessageId: r.lastMessageId,
+                  seen: (id: string) => roomsNow.seen(r.threadId, id),
+                  handsOverTo: dest
+                }
+              ]
+            : []
+        })
+      ]
+    },
+    replyChannelOf: phoneChannelOf,
+    askChannelOf: askChannelOfTab,
+    lobbyLink: () => {
+      const lobby = butlerNow.channel()
+      return lobby && roomLink(lobby.channelId)
+    },
+    noteDiscordId: async (tabId, id) => {
+      const host = machineOfTab(tabId)
+      if (host) return hosts.machine(host).noteDiscordId(tabId, id)
+      noteDiscordId(hookPaths.regDir, tabId, id)
+    },
+    noteDiscordSaid: async (tabId, text) => {
+      const host = machineOfTab(tabId)
+      if (host) return hosts.machine(host).noteDiscordSaid(tabId, text)
+      noteDiscordSaid(hookPaths.regDir, tabId, text)
+    },
+    inRoom: (tabId) => !!roomOfTab(tabId),
+    helperTitle: (tabId) =>
+      butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    remote: (tabId) => !!tracker.remoteOf(tabId),
+    askPlaced: (card, at) => buttons.placed(card, at),
+    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
-    waiting: (tabId) => {
-      discordNotices?.waiting(tabId)
-      void discordLive?.refresh(tabId)
-    },
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
-    type: (tabId, keys) => ptyMgr.type(tabId, keys),
-    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
-    queue: async (tabId, text, clientId) => {
-      if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
-      await codexSessions.queueMessage(tabId, text, clientId)
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+      showAskOnItsRow(tabId)
+      void ownerAsleep.asks(tabId)
     },
-    codexApproval: (tabId) => codexSessions?.openApproval(tabId),
-    codexQuestion: (tabId) => codexSessions?.openQuestion(tabId),
+    type: (tabId, keys, stillWanted) => ptyMgr.type(tabId, keys, stillWanted),
+    touchedSinceAsked: (tabId) => {
+      const asked = questionSeenAt(tabId)
+      return asked !== undefined && ownerTouchedSince(tabId, asked)
+    },
+    ownerTouchedSince,
+    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
+    queue: queueCodexMessage,
+    sendLine: sendPeerLine,
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+    pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
+    pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
+    answerable: async (tabId) => {
+      await storedOwnerOf(tabId)?.answerable?.(tabId)
+    },
+    answerInPlace: async (tabId, reply) => {
+      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+    },
+    showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir,
     attachmentsDir
   })
   discordRelay.watchAsks()
+  const relay = discordRelay
+  awayDigest = new AwayDigest({
+    away: ownerAway,
+    lastHandsAt: () => presence.lastHandsAt(),
+    reachable: () => discordConnected && !!butlerNow.channel(),
+    marks: () => attention.list(),
+    butlerSide,
+    inRoom: (tabId) => !!roomOfTab(tabId),
+    touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
+    judging: (tabId) => newsJudge.judging(tabId),
+    sessionOf: (mark) => {
+      const s = sessionOfTab(mark.tabId)
+      const workspace = sessionBackends.workspaceOfTab(mark.tabId)
+      return {
+        title: s?.title ?? mark.title,
+        sessionId: s?.sessionId ?? mark.sessionId,
+        workspace: workspace && path.basename(workspace)
+      }
+    },
+    butlerBusy: () => {
+      const tab = butlerNow.liveTab()
+      const lobby = butlerNow.channel()?.channelId
+      return (!!lobby && relay.delivering(lobby)) || (!!tab && !relay.takesCommand(tab))
+    },
+    tell: (text) => relay.tellQuietly(butlerDestination(), text),
+    now: Date.now,
+    gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
+  })
+  const digest = awayDigest
+  setInterval(() => {
+    digest.marked()
+    void ownerAsleep.reconcile()
+  }, AWAY_CHECKED_EVERY_MS).unref()
+  void ownerAsleep.reconcile()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
-  discordNotices = new Notices({
-    bindings: () => conductorsNow.bindings(),
-    place: (b, subject) => threads.place(b, subject),
-    threadOf: (key) => threads.threadOf(key),
-    card: async (channelId, card) => discordRelay?.card(channelId, card),
-    archive: (threadId) => threads.archive(threadId),
-    withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    subject: (tabId) => {
-      const s = sessionOfTab(tabId)
-      return s?.sessionId
-        ? {
-            tabId,
-            key: s.sessionId,
-            name: s.title,
-            backend: s.backendId,
-            workspace: sessionBackends.workspaceOfTab(tabId),
-            conductor: s.conductor
-          }
-        : undefined
-    },
-    shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    commandRunning: (tabId) => slash.running(tabId),
-    dialog: dialogOf
-  })
-  tracker.dialogsWatched = (tabId) =>
-    !!conductorsNow.conductorOf(tabId) ||
-    conductorsNow.covers(sessionBackends.workspaceOfTab(tabId))
   void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
@@ -2197,30 +4052,91 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set(
-        tracker
-          .list()
-          .filter((sess) => sess.alive && sess.remote)
-          .map((sess) => sess.remote!.host)
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
+      const live = new Set(codexMachines)
+      const shellTabsOn = new Map<string, string[]>()
+      for (const h of ptyMgr.list()) {
+        if (!h.alive) continue
+        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.utilMachine) {
+          live.add(h.utilMachine)
+          shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
+        }
+      }
+      const busy = new Set(
+        allSessions().flatMap((s) => {
+          const host = s.alive && machineOfTab(s.tabId)
+          return host && (s.status === 'working' || s.status === 'approval') ? [host] : []
+        })
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
+                {
+                  from: AGY_REMOTE_BRAIN,
+                  to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
+                  flags: AGY_BRAIN_FLAGS
+                }
+              ]
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
-        hasTabs: live.has(t.host)
+        hasTabs: live.has(t.host),
+        busy: busy.has(t.host),
+        shellTabs: shellTabsOn.get(t.host)
       }))
     },
     onChange: (host) => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids)
+    onLeft: (host, ids) => {
+      claudeBackend.noticeRemoteExits(host, ids)
+      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
+    },
+    onHooksPulled: (host) => {
+      for (const s of storedSessions()) s.followMirrors?.(host)
+    },
+    onShells: (host, shells) => {
+      for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
+    },
+    onConnected: (host) => void freshness?.machineUp(host),
+    onConnectedRound: (host) => {
+      void pageForwards.checkMaster(host)
+      void browserTunnels.sync(
+        host,
+        ptyTabIds()
+          .filter((id) => remoteHostOfTab(id) === host)
+          .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
+      )
+    }
+  })
+  ptyMgr.on('typed', (tabId: string) => {
+    const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
+    if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
-    onChange: () => workspaceMgr?.restampLive()
+    autoPull: () => loadSettings().gitAutoPull,
+    busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
+    onChange: () => workspaceMgr?.restampLive(),
+    onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
+    runner: (wsPath) => {
+      const key = parseRemoteKey(wsPath)
+      return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness
+    },
+    fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -2254,10 +4170,17 @@ app.whenReady().then(() => {
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
     worktreeRecorded: (root, name) =>
-      codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
+      storedSessions().some((s) =>
+        s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
+      ),
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
-    countRunFolders,
-    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    listRunFolders,
+    runLeftovers,
+    tidyRun,
+    foldersInUse,
+    quitting: () => quitCommitted,
+    turnedOff: turnedOffNow,
+    noUsableAccount: (backend) => sessionBackends.noUsableAccount(backend),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
@@ -2265,10 +4188,14 @@ app.whenReady().then(() => {
     stillWorking: (tabId) => tracker.stillWorking(tabId),
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
-    push: (state) => sendToRenderer('cron:state', state),
-    killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
+    push: (state) => sendToRenderer(CH.cron.state, state),
+    killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
+    endpointAccountWithModelOf: (tabId) => {
+      const name = tracker.infoOf(tabId)?.pickedAccount
+      return name && findAccount(name, 'custom')?.model ? name : undefined
+    },
     bindDeadlineMs: cronBindDeadlineMs(),
     closeRecheckMs: cronTestMs('KOLOFT_CRON_CLOSE_RECHECK_MS', CRON_CLOSE_RECHECK_MS),
     setInterval,
@@ -2280,24 +4207,29 @@ app.whenReady().then(() => {
 
   registerIpc()
   setupAppMenu(
-    (action) => {
+    (action, from) => {
       if (action === 'toggle-keep-awake') {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
-      sendToRenderer(`shortcut:${action}`)
+      if (keptBySignInWindow(from, action === 'close-tab' ? 'closes-it' : 'acts-on-the-app')) return
+      sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer('shortcut:browser', cmd),
+    (cmd, from) => {
+      if (keptBySignInWindow(from, cmd === 'browser-close-tab' ? 'closes-it' : 'acts-on-its-page'))
+        return
+      sendToRenderer(CH.shortcut.browser, cmd)
+    },
     loadSettings().keepAwake
   )
-  applyKeepAwake(loadSettings().keepAwake)
+  holdMacAwake(loadSettings().keepAwake)
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
-    if (cmd === 'find') sendToRenderer('shortcut:find')
+    if (cmd === 'find') sendToRenderer(CH.shortcut.find)
     else if (cmd === 'cycle-next' || cmd === 'cycle-prev') {
-      sendToRenderer('shortcut:workbench', cmd)
-    } else sendToRenderer('shortcut:browser', cmd)
+      sendToRenderer(CH.shortcut.workbench, cmd)
+    } else sendToRenderer(CH.shortcut.browser, cmd)
   }
   // PLATFORM§12
   const pdfKeepsItsNativeFind = (
@@ -2307,6 +4239,7 @@ app.whenReady().then(() => {
   // PLATFORM§7
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    contents.on('input-event', handsOnKoloft)
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (!(input.meta || input.control)) return
@@ -2336,21 +4269,23 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
-  powerMonitor.on('resume', () => void freshness?.sweep())
+  powerMonitor.on('lock-screen', () => {
+    presence.screenLocked()
+    awayDigest?.marked()
+    discordRelay?.checkHeld()
+  })
+  powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
   screen.on('display-added', requestWebglRepair)
   screen.on('display-removed', requestWebglRepair)
   screen.on('display-metrics-changed', requestWebglRepair)
 
+  markKeyAccountsSavedOnDisk()
   createWindow()
-  startUpdateNotifier((offer) => sendToRenderer('update:offer', offer))
+  startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
-  const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
-    void probeAllForPanel().catch(() => {})
-  }
+  probeOnceTheRendererIsUp = launchUsageProbe(listAccounts())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -2368,7 +4303,7 @@ function clearQuitFallback(): void {
 }
 
 function askQuit(): boolean {
-  if (!sendToRenderer('app:quit-requested')) return false
+  if (!sendToRenderer(CH.app.quitRequested)) return false
   clearQuitFallback()
   quitFallback = setTimeout(() => {
     quitFallback = null
@@ -2378,8 +4313,8 @@ function askQuit(): boolean {
 }
 setQuitAsk(askQuit)
 
-let codexQuitPending = false
-let codexQuitStopped = false
+let storedQuitPending = false
+let storedQuitStopped = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -2394,19 +4329,28 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
-  if (!quitCommitted) rememberOpenTabs()
+  if (!quitCommitted) {
+    rememberOpenTabs()
+    browserTunnels.cancelOnQuit()
+    pageForwards.cancelOnQuit()
+  }
   quitCommitted = true
-  if (!codexQuitStopped && codexSessions?.hasRuns()) {
+  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
-    if (!codexQuitPending) {
-      codexQuitPending = true
-      void codexSessions
-        .stopAll()
-        .catch((error) => console.error('[koloft] Codex did not stop cleanly:', error))
-        .finally(() => {
-          codexQuitStopped = true
-          app.quit()
-        })
+    if (!storedQuitPending) {
+      storedQuitPending = true
+      void Promise.all(
+        storedSessions().map((s) =>
+          s
+            .stopAll()
+            .catch((error) =>
+              console.error(`[koloft] ${BACKEND_LABEL[s.id]} did not stop cleanly:`, error)
+            )
+        )
+      ).finally(() => {
+        storedQuitStopped = true
+        app.quit()
+      })
     }
     return
   }
@@ -2418,45 +4362,39 @@ app.on('before-quit', (e) => {
   cronRunner?.quitSweep()
   cronRunner?.stop()
   discordLink?.stop()
-  conductors?.flush()
+  butler?.flush()
   workspaceMgr?.dispose()
   flushLayout()
   openTabsFile?.flushSync()
+  sessionAccounts?.flushSync()
+  for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
+  flushInbox()
   freshness?.stop()
   remoteSync?.stop()
+  gitAccounts?.stop()
   closeAllDirWatchers()
   resetQuitGuard()
 })
 
-function setupLine(): string | undefined {
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
+
+function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
-  return `export PATH="${ptyMgr.shimDir}:$PATH"; hash -r 2>/dev/null; clear`
+  const dirs = playwrightBin ? `${ptyMgr.shimDir}:${playwrightBin}` : ptyMgr.shimDir
+  return `export PATH="${dirs}:$PATH"; hash -r 2>/dev/null; clear`
 }
 
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(openDir, () => (obj, full) => handleOpenRequest(obj as OpenDrop, full))
-}
-
-const OPEN_REQUEST_STILL_WANTED_MS = 60_000
-function sweepOpenRequests(openDir: string): void {
-  fs.readdir(openDir, (err, names) => {
-    if (err) return
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(openDir, name)
-      fs.stat(full, (e, st) => {
-        if (e) return
-        if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
-        } else {
-          fs.rm(full, { force: true }, () => {})
-        }
-      })
-    }
-  })
+  const handle = (obj: unknown, full: string): void => handleOpenRequest(obj as OpenDrop, full)
+  return watchAndSweepJsonDrops(
+    openDir,
+    () => handle,
+    undefined,
+    () => true
+  )
 }
 
 // ADR-0009
@@ -2504,7 +4442,7 @@ function askUserForPermission(
   }
   const id = crypto.randomUUID()
   pendingPermissions.set(id, { guestId, origin, permission, answer: callback })
-  sendToRenderer('browser:permission-ask', { id, origin, permission })
+  sendToRenderer(CH.browser.permissionAsk, { id, origin, permission })
 }
 
 function answerPermission(id: string, granted: boolean): void {
@@ -2522,7 +4460,7 @@ function dropPermissions(match: (p: PendingPermission) => boolean): void {
     if (!match(pending)) continue
     pendingPermissions.delete(id)
     pending.answer(false)
-    sendToRenderer('browser:permission-drop', id)
+    sendToRenderer(CH.browser.permissionDrop, id)
   }
 }
 
@@ -2538,7 +4476,7 @@ function setupBrowserAuth(): void {
     const id = crypto.randomUUID()
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
-    sendToRenderer('browser:auth-challenge', payload)
+    sendToRenderer(CH.browser.authChallenge, payload)
   })
 }
 
@@ -2548,10 +4486,62 @@ function modalSlotTaken(): boolean {
   return pendingAuth.size > 0 || pendingJsDialogs.size > 0
 }
 
+const signInWindows = new WeakSet<BaseWindow>()
+
+function keptBySignInWindow(
+  from: BaseWindow | undefined,
+  key: 'closes-it' | 'acts-on-its-page' | 'acts-on-the-app'
+): boolean {
+  if (!from || !signInWindows.has(from)) return false
+  if (key === 'closes-it') from.close()
+  if (key !== 'acts-on-the-app') return true
+  mainWindow?.show()
+  return false
+}
+
+const webPageWatchers: ((contents: WebContents) => void)[] = []
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return
+  for (const w of webPageWatchers) w(contents)
+})
+
+function onEveryWebPage(watch: (contents: WebContents) => void): void {
+  webPageWatchers.push(watch)
+}
+
+function adoptSignInWindow(win: BrowserWindow, popup: WebContents, opener: WebContents): void {
+  signInWindows.add(win)
+  popup.on('input-event', handsOnKoloft)
+  const host = mainWindow
+  const close = (): void => {
+    if (!win.isDestroyed()) win.close()
+  }
+  opener.once('destroyed', close)
+  host?.once('closed', close)
+  win.once('closed', () => {
+    opener.removeListener('destroyed', close)
+    host?.removeListener('closed', close)
+  })
+  const popupId = popup.id
+  void reportedOwner(opener.id).then((owner) => {
+    if (owner) recordGuestOwner(popupId, owner)
+  })
+  for (const w of webPageWatchers) w(popup)
+}
+
+function setupSecretLanding(): void {
+  onEveryWebPage((contents) => {
+    contents.on('did-start-navigation', (details) => {
+      if (details.isMainFrame) secretAsks?.navigationStarted(contents.id, details.url)
+    })
+    contents.on('did-navigate', (_e, url) => secretAsks?.navigated(contents.id, url))
+  })
+}
+
 // PLATFORM§12
 function setupGuestUnload(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('will-prevent-unload', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       event.preventDefault()
@@ -2565,11 +4555,56 @@ const guestOwners = new WeakMap<WebContents, string>()
 function tabOwningGuest(guest: WebContents): string | null {
   return guestOwners.get(guest) ?? uiActiveTabId
 }
+
+const A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS = 3000
+const ownerWaiters = new Map<number, ((owner: string | null) => void)[]>()
+
+function reportedOwner(guestId: number): Promise<string | null> {
+  const guest = webContents.fromId(guestId)
+  if (!guest || overlayGuests.has(guestId)) return Promise.resolve(null)
+  const known = guestOwners.get(guest)
+  if (known) return Promise.resolve(known)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const left = (ownerWaiters.get(guestId) ?? []).filter((w) => w !== answer)
+      if (left.length) ownerWaiters.set(guestId, left)
+      else ownerWaiters.delete(guestId)
+      resolve(guestOwners.get(guest) ?? null)
+    }, A_NEW_PAGE_REPORTS_ITS_TAB_WITHIN_MS)
+    const answer = (owner: string | null): void => {
+      clearTimeout(timer)
+      resolve(owner)
+    }
+    ownerWaiters.set(guestId, [...(ownerWaiters.get(guestId) ?? []), answer])
+  })
+}
+
+function recordGuestOwner(guestId: number, owner: string): void {
+  const guest = webContents.fromId(guestId)
+  if (guest) guestOwners.set(guest, owner)
+  for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(owner)
+  ownerWaiters.delete(guestId)
+}
+
+function machineOfOwner(owner: string): string | undefined {
+  return isWorkspaceWorkbenchKey(owner)
+    ? parseRemoteKey(workspaceOfWorkbenchKey(owner))?.host
+    : machineOfTab(owner)
+}
+
+function setupGuestForwardsEnd(): void {
+  onEveryWebPage((contents) => {
+    const id = contents.id
+    contents.once('destroyed', () => {
+      ownerWaiters.delete(id)
+      pageForwards.pageGone(id)
+    })
+  })
+}
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('input-event', (_ev, input) => {
       if (CHROMIUM_USER_ACTIVATION_INPUTS.has(input.type)) {
         guestGestures.set(contents, Date.now())
@@ -2584,21 +4619,46 @@ function takeGuestGesture(contents: WebContents): boolean {
   return fresh
 }
 
+const POPUP_WINDOW_FEATURES = /(^|[\s,])(popup|(inner)?width|(inner)?height)\s*(=|,|$)/i
+
+function opensAsSignInWindow(
+  from: WebContents,
+  { url, disposition, features }: Electron.HandlerDetails
+): boolean {
+  return (
+    disposition === 'new-window' &&
+    POPUP_WINDOW_FEATURES.test(features) &&
+    /^https?:/i.test(url) &&
+    !isOverlayGuest(from) &&
+    sessionDrivingGuest(from.id) === null &&
+    !guestDrivenFromAnotherMachine(from.id) &&
+    takeGuestGesture(from)
+  )
+}
+
 function setupGuestPopups(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
-    contents.setWindowOpenHandler(({ url }) => {
-      if (contents.session === session.fromPartition(BROWSER_PARTITION)) {
-        routeGuestPopup(url, contents)
+  onEveryWebPage((contents) => {
+    contents.setWindowOpenHandler((details) => {
+      if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return { action: 'deny' }
+      // PLATFORM§8
+      if (opensAsSignInWindow(contents, details)) {
+        return {
+          action: 'allow',
+          createWindow: (options) => {
+            const { host, page } = openSignInWindow(options, !BACKGROUND_TEST)
+            adoptSignInWindow(host, page, contents)
+            return page
+          }
+        }
       }
+      routeGuestPopup(details.url, contents)
       return { action: 'deny' }
     })
   })
 }
 
 function setupGuestContextMenu(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.on('context-menu', (_event, params) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       const items = guestMenuItems(params)
@@ -2620,24 +4680,37 @@ function setupGuestContextMenu(): void {
 // PLATFORM§8
 function muteGuestsUnderTest(): void {
   if (!BACKGROUND_TEST) return
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     contents.setAudioMuted(true)
   })
 }
 
 // PLATFORM§12
 function setupGuestLinkReports(): void {
-  ipcMain.on('browser:link-blocked', (e, url: unknown) => {
+  ipcMain.on(CH.browser.linkBlocked, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
-    sendToRenderer('browser:blocked-scheme', url.slice(0, 2048))
+    sendToRenderer(CH.browser.blockedScheme, url.slice(0, 2048))
+  })
+}
+
+// PLATFORM§11
+function setupGuestPermissionQuery(): void {
+  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) => {
+    const decision = permissionQueryAsk(name, {
+      requestingUrl: e.senderFrame?.url,
+      isMainFrame: e.senderFrame?.parent === null
+    })
+    e.returnValue =
+      e.sender.session === session.fromPartition(BROWSER_PARTITION) &&
+      !isOverlayGuest(e.sender) &&
+      decision.kind === 'ask' &&
+      rememberedPermission(decision.origin, decision.permission) === undefined
   })
 }
 
 function setupPermissionCleanup(): void {
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() !== 'webview') return
+  onEveryWebPage((contents) => {
     // PLATFORM§5
     const guestId = contents.id
     contents.once('destroyed', () => {
@@ -2651,7 +4724,7 @@ function setupPermissionCleanup(): void {
 }
 
 function setupGuestBackgroundOpen(): void {
-  ipcMain.on('browser:open-background', (e, url: unknown) => {
+  ipcMain.on(CH.browser.openBackground, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
     if (isOverlayGuest(e.sender)) {
@@ -2667,7 +4740,7 @@ function setupGuestBackgroundOpen(): void {
     const tabId = tabOwningGuest(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   })
 }
 
@@ -2684,12 +4757,12 @@ function setupGuestFullscreen(): void {
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = true
-      sendToRenderer('browser:fullscreen', true)
+      sendToRenderer(CH.browser.fullscreen, true)
     })
     contents.on('leave-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = false
-      sendToRenderer('browser:fullscreen', false)
+      sendToRenderer(CH.browser.fullscreen, false)
     })
   })
 }
@@ -2699,7 +4772,7 @@ function setupGuestAudioState(): void {
     if (contents.getType() !== 'webview') return
     contents.on('audio-state-changed', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      sendToRenderer('browser:audio-state', {
+      sendToRenderer(CH.browser.audioState, {
         guestId: contents.id,
         audible: event.audible,
         muted: contents.isAudioMuted()
@@ -2726,7 +4799,7 @@ function sendOverlayOpen(url: string, presentation: 'now' | 'background'): void 
 function flushOverlayOpens(): void {
   if (!overlayListening) return
   while (pendingOverlayOpens.length) {
-    if (!sendToRenderer('browser:overlay-open', pendingOverlayOpens[0])) return
+    if (!sendToRenderer(CH.browser.overlayOpen, pendingOverlayOpens[0])) return
     pendingOverlayOpens.shift()
   }
 }
@@ -2738,8 +4811,30 @@ function overlayListenerLost(): void {
 const cdpOps = new Map<string, (res: BrowserCdpOpResult) => void>()
 const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
+const unexpectedExits = new Map<string, string>()
+let agentExitLog: ((line: string) => void) | undefined
 let windowOpenedAt = 0
+
+function unexpectedExitHeading(h: PtyHandle, e: TerminalExit): string {
+  const how = e.signal ? `was killed by signal ${e.signal}` : `exited with code ${e.exitCode}`
+  const where = h.remoteHost ? `${h.remoteHost}:${h.cwd}` : h.cwd
+  const after = Math.round((Date.now() - h.startedAt) / 1000)
+  return `${h.kind} tab ${h.id} ${how} in ${where}, ${after}s after it started; its last screen:`
+}
+
+function logUnexpectedExit(screen: UnexpectedExitScreen): void {
+  const heading = unexpectedExits.get(screen.id)
+  if (!heading) return
+  unexpectedExits.delete(screen.id)
+  agentExitLog ??= signalLog(path.join(app.getPath('userData'), 'agent-exits.log'))
+  agentExitLog([heading, ...screen.lines.map((l) => `  | ${l}`)].join('\n'))
+}
 const SCREEN_ANSWER_BUDGET_MS = 3000
+
+async function screenLines(tabId: string): Promise<string[] | undefined> {
+  const screen = await screenOf(tabId)
+  return 'lines' in screen ? screen.lines : undefined
+}
 
 async function screenOf(tabId: string): Promise<SessionScreen> {
   const handle = ptyMgr.get(tabId)
@@ -2759,7 +4854,7 @@ async function screenOf(tabId: string): Promise<SessionScreen> {
       resolve(a)
     })
     const request: ScreenRequest = { requestId, tabId }
-    sendToRenderer('terminal:screen', request)
+    sendToRenderer(CH.terminal.screen, request)
   })
   if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
   const notes: string[] = []
@@ -2781,7 +4876,7 @@ function ptyTabIds(): string[] {
       (p) =>
         !p.util &&
         (p.kind === 'shell' ||
-          capabilitiesFor(p.kind, tracker.remoteOf(p.id) ? 'ssh' : 'local').browserControl === true)
+          capabilitiesFor(p.kind, remoteHostOfTab(p.id) ? 'ssh' : 'local').browserControl === true)
     )
     .map((p) => p.id)
 }
@@ -2802,14 +4897,14 @@ function cdpOp(
       resolve(res)
     })
     const payload: BrowserCdpOp = { opId, kind, sessionId, ...extra }
-    sendToRenderer('browser:cdp-op', payload)
+    sendToRenderer(CH.browser.cdpOp, payload)
   })
 }
 
 function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) =>
-      claudeBackend.sessionIdOf(tabId) ?? codexSessions?.sessionIdOf(tabId) ?? null,
+      claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -2831,13 +4926,21 @@ function relayDeps(): RelayDeps {
     },
     setAttached: (sessionId, targetIds) => {
       const payload: BrowserCdpAttached = { sessionId, targetIds }
-      sendToRenderer('browser:cdp-attached', payload)
+      sendToRenderer(CH.browser.cdpAttached, payload)
+    },
+    cameThroughAForward: (guestId, url) => {
+      const port = loopbackPortOf(url)
+      return port !== null && pageForwards.carries(guestId, port)
     }
   }
 }
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
+  if (guestDrivenFromAnotherMachine(from.id)) {
+    if (driver) void openForMachine(driver, url, relayDeps().create).catch(() => {})
+    return true
+  }
   if (driver) void cdpOp('create', driver, { url })
   return driver !== null
 }
@@ -2847,23 +4950,24 @@ function routeGuestPopup(url: string, from: WebContents): void {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
-    else sendToRenderer('browser:blocked-scheme', url)
+    else sendToRenderer(CH.browser.blockedScheme, url)
     return
   }
   const decision = routeFor(url, 'user')
+  if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
   if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source: 'user' }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
   } else if (decision.dest === 'system') {
     openUrlExternally(decision.target)
   } else {
-    sendToRenderer('browser:blocked-scheme', url)
+    sendToRenderer(CH.browser.blockedScheme, url)
   }
 }
 
@@ -2875,7 +4979,7 @@ async function openExtensionTab(url: string): Promise<WebContents | null> {
   if (!extensionPage && decision.dest !== 'browser') return null
   const target = extensionPage ? url : decision.target
   const payload: BrowserOpenRequest = { tabId, url: target, source: 'user' }
-  if (!sendToRenderer('browser:open', payload)) return null
+  if (!sendToRenderer(CH.browser.open, payload)) return null
   return awaitGuestFor(target)
 }
 
@@ -2885,21 +4989,25 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-async function directoryTarget(url: string): Promise<string | null> {
-  let target: string
+function localFilePath(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.host && u.host !== 'localhost') return null
-    target = decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-  try {
-    return (await fs.promises.stat(target)).isDirectory() ? target : null
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
 }
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(target)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -2917,8 +5025,103 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   })
 }
 
+// ADR-0045
+const MACHINE_PAGE_HEADERS = {
+  'content-security-policy':
+    'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-pointer-lock allow-presentation'
+}
+
+async function bytesOfAFileHere(file: string): Promise<Buffer | null> {
+  const machine = parseRemoteKey(file)?.host
+  if (machine && !workspaceMgr?.remoteTargets().some((t) => t.host === machine)) return null
+  return hosts
+    .of(file)
+    .readBytes(file)
+    .catch(() => null)
+}
+
+function bodyOf(data: Buffer): Uint8Array {
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+}
+
+async function machinePageResponse(request: Request): Promise<Response> {
+  const page = machinePageOf(request.url)
+  const body = page && (await bytesOfAFileHere(formatRemoteKey(page.host, page.path)))
+  if (!page || !body)
+    return new Response(fileNotFoundHtml(page?.path ?? request.url), {
+      status: 404,
+      headers: { ...HTML_HEADERS, ...MACHINE_PAGE_HEADERS }
+    })
+  return new Response(bodyOf(body), {
+    headers: { 'content-type': mimeOf(page.path), ...MACHINE_PAGE_HEADERS }
+  })
+}
+
+const FRAME_LOADS = new Set(['mainFrame', 'subFrame'])
+
+// ADR-0045
+function machinePageRequestRefused(details: Electron.OnBeforeRequestListenerDetails): boolean {
+  if (!machinePageOf(details.url) || FRAME_LOADS.has(details.resourceType)) return false
+  return !machinePageOf(details.frame?.url ?? '')
+}
+
+function fenceRequest(
+  details: Electron.OnBeforeRequestListenerDetails,
+  callback: (response: Electron.CallbackResponse) => void
+): void {
+  const guest = details.webContentsId
+  const fenced =
+    guest !== undefined
+      ? guestDrivenFromAnotherMachine(guest)
+      : details.initiatorOrigin !== undefined &&
+        originDrivenFromAnotherMachine(details.initiatorOrigin)
+  if (!fenced) return callback({})
+  if (FRAME_LOADS.has(details.resourceType)) notePageOpenedForAMachine(details.url)
+  if (details.url.startsWith('file:') || machinePageOf(details.url))
+    return callback({ cancel: true })
+  void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
+}
+
+// ADR-0046 PLATFORM§12 PLATFORM§33
+async function loopbackOnTheMachine(
+  details: Electron.OnBeforeRequestListenerDetails,
+  guest: number,
+  machinePort: number,
+  host: string
+): Promise<Electron.CallbackResponse> {
+  if (!aPageOnTheMachineAsks(details.resourceType, details.initiatorOrigin)) return { cancel: true }
+  const frame = FRAME_LOADS.has(details.resourceType)
+  if (frame && guestDrivenFromAnotherMachine(guest)) notePageOpenedForAMachine(details.url)
+  const macPort = await pageForwards.macPortFor(host, machinePort, guest, frame)
+  if (!webContents.fromId(guest)) pageForwards.pageGone(guest)
+  if (macPort === null) return { cancel: true }
+  const there = onMacPort(details.url, macPort)
+  if (there === details.url) return {}
+  return details.resourceType === 'webSocket' ? { cancel: true } : { redirectURL: there }
+}
+
+// ADR-0045 ADR-0046
+function setupPageShotPartition(): void {
+  const ses = shotSession()
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const page = details.webContentsId
+    const host = machineOfShotPage(page)
+    const fromMachine = machinePageOf(details.url)
+    if (fromMachine && (fromMachine.host !== host || machinePageRequestRefused(details)))
+      return callback({ cancel: true })
+    const machinePort = loopbackPortOf(details.url)
+    if (page === undefined || !host || machinePort === null) return callback({})
+    void loopbackOnTheMachine(details, page, machinePort, host).then(callback, () =>
+      callback({ cancel: true })
+    )
+  })
+  onShotPageGone((page) => pageForwards.pageGone(page))
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
+  ses.protocol.handle(MACHINE_PAGE_SCHEME, machinePageResponse)
   // PLATFORM§11
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const decision = permissionAsk(permission, (details ?? {}) as PermissionDetails)
@@ -2934,7 +5137,7 @@ function setupBrowserPartition(): void {
     if (decision.kind === 'refuse') {
       callback(false)
       if (decision.tell) {
-        sendToRenderer('browser:permission-refused', {
+        sendToRenderer(CH.browser.permissionRefused, {
           origin: decision.origin,
           permission: decision.permission
         })
@@ -2956,7 +5159,7 @@ function setupBrowserPartition(): void {
     if (permission !== 'openExternal') return
     const target = (details as { externalURL?: string }).externalURL ?? ''
     if (canOpenExternally(target) && takeGuestGesture(_wc)) openUrlExternally(target)
-    else if (target) sendToRenderer('browser:blocked-scheme', target)
+    else if (target) sendToRenderer(CH.browser.blockedScheme, target)
   })
   // PLATFORM§11
   ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
@@ -2965,20 +5168,23 @@ function setupBrowserPartition(): void {
     if (decision.kind !== 'ask') return false
     return rememberedPermission(decision.origin, decision.permission) ?? false
   })
-  ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
+  ses.protocol.handle(PREVIEW_FILE_SCHEME, async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
-    const dir = await directoryTarget(request.url)
-    if (dir) {
-      const entries = (await fs.promises.readdir(dir, { withFileTypes: true })).map((e) => ({
+    const target = localFilePath(request.url)
+    if (target && (await isDirectory(target))) {
+      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(dir, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
-    return ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    try {
+      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    } catch (err) {
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
+    }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   // PLATFORM§14
@@ -3000,6 +5206,27 @@ function setupBrowserPartition(): void {
   ses.registerPreloadScript({
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
+  })
+  // PLATFORM§39 PLATFORM§12
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    if (
+      webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+      machinePageRequestRefused(details)
+    )
+      return callback({ cancel: true })
+    const guest = details.webContentsId
+    const machinePort = loopbackPortOf(details.url)
+    if (guest === undefined || machinePort === null || !workspaceMgr?.remoteTargets().length)
+      return fenceRequest(details, callback)
+    void reportedOwner(guest)
+      .then((owner) => {
+        const host = owner ? machineOfOwner(owner) : undefined
+        return host ? loopbackOnTheMachine(details, guest, machinePort, host) : null
+      })
+      .then(
+        (answer) => (answer ? callback(answer) : fenceRequest(details, callback)),
+        () => callback({ cancel: true })
+      )
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -3027,7 +5254,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
-    sendToRenderer('browser:download-event', {
+    sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
       name,
@@ -3035,7 +5262,7 @@ function setupBrowserPartition(): void {
     })
     item.on('updated', (_ev, state) => {
       if (state !== 'progressing') return
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'progress',
         received: item.getReceivedBytes()
@@ -3044,7 +5271,7 @@ function setupBrowserPartition(): void {
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'done',
         state,
@@ -3055,7 +5282,7 @@ function setupBrowserPartition(): void {
         return
       }
       const payload: BrowserDownload = { name, path: savePath }
-      sendToRenderer('browser:download', payload)
+      sendToRenderer(CH.browser.download, payload)
     })
   })
 }
@@ -3102,12 +5329,12 @@ function openInWorkbench(
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source, view }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
     return true
   }
   return false
@@ -3121,33 +5348,42 @@ async function openOnMachine(
 ): Promise<boolean> {
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const page = routeFor(keyed, 'agent')
+  if (page.dest === 'browser') return openInWorkbench(tabId, page, 'agent')
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
-  sendToRenderer('preview:open-file', payload)
+  sendToRenderer(CH.preview.openFile, payload)
   return true
 }
 
+async function isRegularFile(file: string): Promise<boolean> {
+  const stat = await fs.promises.stat(file).catch(() => null)
+  return !!stat?.isFile()
+}
+
 function killTabFromMain(tabId: string): void {
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   void killTabPty(tabId)
 }
 
 function killTabPty(tabId: string, restarting = false): Promise<boolean> {
+  if (!restarting) cronRunner?.tabClosed(tabId, !!ptyMgr.get(tabId)?.alive)
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
-    const resource =
-      sleeper.kind === 'codex' && !restarting
-        ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
-        : undefined
-    return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
+    const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
+    const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
+    if (!restarting) cronRunner?.onTabGone({ treeRoot: tree, sessionId: sleeper.sessionId })
+    return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
+      () => true
+    )
   }
-  discordNotices?.closed(tabId)
-  discordLive?.closed(tabId)
   return stopTabProcess(tabId, restarting)
 }
 
 function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
+  if (ptyMgr.get(tabId)?.alive)
+    closedTabs.set(tabId, restarting ? null : leftTabOf(sessionOfTab(tabId)))
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
@@ -3158,7 +5394,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   return stopped.then(
     () => true,
     (error) => {
-      sendToRenderer('cron:toast', String(error))
+      sendToRenderer(CH.cron.toast, String(error))
       return false
     }
   )
@@ -3167,6 +5403,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
   if (archived) {
+    koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
     readerDocs.forget(id)
@@ -3192,63 +5429,136 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
+const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
+
+function treeRootOf(s: SessionInfo): string {
+  return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
+}
+
+function leftTabOf(s: SessionInfo | undefined): LeftTab {
+  return s ? { treeRoot: treeRootOf(s), sessionId: s.sessionId || undefined } : {}
+}
+
+function aliveSessionsIn(treeRoot: string, exceptTabId?: string): SessionInfo[] {
+  return allSessions().filter(
+    (s) => s.tabId !== exceptTabId && s.alive && treeRootOf(s) === treeRoot
+  )
+}
+
+const TAB_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const TAB_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingWouldLose(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
+  info: ProjectInfo | undefined,
+  waitUntil: number
 ): Promise<string[]> {
-  const tree = await closingTree(hostGitOut, info)
+  if (target.tabId && dirtyTabIds.has(target.tabId)) return [TAB_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked =
+    target.tabId && codexSessions?.questionWentUnanswered(target.tabId)
+      ? [TAB_ASKED_A_QUESTION_NOBODY_ANSWERED]
+      : []
+  let left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  if (left.length && treeRemovals.has(target.treeRoot))
+    left = await leftOnceRemovalsEnd(target, info, waitUntil)
+  return [...asked, ...left]
+}
+
+async function leftOnceRemovalsEnd(
+  target: ClosableSession,
+  info: ProjectInfo | undefined,
+  waitUntil: number
+): Promise<string[]> {
+  if (!(await treeRemovals.settledWithin(target.treeRoot, waitUntil - Date.now())))
+    return [
+      `Koloft is still deleting the worktree ${target.treeRoot}. Close the session again in a minute.`
+    ]
+  const tree = await closingTree(hostGitOut, info ?? projectInfoFor(target.treeRoot))
   if (!tree) return []
-  const sharing = allSessions().filter(
-    (s) =>
-      s.tabId !== target.tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
-  )
+  const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
+}
+
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
 }
 
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
-): Promise<void> {
-  if (target.tabId) {
-    sendToRenderer('tab:killedByMain', target.tabId)
-    await killTabPty(target.tabId)
+  info?: ProjectInfo,
+  tell = tellTheOwner
+): Promise<boolean> {
+  await treeRemovals.settled(target.treeRoot)
+  const where = info ?? projectInfoFor(target.treeRoot)
+  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+}
+
+async function endAndRemove(
+  target: ClosableSession,
+  info: ProjectInfo,
+  tell: (text: string) => void
+): Promise<boolean> {
+  const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
+  if (tabId) {
+    sendToRenderer(CH.tab.killedByMain, tabId)
+    await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
-    return
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const leftSinceTheCheck =
+    tabId && tree && !alreadyRemoved ? await whatIsLeft(hostGitOut, tree, mergedHeads) : []
+  if (leftSinceTheCheck.length) {
+    tell(
+      `Koloft ended ${target.title} but did not close it: it left this after Koloft checked.\n${leftSinceTheCheck.join('\n')}`
+    )
+    return false
+  }
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer('cron:toast', `${target.title}: ${problem}`)
-    return
+    tell(
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
+    )
+    return false
   }
   archiveSession(target.sessionId)
-  codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+  for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
-async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
+async function removeUntouchedWorktree(
+  owner: SessionsWithStore | null | undefined,
+  resource: WorktreeResource
+): Promise<void> {
   const tree = resource.worktreePath
-  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
-  if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
-    return
-  const problem = await removeTree(hostGitOut, {
-    root: resource.originalCwd,
-    treeRoot: tree,
-    worktreeName: resource.worktreeName,
-    branches: [`worktree-${resource.worktreeName}`]
-  })
-  if (problem) sendToRenderer('cron:toast', problem)
-}
-
-function worktreeHomeOf(root: string): string {
-  return `${root}/.claude/worktrees`
+  if (sleeperTrees().includes(tree) || cronRunner?.holdsFolder(tree)) return
+  if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
+  if (treeRemovals.has(tree)) return
+  const problem = await treeRemovals.run(tree, () =>
+    removeTree(hostGitOut, {
+      root: resource.originalCwd,
+      treeRoot: tree,
+      worktreeName: resource.worktreeName,
+      branches: [`worktree-${resource.worktreeName}`]
+    })
+  )
+  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -3258,17 +5568,19 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
-const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
-  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  return whatClosingWouldLose(
+    session,
+    cronRunTree(root, worktree),
+    Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+  )
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -3276,21 +5588,105 @@ async function closeTheRunFully(tabId: string, root: string, worktree?: string):
   if (session) await closeSessionFully(session, cronRunTree(root, worktree))
 }
 
-async function countRunFolders(root: string, slug: string): Promise<number> {
+async function worktreeFolders(root: string): Promise<string[]> {
   const entries = await hosts.of(root).listDir(worktreeHomeOf(root), { showIgnored: true })
-  return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
+  return entries.filter((e) => e.isDir).map((e) => e.name)
+}
+
+async function listRunFolders(root: string, slug: string): Promise<string[]> {
+  return (await worktreeFolders(root)).filter((name) => isRunFolderOf(slug, name))
+}
+
+const WORKTREE_BRANCH = 'worktree-'
+
+async function runLeftovers(root: string): Promise<RunLeftovers> {
+  const [folders, branches] = await Promise.all([
+    worktreeFolders(root),
+    hostGitOut(root, ['branch', '--list', `${WORKTREE_BRANCH}*`, '--format=%(refname:short)'])
+  ])
+  const branched =
+    branches === null
+      ? null
+      : branches
+          .split('\n')
+          .filter((b) => b.startsWith(WORKTREE_BRANCH))
+          .map((b) => b.slice(WORKTREE_BRANCH.length))
+  return { folders, branched }
+}
+
+const STILL_RUNNING_ON_THE_MACHINE = 'still running on the machine'
+
+async function tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult> {
+  const host = parseRemoteKey(root)?.host
+  if (host && sessionId) {
+    const after = await claudeBackend.waitRemoteGone(host, sessionId)
+    if (after === 'alive') return { removed: false, kept: [STILL_RUNNING_ON_THE_MACHINE] }
+    if (after === 'unreachable') return machineUnreachable()
+  }
+  const info = cronRunTree(root, worktree)
+  const result = await treeRemovals.run(info.treeRoot, () =>
+    tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
+  )
+  if (result.removed)
+    for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  return result
+}
+
+function sleeperTrees(): string[] {
+  return [...sleepers.values()].map((t) => projectInfoFor(t.cwd).treeRoot)
+}
+
+function foldersInUse(leavingTabId?: string): Set<string> {
+  const alive = allSessions().filter((s) => s.tabId !== leavingTabId && s.alive)
+  return new Set([...alive.map(treeRootOf), ...sleeperTrees()])
 }
 
 async function launchQuietTab(
   options: CreateTabOptions & { kind: BackendId },
   title: string,
-  jobId?: string
+  more: Pick<SpawnedTab, 'jobId' | 'launch'> = {}
 ): Promise<string | null> {
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
-  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
-  sendToRenderer('terminal:spawned', spawned)
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, ...more }
+  sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
+}
+
+function remoteHookMirrors(): string[] {
+  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
+  return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
+}
+
+const freedOnMachine = new Map<string, string>()
+
+async function freeOnMachine(tabId: string): Promise<void> {
+  const host = machineOfTab(tabId)
+  if (!host) return
+  await loginEnvReady()
+  await runSsh(
+    host,
+    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
+      tabId
+    ]),
+    { controlDir: remoteControlDir }
+  )
+  freedOnMachine.set(tabId, host)
+}
+
+function forgetFreeOnMachine(tabId: string): void {
+  const host = freedOnMachine.get(tabId)
+  if (!host) return
+  freedOnMachine.delete(tabId)
+  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
+function forgetShellOnMachine(host: string, tabId: string): void {
+  void runSsh(host, remoteShCommand(`rm -f "${remoteShellPidFile('$1')}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
 }
 
 const RESUMES_AT_ONCE = 4
@@ -3305,14 +5701,15 @@ function restoreOpenTabs(): string | undefined {
     addSleeper(id, t)
     if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
-  void resumeAwake(
-    [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly],
-    savedOpenTabs.active
-  ).finally(() => {
+  const awake = [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly]
+  cronRunner?.expectReopened(awake)
+  void resumeAwake(awake, savedOpenTabs.active).finally(() => {
     openTabsRestored = true
     rememberOpenTabs()
+    cronRunner?.reopeningOver()
+    cronRunner?.sweepLeftFolders()
   })
-  workspaceMgr.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   return activeAsleep
 }
 
@@ -3323,29 +5720,35 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   const resumeOne = async (id: string): Promise<void> => {
     const row = rows.find((r) => r.id === id)
     const resumed = row
-      ? await resumeRow(row).catch(() => ({ ok: false as const, error: couldNotStart(row.title) }))
+      ? await resumeRow(row, { rebuildGoneWorktree: false }).catch(() => ({
+          ok: false as const,
+          error: couldNotStart(row.title)
+        }))
       : undefined
+    const reopenedTab = resumed?.ok && ptyMgr.get(resumed.tabId)?.alive ? resumed.tabId : undefined
+    cronRunner?.reopenedIn(id, reopenedTab)
     if (!resumed?.ok) {
-      if (resumed) sendToRenderer('cron:toast', resumed.error)
+      if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
-    if (id === active) sendToRenderer('attention:activate-tab', { tabId: resumed.tabId })
+    if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
-function couldNotStart(title: string): string {
-  return `Could not start “${title}” — click it to try again.`
+function couldNotStart(title: string, reason?: string): string {
+  return `Could not start “${title}” — ${reason || 'click it to try again.'}`
 }
 
 // CC§11
 async function resumeRow(
-  row: SessionRow
+  row: SessionRow,
+  { rebuildGoneWorktree }: { rebuildGoneWorktree: boolean }
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
-  if (plan.action === 'dialog' || plan.action === 'rebuild') {
+  if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
       error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
@@ -3356,12 +5759,18 @@ async function resumeRow(
       ok: false,
       error:
         plan.reason === 'running'
-          ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
+          ? `“${row.title}” is already running in another ${row.backendId} process, so Koloft left it there.`
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
-  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
+  const res = await backend.resume({
+    sessionId: row.id,
+    cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
+    mode: plan.action
+  })
+  if (!res.ok) {
+    return { ok: false, error: couldNotStart(row.title, res.code === 'backend' ? res.message : '') }
+  }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -3369,106 +5778,462 @@ async function resumeRow(
     title: row.title,
     sessionId: row.id
   }
-  sendToRenderer('terminal:spawned', spawned)
+  sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
 }
 
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+}
+
+function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
+  return (
+    !!sessionOfTab(tabId)?.sessionId &&
+    tracker.statusOf(tabId) !== undefined &&
+    (!turnEnded || tracker.turnOver(tabId))
+  )
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => boundAndSettled(tabId, turnEnded), ms)
+}
+
+// AGY§8
+function tabTypable(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () =>
-      !!sessionOfTab(tabId)?.sessionId &&
-      tracker.statusOf(tabId) !== undefined &&
-      (!turnEnded || tracker.turnOver(tabId)),
+    () => showsPromptBeforeBind(tabId) || boundAndSettled(tabId, turnEnded),
     ms
   )
 }
 
-function registerSlashCommands(): void {
-  const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
-  void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+function tabBound(tabId: string, ms: number): Promise<boolean> {
+  return ptyMgr.whenReady(tabId, () => !!sessionOfTab(tabId)?.sessionId, ms)
 }
 
-function conductorDestination(b: ConductorBinding): Destination {
+function registerSlashCommands(): void {
+  const guildId = butler?.channel()?.guildId
+  if (guildId) void discordLink?.registerCommands([guildId], SLASH_COMMANDS)
+}
+
+async function secretAskerName(tabId: string): Promise<string> {
+  if (butler?.isButlerTab(tabId)) return butlerNameNow()
+  const s = sessionOfTab(tabId)
+  const name = (await discordShownName(s)) ?? s?.title ?? 'A session'
+  const workspace = sessionBackends.workspaceOfTab(tabId)
+  return workspace ? `${name} · ${scopeName(workspace)}` : name
+}
+
+const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
+
+// CODEX§15
+async function openSignInEndOn(host: string | undefined, url: string): Promise<string> {
+  if (!host) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(LOOPBACK_OPEN_TIMEOUT_MS)
+    }).catch((error: unknown) => `nothing (${errorText(error)})`)
+    return typeof res === 'string' ? res : String(res.status)
+  }
+  await loginEnvReady()
+  const r = await runSsh(
+    host,
+    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
+  )
+  return r.stdout.trim() || `nothing (${r.stderr.trim()})`
+}
+
+function guestPagesOf(tabId: string): (GuestPage & FieldPage)[] {
+  return webContents
+    .getAllWebContents()
+    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
+    .map((wc) => ({
+      guestId: wc.id,
+      url: () => wc.getURL(),
+      // PLATFORM§10
+      run: async (script: string) => {
+        await compositionDone()
+        return await wc.executeJavaScript(script)
+      },
+      reload: () =>
+        new Promise<void>((resolve) => {
+          wc.once('did-stop-loading', () => resolve())
+          wc.reload()
+        })
+    }))
+}
+
+async function saveDiscordToken(token: string): Promise<boolean> {
+  const saved = await discordTokenWrite(token)
+  if (saved) void discordLink?.connect()
+  return saved
+}
+
+const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
+const SET_UP_DISCORD_HOW =
+  '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
+function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  const words = ownerWords ?? SET_UP_DISCORD_WORDS
+  return startHelper((butler) => ({
+    prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
+    ownerWords: words,
+    backend: discordHelperBackend(butler.backendId)
+  }))
+}
+
+function discordHelperBackend(butlerBackend: BackendId): BackendId {
+  const methods = loadSettings().sessionMethods
+  return methods.enabled[butlerBackend]
+    ? butlerBackend
+    : effectiveBackend(methods, new Set(SESSION_BACKENDS))
+}
+
+async function bindWithNewChannel(): Promise<ConductorSaveResult> {
+  const link = discordLink
+  const bound = butler
+  if (!bound || !link) return { ok: false, error: STILL_STARTING }
+  const saved = await bound.bindNewChannel((category) => link.newChannel(bound.channel(), category))
+  if (saved.ok) registerSlashCommands()
+  return saved
+}
+
+function butlerNameNow(): string {
+  return loadSettings().butler.name
+}
+
+function ownersPermission(): 'bypass' | 'default' {
+  return loadSettings().skipPermissions ? 'bypass' : 'default'
+}
+
+const NO_CHANNEL_BOUND = 'No Discord channel is bound.'
+
+function ownerIsWhere(): string {
+  if (ownerAsleep.asleep()) return '(Koloft: the owner is asleep right now.)'
+  return ownerAway()
+    ? '(Koloft: the owner is away from the Mac right now.)'
+    : '(Koloft: the owner is at the Mac right now.)'
+}
+
+function roomOfTab(tabId: string): string | undefined {
+  return butlerSide(tabId) ? undefined : rooms?.carried(tabId)
+}
+
+function askChannelOfTab(tabId: string): string | undefined {
+  return butlerSide(tabId) ? butler?.channel()?.channelId : roomOfTab(tabId)
+}
+
+function phoneChannelOf(tabId: string): string | undefined {
+  return butler?.channelOfTab(tabId) ?? roomOfTab(tabId)
+}
+
+async function copyToPhone(
+  tabId: string,
+  target: string,
+  view?: ArtifactView
+): Promise<string | undefined> {
+  const relay = discordRelay
+  const reaches = relay?.reaches(tabId) && !relay.quietTurn(tabId)
+  const channelId = reaches ? phoneChannelOf(tabId) : undefined
+  const shown = channelId && shownOf(target, machineOfTab(tabId), view)
+  if (!relay || !channelId || !shown) return undefined
+  const where = butler?.channelOfTab(tabId)
+    ? 'the Discord channel the owner talks to you in'
+    : "this session's room on the owner's Discord"
+  return sendPhoneCopy(
+    {
+      shoot: (url, machine) => shootPage(url, { machine }),
+      shootHtml,
+      size: async (file) => (isRemoteKey(file) ? undefined : (await fs.promises.stat(file)).size),
+      readBytes: (file) =>
+        hosts
+          .of(file)
+          .readBytes(file)
+          .catch((error: unknown) => {
+            throw errorText(error) === 'KOLOFT_TOO_LARGE' ? new Error(tooLarge()) : error
+          }),
+      fileDiff: (file) => hosts.of(file).gitFileDiff(file),
+      send: (files, parts) => relay.sendParts(channelId, files, parts)
+    },
+    shown,
+    where
+  )
+}
+
+const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
+
+function askUnreadablySoon(tabId: string): void {
+  if (!roomOfTab(tabId)) return
+  if (storedOwnerOf(tabId)) return discordRelay?.asksUnreadably(tabId)
+  setTimeout(() => {
+    if (tracker.statusOf(tabId) === 'approval') discordRelay?.asksUnreadably(tabId)
+  }, AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS)
+}
+
+const touchedAt = new Map<string, number>()
+const ownerTouchedAt = new Map<string, number>()
+const questionSeen = new Map<string, { asks: string; at: number }>()
+
+function questionSeenAt(tabId: string): number | undefined {
+  const open = storedOwnerOf(tabId)?.openQuestion(tabId)
+  if (!open) return undefined
+  const asks = JSON.stringify(open.questions)
+  const seen = questionSeen.get(tabId)
+  if (seen?.asks === asks) return seen.at
+  const at = Date.now()
+  questionSeen.set(tabId, { asks, at })
+  return at
+}
+
+// CC§14
+function touchesADialog(tabId: string, data: string): boolean {
+  if (pressesAKey(data)) return true
+  return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'
+}
+
+function ownerTouchedTheScreen(tabId: string): void {
+  questionSeenAt(tabId)
+  ownerTouchedAt.set(tabId, Date.now())
+}
+
+function ownerTouchedSince(tabId: string, at: number): boolean {
+  return (ownerTouchedAt.get(tabId) ?? 0) >= at
+}
+const TOUCHED_BEFORE_LEAVING_WITHIN_MS = 30 * 60_000
+
+function ownerTouched(tabId: string): void {
+  if (!backendIdOf(ptyMgr.get(tabId)?.kind)) return
+  touchedAt.set(tabId, Date.now())
+  rooms?.handsOn(tabId)
+}
+
+function touchedBefore(left: number): string[] {
+  return [...touchedAt].flatMap(([tabId, at]) => {
+    const title = ptyMgr.get(tabId)?.alive && sessionOfTab(tabId)?.title
+    return title && at >= left - TOUCHED_BEFORE_LEAVING_WITHIN_MS && !butlerSide(tabId)
+      ? [title]
+      : []
+  })
+}
+
+function roomOfEndedTab(tabId: string, sessionGoesOn: boolean, unexpected: boolean): void {
+  if (sessionGoesOn) rooms?.forget(tabId)
+  else if (unexpected) rooms?.stopped(tabId)
+  else void rooms?.closed(tabId)
+}
+
+function rowOfKey(key: string | undefined): SessionRow | undefined {
+  return (workspaceMgr?.rows() ?? []).flatMap((w) => w.rows).find((r) => r.id === key)
+}
+
+function liveTabOfRoom(threadId: string, keys: string[]): string | undefined {
+  const tab = rooms?.tabOfThread(threadId)
+  if (tab && ptyMgr.get(tab)?.alive) return tab
+  return allSessions().find((s) => s.alive && keys.includes(s.sessionId))?.tabId
+}
+
+function roomDestination(threadId: string): Destination | undefined {
+  const room = rooms?.ofThread(threadId)
+  if (!room) return undefined
+  const liveTab = (): string | undefined => liveTabOfRoom(threadId, room.keys)
   return {
-    id: b.id,
-    name: 'The conductor',
-    conductor: true,
-    liveTab: () => conductors?.liveTab(b.id),
+    channelId: threadId,
+    name: room.name,
+    liveTab,
     open: async () => {
-      const opened = await conductors?.open(b.id)
+      const live = liveTab()
+      if (live) return live
+      const row = rowOfKey(room.keys.at(-1))
+      if (!row)
+        throw new Error(`${room.name} is no longer in Koloft's sidebar, so it cannot be resumed.`)
+      return sessionDeps.resume(row)
+    },
+    typeCommand: async (tabId, command) => {
+      await slash.typeWhenIdle({ name: room.name, tabId, butler: false }, command, {
+        channelId: threadId
+      })
+    },
+    seen: (id) => rooms?.seen(threadId, id),
+    ownerSpoke: () => rooms?.ownerSpoke(threadId)
+  }
+}
+
+function commandInto(dest: Destination | undefined, text: string): string {
+  if (!discordRelay || !dest) throw new Error(STILL_STARTING)
+  if (!dest.channelId) throw new Error(NO_CHANNEL_BOUND)
+  discordRelay.command(dest, text, dest.channelId)
+  return `Koloft will type ${text} into ${dest.name} once its turn ends, and post what it prints in Discord.`
+}
+
+async function openRoomFor(p: PlacedRow): Promise<string> {
+  const r = rooms
+  if (!r) throw new Error(STILL_STARTING)
+  const tabId = p.live?.tabId ?? (await sessionDeps.resume(p.row))
+  const subject: RoomSubject = {
+    tabId,
+    key: p.row.id,
+    name: p.title,
+    backend: p.row.backendId,
+    workspace: p.workspace
+  }
+  return r.open(subject, (threadId) => showWhereItIs(threadId, subject))
+}
+
+function stateWords(tabId: string | undefined): string {
+  if (!tabId || tracker.statusOf(tabId) === undefined) return 'It is starting up.'
+  if (asksTheOwner(tabId)) return 'It is waiting for you: its question is below.'
+  return tracker.statusOf(tabId) === 'working' ? 'It is working.' : 'It finished its turn.'
+}
+
+const LAST_WORDS_QUOTED = 600
+
+async function showWhereItIs(threadId: string, s: RoomSubject): Promise<void> {
+  const [turn] = s.key ? await sessionBackends.turns(s.key, 1).catch(() => []) : []
+  const said = turn?.reply.trim() ? `It last said: “${quoteOf(turn.reply, LAST_WORDS_QUOTED)}”` : ''
+  const body = [`-# ${whereOf(s)}`, stateWords(s.tabId), said].filter(Boolean).join('\n\n')
+  await discordLink
+    ?.card(threadId, { accent: accentOf(s.name), header: `📍 **${s.name}**: where it is`, body })
+    .catch(() => undefined)
+  if (s.tabId) discordRelay?.roomOpened(s.tabId)
+}
+
+async function openRoomByRef(ref: string): Promise<AgentReply> {
+  const found = await findSessionRow(sessionDeps, ref)
+  if (!found.ok) return refused(`koloft discord thread open: ${found.error}`)
+  if (found.value.workspace === conductorFolder(app.getPath('userData')))
+    return refused(
+      'koloft discord thread open: a helper in your own folder gets no room; its questions already come to your channel.'
+    )
+  const threadId = await openRoomFor(found.value)
+  return answered(
+    `Opened the room of ${found.value.title}: ${roomLink(threadId)}. Give the owner that link exactly as written; Discord shows it as a link to the room.`
+  )
+}
+
+async function roomForNew(
+  callerTab: string,
+  tabId: string,
+  workspace: string,
+  name: string | undefined
+): Promise<string | undefined> {
+  if (!rooms || !discordRelay?.answeringDiscord(callerTab)) return undefined
+  const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+  if (!backend) return undefined
+  const subject: RoomSubject = {
+    tabId,
+    name: name || sessionOfTab(tabId)?.title || `${BACKEND_LABEL[backend]} session`,
+    backend,
+    workspace
+  }
+  const threadId = await rooms
+    .open(subject, (id) => showWhereItIs(id, subject))
+    .catch(() => undefined)
+  return threadId && roomLink(threadId)
+}
+
+function butlerDestination(): Destination {
+  return {
+    channelId: butler?.channel()?.channelId ?? '',
+    ownerIsWhere,
+    name: butlerNameNow(),
+    liveTab: () => butler?.liveTab(),
+    open: async () => {
+      const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
-    typeCommand: (tabId, command) =>
-      slash.typeWhenIdle(
-        { name: `the ${conductorName(b.scope)}`, tabId, conductor: true },
-        command,
-        b.channel.channelId
-      ),
-    seen: (id) => conductors?.setLastMessage(b.id, id)
+    typeCommand: async (tabId, command) => {
+      const channelId = butler?.channel()?.channelId
+      if (!channelId) throw new Error(NO_CHANNEL_BOUND)
+      await slash.typeWhenIdle({ name: butlerNameNow(), tabId, butler: true }, command, {
+        channelId
+      })
+    },
+    seen: (id) => butler?.setLastMessage(id)
   }
 }
 
-async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
-  const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
-  const target = (tabId: string): SlashTarget => {
-    conductors?.touchNowAndNext(b.id, t.key, tabId)
-    return { name: t.name, tabId, conductor: false }
-  }
-  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, butler: !!t.butler })
+  if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
-    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, to))
+    .catch((error: unknown) => slashReply(to, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${replyWhere(to)}.`
 }
 
-function commandIntoConductor(b: ConductorBinding, text: string): string {
-  if (!discordRelay) throw new Error(STILL_STARTING)
-  discordRelay.command(conductorDestination(b), text, b.channel.channelId)
-  return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
+function commandIntoButler(text: string): string {
+  return commandInto(butlerDestination(), text)
 }
 
-function conductorTarget(ref: string): Target | undefined {
-  const all = conductors
-  const b = all?.bindingOf(ref)
-  if (!all || !b) return undefined
+function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+  const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
+  const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
+  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
+  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
+}
+
+async function startHelper(
+  task: (butler: SessionInfo) => ButlerHelperTask
+): Promise<ConductorOpenResult> {
+  // AGY§8
+  const opened = await butler?.open(A_HELPER_HAS_IT)
+  if (!opened) return { ok: false, error: STILL_STARTING }
+  if (!opened.ok) return opened
+  const parent = (await tabReady(opened.tabId, cronBindDeadlineMs(), false))
+    ? sessionOfTab(opened.tabId)
+    : undefined
+  if (!parent) return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
+  const tabId = await sessionCommand.startButlerHelper(parent, task(parent))
+  return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
+}
+
+function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+  return startHelper(() => ({
+    prompt: fromPalette(request),
+    name: request.title,
+    ownerWords: request.words,
+    backend: request.backend
+  }))
+}
+
+function butlerTarget(ref: string): Target | undefined {
+  const all = butler
+  if (!all?.isButler(ref)) return undefined
+  const tabId = all.liveTab()
   return {
-    key: `conductor:${b.id}`,
-    name: `the ${conductorName(b.scope)}`,
-    backend: b.backend,
+    key: 'butler',
+    name: butlerNameNow(),
+    backend:
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
     remote: false,
-    tabId: all.liveTab(b.id),
-    bindingId: b.id,
+    tabId,
+    butler: true,
     open: async () => {
-      const opened = await all.open(b.id)
+      const opened = await all.open()
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     }
   }
 }
 
-async function launchCronRun(
-  req: LaunchRequest
-): Promise<{ ok: true; tabId: string } | { ok: false }> {
+async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
-    const tabId = await launchQuietTab(
-      {
-        kind: req.backend,
-        cwd: req.cwd,
-        worktree: req.worktree,
-        model: req.model,
-        effort: req.effort,
-        permission: req.permission,
-        firstPrompt: req.firstPrompt,
-        name: req.name,
-        scheduled: true
-      },
-      req.name,
-      req.jobId
-    )
+    const options: CreateTabOptions & { kind: BackendId } = {
+      kind: req.backend,
+      cwd: req.cwd,
+      worktree: req.worktree,
+      model: req.model,
+      effort: req.effort,
+      permission: req.permission,
+      firstPrompt: req.firstPrompt,
+      name: req.name,
+      scheduled: true
+    }
+    const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
@@ -3490,18 +6255,24 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
+  recorded: (dir) => storedSessions().some((s) => s.worktrees.recorded(dir)),
   ...gitProbes(localGitOut)
 }
 
 function commitSettings(patch: Partial<Settings>): Settings {
   const s = saveSettings(patch)
-  sendToRenderer('settings:update', s)
+  sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
-  applyKeepAwake(s.keepAwake)
-  setKeepAwakeChecked(s.keepAwake)
+  if (ownerAsleep.set(s.ownerAsleepSince)) syncAnswerable()
+  holdMacAwake(s.keepAwake)
   return s
+}
+
+function holdMacAwake(keepAwake: boolean): void {
+  const asleep = ownerAsleep.asleep()
+  applyKeepAwake(keepAwake || asleep)
+  setKeepAwakeChecked(keepAwake || asleep, !asleep)
 }
 
 const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
@@ -3509,8 +6280,17 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
-  gh: (args) => loginEnvReady().then(() => runGh(args)),
+  countedAs: (root) => gitAccounts?.pickedAccount(root),
+  openCounts: async (repo, root) => {
+    await loginEnvReady()
+    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
+    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
+    return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
+  },
+  gh: async (args, root) => {
+    await loginEnvReady()
+    return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
+  },
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -3527,7 +6307,12 @@ const githubOptions: GithubOptions = {
 }
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions)),
+  localHost(new GithubLookup(githubOptions), {
+    hookRegDir: () => hookRegDir ?? '',
+    agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    docsPlugin: () => claudeDocsPlugin,
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
+  }),
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
@@ -3535,6 +6320,8 @@ const hosts = new Hosts(
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
       sshEnvReady: loginEnvReady,
+      watch: (p, onChange) => remoteSync?.watch(machine, p, onChange),
+      unwatch: (p) => remoteSync?.unwatch(machine, p),
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {
@@ -3556,12 +6343,21 @@ const hosts = new Hosts(
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
+        firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
+        pickAccount: (launchKey, resumeSessionId) =>
+          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+        noAccountMessage: () => noAccountNow('claude'),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(
+            tabId,
+            dir,
+            loadSettings().statuslineBuiltin,
+            allowKoloft,
+            !!guard?.isBackground(tabId)
+          )
       }
     })
 )
@@ -3573,11 +6369,20 @@ const claudeBackend = new ClaudeBackend({
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
-  setupLine,
+  setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: (tabId, allowKoloft, conductor, playwrightServers) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor, playwrightServers),
+  playwrightMcp: async (cwd) =>
+    loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
-  error: (message) => sendToRenderer('cron:toast', message)
+  error: (message) => sendToRenderer(CH.cron.toast, message),
+  machineOfTab,
+  otherTabOnMachine: (machine, tmuxName, launchTab) =>
+    storedSessions()
+      .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
+      .find(Boolean)
 })
 sessionBackends.register(claudeBackend)
 
@@ -3592,20 +6397,14 @@ function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tab
 
 function registerIpc(): void {
   ipcMain.handle(
-    'terminal:create',
+    CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
-      if (
-        opts.kind !== 'shell' &&
-        !opts.resumeSessionId &&
-        !loadSettings().sessionMethods.enabled[opts.kind]
-      ) {
-        throw new Error('This session method is disabled in Settings ▸ Sessions.')
-      }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
       const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
+        koloftShim: PLAIN_KOLOFT_SHIM,
         cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,
@@ -3614,23 +6413,41 @@ function registerIpc(): void {
         resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
+        utilMachine: opts.util === true ? parseRemoteKey(requested)?.host : undefined,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
+      if (handle.utilMachine) remoteSync?.typedInto(handle.utilMachine)
       writeRelayEnv(ptyTabIds())
       return { ok: true, id: handle.id, cwd: launch.cwd }
     }
   )
 
-  ipcMain.on('terminal:write', (_e, id: string, data: string) => writeToTab(id, data))
-  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) => {
+  ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
+    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    if (ownerTyped(data) && data.includes('\r')) ownerCameBack()
+    if (ownerTyped(data)) ownerTouched(id)
+    if (touchesADialog(id, data)) ownerTouchedTheScreen(id)
+    writeToTab(id, data)
+  })
+  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
+  ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
+  ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
+    if (guard?.isBackground(id)) void guard.free(id)
+    if (typedAfter?.includes('\r')) ownerCameBack()
+    ownerTouched(id)
+    ownerTouchedTheScreen(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
+  ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
+    if (typeof text === 'string' && text) clipboard.writeText(text)
+  })
   // PLATFORM§21
-  ipcMain.on('sessions:activity', (_e, id: unknown) => {
+  ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
   })
-  ipcMain.on('terminal:ack', (_e, id: string, ackedUtf16Units: number) => {
+  ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: number) => {
     if (
       typeof ackedUtf16Units === 'number' &&
       Number.isFinite(ackedUtf16Units) &&
@@ -3641,34 +6458,109 @@ function registerIpc(): void {
       }
     }
   })
-  ipcMain.on('terminal:attach', (_e, id: string) => {
+  ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
     flushHeldData()
   })
-  ipcMain.handle('terminal:flowStats', () =>
+  ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))
   )
-  ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
+  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
   ipcMain.on(
-    'terminal:kill',
+    CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
+  ipcMain.on(CH.tabs.moved, (_e, oldTabId: unknown, newTabId: unknown) => {
+    if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
+    ptyMgr.moveOwner(oldTabId, newTabId)
+    startedSessions.moved(oldTabId, newTabId)
+    sessionCommand.tabMoved(oldTabId, newTabId)
+    koloftInbox.rebound(oldTabId, newTabId)
+    cronRunner?.tabMoved(oldTabId, newTabId)
+    for (const wc of webContents.getAllWebContents())
+      if (guestOwners.get(wc) === oldTabId) guestOwners.set(wc, newTabId)
+    secretAsks?.rehome(oldTabId, newTabId)
+  })
 
-  ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', () =>
-    sessionBackends.availability((id) => ({
-      id,
-      available: false,
-      reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
-    }))
+  ipcMain.handle(CH.sessions.list, () => allSessions())
+  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
+    if (recheck === true) sessionBackends.forgetAvailability()
+    return installedBackends()
+  })
+  ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
+    const id = backendIdOf(backend)
+    return id ? installTool(id) : null
+  })
+  ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.inbox.list, () => {
+    koloftInbox.sync()
+    return inbox.snapshot()
+  })
+  const onCard =
+    (act: (cardId: string, ...rest: unknown[]) => void) =>
+    (_e: unknown, cardId: unknown, ...rest: unknown[]): void => {
+      if (typeof cardId !== 'string') return
+      try {
+        act(cardId, ...rest)
+      } catch (error) {
+        sendToRenderer(CH.cron.toast, errorText(error))
+      }
+    }
+  ipcMain.on(
+    CH.inbox.press,
+    onCard((id, action, answers) => {
+      if (typeof action === 'string' && answers && typeof answers === 'object')
+        inbox.press(id, action, answers as InboxAnswers)
+    })
   )
-  ipcMain.handle('attention:list', () => attention.list())
-  ipcMain.handle('tabs:list', (): TabInventoryReply => {
+  ipcMain.on(
+    CH.inbox.confirm,
+    onCard((id) => inbox.confirm(id))
+  )
+  ipcMain.on(
+    CH.inbox.undo,
+    onCard((id) => inbox.undo(id))
+  )
+  ipcMain.on(
+    CH.inbox.retry,
+    onCard((id) => inbox.retry(id))
+  )
+  ipcMain.on(
+    CH.inbox.dismiss,
+    onCard((id) => inbox.dismiss(id))
+  )
+  ipcMain.on(
+    CH.inbox.top,
+    onCard((id) => inbox.moveToTop(id))
+  )
+  ipcMain.on(
+    CH.inbox.level,
+    onCard((id, level) => {
+      if (level === null || INBOX_LEVELS.includes(level as InboxLevel))
+        inbox.setYourLevel(id, level as InboxLevel | null)
+    })
+  )
+  ipcMain.on(CH.inbox.clearNotes, () => inbox.clearNotes())
+  ipcMain.handle(CH.secret.list, () => secretAsks?.views() ?? [])
+  ipcMain.on(CH.secret.answer, (_e, id: unknown, value: unknown) => {
+    if (typeof id === 'string' && typeof value === 'string') secretAsks?.answer(id, value)
+  })
+  ipcMain.on(CH.secret.done, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.done(id)
+  })
+  ipcMain.on(CH.secret.decline, (_e, id: unknown) => {
+    if (typeof id === 'string') secretAsks?.decline(id)
+  })
+  ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
-    cronRunner?.onRendererReady()
+    if (probeOnceTheRendererIsUp) {
+      void LAUNCH_PROBES[probeOnceTheRendererIsUp]().catch(() => {})
+      probeOnceTheRendererIsUp = null
+    }
     const activeAsleep = restoreOpenTabs()
+    cronRunner?.onRendererReady()
     const active = activeAsleep ?? activeTabBeforeReload
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
@@ -3678,9 +6570,9 @@ function registerIpc(): void {
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(
       ptys.map((h) => {
-        const remote = tracker.remoteOf(h.id)
         const cwd = cwdByTab.get(h.id)
-        return remote && cwd ? { ...h, cwd: formatRemoteKey(remote.host, cwd) } : h
+        if (!h.remoteHost || !cwd) return h
+        return { ...h, cwd: isRemoteKey(cwd) ? cwd : formatRemoteKey(h.remoteHost, cwd) }
       }),
       tracked
     )
@@ -3689,73 +6581,48 @@ function registerIpc(): void {
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
-  ipcMain.on('attention:active-tab', (_e, id: string | null) => {
-    const prevActive = uiActiveTabId
+  ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    const ctx = attentionCtx()
-    if (uiActiveTabId && ctx.windowFocused) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
+    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()
-  })
-  ipcMain.on('attention:visit', (_e, id: string) => {
-    if (typeof id !== 'string' || !id) return
-    const prevActive = uiActiveTabId
-    uiActiveTabId = id
-    tracker.noteActivity(id)
-    consumeOutletDedupe(id)
-    attention.clear(id)
-    if (prevActive && prevActive !== id) attention.reconsider(prevActive, attentionCtx())
   })
 
   ipcMain.handle(
-    'cron:list',
+    CH.cron.list,
     () => cronRunner?.state() ?? { jobs: [], live: [], folders: {}, notes: {} }
   )
   ipcMain.handle(
-    'cron:save',
+    CH.cron.save,
     (_e, input: CronSaveInput) =>
       cronRunner?.save(input) ?? { ok: false, errors: [CRON_SAVE_MESSAGES.workspace] }
   )
-  ipcMain.handle('cron:delete', (_e, jobId: string) => cronRunner?.delete(jobId))
-  ipcMain.handle('cron:setEnabled', (_e, arg: { jobId: string; on: boolean }) =>
+  ipcMain.handle(CH.cron.delete, (_e, jobId: string) => cronRunner?.delete(jobId))
+  ipcMain.handle(CH.cron.setEnabled, (_e, arg: { jobId: string; on: boolean }) =>
     cronRunner?.setEnabled(arg.jobId, arg.on)
   )
   ipcMain.handle(
-    'cron:runNow',
+    CH.cron.runNow,
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
-  ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
+  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string) =>
     hosts.of(workspacePath).listSkills(workspacePath)
   )
-  ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
+  ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
   )
 
-  ipcMain.handle('update:check', () => checkForUpdates())
-  ipcMain.handle('update:download', () =>
-    downloadAndInstall((p) => sendToRenderer('update:progress', p))
+  ipcMain.handle(CH.update.check, () => checkForUpdates())
+  ipcMain.handle(CH.update.download, () =>
+    downloadAndInstall((p) => sendToRenderer(CH.update.progress, p))
   )
-  ipcMain.on('update:restart', () => restartApp())
-  ipcMain.handle('update:offer', () => currentOffer())
-  ipcMain.on('update:openRelease', () => sendOverlayOpen(releasePageUrl(), 'now'))
-  ipcMain.handle('update:whatsNew', async (): Promise<WhatsNew | null> => {
-    if (!app.isPackaged && !fixturePath()) return null
-    const { show, record } = await whatsNewDecision(
-      loadSettings().lastSeenVersion,
-      app.getVersion(),
-      fetchPublishedReleases
-    )
-    if (record) commitSettings({ lastSeenVersion: record })
-    return show
-  })
+  ipcMain.on(CH.update.restart, () => restartApp())
+  ipcMain.handle(CH.update.offer, () => currentOffer())
+  ipcMain.on(CH.update.openRelease, () => sendOverlayOpen(releasePageUrl(), 'now'))
 
-  ipcMain.handle('accounts:list', () => accountViews())
+  ipcMain.handle(CH.accounts.list, () => accountViews())
   ipcMain.handle(
-    'accounts:add',
+    CH.accounts.add,
     (
       _e,
       name: string,
@@ -3764,191 +6631,300 @@ function registerIpc(): void {
       endpoint?: { baseUrl: string; model?: string }
     ) => addAccount(name, kind, secret, endpoint)
   )
-  ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
-    // CODEX§15
-    if (kind !== 'codex-home') await keychainDelete(kind, name)
-    removeAccountMeta(name, kind)
-    usageViews.delete(viewKey(name, kind))
-    picker.forget(kind, name)
-    pushAccounts()
+  ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
+    // CODEX§15 MUSE§13
+    if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
+    forgetAccount(name, kind)
   })
-  ipcMain.handle('accounts:toggle', (_e, name: string, kind: AccountKind, enabled: boolean) => {
+  ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
     pushAccounts()
   })
-  ipcMain.handle('accounts:probe', () => probeAllForPanel())
-  ipcMain.handle('accounts:bypass-accepted', () =>
-    bypassWarningAccepted(claudeJsonPath(), claudeSettingsPath())
-  )
-  ipcMain.handle('accounts:accept-bypass', () => acceptBypassWarning(claudeSettingsPath()))
-  ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
+  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
         : 'unknown'
       : validateNewAccount(name, 'oauth')
     if (v !== 'ok') return v
+    claudeBackend.forgetAvailability()
+    const installFirst = !(await claudeBackend.availability()).available
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name)
+    startGuidedLogin(name, installFirst)
     return 'ok'
   })
-  ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
-    codexSignIn(name, again === true)
+  ipcMain.handle(
+    CH.accounts.signIn,
+    async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
+      isSignInFolderKind(kind)
+        ? signInToHome(kind, name, again === true)
+        : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.on('accounts:cancel-login', () => {
+  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
+  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
+  ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })
 
-  ipcMain.handle('settings:get', () => loadSettings())
-  ipcMain.handle('app:version', () => app.getVersion())
-  ipcMain.handle('settings:set', (_e, patch) => {
-    return commitSettings(sanitizeSettingsPatch(patch))
-  })
+  ipcMain.handle(CH.settings.get, () => loadSettings())
+  ipcMain.handle(CH.app.version, () => app.getVersion())
+  ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
-  ipcMain.handle('workspace:add', (_e, p: string) => {
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
+    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
+    const mgr = workspaceMgr
+    const run = new AbortController()
+    assistRuns.set(id, run)
+    try {
+      return await routeSession(
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
+        message,
+        run.signal
+      )
+    } finally {
+      assistRuns.delete(id)
+    }
+  })
+  ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
+    if (typeof id === 'number') assistRuns.get(id)?.abort()
+  })
+  const addWorkspacePath = (p: string): WorkspaceAddResult | undefined => {
     const r = workspaceMgr?.add(p)
     const remote = parseRemoteKey(p)
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
+  }
+  const historyPartlyUnread = (id: BackendId, error: unknown): void => {
+    sendToRenderer(
+      CH.cron.toast,
+      `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+    )
+  }
+  const pinWorkspace = (p: string): WorkspaceAddResult | undefined => {
+    const r = addWorkspacePath(p)
+    if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
+    return r
+  }
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => pinWorkspace(p))
+  ipcMain.handle(CH.workspace.pinRecent, async (_e, paths: unknown) => {
+    if (!workspaceMgr || !Array.isArray(paths)) return
+    const pinned = paths.flatMap((p) => {
+      const r = typeof p === 'string' ? pinWorkspace(p) : undefined
+      return r && 'path' in r ? [r.path] : []
+    })
+    await workspaceMgr.whenScanned()
+    const now = Date.now()
+    const unread = new Map<BackendId, unknown>()
+    const lists = await Promise.allSettled(
+      pinned.map((p) => sessionBackends.historyRows(p, (id, error) => unread.set(id, error)))
+    )
+    for (const [id, error] of unread) historyPartlyUnread(id, error)
+    sessionBackends.adopt(
+      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
+    )
+    await workspaceMgr.whenScanned()
+    if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
   })
-  ipcMain.handle('workspace:remove', (_e, p: string) => {
+  const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+  const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
+  ipcMain.handle(CH.gitAccounts.list, () => gitAccounts?.views() ?? [])
+  const machineOf = (v: unknown): string | undefined => (isText(v) ? v : undefined)
+  ipcMain.handle(
+    CH.gitAccounts.loginStart,
+    (_e, platform: unknown, url: unknown, machine: unknown) =>
+      gitAccounts && isGitPlatform(platform) && typeof url === 'string'
+        ? gitAccounts.loginStart(platform, url, machineOf(machine))
+        : { ok: false, error: 'bad-url' }
+  )
+  ipcMain.on(CH.gitAccounts.loginCancel, () => gitAccounts?.loginCancel())
+  ipcMain.on(CH.gitAccounts.loginBrowser, () => gitAccounts?.loginBrowser())
+  ipcMain.handle(CH.gitAccounts.addToken, (_e, add: Partial<GitTokenAdd> | undefined) =>
+    gitAccounts && isGitPlatform(add?.platform) && isText(add.token) && typeof add.url === 'string'
+      ? gitAccounts.addToken({
+          platform: add.platform,
+          url: add.url,
+          token: add.token.trim(),
+          ...(typeof add.username === 'string' && { username: add.username }),
+          ...(machineOf(add.machine) && { machine: add.machine })
+        })
+      : { ok: false, error: 'rejected' }
+  )
+  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
+  )
+  ipcMain.handle(CH.gitAccounts.makeDefault, (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
+  )
+  ipcMain.handle(CH.gitAccounts.check, () => gitAccounts?.checkAll())
+  ipcMain.handle(CH.gitAccounts.pick, (_e, wsPath: unknown, id: unknown) =>
+    isText(wsPath) && (id === null || isText(id))
+      ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
+      : undefined
+  )
+  ipcMain.handle(CH.gitAccounts.suggest, (_e, wsPath: unknown, network: unknown) =>
+    isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
+  )
+  ipcMain.handle(CH.gitAccounts.dismiss, (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
+  )
+  ipcMain.handle(CH.gitAccounts.makeSshKey, (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.makeSshKey(wsPath) : undefined
+  )
+  ipcMain.handle(CH.gitAccounts.checkSshKey, (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.checkSshKey(wsPath) : undefined
+  )
+  ipcMain.handle(CH.project.create, (_e, parent: unknown, name: unknown) =>
+    typeof parent === 'string' && parent && typeof name === 'string'
+      ? createProject(hosts.of(parent), parent, name, addWorkspacePath)
+      : { ok: false, reason: 'Pick a folder.' }
+  )
+  ipcMain.handle(CH.workspace.remove, (_e, p: string) => {
     const marked = markedSessionsOf(p)
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
-      conductors?.removeWorkspace(p)
       for (const id of marked) attention.clearSession(id)
     }
     return r
   })
-  ipcMain.handle('workspace:removeConfirmed', async (_e, p: string) => {
-    const codexTabs = new Set(
-      (codexSessions?.rows(p) ?? [])
-        .filter((r) => r.running || r.pending)
-        .map((r) => (r.pending ? r.id : codexSessions?.aliveTabFor(r.id)))
-        .filter((id): id is string => !!id)
+  ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
+    await Promise.all(
+      storedSessions().flatMap((stored) => {
+        const tabs = new Set(
+          stored
+            .rows(p)
+            .filter((r) => r.running || r.pending)
+            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
+            .filter((id): id is string => !!id)
+        )
+        return [...tabs].map((id) => stored.stop(id))
+      })
     )
-    await Promise.all([...codexTabs].map((id) => codexSessions?.stop(id)))
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
-    conductors?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle('conductors:save', (_e, input: ConductorSaveInput) => {
-    const channel = input?.channel
+  ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {
     if (
-      typeof input?.scope !== 'string' ||
-      !backendIdOf(input.backend) ||
       !isDiscordId(channel?.guildId) ||
       !isDiscordId(channel.channelId) ||
       typeof channel.name !== 'string'
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    const saved = conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
+    const saved = butler?.bind({ guildId, channelId, name }) ?? {
       ok: false,
       error: STILL_STARTING
     }
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
-  ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
-  ipcMain.handle(
-    'conductors:open',
-    (_e, id: string) => conductors?.open(id) ?? { ok: false, error: STILL_STARTING }
-  )
-  ipcMain.handle(
-    'conductors:startFresh',
-    (_e, id: string) => conductors?.startFresh(id) ?? { ok: false, error: STILL_STARTING }
-  )
-  ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
-    if (typeof token !== 'string' || !token.trim()) return false
-    const saved = await discordTokenWrite(token.trim())
-    if (saved) void discordLink?.connect()
-    return saved
+  ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
+  ipcMain.handle(CH.conductors.unbind, () => {
+    butler?.unbind()
+    syncAnswerable()
   })
-  ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
-  ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
+  ipcMain.handle(CH.conductors.open, () => butler?.open() ?? { ok: false, error: STILL_STARTING })
+  ipcMain.handle(
+    CH.conductors.startFresh,
+    () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING }
+  )
+  ipcMain.handle(CH.conductors.fromPalette, (_e, request: PaletteRequest) =>
+    handFromPalette(request)
+  )
+  ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
+  ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
-    if (owner) conductors?.setOwner(owner)
+    if (owner) butler?.setOwner(owner)
   })
-  ipcMain.handle('discord:forgetOwner', () => conductors?.setOwner(null))
-  ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
-  ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
+  ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
+  ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
+    setUpDiscordWithButler(typeof ownerWords === 'string' ? ownerWords : undefined)
+  )
+  ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )
-  ipcMain.handle('workspace:rows', async () => {
+  ipcMain.handle(CH.workspace.rows, async () => {
     await workspaceMgr?.firstScan
     return workspaceMgr?.rows() ?? []
   })
-  ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
+  ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
+  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    if (SUPPORTED_PAIRS.codex[hostOf(p)]) {
-      for (const resource of codexSessions?.store.listResources() ?? []) {
-        if (
-          resource.originalCwd !== p ||
-          (resource.state === 'ready' && dirExistsSync(resource.worktreePath))
-        )
-          continue
+    for (const stored of storedSessions()) {
+      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
+      const there = await Promise.all(
+        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
+      )
+      for (const [i, resource] of mine.entries()) {
+        if (there[i]) continue
         const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) existing.recoveryResourceId = resource.id
-        else
+        if (existing) {
+          existing.recoveryResourceId = resource.id
+          existing.recoveryBackend = stored.id
+        } else
           trees.push({
             name: resource.worktreeName,
             dir: resource.worktreePath,
             branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id
+            recoveryResourceId: resource.id,
+            recoveryBackend: stored.id
           })
       }
     }
     return trees
   })
-  ipcMain.handle('workspace:fetchFreshness', (_e, p: string) => freshness?.fetchNow(p) ?? null)
+  ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
-    'workspace:pull',
+    CH.workspace.pull,
     (_e, p: string, expect: { branch: string; head: string }) =>
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
-  ipcMain.handle('workbench:get', (_e, sessionId: string) =>
+  ipcMain.handle(CH.workbench.get, (_e, sessionId: string) =>
     workspaceMgr?.workbenchState(sessionId)
   )
-  ipcMain.on('workbench:setState', (_e, sessionId: string, state: SessionWorkbenchState) => {
+  ipcMain.on(CH.workbench.setState, (_e, sessionId: string, state: SessionWorkbenchState) => {
     if (typeof sessionId !== 'string' || !sessionId) return
     if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
     if (!workspaceMgr) return
     workspaceMgr.setWorkbenchState(
       sessionId,
-      sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
+      sanitizeSessionWorkbench(
+        state,
+        isWorkspaceWorkbenchKey(sessionId)
+          ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+          : workspaceMgr.defaultOpen()
+      )
     )
   })
-  ipcMain.on('workbench:available', (_e, available: unknown, terminal: unknown) => {
+  ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
     setWorkbenchAvailable(available === true, terminal === true)
   })
-  ipcMain.on('workbench:findAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.findAvailable, (_e, available: unknown) => {
     setFindAvailable(available === true)
   })
-  ipcMain.on('workbench:saveAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.saveAvailable, (_e, available: unknown) => {
     setSaveAvailable(available === true)
   })
-  ipcMain.on('workbench:dirtyTabs', (_e, ids: unknown) => {
+  ipcMain.on(CH.workbench.dirtyTabs, (_e, ids: unknown) => {
     if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) return
     dirtyTabIds.clear()
     for (const id of ids as string[]) dirtyTabIds.add(id)
   })
-  ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
+  ipcMain.handle(CH.sessions.archive, (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return archiveSession(id)
   })
 
-  ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {
+  ipcMain.on(CH.sessions.setResident, (_e, id: unknown, on: unknown) => {
     if (typeof id !== 'string' || !id || typeof on !== 'boolean') return
     workspaceMgr?.setResident(id, on)
   })
 
-  ipcMain.handle('sessions:forceClose', async (_e, id: unknown): Promise<{ ok: boolean }> => {
+  ipcMain.handle(CH.sessions.forceClose, async (_e, id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
     const tabId = sessionBackends.forSession(id).aliveTabFor(id)
     if (!tabId) return { ok: false }
@@ -3956,32 +6932,31 @@ function registerIpc(): void {
   })
 
   // CC§2
-  ipcMain.handle('sessions:transcriptExists', (_e, id: unknown): boolean | Promise<boolean> => {
+  ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
-    sessionBackends.historyRows(p, (id, error) =>
-      sendToRenderer(
-        'cron:toast',
-        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
-      )
-    )
+  ipcMain.handle(CH.sessions.noAccountToResume, (_e, id: unknown): string | null => {
+    if (typeof id !== 'string' || !id) return null
+    return sessionBackends.noUsableAccount(sessionBackends.forSession(id).id)
+  })
+
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
+    sessionBackends.historyRows(p, historyPartlyUnread)
   )
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
-        .map((w) => w.path)
-        .filter((p) => !parseRemoteKey(p))
+      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
-        ...(codexSessions?.searchable(localPins) ?? [])
+        ...storedSessions().flatMap((s) => s.searchable(pins))
       ]
     },
-    codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
-    hidden: (id) => !!sessionBackends.conductorOf(id),
+    backendSnippets: async (term, signal) =>
+      (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
+    hidden: (id) => sessionBackends.isButlerSession(id),
     scan: (files, term, found) => {
       // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })
@@ -3994,74 +6969,110 @@ function registerIpc(): void {
         stop: () => void worker.terminate()
       }
     },
-    send: (found) => sendToRenderer('sessions:search-hits', found)
+    send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
-  ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          geminiDir: ownersGemini()
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
+      ])
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
+    },
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
+  })
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
+
+  ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)
   })
 
-  ipcMain.handle('sessions:leftovers', () => leftovers)
-  ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
+  ipcMain.handle(CH.sessions.leftovers, () => leftovers)
+  ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
     await refreshLeftovers()
     return stopped
   })
 
-  ipcMain.handle('sessions:resumePlan', (_e, id: unknown): Promise<ResumePlan> => {
+  ipcMain.handle(CH.sessions.resumePlan, (_e, id: unknown): Promise<ResumePlan> => {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
     return sessionBackends.forSession(id).resumePlan(id)
   })
 
-  ipcMain.handle('sessions:resume', (_e, req: SessionResumeRequest) => {
+  ipcMain.handle(CH.sessions.resume, (_e, req: SessionResumeRequest) => {
     if (typeof req?.sessionId !== 'string') return { ok: false, code: 'invalid-args' }
     return sessionBackends.forSession(req.sessionId).resume(req)
   })
 
-  ipcMain.on('app:isDev', (e) => {
+  ipcMain.on(CH.app.isDev, (e) => {
     e.returnValue = !app.isPackaged
   })
 
-  ipcMain.on('app:quit-approved', () => {
+  ipcMain.on(CH.app.quitApproved, () => {
     clearQuitFallback()
     approveAndRun(() => app.quit())
   })
-  ipcMain.on('app:quit-held', () => {
+  ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
   })
-  ipcMain.on('app:quit-declined', () => {
+  ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()
     declineQuit()
   })
 
-  ipcMain.on('shortcut:window', (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
+  ipcMain.on(CH.shortcut.window, (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
 
-  ipcMain.on('browser:guest-limit', (e) => {
+  ipcMain.on(CH.browser.guestLimit, (e) => {
     e.returnValue = browserGuestLimit()
   })
-  ipcMain.on('browser:overlay-guest', (_e, guestId: unknown, on: unknown) => {
+  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) => {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
+    if (!on) return
+    for (const resolve of ownerWaiters.get(guestId) ?? []) resolve(null)
+    ownerWaiters.delete(guestId)
   })
-  ipcMain.on('browser:guest-owner', (_e, guestId: unknown, ownerTabId: unknown) => {
+  ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
-    const guest = webContents.fromId(guestId)
-    if (guest) guestOwners.set(guest, ownerTabId)
+    recordGuestOwner(guestId, ownerTabId)
   })
-  ipcMain.on('browser:overlay-ready', () => {
+  ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
     flushOverlayOpens()
   })
-  ipcMain.on('browser:strip', (_e, sessionId: unknown, targets: unknown) => {
+  ipcMain.on(CH.browser.strip, (_e, sessionId: unknown, targets: unknown) => {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
-  ipcMain.on('terminal:screen-done', (_e, answer: unknown) => {
+  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
+  ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return
     const pending = screenAsks.get(a.requestId)
@@ -4069,7 +7080,12 @@ function registerIpc(): void {
     screenAsks.delete(a.requestId)
     pending(a)
   })
-  ipcMain.on('browser:cdp-op-done', (_e, res: unknown) => {
+  ipcMain.on(CH.terminal.unexpectedExit, (_e, screen: unknown) => {
+    const s = screen as UnexpectedExitScreen
+    if (!s || typeof s.id !== 'string' || !Array.isArray(s.lines)) return
+    logUnexpectedExit({ id: s.id, lines: s.lines.map(String) })
+  })
+  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult
     if (!r || typeof r.opId !== 'string') return
     const pending = cdpOps.get(r.opId)
@@ -4077,10 +7093,10 @@ function registerIpc(): void {
     cdpOps.delete(r.opId)
     pending(r)
   })
-  ipcMain.on('browser:open-external', (_e, url: string) => {
+  ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
     if (typeof url === 'string') openUrlExternally(url)
   })
-  ipcMain.on('browser:devtools', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => {
     if (typeof id !== 'number') return
     const guest = webContents.fromId(id)
     if (!guest || guest.getType() !== 'webview') return
@@ -4088,23 +7104,57 @@ function registerIpc(): void {
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
   })
-  ipcMain.handle('ext:list', () =>
+  ipcMain.handle(CH.browser.pickElement, async (_e, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'number' || typeof tabId !== 'string') return null
+    const guest = webContents.fromId(id)
+    if (!guest || guest.getType() !== 'webview') return null
+    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
+    const picked = await pickElement(guest)
+    if (!picked) return null
+    if (picked.pictureFailed)
+      sendToRenderer(
+        CH.cron.toast,
+        `The picture of the element could not be taken: ${picked.pictureFailed}`
+      )
+    const machine = machineOfTab(tabId)
+    const picture = picked.png
+      ? await (
+          machine
+            ? hosts.machine(machine).savePick(`${crypto.randomUUID()}.png`, picked.png)
+            : savePickOnThisMac(picked.png)
+        ).catch((error) => {
+          const why = error instanceof Error ? error.message : String(error)
+          sendToRenderer(
+            CH.cron.toast,
+            machine
+              ? `The picture of the element could not be copied to ${machine}: ${why}`
+              : `The picture of the element could not be saved: ${why}`
+          )
+          return null
+        })
+      : null
+    return pickText(picked, picture)
+  })
+  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
+    if (typeof id === 'number') stopPick(id)
+  })
+  ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
   )
-  ipcMain.handle('ext:set-enabled', (_e, id: unknown, enabled: unknown) => {
+  ipcMain.handle(CH.ext.setEnabled, (_e, id: unknown, enabled: unknown) => {
     if (typeof id !== 'string' || typeof enabled !== 'boolean') return
     return setExtensionEnabled(id, enabled)
   })
-  ipcMain.handle('ext:uninstall', (_e, id: unknown) => {
+  ipcMain.handle(CH.ext.uninstall, (_e, id: unknown) => {
     if (typeof id === 'string') uninstallExtension(id)
   })
-  ipcMain.on('ext:active-guest', (_e, id: unknown, url: unknown) => {
+  ipcMain.on(CH.ext.activeGuest, (_e, id: unknown, url: unknown) => {
     if (typeof id === 'number') reportActiveGuest(id, typeof url === 'string' ? url : '')
   })
-  ipcMain.on('ext:open-dropped', (_e, url: unknown) => {
+  ipcMain.on(CH.ext.openDropped, (_e, url: unknown) => {
     if (typeof url === 'string') reportOpenDropped(url)
   })
-  ipcMain.handle('ext:popup-anchor', (_e, rect: ExtensionPopupAnchor) => {
+  ipcMain.handle(CH.ext.popupAnchor, (_e, rect: ExtensionPopupAnchor) => {
     if (!rect) return
     const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v)
     // PLATFORM§5
@@ -4112,62 +7162,62 @@ function registerIpc(): void {
       beforeActivate(rect)
     }
   })
-  ipcMain.on('ext:dismiss-popup', () => dismissActionPopup())
-  ipcMain.on('ext:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.ext.dismissPopup, () => dismissActionPopup())
+  ipcMain.on(CH.ext.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id === 'string') answerPermissionRequest(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id !== 'string') return
     answerPermission(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const pending = pendingPermissions.get(id)
     if (pending) dropPermissions((p) => p === pending)
   })
 
-  ipcMain.on('browser:download-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     liveDownloads.get(id)?.cancel()
   })
 
-  ipcMain.on('browser:download-retry', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const url = downloadSources.get(id)
     if (!url) return
     retryTargets.set(url, id)
-    sendToRenderer('browser:download-event', { id, kind: 'retrying' })
+    sendToRenderer(CH.browser.downloadEvent, { id, kind: 'retrying' })
     session.fromPartition(BROWSER_PARTITION).downloadURL(url)
   })
 
-  ipcMain.on('browser:copy-text', (_e, text: unknown) => {
+  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => {
     if (typeof text !== 'string' || !text) return
     clipboard.writeText(text.slice(0, 8192))
   })
 
-  ipcMain.on('browser:set-muted', (_e, guestId: unknown, muted: unknown) => {
+  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) => {
     if (typeof guestId !== 'number') return
     const contents = webContents.fromId(guestId)
     if (!contents || contents.session !== session.fromPartition(BROWSER_PARTITION)) return
     contents.setAudioMuted(muted === true)
   })
 
-  ipcMain.handle('browser:cert-proceed', (_e, url: string) => {
+  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => {
     const host = certHostOf(typeof url === 'string' ? url : '')
     if (!host) return
     trustedCertHosts.add(host)
   })
   // PLATFORM§12
-  ipcMain.handle('browser:clear-data', async () => {
+  ipcMain.handle(CH.browser.clearData, async () => {
     const ses = session.fromPartition(BROWSER_PARTITION)
     trustedCertHosts.clear()
     await ses.clearData()
     await ses.clearAuthCache()
     await ses.closeAllConnections()
   })
-  ipcMain.on('browser:auth-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingAuth.get(id)
     if (!respond) return
     pendingAuth.delete(id)
@@ -4177,7 +7227,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on(
-    'browser:js-dialog',
+    CH.browser.jsDialog,
     (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) => {
       const cancel = { ok: false } satisfies BrowserDialogAnswer
       if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) {
@@ -4204,10 +7254,10 @@ function registerIpc(): void {
         guestId: e.sender.id,
         overlay: isOverlayGuest(e.sender)
       }
-      sendToRenderer('browser:js-dialog', payload)
+      sendToRenderer(CH.browser.jsDialog, payload)
     }
   )
-  ipcMain.on('browser:js-dialog-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingJsDialogs.get(id)
     if (!respond) return
     pendingJsDialogs.delete(id)
@@ -4218,72 +7268,68 @@ function registerIpc(): void {
     )
   })
 
-  ipcMain.handle('preview:readText', async (_e, p: string): Promise<string> => {
+  ipcMain.handle(CH.preview.readText, async (_e, p: string): Promise<string> => {
     if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
     return hosts.of(p).readText(p)
   })
-  ipcMain.handle('fs:listDir', (_e, p: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.listDir, (_e, p: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).listDir(p, opts)
   )
-  ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
+  ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
+    typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
-  ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
+  ipcMain.handle(CH.fs.gitChanges, (_e, root: string, base?: unknown) =>
+    typeof root === 'string' && root
+      ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
+      : { base: null, status: {}, numstat: {}, missing: false }
   )
-  ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
-  )
-  ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
-  )
-  ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
+  ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))
       : { text: '', truncated: false, notRepo: true, toplevel: null }
   )
-  ipcMain.handle('fs:gitFileDiff', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiff, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
-  ipcMain.handle('fs:gitFileDiffFull', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiffFull, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle(
-    'fs:searchContent',
+    CH.fs.searchContent,
     (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
       typeof root === 'string' && root
         ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
-  ipcMain.handle('fs:watchDir', (_e, root: string) =>
+  ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
+      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
       : false
   )
-  ipcMain.on('fs:unwatchDir', (_e, root: string) => {
+  ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {
     if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
-  ipcMain.on('fs:watchFile', (_e, p: string) => {
-    if (typeof p === 'string' && path.isAbsolute(p))
-      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
+  ipcMain.on(CH.fs.watchFile, (_e, p: string) => {
+    if (typeof p === 'string' && isAbsoluteOnHost(p))
+      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer(CH.fs.fileChanged, fp, st))
   })
-  ipcMain.on('fs:unwatchFile', (_e, p: string) => {
+  ipcMain.on(CH.fs.unwatchFile, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
-  ipcMain.on('fs:reveal', (_e, p: string) => {
+  ipcMain.on(CH.fs.reveal, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
-  ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
-  ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
+  ipcMain.handle(CH.edit.open, (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
+  ipcMain.handle(CH.edit.write, (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
     hosts
       .of(p as string)
       .writeText(
@@ -4293,54 +7339,61 @@ function registerIpc(): void {
         (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
       )
   )
-  ipcMain.handle('edit:create', (_e, dirPath: unknown, name: unknown) =>
+  ipcMain.handle(CH.edit.create, (_e, dirPath: unknown, name: unknown) =>
     hosts.of(dirPath as string).createFile(dirPath as string, name as string)
   )
-  ipcMain.handle('notes:path', (_e, ws: unknown) => {
+  ipcMain.handle(CH.notes.path, (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
-    return notesFileOfPinned(ws) ?? null
+    return notesFileOfScope(ws) ?? null
   })
-  ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
+  ipcMain.handle(CH.github.info, async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
     const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
     if (settled)
       void settled.then(
-        (info) => sendToRenderer('github:info', root, info),
+        (info) => sendToRenderer(CH.github.info, root, info),
         () => {}
       )
     return now
   })
-  ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
+  ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
+    if (
+      what !== 'repo' &&
+      what !== 'issues' &&
+      what !== 'pulls' &&
+      what !== 'pr' &&
+      what !== 'compare'
+    )
+      return null
     return hosts.of(root).github.target(root, what)
   })
-  ipcMain.handle('github:checks', (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
+  ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
       return Promise.resolve({ state: 'failed' })
     }
     return hosts.of(root).github.checks(root, pr as number)
   })
-  ipcMain.handle('github:failing-checks-text', (_e, root: unknown, pr: unknown) => {
+  ipcMain.handle(CH.github.failingChecksText, (_e, root: unknown, pr: unknown) => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
     return hosts.of(root).github.failingChecksText(root, pr as number)
   })
-  ipcMain.handle('github:commit', (_e, root: unknown, message: unknown) => {
+  ipcMain.handle(CH.github.commit, (_e, root: unknown, message: unknown) => {
     if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
     const host = hosts.of(root)
     return commitAll((args, network) => host.gitRun(root, args, network), message)
   })
-  ipcMain.handle('github:push', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.push, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
-  ipcMain.handle('github:open-items', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.openItems, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return { state: 'no-repo' }
     return hosts.of(root).github.openItems(root)
   })
   ipcMain.handle(
-    'github:pr-worktree',
+    CH.github.prWorktree,
     async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
       if (
         typeof root !== 'string' ||
@@ -4357,11 +7410,11 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
       return r
     }
   )
-  ipcMain.handle('preview:openFileDialog', async () => {
+  ipcMain.handle(CH.preview.openFileDialog, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -4370,9 +7423,9 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
+  ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
-  ipcMain.handle('workspace:pickFolder', async () => {
+  ipcMain.handle(CH.workspace.pickFolder, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -4381,11 +7434,11 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.on('preview:os-open', (_e, p: string) => {
+  ipcMain.on(CH.preview.osOpen, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
   })
 
-  ipcMain.on('app:home', (e) => {
+  ipcMain.on(CH.app.home, (e) => {
     try {
       e.returnValue = fs.realpathSync(os.homedir())
     } catch {

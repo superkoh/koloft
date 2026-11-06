@@ -15,6 +15,8 @@ import {
 import type { E2EEnv } from '../helpers/env'
 import { fetchedAtMs } from '../helpers/gitFixture'
 import {
+  centerTerm,
+  closeKeptTab,
   closeMenu,
   FAKE_SESSION_TITLE,
   fetchNowInGitPanel,
@@ -22,6 +24,7 @@ import {
   menuItemTexts,
   openMenu,
   resumedId,
+  runIn,
   startSessionIn,
   waitForCalls,
   wsRows
@@ -57,12 +60,13 @@ async function seedSessionKilledThenRemovedFromListByHand(
   wsName: string
 ): Promise<void> {
   await startSessionIn(page, wsName)
-  const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
   await expect(row).toHaveCount(1, { timeout: 40_000 })
 
   const calls = await waitForCalls(env, 1)
   killSession(calls[calls.length - 1].pid, env)
   await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+  await closeKeptTab(page, row)
 
   await openMenu(page, row)
   await page.locator('.menu .mi', { hasText: 'Remove from list' }).click()
@@ -186,23 +190,21 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
     try {
       await openMenu(page, page.locator('.ws-head', { hasText: 'git-menu' }))
       const gitItems = await menuItemTexts(page)
-      expect(gitItems).toHaveLength(6)
+      expect(gitItems).toHaveLength(5)
       expect(gitItems[0]).toMatch(/^New session\s*⌘N$/)
       expect(gitItems[1]).toMatch(/^New worktree session…\s*⇧⌘N$/)
       expect(gitItems[2]).toMatch(/^Restore session…$/)
       expect(gitItems[3]).toMatch(/^Scheduled jobs…$/)
-      expect(gitItems[4]).toMatch(/^Bind Discord channel…$/)
-      expect(gitItems[5]).toMatch(/^Remove workspace$/)
+      expect(gitItems[4]).toMatch(/^Remove workspace$/)
       await closeMenu(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'plain-menu' }))
       const plainItems = await menuItemTexts(page)
-      expect(plainItems).toHaveLength(5)
+      expect(plainItems).toHaveLength(4)
       expect(plainItems[0]).toMatch(/^New session\s*⌘N$/)
       expect(plainItems[1]).toMatch(/^Restore session…$/)
       expect(plainItems[2]).toMatch(/^Scheduled jobs…$/)
-      expect(plainItems[3]).toMatch(/^Bind Discord channel…$/)
-      expect(plainItems[4]).toMatch(/^Remove workspace$/)
+      expect(plainItems[3]).toMatch(/^Remove workspace$/)
       await closeMenu(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'gone-menu' }))
@@ -407,7 +409,7 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
     }
   })
 
-  test('BB-C33: C8-side pull under a running root session (started before origin moved) asks first', async ({
+  test('BB-C33: C8-side pull under a root session mid-task (started before origin moved) asks first', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -420,6 +422,9 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       pinned.git['repo-run'].originAhead(3)
       await fetchNowInGitPanel(page, 'repo-run')
       await waitForBehindBadge(page, 'repo-run', 3)
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await openWorktreeDialog(page, 'repo-run')
       await page.keyboard.type('x')
@@ -430,7 +435,7 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       await page.keyboard.press('Enter')
       const confirm = page
         .locator('div')
-        .filter({ hasText: /running in this checkout/ })
+        .filter({ hasText: /working on a task in this checkout/ })
         .filter({ has: page.getByRole('button', { name: 'Pull anyway' }) })
         .last()
       await expect(confirm).toBeVisible({ timeout: 15_000 })

@@ -219,13 +219,9 @@ export function openTab(
     openedByAgent: opts.openedByAgent ? true : undefined,
     agentOpenedAt: opts.agentOpenedAt
   }
-  const at =
-    opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')
-  const tabs =
-    at < 0 ? [...base.tabs, tab] : [...base.tabs.slice(0, at), tab, ...base.tabs.slice(at)]
   return {
     set: {
-      tabs,
+      tabs: [...base.tabs, tab],
       activeId: opts.source === 'user' ? tab.id : base.activeId,
       recency: [...base.recency, tab.id]
     },
@@ -251,10 +247,7 @@ export function moveTab(set: WorkbenchTabSet, id: string, to: number): Workbench
   if (id === FILES_TAB_ID) return set
   const from = set.tabs.findIndex((t) => t.id === id)
   if (from < 0) return set
-  if (set.tabs[from].kind === 'terminal') return set
-  const firstTerm = set.tabs.findIndex((t) => t.kind === 'terminal')
-  const right = (firstTerm < 0 ? set.tabs.length : firstTerm) - 1
-  const target = Math.max(1, Math.min(right, to))
+  const target = Math.max(1, Math.min(set.tabs.length - 1, to))
   if (target === from) return set
   const tabs = set.tabs.slice()
   const [moved] = tabs.splice(from, 1)
@@ -299,14 +292,25 @@ export function retargetTab(
 ): WorkbenchTabSet {
   return {
     ...set,
-    tabs: set.tabs.map((t) => (t.id === id ? { ...t, path, line, title: '', view: undefined } : t))
+    tabs: set.tabs.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            path,
+            line,
+            title: '',
+            view: undefined,
+            sourceTabId: undefined,
+            sourcePath: undefined
+          }
+        : t
+    )
   }
 }
 
 export interface RetargetResult {
   set: WorkbenchTabSet
   tabId: string
-  openedNew: boolean
   refused?: OpenTabResult['refused']
 }
 
@@ -317,14 +321,12 @@ export function retargetOrOpenTab(
   line?: number,
   isDirty?: (tabId: string) => boolean
 ): RetargetResult {
-  if (!isDirty?.(id)) return { set: retargetTab(set, id, path, line), tabId: id, openedNew: false }
-  const r = openTab(set, { kind: 'file', path, source: 'user', line, isDirty })
-  return {
-    set: r.set,
-    tabId: r.tabId,
-    openedNew: !r.refused,
-    refused: r.refused
-  }
+  const clean = !isDirty?.(id)
+  const elsewhere = set.tabs.some((t) => t.id !== id && sameTarget(t, { kind: 'file', path }))
+  if (clean && !elsewhere) return { set: retargetTab(set, id, path, line), tabId: id }
+  const base = clean ? closeTab(set, id) : set
+  const r = openTab(base, { kind: 'file', path, source: 'user', line, isDirty })
+  return { set: r.set, tabId: r.tabId, refused: r.refused }
 }
 
 const MAX_LABEL = 40

@@ -61,7 +61,7 @@ const callsIn = (file: string): string[] =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : []
 
 describe('worktree-deps SessionStart hook', () => {
-  it('installs, rebuilds and fetches Electron, in that order, in a linked worktree with no node_modules', () => {
+  it('installs, rebuilds, fetches Electron and then the shipped git and gh, in that order, in a linked worktree with no node_modules', () => {
     const { worktree } = repoWithWorktree()
     const { bin, calls } = fakeBins()
     const r = runHook(worktree, bin)
@@ -69,7 +69,8 @@ describe('worktree-deps SessionStart hook', () => {
     expect(callsIn(calls)).toEqual([
       'npm ci',
       'npm run rebuild',
-      'node node_modules/electron/install.js'
+      'node node_modules/electron/install.js',
+      'node scripts/fetch-vendor.cjs'
     ])
   })
 

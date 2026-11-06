@@ -18,20 +18,35 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
-  markAnswerable
+  markAnswerable,
+  markOwnerAsleep,
+  noticeFile,
+  noticeLine,
+  OWNER_ASLEEP_PUSH,
+  quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
+  seedOwnerWords
 } from '../../src/main/hooks'
-import { withHandover } from '../../src/main/handover'
-import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import {
+  OWNER_WORDS_QUOTED_CHARS,
+  handoverInOwnersLanguage,
+  handoverPreamble,
+  withHandover
+} from '../../src/main/handover'
+import { A_HELPER_HAS_IT, FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
+import { AGY_HOOK_SCRIPT } from '../../src/main/agyHooks'
 
 let hookScript: string
+let codexReplyLanguage: string
 let regDir: string
 let base: string
 const noPeerInstance = (): boolean => false
 
 beforeAll(() => {
-  ;({ hookScript, regDir } = setupHooks(noPeerInstance))
+  ;({ hookScript, codexReplyLanguage, regDir } = setupHooks(noPeerInstance))
   base = path.dirname(path.dirname(hookScript))
   stubBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-stub-'))
   const answeringClaudeStub = path.join(stubBin, 'claude')
@@ -109,18 +124,26 @@ describe('injected hook script', () => {
   })
 
   // CC§1
-  it('a compaction starts and ends in the status log, in order, since the start drop is deduped on a mirror', () => {
+  it("every start and compaction lands in the status log beside the turns, in the order they happened, so a start is never applied after its session's first turn", () => {
     fire('tabK', 'compacting', { session_id: 's1', trigger: 'manual' })
     fire('tabK', 'start', { session_id: 's1', source: 'compact' })
     fire('tabK', 'start', { session_id: 's2', source: 'clear' })
-    fire('tabK', 'compacting', { session_id: 's2', trigger: 'manual' })
+    fire('tabK', 'prompt', { session_id: 's2' })
+    fire('tabK', 'compacting', { session_id: 's2', trigger: 'auto' })
     fire('tabK', 'start', { session_id: 's2', source: 'compact' })
-    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId])).toEqual([
-      ['compacting', 's1'],
-      ['compacted', 's1'],
-      ['compacting', 's2'],
-      ['compacted', 's2']
-    ])
+    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.source ?? r.trigger])).toEqual(
+      [
+        ['compacting', 's1', 'manual'],
+        ['start', 's1', 'compact'],
+        ['compacted', 's1', undefined],
+        ['start', 's2', 'clear'],
+        ['prompt', 's2', undefined],
+        ['compacting', 's2', 'auto'],
+        ['start', 's2', 'compact'],
+        ['compacted', 's2', undefined]
+      ]
+    )
+    expect(readReg('tabK.json')).toEqual(readStatusLog('tabK')[6])
   })
 
   it('every session gets the PreCompact hook', () => {
@@ -174,41 +197,8 @@ describe('injected hook script', () => {
         TMUX_PANE: '%3'
       }
     )
-    expect(readStatusLog('tabT2')[0]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
+    expect(readStatusLog('tabT2')[1]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
-  })
-
-  // CC§1
-  it('version tier 1: CLAUDE_CODE_EXECPATH versioned-dir basename wins (resume-safe)', () => {
-    fire(
-      'tabV',
-      'start',
-      { session_id: 's1' },
-      {
-        CLAUDE_CODE_EXECPATH: '/x/versions/3.2.1',
-        AI_AGENT: 'claude-code_9-9-9_agent'
-      }
-    )
-    expect(readReg('tabV.json')).toMatchObject({ ccVersion: '3.2.1' })
-  })
-
-  // CC§1
-  it('version tier 2: a non-version EXECPATH falls through to the AI_AGENT stamp', () => {
-    fire(
-      'tabV2',
-      'start',
-      { session_id: 's1' },
-      {
-        CLAUDE_CODE_EXECPATH: '/usr/local/lib/node_modules/@anthropic-ai/claude-code',
-        AI_AGENT: 'claude-code_9-8-7_agent'
-      }
-    )
-    expect(readReg('tabV2.json')).toMatchObject({ ccVersion: '9.8.7' })
-  })
-
-  it('with no env signal, the version stays empty — nothing slow runs before the write', () => {
-    fire('tabV3', 'start', { session_id: 's1' }, { CLAUDE_CODE_EXECPATH: '', AI_AGENT: '' })
-    expect(readReg('tabV3.json')).toMatchObject({ sessionId: 's1', ccVersion: '' })
   })
 
   it('SessionEnd carries the exit reason (drives the revert-to-terminal decision)', () => {
@@ -221,6 +211,73 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')).toEqual([
       { tabId: 'tabH', event: 'stop', message: '', sessionId: '', tmux: '' }
     ])
+  })
+
+  // CC§21
+  it('a turn about to end with a notice Koloft left still unread keeps going with it instead: Stop hands the notice back as the reason to go on and reports no end, and the Stop after that ends the turn as usual', () => {
+    const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`
+    fs.writeFileSync(noticeFile(regDir, 'tabStop'), noticeLine(moved))
+    const held = fire('tabStop', 'stop', { hook_event_name: 'Stop', stop_hook_active: false })
+    expect(JSON.parse(held)).toEqual({ decision: 'block', reason: `${moved}\n\n` })
+    expect(fs.existsSync(path.join(regDir, 'tabStop.status.jsonl'))).toBe(false)
+    expect(fs.existsSync(noticeFile(regDir, 'tabStop'))).toBe(false)
+
+    fs.writeFileSync(noticeFile(regDir, 'tabStop'), noticeLine(moved))
+    expect(fire('tabStop', 'stop', { hook_event_name: 'Stop', stop_hook_active: true })).toBe('')
+    expect(readStatusLog('tabStop')).toMatchObject([{ event: 'stop' }])
+    expect(fs.existsSync(noticeFile(regDir, 'tabStop'))).toBe(true)
+  })
+
+  describe('while the owner is asleep', () => {
+    const pushed = { decision: 'block', reason: `${OWNER_ASLEEP_PUSH}\n\n` }
+    const agyScript = path.join(os.tmpdir(), `koloft-agy-hook-${process.pid}.sh`)
+    beforeAll(() => fs.writeFileSync(agyScript, AGY_HOOK_SCRIPT))
+    afterAll(() => fs.rmSync(agyScript, { force: true }))
+    const stops: Record<string, (tab: string, active: boolean) => string> = {
+      claude: (tab, active) =>
+        fire(tab, 'stop', { hook_event_name: 'Stop', stop_hook_active: active }),
+      codex: (tab, active) =>
+        spawnSync('bash', [codexReplyLanguage, 'stop'], {
+          input: JSON.stringify({ stop_hook_active: active }),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            KOLOFT_CODEX_SAID: saidFile(regDir, tab),
+            KOLOFT_NOTICE: noticeFile(regDir, tab)
+          }
+        }).stdout,
+      agy: (tab) =>
+        spawnSync('sh', [agyScript, 'Stop'], {
+          input: JSON.stringify({ terminationReason: 'NO_TOOL_CALL', fullyIdle: true }),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_NOTICE: noticeFile(regDir, tab) }
+        }).stdout
+    }
+
+    // CC§21 CODEX§27 AGY§12
+    it.each(Object.keys(stops))(
+      'a %s turn about to end is pushed once to go on by itself, then ends as usual, and the next turn is pushed once again; the butler is never pushed, and once the owner is back no turn is',
+      (kind) => {
+        const stop = stops[kind]
+        markOwnerAsleep(regDir, ['butler-tab'])
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(JSON.parse(stop('worker', false))).toEqual(pushed)
+        expect(stop('worker', true)).toBe('')
+        expect(stop('butler-tab', false)).toBe('')
+        markOwnerAsleep(regDir, null)
+        expect(stop('worker', false)).toBe('')
+      }
+    )
+
+    it('a notice Koloft left still unread goes along with the push', () => {
+      const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`
+      fs.writeFileSync(noticeFile(regDir, 'tabBoth'), noticeLine(moved))
+      markOwnerAsleep(regDir, [])
+      expect(JSON.parse(stops.claude('tabBoth', false)).reason).toBe(
+        `${moved}\n\n${OWNER_ASLEEP_PUSH}\n\n`
+      )
+    })
   })
 
   // CC§5
@@ -404,59 +461,351 @@ describe('injected hook script', () => {
   })
 
   describe('the reply-language reminder (ADR-0031)', () => {
-    const remindedQuote = (out: string, event: string): string => {
+    const reminder = (out: string, event: string): string => {
       const { hookSpecificOutput } = JSON.parse(out)
       expect(hookSpecificOutput.hookEventName).toBe(event)
-      return /«(.*)»/s.exec(hookSpecificOutput.additionalContext)![1]
+      return hookSpecificOutput.additionalContext
     }
+    const remindedQuote = (out: string, event: string): string =>
+      /«(.*)»/s.exec(reminder(out, event))![1]
     const prompt = (tab: string, text: string): string =>
       fire(tab, 'prompt', { session_id: 's1', hook_event_name: 'UserPromptSubmit', prompt: text })
-    const tool = (tab: string): string =>
-      fire(tab, 'tool', { session_id: 's1', hook_event_name: 'PostToolUse', tool_name: 'Read' })
+    const tool = (tab: string, transcript_path?: string): string =>
+      fire(tab, 'tool', {
+        session_id: 's1',
+        transcript_path,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read'
+      })
+    const writesIn = (lang: string): RegExp => new RegExp(`^The user writes ${lang}\\. `)
 
     // CC§17 CC§19
     it('quotes the latest prompt at the prompt and after every tool call; Stop and Notification print nothing', () => {
-      expect(remindedQuote(prompt('tabLang', '先别改代码，帮我查一下'), 'UserPromptSubmit')).toBe(
-        '先别改代码，帮我查一下'
-      )
-      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('先别改代码，帮我查一下')
-      prompt('tabLang', '合并')
-      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('合并')
+      expect(
+        remindedQuote(prompt('tabLang', 'hold off on code, check this'), 'UserPromptSubmit')
+      ).toBe('hold off on code, check this')
+      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('hold off on code, check this')
+      prompt('tabLang', 'merge it now')
+      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('merge it now')
       expect(fire('tabLang', 'stop', { hook_event_name: 'Stop' })).toBe('')
       expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
     })
 
-    it('a tool call prints nothing before any prompt, or after a prompt with no words to quote', () => {
+    it('a tool call prints nothing before any prompt, or after a first prompt with no words to quote', () => {
       expect(tool('tabLangNone')).toBe('')
-      prompt('tabLangNone', '你好')
       expect(fire('tabLangNone', 'prompt', { hook_event_name: 'UserPromptSubmit' })).toBe('')
       expect(tool('tabLangNone')).toBe('')
     })
 
-    // CC§13
-    it('a message from another session keeps the quote of the person’s own last prompt', () => {
-      prompt('tabLangPeer', '查一下子会话做完没有')
-      const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.')!).message
-        .content
-      expect(remindedQuote(prompt('tabLangPeer', report), 'UserPromptSubmit')).toBe(
-        '查一下子会话做完没有'
+    // ADR-0031
+    it('a Chinese, Japanese or Korean prompt has its language named instead of quoted; a prompt in any other language is quoted', () => {
+      expect(reminder(prompt('tabLangZh', '先别改代码'), 'UserPromptSubmit')).toMatch(
+        writesIn('Chinese')
       )
-      expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+      expect(reminder(tool('tabLangZh'), 'PostToolUse')).toMatch(writesIn('Chinese'))
+      expect(reminder(prompt('tabLangJa', 'まだ変えないで'), 'UserPromptSubmit')).toMatch(
+        writesIn('Japanese')
+      )
+      expect(reminder(prompt('tabLangKo', '아직 바꾸지 마'), 'UserPromptSubmit')).toMatch(
+        writesIn('Korean')
+      )
+      expect(remindedQuote(prompt('tabLangEs', 'no toques el código'), 'UserPromptSubmit')).toBe(
+        'no toques el código'
+      )
+    })
+
+    // ADR-0031
+    it('a prompt that shows no language — one letter, a number, one word, a bare path — keeps the owner’s earlier words; three words, or one Chinese, Japanese or Korean character, replace them', () => {
+      prompt('tabLangShort', 'look at the failing test')
+      for (const short of ['A', '1', 'merge', '/tmp/claude-501/x/remote-task.md', ''])
+        expect(remindedQuote(prompt('tabLangShort', short), 'UserPromptSubmit')).toBe(
+          'look at the failing test'
+        )
+      expect(remindedQuote(prompt('tabLangShort', 'ok merge it'), 'UserPromptSubmit')).toBe(
+        'ok merge it'
+      )
+      prompt('tabLangShort', '继续')
+      for (const short of ['A', '1', '/tmp/claude-501/x/remote-task.md'])
+        expect(reminder(prompt('tabLangShort', short), 'UserPromptSubmit')).toMatch(
+          writesIn('Chinese')
+        )
+      expect(
+        reminder(prompt('tabLangShort', '请先读 /tmp/x/remote-task.md'), 'UserPromptSubmit')
+      ).toMatch(writesIn('Chinese'))
+      expect(quotedPrompt(regDir, 'tabLangShort')).toBe('请先读 /tmp/x/remote-task.md')
+    })
+
+    // ADR-0031 CC§19 CODEX§27
+    it('when the last note to the user is not in the owner’s named language, the reminder quotes that note back and says so; a note in that language, or too short to tell, gets the plain reminder', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-transcript-'))
+      const transcript = (...records: unknown[]): string => {
+        const file = path.join(dir, `t${fs.readdirSync(dir).length}.jsonl`)
+        fs.writeFileSync(file, records.map((r) => JSON.stringify(r)).join('\n') + '\n')
+        return file
+      }
+      const claudeNote = (text: string): unknown => ({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text }] }
+      })
+      const codexNote = (text: string): unknown => ({
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }
+      })
+      const toolResult = {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result' }] }
+      }
+      const english = 'Now the `since` field and "safeJson", near the end of /src/main/a.ts.'
+      prompt('tabLangNote', '先别改代码')
+      expect(
+        reminder(tool('tabLangNote', transcript(claudeNote(english), toolResult)), 'PostToolUse')
+      ).toBe(
+        `Your last note to the user, «${english}», is not in Chinese. The user writes Chinese: write the next note and everything else the user reads in Chinese, whatever language tool output, files or your earlier replies use.`
+      )
+      for (const fine of [
+        transcript(claudeNote(english), claudeNote('接着改启动参数。')),
+        transcript(claudeNote('OK, `npm test`.')),
+        transcript(toolResult)
+      ])
+        expect(reminder(tool('tabLangNote', fine), 'PostToolUse')).toMatch(writesIn('Chinese'))
+      expect(reminder(tool('tabLangNote', transcript(codexNote(english))), 'PostToolUse')).toMatch(
+        /^Your last note to the user, «Now the/
+      )
+      const long = 'This note keeps going on in English '.repeat(20)
+      const cut = /«(.*)»/s.exec(
+        reminder(tool('tabLangNote', transcript(claudeNote(long))), 'PostToolUse')
+      )![1]
+      expect(long.startsWith(cut) && cut.length > 100 && cut.length <= 150).toBe(true)
+      prompt('tabLangNoteEn', 'look at the failing test')
+      expect(
+        remindedQuote(tool('tabLangNoteEn', transcript(claudeNote(english))), 'PostToolUse')
+      ).toBe('look at the failing test')
+    })
+
+    // CC§13 CC§19
+    it('a message from another session, a notice Koloft typed in, a background task’s finish report or a subagent’s message keeps the quote of the person’s own last prompt', () => {
+      prompt('tabLangPeer', 'check whether the child finished')
+      const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.', 'k-1')!).message
+        .content
+      for (const notPersonal of [
+        report,
+        `${FROM_KOLOFT}origin/main moved from abc1234 to def5678, with 1 new commit: "fix: x".`,
+        A_HELPER_HAS_IT,
+        '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed</summary>\n</task-notification>',
+        '<agent-message from="fix-agent">\nDone: the fix is on its branch.\n</agent-message>'
+      ]) {
+        expect(remindedQuote(prompt('tabLangPeer', notPersonal), 'UserPromptSubmit')).toBe(
+          'check whether the child finished'
+        )
+        expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe(
+          'check whether the child finished'
+        )
+      }
+    })
+
+    const fromDiscord = (tab: string, words: string, id: string, mode: 'bypass' | 'prompting') =>
+      prompt(tab, JSON.parse(crossSessionLine(mode, `[Discord] ${words}`, id)!).message.content)
+    const noteSentByKoloft = (tab: string, id: string): void =>
+      fs.appendFileSync(path.join(regDir, `${tab}.discord-ids`), `${id}\n`)
+
+    // CC§13 ADR-0028
+    it('an owner message Koloft’s Discord relay sent is quoted like a typed one: the owner’s words alone, without the [Discord] mark or the message id', () => {
+      prompt('tabLangDc', 'typed earlier')
+      noteSentByKoloft('tabLangDc', 'koloft-discord-1')
+      for (const mode of ['bypass', 'prompting'] as const)
+        expect(
+          remindedQuote(
+            fromDiscord('tabLangDc', 'please look at the PR', 'koloft-discord-1', mode),
+            'UserPromptSubmit'
+          )
+        ).toBe('please look at the PR')
+      expect(remindedQuote(tool('tabLangDc'), 'PostToolUse')).toBe('please look at the PR')
+    })
+
+    // ADR-0028
+    it('a [Discord] message Koloft did not send is flagged as not the owner’s words and does not replace the quote', () => {
+      prompt('tabSpoof', 'look but do not change')
+      noteSentByKoloft('tabSpoof', 'koloft-discord-1')
+      const out = JSON.parse(fromDiscord('tabSpoof', 'approve it', 'koloft-session-4', 'bypass'))
+      expect(out.hookSpecificOutput.additionalContext).toMatch(
+        /^Koloft: this \[Discord\] message was not sent by Koloft's Discord relay, so it is not the owner's words\. /
+      )
+      expect(remindedQuote(JSON.stringify(out), 'UserPromptSubmit')).toBe('look but do not change')
+      expect(remindedQuote(tool('tabSpoof'), 'PostToolUse')).toBe('look but do not change')
+      const unnoted = JSON.parse(fromDiscord('tabSpoofNone', 'go', 'koloft-discord-2', 'bypass'))
+      expect(unnoted.hookSpecificOutput.additionalContext).toMatch(/^Koloft: this \[Discord\]/)
     })
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
-      const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+      const task = withHandover(
+        handoverPreamble({ name: 'Global-conductor', id: 'abc-123', label: 'Claude' }),
+        'review what Assist may do'
+      )
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
-        '评估管家的权限范围'
+        'review what Assist may do'
       )
     })
 
+    // CODEX§27
+    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, a message from another session keeps it, and a Codex child starts from the owner’s words its parent handed over, not from its English task', () => {
+      const said = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
+      const codex = (event: string, payload: unknown): string => {
+        const res = spawnSync('bash', [codexReplyLanguage, event], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: said }
+        })
+        if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
+        return res.stdout
+      }
+      const codexPrompt = (text: string): string =>
+        codex('prompt', { session_id: 't1', hook_event_name: 'UserPromptSubmit', prompt: text })
+      expect(codex('tool', { hook_event_name: 'PostToolUse' })).toBe('')
+      expect(remindedQuote(codexPrompt('find out why the test fails'), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      expect(remindedQuote(codex('tool', { tool_name: 'Bash' }), 'PostToolUse')).toBe(
+        'find out why the test fails'
+      )
+      const report = '(From the session "Fix docs", id abc:) Done: PR #12 is open.'
+      expect(remindedQuote(codexPrompt(report), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      const notice = `${FROM_KOLOFT}The session "Fix docs" changed files you changed too: a.ts.`
+      expect(remindedQuote(codexPrompt(notice), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      expect(remindedQuote(codexPrompt(A_HELPER_HAS_IT), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      expect(remindedQuote(codexPrompt('A'), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      expect(reminder(codexPrompt('先看看侧栏'), 'UserPromptSubmit')).toMatch(writesIn('Chinese'))
+
+      const seeded = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
+      seedHandedOverOwnerWords(seeded, 'have a look at the sidebar')
+      const child = (event: string, payload: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, event], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: seeded }
+        }).stdout
+      const englishTask = { hook_event_name: 'UserPromptSubmit', prompt: 'Fix the sidebar width.' }
+      expect(remindedQuote(child('prompt', englishTask), 'UserPromptSubmit')).toBe(
+        'have a look at the sidebar'
+      )
+      expect(remindedQuote(child('tool', {}), 'PostToolUse')).toBe('have a look at the sidebar')
+      expect(
+        remindedQuote(
+          child('prompt', { ...englishTask, prompt: 'change it once more' }),
+          'UserPromptSubmit'
+        )
+      ).toBe('change it once more')
+    })
+
+    it('what Koloft left for a Claude or Codex tab reaches the model once, ahead of the reminder, at its next prompt or tool call of its own — never a subagent’s — and its file goes', () => {
+      const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb: "fix: \\"login\\"".`
+      const left = noticeFile(regDir, 'tabNotice')
+      fs.writeFileSync(left, noticeLine(moved))
+      const head = `${moved}\n\nThe user's latest message begins: «check the sidebar»`
+      const told = reminder(prompt('tabNotice', 'check the sidebar'), 'UserPromptSubmit')
+      expect(told.slice(0, head.length)).toBe(head)
+      expect(fs.existsSync(left)).toBe(false)
+      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^The user's latest message/)
+
+      fs.writeFileSync(left, noticeLine(moved))
+      const subagentTool = fire('tabNotice', 'tool', {
+        session_id: 's1',
+        agent_id: 'a1',
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read'
+      })
+      expect(reminder(subagentTool, 'PostToolUse')).toMatch(/^The user's latest message/)
+      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^\(From Koloft:\) origin/)
+      expect(fs.existsSync(left)).toBe(false)
+
+      const notice = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-')), 'n')
+      const codexTool = (input: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, 'tool'], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+        }).stdout
+      fs.writeFileSync(notice, noticeLine(moved))
+      expect(codexTool({ tool_name: 'Bash', agent_id: 'a1' })).toBe('')
+      expect(reminder(codexTool({ tool_name: 'Bash' }), 'PostToolUse')).toBe(`${moved}\n\n`)
+      expect(fs.existsSync(notice)).toBe(false)
+
+      const codexStop = (input: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, 'stop'], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+        }).stdout
+      fs.writeFileSync(notice, noticeLine(moved))
+      expect(codexStop({ stop_hook_active: true })).toBe('')
+      expect(JSON.parse(codexStop({ stop_hook_active: false }))).toEqual({
+        decision: 'block',
+        reason: `${moved}\n\n`
+      })
+      expect(codexStop({ stop_hook_active: false })).toBe('')
+    })
+
+    // ADR-0031
+    it('a Claude child Koloft saved the owner’s last words for is quoted by those words, not by its handed-over task in whatever language, Koloft reads them back whole for the next child down, and the owner’s next prompt replaces them', async () => {
+      const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
+      const caller = { name: 'planner', id: 'abc-123', label: 'Claude', ownerWords }
+      const translated = await handoverInOwnersLanguage(
+        caller,
+        async () =>
+          'Japanese\nKoloft が起動したのは、会話 {caller} が頼んだからです。持ち主が最後に書いたのは {owner} です。終わったら次を実行して結果を返してください：'
+      )
+      const brief = 'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      for (const [tab, preamble] of [
+        ['tabLangOW', handoverPreamble(caller)],
+        ['tabLangOWJa', translated]
+      ]) {
+        seedHandedOverOwnerWords(saidFile(regDir, tab), ownerWords)
+        expect(reminder(prompt(tab, withHandover(preamble, brief)), 'UserPromptSubmit')).toMatch(
+          writesIn('Chinese')
+        )
+        expect(reminder(tool(tab), 'PostToolUse')).toMatch(writesIn('Chinese'))
+        expect(quotedPrompt(regDir, tab)).toBe(ownerWords)
+        prompt(tab, '再改一下')
+        expect(quotedPrompt(regDir, tab)).toBe('再改一下')
+      }
+      expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
+    })
+
+    // ADR-0031
+    it('owner words Koloft writes for a tab itself (typed in ⌘P) are quoted by the next reminder and read back whole for a child, the ⌘P message after them does not replace them, and a long text is cut short', () => {
+      const typed = '把 "侧栏" 调暗\n一点 \\ 😀'
+      seedOwnerWords(saidFile(regDir, 'tabLangPalette'), typed)
+      const palette = JSON.parse(
+        crossSessionLine('prompting', `The owner typed this in ⌘P: ${typed}`, 'koloft-butler-1')!
+      ).message.content
+      expect(reminder(prompt('tabLangPalette', palette), 'UserPromptSubmit')).toMatch(
+        writesIn('Chinese')
+      )
+      expect(reminder(tool('tabLangPalette'), 'PostToolUse')).toMatch(writesIn('Chinese'))
+      expect(quotedPrompt(regDir, 'tabLangPalette')).toBe(typed)
+
+      seedOwnerWords(saidFile(regDir, 'tabLangPalette'), '长'.repeat(4000))
+      expect(quotedPrompt(regDir, 'tabLangPalette')).toBe('长'.repeat(OWNER_WORDS_QUOTED_CHARS))
+    })
+
     // CC§19
-    it('quotes at most 300 bytes and always whole characters and whole escapes, so the reminder is valid JSON', () => {
+    it('keeps at most 300 bytes of the prompt, always whole characters and whole escapes, so the reminder is valid JSON', () => {
       for (let pad = 0; pad < 6; pad++) {
-        for (const body of ['中文'.repeat(100), 'a"b\\c\nd\x1b'.repeat(40), '😀é'.repeat(80)]) {
+        for (const body of [
+          '中文'.repeat(100),
+          'ab"cd\\ef\ngh\x1b'.repeat(30),
+          '😀é '.repeat(80)
+        ]) {
           const text = 'x'.repeat(pad) + body
-          const quote = remindedQuote(prompt('tabLangCut', text), 'UserPromptSubmit')
+          reminder(prompt('tabLangCut', text), 'UserPromptSubmit')
+          const quote = quotedPrompt(regDir, 'tabLangCut')!
           expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
           expect(Buffer.byteLength(JSON.stringify(quote))).toBeLessThanOrEqual(302)
           expect(Buffer.byteLength(JSON.stringify(quote))).toBeGreaterThan(290)
@@ -518,96 +867,27 @@ describe('injected hook script', () => {
         )
       ).hooks
 
-    it('only a conductor tab gets the gate, a PreToolUse hook on every tool', () => {
-      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
-      expect(hooksOf(true).PreToolUse).toEqual([
-        { matcher: '*', hooks: [{ type: 'command', command: expect.any(String) }] }
-      ])
+    // CC§13 ADR-0028
+    it('only a conductor tab takes a message from another session whatever permission mode that session claims', () => {
+      const settingsOf = (conductor: boolean): Record<string, unknown> =>
+        JSON.parse(
+          fs.readFileSync(
+            writeTabHookSettings(setupHooks(noPeerInstance), 'tabG', undefined, true, conductor),
+            'utf8'
+          )
+        )
+      expect(settingsOf(true).crossSessionInbound).toBe('accept')
+      expect(settingsOf(false)).not.toHaveProperty('crossSessionInbound')
     })
 
-    // ADR-0029 CC§15
-    describe('the gate lets a conductor read, write its own memory folder, ask the owner and run one plain koloft command, and nothing else', () => {
-      let command: string
-      beforeAll(() => {
-        command = hooksOf(true).PreToolUse[0].hooks[0].command
-      })
-      const gate = (event: unknown): 'allow' | 'deny' => {
-        const res = spawnSync('/bin/sh', ['-c', command], {
-          input: typeof event === 'string' ? event : JSON.stringify(event),
-          encoding: 'utf8'
-        })
-        if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
-        if (res.stdout === '') return 'allow'
-        expect(JSON.parse(res.stdout).hookSpecificOutput).toMatchObject({
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny'
-        })
-        return 'deny'
-      }
-      const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
-      const transcript_path = '/home/o/.claude/projects/-conductors-global/c1.jsonl'
-      const write = (tool_name: string, file_path: string): unknown => ({
-        tool_name,
-        transcript_path,
-        tool_input: { file_path, content: 'x' }
-      })
-
-      it.each([
-        ['Read', { tool_name: 'Read', tool_input: { file_path: '/ws/a/README.md' } }],
-        ['Grep', { tool_name: 'Grep', tool_input: { pattern: 'x' } }],
-        ['a question to the owner', { tool_name: 'AskUserQuestion', tool_input: {} }],
-        ['koloft help', bash('koloft help')],
-        ['a koloft command with spaces around it', bash('  koloft session list \n')],
-        ['operators inside quotes', bash('koloft session send a -- "fix x; then y && z | w"')],
-        ['a multi-line single-quoted message', bash("koloft session send a -- 'one\ntwo $HOME'")],
-        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')],
-        [
-          'a Write into its own memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory/MEMORY.md')
-        ],
-        [
-          'an Edit in its own memory folder',
-          write('Edit', '/home/o/.claude/projects/-conductors-global/memory/a/b.md')
-        ]
-      ])('allows %s', (_name, event) => {
-        expect(gate(event)).toBe('allow')
-      })
-
-      it.each([
-        ['Write', { tool_name: 'Write', tool_input: { file_path: '/ws/a/x', content: 'x' } }],
-        ['Edit', { tool_name: 'Edit', tool_input: { file_path: '/ws/a/x' } }],
-        ['a subagent', { tool_name: 'Agent', tool_input: { prompt: 'fix it' } }],
-        ['WebFetch', { tool_name: 'WebFetch', tool_input: { url: 'https://x' } }],
-        ['a command that is not koloft', bash('echo x > /ws/a/x')],
-        ['a name that only starts with koloft', bash('koloftx help')],
-        ['a chained command', bash('koloft help && rm -rf /ws/a')],
-        ['a second command after ;', bash('koloft help; ls')],
-        ['a second command on a new line', bash('koloft help\nrm -rf /ws/a')],
-        ['a pipe', bash('koloft help | sh')],
-        ['a redirect', bash('koloft session read a > /ws/a/out')],
-        ['command substitution in double quotes', bash('koloft session send a -- "$(rm x)"')],
-        ['backticks', bash('koloft session send a -- `rm x`')],
-        ['an unclosed quote', bash("koloft session send a -- 'oops")],
-        ['input that is not JSON', 'not json'],
-        [
-          'a Write beside its memory folder, onto its transcript',
-          write('Write', '/home/o/.claude/projects/-conductors-global/c1.jsonl')
-        ],
-        [
-          'a Write that climbs out of its memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory/../../x/memory/a.md')
-        ],
-        [
-          'a folder whose name only starts like its memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory-x/a.md')
-        ],
-        [
-          'another session’s memory folder',
-          write('Edit', '/home/o/.claude/projects/-ws-a/memory/a.md')
-        ]
-      ])('denies %s', (_name, event) => {
-        expect(gate(event)).toBe('deny')
-      })
+    // ADR-0029
+    it('a conductor tab gets no gate: like any tab, its only PreToolUse hook is the look at the folder before a shell command', () => {
+      for (const conductor of [true, false])
+        expect(
+          (hooksOf(conductor).PreToolUse as { hooks: { command: string }[] }[]).map((e) =>
+            e.hooks.map((h) => h.command.split(' ').pop())
+          )
+        ).toEqual([['shell-before']])
     })
   })
 
@@ -683,7 +963,7 @@ describe('injected hook script', () => {
   })
 
   // CC§19
-  it('every tool call fires the reply-language hook; the Bash-matched one rides along only with the statusline', () => {
+  it('every tool call fires the reply-language hook and every Bash call the look at the folder after it; the Bash-matched status-line one rides along only with the statusline', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const postToolUse = (file: string): { matcher: string; hooks: { command: string }[] }[] =>
       JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
@@ -691,9 +971,25 @@ describe('injected hook script', () => {
       postToolUse(file).map((e) => `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`)
     expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
       '* tool',
+      'Bash shell-after',
       'Bash posttool'
     ])
-    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual(['* tool'])
+    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual([
+      '* tool',
+      'Bash shell-after'
+    ])
+  })
+
+  it('a Bash call that fails still gets the look at the folder after it', () => {
+    const settings = JSON.parse(
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPTF'), 'utf8')
+    )
+    expect(
+      settings.hooks.PostToolUseFailure.map(
+        (e: { matcher: string; hooks: { command: string }[] }) =>
+          `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`
+      )
+    ).toEqual(['Bash shell-after'])
   })
 
   // CC§8
@@ -741,6 +1037,40 @@ describe('injected hook script', () => {
     )
   })
 
+  // ADR-0048 CC§24
+  it('lets every tool of each Playwright MCP server it is given run without asking, next to the koloft rule, writing each character of the server name Claude Code drops from tool names as _', () => {
+    const permissionsOf = (allowKoloft: boolean, servers: string[]): unknown =>
+      JSON.parse(
+        fs.readFileSync(
+          writeTabHookSettings(
+            setupHooks(noPeerInstance),
+            'tabMCP',
+            undefined,
+            allowKoloft,
+            false,
+            false,
+            servers
+          ),
+          'utf8'
+        )
+      ).permissions
+    expect(permissionsOf(true, ['playwright', 'my.browser', 'pw é'])).toEqual({
+      allow: ['Bash(koloft *)', 'mcp__playwright', 'mcp__my_browser', 'mcp__pw__']
+    })
+    expect(permissionsOf(false, ['play-wright'])).toEqual({ allow: ['mcp__play-wright'] })
+  })
+
+  // CC§6
+  it("turns Claude Code's agent teams off in every tab, on this Mac and on a remote machine, so a named subagent never becomes a teammate", () => {
+    const off = { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' }
+    expect(
+      JSON.parse(
+        fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabTM1'), 'utf8')
+      ).env
+    ).toEqual(off)
+    expect(machineHookSettings('tabTM2', '$HOME/.koloft/m', false, false).env).toEqual(off)
+  })
+
   describe('a dialog Koloft can answer from Discord (PermissionRequest)', () => {
     const ask = {
       session_id: 's1',
@@ -748,8 +1078,15 @@ describe('injected hook script', () => {
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
-    const runAsk = (tab: string): ReturnType<typeof spawn> =>
-      spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const runAsk = (tab: string, givesUpAfterS?: number): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: {
+          ...process.env,
+          SECONDS: '7200',
+          ...(givesUpAfterS && { KOLOFT_ASK_GIVES_UP_AFTER_S: String(givesUpAfterS) })
+        }
+      })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
       child.stdout!.on('data', (c) => (out += c))
@@ -773,8 +1110,10 @@ describe('injected hook script', () => {
       expect(local[0].matcher).toBe('*')
       expect(local[0].hooks[0].command).toMatch(/ ask$/)
       expect(local[0].hooks[0].timeout).toBe(3600)
-      const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', undefined, dq, 'record-only')
-        .hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
+      const remote = machineHookSettings('tabC2', '$HOME/.koloft/m', false, false).hooks as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >
       expect(remote.PermissionRequest[0].hooks[0].command).toMatch(/ asked$/)
       expect(remote.PermissionRequest[0].hooks[0]).not.toHaveProperty('timeout')
     })
@@ -793,7 +1132,7 @@ describe('injected hook script', () => {
     })
 
     // CC§14
-    it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
+    it('ended by claude (the person answered "No" at the Mac), it removes its question file and records nothing, even with a large SECONDS in the environment claude hands it', async () => {
       markAnswerable(regDir, 'tabA2', true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
@@ -801,6 +1140,37 @@ describe('injected hook script', () => {
       child.kill('SIGTERM')
       await closed
       expect(hookFiles('tabA2')).toEqual([])
+      expect(fs.existsSync(path.join(regDir, 'tabA2.status.jsonl'))).toBe(false)
+    })
+
+    // CC§14
+    it('given up on its own with no answer, it leaves the dialog on screen with no output, removes its question file and records the question in the status log, as a tab that does not wait would', async () => {
+      markAnswerable(regDir, 'tabA3', true)
+      const child = runAsk('tabA3', 2)
+      const printed = feed(child, ask)
+      await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA3'))).toBe(true))
+      expect(await printed).toBe('')
+      expect(child.exitCode).toBe(0)
+      expect(hookFiles('tabA3')).toEqual([])
+      expect(readStatusLog('tabA3')).toEqual([
+        { tabId: 'tabA3', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
+    })
+
+    // CC§14
+    it('an answer Koloft writes just as the hook gives up is still printed, and the question is not recorded', async () => {
+      markAnswerable(regDir, 'tabA4', true)
+      const child = runAsk('tabA4', 2)
+      const printed = feed(child, ask)
+      const askFile = askOf(child, 'tabA4')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(false), {
+        interval: 20,
+        timeout: 5000
+      })
+      fs.writeFileSync(path.join(regDir, `tabA4.${child.pid}.answer.json`), '{"late":true}')
+      expect(await printed).toBe('{"late":true}')
+      expect(fs.existsSync(path.join(regDir, 'tabA4.status.jsonl'))).toBe(false)
     })
 
     // CC§14
@@ -818,6 +1188,47 @@ describe('injected hook script', () => {
       ])
     })
 
+    // CC§13 CC§14
+    it('an Assist answerable from Discord keeps the question of a turn the owner typed at the Mac in its terminal, even once a Discord message joins that turn; the question of any other turn waits for Koloft, and a plain session’s typed turn still does', async () => {
+      const typed = (tab: string): string =>
+        fire(tab, 'prompt', { session_id: 's1', prompt: 'check the PRs' })
+      const viaDiscord = (tab: string): string =>
+        fire(tab, 'prompt', {
+          session_id: 's1',
+          prompt: JSON.parse(
+            crossSessionLine('bypass', '[Discord] and the issues', 'koloft-discord-9')!
+          ).message.content
+        })
+      const keptInTerminal = (tab: string): boolean => {
+        const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
+          input: JSON.stringify(ask),
+          encoding: 'utf8',
+          timeout: 5000
+        })
+        return res.status === 0 && res.stdout === '' && readStatusLog(tab).at(-1)?.event === 'ask'
+      }
+      const waitsForKoloft = async (tab: string): Promise<boolean> => {
+        const child = runAsk(tab)
+        const printed = feed(child, ask)
+        await vi.waitFor(() => expect(fs.existsSync(askOf(child, tab))).toBe(true))
+        fs.writeFileSync(path.join(regDir, `${tab}.${child.pid}.answer.json`), '{"ok":1}')
+        return (await printed) === '{"ok":1}'
+      }
+
+      writeConductorMarker(regDir, 'tabAs', 'role')
+      markAnswerable(regDir, 'tabAs', true)
+      typed('tabAs')
+      viaDiscord('tabAs')
+      expect(keptInTerminal('tabAs')).toBe(true)
+      fire('tabAs', 'stop', { hook_event_name: 'Stop' })
+      viaDiscord('tabAs')
+      expect(await waitsForKoloft('tabAs')).toBe(true)
+
+      markAnswerable(regDir, 'tabPlainTyped', true)
+      typed('tabPlainTyped')
+      expect(await waitsForKoloft('tabPlainTyped')).toBe(true)
+    })
+
     // CC§14
     it('on another machine it does not wait: it appends the whole question to the status log, which the mirror brings back', () => {
       fire('tabR1', 'asked', ask)
@@ -830,17 +1241,14 @@ describe('injected hook script', () => {
   describe('U-HOOK-2: settings for a tab running on another machine', () => {
     const machine = remoteMachineDir('m-abc123')
     const build = (): Record<string, unknown> =>
-      hookSettings(
-        `${machine}/hook.sh`,
-        REMOTE_HOOK_DIR,
-        'tabR',
-        {
+      hookSettings(`${machine}/hook.sh`, REMOTE_HOOK_DIR, 'tabR', {
+        statusLine: {
           type: 'command',
           command: dq(`${machine}/run.sh`),
           padding: 0
         },
-        dq
-      )
+        quote: dq
+      })
 
     const commands = (s: Record<string, unknown>): string[] =>
       Object.values(s.hooks as Record<string, { hooks: { command: string }[] }[]>).flatMap((g) =>
@@ -865,6 +1273,12 @@ describe('injected hook script', () => {
       fs.writeFileSync(log, '{"a":1}\n{"a":2}\n')
       build()
       expect(fs.readFileSync(log, 'utf8')).toBe('{"a":1}\n{"a":2}\n')
+    })
+  })
+
+  it('the settings file every Claude launch gets, on this Mac or another machine, answers Claude’s one-time Bypass Permissions screen itself (CC§9)', () => {
+    expect(hookSettings('/x/hook.sh', '/x/reg', 'tabBP')).toMatchObject({
+      skipDangerousModePermissionPrompt: true
     })
   })
 })
@@ -893,18 +1307,24 @@ describe('setupHooks at startup', () => {
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
 
-  it('removes the answerable and conductor markers and the saved prompt a crash left behind, and keeps a live peer instance’s however old they are', () => {
+  it('removes the answerable and conductor markers, the saved prompt, the typed-turn mark, the noted Discord message ids and the notice left for the tab a crash left behind, and keeps a live peer instance’s however old they are', () => {
     const peerTab = 'pty-peer-1'
     const crashedTab = 'pty-gone-1'
     const markers = (tab: string): string[] => [
       path.join(regDir, `${tab}.answerable`),
       path.join(regDir, `${tab}.conductor`),
-      path.join(regDir, `${tab}.said`)
+      path.join(regDir, `${tab}.said`),
+      path.join(regDir, `${tab}.typed`),
+      path.join(regDir, `${tab}.discord-ids`),
+      noticeFile(regDir, tab)
     ]
     for (const tab of [peerTab, crashedTab]) {
+      fs.writeFileSync(noticeFile(regDir, tab), noticeLine('main moved'))
       markAnswerable(regDir, tab, true)
       writeConductorMarker(regDir, tab, 'role')
       fs.writeFileSync(path.join(regDir, `${tab}.said`), '你好')
+      fs.writeFileSync(path.join(regDir, `${tab}.typed`), '')
+      fs.writeFileSync(path.join(regDir, `${tab}.discord-ids`), 'koloft-discord-1\n')
     }
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
     for (const f of markers(peerTab)) fs.utimesSync(f, twoDaysAgo, twoDaysAgo)
@@ -913,5 +1333,110 @@ describe('setupHooks at startup', () => {
 
     for (const f of markers(peerTab)) expect(fs.existsSync(f), f).toBe(true)
     for (const f of markers(crashedTab)) expect(fs.existsSync(f), f).toBe(false)
+  })
+
+  // ADR-0043
+  it('writes the hold script a background Codex, Muse or Antigravity tab runs before each shell command, which lets it run at once on a roomy Mac', () => {
+    const { hold } = setupHooks(noPeerInstance)
+    const res = spawnSync('bash', [hold, regDir, 'tabH', 'hold'], {
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }),
+      encoding: 'utf8',
+      timeout: 5000
+    })
+    expect(res).toMatchObject({ status: 0, stdout: '' })
+  })
+})
+
+describe("a shell command's written files", () => {
+  function repoWithChanges(): string {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(base, 'shell-writes-')))
+    const run = (...args: string[]): void => {
+      spawnSync('git', args, { cwd: repo })
+    }
+    run('init', '-q')
+    for (const f of ['kept.txt', 'edited.txt', 'already-dirty.txt'])
+      fs.writeFileSync(path.join(repo, f), 'one\n')
+    run('add', '.')
+    run('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base')
+    fs.writeFileSync(path.join(repo, 'already-dirty.txt'), 'two\n')
+    fs.writeFileSync(path.join(repo, 'left-alone.txt'), 'untracked before\n')
+    return repo
+  }
+
+  function runTheCommand(repo: string): void {
+    fs.writeFileSync(path.join(repo, 'edited.txt'), 'changed by the command\n')
+    fs.mkdirSync(path.join(repo, 'sub'))
+    fs.writeFileSync(path.join(repo, 'sub', 'made.txt'), 'new\n')
+  }
+
+  const written = (repo: string): string[] => [
+    path.join(repo, 'edited.txt'),
+    path.join(repo, 'sub', 'made.txt')
+  ]
+
+  it('a Claude Bash call reports the files that changed between its PreToolUse and its PostToolUse, not the ones that were already changed before it', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: path.join(repo), tool_use_id: 'toolu_01' }
+    fire('tabSh', 'shell-before', call)
+    runTheCommand(repo)
+    fire('tabSh', 'shell-after', call)
+    expect(readStatusLog('tabSh')).toEqual([
+      expect.objectContaining({
+        tabId: 'tabSh',
+        event: 'shell-wrote',
+        sessionId: 'sid-sh',
+        wrote: written(repo)
+      })
+    ])
+  })
+
+  it('a command that changes nothing reports nothing', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: repo, tool_use_id: 'toolu_02' }
+    fire('tabSh0', 'shell-before', call)
+    fire('tabSh0', 'shell-after', call)
+    expect(fs.existsSync(path.join(regDir, 'tabSh0.status.jsonl'))).toBe(false)
+  })
+
+  it('a command that commits, and so takes changed files out of what git lists, reports none of them as written', () => {
+    const repo = repoWithChanges()
+    const call = { session_id: 'sid-sh', cwd: repo, tool_use_id: 'toolu_03' }
+    fire('tabShC', 'shell-before', call)
+    spawnSync('git', ['add', '.'], { cwd: repo })
+    spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'c'], {
+      cwd: repo
+    })
+    fire('tabShC', 'shell-after', call)
+    expect(fs.existsSync(path.join(regDir, 'tabShC.status.jsonl'))).toBe(false)
+  })
+
+  it('a session whose folder is reached through a symlink gets its files under that same path, as its own edits name them', () => {
+    const repo = repoWithChanges()
+    const link = path.join(fs.mkdtempSync(path.join(base, 'shell-link-')), 'proj')
+    fs.symlinkSync(repo, link)
+    const call = { session_id: 'sid-sh', cwd: link, tool_use_id: 'toolu_04' }
+    fire('tabShL', 'shell-before', call)
+    runTheCommand(repo)
+    fire('tabShL', 'shell-after', call)
+    expect(readStatusLog('tabShL')[0].wrote).toEqual(written(link))
+  })
+
+  it('a Codex Bash call appends the same list to the file its tab names, also under dash as on a Linux machine', () => {
+    const repo = repoWithChanges()
+    const out = path.join(regDir, 'tabCx.shell-wrote.jsonl')
+    const call = JSON.stringify({ session_id: 'th', cwd: repo, tool_use_id: 'call_9' })
+    const hook = (event: string): void => {
+      spawnSync('/bin/dash', [codexReplyLanguage, event], {
+        input: call,
+        env: { ...process.env, KOLOFT_SHELL_WROTE: out }
+      })
+    }
+    hook('shell-before')
+    runTheCommand(repo)
+    hook('shell-after')
+    expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
+      event: 'shell-wrote',
+      wrote: written(repo)
+    })
   })
 })

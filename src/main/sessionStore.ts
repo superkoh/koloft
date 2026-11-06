@@ -1,9 +1,10 @@
 import fs from 'fs'
-import path from 'path'
-import { randomUUID } from 'crypto'
 import type { LaunchPermission } from '@shared/types'
+import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import { sessionKey } from '@shared/sessionBackend'
+import { BackgroundFile } from './backgroundFile'
 
-export interface CodexMember {
+export interface StoredMember {
   id: string
   key: string
   workspacePath: string
@@ -13,6 +14,7 @@ export interface CodexMember {
   updatedAt: number
   worktreeResourceId?: string
   permission?: LaunchPermission
+  named?: true
 }
 
 export interface WorktreeResource {
@@ -29,32 +31,43 @@ export interface WorktreeResource {
 
 interface SessionStoreData {
   version: 1
-  members: Record<string, CodexMember>
+  members: Record<string, StoredMember>
   resources: Record<string, WorktreeResource>
+  namesOfLeftMembers?: Record<string, string>
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function codexSessionKey(id: string): string {
-  if (!UUID.test(id)) throw new Error('Invalid Codex session ID')
-  return `codex:local:${id}`
-}
+const sessionKeyOn =
+  (backend: 'codex' | 'muse' | 'agy', label: string) =>
+  (id: string, host?: string): string => {
+    if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
+    return sessionKey({ backendId: backend, sourceId: host ?? 'local', nativeSessionId: id })
+  }
+
+export const codexSessionKey = sessionKeyOn('codex', 'Codex')
+export const museSessionKey = sessionKeyOn('muse', 'Muse')
+export const agySessionKey = sessionKeyOn('agy', 'Antigravity')
+
+export type KeyOf = (id: string, host?: string) => string
+
+export const hostOfPath = (p: string): string | undefined => parseRemoteKey(p)?.host
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function absolute(value: unknown): value is string {
-  return typeof value === 'string' && path.isAbsolute(value)
+  return typeof value === 'string' && isAbsoluteOnHost(value)
 }
 
-function validMember(value: unknown, key: string): value is CodexMember {
+function validMember(value: unknown, key: string, keyOf: KeyOf): value is StoredMember {
   if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false
   return (
     value.key === key &&
-    key === codexSessionKey(value.id) &&
-    absolute(value.workspacePath) &&
     absolute(value.cwd) &&
+    key === keyOf(value.id, hostOfPath(value.cwd)) &&
+    absolute(value.workspacePath) &&
     typeof value.title === 'string' &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&
@@ -63,7 +76,8 @@ function validMember(value: unknown, key: string): value is CodexMember {
     (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
     (value.permission === undefined ||
       value.permission === 'acceptEdits' ||
-      value.permission === 'bypass')
+      value.permission === 'bypass') &&
+    (value.named === undefined || value.named === true)
   )
 }
 
@@ -86,14 +100,15 @@ function validResource(value: unknown, id: string): value is WorktreeResource {
   )
 }
 
-function parseData(value: unknown): SessionStoreData {
+function parseData(value: unknown, keyOf: KeyOf): SessionStoreData {
+  // ADR-0025
   if (!record(value) || value.version !== 1) throw new Error('Unsupported session store version')
   if (!record(value.members) || !record(value.resources)) throw new Error('Invalid session store')
   for (const [id, resource] of Object.entries(value.resources)) {
     if (!validResource(resource, id)) throw new Error(`Invalid worktree resource: ${id}`)
   }
   for (const [key, member] of Object.entries(value.members)) {
-    if (!validMember(member, key)) throw new Error(`Invalid session member: ${key}`)
+    if (!validMember(member, key, keyOf)) throw new Error(`Invalid session member: ${key}`)
     if (member.worktreeResourceId && !Object.hasOwn(value.resources, member.worktreeResourceId)) {
       throw new Error(`Missing worktree resource for session: ${key}`)
     }
@@ -103,17 +118,29 @@ function parseData(value: unknown): SessionStoreData {
 
 export class SessionStore {
   private data: SessionStoreData
+  private disk: BackgroundFile
 
-  constructor(readonly filePath: string) {
+  constructor(
+    readonly filePath: string,
+    private keyOf: KeyOf = codexSessionKey
+  ) {
     try {
-      this.data = parseData(JSON.parse(fs.readFileSync(filePath, 'utf8')))
+      this.data = parseData(JSON.parse(fs.readFileSync(filePath, 'utf8')), keyOf)
+      try {
+        fs.copyFileSync(filePath, `${filePath}.bak`, fs.constants.COPYFILE_EXCL)
+      } catch {}
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.data = { version: 1, members: {}, resources: {} }
     }
+    this.disk = new BackgroundFile(() => filePath, 0o600)
   }
 
-  listMembers(workspacePath?: string): CodexMember[] {
+  flushSync(): void {
+    this.disk.flushSync()
+  }
+
+  listMembers(workspacePath?: string): StoredMember[] {
     return structuredClone(
       Object.values(this.data.members).filter(
         (member) => workspacePath === undefined || member.workspacePath === workspacePath
@@ -121,19 +148,20 @@ export class SessionStore {
     )
   }
 
-  getMember(key: string): CodexMember | undefined {
+  getMember(key: string): StoredMember | undefined {
     return Object.hasOwn(this.data.members, key)
       ? structuredClone(this.data.members[key])
       : undefined
   }
 
-  upsertMember(member: CodexMember): void {
+  upsertMember(member: StoredMember): void {
     const next = structuredClone(this.data)
     next.members[member.key] = structuredClone(member)
+    delete next.namesOfLeftMembers?.[member.key]
     this.commit(next)
   }
 
-  updateMember(key: string, patch: Partial<Omit<CodexMember, 'id' | 'key'>>): CodexMember {
+  updateMember(key: string, patch: Partial<Omit<StoredMember, 'id' | 'key'>>): StoredMember {
     const member = this.getMember(key)
     if (!member) throw new Error(`Session member not found: ${key}`)
     const updated = { ...member, ...patch }
@@ -144,9 +172,15 @@ export class SessionStore {
   removeMember(key: string): boolean {
     if (!Object.hasOwn(this.data.members, key)) return false
     const next = structuredClone(this.data)
+    const { named, title } = next.members[key]
+    if (named) (next.namesOfLeftMembers ??= {})[key] = title
     delete next.members[key]
     this.commit(next)
     return true
+  }
+
+  nameOfLeftMember(key: string): string | undefined {
+    return this.data.namesOfLeftMembers?.[key]
   }
 
   listResources(): WorktreeResource[] {
@@ -177,24 +211,8 @@ export class SessionStore {
   }
 
   private commit(next: SessionStoreData): void {
-    parseData(next)
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-    const temporary = `${this.filePath}.${randomUUID()}.tmp`
-    try {
-      const fd = fs.openSync(temporary, 'wx', 0o600)
-      try {
-        fs.writeFileSync(fd, JSON.stringify(next, null, 2) + '\n')
-        fs.fsyncSync(fd)
-      } finally {
-        fs.closeSync(fd)
-      }
-      if (fs.existsSync(this.filePath) && !fs.existsSync(`${this.filePath}.bak`)) {
-        fs.copyFileSync(this.filePath, `${this.filePath}.bak`, fs.constants.COPYFILE_EXCL)
-      }
-      fs.renameSync(temporary, this.filePath)
-      this.data = next
-    } finally {
-      if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
-    }
+    parseData(next, this.keyOf)
+    this.data = next
+    this.disk.write(JSON.stringify(next, null, 2) + '\n')
   }
 }

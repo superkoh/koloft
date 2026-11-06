@@ -1,0 +1,68 @@
+.find-bar {
+  position: absolute;
+  top: 54px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.find-input {
+  width: 180px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 4px 8px;
+  outline: none;
+}
+.find-input:focus {
+  border-color: var(--accent);
+}
+.find-input.no-match {
+  border-color: #f87171;
+  color: #f3a3a3;
+}
+.find-count {
+  min-width: 44px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+.find-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-faint);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.find-btn:hover:not(:disabled) {
+  color: var(--accent);
+}
+.find-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+::highlight(find-all) {
+  background-color: rgba(250, 204, 21, 0.32);
+}
+::highlight(find-active) {
+  background-color: #fb923c;
+  color: #000;
+}

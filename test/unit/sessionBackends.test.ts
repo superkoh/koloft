@@ -5,11 +5,14 @@ import {
   capabilitiesFor,
   effectiveBackend,
   identityOf,
+  launchMenus,
+  SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
-  SUPPORTED_PAIRS
+  turnedOffLine,
+  type Capabilities
 } from '@shared/sessionBackend'
-import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
+import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 
 function stubBackend(
@@ -24,19 +27,24 @@ function stubBackend(
     historyRows: rows,
     create: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
     resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
+    forgetAvailability: () => {},
     resumePlan: async () => ({ action: 'unavailable' as const, reason: 'not-found' as const }),
     hasTab: () => false,
     workspaceOfTab: () => undefined,
     aliveTabFor: () => undefined,
     stop: () => {},
     archive: () => true,
+    adopt: () => {},
     transcriptExists: () => true,
     observe: () => {},
     occupantOf: () => null,
     accountUsable: () => true,
     trustsFolder: () => true,
     turns: async () => [],
-    permissionClass: () => 'prompting' as const
+    transcriptPlaces: () => undefined,
+    permissionClass: () => 'prompting' as const,
+    peerNames: () => async () => null,
+    runningElsewhere: () => false
   } satisfies SessionBackend
 }
 
@@ -102,9 +110,9 @@ describe('session backend boundary', () => {
     ])
   })
 
-  it('marks a conductor’s session, by its tab or its session id, with the conductor it belongs to, and never offers a conductor’s session from history', async () => {
+  it('marks the butler’s session, by its tab or its session id, and never offers the butler’s session from history', async () => {
     const registry = new SessionBackends(lifecycle())
-    registry.conductorOf = (id) => ({ 'conductor-tab': 'b1', 'old-conductor-session': 'b2' })[id]
+    registry.isButlerSession = (id) => id === 'conductor-tab' || id === 'old-conductor-session'
     const session = (tabId: string, sessionId: string): BackendSessionInfo => ({
       tabId,
       sessionId,
@@ -121,7 +129,7 @@ describe('session backend boundary', () => {
         session('t3', 'x')
       ])
     )
-    expect(registry.list().map((s) => s.conductor)).toEqual(['b1', 'b2', undefined])
+    expect(registry.list().map((s) => s.butler)).toEqual([true, true, false])
     expect((await registry.historyRows('/repo', () => {})).map((r) => r.id)).toEqual(['plain'])
   })
 
@@ -135,23 +143,22 @@ describe('session backend boundary', () => {
     await expect(registry.historyRows('/repo', () => {})).rejects.toThrow('app-server gone')
   })
 
-  it('keeps native ids from different backends separate and accepts legacy Claude references', () => {
+  it('keeps native ids from different backends separate, Muse included, and accepts legacy Claude references', () => {
     const nativeSessionId = '00000000-0000-4000-8000-000000000001'
     const claude = sessionKey({ backendId: 'claude', sourceId: 'local', nativeSessionId })
     const codex = sessionKey({ backendId: 'codex', sourceId: 'local', nativeSessionId })
     expect(claude).not.toBe(codex)
     expect(identityOf(codex)).toEqual({ backendId: 'codex', sourceId: 'local', nativeSessionId })
+    const muse = sessionKey({ backendId: 'muse', sourceId: 'local', nativeSessionId })
+    expect(identityOf(muse)).toEqual({ backendId: 'muse', sourceId: 'local', nativeSessionId })
     expect(identityOf(nativeSessionId).backendId).toBe('claude')
   })
 
-  it('refuses implicit/new unsupported launches before reaching any backend', async () => {
+  it('refuses a launch with no method before reaching any backend, and hands a Codex launch here or on a machine to Codex', async () => {
     const registry = new SessionBackends(lifecycle())
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
     const backend: SessionBackend = { ...stubBackend('codex'), create }
     registry.register(backend)
-    await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).rejects.toThrow(
-      'Codex sessions cannot run on a remote machine yet.'
-    )
     await expect(registry.create({ kind: undefined as never, cwd: '/repo' })).resolves.toEqual({
       ok: false,
       code: 'invalid-args'
@@ -160,7 +167,12 @@ describe('session backend boundary', () => {
     await expect(registry.create({ kind: 'codex', cwd: '/repo' })).resolves.toMatchObject({
       ok: true
     })
+    await expect(
+      registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })
+    ).resolves.toMatchObject({ ok: true })
+    expect(create).toHaveBeenCalledTimes(2)
     expect(registry.forSession('codex:local:id')).toBe(backend)
+    expect(registry.forSession('codex:server:id')).toBe(backend)
   })
 
   // ADR-0030
@@ -172,6 +184,20 @@ describe('session backend boundary', () => {
       NO_USABLE_ACCOUNT.codex
     )
     expect(create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a new session of an agent turned off in Settings ▸ Sessions, whatever started it, but still resumes one', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
+    registry.register({ ...stubBackend('codex'), create })
+    registry.turnedOff = (b) => (b === 'codex' ? turnedOffLine(b) : null)
+    await expect(registry.create({ kind: 'codex', cwd: '/repo' })).rejects.toThrow(
+      'Codex is turned off in Settings ▸ Sessions'
+    )
+    expect(create).not.toHaveBeenCalled()
+    await expect(
+      registry.create({ kind: 'codex', cwd: '/repo', resumeSessionId: 'thread' })
+    ).resolves.toMatchObject({ ok: true })
   })
 })
 
@@ -223,29 +249,62 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps agent open and browser control off', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
     expect(remote.agentTools).toBe(true)
-    expect(remote.agentOpen).not.toBe(true)
-    expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks, the koloft command and browser control, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
-    expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
-    expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
-    expect(capabilitiesFor('codex', 'local').accounts).toBe(true)
-    expect(capabilitiesFor('codex', 'local').agentTools).toBe(true)
-    expect(capabilitiesFor('codex', 'local').browserControl).toBe(true)
-    expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
+  const ROWS_ONLY_SOME_TABS_HAVE: [string, keyof Capabilities, string[]][] = [
+    [
+      "Koloft's ask hook holds a question until Discord answers it only in a Claude Code tab on this Mac; on a machine the hook only records it and a Discord button presses the key, and other agents have no such hook",
+      'askHookWaitsForDiscord',
+      ['claude/local']
+    ],
+    [
+      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex and Muse (their screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
+      'panelSeen',
+      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh', 'muse/local', 'muse/ssh']
+    ],
+    [
+      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
+      'worktreeRemovalFollowed',
+      ['claude/local', 'claude/ssh']
+    ],
+    [
+      'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',
+      'browserControl',
+      ['claude/local', 'claude/ssh', 'codex/local', 'muse/local', 'agy/local']
+    ]
+  ]
+  const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>
+    Object.fromEntries(
+      Object.entries(capabilitiesFor(backend, host)).filter(
+        ([row]) => !ROWS_ONLY_SOME_TABS_HAVE.some(([, only]) => only === row)
+      )
+    )
+  const HOSTS: HostId[] = ['local', 'ssh']
+
+  it('gives a Codex, Muse or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
+    for (const backend of SESSION_BACKENDS)
+      expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
   })
 
-  it('supports every pair but Codex on a remote machine', () => {
-    expect(SUPPORTED_PAIRS).toEqual({
-      claude: { local: true, ssh: true },
-      codex: { local: true, ssh: false }
-    })
+  // CODEX§16
+  it('gives a remote Codex, Muse or Antigravity tab what a remote Claude tab has', () => {
+    for (const backend of SESSION_BACKENDS)
+      expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
+  })
+
+  // CC§4 CC§11 CC§14
+  it.each(ROWS_ONLY_SOME_TABS_HAVE)('%s', (_rule, row, on) => {
+    const tabsWithIt = SESSION_BACKENDS.flatMap((backend) =>
+      HOSTS.filter((host) => capabilitiesFor(backend, host)[row] === true).map(
+        (host) => `${backend}/${host}`
+      )
+    )
+    expect(tabsWithIt).toEqual(on)
   })
 })
 
@@ -262,11 +321,12 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
   })
 })
 
+const methods = (defaultBackend: BackendId, codex = true) => ({
+  defaultBackend,
+  enabled: { claude: true, codex, muse: true, agy: true }
+})
+
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
-  const methods = (defaultBackend: BackendId, codex = true) => ({
-    defaultBackend,
-    enabled: { claude: true, codex }
-  })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 
   it('takes the saved default whenever it can run', () => {
@@ -279,11 +339,47 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
     expect(effectiveBackend(methods('codex'), have('claude'))).toBe('claude')
   })
 
+  it('starts the first method that can run when the default cannot and several can', () => {
+    expect(effectiveBackend(methods('claude'), have('codex', 'muse'))).toBe('codex')
+    expect(effectiveBackend(methods('muse'), have('claude', 'codex'))).toBe('claude')
+  })
+
   it('ignores an installed method the user switched off', () => {
     expect(effectiveBackend(methods('claude', false), have('codex'))).toBe('claude')
   })
 
   it('keeps the default when nothing is installed — main refuses it and says why', () => {
     expect(effectiveBackend(methods('codex'), have())).toBe('codex')
+  })
+})
+
+describe('launchMenus (the agents a New session menu offers, by where the workspace is)', () => {
+  const only =
+    (...ids: BackendId[]) =>
+    (b: BackendId): boolean =>
+      ids.includes(b)
+
+  it('with only Codex on this Mac, a local workspace offers Codex alone while a remote one offers Claude Code first, then Codex', () => {
+    const menus = launchMenus(methods('claude'), only('codex'))
+    expect(menus.local).toEqual({ listed: ['codex'], named: null, sole: 'codex' })
+    expect(menus.ssh).toEqual({
+      listed: ['claude', 'codex'],
+      named: ['claude', 'codex'],
+      sole: 'claude'
+    })
+  })
+
+  it('a remote workspace offers Codex, Muse and Antigravity only when this Mac has them, as their tabs need this Mac', () => {
+    expect(launchMenus(methods('muse'), only()).ssh).toEqual({
+      listed: ['claude'],
+      named: null,
+      sole: 'claude'
+    })
+    expect(launchMenus(methods('claude'), only('codex', 'muse', 'agy')).ssh.listed).toEqual([
+      'claude',
+      'codex',
+      'muse',
+      'agy'
+    ])
   })
 })

@@ -35,13 +35,16 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
-const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
-const E2E_CODEX_ACCOUNT = 'e2e-codex'
+export const E2E_CODEX_ACCOUNT = 'e2e-codex'
+export const E2E_MUSE_ACCOUNT = 'e2e-muse'
+export const E2E_AGY_ACCOUNT = 'e2e-agy'
+export const UNPACKAGED_BUILD_AGY_SVC = 'koloft-dev-agy-home'
 
 export function seededAccount(
   name: string,
-  kind: 'oauth' | 'apikey' | 'codex-home' = 'oauth'
+  kind: 'oauth' | 'apikey' | 'codex-home' | 'muse-home' | 'agy-home' = 'oauth'
 ): Record<string, unknown> {
   return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
 }
@@ -88,22 +91,19 @@ export function setupE2EEnv(): E2EEnv {
     keychainFile,
     JSON.stringify({
       [UNPACKAGED_BUILD_APIKEY_SVC]: { [E2E_CLAUDE_ACCOUNT]: E2E_CLAUDE_ACCOUNT_KEY }
-    })
+    }),
+    { mode: 0o600 }
   )
   fs.writeFileSync(
     path.join(userData, 'settings.json'),
     JSON.stringify({
-      onboardingSeen: false,
+      onboardingSeen: true,
       accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
-      assist: { on: true, backend: 'claude' }
+      assist: { on: true, backend: 'claude' },
+      skipPermissionsAgreed: true
     })
   )
-  // CC§9
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
-  fs.writeFileSync(
-    path.join(home, '.claude', 'settings.json'),
-    JSON.stringify({ skipDangerousModePermissionPrompt: true })
-  )
   const fakeSecuritySrc =
     `#!/usr/bin/env bash\n` +
     `acct=""; svc=""; prev=""\n` +
@@ -129,6 +129,9 @@ export function setupE2EEnv(): E2EEnv {
   const downloadDir = fs.realpathSync(path.join(home, 'downloads'))
 
   const fileDialogFile = path.join(home, 'file-dialog-answers')
+
+  const roomyMachineNotTheDevMacsOwnLoad = path.join(home, 'machine-reading.json')
+  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1, load1: 0 }))
 
   const workspaces = {
     a: makeWorkspace(home, 'ws-a', {
@@ -169,6 +172,8 @@ export function setupE2EEnv(): E2EEnv {
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
     KOLOFT_CODEX_CMD: 'codex-not-installed',
+    KOLOFT_MUSE_CMD: 'muse-not-installed',
+    KOLOFT_AGY_CMD: 'agy-not-installed',
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
     KOLOFT_SCRATCHPAD_BASE: scratchpadBase,
@@ -178,6 +183,7 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_CDP_LOG: path.join(home, 'cdp-log.txt'),
     KOLOFT_EXTERNAL_OPENS_FILE: externalOpens,
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
+    KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
     KOLOFT_DOM_RENDERER: '1',
     ELECTRON_RENDERER_URL: undefined
@@ -235,19 +241,170 @@ export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void 
   fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2))
 }
 
-export function installCodex(env: E2EEnv): void {
+// CC§9
+export function seedClaudeTrust(env: E2EEnv, dirs: string[]): void {
+  const projects = Object.fromEntries(
+    dirs.map((dir) => [fs.realpathSync(dir), { hasTrustDialogAccepted: true }])
+  )
+  fs.writeFileSync(path.join(env.home, '.claude.json'), JSON.stringify({ projects }))
+}
+
+export function installCodex(env: E2EEnv, authJson = '{}'): void {
   const binary = path.join(env.fakeBin, 'codex')
   fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'), binary)
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
-  addCodexAccount(env, '{}')
+  addCodexAccount(env, authJson)
+}
+
+export function installMuse(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'muse')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), binary)
+  env.launchEnv.KOLOFT_MUSE_CMD = binary
+  addMuseAccount(env)
+}
+
+// MUSE§13
+export function addMuseAccount(
+  env: E2EEnv,
+  name = E2E_MUSE_ACCOUNT,
+  authJson = JSON.stringify({ schema_version: 1, providers: { meta: { api_key: 'fake' } } })
+): void {
+  const config = path.join(env.userData, 'muse-homes', name, 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(path.join(config, 'auth.json'), authJson, { mode: 0o600 })
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
+  seedSettings(env, {
+    accounts: [...(current.accounts ?? []), seededAccount(name, 'muse-home')]
+  })
+}
+
+export function installAgy(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'agy')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), binary)
+  env.launchEnv.KOLOFT_AGY_CMD = binary
+  addAgyAccount(env)
+}
+
+// AGY§5 AGY§6
+export function addAgyAccount(env: E2EEnv, name = E2E_AGY_ACCOUNT): void {
+  const cache = path.join(env.userData, 'agy-homes', name, 'antigravity-cli', 'cache')
+  fs.mkdirSync(cache, { recursive: true })
+  fs.writeFileSync(
+    path.join(cache, 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
+  addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, name, 'fake-gemini-key')
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
+  seedSettings(env, {
+    accounts: [...(current.accounts ?? []), seededAccount(name, 'agy-home')]
+  })
+}
+
+export interface AgyCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean }
+  geminiDir: string
+}
+
+export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
+  const file = path.join(home, 'fake-agy-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as AgyCall)
+}
+
+export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
+  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
+
+export function ownersGemini(env: E2EEnv): string {
+  return path.join(env.home, '.gemini')
+}
+
+export function agyTranscriptOf(
+  env: E2EEnv,
+  conversationId: string,
+  geminiDir = ownersGemini(env)
+): string {
+  const file = path.join(
+    geminiDir,
+    'antigravity-cli',
+    'brain',
+    conversationId,
+    '.system_generated',
+    'logs',
+    'transcript.jsonl'
+  )
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+}
+
+// AGY§4 AGY§5
+export function trustInAgy(env: E2EEnv, dir: string): void {
+  const app = path.join(ownersGemini(env), 'antigravity-cli')
+  fs.mkdirSync(app, { recursive: true })
+  fs.writeFileSync(
+    path.join(app, 'settings.json'),
+    JSON.stringify({ trustedWorkspaces: [fs.realpathSync(dir)] })
+  )
+}
+
+export interface MuseCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  sessionId: string
+  pathHead: string
+  configHome: string | null
+  credentials: string | null
+}
+
+export function museCalls(env: E2EEnv): MuseCall[] {
+  const file = path.join(env.home, 'fake-muse-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as MuseCall)
+}
+
+export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
+  const file = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake', `${sessionId}.json`)
+  try {
+    const s = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      items: { kind: string; text: string }[]
+    }
+    return s.items.filter((i) => i.kind === 'agentMessage').map((i) => i.text)
+  } catch {
+    return []
+  }
+}
+
+// MUSE§10
+export function trustInMuse(env: E2EEnv, dir: string): void {
+  const config = path.join(env.home, '.config', 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(
+    path.join(config, 'trust.json'),
+    JSON.stringify({
+      schema_version: 1,
+      projects: { [fs.realpathSync(dir)]: { decision: 'trusted' } }
+    })
+  )
 }
 
 export function addCodexAccount(env: E2EEnv, authJson: string): void {
   const accountHome = path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)
   fs.mkdirSync(accountHome, { recursive: true })
-  fs.writeFileSync(path.join(accountHome, 'auth.json'), authJson)
+  fs.writeFileSync(path.join(accountHome, 'auth.json'), authJson, { mode: 0o600 })
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
   seedSettings(env, {
@@ -291,6 +448,49 @@ export interface FakeGhItem {
   isCrossRepository?: boolean
 }
 
+export function fakeGhEnvFile(env: E2EEnv): string {
+  return path.join(env.home, 'fake-gh-env.txt')
+}
+
+export const GIT_ACCOUNT_KEYCHAIN_SERVICE = 'koloft-dev-git-github.com'
+
+export function seedGitAccount(
+  env: E2EEnv,
+  login: string,
+  token: string,
+  picks: string[] = []
+): void {
+  addKeychainEntry(env, GIT_ACCOUNT_KEYCHAIN_SERVICE, login, token)
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    gitAccounts?: unknown[]
+    gitPicks?: unknown[]
+  }
+  const accounts = current.gitAccounts ?? []
+  seedSettings(env, {
+    gitAccounts: [
+      ...accounts,
+      {
+        host: 'github.com',
+        login,
+        id: 4200 + accounts.length,
+        name: login,
+        default: accounts.length === 0,
+        status: 'ok',
+        addedAt: 1 + accounts.length
+      }
+    ],
+    gitPicks: [
+      ...(current.gitPicks ?? []),
+      ...picks.map((ws) => ({
+        repo: fs.realpathSync(path.join(ws, '.git')),
+        host: 'github.com',
+        login
+      }))
+    ]
+  })
+}
+
 export function installFakeGh(
   env: E2EEnv,
   answer: {
@@ -313,6 +513,7 @@ export function installFakeGh(
     path.join(env.fakeBin, 'gh'),
     `#!/bin/sh\n` +
       `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
+      `printf 'GH_TOKEN=%s GH_ENTERPRISE_TOKEN=%s GH_HOST=%s\\n' "$GH_TOKEN" "$GH_ENTERPRISE_TOKEN" "$GH_HOST" >> ${JSON.stringify(fakeGhEnvFile(env))}\n` +
       (answer.exitCode
         ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
         : '') +

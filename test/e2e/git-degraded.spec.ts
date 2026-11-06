@@ -130,7 +130,7 @@ test.describe('Git freshness · degraded data (fetch failed, auto-fetch off, fet
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
       await expect(wsRows(page, 'repo')).toHaveCount(1, { timeout: 40_000 })
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
 
       expect(headSha(fx)).toBe(before)
       await expect(page.locator('.toast', { hasText: 'fast-forwarded' })).toHaveCount(0)

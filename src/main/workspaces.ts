@@ -2,7 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import type {
+  BackendId,
   DiscoveredFolder,
+  FolderUse,
   LayoutV6,
   ProjectInfo,
   BackendSessionRow,
@@ -11,6 +13,7 @@ import type {
   WorkspaceAddResult,
   WorkspaceFreshness,
   WorkspaceGithub,
+  WorkspaceGitAccount,
   WorkspaceRemoveResult,
   WorkspaceRows,
   WorktreeInfo
@@ -41,21 +44,37 @@ import {
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
 import { dirExists } from './fileTree'
+import { dirExistsSync } from './resumePlan'
 import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
+import {
+  isWorkspaceWorkbenchKey,
+  workspaceOfWorkbenchKey,
+  WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+} from '@shared/workbenchState'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
+import { isUnderAnyRoot } from './browserSecurity'
+import { mergeUse } from '@shared/firstRun'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
+const A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS = 10_000
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
-const JSONL_TAIL_BYTES = 64 * 1024
+const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
 const TRANSCRIPTS_OPEN_AT_ONCE = 16
+
+interface ListedTranscript {
+  id: string
+  mtime: number
+  hasTitleSidecar: boolean
+}
 
 interface HeadScan {
   size: number
@@ -73,9 +92,24 @@ export interface LiveSession {
   relocated?: boolean
 }
 
+function addUse(into: Map<string, DiscoveredFolder>, at: string, use: DiscoveredFolder): void {
+  const prev = into.get(at)
+  const agents = { ...prev?.agents }
+  for (const [agent, u] of Object.entries(use.agents) as [BackendId, FolderUse][])
+    agents[agent] = mergeUse(agents[agent], u)
+  into.set(at, { path: at, ...mergeUse(prev, use), agents })
+}
+
+const MAC_SCRATCH_ROOTS = ['/tmp', '/private/tmp', '/var/folders', '/private/var/folders']
+
+export function scratchRootsAround(home: string, tmpdir: string): string[] {
+  return [tmpdir, ...MAC_SCRATCH_ROOTS].filter((r) => !isUnderAnyRoot(home, [r]))
+}
+
 export interface WorkspaceManagerDeps {
-  additionalRows?(workspacePath: string): BackendSessionRow[]
+  additionalRows?(workspacePath: string): (BackendSessionRow & { backendId: BackendId })[]
   additionalMembers?(): Set<string>
+  additionalFolders?(): Promise<DiscoveredFolder[]>
   projectsRoot: string
   loadLayout(): LayoutV6
   saveLayout(layout: LayoutV6): void
@@ -86,6 +120,8 @@ export interface WorkspaceManagerDeps {
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
   github?(wsPath: string): WorkspaceGithub | undefined
+  gitAccount?(wsPath: string): WorkspaceGitAccount | undefined
+  gitPickable?(wsPath: string): boolean
   onRescanned?(wsPaths: string[]): void
   jobCountFor?(wsPath: string): number
   remoteProjectsRoot(host: string): string
@@ -97,16 +133,10 @@ export interface WorkspaceManagerDeps {
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
+  scratchRoots?: readonly string[]
+  butlerFolder?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
-}
-
-function dirExistsSync(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory()
-  } catch {
-    return false
-  }
 }
 
 function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
@@ -144,7 +174,7 @@ async function readJsonlHeadMeta(
   }
 }
 
-async function readJsonlTailLines(file: string): Promise<string[]> {
+async function readJsonlTailLines(file: string, untilWorktreeRecord: boolean): Promise<string[]> {
   let fh: fs.promises.FileHandle
   try {
     fh = await fs.promises.open(file, 'r')
@@ -152,12 +182,22 @@ async function readJsonlTailLines(file: string): Promise<string[]> {
     return []
   }
   try {
-    const size = (await fh.stat()).size
-    const start = Math.max(0, size - JSONL_TAIL_BYTES)
-    const buf = Buffer.allocUnsafe(size - start)
-    await fh.read(buf, 0, buf.length, start)
-    const lines = buf.toString('utf8').split('\n')
-    return start > 0 ? lines.slice(1) : lines
+    let start = (await fh.stat()).size
+    let tail = Buffer.alloc(0)
+    for (let chunk = JSONL_TAIL_FIRST_READ_BYTES; ; chunk *= 2) {
+      const from = Math.max(0, start - chunk)
+      const head = Buffer.alloc(start - from)
+      await fh.read(head, 0, head.length, from)
+      tail = Buffer.concat([head, tail])
+      start = from
+      const lines = tail.toString('utf8').split('\n')
+      const whole = start === 0 ? lines : lines.slice(1)
+      if (start === 0 || !untilWorktreeRecord) return whole
+      const holdsWorktreeRecord = whole.some(
+        (l) => l.includes('"type":"worktree-state"') || l.includes('"type":"relocated"')
+      )
+      if (holdsWorktreeRecord) return whole
+    }
   } finally {
     await fh.close()
   }
@@ -175,6 +215,17 @@ function gitWorktreeEntries(root: string): Promise<WorktreeEntry[]> {
   })
 }
 
+const NO_LINKED_WORKTREES_STAMP = 0
+
+// PLATFORM§30
+async function linkedWorktreesStamp(root: string): Promise<number | null> {
+  try {
+    return (await fs.promises.stat(path.join(root, '.git', 'worktrees'))).mtimeMs
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? NO_LINKED_WORKTREES_STAMP : null
+  }
+}
+
 export class WorkspaceManager {
   private layout: LayoutV6
   private rowsCache: WorkspaceRows[] = []
@@ -188,12 +239,14 @@ export class WorkspaceManager {
   private transcriptFileById = new Map<string, string>()
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
+  private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
   private rootWatchers = new Map<string, fs.FSWatcher>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
   private timer?: NodeJS.Timeout
   private panelTimer?: NodeJS.Timeout
   private scanning = false
   private rescanQueued = false
+  private scanWaiters: (() => void)[] = []
   private lastRunningKey = ''
   private lastLiveKey = ''
   private disposed = false
@@ -201,6 +254,7 @@ export class WorkspaceManager {
   private headScansSeen = new Set<string>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
   private knownTranscripts = new Set<string>()
+  private worktreeDirsByStamp = new Map<string, { stamp: number; dirs: string[] }>()
   private lastAdditionalKey = ''
 
   constructor(private deps: WorkspaceManagerDeps) {
@@ -231,6 +285,21 @@ export class WorkspaceManager {
     )
   }
 
+  transcriptFiles(): { file: string; workspace: string }[] {
+    return [...this.transcriptFileById].flatMap(([id, file]) => {
+      const workspace = this.wsBySession.get(id)
+      return workspace ? [{ file, workspace }] : []
+    })
+  }
+
+  sessionPlaces(): Map<string, SessionPlace> {
+    return new Map(
+      [...this.allRowsCache].flatMap(([workspace, rows]) =>
+        rows.map((r) => [r.id, { workspace, title: r.title }] as const)
+      )
+    )
+  }
+
   findRow(sessionId: string): SessionRow | undefined {
     for (const rows of this.allRowsCache.values()) {
       const hit = rows.find((r) => r.id === sessionId)
@@ -248,7 +317,7 @@ export class WorkspaceManager {
   }
 
   private hidden(id: string): boolean {
-    return this.deps.hiddenRow?.(id) ?? false
+    return this.leavingTheirWorktree.has(id) || (this.deps.hiddenRow?.(id) ?? false)
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
@@ -315,37 +384,48 @@ export class WorkspaceManager {
     }))
   }
 
-  // CC§2
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
-    const byRoot = new Map<string, DiscoveredFolder>()
-    const stats = new Map<string, { size: number; mtimeMs: number }>()
     const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
-    const projects = this.deps.projectsRoot
-    for (const slug of await this.listProjectSlugs(projects)) {
-      const files = await this.listJsonl(projects, slug, stats)
-      let cwd = await this.readFirstCwd(projects, slug, files, stats)
-      if (!cwd) continue
-      const wt = cwd.indexOf(wtMark)
-      if (wt !== -1) cwd = cwd.slice(0, wt)
-      if (!(await dirExists(cwd))) continue
-      const root = this.deps.projectInfo(cwd).root
+    const used = await Promise.all([
+      this.claudeUsedFolders(),
+      this.deps.additionalFolders?.() ?? []
+    ])
+    const byCwd = new Map<string, DiscoveredFolder>()
+    for (const use of used.flat()) {
+      const wt = use.path.indexOf(wtMark)
+      addUse(byCwd, wt === -1 ? use.path : use.path.slice(0, wt), use)
+    }
+    const there = await Promise.all([...byCwd.keys()].map((cwd) => dirExists(cwd)))
+    const byRoot = new Map<string, DiscoveredFolder>()
+    for (const [i, use] of [...byCwd.values()].entries()) {
+      if (!there[i]) continue
+      const root = this.deps.projectInfo(use.path).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
-      const mtime = Math.max(...files.map((f) => f.mtime))
-      const prev = byRoot.get(root)
-      if (prev) {
-        prev.sessions += files.length
-        prev.mtime = Math.max(prev.mtime, mtime)
-      } else {
-        byRoot.set(root, { path: root, sessions: files.length, mtime })
-      }
+      if (isUnderAnyRoot(root, this.deps.scratchRoots ?? [])) continue
+      addUse(byRoot, root, use)
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
   }
 
+  // CC§2
+  private async claudeUsedFolders(): Promise<DiscoveredFolder[]> {
+    const stats = new Map<string, { size: number; mtimeMs: number }>()
+    const projects = this.deps.projectsRoot
+    const used: DiscoveredFolder[] = []
+    for (const slug of await this.listProjectSlugs(projects)) {
+      const files = await this.listJsonl(projects, slug, stats)
+      const cwd = await this.readFirstCwd(projects, slug, files, stats)
+      if (!cwd) continue
+      const use = { sessions: files.length, mtime: Math.max(...files.map((f) => f.mtime)) }
+      used.push({ path: cwd, ...use, agents: { claude: use } })
+    }
+    return used
+  }
+
   private isConductorFolder(dir: string): boolean {
     const root = this.deps.conductorsRoot
-    return !!root && (dir === root || dir.startsWith(root + path.sep))
+    return !!root && isUnderAnyRoot(dir, [root])
   }
 
   async worktrees(wsPath: string): Promise<WorktreeInfo[]> {
@@ -359,6 +439,19 @@ export class WorkspaceManager {
     const { key } = this.scope(wsPath)
     if (key) return this.deps.remoteGit?.(key.host, key.path)?.worktrees ?? []
     return (await this.missing(wsPath)) ? [] : gitWorktreeEntries(wsPath)
+  }
+
+  private async worktreeDirs(wsPath: string, isGit: boolean): Promise<string[]> {
+    const list = async (): Promise<string[]> =>
+      (await this.worktreeEntries(wsPath)).map((e) => e.dir)
+    if (this.scope(wsPath).key) return list()
+    if (!isGit) return []
+    const stamp = await linkedWorktreesStamp(wsPath)
+    const known = this.worktreeDirsByStamp.get(wsPath)
+    if (stamp !== null && known?.stamp === stamp) return known.dirs
+    const dirs = await list()
+    if (stamp !== null) this.worktreeDirsByStamp.set(wsPath, { stamp, dirs })
+    return dirs
   }
 
   add(rawPath: string): WorkspaceAddResult {
@@ -424,8 +517,33 @@ export class WorkspaceManager {
     this.unpin(wsPath)
   }
 
-  launchStarted(tabId: string, cwd: string, worktree?: string, host?: string): void {
-    this.launches.set(tabId, { tabId, cwd, worktree, host })
+  launchStarted(
+    tabId: string,
+    cwd: string,
+    worktree?: string,
+    host?: string,
+    pickedSessionId?: string
+  ): void {
+    this.launches.set(tabId, { tabId, cwd, worktree, host, pickedSessionId })
+    this.scheduleRescan()
+  }
+
+  leavingWorktree(sessionId: string, tabId: string): void {
+    this.leavingTheirWorktree.set(sessionId, { tabId, tabEnded: false })
+    this.scheduleRescan()
+  }
+
+  leftWorktree(sessionId: string, removed: boolean): void {
+    const leaving = this.leavingTheirWorktree.get(sessionId)
+    if (!leaving) return
+    const showAgain = (): void => {
+      if (this.leavingTheirWorktree.get(sessionId) !== leaving) return
+      this.leavingTheirWorktree.delete(sessionId)
+      this.scheduleRescan()
+    }
+    if (!removed) return showAgain()
+    leaving.tabEnded = true
+    setTimeout(showAgain, A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS).unref()
     this.scheduleRescan()
   }
 
@@ -444,6 +562,14 @@ export class WorkspaceManager {
   }
 
   workbenchState(sessionId: string): SessionWorkbenchState {
+    if (isWorkspaceWorkbenchKey(sessionId)) {
+      return (
+        this.layout.workspacePanels?.[workspaceOfWorkbenchKey(sessionId)] ?? {
+          open: WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT,
+          tabs: []
+        }
+      )
+    }
     return resolveWorkbenchState(this.layout, sessionId)
   }
 
@@ -452,6 +578,16 @@ export class WorkspaceManager {
   }
 
   setWorkbenchState(sessionId: string, state: SessionWorkbenchState): void {
+    if (isWorkspaceWorkbenchKey(sessionId)) {
+      const wsPath = workspaceOfWorkbenchKey(sessionId)
+      if (!this.layout.workspaces.some((w) => w.path === wsPath)) return
+      this.layout = {
+        ...this.layout,
+        workspacePanels: { ...this.layout.workspacePanels, [wsPath]: state }
+      }
+      this.saveSoon()
+      return
+    }
     if (!this.isMember(sessionId)) return
     this.layout = { ...this.layout, panels: withWorkbenchState(this.layout, sessionId, state) }
     this.saveSoon()
@@ -482,14 +618,19 @@ export class WorkspaceManager {
   }
 
   onSessionBound(sessionId: string): void {
-    if (!sessionId || this.layout.members.includes(sessionId)) return
+    this.adopt([sessionId])
+  }
+
+  adopt(sessionIds: string[]): void {
+    const fresh = [...new Set(sessionIds)].filter((id) => id && !this.layout.members.includes(id))
+    if (fresh.length === 0) return
+    const panels = Object.fromEntries(
+      fresh.map((id) => [id, { open: this.layout.workbench.defaultOpen, tabs: [] }])
+    )
     this.layout = {
       ...this.layout,
-      members: [...this.layout.members, sessionId],
-      panels: {
-        [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] },
-        ...this.layout.panels
-      }
+      members: [...this.layout.members, ...fresh],
+      panels: { ...panels, ...this.layout.panels }
     }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
@@ -569,6 +710,7 @@ export class WorkspaceManager {
     this.disposed = true
     this.flushPanelSave()
     if (this.timer) clearTimeout(this.timer)
+    for (const done of this.scanWaiters.splice(0)) done()
     for (const w of this.rootWatchers.values()) w.close()
     this.rootWatchers.clear()
     for (const w of this.bucketWatchers.values()) w.close()
@@ -594,6 +736,11 @@ export class WorkspaceManager {
     const next = this.layout.workspaces.filter((w) => w.path !== wsPath)
     if (next.length === this.layout.workspaces.length) return
     this.layout.workspaces = next
+    if (this.layout.workspacePanels?.[wsPath]) {
+      const workspacePanels = { ...this.layout.workspacePanels }
+      delete workspacePanels[wsPath]
+      this.layout.workspacePanels = workspacePanels
+    }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
   }
@@ -618,6 +765,14 @@ export class WorkspaceManager {
     )
   }
 
+  whenScanned(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.scanWaiters.push(resolve)
+      this.scheduleRescan()
+    })
+  }
+
   private scheduleRescan(): void {
     if (this.disposed || this.timer) return
     this.timer = setTimeout(() => {
@@ -633,10 +788,12 @@ export class WorkspaceManager {
       return
     }
     this.scanning = true
+    const waiting = this.scanWaiters.splice(0)
     try {
       await this.doRescan()
     } finally {
       this.scanning = false
+      for (const done of waiting) done()
       if (this.rescanQueued) {
         this.rescanQueued = false
         this.scheduleRescan()
@@ -655,12 +812,12 @@ export class WorkspaceManager {
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    const bindings = this.deps.runningBindings()
-    this.lastRunningKey = [...bindings.keys()].join(',')
-    const runningIds = new Set(bindings.keys())
-
-    const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
-    for (const l of this.launches.values()) l.sessionId = sessionIdByTab.get(l.tabId)
+    const boundAtStart = this.deps.runningBindings()
+    this.lastRunningKey = [...boundAtStart.keys()].join(',')
+    for (const [id, leaving] of this.leavingTheirWorktree) {
+      const tab = boundAtStart.get(id)
+      if (tab && tab !== leaving.tabId) this.leavingTheirWorktree.delete(id)
+    }
     const launches = [...this.launches.values()]
 
     const payload: WorkspaceRows[] = []
@@ -672,28 +829,37 @@ export class WorkspaceManager {
     const bucketDirs: string[] = []
     const workspaceSlugs: string[] = []
     const wantedBucketDirs = new Set<string>()
+    const listed = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
-    for (const ws of this.layout.workspaces) {
+    const butler = this.deps.butlerFolder
+    for (const ws of [...this.layout.workspaces, ...(butler ? [{ path: butler }] : [])]) {
       const { key, root, scanPath } = this.scope(ws.path)
       const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
       const slugs = await slugsOf(root)
-      const wtDirs = (await this.worktreeEntries(ws.path)).map((e) => e.dir)
+      const isGit = key
+        ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
+        : !missing && (await isGitCheckoutAsync(ws.path))
+      const wtDirs = await this.worktreeDirs(ws.path, isGit)
       const buckets = await this.resolveBucketsReadingAhead(root, scanPath, wtDirs, slugs)
       if (key) for (const b of buckets) b.host = key.host
       if (key && scanPath !== key.path) {
         for (const l of launches) if (l.host === key.host && l.cwd === key.path) l.cwd = scanPath
       }
       const dirBySlug = new Map(buckets.map((b) => [b.slug, b.dir]))
-      const wsRunningIds = key
-        ? new Set([...runningIds, ...(this.deps.remoteRunning?.(key.host) ?? [])])
-        : runningIds
       const claudeRow = (r: BackendSessionRow): SessionRow => ({
         ...r,
         ...sourceOf('claude', ws.path)
       })
       const disk = await this.readBuckets(root, scanPath, buckets, dirBySlug, !key)
+      const bindings = this.deps.runningBindings()
+      const sessionIdByTab = new Map([...bindings].map(([sid, tab]) => [tab, sid]))
+      for (const l of launches) l.sessionId = sessionIdByTab.get(l.tabId)
+      const wsRunningIds = new Set([
+        ...bindings.keys(),
+        ...((key && this.deps.remoteRunning?.(key.host)) || [])
+      ])
       const allRows = aggregateSessions(buckets, {
         listJsonl: (slug) => {
           const files = disk.files.get(slug) ?? []
@@ -716,39 +882,44 @@ export class WorkspaceManager {
         now: Date.now
       }).map(claudeRow)
       allRowsByWs.set(ws.path, [...allRows])
-      if (!key) {
-        const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
-          ...r,
-          ...sourceOf('codex', ws.path)
-        }))
-        for (const r of additional) bucketDirById.set(r.id, r.cwd)
-        for (const r of additional) {
-          if (r.pending) continue
-          const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
-          allRows.splice(at < 0 ? allRows.length : at, 0, r)
-        }
-        allRows.unshift(...additional.filter((r) => r.pending))
+      const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
+        ...r,
+        ...sourceOf(r.backendId, ws.path)
+      }))
+      for (const r of additional) bucketDirById.set(r.id, r.cwd)
+      for (const r of additional) {
+        if (r.pending) continue
+        const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
+        allRows.splice(at < 0 ? allRows.length : at, 0, r)
       }
+      allRows.unshift(...additional.filter((r) => r.pending))
       for (const r of allRows) wsBySession.set(r.id, ws.path)
+      for (const r of filterOwned(allRows, owned, wsRunningIds)) listed.add(r.id)
       const visible = allRows
         .filter((r) => !this.hidden(r.id))
         .map((r) => (!r.running && wsRunningIds.has(r.id) ? { ...r, running: true } : r))
-      const rows = filterOwned(visible, owned, wsRunningIds)
+      const ownedOrRunning = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
         wantedBucketDirs.add(path.join(root, b.slug))
       }
-      const pending = resolvePending(buckets, launches, rows, Date.now())
+      const pending = resolvePending(buckets, launches, ownedOrRunning, Date.now())
+      const startingTabs = new Set(pending.rows.filter((r) => r.pending).map((r) => r.id))
+      const awaitingTheirTab = new Set(
+        launches.flatMap((l) =>
+          startingTabs.has(l.tabId) && l.pickedSessionId ? [l.pickedSessionId] : []
+        )
+      )
+      const rows = ownedOrRunning.filter((r) => !awaitingTheirTab.has(r.id))
       for (const tabId of pending.promoted) this.launches.delete(tabId)
       for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({
         workspace: {
           path: ws.path,
           missing,
-          isGit: key
-            ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
-            : !missing && (await isGitCheckoutAsync(ws.path)),
+          isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
+          ...(ws.path === butler && { butler: true as const }),
           ...(key
             ? {
                 remote: {
@@ -767,6 +938,8 @@ export class WorkspaceManager {
       })
     }
 
+    for (const [id, leaving] of this.leavingTheirWorktree)
+      if (leaving.tabEnded && !listed.has(id)) this.leavingTheirWorktree.delete(id)
     this.state = { bucketDirs, workspaceSlugs }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
@@ -776,12 +949,13 @@ export class WorkspaceManager {
     this.statByFile.clear()
 
     // CC§2
-    const liveIds = new Set<string>(this.deps.runningBindings().keys())
+    const liveIds = new Set<string>()
     for (const root of this.roots()) {
       const slugs = await slugsOf(root)
       for (const ids of await Promise.all(slugs.map((slug) => this.listJsonlIds(root, slug))))
         for (const id of ids) liveIds.add(id)
     }
+    for (const id of this.deps.runningBindings().keys()) liveIds.add(id)
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
@@ -848,7 +1022,7 @@ export class WorkspaceManager {
     dirBySlug: Map<string, string>,
     local: boolean
   ): Promise<{
-    files: Map<string, { id: string; mtime: number }[]>
+    files: Map<string, ListedTranscript[]>
     meta: Map<string, SessionMeta>
     dirs: Map<string, boolean>
   }> {
@@ -856,15 +1030,15 @@ export class WorkspaceManager {
     const files = new Map(
       await Promise.all(slugs.map(async (s) => [s, await this.listJsonl(root, s)] as const))
     )
-    const transcripts = slugs.flatMap((s) => (files.get(s) ?? []).map((f) => [s, f.id] as const))
+    const transcripts = slugs.flatMap((s) => (files.get(s) ?? []).map((f) => [s, f] as const))
     const meta = new Map(
       await mapAtMost(
         transcripts,
         TRANSCRIPTS_OPEN_AT_ONCE,
-        async ([s, id]) =>
+        async ([s, f]) =>
           [
-            path.join(s, id),
-            await this.readMeta(root, s, id, dirBySlug.get(s) ?? scanPath)
+            path.join(s, f.id),
+            await this.readMeta(root, s, f, dirBySlug.get(s) ?? scanPath)
           ] as const
       )
     )
@@ -893,7 +1067,9 @@ export class WorkspaceManager {
       workspace: {
         ...e.workspace,
         freshness: this.deps.freshness?.(e.workspace.path),
-        github: this.deps.github?.(e.workspace.path)
+        github: this.deps.github?.(e.workspace.path),
+        gitAccount: this.deps.gitAccount?.(e.workspace.path),
+        ...(this.deps.gitPickable?.(e.workspace.path) && { gitPickable: true })
       },
       rows: e.rows.map((r) => {
         const live = liveById.get(r.id)
@@ -939,6 +1115,7 @@ export class WorkspaceManager {
 
   private watchRoot(root: string): void {
     try {
+      fs.mkdirSync(root, { recursive: true })
       const watcher = fs.watch(root, (_event, filename) => {
         if (!filename) return
         if (
@@ -963,15 +1140,12 @@ export class WorkspaceManager {
         this.bucketWatchers.delete(dir)
       }
     }
-    const localRoot = path.resolve(this.deps.projectsRoot)
     for (const dir of wanted) {
       if (this.bucketWatchers.has(dir)) continue
-      const local = path.dirname(dir) === localRoot
       try {
         // PLATFORM§40
         const watcher = fs.watch(dir, (_event, filename) => {
-          if (local && filename && this.isLiveTranscript(path.join(dir, filename.toString())))
-            return
+          if (filename && this.isLiveTranscript(path.join(dir, filename.toString()))) return
           this.scheduleRescan()
         })
         watcher.on('error', () => {
@@ -1019,7 +1193,7 @@ export class WorkspaceManager {
     root: string,
     slug: string,
     stats = this.statByFile
-  ): Promise<{ id: string; mtime: number }[]> {
+  ): Promise<ListedTranscript[]> {
     const dir = path.join(root, slug)
     let names: fs.Dirent[]
     try {
@@ -1027,21 +1201,23 @@ export class WorkspaceManager {
     } catch {
       return []
     }
+    const files = new Set(names.filter((e) => e.isFile()).map((e) => e.name))
     const found = await Promise.all(
       names
         .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
         .map(async (e) => {
           const file = path.join(dir, e.name)
+          const id = e.name.slice(0, -'.jsonl'.length)
           try {
             const st = await fs.promises.stat(file)
             stats.set(file, { size: st.size, mtimeMs: st.mtimeMs })
-            return { id: e.name.slice(0, -'.jsonl'.length), mtime: st.mtimeMs }
+            return { id, mtime: st.mtimeMs, hasTitleSidecar: files.has(id + '.title') }
           } catch {
             return null
           }
         })
     )
-    return found.filter((f): f is { id: string; mtime: number } => f !== null)
+    return found.filter((f): f is ListedTranscript => f !== null)
   }
 
   private async listJsonlIds(root: string, slug: string): Promise<string[]> {
@@ -1077,12 +1253,12 @@ export class WorkspaceManager {
     return meta
   }
 
-  private async scanTail(file: string): Promise<JsonlTail> {
+  private async scanTail(file: string, untilWorktreeRecord: boolean): Promise<JsonlTail> {
     const st = this.statByFile.get(file)
     const head = this.headScans.get(file)
     const prev = head?.tail
     if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
-    const tail = extractJsonlTail(await readJsonlTailLines(file))
+    const tail = extractJsonlTail(await readJsonlTailLines(file, untilWorktreeRecord))
     if (head && st) head.tail = { ...st, tail }
     return tail
   }
@@ -1104,27 +1280,29 @@ export class WorkspaceManager {
   private async readMeta(
     root: string,
     slug: string,
-    id: string,
+    { id, hasTitleSidecar }: ListedTranscript,
     bucketDir: string
   ): Promise<SessionMeta> {
     const file = path.join(root, slug, id + '.jsonl')
     const partial: Partial<SessionMeta> = { ...(await this.scanHead(file)) }
     // CC§4
     if (partial.worktreeState) {
-      const tail = await this.scanTail(file)
+      const tail = await this.scanTail(file, true)
       if (tail.worktreeState === null) {
         partial.worktreeState = undefined
         partial.cwd = tail.relocatedCwd
       } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
     }
     let sidecar = ''
-    try {
-      sidecar = (await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')).trim()
-    } catch {}
+    if (hasTitleSidecar) {
+      try {
+        sidecar = (await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')).trim()
+      } catch {}
+    }
     if (sidecar) partial.customTitle = sidecar
     // CC§9
     else if (partial.customTitle && this.headScans.get(file)?.final) {
-      const renamed = (await this.scanTail(file)).customTitle
+      const renamed = (await this.scanTail(file, false)).customTitle
       if (renamed) partial.customTitle = renamed
     }
     let timestamp = partial.timestamp

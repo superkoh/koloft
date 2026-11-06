@@ -48,9 +48,8 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
   }
 }
 
-// PLATFORM§32
-export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
-  const { ok, out } = await ghRead([
+export function openCountsArgs(repo: GithubRepo): string[] {
+  return [
     'api',
     'graphql',
     '-f',
@@ -59,11 +58,27 @@ export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null>
     `name=${repo.repo}`,
     '-f',
     `query=${OPEN_COUNTS_QUERY}`
-  ])
+  ]
+}
+
+// PLATFORM§32
+export async function ghOpenCounts(
+  repo: GithubRepo,
+  env?: NodeJS.ProcessEnv
+): Promise<OpenCounts | null> {
+  const { ok, out } = await ghRead(openCountsArgs(repo), env)
   return ok ? parseOpenCounts(out) : null
 }
 
 const OPEN_ITEMS_LIMIT = 50
+
+function checkedOutBranch(pr: {
+  number: number
+  isCrossRepository?: unknown
+  headRefName?: unknown
+}): string {
+  return pr.isCrossRepository === true ? `pr-${pr.number}` : String(pr.headRefName ?? '')
+}
 
 function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null {
   const v = ghJsonArray(stdout)
@@ -84,9 +99,7 @@ function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null 
       title: x.title,
       url: x.url,
       updatedAt: x.updatedAt,
-      ...(kind === 'pr'
-        ? { branch: x.isCrossRepository === true ? `pr-${x.number}` : x.headRefName }
-        : {})
+      ...(kind === 'pr' ? { branch: checkedOutBranch(x) } : {})
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
@@ -121,11 +134,118 @@ export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpe
   return parseOpenItems(slug(repo), issues, prs)
 }
 
-export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {
+export type CheckSummary = 'passing' | 'failing' | 'running' | 'none'
+
+export interface TodoPull {
+  number: number
+  title: string
+  author: string
+  reviewers: string[]
+  branch: string
+  draft: boolean
+  checks: CheckSummary
+  files: number
+  closes: number[]
+  openedAt: string
+}
+
+export type TodoPulls =
+  | { state: 'ok'; me: string | null; pulls: TodoPull[]; closesUnknown: boolean }
+  | { state: 'failed'; why: string }
+
+const TODO_PULLS_LIMIT = 100
+const MERGED_PULLS_IN_ONE_PAGE = 100
+const PULL_FIELDS =
+  'number,title,author,reviewRequests,headRefName,isCrossRepository,isDraft,changedFiles,createdAt,statusCheckRollup'
+const CLOSES_FIELD = 'closingIssuesReferences'
+const FAILED_CONCLUSIONS = new Set([
+  'FAILURE',
+  'ERROR',
+  'CANCELLED',
+  'TIMED_OUT',
+  'ACTION_REQUIRED',
+  'STARTUP_FAILURE'
+])
+
+export function checkSummary(rollup: unknown): CheckSummary {
+  const runs = Array.isArray(rollup) ? (rollup as Record<string, unknown>[]) : []
+  if (!runs.length) return 'none'
+  const outcome = (r: Record<string, unknown>): unknown => r.conclusion || r.state
+  if (runs.some((r) => FAILED_CONCLUSIONS.has(String(outcome(r))))) return 'failing'
+  const done = (r: Record<string, unknown>): boolean =>
+    r.__typename === 'StatusContext'
+      ? r.state !== 'PENDING' && r.state !== 'EXPECTED'
+      : r.status === 'COMPLETED'
+  return runs.every(done) ? 'passing' : 'running'
+}
+
+function loginOf(x: unknown): string {
+  const r = (x ?? {}) as { login?: unknown; slug?: unknown; name?: unknown }
+  return [r.login, r.slug, r.name].find((v): v is string => typeof v === 'string' && !!v) ?? ''
+}
+
+function parseTodoPulls(stdout: string): TodoPull[] | null {
+  const v = ghJsonArray(stdout)
+  if (!v) return null
+  return v
+    .filter((x) => x && Number.isInteger(x.number) && typeof x.title === 'string')
+    .map((x) => ({
+      number: x.number,
+      title: x.title,
+      author: loginOf(x.author),
+      reviewers: (Array.isArray(x.reviewRequests) ? x.reviewRequests : [])
+        .map(loginOf)
+        .filter(Boolean),
+      branch: checkedOutBranch(x),
+      draft: x.isDraft === true,
+      checks: checkSummary(x.statusCheckRollup),
+      files: Number.isInteger(x.changedFiles) ? x.changedFiles : 0,
+      closes: (Array.isArray(x[CLOSES_FIELD]) ? x[CLOSES_FIELD] : [])
+        .map((i: { number?: unknown }) => i?.number)
+        .filter((n: unknown): n is number => Number.isInteger(n)),
+      openedAt: typeof x.createdAt === 'string' ? x.createdAt : ''
+    }))
+}
+
+// PLATFORM§61
+export async function listTodoPulls(gh: Gh, repo: GithubRepo): Promise<TodoPulls> {
+  const list = (fields: string): Promise<GhResult> =>
+    gh([
+      'pr',
+      'list',
+      '--repo',
+      slug(repo),
+      '--state',
+      'open',
+      '--limit',
+      String(TODO_PULLS_LIMIT),
+      '--json',
+      fields
+    ])
+  const [me, full] = await Promise.all([
+    gh(['api', 'user', '--jq', '.login']),
+    list(`${PULL_FIELDS},${CLOSES_FIELD}`)
+  ])
+  const closesUnknown = full.code !== 0 && full.stderr.includes(CLOSES_FIELD)
+  const listed = closesUnknown ? await list(PULL_FIELDS) : full
+  if (listed.missing) return { state: 'failed', why: 'gh is not installed there.' }
+  if (listed.code === GH_SIGNED_OUT) return { state: 'failed', why: 'gh is not signed in there.' }
+  const pulls = listed.code === 0 ? parseTodoPulls(listed.stdout) : null
+  if (!pulls) return { state: 'failed', why: listed.stderr.trim() || 'gh could not list them.' }
+  return { state: 'ok', me: me.code === 0 ? me.stdout.trim() || null : null, pulls, closesUnknown }
+}
+
+export async function ghRead(
+  args: string[],
+  env?: NodeJS.ProcessEnv,
+  cwd?: string
+): Promise<{ ok: boolean; out: string }> {
   try {
     const { stdout } = await execFile('gh', args, {
       timeout: FETCH_TIMEOUT_MS,
-      maxBuffer: MAX_BUFFER
+      maxBuffer: MAX_BUFFER,
+      ...(env && { env }),
+      ...(cwd && { cwd })
     })
     return { ok: true, out: stdout }
   } catch (error) {
@@ -176,8 +296,9 @@ export interface GithubOptions {
   fixture?: GithubFixture | null
   gitBin?: string
   git?: (root: string, args: string[], network: boolean) => Promise<string | null>
-  openCounts?: (repo: GithubRepo) => Promise<OpenCounts | null>
-  gh?: Gh
+  openCounts?: (repo: GithubRepo, root: string) => Promise<OpenCounts | null>
+  countedAs?: (root: string) => string | undefined
+  gh?: (args: string[], root: string) => Promise<GhResult>
   now?: () => number
 }
 
@@ -225,13 +346,14 @@ export class GithubLookup {
     if (this.fixture) return fixtureCounts(this.fixture, root)
     const repo = await this.repoOf(root, false)
     if (!repo || !this.opts.openCounts) return null
-    const key = `${repo.owner}/${repo.repo}`
+    const slug = `${repo.owner}/${repo.repo}`
+    const key = `${this.opts.countedAs?.(root) ?? ''} ${slug}`
     let known = this.counted.get(key)
     if (!known || this.now() - known.at >= TTL_MS) {
-      known = { at: this.now(), counts: await this.opts.openCounts(repo) }
+      known = { at: this.now(), counts: await this.opts.openCounts(repo, root) }
       this.counted.set(key, known)
     }
-    return known.counts && { repo: key, ...known.counts }
+    return known.counts && { repo: slug, ...known.counts }
   }
 
   async ownerSlashName(root: string): Promise<string | null> {
@@ -263,33 +385,83 @@ export class GithubLookup {
     const url =
       what === 'repo'
         ? now.repoUrl
-        : what === 'pulls'
-          ? now.pullsUrl
-          : what === 'compare' && now.branch
-            ? compareUrlOf(now.repoUrl, now.branch)
-            : what === 'pr' && now.pr
-              ? `${now.repoUrl}/pull/${now.pr}`
-              : now.repoUrl
+        : what === 'issues'
+          ? `${now.repoUrl}/issues`
+          : what === 'pulls'
+            ? now.pullsUrl
+            : what === 'compare' && now.branch
+              ? compareUrlOf(now.repoUrl, now.branch)
+              : what === 'pr' && now.pr
+                ? `${now.repoUrl}/pull/${now.pr}`
+                : now.repoUrl
     if (this.fixture) return url
     return (await this.signedIn()) ? url : loginUrlFor(url)
   }
 
+  private ghFor(root: string): Gh | null {
+    const gh = this.opts.gh
+    return gh ? (args) => gh(args, root) : null
+  }
+
   async checks(root: string, pr: number): Promise<PrChecks> {
     const repo = await this.repoFor(root)
-    if (!repo || !this.opts.gh) return { state: 'failed' }
-    return prChecks(this.opts.gh, repo, pr)
+    const gh = this.ghFor(root)
+    if (!repo || !gh) return { state: 'failed' }
+    return prChecks(gh, repo, pr)
   }
 
   async openItems(root: string): Promise<GithubOpenItems> {
     const repo = await this.repoFor(root)
-    if (!repo || !this.opts.gh) return { state: 'no-repo' }
-    return listOpenItems(this.opts.gh, repo)
+    const gh = this.ghFor(root)
+    if (!repo || !gh) return { state: 'no-repo' }
+    return listOpenItems(gh, repo)
+  }
+
+  async todoPulls(root: string): Promise<TodoPulls | null> {
+    const repo = await this.repoFor(root)
+    const gh = this.ghFor(root)
+    return repo && gh ? listTodoPulls(gh, repo) : null
   }
 
   async failingChecksText(root: string, pr: number): Promise<string | null> {
     const repo = await this.repoFor(root)
-    if (!repo || !this.opts.gh) return null
-    return failingChecksText(this.opts.gh, repo, pr)
+    const gh = this.ghFor(root)
+    if (!repo || !gh) return null
+    return failingChecksText(gh, repo, pr)
+  }
+
+  async mergedHeads(root: string, branch: string): Promise<string[] | null> {
+    const heads = await this.mergedHeadsByBranch(root, ['--head', branch])
+    return heads && (heads.get(branch) ?? [])
+  }
+
+  // PLATFORM§32
+  async mergedHeadsByBranch(
+    root: string,
+    by = ['--limit', String(MERGED_PULLS_IN_ONE_PAGE)]
+  ): Promise<Map<string, string[]> | null> {
+    const repo = await this.repoFor(root)
+    if (!repo) return new Map()
+    const gh = this.ghFor(root)
+    if (!gh) return null
+    const r = await gh([
+      'pr',
+      'list',
+      '--repo',
+      slug(repo),
+      '--state',
+      'merged',
+      ...by,
+      '--json',
+      'headRefName,headRefOid'
+    ])
+    const prs = r.code === 0 ? ghJsonArray(r.stdout) : null
+    if (!prs) return null
+    const heads = new Map<string, string[]>()
+    for (const p of prs)
+      if (typeof p?.headRefName === 'string' && typeof p?.headRefOid === 'string')
+        heads.set(p.headRefName, [...(heads.get(p.headRefName) ?? []), p.headRefOid])
+    return heads
   }
 
   private async repoFor(root: string): Promise<GithubRepo | null> {

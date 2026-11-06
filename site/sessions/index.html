@@ -8,8 +8,7 @@
       name="description"
       content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/sessions/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Folders and their sessions — Koloft" />
@@ -36,25 +35,38 @@
       content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/" aria-current="page">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -69,15 +81,14 @@
       <main>
         <h1 class="title">Folders and their sessions</h1>
 
-        <figure class="shot is-narrow" style="--ar: 558 / 800">
+        <figure class="shot is-narrow" style="--ar: 558 / 870">
           <div class="frame">
             <img
               src="../img/a-sidebar.webp"
               width="558"
-              height="800"
-              alt="The sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
+              height="870"
+              alt="Two folders in the sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names; the three open ones also say what their agent did last, like Last: Ran npm run build, and two of them have a red dot; below it the folder harbor-site with one session"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             two folders and their sessions. The bars on the left are the lights: green for a turn
@@ -96,9 +107,13 @@
 
         <h2>Where the list comes from</h2>
         <p>
-          Claude Code and Codex already keep every session in their own files. Koloft reads the
-          chats from there and keeps only a short list of which ones belong to Koloft. Add a folder
-          with <kbd>⇧⌘O</kbd> and its sessions show up under it.
+          Koloft runs four agents: Claude Code, Codex, Meta's Muse Code and Google's Antigravity CLI
+          (<code>agy</code>, the one that took over from Gemini CLI; CLI means command-line tool).
+          Each already keeps every session in its own files. Koloft reads the chats from there and
+          keeps only a short list of which ones belong to Koloft. Add a folder with
+          <kbd>⇧⌘O</kbd> and its sessions show up under it. Where this page says Claude and Codex,
+          what Muse and Antigravity do is on the <a href="../accounts/">accounts</a>,
+          <a href="../remote/">remote</a> and <a href="../agents/">agents</a> pages.
         </p>
         <p>
           A session you started in a plain terminal is not listed by itself. To bring it back,
@@ -108,22 +123,37 @@
         <h2>Start and resume</h2>
         <ul class="dash">
           <li>
-            <kbd>⌘N</kbd> starts a new session. Pick the tool it uses by default in Settings ▸
-            Sessions.
+            <kbd>⌘N</kbd> starts a new session. With more than one agent installed, the button names
+            the one it starts, like <code>Start · Claude ⏎</code>, and a small ▾ at its right end
+            opens a numbered list of all the agents (the default one marked <code>default</code>):
+            press a digit, or <kbd>↓</kbd> <kbd>↑</kbd> and <kbd>⏎</kbd>. <kbd>⇧⏎</kbd> opens the
+            same list; with exactly two agents, and the other one able to run, it starts that one at
+            once. An agent that cannot run says why in the list (<code>Unavailable</code>,
+            <code>No account</code>). Pick the default in Settings ▸ Sessions ▸ Default method.
           </li>
           <li>Click an old row to resume that session.</li>
-          <li>
+          <li id="sleep">
             About half an hour after a session goes quiet (its light turns dim green), it goes to
             sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
             they were. Click the row, or let something send it a message, and the same session wakes
-            in that tab. It stays awake while you look at it, while it still has a red dot, or while
-            a shell tab or an unsaved file is open in it. A session marked Keep running never sleeps
-            (see <a href="#keep-running">below</a>).
+            in that tab. It stays awake while you look at it, while it waits for your OK, or while a
+            shell tab or an unsaved file is open in it. A red dot stays on it while it sleeps. A
+            session marked Keep running never sleeps (see <a href="#keep-running">below</a>).
           </li>
           <li>
             Quit Koloft and open it again, and every session comes back the way it was: the ones
             that were running run again, with the one you were on selected; the ones that were
             asleep stay asleep until you click them; the closed ones stay closed.
+          </li>
+          <li id="quit">
+            If the agent quits on its own with an error (it crashes, is killed, or fails to start),
+            its tab stays open with its last screen. The branch line under the row's title ends with
+            <code>· exited (code N)</code> or <code>· killed (signal N)</code>, and the row's tip
+            reads <code>Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it</code>. If
+            it quits cleanly, as when you type <code>/exit</code>, the tab closes. All four agents
+            do this, on your Mac and on a <a href="../remote/">remote folder</a>. A tab that a
+            <a href="../scheduled/">scheduled job</a> opened stays too once its run has started; if
+            the agent quits before that, the tab closes.
           </li>
         </ul>
         <p>Every row has a light on its left. The colour says what the session is doing.</p>
@@ -142,7 +172,10 @@
               </tr>
               <tr>
                 <td>amber</td>
-                <td>it needs your OK</td>
+                <td>
+                  it needs your OK, or a password, a code or a sign-in (see
+                  <a href="../agents/#secrets">passwords and codes</a>)
+                </td>
               </tr>
               <tr>
                 <td>green</td>
@@ -151,8 +184,8 @@
               <tr>
                 <td>green with <code>↻ N</code></td>
                 <td>
-                  its turn is done, but N things it started still run in the background. Hover the
-                  mark to see them.
+                  its turn is done, but N things it started still run in the background. The light
+                  breathes while they run. Hover the mark to see them.
                 </td>
               </tr>
               <tr>
@@ -166,6 +199,26 @@
             </tbody>
           </table>
         </div>
+        <p id="last-step">
+          An open row can have one more short line under it, about what the agent is doing:
+        </p>
+        <ul class="dash">
+          <li>
+            while it works: the last step it took, like <code>Ran npm test</code> or
+            <code>Edited api.ts</code>
+          </li>
+          <li>
+            while it waits for your OK: what it asks, like
+            <code>Wants to run: rm -rf build</code> or <code>Asks: …</code> (if Koloft cannot tell,
+            <code>Last:</code> and its last step)
+          </li>
+          <li>once its turn is done: the last step, with <code>Last:</code> in front</li>
+          <li>when a Codex plan is ready: <code>Plan ready: implement it?</code></li>
+        </ul>
+        <p>
+          Before the agent has done or asked anything, there is no such line. Claude, Codex, Muse
+          and Antigravity all do this, on your Mac and on a <a href="../remote/">remote folder</a>.
+        </p>
 
         <h2 id="red-dots">Red dots</h2>
         <ul class="dash">
@@ -175,27 +228,43 @@
             which. It sits beside the light; it does not replace it.
           </li>
           <li>
-            Click the row and the dot goes. It is still there after you quit and reopen Koloft
-            (after a restart it always reads "turn done").
+            Looking at the session does not clear the dot. It goes when the session works again: you
+            send it something, answer its question or give your OK, or another session or your
+            butler does. It also goes when you close the tab or archive the session. It is still
+            there after you quit and reopen Koloft (after a restart it always reads "turn done").
+          </li>
+          <li>
+            One kind of dot goes once you look at it: a turn that only reports. That is a turn that
+            ends while the session waits on other work Koloft can see (a session it started or wrote
+            to that is still busy, or a background job it left running), or, with Assist on, a turn
+            whose reply Assist reads as asking you for nothing. Hover the dot: it says "just letting
+            you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
             Notifications and the number goes, but the dots stay.
           </li>
           <li>A folded folder shows how many of its sessions are calling.</li>
+          <li>
+            While any session is calling, a <mark class="hl">bell</mark> with the count sits next to
+            the sidebar button, even with the sidebar hidden. Click it, or press <kbd>⌘J</kbd> (View
+            ▸ Next Waiting Session), to go to the session that has waited longest, in any folder;
+            the sidebar opens its folder and scrolls to its row. Click again for the next one; after
+            the last it starts over. It wakes a sleeping session the way a click does. It skips a
+            closed row with a dot; a click still resumes that one.
+          </li>
         </ul>
 
         <h2 id="keep-running">Keep running</h2>
-        <figure class="shot is-narrow" style="--ar: 554 / 578">
+        <figure class="shot is-narrow" style="--ar: 558 / 668">
           <div class="frame">
             <img
               src="../img/p-keep-running.webp"
-              width="554"
-              height="578"
+              width="558"
+              height="668"
               loading="lazy"
               alt="The tidewatch sessions; the row Fix tide times near midnight has a small pin before its name"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the pin on a row marked Keep running</figcaption>
         </figure>
@@ -224,22 +293,75 @@
         <h2 id="find">Find any session</h2>
         <ul class="dash">
           <li>
-            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens a box that lists every session in every
-            folder, then the folders, then the app's actions (New session…, Settings…, and so on).
-            Type a few letters of a session's title, its worktree, its folder or its machine, press
-            <kbd>⏎</kbd>, and you are there. It does what a click on the row does, so a closed
-            session is resumed. When nothing fits, it says so.
+            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens one box with one input. As you type, the
+            sessions, folders and app actions (New session…, Settings…, and so on) that fit show up
+            under it. Type a few letters of a session's title, its worktree, its folder or its
+            machine, press <kbd>↓</kbd> to pick the match, then <kbd>⏎</kbd>, and you are there. It
+            does what a click on the row does, so a closed session is resumed. Every Settings page
+            is there too, found by English or Chinese words: type "shortcuts" or "快捷键" and the
+            row <code>Settings ▸ Shortcuts</code> shows up.
           </li>
           <li>
-            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a phrase, press
-            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds it is
-            listed, newest first, with one line of text around the match. Click one to open it. For
-            Claude it reads what you typed and what the agent answered, not the output of its tools.
-            For Codex, Codex itself does the search.
+            A moment after you stop typing, the sessions whose conversation holds your words show up
+            too, under <code>In conversations</code>: up to three, with one line of text around the
+            match, and a row <code>All N conversations that mention it</code> when there are more.
+            Click that row, or press <kbd>⌥⏎</kbd>, for the full search.
+          </li>
+          <li>
+            <kbd>⌥⏎</kbd> in the same box searches what was said. Every session in every folder
+            whose title or conversation holds the words is listed, newest first, with one line of
+            text around the match. Click one to open it. For Claude it reads what you typed and what
+            the agent answered, not the output of its tools. For Codex, Codex itself does the
+            search; a Codex session in a <a href="../remote/">remote folder</a> is found by its
+            title only.
+          </li>
+          <li>
+            Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
+            reads <code>Ask AI</code>; with more than one agent it adds your default one, like
+            <code>Ask AI · Claude</code>, and a ▾ beside it lists them all).
+            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
+            the session starts there with your words as its first message. In a folder git tracks it
+            gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
+            folder's branch is behind, Koloft first asks whether to pull. <kbd>⌘⏎</kbd> picks
+            another agent, as <kbd>⇧⏎</kbd> does for <kbd>⌘N</kbd> above. <kbd>⇧⏎</kbd> starts a new
+            line.
+          </li>
+          <li>
+            To pick the folder yourself, type <kbd>@</kbd>: a <code>Workspaces</code> list of your
+            folders shows up and narrows as you type. <kbd>⏎</kbd> or <kbd>⇥</kbd> fills the name
+            in; <kbd>Esc</kbd> puts the list away and keeps your words. A folder on another machine
+            is named like <code>host:name</code>. With a folder named, <kbd>⏎</kbd> starts the
+            session there, with the rest of your words as its first message (if the folder's branch
+            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads as
+            it does with Assist off (see below). Name two different folders and the button is off;
+            the tip reads <code>Name one workspace · Esc</code>.
+          </li>
+          <li>
+            Not everything you type starts a session. "open settings" or "check for updates" just
+            does it. Ask for a session by what it was doing ("go to the session that was fixing
+            login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. With Koloft Assist on, what
+            <kbd>⌘P</kbd> cannot do by itself (words about Koloft itself like "set up Discord", "ask
+            tidewatch …" with the folder named in plain words, a question, or work that fits more
+            than one folder like "fix the tests") goes to a helper of your
+            <a href="../accounts/#butler">butler</a>: a new session in the butler's own folder,
+            under its row. The screen moves there. If the butler is closed, it opens first. The
+            helper runs on the agent you picked (the one on the button, or one from the ▾ list or
+            <kbd>⌘⏎</kbd>), does the job and reports back to your butler. "Set up Discord" works its
+            own way (see <a href="../discord/#set-up">discord</a>).
+          </li>
+          <li>
+            With Assist off, the button reads <code>Start a session</code> (with more than one
+            agent, <code>Start</code> plus your default one, like <code>Start · Claude</code>) and
+            <kbd>⏎</kbd> opens the folder picker instead.
+          </li>
+          <li>
+            If Assist says the words call for a brand-new project, Koloft makes the folder, adds it
+            to the list and starts the session in it. The first time, a New Project box asks where
+            new projects go; Koloft remembers it for next time.
           </li>
         </ul>
         <p>
-          Both work for Claude and Codex, and for a Claude session on a
+          All of this works for every agent, and for a session on a
           <a href="../remote/">remote folder</a>, which is listed with its machine's name and
           resumes there.
         </p>
@@ -265,7 +387,7 @@
  +-----------------------------------------+
 </pre>
 
-        <h2>Worktree sessions</h2>
+        <h2 id="worktrees">Worktree sessions</h2>
         <p>
           Two agents in one folder can step on each other's files.
           <kbd>⇧⌘N</kbd> starts a session in <mark class="hl">its own git worktree</mark>, a second
@@ -273,17 +395,41 @@
         </p>
         <ul class="dash">
           <li>
+            A session you ask for in <kbd>⌘P</kbd>, and one your
+            <a href="../accounts/#butler">butler</a> starts in a project, gets its own worktree too
+            in a folder git tracks, never the folder itself and never a worktree that is already
+            there. Assist or the butler names it; when neither does, the worktree is called
+            <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. A name already in use
+            gets <code class="nowrap">-2</code> after it, then <code class="nowrap">-3</code>.
+            Claude Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
+            <a href="../remote/">remote folder</a> too. <kbd>⌘N</kbd> still starts in the folder.
+          </li>
+          <li>
             Claude Code removes its worktree when it exits, if nothing in it changed. If something
             did, Claude asks you: keep it or remove it.
           </li>
           <li>
-            A Codex worktree stays until you remove it yourself, or until the session is closed with
-            <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+            A Codex worktree goes, folder and branch, when the last session in it ends and nothing
+            in it changed. A restart (<kbd>⇧⌘R</kbd>) or a sleep is not an end. If something did
+            change, it stays until you remove it yourself, or until an agent closes the session with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>, which says when
+            that is allowed).
           </li>
           <li>
-            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
-            the <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick
-            an issue, and the session starts in a worktree named
+            A session whose worktree is gone stays in the list. Hover its row and the tip reads
+            <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
+            again and resumes the same session in it. Restarting it (<kbd>⇧⌘R</kbd>) does the same.
+            When the worktree cannot be made again, a box titled
+            <code>Could not rebuild the worktree</code> offers
+            <code>Resume in main without isolation</code>: the same session goes on in the folder
+            itself, so every file it touches lands there. Claude, Codex, Muse and Antigravity all do
+            this.
+          </li>
+          <li>
+            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
+            or a <a href="../accounts/#git-accounts">git account</a> picked, the
+            <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick an
+            issue, and the session starts in a worktree named
             <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
             work on.
           </li>
@@ -304,8 +450,9 @@
           A new worktree has none of the files git ignores, such as <code>.env</code>. List the ones
           you want in a <code>.worktreeinclude</code> file at the root of the repo, and they are
           copied into each worktree. Claude Code copies them into the worktrees it makes. Koloft
-          copies them into a Codex worktree, and into a worktree it rebuilds for a resumed Claude
-          session. Not on a <a href="../remote/">remote folder</a> yet.
+          copies them into every worktree it makes: for a Codex, Muse or Antigravity session, for a
+          pull request, and when it rebuilds the worktree of a resumed Claude session. This works on
+          a <a href="../remote/">remote folder</a> too.
         </p>
 
         <h2 id="session-tree">Sessions an agent starts</h2>
@@ -316,16 +463,15 @@
           thin line down its left. A session that one of those starts hangs one level deeper. The
           row is there from the moment it reads Starting….
         </p>
-        <figure class="shot is-narrow" style="--ar: 558 / 578">
+        <figure class="shot is-narrow" style="--ar: 558 / 722">
           <div class="frame">
             <img
               src="../img/v-session-tree.webp"
               width="558"
-              height="578"
+              height="722"
               loading="lazy"
               alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>one session started two, and one of those started one more</figcaption>
         </figure>
@@ -335,16 +481,15 @@
           <a href="#red-dots">folded folder</a> does, and a grey count of all the hidden ones. Click
           the arrow again to see them.
         </p>
-        <figure class="shot is-narrow" style="--ar: 558 / 296">
+        <figure class="shot is-narrow" style="--ar: 558 / 366">
           <div class="frame">
             <img
               src="../img/v-session-tree-folded.webp"
               width="558"
-              height="296"
+              height="366"
               loading="lazy"
               alt="The same folder with Add storm alerts endpoint folded: a red 2 and a grey 3 at the right of its name, and the arrow now points right"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>folded: 2 of the 3 sessions inside need you</figcaption>
         </figure>
@@ -352,14 +497,18 @@
           <li>Claude and Codex both do this.</li>
           <li>
             If the session that started them ends but its row stays in the list, they stay under
-            that row, now shown as closed. Nothing under a session closes with it, however it is
-            closed.
+            that row, now shown as closed. Closing a session in the app closes nothing under it;
+            <code class="nowrap">koloft session close</code> also closes the ended sessions it
+            started (see <a href="../agents/">agents</a>).
           </li>
           <li>
-            A row hangs under its starter only while the starter is in the same folder's list.
-            Otherwise it sits at the top of that list: when its starter is gone from the list, when
-            it was started into another folder with <code class="nowrap">--workspace</code>, when a
-            <a href="../discord/">Discord butler</a> started it, and always for a session on another
+            A row hangs under its starter only while the starter is in the same folder's list. When
+            the starter leaves the list (closed for good with
+            <code class="nowrap">koloft session close</code>, or by Remove from list), the row moves
+            up under the starter's own starter, or to the top if there was none. A row also sits at
+            the top when it was started into another folder with
+            <code class="nowrap">--workspace</code>, when your
+            <a href="../accounts/#butler">butler</a> started it, and always for a session on another
             machine.
           </li>
           <li>
@@ -370,6 +519,18 @@
 
         <h2 id="the-sidebar">The sidebar</h2>
         <p>
+          The first row of the list is your <a href="../accounts/#butler">butler</a>,
+          <code>Alfred · Butler</code>, above every folder. When the session tab you are looking at
+          goes away, Koloft shows the butler, unless that session ended before it ever started.
+        </p>
+        <p>
+          When the Mac is busy (macOS says memory is tight, or the processors have been very busy
+          for half a minute), each open session's row also shows about how much memory it and the
+          programs it started use on your Mac, like <code>≈1.2 GB</code>. For a session on another
+          machine, only what runs on your Mac is counted. Nothing waits or is held back: it is only
+          there so you can see which session is heavy.
+        </p>
+        <p>
           Drag a folder's name up or down to reorder the list. The number keys 1 to 9 in the
           <kbd>⌘N</kbd> folder picker follow the new order.
         </p>
@@ -379,11 +540,79 @@
           sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
           hidden.
         </p>
+
+        <h2 id="asleep">While you sleep</h2>
+        <p>
+          Going to bed with work still running? Click the moon at the bottom of the sidebar, between
+          Keep Mac awake and Settings. Its tip reads
+          <code>Going to sleep — sessions keep going without you</code>. While the moon is lit,
+          every session knows you cannot answer, and keeps going instead of waiting for you:
+        </p>
+        <div class="typed-table">
+          <table>
+            <thead>
+              <tr>
+                <th>when a session</th>
+                <th>what happens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>finishes its turn</td>
+                <td>
+                  Koloft tells it, once per turn, that you are asleep. It should do what it still
+                  can, pick what it would recommend instead of asking you, and leave you only what
+                  cannot be undone, such as merging, pushing to main or spending money. Then it may
+                  stop.
+                </td>
+              </tr>
+              <tr>
+                <td>asks you a question</td>
+                <td>
+                  Koloft answers for you: it tells the session to pick the option it recommends, say
+                  so in its report and go on, but to leave you a choice that cannot be undone. When
+                  that answer does not fit, as with a question that takes no typed words, Koloft
+                  picks the first option.
+                </td>
+              </tr>
+              <tr>
+                <td>asks for your OK</td>
+                <td>Koloft gives it, even for a step that cannot be undone.</td>
+              </tr>
+              <tr>
+                <td>needs a password, a code or a sign-in</td>
+                <td>
+                  Koloft says no at once, and tells it to skip that step and say it waits for you
+                  (see <a href="../agents/#secrets">passwords and codes</a>).
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Discord stays quiet, as it does <a href="../discord/#at-the-mac">while you use Koloft</a>,
+          and the Mac stays awake, even with Keep Mac awake off. Your setting stays off, but the
+          Keep Mac awake button and View ▸ Keep Mac Awake show on, greyed out, until you are back.
+          You cannot switch them before then. Your butler is left out: it is not told to go on, and
+          Koloft answers none of its questions. Its password and code asks are turned down too.
+        </p>
+        <p>
+          Click the moon again when you are back. Pressing <kbd>⏎</kbd> in any terminal in Koloft
+          turns it off too, and so does any message, button press, form or slash command you send in
+          your butler's <a href="../discord/">Discord</a> channel. If anything happened while you
+          slept, your butler then gets one note: how long you slept, what the sessions did and what
+          Koloft answered for you. Your butler passes it on to you.
+        </p>
+        <p>
+          This works for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.
+        </p>
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>
-            New session <kbd>⌘N</kbd> — or, when both tools are on in Settings ▸ Sessions, New
-            Claude session and New Codex session, the default one with <kbd>⌘N</kbd>
+            New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
+            Sessions, one line per agent (New Claude session, New Codex session, …), the default one
+            first with <kbd>⌘N</kbd>. An agent with no account Koloft can use is greyed out there
+            (see <a href="../accounts/#no-account">accounts</a>).
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
@@ -393,26 +622,19 @@
             <a href="../scheduled/">Scheduled jobs…</a>
             <span class="why">— sessions on a timer</span>
           </li>
-          <li>
-            Bind Discord channel…
-            <span class="why"
-              >— give this folder its own butler (see <a href="../discord/">discord</a>)</span
-            >
-          </li>
           <li>Remove workspace <span class="why">— take the folder off the list</span></li>
         </ul>
 
         <h2>Right-click a session</h2>
-        <figure class="shot" style="--ar: 912 / 290; --w: min(456px, 100cqw)">
+        <figure class="shot" style="--ar: 916 / 444; --w: min(458px, 100cqw)">
           <div class="frame">
             <img
               src="../img/p-keep-running-menu2.webp"
-              width="912"
-              height="290"
+              width="916"
+              height="444"
               loading="lazy"
               alt="The row Add storm alerts endpoint with its right-click menu open: Reveal in Finder, Copy session ID, Keep running, Close"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the menu of a running session</figcaption>
         </figure>
@@ -428,9 +650,16 @@
             Close <span class="why">(on a running row)</span>, or Remove from list
             <span class="why">(on a closed row)</span>
           </li>
+          <li>
+            Start again <kbd>⇧⌘R</kbd> and Close <kbd>⌘W</kbd>
+            <span class="why"
+              >(on a row whose agent <a href="#quit">quit on its own</a>, the menu has only these
+              two)</span
+            >
+          </li>
         </ul>
 
-        <h2>The git panel</h2>
+        <h2 id="git-panel">The git panel</h2>
         <p>Hover a folder's branch sign and its git panel opens.</p>
         <ul class="dash">
           <li>
@@ -444,20 +673,27 @@
           </li>
           <li><code>Fetch now</code> asks origin what is new.</li>
           <li>
-            On github.com, with <code>gh</code> signed in: the open issues and pull requests. Their
-            two counts also sit after the branch sign (a count of 0 is not drawn).
+            On github.com, with <code>gh</code> signed in or a git account picked: the open issues
+            and pull requests. Their two counts also sit after the branch sign (a count of 0 is not
+            drawn). Click a count, here or on the row, and that list opens on GitHub in
+            <a href="../workbench/#folder-workbench">the folder's own Workbench</a>.
+          </li>
+          <li>
+            Account: which <a href="../accounts/#git-accounts">git account</a> this folder pushes
+            as. Shown for a folder on github.com or another host Koloft knows git accounts for, and
+            for a remote folder whose machine has one (see
+            <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
           </li>
         </ul>
-        <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
+        <figure class="shot" style="--ar: 740 / 670; --w: min(370px, 100cqw)">
           <div class="frame">
             <img
-              src="../img/o-branch-panel.webp"
+              src="../img/o-branch-panel2.webp"
               width="740"
-              height="612"
+              height="670"
               loading="lazy"
-              alt="The git panel under the tidewatch folder: main · origin/main, fetched just now, 2 behind, 0 ahead, a note that Koloft only pulls into a clean tree, Pull · fast-forward greyed out, Fetch now, and GitHub · tidewatch-labs/tidewatch with 7 open issues and 2 open pull requests"
+              alt="The git panel under the tidewatch folder: main · origin/main, fetched just now, 2 behind, 0 ahead, a note that Koloft only pulls into a clean tree, Pull · fast-forward greyed out, Fetch now, and GitHub · tidewatch-labs/tidewatch with two rows you can click, 7 open issues and 2 open pull requests"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the git panel. Pull is greyed out here, and the panel says why: Koloft only pulls into a
@@ -470,28 +706,96 @@
           <code>Fetch now</code> still works.
         </p>
         <p>
-          On a <a href="../remote/">remote folder</a> the panel shows only the GitHub part: the
-          issue and pull request counts, but no Pull, no Fetch now and no behind number.
+          Under it, <code>Auto-pull the default branch</code> (off at first; greyed out while
+          Auto-fetch is off) lets Koloft pull by itself. After each background fetch, a folder that
+          Pull would allow (see above) is pulled, and a small message names the folder, the branch
+          and how many commits came in. It waits while a session in that checkout is mid-task
+          (working, stopped at a permission prompt, or in a state Koloft cannot see) and tries again
+          on the next fetch. Claude Code and Codex sessions count the same way; a remote folder is
+          never pulled.
         </p>
-
-        <p class="next">next page -&gt; <a href="../workbench/">The Workbench</a></p>
-      </main>
-
-      <footer class="signoff">
         <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+          If you click Pull while a session in that checkout is mid-task, Koloft first asks
+          <code>Pull into main?</code>, because the pull would change files under that session.
+          Worktree sessions are not affected.
         </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
+        <p>
+          On a <a href="../remote/">remote folder</a> the panel works too, on the machine itself:
+          the behind number (every five minutes, and when the machine connects),
+          <code>Fetch now</code> and <code class="nowrap">Pull · fast-forward</code>. When the
+          machine cannot reach origin, the panel says
+          <code>can't reach origin from &lt;machine&gt; — check its network or credentials.</code>
+          While the machine is not connected, Fetch now and Pull are greyed out and the last counts
+          stay. The GitHub part and the Account part work as above.
         </p>
-      </footer>
+
+        <h3 id="session-sync">Open sessions hear what changed</h3>
+        <p>
+          When a fetch finds that origin's main branch has moved, say because a pull request was
+          merged, Koloft tells every open session in that repository, whichever agent runs it, that
+          sits on another branch and does not have those commits yet. The fetch is Koloft's own
+          (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>. Your butler is not
+          told, nor is a session on the main branch itself: the behind number, Pull and Auto-pull
+          serve it. Commits that came in while Koloft was closed are not announced either. The
+          message reads:
+          <code>(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". …</code>
+          When those commits touch files the session itself had changed, it names them, and it ends
+          by saying that nobody asks the session to merge or rebase: what to do is the agent's call.
+        </p>
+        <p>
+          When two open sessions of one repository write the same file, each is told:
+          <code>The session "…" changed files you changed too: ….</code> If both sit in the same
+          folder, the message says to read the file again before editing it; if they sit in two
+          worktrees, it says the two branches may conflict when both reach main. Only files the
+          agent wrote through its own tools count, not ones a shell command wrote, and only writes
+          made while the session was open in Koloft; each file is named once per pair of sessions.
+        </p>
+        <p>
+          Koloft never starts a turn for it. A session at work gets the message after its next tool
+          call, or, if it was about to stop, just before it stops: it reads it and then stops,
+          without anyone prompting it. A session that was waiting for you gets it with its next
+          prompt, from you or anyone else, so it keeps its red dot, and no reply to the message
+          alone fills its conversation. This holds for every agent, here or on a machine. You do not
+          see the message in the terminal; the agent does. An Antigravity session sees it for the
+          rest of that turn only.
+        </p>
+
+        <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
+      </main>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

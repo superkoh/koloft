@@ -5,12 +5,17 @@ import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
 import { killSessionCmd } from '../../src/main/remote/launch'
+import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
+import { localHost } from '../../src/main/host/localHost'
+import { GithubLookup } from '../../src/main/github'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
+import { barePath } from '../../src/shared/remoteKey'
+import { removeTree } from '../../src/main/sessionClose'
 
 const MACHINE = 'devbox'
 let home: string
@@ -29,6 +34,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
     c.stdout.on('data', (d: Buffer) => out.push(d))
     c.stderr.on('data', (d: Buffer) => (err += String(d)))
     c.on('close', (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }))
+    c.stdin.on('error', () => {})
     c.stdin.end(opts?.input)
   })
 }
@@ -37,16 +43,20 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
+    watch: () => {},
+    unwatch: () => {},
     github: {},
     claude: {
       userData: home,
       controlDir: home,
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
+      firstHeartbeatDone: async () => {},
       realPath: (p) => p,
       settings: () => ({ skipPermissions: false }),
       agentTools: () => true,
       pickAccount: async () => ({ env: {}, banner: '' }),
+      noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
       hookSettings: () => ({}),
       ...claude
     }
@@ -56,6 +66,12 @@ const keyed = (p: string): string => `ssh://${MACHINE}${p}`
 
 const git = (...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+
+const putNodeOnMachine = (): void => {
+  const node = path.join(home, '.koloft', 'node', 'bin')
+  fs.mkdirSync(node, { recursive: true })
+  fs.symlinkSync(process.execPath, path.join(node, 'node'))
+}
 
 beforeEach(() => {
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sshhost-')))
@@ -92,6 +108,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(all.filter((e) => e.ignored).map((e) => e.name)).toEqual(['.git', 'build'])
     })
 
+    it('gives the real path of each file asked about in one call, ~/ paths included, and leaves out what is not a file there', async () => {
+      fs.symlinkSync(repo, path.join(home, 'link'))
+      const asked = [
+        path.join(home, 'link', 'sub', 'b.txt'),
+        '~/proj/a.txt',
+        path.join(repo, 'gone.txt'),
+        path.join(repo, 'broken'),
+        path.join(repo, 'sub')
+      ]
+      const calls: string[] = []
+      const host = machine((cmd, opts) => (calls.push(cmd), runOnMachine(cmd, opts)))
+      expect(await host.realFiles(asked)).toEqual(
+        new Map([
+          [asked[0], path.join(repo, 'sub', 'b.txt')],
+          [asked[1], path.join(repo, 'a.txt')]
+        ])
+      )
+      expect(calls).toHaveLength(1)
+    })
+
     it('finds files by name and text on the machine, keyed by the machine', async () => {
       const byName = await machine().search(keyed(repo), 'b.txt')
       expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
@@ -108,11 +144,16 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
     it('reports Changes with the machine’s paths, so the renderer can hand them straight back', async () => {
       fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
       fs.writeFileSync(path.join(repo, 'new.txt'), 'n\n')
-      const status = await machine().gitStatus(keyed(repo))
-      expect(status).toEqual({
-        [keyed(path.join(repo, 'a.txt'))]: 'modified',
-        [keyed(path.join(repo, 'broken'))]: 'untracked',
-        [keyed(path.join(repo, 'new.txt'))]: 'untracked'
+      const changes = await machine().gitChanges(keyed(repo), 'merge-base')
+      expect(changes).toEqual({
+        base: git('rev-parse', 'HEAD').trim(),
+        status: {
+          [keyed(path.join(repo, 'a.txt'))]: 'modified',
+          [keyed(path.join(repo, 'broken'))]: 'untracked',
+          [keyed(path.join(repo, 'new.txt'))]: 'untracked'
+        },
+        numstat: { [keyed(path.join(repo, 'a.txt'))]: { added: 1, removed: 0 } },
+        missing: false
       })
       const diff = await machine().gitFileDiff(keyed(path.join(repo, 'a.txt')))
       expect(diff.text).toContain('+more')
@@ -124,8 +165,54 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       const forkPoint = git('rev-parse', 'HEAD').trim()
       git('checkout', '-qb', 'feature')
       git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'more', '--allow-empty')
-      expect(await machine().diffBase(keyed(repo))).toBe(forkPoint)
+      expect((await machine().gitChanges(keyed(repo), 'merge-base')).base).toBe(forkPoint)
       expect(await localDiffBase(repo)).toBe(forkPoint)
+    })
+
+    it('lists the same Changes as the local Workbench for one checkout: renamed, deleted, staged, against the fork point or HEAD', async () => {
+      git('branch', '-M', 'main')
+      git('checkout', '-qb', 'feature')
+      fs.writeFileSync(path.join(repo, 'branch.txt'), 'on the branch\n')
+      git('add', '-A')
+      git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'branch work')
+      git('mv', 'a.txt', 'renamed.txt')
+      fs.rmSync(path.join(repo, 'sub', 'b.txt'))
+      fs.writeFileSync(path.join(repo, 'staged.txt'), 'one\ntwo\n')
+      git('add', 'staged.txt')
+      fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n')
+      const local = localHost(new GithubLookup({}), {} as never)
+      const bareKeys = <V>(m: Record<string, V>): Record<string, V> =>
+        Object.fromEntries(Object.entries(m).map(([k, v]) => [barePath(k), v]))
+      for (const choice of ['merge-base', 'head'] as const) {
+        const remote = await machine().gitChanges(keyed(repo), choice)
+        const here = await local.gitChanges(repo, choice)
+        expect({
+          ...remote,
+          status: bareKeys(remote.status),
+          numstat: bareKeys(remote.numstat)
+        }).toEqual(here)
+      }
+      expect(Object.keys((await local.gitChanges(repo, 'merge-base')).status).sort()).toEqual(
+        ['branch.txt', 'broken', 'loose.txt', 'renamed.txt', 'staged.txt', 'sub/b.txt'].map((r) =>
+          path.join(repo, r)
+        )
+      )
+    })
+
+    it('says the workspace folder is missing when the machine says it is gone, and empty outside a repo', async () => {
+      expect(await machine().gitChanges(keyed(path.join(repo, 'gone')), 'merge-base')).toEqual({
+        base: null,
+        status: {},
+        numstat: {},
+        missing: true
+      })
+      fs.rmSync(path.join(repo, '.git'), { recursive: true })
+      expect(await machine().gitChanges(keyed(repo), 'merge-base')).toEqual({
+        base: null,
+        status: {},
+        numstat: {},
+        missing: false
+      })
     })
 
     it('refuses a save when the file changed on the machine since it was opened, and saves when it did not', async () => {
@@ -144,6 +231,52 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
     })
 
+    it('"Keep mine" overwrites a file that changed on the machine since it was opened', async () => {
+      const file = keyed(path.join(repo, 'a.txt'))
+      const opened = await machine().openForEdit(file)
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'theirs, longer\n')
+
+      const kept = await machine().writeText(file, 'mine\n', opened, { force: true })
+      expect(kept).toMatchObject({ ok: true, size: 5 })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('mine\n')
+    })
+
+    it('a change that lands on the machine between the check and the write is refused, not overwritten', async () => {
+      const file = keyed(path.join(repo, 'a.txt'))
+      const opened = await machine().openForEdit(file)
+      const otherWriterJustBeforeTheWrite = (
+        cmd: string,
+        opts?: { input?: Buffer }
+      ): Promise<BytesResult> => {
+        if (opts?.input) fs.writeFileSync(path.join(repo, 'a.txt'), 'theirs, longer\n')
+        return runOnMachine(cmd, opts)
+      }
+
+      const result = await machine(otherWriterJustBeforeTheWrite).writeText(file, 'mine\n', opened)
+      expect(result).toMatchObject({ ok: false, code: 'stale', text: 'theirs, longer\n' })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('theirs, longer\n')
+      expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
+    })
+
+    it('a save says why it failed: no permission in the folder, the file gone, or its folder gone', async () => {
+      const file = keyed(path.join(repo, 'sub', 'b.txt'))
+      const opened = await machine().openForEdit(file)
+
+      fs.chmodSync(path.join(repo, 'sub'), 0o555)
+      try {
+        await expect(machine().writeText(file, 'mine\n', opened, { force: true })).rejects.toThrow(
+          'KOLOFT_NO_PERM'
+        )
+      } finally {
+        fs.chmodSync(path.join(repo, 'sub'), 0o755)
+      }
+
+      fs.rmSync(path.join(repo, 'sub', 'b.txt'))
+      await expect(machine().writeText(file, 'mine\n', opened)).rejects.toThrow('KOLOFT_GONE')
+      fs.rmSync(path.join(repo, 'sub'), { recursive: true })
+      await expect(machine().writeText(file, 'mine\n', opened)).rejects.toThrow('KOLOFT_DIR_GONE')
+    })
+
     it('creates a new file on the machine but never over one that is there', async () => {
       const created = await machine().createFile(keyed(repo), 'fresh.md')
       expect(created.path).toBe(keyed(path.join(repo, 'fresh.md')))
@@ -156,9 +289,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
     // CC§9 ADR-0026
     it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
-      const node = path.join(home, '.koloft', 'node', 'bin')
-      fs.mkdirSync(node, { recursive: true })
-      fs.symlinkSync(process.execPath, path.join(node, 'node'))
+      putNodeOnMachine()
       fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
       expect(await machine().trustsFolder(keyed(repo))).toBe(false)
 
@@ -169,6 +300,52 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
         projects: { [repo]: { hasTrustDialogAccepted: true } }
       })
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+    })
+
+    // CC§9
+    it("stops looking up at the top of the machine's git repo: a repo in a trusted folder is not trusted, a worktree of a trusted repo is", async () => {
+      putNodeOnMachine()
+      fs.mkdirSync(path.join(home, 'plain'))
+      const claudeJson = path.join(home, '.claude.json')
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [home]: { hasTrustDialogAccepted: true } } })
+      )
+
+      expect(await machine().trustsFolder(keyed(path.join(home, 'plain')))).toBe(true)
+      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
+      await machine().trustFolder(keyed(repo))
+      expect(JSON.parse(fs.readFileSync(claudeJson, 'utf8')).projects[repo]).toEqual({
+        hasTrustDialogAccepted: true
+      })
+
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+      git('worktree', 'add', '-q', '-b', 'worktree-w', path.join(repo, '.claude', 'worktrees', 'w'))
+      expect(
+        await machine().trustsFolder(keyed(path.join(repo, '.claude', 'worktrees', 'w')))
+      ).toBe(true)
+    })
+
+    // CC§9
+    it('on the machine too, a submodule or a worktree whose main repo is gone, under a trusted repo, is not trusted: a .git file with no readable commondir is its own top', async () => {
+      putNodeOnMachine()
+      const submodule = path.join(repo, 'sub')
+      fs.mkdirSync(path.join(repo, '.git', 'modules', 'sub'), { recursive: true })
+      fs.mkdirSync(submodule, { recursive: true })
+      fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+      const orphan = path.join(repo, 'orphan')
+      fs.mkdirSync(orphan)
+      fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(home, 'gone', '.git')}\n`)
+      fs.writeFileSync(
+        path.join(home, '.claude.json'),
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+
+      expect(await machine().trustsFolder(keyed(submodule))).toBe(false)
+      expect(await machine().trustsFolder(keyed(orphan))).toBe(false)
     })
 
     it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
@@ -191,26 +368,156 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       ])
     })
 
-    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply', async () => {
+    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {
       const hookDir = path.join(home, '.koloft', 'hook-sessions')
       fs.mkdirSync(hookDir, { recursive: true })
       fs.writeFileSync(path.join(hookDir, 'req-r1.json'), '{}')
+      fs.writeFileSync(path.join(hookDir, 'req-r3.json'), '{}')
       const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
 
       await machine().answerAgent('r1', reply)
       await machine().answerAgent('r2', reply)
+      await machine().answerAgent('r3', null)
 
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
     })
+
+    it("saves a picked element's picture on the machine and answers with its absolute path there, deleting anything older than a day left in its folder", async () => {
+      const picks = path.join(home, '.koloft', 'element-picks')
+      fs.mkdirSync(picks, { recursive: true })
+      const old = path.join(picks, 'old.png.part')
+      fs.writeFileSync(old, 'x')
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      fs.utimesSync(old, twoDaysAgo, twoDaysAgo)
+
+      const saved = await machine().savePick('tab-1-5.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+
+      expect(saved).toBe(path.join(fs.realpathSync(picks), 'tab-1-5.png'))
+      expect([...fs.readFileSync(saved)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+      expect(fs.readdirSync(picks)).toEqual(['tab-1-5.png'])
+    })
+
+    it('measures how far the checkout is behind origin, fetching in the same command only when asked, and fast-forwards it in one command that answers with the checkout as it now stands', async () => {
+      const publisher = withOrigin()
+      publishTwo(publisher)
+      const sent: string[] = []
+      const host = machine((cmd, opts) => {
+        sent.push(cmd)
+        return runOnMachine(cmd, opts)
+      })
+
+      const before = await host.freshness.measure(keyed(repo), null)
+      expect(before.snapshot).toMatchObject({
+        branch: 'main',
+        defRef: 'origin/main',
+        linked: false,
+        hasSubmodules: false,
+        tracking: { fetched: null, behind: 0, ahead: 0, dirty: false }
+      })
+      const after = await host.freshness.measure(keyed(repo), 15_000)
+      expect(after.snapshot?.tracking).toMatchObject({ fetched: true, behind: 2, ahead: 0 })
+      expect(sent).toHaveLength(2)
+
+      const from = git('rev-parse', 'HEAD').trim()
+      const pulled = await host.freshness.pull(keyed(repo), 'main', from, 60_000)
+      const to = git('rev-parse', 'HEAD').trim()
+      expect(to).toBe(execFileSync('git', ['-C', publisher, 'rev-parse', 'HEAD']).toString().trim())
+      expect(pulled).toMatchObject({
+        ok: true,
+        count: 2,
+        after: { head: to, tracking: { fetched: null, behind: 0, ahead: 0 } }
+      })
+      expect(pulled.stdout).not.toContain('KOLOFT_PULLED')
+      expect(sent).toHaveLength(3)
+    })
   }
 )
 
-const unreachable = async (): Promise<BytesResult> => ({
-  code: 255,
-  stdout: Buffer.alloc(0),
-  stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+function withOrigin(): string {
+  const origin = path.join(home, 'origin.git')
+  const publisher = path.join(home, 'publisher')
+  git('branch', '-M', 'main')
+  execFileSync('git', ['clone', '-q', '--bare', repo, origin])
+  git('remote', 'add', 'origin', origin)
+  git('fetch', '-q', 'origin')
+  execFileSync('git', ['clone', '-q', origin, publisher])
+  return publisher
+}
+
+function publishTwo(publisher: string): void {
+  for (const n of ['1', '2']) {
+    fs.writeFileSync(path.join(publisher, `up${n}.txt`), n)
+    execFileSync('git', ['-C', publisher, 'add', '-A'])
+    execFileSync('git', [
+      '-C',
+      publisher,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-qm',
+      n
+    ])
+  }
+  execFileSync('git', ['-C', publisher, 'push', '-q', 'origin', 'main'])
+}
+
+// PLATFORM§30
+describe('a whole file read from the machine: what a web page there pulls in, a picture or a PDF the Workbench shows', () => {
+  it('reads every file byte for byte, at most four at once over one connection, so the machine sshd default of ten sessions is never filled', async () => {
+    let now = 0
+    let most = 0
+    const host = machine(async (cmd, opts) => {
+      most = Math.max(most, ++now)
+      try {
+        return await runOnMachine(cmd, opts)
+      } finally {
+        now--
+      }
+    })
+    const files = Array.from({ length: 12 }, (_, i) => path.join(repo, `pic-${i}.bin`))
+    files.forEach((f, i) => fs.writeFileSync(f, Buffer.from([0, 255, i, 10])))
+    const read = await Promise.all(files.map((f) => host.readBytes(keyed(f))))
+    expect(read).toEqual(files.map((_, i) => Buffer.from([0, 255, i, 10])))
+    expect(most).toBe(4)
+  })
 })
+
+describe('freshness of a checkout on the machine', () => {
+  it('a fetch the machine cannot do says so, and keeps the time of the last fetch from before it', async () => {
+    withOrigin()
+    const fetchHead = path.join(repo, '.git', 'FETCH_HEAD')
+    const lastFetchS = 1_700_000_000
+    fs.utimesSync(fetchHead, lastFetchS, lastFetchS)
+    git('remote', 'set-url', 'origin', path.join(home, 'gone.git'))
+
+    const got = await machine().freshness.measure(keyed(repo), 15_000)
+
+    expect(got.snapshot?.tracking).toMatchObject({ fetched: false, fetchHeadAt: lastFetchS * 1000 })
+    expect(fs.statSync(fetchHead).mtimeMs).toBeGreaterThan(lastFetchS * 1000)
+  })
+
+  it('answers nothing, and pulls nothing, when the machine cannot be reached', async () => {
+    withOrigin()
+    const host = machine(unreachable)
+    expect((await host.freshness.measure(keyed(repo), 15_000)).snapshot).toBeNull()
+    const from = git('rev-parse', 'HEAD').trim()
+    expect(await host.freshness.pull(keyed(repo), 'main', from, 60_000)).toMatchObject({
+      ok: false,
+      count: 0,
+      after: null
+    })
+  })
+})
+
+const sshFails = (code: number | null, stderr: string) => async (): Promise<BytesResult> => ({
+  code,
+  stdout: Buffer.alloc(0),
+  stderr
+})
+const unreachable = sshFails(255, 'ssh: connect to host devbox port 22: Operation timed out')
 
 describe("Claude's folder trust on the machine", () => {
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
@@ -219,20 +526,115 @@ describe("Claude's folder trust on the machine", () => {
 })
 
 describe('a remote Workbench while the ssh link is down', () => {
-  it('git status, numstat and diff fail when ssh cannot connect, instead of answering "empty, not a repo"', async () => {
+  it('Changes and diff fail when ssh cannot connect, instead of answering "empty, not a repo" or "folder gone"', async () => {
     let linkDown = false
     const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
     fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
-    expect(await host.gitStatus(keyed(repo))).toEqual({
+    expect((await host.gitChanges(keyed(repo), 'merge-base')).status).toEqual({
       [keyed(path.join(repo, 'a.txt'))]: 'modified',
       [keyed(path.join(repo, 'broken'))]: 'untracked'
     })
 
     linkDown = true
 
-    await expect(host.gitStatus(keyed(repo))).rejects.toThrow()
-    await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
+    await expect(host.gitChanges(keyed(repo), 'merge-base')).rejects.toThrow('Operation timed out')
     await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
+  })
+
+  it('never calls the workspace folder missing when ssh cannot connect, only when the machine says it is gone', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    expect(await host.dirExistsOrThrow(keyed(repo))).toBe(true)
+    expect(await host.dirExistsOrThrow(keyed(path.join(repo, 'gone')))).toBe(false)
+
+    linkDown = true
+
+    await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
+  })
+
+  it('refuses a session start with ssh’s reason when the machine is out of reach, but not when it only needs someone to sign in, which the session tab is for, nor when ssh is merely slow', async () => {
+    await expect(machine(unreachable).reachOrThrow()).rejects.toThrow('Operation timed out')
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
+    await expect(machine(needsPassword).reachOrThrow()).resolves.toBeUndefined()
+    await expect(machine(sshFails(null, '')).reachOrThrow()).resolves.toBeUndefined()
+    await expect(machine().reachOrThrow()).resolves.toBeUndefined()
+  })
+
+  it('the folder check before a Codex, Muse or Antigravity start lets through what a Claude start lets through — a machine that only needs someone to sign in, which the session tab asks for, or ssh merely slow — but still refuses one out of reach and a folder the machine says is gone', async () => {
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
+    const newHostKey = sshFails(255, 'Host key verification failed.')
+    expect(await machine(needsPassword).sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine(newHostKey).sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine(sshFails(null, '')).sessionDirThere(keyed(repo))).toBe(true)
+    await expect(machine(unreachable).sessionDirThere(keyed(repo))).rejects.toThrow(
+      'Operation timed out'
+    )
+    expect(await machine().sessionDirThere(keyed(repo))).toBe(true)
+    expect(await machine().sessionDirThere(keyed(path.join(repo, 'gone')))).toBe(false)
+  })
+})
+
+describe('each remote Workbench step is one ssh round trip', () => {
+  const counted = (): { host: SshHost; trips: () => number } => {
+    let n = 0
+    const host = machine((cmd, opts) => {
+      n++
+      return runOnMachine(cmd, opts)
+    })
+    return { host, trips: () => n }
+  }
+
+  it('a Changes refresh asks the machine once', async () => {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
+    const { host, trips } = counted()
+    await host.gitChanges(keyed(repo), 'merge-base')
+    expect(trips()).toBe(1)
+  })
+
+  it('a save asks the machine once, whether it lands or finds the file changed', async () => {
+    const file = keyed(path.join(repo, 'a.txt'))
+    const opened = await machine().openForEdit(file)
+    const { host, trips } = counted()
+    expect(await host.writeText(file, 'mine\n', opened)).toMatchObject({ ok: true })
+    expect(trips()).toBe(1)
+    expect(await host.writeText(file, 'again\n', opened)).toMatchObject({
+      ok: false,
+      code: 'stale'
+    })
+    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('mine\n')
+  })
+
+  it('searches typed one after another reuse one file list for 30 s, then list the files again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { host, trips } = counted()
+      await host.search(keyed(repo), 'a')
+      fs.writeFileSync(path.join(repo, 'abc.txt'), 'x')
+      expect((await host.search(keyed(repo), 'ab')).hits).toEqual([])
+      expect(trips()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect((await host.search(keyed(repo), 'ab')).hits.map((h) => h.rel)).toEqual(['abc.txt'])
+      expect(trips()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a file created from the Workbench shows in the very next search', async () => {
+    const host = machine()
+    expect((await host.search(keyed(repo), 'fresh')).hits).toEqual([])
+    await host.createFile(keyed(repo), 'fresh.md')
+    expect((await host.search(keyed(repo), 'fresh')).hits.map((h) => h.rel)).toEqual(['fresh.md'])
+  })
+
+  it('a file list the machine could not send is asked for again on the next search', async () => {
+    let linkDown = true
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    expect((await host.search(keyed(repo), 'b.txt')).hits).toEqual([])
+    linkDown = false
+    expect((await host.search(keyed(repo), 'b.txt')).hits).toHaveLength(1)
   })
 })
 
@@ -320,12 +722,15 @@ describe('accounts for remote launches started together', () => {
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
       shell: () => ({ spawnCwd: '/' }),
+      watch: () => {},
+      unwatch: () => {},
       github: {},
       claude: {
         userData: home,
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set(),
+        firstHeartbeatDone: async () => {},
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
         agentTools: () => true,
@@ -335,6 +740,7 @@ describe('accounts for remote launches started together', () => {
           handed.push(res.account)
           return { env: {}, banner: '' }
         },
+        noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
         hookSettings: () => ({})
       }
     })
@@ -342,31 +748,92 @@ describe('accounts for remote launches started together', () => {
     expect(handed.sort()).toEqual(['a', 'b'])
   })
 
+  it('a --model asked of a remote launch yields to a custom endpoint account that pins its own model, and stays on any other account', async () => {
+    const tabScript = async (env: Record<string, string>, tabId: string): Promise<string> => {
+      const plan = await machine(runOnMachine, {
+        pickAccount: async () => ({ env, banner: '' })
+      }).launch({ root: keyed('/w'), model: 'opus' })
+      if (!plan.ok) throw new Error('launch refused')
+      plan.launchCommand(tabId)
+      return fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
+    }
+    expect(await tabScript({ ANTHROPIC_MODEL: 'glm-5.2' }, 'tab-pinned')).not.toContain('--model')
+    expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
+  })
+
+  it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {
+    const skips = async (skipPermissions: boolean, permission?: 'bypass' | 'default') => {
+      const plan = await machine(runOnMachine, {
+        settings: () => ({ skipPermissions })
+      }).launch({ root: keyed('/w'), permission })
+      if (!plan.ok) throw new Error('launch refused')
+      return plan.machine?.skipsPermissionChecks
+    }
+    expect(await skips(true)).toBe(true)
+    expect(await skips(true, 'default')).toBe(true)
+    expect(await skips(false)).toBe(false)
+    expect(await skips(false, 'bypass')).toBe(true)
+  })
+
+  it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
+    const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+    await machine(runOnMachine, { pickAccount }).launch({
+      root: keyed('/w'),
+      resumeSessionId: ended
+    })
+    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended)
+  })
+
   // ADR-0030
-  it("refuses a remote launch with no usable account instead of using the machine's own login, but re-attaching a live session needs none", async () => {
+  it("refuses a remote launch with no usable account, naming what is wrong with the accounts, instead of using the machine's own login, but re-attaching a live session needs none", async () => {
     const pickAccount = vi.fn(async () => undefined)
+    const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
     const live = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
       shell: () => ({ spawnCwd: '/' }),
+      watch: () => {},
+      unwatch: () => {},
       github: {},
       claude: {
         userData: home,
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set([live]),
+        firstHeartbeatDone: async () => {},
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
         agentTools: () => true,
         pickAccount,
+        noAccountMessage: () => why,
         hookSettings: () => ({})
       }
     })
-    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(NO_USABLE_ACCOUNT.claude)
+    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(why)
     pickAccount.mockClear()
     expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
     expect(pickAccount).not.toHaveBeenCalled()
   })
+})
+
+it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
+  const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  let askForHeartbeat!: (answer: () => void) => void
+  const heartbeatAsked = new Promise<() => void>((asked) => (askForHeartbeat = asked))
+  const alive = new Set<string>()
+  const host = machine(runOnMachine, {
+    alive: () => alive,
+    firstHeartbeatDone: () => new Promise((done) => askForHeartbeat(done))
+  })
+  const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
+  const answer = await Promise.race([heartbeatAsked, launching.then(() => undefined)])
+  if (!answer) throw new Error('launch finished without asking for the first heartbeat')
+  alive.add(live)
+  answer()
+  const plan = await launching
+  if (!plan.ok) throw new Error('launch refused')
+  expect(plan.machine?.attachTo).toBe(live)
 })
 
 describe('ending a session that runs on the machine', () => {
@@ -464,4 +931,22 @@ describe('the utility terminal on the machine', () => {
     expect(printed.status).toBe(0)
     expect(fs.readFileSync(realLog, 'utf8')).toBe('-p hi there\n')
   })
+})
+
+it('a worktree git cannot delete on the machine is reported in git’s words, with the commands to run on that machine', async () => {
+  const tree = path.join(repo, '.claude', 'worktrees', 'w')
+  git('worktree', 'add', '-q', '-b', 'worktree-w', tree)
+  const readOnly = path.join(tree, 'build', 'ro')
+  fs.mkdirSync(readOnly, { recursive: true })
+  fs.writeFileSync(path.join(readOnly, 'out.o'), 'x')
+  fs.chmodSync(readOnly, 0o555)
+  const problem = await removeTree(machine().gitOut, {
+    root: keyed(repo),
+    treeRoot: keyed(tree),
+    worktreeName: 'w',
+    branches: ['worktree-w']
+  })
+  fs.chmodSync(readOnly, 0o755)
+  expect(problem).toContain(`failed to delete '${tree}': Permission denied`)
+  expect(problem).toContain(`run on ${MACHINE}: chmod -R u+w '${tree}' && rm -rf '${tree}'`)
 })

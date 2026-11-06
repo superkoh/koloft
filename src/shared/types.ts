@@ -1,3 +1,7 @@
+import type { SessionRoute } from './sessionRoute'
+import type { TokenCounts } from './pricing'
+import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
+
 export interface ProjectInfo {
   root: string
   treeRoot: string
@@ -5,7 +9,35 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home' | 'agy-home'
+
+export const ACCOUNT_KINDS: readonly AccountKind[] = [
+  'oauth',
+  'apikey',
+  'custom',
+  'codex-home',
+  'muse-home',
+  'agy-home'
+]
+
+// CODEX§15 MUSE§13 AGY§5
+export const SIGN_IN_FOLDER_OF = {
+  codex: 'codex-home',
+  muse: 'muse-home',
+  agy: 'agy-home'
+} as const satisfies Partial<Record<BackendId, AccountKind>>
+
+export type SignInBackend = keyof typeof SIGN_IN_FOLDER_OF
+export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
+
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
+
+export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
+  Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
+) as Record<SignInFolderKind, SignInBackend>
+
+export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
+  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -23,9 +55,122 @@ export function keychainService(appName: string, kind: AccountKind): string {
   return keychainNamespace(appName) + keychainServiceSuffix(kind)
 }
 
+export type GitPlatform = 'github' | 'ghes' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea' | 'other'
+
+export const GIT_PLATFORMS: readonly GitPlatform[] = [
+  'github',
+  'ghes',
+  'gitlab',
+  'bitbucket',
+  'azure',
+  'gitea',
+  'other'
+]
+
+export function gitKeychainService(appName: string, host: string): string {
+  return `${keychainNamespace(appName)}-git-${host.toLowerCase()}`
+}
+
+export interface GitAuthor {
+  name: string
+  email: string
+}
+
+export interface GitAccount {
+  id: string
+  platform: GitPlatform
+  url: string
+  host: string
+  login: string
+  author?: GitAuthor
+  gcmNamespace?: string
+  default: boolean
+  status: AccountStatus
+  addedAt: number
+}
+
+export type GitSshKeyState = 'unchecked' | 'not-taken' | 'works'
+
+export interface GitRepoPick {
+  repo: string
+  account: string
+  sshKey?: GitSshKeyState
+}
+
+export type WorkspaceGitSsh =
+  | { kind: 'https-refused'; sshOnly: boolean }
+  | { kind: 'key'; publicKey: string; keysPage: string; notTakenYet: boolean }
+
+export interface GitMachine {
+  accounts: GitAccount[]
+  picks: GitRepoPick[]
+  dismissed: string[]
+}
+
+export interface GitAccountView extends GitAccount {
+  usedBy: string[]
+  checkError?: 'offline'
+  machine?: string
+}
+
+export type GitLoginProgress =
+  | { phase: 'checking' }
+  | { phase: 'code'; code: string; url: string }
+  | { phase: 'browser'; url?: string }
+  | { phase: 'saved'; login: string }
+  | { phase: 'failed'; message: string }
+
+export type GitLoginStart =
+  | { ok: true }
+  | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+  | { ok: false; error: 'machine'; message: string }
+
+export interface GitTokenAdd {
+  platform: GitPlatform
+  url: string
+  token: string
+  username?: string
+  machine?: string
+}
+
+export type GitTokenAddResult =
+  | { ok: true; login: string }
+  | {
+      ok: false
+      error: 'rejected' | 'offline' | 'failed' | 'missing-scope' | 'bad-url'
+      scope?: string
+    }
+  | { ok: false; error: 'machine'; message: string }
+
+export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
+
+export type GitAccountSuggestion =
+  | { kind: 'off' }
+  | { kind: 'none'; host: string }
+  | {
+      kind: 'use' | 'add' | 'cannot-push' | 'hint'
+      host: string
+      login: string
+      reason: GitClueReason
+    }
+  | { kind: 'only-one-can-push' | 'default-can-push'; host: string; login: string }
+  | { kind: 'org-blocked'; host: string; login: string; org: string }
+
+export interface WorkspaceGitAccount {
+  id: string
+  login: string
+  host: string
+  platform: GitPlatform
+  author?: GitAuthor
+  status: AccountStatus
+  sharedWith: string[]
+  pushBlockedByOrg?: string
+  ssh?: WorkspaceGitSsh
+}
+
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
-  if (kind === 'codex-home') return '-codex-home'
+  if (isSignInFolderKind(kind)) return `-${kind}`
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -60,8 +205,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
-      continue
+    if (!a.kind || !ACCOUNT_KINDS.includes(a.kind)) continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -105,6 +249,8 @@ export interface UsageSnapshot {
   roi: number
   overage: string
   // CC§7
+  has5h: boolean
+  // CC§7
   hasOi: boolean
   at: number
 }
@@ -119,17 +265,45 @@ export interface CodexLimitWindow {
 export interface CodexLimits {
   windows: CodexLimitWindow[]
   at: number
+  reached?: boolean
+  credits?: { unlimited: boolean; balance?: number }
+  resets?: { available: number; firstExpiresAt?: number }
+}
+
+// CODEX§15
+export const CODEX_RESET_OUTCOMES = [
+  'reset',
+  'nothingToReset',
+  'noCredit',
+  'alreadyRedeemed'
+] as const
+
+export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
+
+export interface QuotaBucket {
+  label: string
+  used: number
+  resetsAt?: number
+  minutes?: number
 }
 
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
+  quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
+  apiKey?: true
 }
 
-export type CodexSignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
+export type SignInResult =
+  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
+
+export interface SignInFailure {
+  backend: SignInBackend
+  name: string
+  again: boolean
+  tail: string
+}
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
@@ -157,6 +331,7 @@ export interface Settings {
   sidebarWidth: number
   sidebarHidden: boolean
   skipPermissions: boolean
+  skipPermissionsAgreed: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
   notifyTurnDone: boolean
@@ -164,27 +339,47 @@ export interface Settings {
   notifyExited: boolean
   notifyApprovalSound: boolean
   dockBadge: boolean
-  showUsage: boolean
   // CC§6
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
+  gitAutoPull: boolean
   // PLATFORM§17
   browserControl: boolean
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
-  conductorsFolded: boolean
   keepAwake: boolean
+  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
+  butler: ButlerSetting
+  newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  lastSeenVersion: string
   discord: DiscordSettings
+  butlerSession: ButlerSession
+  gitAccounts: GitAccount[]
+  gitPicks: GitRepoPick[]
+  gitSuggestionsDismissed: string[]
+  gitMachines: Record<string, GitMachine>
+  todoNotes: Record<string, string>
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
+
+export interface ButlerSetting {
+  name: string
+  formerNames: string[]
+}
+
+export const DEFAULT_BUTLER_NAME = 'Alfred'
+
+export interface ButlerSession {
+  sessionIds: string[]
+  lastSessionKey?: string
+  knowsTodo?: string[]
+}
 
 export interface DiscordChannel {
   guildId: string
@@ -192,36 +387,22 @@ export interface DiscordChannel {
   name: string
 }
 
-export interface ConductorBinding {
-  id: string
-  scope: string
-  backend: BackendId
-  channel: DiscordChannel
-  sessionIds: string[]
-  lastSessionKey?: string
-  lastMessageId?: string
-  touched: string[]
-  threads?: SessionThread[]
-}
-
-export interface SessionThread {
-  threadId: string
-  keys: string[]
-  name?: string
-  lastMessageId?: string
-}
-
 export interface DiscordSettings {
   userId?: string
   userName?: string
-  bindings: ConductorBinding[]
+  channel?: DiscordChannel
+  lastMessageId?: string
+  category?: DiscordChannel
+  oldThreadsArchived?: true
+  rooms?: SessionRoom[]
 }
 
-export interface ConductorSaveInput {
-  id?: string
-  scope: string
-  backend: BackendId
-  channel: DiscordChannel
+export interface SessionRoom {
+  threadId: string
+  keys: string[]
+  name: string
+  lastMessageId?: string
+  putDown?: true
 }
 
 export type DiscordPhase =
@@ -231,24 +412,50 @@ export interface DiscordStatus {
   phase: DiscordPhase
   botName?: string
   applicationId?: string
-  guildNames: string[]
+  guilds: DiscordGuild[]
+  appOwner?: DiscordUser
   failing: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+export interface DiscordGuild {
+  id: string
+  name: string
+  ownerId?: string
+}
 
-export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+export interface DiscordUser {
+  id: string
+  name: string
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
+
+export type ConductorSaveResult =
+  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
+
+export interface PaletteRequest {
+  words: string
+  backend: BackendId
+  title?: string
+  about?: string
+  at?: string
+}
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
 
+export const SIDEBAR_MIN = 240
+
 export const DEFAULT_SETTINGS: Settings = {
-  sessionMethods: { defaultBackend: 'claude', enabled: { claude: true, codex: true } },
+  sessionMethods: {
+    defaultBackend: 'claude',
+    enabled: { claude: true, codex: true, muse: true, agy: true }
+  },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
   fontSize: 13,
@@ -259,6 +466,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 280,
   sidebarHidden: false,
   skipPermissions: true,
+  skipPermissionsAgreed: false,
   fablePriority: true,
   accounts: [],
   notifyTurnDone: true,
@@ -266,26 +474,51 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyExited: true,
   notifyApprovalSound: false,
   dockBadge: true,
-  showUsage: true,
   statuslineBuiltin: true,
   gitAutoFetch: true,
+  gitAutoPull: false,
   browserControl: true,
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
-  conductorsFolded: true,
   keepAwake: true,
+  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
+  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
+  newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: '',
-  discord: { bindings: [] }
+  discord: {},
+  butlerSession: { sessionIds: [] },
+  gitAccounts: [],
+  gitPicks: [],
+  gitSuggestionsDismissed: [],
+  gitMachines: {},
+  todoNotes: {}
 }
 
-export type BackendId = 'claude' | 'codex'
+export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
 export type HostId = 'local' | 'ssh'
+
+export interface UsageRecord extends TokenCounts {
+  sessionId: string
+  day: string
+  model: string
+  surchargeUsd: number
+}
+
+export interface UsageRow extends UsageRecord {
+  backend: BackendId
+  workspace: string
+}
+
+export interface UsageRead {
+  rows: UsageRow[]
+  titles: Record<string, string>
+  reading: boolean
+}
 export interface SessionMethods {
   defaultBackend: BackendId
   enabled: Record<BackendId, boolean>
@@ -303,6 +536,7 @@ export interface BackendAvailability {
 export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
 
 export interface CreateTabOptions {
+  tabId?: string
   worktreeResourceId?: string
   kind: TabKind
   cwd?: string
@@ -321,8 +555,35 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerWords?: string
   conductor?: boolean
   trustFolder?: boolean
+}
+
+export interface QueuedLaunch {
+  tabId: string
+  kind: BackendId
+  cwd: string
+  title: string
+  jobId?: string
+  since: number
+}
+
+export interface HeldCommand {
+  since: number
+  command: string
+}
+
+export interface MachineState {
+  busy: boolean
+  pressure: number | null
+  load1: number
+  cores: number
+  queued: QueuedLaunch[]
+  held: Record<string, HeldCommand>
+  background: string[]
+  memory: Record<string, number>
+  sharedVmBytes: number
 }
 
 export type CreateTabResult =
@@ -368,6 +629,15 @@ export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 're
 export type GitStatusMap = Record<string, GitFileStatus>
 
 export type GitNumstatMap = Record<string, { added: number; removed: number }>
+
+export type BaseChoice = 'merge-base' | 'head'
+
+export interface GitChanges {
+  base: string | null
+  status: GitStatusMap
+  numstat: GitNumstatMap
+  missing: boolean
+}
 
 export const HIDDEN_BY_DEFAULT_NAMES: ReadonlySet<string> = new Set(['node_modules', '.git'])
 
@@ -429,17 +699,33 @@ export interface AttentionSubject {
   sessionId?: string
 }
 
+export type SecretAskShape =
+  | { kind: 'sudo'; command: string; prompt: string }
+  | { kind: 'page'; guestId: number; url: string; label: string }
+  | { kind: 'url'; signIn: string }
+
+export type SecretAskView = SecretAskShape & { id: string; tabId: string }
+
 export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  resurrected?: boolean
+  fyi?: boolean
+}
+
+export interface OsOutletsSeenByTests {
+  notifications: { title: string; body: string }[]
+  dockBadge: string
 }
 
 export const ATTENTION_REASON: Record<AttentionKind, string> = {
   'turn-done': 'turn done — your move',
   approval: 'waiting for your approval',
   exited: 'session exited unexpectedly'
+}
+
+export function attentionReason(e: Pick<AttentionEvent, 'kind' | 'fyi'>): string {
+  return e.fyi ? 'turn done — just letting you know' : ATTENTION_REASON[e.kind]
 }
 
 export interface FlowStats {
@@ -472,18 +758,24 @@ export interface SessionUsage {
   inTok: number
   outTok: number
   cacheWriteTok: number
+  cacheWrite1hTok?: number
   cacheReadTok: number
   costUsd?: number
   todayCostUsd?: number
   todayDayKey?: string
   model?: string
-  ccVersion?: string
   ctxTokens?: number
   ctxPct?: number
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
-export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
+
+export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
+  claude: PLACEHOLDER_SESSION_TITLE,
+  codex: 'Codex session',
+  muse: 'Muse session',
+  agy: 'Antigravity session'
+}
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -493,7 +785,6 @@ export interface SessionSource {
 }
 
 export interface BackendSessionInfo {
-  cliVersion?: string
   background?: BackgroundItem[]
   nativeSessionId?: string
   tabId: string
@@ -504,17 +795,18 @@ export interface BackendSessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  // CC§2
   details?: {
-    claude?: { jsonlPath: string | null; scratchpadDir?: string }
     codex?: { observation: 'live' | 'degraded' }
   }
   files?: PreviewItem[]
   lastTouched?: string
   lastWritten?: string
   liveWrites?: number
+  lastAction?: string
   account?: string
   pickedAccount?: string
+  // CC§2
+  scratchpadDir?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }
@@ -529,15 +821,16 @@ export interface DocVerdict {
 }
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
-  conductor?: string
+  butler?: boolean
   turnOver?: boolean
+  asking?: string
   docVerdicts?: Record<string, DocVerdict>
 }
 
+export const PLAN_READY = 'Plan ready: implement it?'
+
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
-  // CC§2
-  scratchpadDir?: string
   files: PreviewItem[]
 }
 
@@ -546,16 +839,14 @@ export interface ReleaseNotes {
   notes: string
 }
 
-export interface DiscoveredFolder {
-  path: string
+export interface FolderUse {
   sessions: number
   mtime: number
 }
 
-export interface WhatsNew {
-  current: string
-  releases: ReleaseNotes[]
-  omittedReleases: number
+export interface DiscoveredFolder extends FolderUse {
+  path: string
+  agents: Partial<Record<BackendId, FolderUse>>
 }
 
 export interface UpdateCheckResult {
@@ -601,7 +892,7 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+export type GithubTarget = 'repo' | 'issues' | 'pulls' | 'pr' | 'compare'
 
 export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
 
@@ -769,11 +1060,23 @@ export interface TerminalExit {
   id: string
   exitCode: number
   signal?: number
+  unexpected?: true
+  runStarted?: true
+  accountIssue?: string
+}
+
+export interface UnexpectedExitScreen {
+  id: string
+  lines: string[]
 }
 
 export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
   // PLATFORM§29
   return exit.exitCode !== 0 || !!exit.signal
+}
+
+export function endedRowNote(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): string {
+  return exit.signal ? `killed (signal ${exit.signal})` : `exited (code ${exit.exitCode})`
 }
 
 export interface TerminalProcessTitle {
@@ -813,18 +1116,20 @@ export interface KoloftApi {
     create(opts: CreateTabOptions): Promise<CreateTabResult>
     write(id: string, data: string): void
     paste(id: string, text: string, typedAfter?: string): Promise<void>
+    copy(text: string): void
     ack(id: string, utf16Units: number): void
     attach(id: string): void
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
     kill(id: string, restarting?: boolean): void
-    onData(cb: (d: TerminalData) => void): () => void
+    onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
     onSpawned(cb: (t: SpawnedTab) => void): () => void
     onScreenRequest(cb: (r: ScreenRequest) => void): () => void
     answerScreen(a: ScreenAnswer): void
+    logUnexpectedExit(s: UnexpectedExitScreen): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>
@@ -836,11 +1141,14 @@ export interface KoloftApi {
   }
   tabs: {
     list(): Promise<TabInventoryReply>
+    moved(oldTabId: string, newTabId: string): void
     onKilledByMain(cb: (tabId: string) => void): () => void
     onSlept(cb: (tabId: string) => void): () => void
   }
   sessions: {
-    backends(): Promise<BackendAvailability[]>
+    backends(recheck?: boolean): Promise<BackendAvailability[]>
+    installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
+    onToolsChanged(cb: () => void): () => void
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
     onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
     noteActivity(tabId: string): void
@@ -852,16 +1160,35 @@ export interface KoloftApi {
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
+    noAccountToResume(sessionId: string): Promise<string | null>
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
     search(searchId: number, term: string): void
     onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
+  inbox: {
+    list(): Promise<InboxSnapshot>
+    onChanged(cb: (snapshot: InboxSnapshot) => void): () => void
+    press(cardId: string, actionId: string, answers: InboxAnswers): void
+    confirm(cardId: string): void
+    undo(cardId: string): void
+    retry(cardId: string): void
+    dismiss(cardId: string): void
+    level(cardId: string, level: InboxLevel | null): void
+    top(cardId: string): void
+    clearNotes(): void
+  }
+  secret: {
+    list(): Promise<SecretAskView[]>
+    onAsks(cb: (asks: SecretAskView[]) => void): () => void
+    answer(id: string, value: string): void
+    done(id: string): void
+    decline(id: string): void
+  }
   attention: {
     list(): Promise<AttentionEvent[]>
     activeTab(id: string | null): void
-    visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
     onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }
@@ -869,7 +1196,6 @@ export interface KoloftApi {
     readText(path: string): Promise<string>
     openFileDialog(): Promise<string | null>
     osOpen(path: string): void
-    fileUrl(path: string): string
     onOpenRequest(cb: (r: OpenRequest) => void): () => void
   }
   browserGuestLimit: number
@@ -899,6 +1225,7 @@ export interface KoloftApi {
     setOverlayGuest(guestId: number, on: boolean): void
     setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
+    reportComposing(on: boolean): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
     onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
@@ -906,6 +1233,8 @@ export interface KoloftApi {
     clearData(): Promise<void>
     openExternal(url: string): void
     toggleDevTools(guestId: number): void
+    pickElement(guestId: number, sessionTabId: string): Promise<string | null>
+    stopPick(guestId: number): void
   }
   extensions: {
     list(): Promise<ExtensionInfo[]>
@@ -928,9 +1257,7 @@ export interface KoloftApi {
       query: string,
       opts?: { showIgnored?: boolean }
     ): Promise<{ hits: SearchHit[]; truncated: boolean }>
-    diffBase(root: string): Promise<string | null>
-    gitStatus(root: string, base?: string): Promise<GitStatusMap>
-    gitNumstat(root: string, base?: string): Promise<GitNumstatMap>
+    gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     watchDir(root: string): Promise<boolean>
     unwatchDir(root: string): void
     onDirChange(cb: (root: string) => void): () => void
@@ -997,11 +1324,21 @@ export interface KoloftApi {
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
+    pinRecent(paths: string[]): Promise<void>
+    createProject(parent: string, name: string): Promise<ProjectCreateResult>
+  }
+  assist: {
+    route(id: number, message: string): Promise<SessionRoute | null>
+    cancel(id: number): void
   }
   settings: {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
     onUpdate(cb: (s: Settings) => void): () => void
+  }
+  usage: {
+    read(): Promise<UsageRead>
+    onChanged(cb: (read: UsageRead) => void): () => void
   }
   accounts: {
     list(): Promise<AccountView[]>
@@ -1014,19 +1351,38 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CC§9
-    bypassAccepted(): Promise<boolean>
-    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
+    // CODEX§15 MUSE§13
+    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
+    signInFailure(): Promise<SignInFailure | null>
+    dismissSignInFailure(): void
+    onSignInFailure(cb: (f: SignInFailure | null) => void): () => void
     // CODEX§15
-    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
+  }
+  gitAccounts: {
+    list(): Promise<GitAccountView[]>
+    onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
+    loginStart(platform: GitPlatform, url: string, machine?: string): Promise<GitLoginStart>
+    loginCancel(): void
+    loginBrowser(): void
+    onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
+    addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
+    remove(id: string, machine?: string): Promise<void>
+    makeDefault(id: string, machine?: string): Promise<void>
+    check(): Promise<void>
+    pick(wsPath: string, id: string | null): Promise<void>
+    suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
+    dismiss(wsPath: string): Promise<void>
+    makeSshKey(wsPath: string): Promise<void>
+    checkSshKey(wsPath: string): Promise<void>
   }
   // ADR-0006
   update: {
@@ -1036,7 +1392,6 @@ export interface KoloftApi {
     restart(): void
     openRelease(): void
     onProgress(cb: (p: UpdateProgress) => void): () => void
-    whatsNew(): Promise<WhatsNew | null>
     offer(): Promise<UpdateCheckResult | null>
     onOffer(cb: (offer: UpdateCheckResult | null) => void): () => void
   }
@@ -1064,7 +1419,6 @@ export interface KoloftApi {
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void
     onFindFiles(cb: () => void): () => void
-    onSearchSessions(cb: () => void): () => void
     // PLATFORM§7
     onBrowserCommand(cb: (cmd: BrowserCommand) => void): () => void
     // PLATFORM§7
@@ -1087,20 +1441,26 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  machine: {
+    onState(cb: (s: MachineState) => void): () => void
+    now(): Promise<MachineState | null>
+    free(tabId: string): Promise<boolean>
+    drop(tabId: string): Promise<boolean>
+  }
   conductors: {
-    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    unbind(id: string): Promise<void>
-    switchBackend(id: string): Promise<void>
-    open(id: string): Promise<ConductorOpenResult>
-    startFresh(id: string): Promise<ConductorOpenResult>
+    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
+    bindNewChannel(): Promise<ConductorSaveResult>
+    unbind(): Promise<void>
+    open(): Promise<ConductorOpenResult>
+    startFresh(): Promise<ConductorOpenResult>
+    fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
   }
   discord: {
-    setToken(token: string): Promise<boolean>
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
-    forgetOwner(): Promise<void>
     channels(): Promise<DiscordChannel[]>
+    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1108,6 +1468,8 @@ export type Schedule =
   | { kind: 'daily'; at: string }
   | { kind: 'weekly'; days: number[]; at: string }
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
+  | { kind: 'once'; date: string; at: string }
+  | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 export type CronPermission = 'same' | 'acceptEdits' | 'skipAll'
 // CC§9
@@ -1130,10 +1492,12 @@ export interface CronJob {
   autoClose?: true
   enabled: boolean
   createdAt: number
+  waitFrom?: number
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState =
+  'closed' | 'quit' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number
@@ -1143,6 +1507,10 @@ export interface HistoryLine {
   until?: number
   worktree?: string
   note?: string
+  sessionId?: string
+  removed?: true
+  kept?: string
+  liveState?: 'running' | 'done'
 }
 
 export interface CronFile {
@@ -1150,7 +1518,7 @@ export interface CronFile {
   jobs: CronJob[]
 }
 
-export type LiveState = 'launching' | 'running' | 'done'
+export type LiveState = 'queued' | 'launching' | 'running' | 'done'
 
 export interface LiveRun {
   jobId: string
@@ -1162,6 +1530,8 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  closing?: 'soon' | 'after-background-work'
+  note?: string
 }
 
 export interface CronState {
@@ -1184,16 +1554,17 @@ export interface SpawnedTab {
   title: string
   jobId?: string
   sessionId?: string
+  launch?: CreateTabOptions
 }
 
-export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }
+export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {
+  id?: string
+}
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }
-  | {
-      ok: false
-      reason: 'skipped' | 'failed' | 'folder-missing' | 'no-account' | 'not-ready' | 'unknown-job'
-    }
+  | { ok: false; reason: 'skipped' | 'failed' | 'folder-missing' | 'not-ready' | 'unknown-job' }
+  | { ok: false; reason: 'no-account' | 'turned-off'; why: string }
 
 export type AuxMode = 'preview' | 'browser' | null
 
@@ -1256,6 +1627,7 @@ export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
   resident?: string[]
+  workspacePanels?: Record<string, SessionWorkbenchState>
 }
 
 // CC§2
@@ -1338,7 +1710,10 @@ export interface WorkspaceRows {
     hasHistory: boolean
     freshness?: WorkspaceFreshness
     github?: WorkspaceGithub
+    gitAccount?: WorkspaceGitAccount
+    gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
+    butler?: true
   }
   rows: SessionRow[]
 }
@@ -1351,6 +1726,7 @@ export interface WorkspaceGithub {
 
 export interface WorktreeInfo {
   recoveryResourceId?: string
+  recoveryBackend?: BackendId
   name: string
   dir: string
   branch?: string
@@ -1361,6 +1737,8 @@ export type WorkspaceAddResult =
   | { code: 'exists'; path: string }
   | { code: 'rejected-worktree' }
   | { code: 'not-found' }
+
+export type ProjectCreateResult = { ok: true; path: string } | { ok: false; reason: string }
 
 export interface WorkspaceRemoveResult {
   running: number
@@ -1379,12 +1757,15 @@ export interface SessionResumeRequest {
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
   conductor?: boolean
+  permission?: LaunchPermission
   trustFolder?: boolean
 }
 
+export type ResumeFailure = 'cwd-missing' | 'invalid-args' | 'rebuild-failed'
+
 export type SessionResumeResult =
   | { ok: true; id: string; cwd: string; kind?: TabKind }
-  | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
+  | { ok: false; code: ResumeFailure }
   | { ok: false; code: 'backend'; message: string }
 
 export type ResumePlan =

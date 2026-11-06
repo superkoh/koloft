@@ -1,12 +1,17 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { keychainNamespace } from '@shared/types'
+import { keychainNamespace, keychainServiceSuffix } from '@shared/types'
+import { MUSE_PASSES_TO_PLAYWRIGHT, museAccountEnv } from './museAccounts'
+import { agyAccountEnv } from './agyAccounts'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
+import { SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS, writeSudoShims } from './sudoShim'
+import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
+import { PLAYWRIGHT_CLI_SESSION_PREFIX, PLAYWRIGHT_OUTPUT_FOLDER } from '@shared/browserTabEnv'
 
 export interface ShimPaths {
   shimDir: string
@@ -14,6 +19,8 @@ export interface ShimPaths {
   openDir: string
   pickDir: string
   agentDir: string
+  gitHelper: string
+  ghWrapper: string
 }
 
 // CC§9
@@ -127,13 +134,23 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'archive',
   'delete',
   'migrate-rollouts',
+  'migrate-nfs-db',
   'unarchive',
   'exec-server',
   'features',
   'help'
 ].join('|')
 
-const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; then
+const HELP_OR_VERSION = '-h|--help|-V|--version'
+
+function utilTerminalRefusesInteractive(
+  label: string,
+  flagsFollowedByAValue: string,
+  subcommandsWithoutATui: string,
+  hint: string,
+  flagsWithoutATui = HELP_OR_VERSION
+): string {
+  return `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
   sub=""
@@ -143,29 +160,135 @@ const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; th
       continue
     fi
     case "$a" in
-      -h|--help|-V|--version) utilok=1 ;;
-      ${CODEX_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
+      ${flagsWithoutATui}) utilok=1 ;;
+      ${flagsFollowedByAValue}) valflag=1 ;;
       -*) ;;
       *) [ -z "$sub" ] && sub="$a" ;;
     esac
   done
   case "$sub" in
-    ${CODEX_SUBCOMMANDS_WITHOUT_A_TUI}) utilok=1 ;;
+    ${subcommandsWithoutATui}) utilok=1 ;;
   esac
   if [ "$utilok" = "0" ]; then
-${utilTerminalRefusal('Codex', 'codex exec · --help · login · mcp')}
+${utilTerminalRefusal(label, hint)}
   fi
 fi`
+}
+
+// MUSE§1
+const MUSE_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '-c',
+  '--config',
+  '--agents',
+  '--provider',
+  '--preset',
+  '--model',
+  '--contributor-mode',
+  '--reasoning-effort',
+  '--effort',
+  '--base-url',
+  '--image',
+  '--workspace',
+  '--worktree-base',
+  '--worktree-existing',
+  '--approval-mode',
+  '--permission-profile',
+  '--approval-judge',
+  '--echo-delay-ms'
+].join('|')
+
+// MUSE§1
+const MUSE_SUBCOMMANDS_WITHOUT_A_TUI = [
+  'exec',
+  'config',
+  'export',
+  'trace',
+  'model-profile',
+  'skills',
+  'voice',
+  'plugins',
+  'sandbox',
+  'schema',
+  'serve',
+  'session-message',
+  'mcp',
+  'auth',
+  'login',
+  'logout',
+  'init',
+  'help'
+].join('|')
+
+// AGY§1
+const AGY_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '--add-dir',
+  '--agent',
+  '--conversation',
+  '--effort',
+  '-i',
+  '--prompt-interactive',
+  '--input-format',
+  '--json-schema',
+  '--log-file',
+  '--mode',
+  '--model',
+  '--output-format',
+  '--print-timeout',
+  '--project'
+].join('|')
+
+// AGY§1
+const AGY_SUBCOMMANDS_WITHOUT_A_TUI = [
+  'agent',
+  'agents',
+  'changelog',
+  'help',
+  'install',
+  'mcp',
+  'mic-serve',
+  'models',
+  'plugin',
+  'plugins',
+  'remote-control',
+  'update'
+].join('|')
 
 const UTIL_TERMINAL_REFUSAL = {
   claude: UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
-  codex: UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX
+  codex: utilTerminalRefusesInteractive(
+    'Codex',
+    CODEX_FLAGS_FOLLOWED_BY_A_VALUE,
+    CODEX_SUBCOMMANDS_WITHOUT_A_TUI,
+    'codex exec · --help · login · mcp'
+  ),
+  muse: utilTerminalRefusesInteractive(
+    'Muse',
+    MUSE_FLAGS_FOLLOWED_BY_A_VALUE,
+    MUSE_SUBCOMMANDS_WITHOUT_A_TUI,
+    'muse exec · --help · login'
+  ),
+  agy: utilTerminalRefusesInteractive(
+    'Antigravity',
+    AGY_FLAGS_FOLLOWED_BY_A_VALUE,
+    AGY_SUBCOMMANDS_WITHOUT_A_TUI,
+    'agy -p · --help · mcp',
+    '-h|--help|--version|-p|--print|--prompt'
+  )
 }
 
-export function utilTerminalGuard(bin: keyof typeof UTIL_TERMINAL_REFUSAL): string {
+type GuardedTool = Exclude<keyof typeof UTIL_TERMINAL_REFUSAL, 'claude'>
+
+const GUARDED_OUTSIDE_THE_CLAUDE_SHIM = (
+  Object.keys(UTIL_TERMINAL_REFUSAL) as (keyof typeof UTIL_TERMINAL_REFUSAL)[]
+).filter((tool): tool is GuardedTool => tool !== 'claude')
+
+export function utilTerminalGuard(
+  bin: keyof typeof UTIL_TERMINAL_REFUSAL,
+  accountPick = ''
+): string {
   return `#!/bin/sh
 ${UTIL_TERMINAL_REFUSAL[bin]}
-self=$(cd "$(dirname "$0")" && pwd)
+${accountPick}self=$(cd "$(dirname "$0")" && pwd)
 IFS=:
 set -f
 for d in $PATH; do
@@ -174,6 +297,107 @@ for d in $PATH; do
 done
 echo "${bin}: not found" >&2
 exit 127
+`
+}
+
+// ADR-0030
+const PICK_ACCOUNT_FNS = `refuse() { echo "koloft: $1" >&2; exit ${SHIM_FOUND_NO_ACCOUNT_EXIT}; }
+pick_field() { printf '%s\\n' "$pjson" | sed -n 's/.*"'"$1"'":"\\([^"]*\\)".*/\\1/p'; }
+pick_account() {
+  [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||
+    refuse "$1 runs here only inside a Koloft tab, on an account from Settings ▸ Accounts."
+  pickid="$(newid)"
+  [ -n "$pickid" ] || pickid="$$-$(date +%s)"
+  preq="$KOLOFT_PICK_DIR/req-$pickid.json"
+  pres="$KOLOFT_PICK_DIR/res-$pickid.json"
+  printf '{"tabId":"%s","ts":%s,"backend":"%s"}\\n' "$KOLOFT_TAB_ID" "$(date +%s)" "$1" > "$preq" 2>/dev/null
+  pwaits=0
+  while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
+  pjson="$(cat "$pres" 2>/dev/null)"
+  rm -f "$preq" "$pres" 2>/dev/null
+  pacct="$(pick_field account)"
+  if [ -z "$pacct" ]; then
+    [ -z "$pjson" ] && refuse "picking an account took too long. Try again."
+    refuse "$2"
+  fi
+}
+# PLATFORM§3 PLATFORM§2 ADR-0001
+read_keychain() {
+  ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
+  ( umask 077; exec security find-generic-password -s "$1" -a "$2" -w > "$ptokf" 2>/dev/null ) &
+  psec=$!
+  pswait=0
+  while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
+  kill "$psec" 2>/dev/null
+  wait "$psec" 2>/dev/null
+  ptok="$(cat "$ptokf" 2>/dev/null)"
+  rm -f "$ptokf" 2>/dev/null
+}`
+
+const exportsOf = (env: Record<string, string>): string =>
+  `export ${Object.entries(env)
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(' ')}`
+
+const AGY_PRINT_OUTSIDE_A_SUBCOMMAND = `valflag=0
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then valflag=0; continue; fi
+    case "$a" in
+      -p|--print|--prompt) pick=1 ;;
+      ${AGY_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
+    esac
+  done
+  case "$sub" in ${AGY_SUBCOMMANDS_WITHOUT_A_TUI}) pick=0 ;; esac`
+
+const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useIt: string }> = {
+  // CODEX§15
+  codex: {
+    reachesTheModel: 'case "$sub" in exec|e|review|apply|a|app-server|mcp-server) pick=1 ;; esac',
+    useIt: `unset CODEX_API_KEY OPENAI_API_KEY
+    export CODEX_HOME="$phome"`
+  },
+  // MUSE§13 MUSE§21
+  muse: {
+    reachesTheModel: 'case "$sub" in exec|serve) pick=1 ;; esac',
+    useIt: exportsOf({
+      ...museAccountEnv('$phome'),
+      ...Object.fromEntries(MUSE_PASSES_TO_PLAYWRIGHT.map((key) => [key, `\${${key}-}`]))
+    })
+  },
+  // AGY§6 AGY§7
+  agy: {
+    reachesTheModel: AGY_PRINT_OUTSIDE_A_SUBCOMMAND,
+    useIt: `unset GEMINI_API_KEY
+    ${exportsOf(agyAccountEnv())}
+    if [ "$(pick_field kind)" = "apikey" ]; then
+      read_keychain "__KOLOFT_KEYCHAIN_NS__${keychainServiceSuffix('agy-home')}" "$pacct"
+      [ -n "$ptok" ] ||
+        refuse "could not read the key of $pacct from the Keychain. Try again, or add it again in Settings ▸ Accounts."
+      export GEMINI_API_KEY="$ptok"
+      ptok=""
+    fi
+    set -- "--gemini_dir=$phome" "$@"`
+  }
+}
+
+function utilTerminalAccountPick(bin: GuardedTool): string {
+  const { reachesTheModel, useIt } = UTIL_TERMINAL_ACCOUNT[bin]
+  return `if [ "$KOLOFT_UTIL" = "1" ]; then
+  pick=0
+  ${reachesTheModel}
+  for a in "$@"; do case "$a" in ${HELP_OR_VERSION}) pick=0 ;; esac; done
+  if [ "$pick" = "1" ]; then
+${NEWID_FN}
+${PICK_ACCOUNT_FNS}
+    pick_account ${bin} "${NO_USABLE_ACCOUNT[bin]}"
+    phome="$(pick_field home)"
+    ${useIt}
+    pbanner="$(pick_field banner)"
+    pwarn="$(pick_field warning)"
+    [ -n "$pbanner" ] && printf '%s\\n' "$pbanner" >&2
+    [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
+  fi
+fi
 `
 }
 
@@ -230,7 +454,9 @@ if [ "$skip" = "0" ]; then ensure_claude_minimum "$real" || exit 1; fi
 pre=()
 [ -n "$KOLOFT_HOOK_SETTINGS" ] && pre=(--settings "$KOLOFT_HOOK_SETTINGS")
 # CC§13
+[ -n "$KOLOFT_DOCS_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_DOCS_PLUGIN")
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
+[ -n "$KOLOFT_AGENT_PROMPT" ] && pre+=(--append-system-prompt-file "$KOLOFT_AGENT_PROMPT")
 
 ${NEWID_FN}
 
@@ -245,7 +471,9 @@ register() {
 
 # PLATFORM§17
 if [ -n "$KOLOFT_CDP_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ "$KOLOFT_UTIL" != "1" ]; then
-  export PLAYWRIGHT_CLI_SESSION="koloft-$KOLOFT_TAB_ID"
+  export PLAYWRIGHT_CLI_SESSION="${PLAYWRIGHT_CLI_SESSION_PREFIX}$KOLOFT_TAB_ID"
+  ktmp="\${TMPDIR:-/tmp}"
+  export PLAYWRIGHT_MCP_OUTPUT_DIR="\${ktmp%/}/${PLAYWRIGHT_OUTPUT_FOLDER}/$KOLOFT_TAB_ID"
   kcdp="$(cat "$KOLOFT_CDP_DIR/$KOLOFT_TAB_ID" 2>/dev/null)"
   if [ -n "$kcdp" ]; then
     export PLAYWRIGHT_MCP_CDP_ENDPOINT="$kcdp"
@@ -274,49 +502,20 @@ for a in "$@"; do
     ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
   esac
 done
-# ADR-0030
-refuse() { echo "koloft: $1" >&2; exit ${SHIM_FOUND_NO_ACCOUNT_EXIT}; }
+${PICK_ACCOUNT_FNS}
 if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
-  [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||
-    refuse "claude runs here only inside a Koloft tab, on an account from Settings ▸ Accounts."
-  pickid="$(newid)"
-  [ -n "$pickid" ] || pickid="$$-$(date +%s)"
-  preq="$KOLOFT_PICK_DIR/req-$pickid.json"
-  pres="$KOLOFT_PICK_DIR/res-$pickid.json"
-  printf '{"tabId":"%s","ts":%s}\\n' "$KOLOFT_TAB_ID" "$(date +%s)" > "$preq" 2>/dev/null
-  pwaits=0
-  while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
-  pacct=""
-  preason="timeout"
-  if [ -f "$pres" ]; then
-    pacct="$(sed -n 's/.*"account":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pkind="$(sed -n 's/.*"kind":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pbanner="$(sed -n 's/.*"banner":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pwarn="$(sed -n 's/.*"warning":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pbase="$(sed -n 's/.*"baseUrl":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pmodel="$(sed -n 's/.*"model":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    preason="$(sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-    pflag="$(sed -n 's/.*"skipFlag":true.*/1/p' "$pres" 2>/dev/null)"
-  fi
-  rm -f "$preq" "$pres" 2>/dev/null
-  if [ -z "$pacct" ]; then
-    [ "$preason" = "timeout" ] && refuse "picking an account took too long. Try again."
-    refuse "${NO_USABLE_ACCOUNT.claude}"
-  fi
+  pick_account claude "${NO_USABLE_ACCOUNT.claude}"
+  pkind="$(pick_field kind)"
+  pbanner="$(pick_field banner)"
+  pwarn="$(pick_field warning)"
+  pbase="$(pick_field baseUrl)"
+  pmodel="$(pick_field model)"
+  pflag="$(printf '%s\\n' "$pjson" | sed -n 's/.*"skipFlag":true.*/1/p')"
   psvc="__KOLOFT_KEYCHAIN_NS__-claude-oauth"
   [ "$pkind" = "apikey" ] && psvc="__KOLOFT_KEYCHAIN_NS__-anthropic-api"
   [ "$pkind" = "custom" ] && psvc="__KOLOFT_KEYCHAIN_NS__-custom-endpoint"
-  # PLATFORM§3 PLATFORM§2 ADR-0001
-  ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
-  ( umask 077; exec security find-generic-password -s "$psvc" -a "$pacct" -w > "$ptokf" 2>/dev/null ) &
-  psec=$!
-  pswait=0
-  while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
-  kill "$psec" 2>/dev/null
-  wait "$psec" 2>/dev/null
-  ptok="$(cat "$ptokf" 2>/dev/null)"
-  rm -f "$ptokf" 2>/dev/null
+  read_keychain "$psvc" "$pacct"
   [ -n "$ptok" ] ||
     refuse "could not read the sign-in of $pacct from the Keychain. Try again, or sign it in again in Settings ▸ Accounts."
   if [ "$pkind" = "apikey" ]; then
@@ -333,6 +532,15 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
       export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+      # CC§9
+      kargs=()
+      kdrop=0
+      for a in "$@"; do
+        if [ "$kdrop" = "1" ]; then kdrop=0; continue; fi
+        if [ "$a" = "--model" ]; then kdrop=1; continue; fi
+        kargs+=("$a")
+      done
+      set -- "\${kargs[@]}"
     fi
   else
     export CLAUDE_CODE_OAUTH_TOKEN="$ptok"
@@ -388,6 +596,7 @@ exit 0
 
 const STALE_REGISTRATION_AGE_MS = 12 * 60 * 60 * 1000
 const STALE_PICK_AGE_MS = 60 * 60 * 1000
+const OPEN_REQUEST_STILL_WANTED_MS = 60_000
 
 // ADR-0004
 function pruneStale(dir: string, maxAgeMs = STALE_REGISTRATION_AGE_MS): void {
@@ -411,7 +620,7 @@ export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined
   return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
 }
 
-export function setupShim(): ShimPaths {
+export function setupShim(gitAuthDir: string, butlerFolder: string): ShimPaths {
   const base = app.getPath('userData')
   const shimDir = path.join(base, 'shim')
   const regDir = path.join(base, 'sessions')
@@ -425,7 +634,7 @@ export function setupShim(): ShimPaths {
   fs.mkdirSync(pickDir, { recursive: true })
   fs.mkdirSync(agentDir, { recursive: true })
   pruneStale(regDir)
-  pruneStale(openDir)
+  pruneStale(openDir, OPEN_REQUEST_STILL_WANTED_MS)
   pruneStale(pickDir, STALE_PICK_AGE_MS)
   pruneStale(agentDir, STALE_PICK_AGE_MS)
 
@@ -440,13 +649,31 @@ export function setupShim(): ShimPaths {
   fs.writeFileSync(openShimPath, OPEN_SHIM_SCRIPT, { mode: 0o755 })
   fs.chmodSync(openShimPath, 0o755)
 
-  const codexGuardPath = path.join(shimDir, 'codex')
-  fs.writeFileSync(codexGuardPath, utilTerminalGuard('codex'), { mode: 0o755 })
-  fs.chmodSync(codexGuardPath, 0o755)
+  for (const tool of GUARDED_OUTSIDE_THE_CLAUDE_SHIM) {
+    const guardPath = path.join(shimDir, tool)
+    fs.writeFileSync(
+      guardPath,
+      utilTerminalGuard(tool, utilTerminalAccountPick(tool)).replaceAll(
+        '__KOLOFT_KEYCHAIN_NS__',
+        ns
+      ),
+      { mode: 0o755 }
+    )
+    fs.chmodSync(guardPath, 0o755)
+  }
 
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })
   fs.chmodSync(agentShimPath, 0o755)
+  writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
 
-  return { shimDir, regDir, openDir, pickDir, agentDir }
+  const gitHelper = path.join(shimDir, 'git-credential-koloft')
+  fs.writeFileSync(gitHelper, gitCredentialHelperScript(gitAuthDir), { mode: 0o755 })
+  fs.chmodSync(gitHelper, 0o755)
+
+  const ghWrapper = path.join(shimDir, 'gh')
+  fs.writeFileSync(ghWrapper, ghWrapperScript(gitAuthDir, butlerFolder), { mode: 0o755 })
+  fs.chmodSync(ghWrapper, 0o755)
+
+  return { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper }
 }

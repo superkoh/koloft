@@ -1,11 +1,19 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { NEWID_FN } from './openShimScript'
+import { AGENT_GUIDE } from '@shared/agentGuide'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
+import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
+import { GIT_TIMEOUT_MS } from './gitStatus'
+import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
+import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from './sudoShim'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from './discord/dialog'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
+const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
 const HEAD = `#!/usr/bin/env bash
 : koloft agent shim
@@ -23,7 +31,14 @@ jstr() {
 const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
 const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 
-const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
+export const OWNER_TYPES_A_SECRET_WITHIN_MS = 9 * 60_000
+const SECRET_REPLY_OUTLIVES_THE_ASK_MS = 60_000
+const PAGE_PICTURES_REACH_DISCORD_WITHIN_MS = 10 * 60_000
+const GIT_LISTS_AND_ADDS_THE_WORKTREE_WITHIN_MS = 2 * GIT_TIMEOUT_MS
+const ASSIST_TITLES_AND_GIT_ADDS_THE_WORKTREE_WITHIN_MS =
+  ASSIST_ANSWERS_WITHIN_MS + GIT_LISTS_AND_ADDS_THE_WORKTREE_WITHIN_MS
+
+const body = (waitsMs: number, pollMs = SHIM_POLL_MS, afterWrite = ''): string => `
 ${NEWID_FN}
 id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
@@ -32,13 +47,20 @@ for a in "$@"; do args="$args\${args:+,}\\"$(jstr "$a")\\""; done
 part="$dir/req-$id.part"
 req="$dir/req-$id.json"
 res="$dir/res-$id.json"
-if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
+trap 'rm -f "$req" "$part" 2>/dev/null' EXIT
+trap 'exit 143' TERM HUP INT
+if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" 2>/dev/null > "$part" || ! mv "$part" "$req" 2>/dev/null; then
   rm -f "$part" 2>/dev/null
   echo "$unwritable" >&2
   exit 1
 fi
-waits=0
-while [ ! -f "$res" ] && [ "$waits" -lt ${waitsMs / pollMs} ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
+${afterWrite}waits=0
+limit=${waitsMs / pollMs}
+[ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
+[ "$1" = discord ] && [ "$2" = shot ] && limit=${PAGE_PICTURES_REACH_DISCORD_WITHIN_MS / pollMs}
+[ "$1" = session ] && [ "$2" = answer ] && limit=${(waitsMs + A_TAKEN_ANSWER_SHOWS_WITHIN_MS) / pollMs}
+[ "$1" = session ] && [ "$2" = new ] && limit=${Math.ceil(ASSIST_TITLES_AND_GIT_ADDS_THE_WORKTREE_WITHIN_MS / pollMs)}
+while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
   echo "koloft: Koloft did not answer." >&2
@@ -62,7 +84,7 @@ if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ]
 fi
 dir="$KOLOFT_AGENT_DIR"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\","
-unwritable="koloft: could not reach Koloft."
+unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 
 export const REMOTE_AGENT_SHIM = `${HEAD}
@@ -75,22 +97,35 @@ mkdir -p "$dir" 2>/dev/null
 tm=""
 [ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
-unwritable="koloft: could not reach Koloft."
-${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
+[ -n "$${NO_REPLY_ENV}" ] && tabfield="$tabfield\\"reply\\":false,"
+unwritable="${COULD_NOT_REACH_KOLOFT}"
+${body(
+  REMOTE_AGENT_SHIM_WAITS_MS,
+  REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS,
+  `[ -n "$${NO_REPLY_ENV}" ] && { trap - EXIT; exit 0; }\n`
+)}`
 
-// CODEX§12 CODEX§17
-function codexAgentShim(requestDir: string): string {
+const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
+
+// CODEX§12 CODEX§17 MUSE§8 AGY§25
+function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
   return `${HEAD}
+case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac
 dir=${shq(requestDir)}
 if [ ! -d "$dir" ]; then
-  echo "koloft: this Codex session is no longer linked to Koloft." >&2
+  echo "koloft: this ${BACKEND_LABEL[backend]} session is no longer linked to Koloft." >&2
   exit 1
 fi
 tabfield=""
-unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
+unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
-export function writeCodexAgentShim(shimDir: string, requestDir: string): void {
-  fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir), { mode: 0o755 })
+export function writeAgentShim(shimDir: string, requestDir: string, backend: BackendId): void {
+  const guide = path.join(shimDir, 'koloft-guide.txt')
+  fs.writeFileSync(guide, AGENT_GUIDE + '\n')
+  fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
+    mode: 0o755
+  })
+  writeSudoShims(shimDir, SUDO_SHIM_FILES)
 }

@@ -1,17 +1,33 @@
-import type { JSX } from 'react'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { useEffect, useState, type JSX } from 'react'
+import { BACKEND_LABEL, preferredAssistBackend, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
 import { useStore } from '../../store'
 import { useAssistSetup } from '../../useAssistSetup'
 import { ASSIST_COST_LINE, ASSIST_RUNS_ON } from '../AssistSetup'
-import { SessionBackendIcon } from '../SessionBackendIcon'
+import { AgentSelect } from '../SessionLaunchButtons'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
+const NO_ACCOUNT_LINE = 'no account — add one in Settings ▸ Accounts'
+
 export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
+  const butler = useStore((s) => s.settings.butler)
+  const name = butler.name
+  const runsOn = useStore((s) => preferredAssistBackend(s.settings))
+  const methods = useStore((s) => s.settings.sessionMethods)
   const update = useSettingsUpdate()
   const setup = useAssistSetup()
   const on = assist?.on ?? false
+  const [nameDraft, setNameDraft] = useState(name)
+  useEffect(() => setNameDraft(name), [name])
+
+  const commitName = (): void => {
+    const next = butlerName(nameDraft)
+    setNameDraft(next)
+    if (next !== name) update({ butler: renamedButler(butler, next) })
+  }
+
   return (
     <>
       <div className="set-grp">Assist</div>
@@ -20,7 +36,7 @@ export function AssistSection(): JSX.Element {
           <b>Koloft Assist</b>
           <small>
             Koloft asks an AI for small jobs, like naming a new session. {ASSIST_COST_LINE} Off,
-            those jobs run without AI.
+            Koloft does those jobs without AI. {name}, your butler, keeps working either way.
           </small>
         </div>
         <Switch
@@ -30,30 +46,52 @@ export function AssistSection(): JSX.Element {
           onChange={(next) => assist && update({ assist: { ...assist, on: next } })}
         />
       </div>
-      <div className={'set-row child' + (on ? '' : ' off')}>
+      <div className="set-row child">
         <div className="set-lab">
           <b>Runs on</b>
           {SESSION_BACKENDS.map((b) => (
             <small key={b} className={setup.usable[b] ? undefined : 'ob-warn'}>
-              {BACKEND_LABEL[b]} ·{' '}
-              {setup.usable[b] ? ASSIST_RUNS_ON[b] : 'no account — add one in Settings ▸ Accounts'}
+              {BACKEND_LABEL[b]} · {setup.usable[b] ? ASSIST_RUNS_ON[b] : NO_ACCOUNT_LINE}
             </small>
           ))}
+          <small>{name} runs on it too. A change applies the next time it starts.</small>
         </div>
-        <div className="seg" role="group" aria-label="Koloft Assist runs on">
-          {SESSION_BACKENDS.map((b) => (
-            <button
-              key={b}
-              className={assist?.backend === b ? 'on' : ''}
-              aria-pressed={assist?.backend === b}
-              disabled={!setup.usable[b]}
-              onClick={() => update({ assist: { on: true, backend: b } })}
-            >
-              <SessionBackendIcon backend={b} size={14} decorative />
-              {BACKEND_LABEL[b]}
-            </button>
-          ))}
+        <AgentSelect
+          value={runsOn}
+          ariaLabel="Koloft Assist runs on"
+          choice={{
+            listed: SESSION_BACKENDS,
+            issue: (b) =>
+              !methods.enabled[b]
+                ? `${BACKEND_LABEL[b]} is switched off in Settings ▸ Sessions.`
+                : setup.usable[b]
+                  ? ''
+                  : NO_ACCOUNT_LINE,
+            note: (b) => (methods.enabled[b] ? 'No account' : 'Off')
+          }}
+          onPick={(b) => update({ assist: { on: assist?.on ?? true, backend: b } })}
+        />
+      </div>
+      <div className="set-row stack">
+        <div className="set-lab">
+          <b>Name</b>
+          <small>
+            Your butler’s name, shown as “{butlerTitle(name)}” at the top of the sidebar. Other
+            sessions reach it by this name.
+          </small>
         </div>
+        <input
+          className="set-input"
+          type="text"
+          aria-label="Butler name"
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitName()
+          }}
+          spellCheck={false}
+        />
       </div>
     </>
   )

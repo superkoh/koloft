@@ -9,15 +9,22 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Commands
 
-- `npm run test:unit`  — Vitest, plain Node, no app; the fast layer.
+- `npm run test:unit`  — Vitest, plain Node (jsdom for component tests), no app; the
+  fast layer.
 - `npm run test:unit:changed` — the same, only the files reachable from what this
   branch changed against `main` (vitest `--changed`).
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
   `npm run build` first — Playwright never builds (root CLAUDE.md).
 - `npm test`           — both.
+- `node scripts/real-window-mac.mjs tart|here` — the real-window layer (below); never
+  part of `npm test`.
 
 ## Unit layer (test/unit/)
 
+- A component test is a `.test.tsx` whose first line is `// @vitest-environment jsdom`;
+  it renders with `@testing-library/react` and calls `cleanup` in `afterEach` (vitest
+  globals are off, so nothing cleans up for it) — sessionBackendIcon.test.tsx. Every
+  other file runs in plain Node.
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
   reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
   `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
@@ -75,34 +82,54 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
     does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
+  - env: `KOLOFT_FAKE_PROGRAM_STATUS=1` makes it ask its terminal for OSC 7501 at start,
+    as the real one does (CC§12), and, once answered, report `blocked` while a dialog
+    waits on a key and `working` after it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
-    fresh launch, used once), `-no-status` (binds but never reports a run-state),
+    fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    closes its tab kills it), `-trust-question` (holds a session id: resuming that id, it
+    asks CC's folder-trust question before it binds; ↓ then Enter answers yes, deletes
+    the file and starts, Enter alone exits 1), `-bg-ms` (how long `/bg-reported`'s background work runs,
     5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
     SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
-    failure line and leaves the worktree).
+    failure line and leaves the worktree), `-drop-key` (a dialog drops the next key it
+    gets, then deletes the file).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
     whole line), `/long <n>` (a
-    reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` and `/bash <command>`
+    reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` (more questions after
+    `||`; a question starting `+` takes several picks; the dialog takes CC's keys, one
+    per read: Down and Up move its highlight over the options, the own-words row and
+    the chat row as CC's do, a digit on the own-words row is typed there and Ctrl+U
+    empties it, Shift+Tab on an option row or the review page goes back a question,
+    CC§14) and `/bash <command>`
     (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
-    digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
-    `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
+    digit picks that option and `1` runs the command; a command starting `slow ` runs on
+    only once `<home>/go-run` exists), `/busy` (a turn held open ~30 s), `/need-approval`,
+    `/scratch <name>`, `/later <line>` (takes `<line>` as typed once `<home>/go-later`
+    exists, then deletes that file — for a line the owner must not type, since a typed
+    Enter is the owner back from asleep), `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
-    output and `koloft exit=<code>`, with no hook and no transcript line), `/clear`,
+    output and `koloft exit=<code>`, with no hook and no transcript line), `/sh <command>`
+    (the same for any shell command, as Claude's Bash tool would run it with the
+    session's env, ending `sh exit=<code>`), `/run <command>` (the same command as a
+    Bash tool call: its PreToolUse and PostToolUse hooks around it, then Stop; ends
+    `ran <command>`), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
-    writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
+    writes), `/compact-while-idle` (Claude compacting a finished session on its own:
+    the `idle_prompt` Notification, then an `auto` PreCompact and a compact
+    SessionStart, with no prompt and no Stop around them), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
+    Stop, its UserPromptSubmit hook given the line as `prompt`. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
     so an Esc Koloft presses lands inside the next one). A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
@@ -113,11 +140,16 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     /dev/null), which prints `<first line of the task> (titled)` and exits unlogged; a
     `-p` typed in a terminal is logged like any launch. Asked which docs are for the
     reader, it picks every written file whose name does not start with `draft-`, plus
-    every absolute `.md`/`.html` path in the reply.
+    every absolute `.md`/`.html` path in the reply. While `<home>/fake-claude-assist-reply`
+    exists, every such `-p` instead prints that file as Assist's answer (after
+    `fake-claude-assist-ms` ms, when that file exists) and appends what it was asked to
+    `fake-claude-assist-asked.txt`.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
     message socket (CC§11); each line written there is appended raw to
-    `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
-    `Peer said: <content>`, then Stop). A `--name` shows as its registry name.
+    `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
+    gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
+    transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
+    Stop). A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
@@ -155,12 +187,27 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
   `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
   Without it, `KOLOFT_CODEX_CMD` is a bare name, not a path, so Codex reads as not
-  installed whatever the developer's own login shell has.
+  installed whatever the developer's own login shell has. A Codex tab on the fake remote
+  needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
+  the machine and gives the Mac account a token; what the machine's app-server did lands
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+- Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
+  (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
+  Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
+  `<home>/.config/muse` trusts the folder or it got `--trust-workspace`.
+- Antigravity sessions: the `agy` is fixtures/fake-agy.js, installed per case by
+  `installAgy` (helpers/env.ts, sets `KOLOFT_AGY_CMD` and adds an API-key account);
+  without it agy reads as not installed. It asks agy's trust question unless the owner's
+  `~/.gemini` settings trust the folder (`trustInAgy`), logs every launch to
+  `<home>/fake-agy-calls.jsonl` (the account probe's `-p /usage` and `--version` too),
+  and serves agy's local API. On the fake remote machine `installRemoteAgy`
+  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder.
 
 ### Keys, focus and the hidden window
 
 - Native menu accelerators are unreachable from Playwright's synthetic keys — send
-  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`). Which island
+  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`); a case about the
+  key itself belongs in the real-window layer. Which island
   a key belongs to is decided by focus, so click the target area first. Dialog-local
   keys (⏎/Esc/digits/arrows/typing inside C8/C9/C10) are renderer keydown — plain
   `page.keyboard`. The app drops a shortcut sent before its first rows push, on
@@ -168,12 +215,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (helpers/blackbox.ts); `clickAppMenuItem` waits for the shortcut listeners, not for
   the first rows push. Find a dialog by its visible title.
 - The test window never has OS focus. Read focus from `focusOwner` /
-  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
-  same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
-  (helpers/app.ts): main then reads its window as focused, and the click it makes
-  counts as "watching".
+  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). Every
+  finished turn leaves an attention mark, seen through `pendingAttention(page)`, and
+  only the session working again clears it — looking at the tab clears only a mark that
+  is only news (`fyi`). No OS
+  notification or Dock badge is ever shown; what one would have said is recorded
+  instead and read with `osOutlets(app)` (helpers/app.ts). A case about what a user
+  watching the tab is spared (the sound, the notification) calls
+  `pretendWindowFocused(app)`: main then reads its window as focused.
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -198,7 +247,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   columns.
 - After a click on a session row, the Workbench still shows the old session for two
   frames (T-SWITCH-04): poll, don't read once. Its file tabs mount again only then
-  (ADR-0016): wait for the remount before touching one.
+  (ADR-0016): wait for the remount before touching one. The center terminal lags the
+  same way, and `centerTerm` then still finds the old session's terminal, which a click
+  keeps waiting on after it hides: switch with `switchToRow` (helpers/p1.ts) before
+  typing into the new one.
 
 ### Selectors
 
@@ -231,6 +283,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `toBeVisible` ignores scroll clipping: compare bounding rects. A click scrolls its
   target into view first, so read a scroll offset after the click. A chained selector
   resolves under its parent: `tabCloseIn` under a tab, `tabClose` only from the page.
+- While Koloft's own tooltip shows (the mouse rests 600 ms on a titled element,
+  `titleTips.ts`), that element's `title` reads `''` until the mouse leaves: read or
+  select by `title` before hovering, or move the mouse away first. A click hides the
+  tip and puts the title back at once.
 
 ### Test-only seams
 
@@ -240,23 +296,85 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `src/preload/index.ts` for the renderer — so grep its name. All are inert in
   production.
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
-  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
+  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
-  `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
+  `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`, and `KOLOFT_TEST_MACHINE_FILE` (JSON
+  `{pressure, load1, backgroundWork}` read in place of the Mac's own numbers) pointing at a
+  roomy `<home>/machine-reading.json`, so the developer Mac's own load never reaches a
+  test; a spec wanting a busy Mac points it at a file of its own (machine-room). The
+  hand-test sandbox drops it and reads the real Mac.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
+  `KOLOFT_TEST_TOOL_INSTALLER` (fixtures/fake-tool-installer.js), `KOLOFT_TEST_CLT`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
+  (real-window layer), `KOLOFT_TEST_PRESENCE_FILE`
+  (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
+  without it a test run counts the owner as away, so Discord posts as before),
+  `KOLOFT_AWAY_DIGEST_MS` (how long the away digest gathers before it goes to the
+  butler), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
-  `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
-  spec may rewrite them after launch.
+  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
+  `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
-  `globalThis.__koloftOsNotifCount`, and `installGitSpawnLog` (the git the app runs).
+  `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
+  (the git the app runs).
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
+
+## Hand tests
+
+A hand test is a case no suite answers. Split it into steps, and give each step to the
+first of these that can do it; only a step none of them can do goes to the owner:
+
+1. The hand-test sandbox, `npm run handtest` (test/handtest/sandbox.ts; its usage text
+   says how). It lends a Claude account from the installed Koloft: the token goes into
+   a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
+   Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
+   Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
+   it cannot reach OpenAI (CODEX§16). `--discord` puts it on the real Discord as the dev
+   build's test bot, so the owner's only step is a press on the phone. Drive it with
+   `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
+   files and `<home>/koloft.log`.
+2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
+3. The real binary in a temp HOME (claude, codex, gh) — a temp HOME does not hide the
+   login Keychain, so a probe that signs in runs in Docker.
+4. The Docker SSH lab, for anything about a remote machine.
+5. A Mac with a real window, for what the sandbox cannot see (below).
+6. The owner, only for: a captcha, their own Discord account or phone, a first sign-in
+   with their own account, a matter of taste, or an effect that takes days to show.
+
+The sandbox is launched like an e2e app, so "Keys, focus and the hidden window" and
+"Test-only seams" above hold for it too: no Dock, badge or OS notification is shown
+(main records what it would have said in `__koloftOsOutlets`), no real ⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
+hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with DOM
+(not WebGL), and the lab machine's ssh login has no locale (the lab's ssh runs with
+`-F`, so no `SendEnv LANG`); a remote tab still draws its symbols, as Koloft runs the
+tmux client there with `-u`.
+
+The owner's step goes through AskUserQuestion, one case at a time: the steps inside
+the question, the outcomes as options. Only the questions of the butler and of the
+helpers in its folder reach the owner's Discord as cards in its channel
+(discord-flow), and those of a session with a room of its own as cards in that room
+(discord-real-smoke); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
+butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
+owner answers, check their step in a log or file yourself.
+
+## Real-window layer (test/real-window/)
+
+- For what only macOS itself delivers or draws: menu keys, the mouse on the window
+  frame, the Dock, banners, a real input method. It reuses the e2e fixtures and
+  launches with `KOLOFT_TEST_REAL_WINDOW=1` on top of the test seams, so the window,
+  Dock icon, badge and banners are real; input goes through `helpers/macInput.ts`
+  (CGEvent and Accessibility, platform ledger §52). The hidden-window rules above
+  about focus and `osOutlets` turn around here: notifications and the badge are really
+  shown, and `osOutlets` records nothing.
+- Every case skips unless `KOLOFT_REAL_WINDOW=1`, which only `scripts/real-window-mac.mjs`
+  sets: in a throwaway tart VM (`tart`), or on a Mac nobody is using (`here`, which the
+  GitHub workflow `real-window.yml` runs). One worker, no retries.
 
 ## Component & case numbers used in specs and test titles
 

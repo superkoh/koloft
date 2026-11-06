@@ -15,19 +15,21 @@ import type {
 } from '@shared/types'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
-import {
-  identityOf,
-  sourceOf,
-  SUPPORTED_PAIRS,
-  unsupportedPairMessage
-} from '@shared/sessionBackend'
+import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
 
+export interface TranscriptPlaces {
+  onThisMac?: string
+  onMachine?: string
+}
+
 export interface SessionBackend {
   id: BackendId
+  recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
+  forgetAvailability(): void
   list(): BackendSessionInfo[]
   historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
@@ -38,18 +40,22 @@ export interface SessionBackend {
   aliveTabFor(key: string): string | undefined
   stop(tabId: string, restarting?: boolean): void | Promise<void>
   archive(key: string): boolean
+  adopt(keys: string[]): void
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void
   occupantOf(dir: string): string | null
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
+  transcriptPlaces(key: string): TranscriptPlaces | undefined
   permissionClass(tabId: string): ModeClass
+  peerNames(): (key: string) => Promise<string | null>
+  runningElsewhere(key: string): boolean | Promise<boolean>
 }
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
-  bound(tabId: string, key: string): void
+  bound(tabId: string, key: string, idleCompaction: boolean): void
   exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
@@ -62,10 +68,12 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
-  conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
-  conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
+  isButlerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
+  askingOf: (tabId: string) => string | undefined = () => undefined
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
+  noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
+  turnedOff: (backend: BackendId) => string | null = () => null
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -73,8 +81,8 @@ export class SessionBackends {
     switch (event.type) {
       case 'bound':
         this.cleanExitAt.delete(tabId)
-        this.lifecycle.clearAttention(tabId)
-        return this.lifecycle.bound(tabId, event.key)
+        if (!event.idleCompaction) this.lifecycle.clearAttention(tabId)
+        return this.lifecycle.bound(tabId, event.key, !!event.idleCompaction)
       case 'exited':
         return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':
@@ -129,18 +137,22 @@ export class SessionBackends {
   }
 
   workspaceOfTab(tabId: string): string | undefined {
-    return this.conductorWorkspaceOf(tabId) ?? this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(
     unregistered: (id: BackendId) => BackendAvailability
   ): Promise<BackendAvailability[]> {
     return Promise.all(
-      (Object.keys(SUPPORTED_PAIRS) as BackendId[]).map((id) => {
+      SESSION_BACKENDS.map((id) => {
         const backend = this.adapters.get(id)
         return backend ? backend.availability() : unregistered(id)
       })
     )
+  }
+
+  forgetAvailability(): void {
+    for (const backend of this.adapters.values()) backend.forgetAvailability()
   }
 
   list(): SessionInfo[] {
@@ -148,10 +160,11 @@ export class SessionBackends {
       backend.list().map((s): SessionInfo => ({
         ...s,
         backendId: backend.id,
-        host: s.remote ? 'ssh' : 'local',
+        host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
+        butler: this.isButlerSession(s.tabId) || this.isButlerSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
+        asking: this.askingOf(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))
     )
@@ -161,8 +174,27 @@ export class SessionBackends {
     return this.forSession(key).turns(key, n)
   }
 
+  transcriptPlaces(key: string): TranscriptPlaces | undefined {
+    return this.forSession(key).transcriptPlaces(key)
+  }
+
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
+  }
+
+  peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {
+    const lookups = new Map<BackendId, (key: string) => Promise<string | null>>()
+    return async ({ backendId, sessionId }) => {
+      const backend = this.adapters.get(backendId)
+      if (!backend) return null
+      const lookup = lookups.get(backendId) ?? backend.peerNames()
+      lookups.set(backendId, lookup)
+      return lookup(sessionId)
+    }
+  }
+
+  async runningElsewhere(backendId: BackendId, key: string): Promise<boolean> {
+    return (await this.adapters.get(backendId)?.runningElsewhere(key)) ?? false
   }
 
   async historyRows(
@@ -182,23 +214,32 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.conductorOf(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.isButlerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+  }
+
+  adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {
+    for (const backend of this.adapters.values())
+      backend.adopt(rows.filter((r) => r.backendId === backend.id).map((r) => r.id))
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {
     if (options.kind === 'shell') throw new Error('A utility terminal is not a session.')
     if (
-      !SUPPORTED_PAIRS[options.kind] ||
+      !SESSION_BACKENDS.includes(options.kind) ||
       options.util ||
-      (options.worktreeResourceId && options.kind !== 'codex')
+      (options.worktreeResourceId && !this.adapters.get(options.kind)?.recoversWorktrees)
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
-    if (refusal) return Promise.reject(new Error(refusal))
-    const backend = this.get(options.kind)
-    // ADR-0030
-    if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))
-    return backend.create(options)
+    const refused =
+      (!options.resumeSessionId && this.turnedOff(options.kind)) ||
+      this.noUsableAccount(options.kind)
+    if (refused) return Promise.reject(new Error(refused))
+    return this.get(options.kind).create(options)
+  }
+
+  // ADR-0030
+  noUsableAccount(kind: BackendId): string | null {
+    return this.get(kind).accountUsable() ? null : this.noAccountMessage(kind)
   }
 }

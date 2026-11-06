@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuPencil, LuPlay, LuTrash2, LuX } from 'react-icons/lu'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { IconClose, IconDelete, IconEdit, IconPlay } from '../icons'
 import type {
   BackendId,
   CronJob,
@@ -13,19 +13,33 @@ import { cronBackend, slugOf } from '@shared/cronNames'
 import { hostOf } from '@shared/remoteKey'
 import {
   BACKEND_LABEL,
+  BACKEND_PRODUCT,
   capabilitiesFor,
   effectiveBackend,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
-import { histText, histWhen, lastRunOf, liveOf, whenLine } from '@shared/cronHistory'
+import { describeSchedule, describeWhen, isStepKind, nextRun, stepMs } from '@shared/schedule'
 import {
+  histEnd,
+  histFolder,
+  histText,
+  histWhen,
+  lastRunOf,
+  liveOf,
+  liveWords,
+  oncePassed,
+  whenLine
+} from '@shared/cronHistory'
+import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
+import {
+  effortOf,
   emptyFields,
-  permissionAfterSwitch,
+  modelValue,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
   validate,
+  toModelFields,
   type JobFields,
   type WhenKind
 } from '../cronForm'
@@ -33,6 +47,7 @@ import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { mixesBackends } from '../sessionRows'
 import { Switch } from './settings/Switch'
+import '../cronJobs.css'
 
 const DAY_CHIPS: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' },
@@ -47,23 +62,24 @@ const DAY_CHIPS: { d: number; label: string }[] = [
 const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
   { kind: 'daily', label: 'Every day' },
   { kind: 'weekly', label: 'Pick days' },
-  { kind: 'every', label: 'Repeat every…' }
+  { kind: 'every', label: 'Repeat every…' },
+  { kind: 'once', label: 'Once' },
+  { kind: 'after', label: 'After each run…' }
 ]
 
-const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
-  { value: '', label: 'Default' },
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'other', label: 'Other…' }
-]
+const AFTER_HINT =
+  'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
 
-const MODEL_CHIPS_OF: Record<BackendId, typeof MODEL_CHIPS> = {
-  claude: MODEL_CHIPS,
-  codex: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
-}
-
-const APP_NAME: Record<BackendId, string> = { claude: 'Claude Code', codex: 'Codex' }
+const MODEL_CHIPS_OF = Object.fromEntries(
+  SESSION_BACKENDS.map((b) => [
+    b,
+    [
+      { value: '', label: 'Default' },
+      ...NAMED_MODELS[b].map((m) => ({ value: m.id, label: m.label })),
+      { value: 'other', label: 'Other…' }
+    ]
+  ])
+) as Record<BackendId, { value: string; label: string }[]>
 
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
   { value: '', label: 'Same as usual' },
@@ -98,10 +114,12 @@ const effortHint = (label: string): string =>
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-// CC§9 CODEX§14
+// CC§9 CODEX§14 MUSE§10 AGY§5
 const TRUST_QUESTION: Record<BackendId, string> = {
   claude: 'do you trust this project?',
-  codex: 'do you trust the contents of this directory?'
+  codex: 'do you trust the contents of this directory?',
+  muse: 'Do you trust this workspace?',
+  agy: 'Do you trust the contents of this project?'
 }
 const trustHint = (backend: BackendId): string =>
   `${BACKEND_LABEL[backend]} has never been opened in this folder. Start one session here ` +
@@ -112,7 +130,7 @@ const MANY_RUN_FOLDERS = 10
 
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
-  if (h.state === 'failed') return 'dot bad'
+  if (h.state === 'failed' || h.state === 'quit') return 'dot bad'
   if (h.state === 'finished') return 'dot ok'
   return 'dot'
 }
@@ -146,11 +164,12 @@ export function CronJobsDialog({
   const mixed = mixesBackends(jobs.map((j) => ({ backendId: cronBackend(j) })))
 
   const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null)
-  const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0]
+  const selected = jobs.find((j) => j.id === selectedId)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [form, setForm] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null)
   const [fields, setFields] = useState<JobFields>(emptyFields())
   const [touched, setTouched] = useState(false)
+  const [autoCloseBeforeAfter, setAutoCloseBeforeAfter] = useState<boolean | null>(null)
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [skills, setSkills] = useState<SkillSuggestion[]>([])
   const [trusted, setTrusted] = useState<boolean | null>(null)
@@ -200,7 +219,8 @@ export function CronJobsDialog({
     if (form) nameRef.current?.focus()
   }, [form])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
@@ -224,19 +244,14 @@ export function CronJobsDialog({
       ...scheduleToFields(job.schedule),
       name: job.name,
       task: job.task,
-      model: !job.model
-        ? ''
-        : job.model === 'fable' || job.model === 'opus' || job.model === 'sonnet'
-          ? job.model
-          : 'other',
-      modelOther: job.model && !['fable', 'opus', 'sonnet'].includes(job.model) ? job.model : '',
+      ...toModelFields(f.backend, job.model),
       effort: job.effort ?? '',
       permission: job.permission,
       autoClose: job.autoClose === true
     })
     setTouched(false)
     setServerErrors([])
-    setSelectedId(job.id)
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'edit', id: job.id })
   }
 
@@ -244,6 +259,7 @@ export function CronJobsDialog({
     setFields(emptyFields(defaultBackend))
     setTouched(false)
     setServerErrors([])
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'new' })
   }
 
@@ -253,13 +269,13 @@ export function CronJobsDialog({
     setFields((f) => ({ ...f, ...p }))
   }
 
-  const result = validate(fields)
+  const editing = form?.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
+  const result = validate(fields, new Date(), editing?.schedule)
   const errors = result.ok ? {} : result.errors
   const err = (k: keyof JobFields): string | undefined => (touched ? errors[k] : undefined)
 
   const save = async (): Promise<void> => {
     if (!result.ok || !form) return
-    const editing = form.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
     const input: CronSaveInput = {
       ...result.input,
       workspacePath: wsPath,
@@ -268,7 +284,6 @@ export function CronJobsDialog({
     if (form.mode === 'edit') input.id = form.id
     const r = await window.api.cron.save(input)
     if (r.ok) {
-      setSelectedId(r.job.id)
       closeForm()
     } else {
       setServerErrors(r.errors)
@@ -321,17 +336,20 @@ export function CronJobsDialog({
 
   const renderCard = (job: CronJob): JSX.Element => (
     <div
-      className={'job-row' + (job.enabled ? '' : ' off')}
+      className={'job-row' + (job.enabled ? '' : ' off') + (job.id === selected?.id ? ' on' : '')}
       key={job.id}
-      onClick={() => setSelectedId(job.id)}
     >
       <Switch
         checked={job.enabled}
+        disabled={oncePassed(job, new Date())}
         small
         ariaLabel={`${job.name} on`}
         onChange={(on) => void window.api.cron.setEnabled(job.id, on)}
       />
-      <div className="job-main">
+      <div
+        className="job-main"
+        onClick={() => setSelectedId(job.id === selected?.id ? null : job.id)}
+      >
         <div className="job-name">{job.name}</div>
         <div className="job-task">
           {[
@@ -345,7 +363,7 @@ export function CronJobsDialog({
             .join(' · ')}
         </div>
         {cron.notes[job.id] && <p className="field-hint bad">{cron.notes[job.id]}</p>}
-        <div className="job-when">{whenLine(job, new Date())}</div>
+        <div className="job-when">{whenLine(job, new Date(), cron.live)}</div>
         <div className="job-last">{lastLine(job)}</div>
       </div>
       {confirmId === job.id ? (
@@ -367,18 +385,18 @@ export function CronJobsDialog({
       ) : (
         <div className="job-acts">
           <button className="mini" onClick={() => void window.api.cron.runNow(job.id)}>
-            <LuPlay size={11} />
+            <IconPlay size={11} />
             Run now
           </button>
           <button className="ibtn" aria-label={`Edit ${job.name}`} onClick={() => edit(job)}>
-            <LuPencil size={15} />
+            <IconEdit size={15} />
           </button>
           <button
             className="ibtn danger"
             aria-label={`Delete ${job.name}`}
             onClick={() => setConfirmId(job.id)}
           >
-            <LuTrash2 size={15} />
+            <IconDelete size={15} />
           </button>
         </div>
       )}
@@ -387,15 +405,23 @@ export function CronJobsDialog({
 
   const slug = slugOf(fields.name)
   const schedule = fieldsToSchedule(fields)
+  const now = new Date()
+  const firstRun =
+    schedule?.kind === 'after'
+      ? new Date(now.getTime() + stepMs(schedule))
+      : schedule && nextRun(schedule, now)
   const preview = schedule
-    ? `${describeSchedule(schedule)} · next ${describeWhen(nextRun(schedule, new Date()), new Date())}`
+    ? describeSchedule(schedule) + (firstRun ? ` · next ${describeWhen(firstRun, now)}` : '')
     : ''
+  const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
-  const modelChips = MODEL_CHIPS_OF[fields.backend]
+  const efforts = effortsFor(fields.backend, modelValue(fields))
+  const effortChips = EFFORT_CHIPS.filter((c) => c.value === '' || efforts.includes(c.value))
+  const effort = effortOf(fields)
 
   const permissionHint =
-    (fields.backend === 'claude' && settings.skipPermissions
+    (settings.skipPermissions
       ? 'Today that means: skips all permission checks (your Accounts setting).'
       : `Today that means: ${label} asks before risky steps, like your other sessions.`) +
     ' ' +
@@ -406,10 +432,9 @@ export function CronJobsDialog({
       <p className="fnote">
         A new copy of the repo every time —{' '}
         <span className="m">{`.claude/worktrees/${slug}-<date>-<time>`}</span>, branch{' '}
-        <span className="m">{`worktree-${slug}-…`}</span>. Your own files are never touched. Each
-        run&apos;s folder and branch stay until you remove them (
-        <span className="m">git worktree remove</span>). Closing and /exit work exactly as in any
-        New worktree session.
+        <span className="m">{`worktree-${slug}-…`}</span>. Your own files are never touched. When a
+        run&apos;s tab closes, Koloft removes its folder and branch, unless they hold work not
+        committed; its row in the sidebar still resumes it.
       </p>
     ) : (
       <p className="fnote">{NO_GIT_NOTE}</p>
@@ -429,8 +454,7 @@ export function CronJobsDialog({
                   onClick={() =>
                     patch({
                       backend: b,
-                      permission: permissionAfterSwitch(fields, b),
-                      ...(MODEL_CHIPS_OF[b].some((c) => c.value === fields.model)
+                      ...(fields.model === 'other' || namedModel(b, fields.model)
                         ? {}
                         : { model: '' })
                     })
@@ -493,7 +517,7 @@ export function CronJobsDialog({
             ))}
           </div>
         )}
-        <p className="field-hint">{taskHint(APP_NAME[fields.backend])}</p>
+        <p className="field-hint">{taskHint(BACKEND_PRODUCT[fields.backend])}</p>
         {err('task') && <p className="field-hint bad">{err('task')}</p>}
       </div>
 
@@ -510,7 +534,19 @@ export function CronJobsDialog({
             <button
               key={c.kind}
               className={'chip' + (fields.whenKind === c.kind ? ' on' : '')}
-              onClick={() => patch({ whenKind: c.kind })}
+              onClick={() => {
+                const entering = c.kind === 'after' && fields.whenKind !== 'after'
+                const leaving = c.kind !== 'after' && fields.whenKind === 'after'
+                if (entering) setAutoCloseBeforeAfter(fields.autoClose)
+                if (leaving) setAutoCloseBeforeAfter(null)
+                patch({
+                  whenKind: c.kind,
+                  ...(entering ? { autoClose: true } : {}),
+                  ...(leaving && autoCloseBeforeAfter !== null
+                    ? { autoClose: autoCloseBeforeAfter }
+                    : {})
+                })
+              }}
             >
               {c.label}
             </button>
@@ -535,13 +571,14 @@ export function CronJobsDialog({
             ))}
           </div>
         )}
-        {fields.whenKind === 'every' ? (
+        {stepKind ? (
           <div className="inline">
+            {fields.whenKind === 'after' && <span className="field-hint">wait</span>}
             <div className={inputCls('n')}>
               <input
                 className="cb-field"
                 type="number"
-                aria-label="Repeat every"
+                aria-label={fields.whenKind === 'after' ? 'Wait' : 'Repeat every'}
                 min={1}
                 value={Number.isNaN(fields.n) ? '' : String(fields.n)}
                 onChange={(e) =>
@@ -562,6 +599,21 @@ export function CronJobsDialog({
           </div>
         ) : (
           <div className="inline">
+            {fields.whenKind === 'once' && (
+              <>
+                <span className="field-hint">on</span>
+                <div className={inputCls('date') + ' date'}>
+                  <input
+                    className="cb-field"
+                    type="date"
+                    aria-label="on"
+                    value={fields.date}
+                    onChange={(e) => patch({ date: e.target.value })}
+                    {...focusProps('date')}
+                  />
+                </div>
+              </>
+            )}
             <span className="field-hint">at</span>
             <div className={inputCls('at') + ' time'}>
               <input
@@ -576,7 +628,9 @@ export function CronJobsDialog({
             {preview && <span className="field-hint">{preview}</span>}
           </div>
         )}
+        {fields.whenKind === 'after' && <p className="field-hint">{AFTER_HINT}</p>}
         {err('days') && <p className="field-hint bad">{err('days')}</p>}
+        {err('date') && <p className="field-hint bad">{err('date')}</p>}
         {err('at') && <p className="field-hint bad">{err('at')}</p>}
         {err('n') && <p className="field-hint bad">{err('n')}</p>}
       </div>
@@ -584,7 +638,7 @@ export function CronJobsDialog({
       <span className="flabel">Model</span>
       <div className="fcol">
         <div className="chips">
-          {modelChips.map((c) => (
+          {MODEL_CHIPS_OF[fields.backend].map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.model === c.value ? ' on' : '')}
@@ -614,10 +668,10 @@ export function CronJobsDialog({
       <span className="flabel">Thinking</span>
       <div className="fcol">
         <div className="chips">
-          {EFFORT_CHIPS.map((c) => (
+          {effortChips.map((c) => (
             <button
               key={c.label}
-              className={'chip' + (fields.effort === c.value ? ' on' : '')}
+              className={'chip' + (effort === c.value ? ' on' : '')}
               onClick={() => patch({ effort: c.value })}
             >
               {c.label}
@@ -650,7 +704,10 @@ export function CronJobsDialog({
             <button
               key={c.label}
               className={'chip' + (fields.autoClose === c.value ? ' on' : '')}
-              onClick={() => patch({ autoClose: c.value })}
+              onClick={() => {
+                setAutoCloseBeforeAfter(null)
+                patch({ autoClose: c.value })
+              }}
             >
               {c.label}
             </button>
@@ -675,30 +732,67 @@ export function CronJobsDialog({
   )
 
   const renderHistory = (): JSX.Element | null => {
-    if (!selected) return null
-    const live = liveOf(cron.live, selected.id)
+    if (jobs.length === 0) return null
+    const now = new Date()
+    type Row = {
+      key: string
+      job: string
+      at: number
+      when: string
+      dot: string
+      text: string
+      worktree?: string
+      folder?: string
+    }
+    const waiting: Row[] = []
+    const past: Row[] = []
+    for (const job of selected ? [selected] : jobs) {
+      const live = liveOf(cron.live, job.id)
+      if (live?.state === 'done') {
+        const words = liveWords(job, live)
+        waiting.push({
+          key: `${job.id}-live`,
+          job: job.name,
+          at: live.dueAt,
+          when: describeWhen(new Date(live.dueAt), now),
+          dot: 'dot ok',
+          text: live.kept
+            ? `Done — not closed: ${live.kept}`
+            : words.charAt(0).toUpperCase() + words.slice(1),
+          worktree: live.worktree
+        })
+      }
+      job.history.forEach((h, i) =>
+        past.push({
+          key: `${job.id}-${h.dueAt}-${i}`,
+          job: job.name,
+          at: histEnd(h),
+          when: histWhen(h, now),
+          dot: histDot(h),
+          text: histText(h),
+          worktree: h.worktree,
+          folder: histFolder(h)
+        })
+      )
+    }
+    const newestFirst = (a: Row, b: Row): number => b.at - a.at
+    const rows = [...waiting.sort(newestFirst), ...past.sort(newestFirst)]
     return (
       <div className="hist">
-        <span className="flabel">{`History · ${selected.name}`}</span>
+        <span className="flabel">
+          {selected ? `History · ${selected.name}` : 'History · all jobs'}
+        </span>
         <div className="hist-list">
-          {live?.state === 'done' && (
-            <div className="hist-row">
-              <span className="hist-when">{describeWhen(new Date(live.dueAt), new Date())}</span>
+          {rows.map((r) => (
+            <div className="hist-row" key={r.key}>
+              <span className="hist-when">{r.when}</span>
+              {!selected && <span className="hist-job">{r.job}</span>}
               <span className="hist-state">
-                <span className="dot ok" />
-                {live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you'}
+                <span className={r.dot} />
+                {r.text}
               </span>
-              {live.worktree && <span className="hist-wt">{` · ${live.worktree}`}</span>}
-            </div>
-          )}
-          {selected.history.map((h, i) => (
-            <div className="hist-row" key={`${h.dueAt}-${i}`}>
-              <span className="hist-when">{histWhen(h, new Date())}</span>
-              <span className="hist-state">
-                <span className={histDot(h)} />
-                {histText(h)}
-              </span>
-              {h.worktree && <span className="hist-wt">{` · ${h.worktree}`}</span>}
+              {r.worktree && <span className="hist-wt">{` · ${r.worktree}`}</span>}
+              {r.folder && <span className="hist-folder">{` · ${r.folder}`}</span>}
             </div>
           ))}
         </div>
@@ -721,7 +815,7 @@ export function CronJobsDialog({
         <div className="modal-header">
           <span>{header}</span>
           <span className="modal-close" onClick={onClose} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">

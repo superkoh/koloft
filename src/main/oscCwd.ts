@@ -2,6 +2,7 @@ import os from 'os'
 
 const ESC = '\x1b'
 const BEL = '\x07'
+const OSC_START = `${ESC}]`
 
 export const OSC_CARRY_MAX = 4096
 
@@ -28,16 +29,19 @@ function cwdFromBody(body: string, hostname: string): string | undefined {
   }
 }
 
-// PLATFORM§2
-export class OscCwdParser {
+export class OscBodies {
   private carry = ''
+  private carryIsHeadOnly = false
 
-  constructor(private readonly hostname: string = os.hostname()) {}
+  constructor(private readonly keepHeadOfLongBodies = false) {}
 
-  push(chunk: string): string | undefined {
+  push(chunk: string): string[] {
+    if (!this.carry && !chunk.includes(OSC_START) && !chunk.endsWith(ESC)) return []
     const s = this.carry + chunk
+    const headOnly = this.carryIsHeadOnly
     this.carry = ''
-    let found: string | undefined
+    this.carryIsHeadOnly = false
+    const found: string[] = []
     let i = 0
     while (i < s.length) {
       const esc = s.indexOf(ESC, i)
@@ -58,7 +62,7 @@ export class OscCwdParser {
           break
         }
         if (c === ESC) {
-          if (j + 1 >= s.length) return this.hold(s.slice(esc), found)
+          if (j + 1 >= s.length) return this.hold(s.slice(esc), found, headOnly && esc === 0)
           if (s[j + 1] === '\\') {
             end = j
             termLen = 2
@@ -71,16 +75,33 @@ export class OscCwdParser {
           i = j
           continue
         }
-        return this.hold(s.slice(esc), found)
+        return this.hold(s.slice(esc), found, headOnly && esc === 0)
       }
-      found = cwdFromBody(s.slice(esc + 2, end), this.hostname) ?? found
+      found.push(s.slice(esc + 2, headOnly && esc === 0 ? OSC_CARRY_MAX : end))
       i = end + termLen
     }
     return found
   }
 
-  private hold(partial: string, found: string | undefined): string | undefined {
-    this.carry = partial.length <= OSC_CARRY_MAX ? partial : ''
+  private hold(partial: string, found: string[], headOnly = false): string[] {
+    if (!headOnly && partial.length <= OSC_CARRY_MAX) this.carry = partial
+    else if (this.keepHeadOfLongBodies) {
+      this.carry = partial.slice(0, OSC_CARRY_MAX) + (partial.endsWith(ESC) ? ESC : '')
+      this.carryIsHeadOnly = true
+    }
+    return found
+  }
+}
+
+// PLATFORM§2
+export class OscCwdParser {
+  private bodies = new OscBodies()
+
+  constructor(private readonly hostname: string = os.hostname()) {}
+
+  push(chunk: string): string | undefined {
+    let found: string | undefined
+    for (const body of this.bodies.push(chunk)) found = cwdFromBody(body, this.hostname) ?? found
     return found
   }
 }

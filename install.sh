@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-line installer for Koloft (macOS arm64):
 #
-#   curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 #
 # It downloads the latest dmg and copies Koloft.app into /Applications, replacing an
 # older copy.
@@ -11,9 +11,9 @@
 # glued onto the variable name in single-byte locales and break `set -u`.
 set -euo pipefail
 
-# Binaries live in their own repo, apart from the source in superkoh/koloft, so the
-# release list stays nothing but installers.
-REPO="superkoh/koloft-releases"
+# The copy in superkoh/koloft-releases is the same script, so its old URL installs
+# from this repo too (docs/adr/0037).
+REPO="superkoh/koloft"
 APP_DIR="/Applications"
 
 if [ "$(uname -s)" != "Darwin" ]; then

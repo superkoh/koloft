@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
 import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
 import { AttentionTracker } from '../../src/main/attention'
-import type { AttentionKind, BackgroundItem } from '../../src/shared/types'
+import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -20,10 +20,7 @@ function fixture() {
   })
   runtime.on('status', (edge: StatusEdge) => {
     edges.push(edge)
-    attention.onStatusChange(edge.tabId, edge.prev, edge.next, {
-      windowFocused: false,
-      activeTabId: null
-    })
+    attention.onStatusChange(edge.tabId, edge.prev, edge.next)
   })
   const observer = new CodexObservation((event) => {
     events.push(event)
@@ -70,8 +67,8 @@ describe('CodexObservation: messages Koloft queued', () => {
   it('are still queued through the idle moment between two queued turns, and gone once the last one is taken', () => {
     const f = fixture()
     f.bind()
-    f.observer.queuedMessage('koloft-a')
-    f.observer.queuedMessage('koloft-b')
+    f.observer.queuedMessage('koloft-a', 'a')
+    f.observer.queuedMessage('koloft-b', 'b')
     f.server('turn/completed', { turn: { id: 't1' } })
     expect(f.observer.queueDrained()).toBe(false)
     f.server('turn/started', { turn: { id: 't2' } })
@@ -85,12 +82,97 @@ describe('CodexObservation: messages Koloft queued', () => {
   it('a refused one, or one left on a thread the session moved away from, does not hold the queue open', () => {
     const f = fixture()
     f.bind()
-    f.observer.queuedMessage('koloft-a')
+    f.observer.queuedMessage('koloft-a', 'a')
     f.observer.queueRefused('koloft-a')
     expect(f.observer.queueDrained()).toBe(true)
-    f.observer.queuedMessage('koloft-b')
+    f.observer.queuedMessage('koloft-b', 'b')
     f.bind(B, 2)
     expect(f.observer.queueDrained()).toBe(true)
+  })
+
+  // CODEX§34
+  it('once an app-server dies, only a message whose turn began and never ended is handed back to send again; one still in Codex queue, one whose turn ended, even interrupted, is not', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-done', 'answered')
+    f.observer.queuedMessage('koloft-stopped', 'stopped by the owner')
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.observer.queuedMessage('koloft-waiting', 'still queued')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-done'), turnId: 't1' })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/started', { ...userMessage('koloft-stopped'), turnId: 't2' })
+    f.server('turn/completed', { turn: { id: 't2', status: 'interrupted' } })
+    f.server('turn/started', { turn: { id: 't3' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't3' })
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer().map((cut) => cut.text)).toEqual([
+      'the report'
+    ])
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+    expect(f.observer.queueDrained()).toBe(false)
+  })
+
+  // CODEX§34
+  it('a message already sent again once comes back marked as such when that turn is cut off too', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-again', 'the report', true)
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-again'), turnId: 't1' })
+    f.observer.serverReplaced()
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([
+      expect.objectContaining({ text: 'the report', sentAgain: true })
+    ])
+  })
+
+  // CODEX§34
+  it('a message whose turn began on a thread the session then left is not sent again', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-cut', 'the report')
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { ...userMessage('koloft-cut'), turnId: 't1' })
+    f.observer.serverReplaced()
+    f.bind(B, 2)
+    expect(f.observer.takeQueuedCutOffByAReplacedServer()).toEqual([])
+  })
+})
+
+// CODEX§34
+describe('CodexObservation: a TUI that reconnects', () => {
+  it('re-opening the thread it already shows keeps the running turn, so its end is still seen and what it said still counts', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/completed', {
+      item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'hello' }] }
+    })
+    f.observer.receive('client', { id: 2, method: 'thread/resume', params: { threadId: A } })
+    f.observer.receive('server', {
+      id: 2,
+      result: { thread: { ...thread(), status: { type: 'active', activeFlags: [] }, turns: [] } }
+    })
+    expect(f.status()).toBe('working')
+    f.server('item/completed', { item: { type: 'agentMessage', id: 'a1', text: 'hi there' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 't1', status: 'completed' } })
+    expect(f.status()).toBe('waiting')
+    const ended = f.events.flatMap((e) => (e.type === 'turn-ended' ? [e.turn] : []))
+    expect(ended.map((turn) => [turn.said.map((line) => line.text), turn.reply])).toEqual([
+      [['hello'], 'hi there']
+    ])
+  })
+
+  it('once a new app-server took over, the turn the old one was running no longer counts as working, even before the screen is back', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    expect(f.status()).toBe('working')
+    f.observer.serverReplaced()
+    expect(f.status()).toBe('waiting')
   })
 })
 
@@ -171,21 +253,50 @@ describe('CodexObservation', () => {
     expect(f.attention.list().map((e) => e.kind)).toEqual(['approval'])
   })
 
-  it('keeps tool questions distinct from permission approvals across status updates, and the question marks the row as needing you', () => {
+  it('a tool question holds across status updates and marks the row as needing you, as an approval or a Claude question does, until it is answered', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'turn' } })
     f.server('item/tool/requestUserInput', {}, 50)
     f.server('thread/status/changed', { status: { type: 'active' } })
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
     expect(f.attention.list()).toHaveLength(1)
     f.observer.receive('client', { id: 50, result: { answers: {} } })
     expect(f.status()).toBe('working')
-    expect(f.raised).not.toContain('approval')
   })
 
   // CODEX§20
-  it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
+  it('a tool question the TUI lets go with no answer stays marked as unanswered, through the end of that turn and a resume of the same thread, until the next turn starts or a later question is answered; an answered one or an error reply never is', () => {
+    const f = fixture()
+    f.bind()
+    const ask = (id: number) =>
+      f.server('item/tool/requestUserInput', { questions: [{ id: 'colour' }] }, id)
+    const reply = (id: number, frame: object) => f.observer.receive('client', { id, ...frame })
+    const green = { result: { answers: { colour: { answers: ['Green'] } } } }
+    f.server('turn/started', { turn: { id: 'asked' } })
+    ask(0)
+    reply(0, green)
+    ask(1)
+    reply(1, { error: { code: -1, message: 'failed' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+
+    ask(2)
+    reply(2, { result: { answers: {} } })
+    f.server('turn/completed', { turn: { id: 'asked' } })
+    f.bind(A, 9, 'thread/resume')
+    expect(f.observer.questionWentUnanswered()).toBe(true)
+
+    f.server('turn/started', { turn: { id: 'owner wrote' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+    ask(3)
+    reply(3, { result: { answers: {} } })
+    ask(4)
+    reply(4, green)
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+  })
+
+  // CODEX§20
+  it('holds an open question only in the shapes that were probed, questions with options or one enum field with options, until the TUI answers it', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'turn' } })
@@ -209,7 +320,7 @@ describe('CodexObservation', () => {
       },
       0
     )
-    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked })
+    expect(f.observer.openQuestion()).toEqual({ id: 0, questions: [{ ...asked, ownWords: true }] })
     f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
     expect(f.observer.openQuestion()).toBeUndefined()
 
@@ -224,8 +335,7 @@ describe('CodexObservation', () => {
     )
     expect(f.observer.openQuestion()).toEqual({
       id: 1,
-      question: 'Which?',
-      options: [{ label: 'Red' }, { label: 'Green' }]
+      questions: [{ question: 'Which?', options: [{ label: 'Red' }, { label: 'Green' }] }]
     })
     f.observer.receive('client', {
       id: 1,
@@ -236,12 +346,23 @@ describe('CodexObservation', () => {
       'item/tool/requestUserInput',
       {
         questions: [
-          { id: 'a', question: 'A?', options: colours },
+          { id: 'a', question: 'A?', isOther: true, options: colours },
           { id: 'b', question: 'B?', options: colours }
         ]
       },
       2
     )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 2,
+      questions: [
+        { question: 'A?', options: colours, ownWords: true },
+        { question: 'B?', options: colours }
+      ]
+    })
+    f.observer.receive('client', {
+      id: 2,
+      result: { answers: { a: { answers: ['Red'] }, b: { answers: ['Green'] } } }
+    })
     f.server(
       'item/tool/requestUserInput',
       { questions: [{ id: 'free', question: 'Name?', options: null }] },
@@ -262,7 +383,7 @@ describe('CodexObservation', () => {
       5
     )
     expect(f.observer.openQuestion()).toBeUndefined()
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
   })
 
   it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
@@ -299,6 +420,27 @@ describe('CodexObservation', () => {
       cacheWriteTok: 0
     })
     expect(last.costUsd).toBeCloseTo(0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10)
+  })
+
+  // CODEX§13
+  it('prices each request above 272K input at the long-context price, counting a repeated frame once', () => {
+    const f = fixture()
+    const cost = () =>
+      f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!.costUsd
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-6.1-sol' } })
+    const short = { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 1000 }
+    f.server('thread/tokenUsage/updated', { tokenUsage: { total: short, last: short } })
+    expect(cost()).toBeCloseTo(0.1 * 2 + 0.001 * 10)
+    const long = { inputTokens: 300_000, cachedInputTokens: 100_000, outputTokens: 2000 }
+    const total = { inputTokens: 400_000, cachedInputTokens: 100_000, outputTokens: 3000 }
+    const frame = { tokenUsage: { total, last: long } }
+    f.server('thread/tokenUsage/updated', frame)
+    const shortTotal = 0.3 * 2 + 0.1 * 0.1 + 0.003 * 10
+    const surcharge = 0.2 * 4 + 0.1 * 0.2 + 0.002 * 15 - (0.2 * 2 + 0.1 * 0.1 + 0.002 * 10)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
+    f.server('thread/tokenUsage/updated', frame)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
   })
 
   it('leaves the cost out when the model has no known price', () => {
@@ -444,7 +586,7 @@ describe('CodexObservation', () => {
     f.server('thread/status/changed', {
       status: { type: 'active', activeFlags: ['waitingOnUserInput'] }
     })
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
   })
 
   const patch = (status: string, changes: object[]) => ({
@@ -507,6 +649,86 @@ describe('CodexObservation', () => {
     })
   })
 
+  it('says on the row what the session itself last finished, a command that ran and exited non-zero too (a failed read as the command it ran), a ready plan until the next turn starts, and nothing declined, stopped from outside, failed to apply, still running or from another thread', () => {
+    const f = fixture()
+    const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    const ended = (status: string, exitCode: number | null, run: string, actions?: object[]) => ({
+      item: {
+        ...command(run, actions ?? [{ type: 'unknown', command: run }]).item,
+        status,
+        exitCode
+      }
+    })
+    f.bind()
+    f.server('item/started', { item: { ...command('npm test', []).item, status: 'inProgress' } })
+    expect(did()).toEqual([])
+    f.server('item/completed', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server('item/completed', ended('failed', 1, 'npm run lint'))
+    f.server(
+      'item/completed',
+      ended('failed', 1, 'cat missing.md', [{ type: 'read', path: '/repo/missing.md' }])
+    )
+    f.server('item/completed', ended('failed', -1, 'python3 -m http.server 18799'))
+    f.server('item/completed', ended('declined', null, 'rm -rf /'))
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/src/bar.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      patch('failed', [{ path: '/repo/src/baz.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/completed', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
+    f.server(
+      'item/completed',
+      command('cat a.md && rm -rf build', [
+        { type: 'read', path: '/repo/a.md' },
+        { type: 'unknown', command: 'rm -rf build' }
+      ])
+    )
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { type: 'plan', id: 't-plan', text: '1. a\n2. b' } }
+    })
+    expect(did()).toEqual([
+      'Ran npm test',
+      'Ran npm run lint',
+      'Ran cat missing.md',
+      'Edited foo.ts',
+      'Read a.md',
+      'Ran cat a.md && rm -rf build',
+      PLAN_READY
+    ])
+    f.server('turn/started', { turn: { id: 'next' } })
+    expect(did().at(-1)).toBeUndefined()
+    f.server('turn/started', { turn: { id: 'another' } })
+    expect(did()).toHaveLength(8)
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
+    })
+    expect(did()).toHaveLength(8)
+  })
+
+  it('a patch Codex asks to apply names the file it would change', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/started',
+      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/fileChange/requestApproval', { itemId: 'patch', reason: 'outside' }, 7)
+    expect(f.observer.openApproval()).toEqual({
+      id: 7,
+      file: '/repo/src/foo.ts',
+      reason: 'outside'
+    })
+  })
+
   it('ignores a declined patch and a shell command that only writes through the shell', () => {
     const f = fixture()
     f.bind()
@@ -518,10 +740,10 @@ describe('CodexObservation', () => {
       'item/completed',
       command('echo hello > b.txt', [{ type: 'unknown', command: 'echo hello > b.txt' }])
     )
-    expect(f.files()).toBeUndefined()
+    expect(f.files()?.files).toEqual([])
   })
 
-  it('starts a fresh file list when the foreground session changes', () => {
+  it('starts a fresh file list when the foreground session changes, empty until the new session touches a file (/clear)', () => {
     const f = fixture()
     f.bind()
     f.server(
@@ -529,6 +751,7 @@ describe('CodexObservation', () => {
       patch('completed', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'a\n' }])
     )
     f.bind(B, 2, 'thread/start')
+    expect(f.files()?.files).toEqual([])
     f.observer.receive('server', {
       method: 'item/completed',
       params: {

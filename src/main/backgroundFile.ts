@@ -1,17 +1,29 @@
 import fs from 'fs'
 
 export class BackgroundFile {
+  private static readonly draining = new Set<Promise<void>>()
+
+  static async whenAllWritten(): Promise<void> {
+    while (BackgroundFile.draining.size) await Promise.all(BackgroundFile.draining)
+  }
+
   private latest = ''
   private latestGen = 0
   private savedGen = 0
   private writing = false
 
-  constructor(private readonly file: () => string) {}
+  constructor(
+    private readonly file: () => string,
+    private readonly mode?: number
+  ) {}
 
   write(text: string): void {
     this.latest = text
     this.latestGen++
-    if (!this.writing) void this.drain()
+    if (this.writing) return
+    const drained = this.drain()
+    BackgroundFile.draining.add(drained)
+    void drained.then(() => BackgroundFile.draining.delete(drained))
   }
 
   flushSync(): void {
@@ -19,7 +31,7 @@ export class BackgroundFile {
     const target = this.file()
     const tmp = `${target}.koloft-${process.pid}-now`
     try {
-      fs.writeFileSync(tmp, this.latest)
+      fs.writeFileSync(tmp, this.latest, { mode: this.mode })
       fs.renameSync(tmp, target)
     } catch {}
     this.savedGen = this.latestGen
@@ -32,7 +44,7 @@ export class BackgroundFile {
       const target = this.file()
       const tmp = `${target}.koloft-${process.pid}`
       try {
-        await fs.promises.writeFile(tmp, this.latest)
+        await fs.promises.writeFile(tmp, this.latest, { mode: this.mode })
         if (gen > this.savedGen) fs.renameSync(tmp, target)
         else await fs.promises.rm(tmp, { force: true })
       } catch {}

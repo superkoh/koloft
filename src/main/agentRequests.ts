@@ -9,6 +9,7 @@ export interface AgentRequest {
   tabId?: string
   argv: string[]
   cwd: string
+  pid?: number
 }
 
 export interface AgentReply {
@@ -76,8 +77,13 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
   return {
     tabId: typeof r.tabId === 'string' && r.tabId ? r.tabId : undefined,
     argv: r.argv,
-    cwd: r.cwd
+    cwd: r.cwd,
+    ...(typeof r.pid === 'number' ? { pid: r.pid } : {})
   }
+}
+
+function asksForHelp(argv: string[]): boolean {
+  return splitAtDashes(argv).before.includes('--help')
 }
 
 export async function dispatchAgent(
@@ -85,6 +91,7 @@ export async function dispatchAgent(
   argv: string[],
   caller: AgentCaller
 ): Promise<AgentReply> {
+  if (asksForHelp(argv)) return answered(AGENT_GUIDE)
   const [verb = 'help', ...rest] = argv
   const run = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
   if (!run)
@@ -110,6 +117,10 @@ export interface TabFacts {
 
 export type CallerTab = { tabId: string } | 'another-instance' | 'unknown'
 
+export function tabSpokenFor(tabId: string, facts: TabFacts): string {
+  return facts.util && facts.ownerTabId ? facts.ownerTabId : tabId
+}
+
 export function callerTab(
   tabId: string,
   tab: (id: string) => TabFacts | undefined,
@@ -117,7 +128,7 @@ export function callerTab(
 ): CallerTab {
   const facts = tab(tabId)
   if (!facts) return anotherLiveInstanceOwns(tabId, alive) ? 'another-instance' : 'unknown'
-  return { tabId: facts.util && facts.ownerTabId ? facts.ownerTabId : tabId }
+  return { tabId: tabSpokenFor(tabId, facts) }
 }
 
 export interface AgentRequestDeps {
@@ -173,6 +184,7 @@ export class AgentRequests {
       setTimeout(() => this.claimed.delete(full), CLAIM_OUTLIVES_DROP_REREADS_MS)
     )
     const reply = await this.replyTo(req, tabId)
+    if (req?.pid !== undefined && !this.deps.alive(req.pid)) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
     } catch {}

@@ -110,25 +110,53 @@ export async function waitGitQuiet(
   }
 }
 
+function installGitThatFirst(
+  env: E2EEnv,
+  markerName: string,
+  before: (real: string, marker: string) => string
+): string {
+  const wrapper = path.join(env.fakeBin, 'git')
+  const real = realGitPath(env)
+  const marker = path.join(env.home, markerName)
+  fs.writeFileSync(wrapper, `#!/usr/bin/env bash\n${before(real, marker)}exec "${real}" "$@"\n`, {
+    mode: 0o755
+  })
+  fs.chmodSync(wrapper, 0o755)
+  return marker
+}
+
+export function installHalfWayWorktreeRemoval(
+  env: E2EEnv,
+  worktreeName: string,
+  ms: number
+): string {
+  return installGitThatFirst(
+    env,
+    'git-removal-half-way',
+    (real, marker) =>
+      `tree="\${@: -1}"\n` +
+      `if [ "$1" = "-C" ] && [ "$3" = worktree ] && [ "$4" = remove ] && [[ "$tree" == */.claude/worktrees/${worktreeName} ]]; then\n` +
+      `  "${real}" -C "$tree" ls-files -z | (cd "$tree" && xargs -0 rm -f)\n` +
+      `  : > "${marker}"\n` +
+      `  sleep ${ms / 1000}\n` +
+      `  exec "${real}" -C "$2" worktree remove --force "$tree"\n` +
+      `fi\n`
+  )
+}
+
 export function installStallingGit(
   env: E2EEnv,
   stall: { root: string; subcommand: string; verb?: string; lastArg?: string; ms: number }
 ): string {
-  const wrapper = path.join(env.fakeBin, 'git')
-  const real = realGitPath(env)
-  const marker = path.join(env.home, 'git-stall-done')
   const verbTest = stall.verb ? ` && [ "$4" = "${stall.verb}" ]` : ''
   const lastArgTest = stall.lastArg ? ` && [ "\${@: -1}" = "${stall.lastArg}" ]` : ''
-  fs.writeFileSync(
-    wrapper,
-    `#!/usr/bin/env bash\n` +
+  return installGitThatFirst(
+    env,
+    'git-stall-done',
+    (_real, marker) =>
       `if [ "$1" = "-C" ] && [ "$2" = "${stall.root}" ] && [ "$3" = "${stall.subcommand}" ]${verbTest}${lastArgTest}; then\n` +
       `  sleep ${stall.ms / 1000}\n` +
       `  : > "${marker}"\n` +
-      `fi\n` +
-      `exec "${real}" "$@"\n`,
-    { mode: 0o755 }
+      `fi\n`
   )
-  fs.chmodSync(wrapper, 0o755)
-  return marker
 }

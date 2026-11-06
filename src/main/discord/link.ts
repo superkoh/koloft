@@ -1,4 +1,12 @@
-import type { DiscordChannel, DiscordPhase, DiscordStatus } from '@shared/types'
+import type {
+  DiscordChannel,
+  DiscordGuild,
+  DiscordPhase,
+  DiscordStatus,
+  DiscordUser
+} from '@shared/types'
+import { newChannelGuild, NEW_CHANNEL_NAME, NEW_CHANNEL_TOPIC } from '@shared/conductors'
+import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
 import { cardMessages, NO_MENTIONS, type Card } from './cards'
@@ -6,12 +14,17 @@ import { cardMessages, NO_MENTIONS, type Card } from './cards'
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
 const LOCK_RETRY_MS = 30_000
+const NO_OWNED_SERVER =
+  'The bot is in no server you own yet. Make a server of your own in Discord, invite the bot to it, then try again.'
 const TEXT_CHANNEL = 0
-const NOT_FOUND = 404
+const CATEGORY = 4
+const MESSAGE_CONTENT = 1 << 18
+const MESSAGE_CONTENT_LIMITED = 1 << 19
 const MISSING_PERMISSIONS = 403
 const FILES_PER_MESSAGE = 10
 const BYTES_PER_MESSAGE = 25 * 1024 * 1024
-export const BYTES_PER_FILE = 20 * 1024 * 1024
+export const MB = 1024 * 1024
+export const BYTES_PER_FILE = 20 * MB
 
 const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg'
 
@@ -48,30 +61,43 @@ export interface DiscordFile {
 export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
 export const COMPONENT_INTERACTION = 3
-export const AUTOCOMPLETE_INTERACTION = 4
+export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
 const ONLY_THE_SENDER_SEES_IT = 64
-const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
+const THREAD_FOLDS_AFTER_A_DAY_MINUTES = 1440
+const THREAD_NAME_LIMIT = 100
+
+const onlyForTheSender = (content: string): unknown => ({
+  content,
+  flags: ONLY_THE_SENDER_SEES_IT
+})
 
 export function privately(content: string): unknown {
-  return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
+  return { type: REPLY_TO_INTERACTION, data: onlyForTheSender(content) }
 }
-const THREAD_NAME_LIMIT = 100
 
 export interface DiscordInteraction {
   id: string
+  applicationId: string
   token: string
   type: number
   channelId: string
   userId: string
   command: string
   options: Record<string, string>
-  focused?: string
   customId?: string
+  fields?: Record<string, string>
+}
+
+interface RawComponent {
+  custom_id?: string
+  value?: unknown
+  components?: RawComponent[]
 }
 
 interface RawInteraction {
   id: string
+  application_id: string
   token: string
   type: number
   channel_id?: string
@@ -80,8 +106,18 @@ interface RawInteraction {
   data?: {
     name?: string
     custom_id?: string
-    options?: { name: string; value?: unknown; focused?: boolean }[]
+    options?: { name: string; value?: unknown }[]
+    components?: RawComponent[]
   }
+}
+
+// PLATFORM§39
+function fieldsOf(rows: RawComponent[]): Record<string, string> {
+  const fields: Record<string, string> = {}
+  for (const row of rows)
+    for (const c of row.components ?? [])
+      if (c.custom_id && typeof c.value === 'string') fields[c.custom_id] = c.value
+  return fields
 }
 
 export interface SlashCommandSpec {
@@ -112,24 +148,22 @@ export function sameCommand(a: SlashCommandSpec, b: SlashCommandSpec): boolean {
 export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   const userId = raw.member?.user?.id ?? raw.user?.id
   const data = raw.data
-  const pressed = raw.type === COMPONENT_INTERACTION ? data?.custom_id : undefined
+  const submitted = raw.type === FORM_SUBMIT_INTERACTION
+  const pressed = raw.type === COMPONENT_INTERACTION || submitted ? data?.custom_id : undefined
   if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
   const options: Record<string, string> = {}
-  let focused: string | undefined
-  for (const o of data.options ?? []) {
-    options[o.name] = String(o.value ?? '')
-    if (o.focused) focused = o.name
-  }
+  for (const o of data.options ?? []) options[o.name] = String(o.value ?? '')
   return {
     id: raw.id,
+    applicationId: raw.application_id,
     token: raw.token,
     type: raw.type,
     channelId: raw.channel_id,
     userId,
     command: data.name ?? '',
     options,
-    focused,
-    ...(pressed ? { customId: pressed } : {})
+    ...(pressed ? { customId: pressed } : {}),
+    ...(submitted ? { fields: fieldsOf(data.components ?? []) } : {})
   }
 }
 
@@ -139,6 +173,7 @@ export interface DiscordLinkDeps {
   takeLock(): boolean
   releaseLock(): void
   owner(): string | undefined
+  foundAppOwner(owner: DiscordUser): void
   push(status: DiscordStatus): void
   onMessage(m: DiscordMessage): void
   onInteraction(i: DiscordInteraction): void
@@ -160,6 +195,33 @@ interface RawMessage {
   content: string
   author: Author
   attachments?: DiscordAttachment[]
+}
+
+interface RawApplication {
+  id: string
+  flags?: number
+  owner?: { id: string; username: string }
+  team?: unknown
+}
+
+interface RawChannel {
+  id: string
+  name: string
+  type: number
+}
+
+interface RawThread {
+  id: string
+  type: number
+  parent_id?: string
+  owner_id?: string
+}
+
+const THREAD_TYPES = [10, 11, 12]
+
+export interface NewChannel {
+  channel: DiscordChannel
+  category: DiscordChannel
 }
 
 interface Candidate {
@@ -199,9 +261,11 @@ function messageOf(m: RawMessage): DiscordMessage {
 
 export class DiscordLink {
   private phase: DiscordPhase = 'off'
+  private botId?: string
   private botName?: string
   private applicationId?: string
-  private guilds = new Map<string, string>()
+  private appOwner?: DiscordUser
+  private guilds = new Map<string, DiscordGuild>()
   private registered = new Set<string>()
   private failing = new Map<string, string>()
   private candidate?: Candidate
@@ -218,7 +282,8 @@ export class DiscordLink {
       phase: this.phase,
       botName: this.botName,
       applicationId: this.applicationId,
-      guildNames: [...this.guilds.values()].filter(Boolean),
+      guilds: [...this.guilds.values()].filter((g) => g.name),
+      ...(this.appOwner ? { appOwner: this.appOwner } : {}),
       failing: Object.fromEntries(this.failing),
       ...(this.candidate
         ? {
@@ -244,8 +309,10 @@ export class DiscordLink {
     this.gateway?.stop()
     this.gateway = null
     this.rest = null
+    this.botId = undefined
     this.botName = undefined
     this.applicationId = undefined
+    this.appOwner = undefined
     this.guilds.clear()
     this.registered.clear()
     this.failing.clear()
@@ -282,12 +349,19 @@ export class DiscordLink {
     const rest = new DiscordRest(apiUrl, token)
     try {
       const [me, app] = await Promise.all([
-        rest.request<{ username: string }>('GET', '/users/@me'),
-        rest.request<{ id: string }>('GET', '/oauth2/applications/@me')
+        rest.request<{ id: string; username: string }>('GET', '/users/@me'),
+        rest.request<RawApplication>('GET', '/oauth2/applications/@me')
       ])
       if (generation !== this.generation) return
+      this.botId = me.id
       this.botName = me.username
       this.applicationId = app.id
+      if (app.owner && !app.team) {
+        this.appOwner = { id: app.owner.id, name: app.owner.username }
+        this.d.foundAppOwner(this.appOwner)
+      }
+      await this.turnOnMessageContent(rest, app.flags ?? 0)
+      if (generation !== this.generation) return
       this.rest = rest
       this.gateway = new DiscordGateway({
         token,
@@ -304,14 +378,22 @@ export class DiscordLink {
     }
   }
 
+  // PLATFORM§39
+  private async turnOnMessageContent(rest: DiscordRest, flags: number): Promise<void> {
+    if (flags & (MESSAGE_CONTENT | MESSAGE_CONTENT_LIMITED)) return
+    await rest
+      .request('PATCH', '/applications/@me', { flags: flags | MESSAGE_CONTENT_LIMITED })
+      .catch(() => undefined)
+  }
+
   private onDispatch(type: string, data: unknown): void {
     if (type === 'READY') {
       for (const g of (data as { guilds: { id: string }[] }).guilds)
-        this.guilds.set(g.id, this.guilds.get(g.id) ?? '')
+        this.guilds.set(g.id, this.guilds.get(g.id) ?? { id: g.id, name: '' })
       this.d.onReady()
     } else if (type === 'GUILD_CREATE') {
-      const g = data as { id: string; name: string }
-      this.guilds.set(g.id, g.name)
+      const g = data as { id: string; name: string; owner_id?: string }
+      this.guilds.set(g.id, { id: g.id, name: g.name, ownerId: g.owner_id })
     } else if (type === 'GUILD_DELETE') {
       const g = data as { id: string; unavailable?: boolean }
       if (g.unavailable) return
@@ -366,7 +448,7 @@ export class DiscordLink {
 
   // PLATFORM§39
   async editCard(channelId: string, messageId: string, card: Card): Promise<void> {
-    const [message] = cardMessages(card)
+    const message = cardMessages(card).at(-1)
     await this.api().request('PATCH', `/channels/${channelId}/messages/${messageId}`, message)
   }
 
@@ -376,27 +458,20 @@ export class DiscordLink {
   }
 
   // PLATFORM§39
-  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
-    const thread = await this.api().request<{ id: string }>(
-      'POST',
-      `/channels/${channelId}/messages/${messageId}/threads`,
-      {
-        name: name.slice(0, THREAD_NAME_LIMIT),
-        auto_archive_duration: PUBLIC_THREAD_KEPT_A_WEEK_MINUTES
-      }
+  async botThreadsUnder(guildId: string, parentId: string): Promise<string[]> {
+    const { threads } = await this.api().request<{ threads: RawThread[] }>(
+      'GET',
+      `/guilds/${guildId}/threads/active`
     )
-    return thread.id
-  }
-
-  addToThread(threadId: string, userId: string): Promise<unknown> {
-    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
+    return threads
+      .filter((t) => t.parent_id === parentId && t.owner_id === this.botId)
+      .map((t) => t.id)
   }
 
   // PLATFORM§39
-  renameThread(threadId: string, name: string): Promise<unknown> {
-    return this.api().request('PATCH', `/channels/${threadId}`, {
-      name: name.slice(0, THREAD_NAME_LIMIT)
-    })
+  async isBotThread(channelId: string): Promise<boolean> {
+    const c = await this.api().request<RawThread>('GET', `/channels/${channelId}`)
+    return THREAD_TYPES.includes(c.type) && c.owner_id === this.botId
   }
 
   archiveThread(threadId: string): Promise<unknown> {
@@ -404,23 +479,21 @@ export class DiscordLink {
   }
 
   // PLATFORM§39
-  async deleteThread(channelId: string, threadId: string): Promise<void> {
-    await this.starting
-    await this.api().sent(`/channels/${threadId}/messages`)
-    await this.api()
-      .request('DELETE', `/channels/${threadId}`)
-      .catch((error: unknown) => {
-        if (!(error instanceof DiscordHttpError)) throw error
-        if (error.status === NOT_FOUND) return
-        if (error.status === MISSING_PERMISSIONS)
-          throw new Error(
-            `${error.message}. Give the bot the Manage Threads permission in the server’s settings.`
-          )
-        throw error
-      })
-    await this.api()
-      .request('DELETE', `/channels/${channelId}/messages/${threadId}`)
-      .catch(() => undefined)
+  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
+    const thread = await this.api().request<{ id: string }>(
+      'POST',
+      `/channels/${channelId}/messages/${messageId}/threads`,
+      {
+        name: name.slice(0, THREAD_NAME_LIMIT),
+        auto_archive_duration: THREAD_FOLDS_AFTER_A_DAY_MINUTES
+      }
+    )
+    return thread.id
+  }
+
+  // PLATFORM§39
+  addToThread(threadId: string, userId: string): Promise<unknown> {
+    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {
@@ -460,6 +533,15 @@ export class DiscordLink {
 
   respond(i: DiscordInteraction, body: unknown): Promise<unknown> {
     return this.api().request('POST', `/interactions/${i.id}/${i.token}/callback`, body)
+  }
+
+  // PLATFORM§39
+  followUp(i: DiscordInteraction, privateText: string): Promise<unknown> {
+    return this.api().request(
+      'POST',
+      `/webhooks/${i.applicationId}/${i.token}`,
+      onlyForTheSender(privateText)
+    )
   }
 
   // PLATFORM§39
@@ -509,7 +591,7 @@ export class DiscordLink {
     const lists = await Promise.all(
       guilds.map((g) =>
         rest
-          .request<{ id: string; name: string; type: number }[]>('GET', `/guilds/${g.id}/channels`)
+          .request<RawChannel[]>('GET', `/guilds/${g.id}/channels`)
           .then((list) =>
             list
               .filter((c) => c.type === TEXT_CHANNEL)
@@ -518,5 +600,49 @@ export class DiscordLink {
       )
     )
     return lists.flat()
+  }
+
+  // PLATFORM§39
+  async newChannel(
+    bound: DiscordChannel | undefined,
+    saved: DiscordChannel | undefined
+  ): Promise<NewChannel> {
+    await this.starting
+    const api = this.api()
+    const guildId = newChannelGuild(bound, [...this.guilds.values()], this.d.owner())
+    if (!guildId) throw new Error(NO_OWNED_SERVER)
+    const route = `/guilds/${guildId}/channels`
+    const there = await api.request<RawChannel[]>('GET', route)
+    const botName = this.botName ?? 'Koloft'
+    const categories = there.filter((c) => c.type === CATEGORY)
+    const make = (body: unknown): Promise<RawChannel> =>
+      api.request<RawChannel>('POST', route, body).catch((error: unknown) => {
+        if (error instanceof DiscordHttpError && error.status === MISSING_PERMISSIONS)
+          throw new CannotMakeChannels()
+        throw error
+      })
+    const category =
+      categories.find((c) => c.id === saved?.channelId) ??
+      categories.find((c) => c.name === botName) ??
+      (await make({ name: botName, type: CATEGORY }))
+    const taken = there.filter((c) => c.type === TEXT_CHANNEL).map((c) => c.name)
+    const made = await make({
+      name: distinctName(NEW_CHANNEL_NAME, taken),
+      type: TEXT_CHANNEL,
+      parent_id: category.id,
+      topic: NEW_CHANNEL_TOPIC
+    })
+    return {
+      channel: { guildId, channelId: made.id, name: made.name },
+      category: { guildId, channelId: category.id, name: category.name }
+    }
+  }
+}
+
+export class CannotMakeChannels extends Error {
+  constructor() {
+    super(
+      'The bot is not allowed to make channels yet. Invite it again to give it that permission — the channels you already bound keep working.'
+    )
   }
 }

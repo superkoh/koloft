@@ -2,17 +2,29 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  installAgy,
+  installCodex,
+  installMuse,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
+import { startCodex } from './helpers/codex'
+import {
+  type AgentName,
   boundSessionId,
   centerTerm,
   clickAppMenuItem,
+  newSessionInWith,
   runIn,
   sendShortcut,
+  sessionInRow,
   setNextSessionTitle,
   startSessionIn,
   transcriptFile,
+  untilTheRowHoldsANewSession,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -23,14 +35,19 @@ import {
   commentOnFirstHunk,
   countGitSpawns,
   expectOnePromptFromTheComment,
+  filesMenu,
+  filterBtn,
   installGitSpawnLog,
   installStallingGit,
   isAggregateDiff,
   layoutState,
   openFileTab,
   openInBrowse,
+  pickChip,
   seedWorkbenchDefault,
   showBrowse,
+  showChanges,
+  shownPaths,
   waitGitQuiet,
   wbTabs,
   workbenchIcon,
@@ -54,13 +71,10 @@ const CV = {
 
 const previewLabel = (page: Page): Locator => page.locator(WORKBENCH.previewDiffLabel)
 
-const badge = (page: Page): Locator => page.locator('.wb-tab.pinned .cnt')
+const badge = (page: Page): Locator => page.locator('.wb-panel .wb-tab.pinned .lb')
 const reloadBtn = (page: Page): Locator => page.locator('.wb-bar .icobtn[aria-label="Reload"]')
 const baseBtn = (page: Page): Locator =>
   page.locator('.wb-bar .seg button', { hasText: /^(base|vs HEAD) ▾$/ })
-const filterBtn = (page: Page): Locator =>
-  page.locator('.wb-bar .seg button', { hasText: 'Filter' })
-const filesMenu = (page: Page): Locator => page.locator('.wb-bar .fv-menu')
 
 const rows = (page: Page): Locator => page.locator(CV.row)
 const blocks = (page: Page): Locator => page.locator(CV.block)
@@ -69,28 +83,28 @@ const blockOf = (page: Page, rel: string): Locator =>
   page.locator(`${CV.block}[data-path="${rel}"]`)
 const stream = (page: Page): Locator => page.locator(CV.stream)
 
-async function shownPaths(page: Page): Promise<string[]> {
-  return (await rows(page).evaluateAll((els) =>
-    els.map((e) => (e as HTMLElement).dataset.path ?? '')
-  )) as string[]
-}
+const GIT_KILLED_AFTER_MS = 3000
 
-async function showChanges(page: Page): Promise<void> {
-  const panel = workbenchPanel(page)
-  if (!(await panel.isVisible())) {
-    await workbenchIcon(page).click()
-    await expect(panel).toBeVisible({ timeout: 20_000 })
-  }
-  const pinned = page.locator(WORKBENCH.tabFiles)
-  if (!(await pinned.getAttribute('class'))?.split(/\s+/).includes('on')) await pinned.click()
-  const changes = page
-    .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-    .filter({ hasText: 'Changes' })
-  await expect(changes).toBeVisible({ timeout: 20_000 })
-  if ((await changes.getAttribute('aria-pressed')) !== 'true') await changes.click()
-  await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes', {
-    timeout: 20_000
-  })
+function hangStatusReadsWhileFlagged(
+  env: E2EEnv,
+  root: string
+): { hangFromNowOn: string; hung: string } {
+  const hangFromNowOn = path.join(env.home, 'git-status-hangs')
+  const hung = path.join(env.home, 'git-status-hung')
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'git'),
+    `#!/usr/bin/env bash\n` +
+      `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${root}" ]; then\n` +
+      `  case " $* " in\n` +
+      `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
+      `  esac\n` +
+      `fi\n` +
+      `exec "${realGit}" "$@"\n`,
+    { mode: 0o755 }
+  )
+  env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+  return { hangFromNowOn, hung }
 }
 
 const transientBlockNotesIncludingTheSettledLookingOne = /^(Loading…|No diff available\.)$/
@@ -116,26 +130,35 @@ function blockTop(page: Page, rel: string): Promise<number> {
   return blockOf(page, rel).evaluate((el) => (el as HTMLElement).offsetTop)
 }
 
-async function pickChip(
-  page: Page,
-  group: 'Status' | 'Ownership' | 'Type',
-  chip: string
-): Promise<void> {
-  const target = page.locator(
-    `.fv-filters .fv-fgroup[aria-label="${group}"] .ft-chip[data-chip="${chip}"]`
-  )
-  if ((await filesMenu(page).count()) === 0) await filterBtn(page).click()
-  await expect(filesMenu(page)).toBeVisible()
-  await target.click()
-  await expect(target).toHaveAttribute('aria-checked', 'true')
-  await page.keyboard.press('Escape')
-  await expect(filesMenu(page)).toHaveCount(0)
-}
-
-async function openChanges(page: Page, ws = 'ws-a'): Promise<void> {
-  await startSessionIn(page, ws)
+async function openChanges(page: Page, ws = 'ws-a', method?: AgentName): Promise<void> {
+  await startSessionIn(page, ws, { method })
   await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
   await showChanges(page)
+}
+
+function installAgentFor(env: E2EEnv, agent: AgentName, ws: string): void {
+  if (agent === 'Codex') installCodex(env)
+  if (agent === 'Muse') {
+    installMuse(env)
+    trustInMuse(env, ws)
+  }
+  if (agent === 'Antigravity') {
+    installAgy(env)
+    trustInAgy(env, ws)
+  }
+}
+
+async function openChangesTyping(page: Page, agent: AgentName, line: string): Promise<void> {
+  if (agent === 'Antigravity') {
+    await newSessionInWith(page, 'ws-a', agent)
+    await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), line)
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
+    await showChanges(page)
+  } else {
+    await openChanges(page, 'ws-a', agent === 'Claude' ? undefined : agent)
+    await runIn(page, centerTerm(page), line)
+  }
 }
 
 async function relaunchWithGitLog(
@@ -306,6 +329,46 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(blockOf(page, 'src/change-2.ts').locator(CV.diffRow).first()).toBeVisible()
   })
 
+  test('at the narrowest Workbench, vs HEAD with 10+ changes, the Changes bar keeps Reload and full width inside it, and full width still clicks', async ({
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(7)
+    fx.modifyMarkdown()
+    fx.modifyHtml()
+    fx.addUntracked('src/new-1.ts')
+    fx.addUntracked('src/new-2.ts')
+    fx.addUntracked('src/new-3.ts')
+
+    await openChanges(page)
+    const gutter = page.locator('.center-row .gutter-v').last()
+    const grip = (await gutter.boundingBox())!
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(grip.x + 4000, grip.y + grip.height / 2, { steps: 12 })
+    await page.mouse.up()
+    expect((await workbenchPanel(page).boundingBox())!.width).toBeLessThan(470)
+
+    await baseBtn(page).click()
+    await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
+    await expect(baseBtn(page)).toHaveText(/^vs HEAD ▾$/)
+    await waitStream(page, 12)
+
+    const bar = page
+      .locator(WORKBENCH.kindBar)
+      .filter({ has: page.locator('.seg[aria-label="Files view"]') })
+    expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    const barBox = (await bar.boundingBox())!
+    for (const button of [reloadBtn(page), page.locator(WORKBENCH.fullWidth)]) {
+      const box = (await button.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(barBox.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(barBox.x + barBox.width)
+    }
+    await page.locator(WORKBENCH.fullWidth).click()
+    await expect.poll(() => layoutState(page)).toBe('T3')
+  })
+
   test('WB-C06: the three filter groups AND together, and Docs is markdown + html', async ({
     page,
     env
@@ -445,7 +508,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(total.locator('.cv-total-n')).toHaveText('1 file')
     await expect(total.locator('.ft-delta .add')).toHaveText('+1')
     await expect(total.locator('.ft-delta .del')).toHaveText('−1')
-    await expect(badge(page)).toHaveText('5')
+    await expect(badge(page)).toHaveText('5 files')
     await expect(total).not.toHaveAttribute('data-partial', '1')
 
     fx.editTracked(fx.paths.markdown)
@@ -483,18 +546,17 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     const room = await list.evaluate((el) => el.scrollHeight - el.clientHeight)
     expect(room).toBeGreaterThan(0)
 
-    const topRoundedPastSubpixelNoise = async (): Promise<number> => {
-      const box = await total.boundingBox()
-      if (!box)
-        throw new Error('the summary header left the screen — it must survive every scroll offset')
-      return Math.round(box.y)
-    }
-    const before = await topRoundedPastSubpixelNoise()
+    const topInPanelSoTheIslandRiseInMovesBothAlike = (): Promise<number> =>
+      total.evaluate((el) => {
+        const panel = el.closest('.wb-panel')!.getBoundingClientRect()
+        return Math.round(el.getBoundingClientRect().y - panel.y)
+      })
+    const before = await topInPanelSoTheIslandRiseInMovesBothAlike()
     await list.evaluate((el) => {
       el.scrollTop = el.scrollHeight
     })
     expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
-    expect(await topRoundedPastSubpixelNoise()).toBe(before)
+    expect(await topInPanelSoTheIslandRiseInMovesBothAlike()).toBe(before)
   })
 
   test('a directory split by its subdirectory leaves no orphaned rows — across a poll, or a session switch', async ({
@@ -537,7 +599,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     await openChanges(page)
     await waitStream(page, 5)
-    await expect(badge(page)).toHaveText('5')
+    await expect(badge(page)).toHaveText('5 files')
 
     await rowOf(page, 'src/change-4.ts').click()
     const anchoredTop = await scrollTop(page)
@@ -556,7 +618,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     expect(await blockTop(page, 'src/change-4.ts')).toBe(anchorOffset)
 
     fx.addUntracked('src/zz-late.ts')
-    await expect(badge(page)).toHaveText('6', { timeout: 30_000 })
+    await expect(badge(page)).toHaveText('6 files', { timeout: 30_000 })
     await expect(rowOf(page, 'src/zz-late.ts')).toHaveCount(1)
     expect(await scrollTop(page)).toBe(anchoredTop)
   })
@@ -572,24 +634,24 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     await openChanges(page)
     await waitStream(page, 6)
-    await expect(badge(page)).toHaveText('6')
+    await expect(badge(page)).toHaveText('6 files')
 
     await pickChip(page, 'Type', 'docs')
     await expect.poll(() => shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
-    await expect(badge(page)).toHaveText('6')
+    await expect(badge(page)).toHaveText('6 files')
 
     fx.editTracked(fx.paths.changeable[4])
-    await expect(badge(page)).toHaveText('7', { timeout: 30_000 })
+    await expect(badge(page)).toHaveText('7 files', { timeout: 30_000 })
     expect(await shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
 
     await reloadBtn(page).click()
-    await expect(badge(page)).toHaveText('7')
+    await expect(badge(page)).toHaveText('7 files')
     await expect.poll(() => shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
     await expect(blockOf(page, 'docs/guide.md').locator(CV.diffRow).first()).toBeVisible()
 
     await pickChip(page, 'Type', 'all')
     await expect.poll(() => shownPaths(page)).toHaveLength(7)
-    await expect(badge(page)).toHaveText('7')
+    await expect(badge(page)).toHaveText('7 files')
   })
 
   test('WB-C11: an over-sized change set shows the truncation banner and labels what was cut off', async ({
@@ -631,7 +693,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       timeout: 30_000
     })
     expect(await rows(page).count()).toBe(0)
-    expect(await badge(page).count()).toBe(0)
+    await expect(badge(page)).toHaveText('No changes')
 
     await baseBtn(page).click()
     await expect(filesMenu(page)).toBeVisible()
@@ -726,7 +788,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
 
     const rowFor = (title: string): Locator =>
-      page.locator('.ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
+      page.locator('.ws .ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
     await expect(rowFor('Session A')).toHaveCount(1, { timeout: 40_000 })
     await expect(rowFor('Session B')).toHaveCount(1, { timeout: 40_000 })
     const rowA = rowFor('Session A')
@@ -748,6 +810,96 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await pickChip(page, 'Ownership', 'session')
     await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
   })
+
+  test('a file a Codex turn wrote shows in its Changes with its text, and the Ownership filter keeps it while dropping a change the session did not make', async ({
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(1)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await showChanges(page)
+      await waitStream(page, 1)
+
+      await runIn(page, centerTerm(page), '/write src/codex-notes.ts')
+      await expect
+        .poll(() => shownPaths(page), { timeout: 30_000 })
+        .toEqual(['src/change-1.ts', 'src/codex-notes.ts'])
+      await waitStream(page, 2)
+      await expect(rowOf(page, 'src/codex-notes.ts').locator('.ft-gbadge')).toHaveText('U')
+      await expect(blockOf(page, 'src/codex-notes.ts')).toContainText('written by Codex')
+
+      await pickChip(page, 'Ownership', 'session')
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/codex-notes.ts'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  const SHELL_LINE: Record<AgentName, string> = {
+    Claude: '/run',
+    Codex: '/sh',
+    Muse: '/sh',
+    Antigravity: '/bash'
+  }
+  for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
+    test(`a file a shell command in a ${agent} tab made shows under the Ownership filter's session choice, and a change the session did not make stays out`, async ({
+      env
+    }) => {
+      const fx = setupChangeFixture(env.workspaces.a)
+      fx.modifyTracked(1)
+      installAgentFor(env, agent, env.workspaces.a)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await openChangesTyping(page, agent, `${SHELL_LINE[agent]} printf made > src/shell-made.ts`)
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/change-1.ts', 'src/shell-made.ts'])
+        await pickChip(page, 'Ownership', 'session')
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/shell-made.ts'])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const agent of ['Claude', 'Codex', 'Muse', 'Antigravity'] as const)
+    test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
+      env
+    }) => {
+      const fx = setupChangeFixture(env.workspaces.a)
+      installAgentFor(env, agent, env.workspaces.a)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await openChangesTyping(page, agent, `/write ${fx.rel(fx.paths.agentTs)}`)
+        await pickChip(page, 'Ownership', 'session')
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes.ts'])
+
+        const row = wsRows(page, 'ws-a').first()
+        const old = await sessionInRow(page, row)
+        await runIn(page, centerTerm(page), '/clear')
+        await untilTheRowHoldsANewSession(page, row, old)
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
+
+        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes-b.ts'])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
     page,
@@ -929,10 +1081,13 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     fx.addUntracked('src/while-collapsed.ts')
     await expect(previewLabel(page)).toHaveText('3 files')
+    const previewTab = await page.locator(WORKBENCH.previewDiff).textContent()
+    expect(previewTab).toBe('3 files+2−2')
 
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect.poll(() => layoutState(page)).toBe('T2')
     await expect(page.locator(WORKBENCH.previewCard)).toHaveCount(0)
+    await expect(page.locator('.wb-panel .wb-tab.pinned')).toHaveText(previewTab ?? '')
     await showChanges(page)
     await waitStream(page, 3)
     await expect(page.locator(CV.total)).toContainText('3 files')
@@ -1130,22 +1285,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     test.setTimeout(180_000)
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const hangFromNowOn = path.join(env.home, 'git-status-hangs')
-    const hung = path.join(env.home, 'git-status-hung')
-    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-    fs.writeFileSync(
-      path.join(env.fakeBin, 'git'),
-      `#!/usr/bin/env bash\n` +
-        `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${fx.root}" ]; then\n` +
-        `  case " $* " in\n` +
-        `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
-        `  esac\n` +
-        `fi\n` +
-        `exec "${realGit}" "$@"\n`,
-      { mode: 0o755 }
-    )
-    const GIT_KILLED_AFTER_MS = 3000
-    env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+    const { hangFromNowOn, hung } = hangStatusReadsWhileFlagged(env, fx.root)
     await app.close().catch(() => {})
     const next = await launchApp(env)
     try {
@@ -1154,7 +1294,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await waitBooted(page)
       await openChanges(page)
       await waitStream(page, 2)
-      await expect(badge(page)).toHaveText('2')
+      await expect(badge(page)).toHaveText('2 files')
       await expect(rowOf(page, 'src/change-1.ts').locator('.ft-gbadge')).toHaveText('M')
       const good = await rows(page).allInnerTexts()
 
@@ -1164,7 +1304,39 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await page.waitForTimeout(2 * GIT_KILLED_AFTER_MS)
 
       expect(await rows(page).allInnerTexts()).toEqual(good)
-      await expect(badge(page)).toHaveText('2')
+      await expect(badge(page)).toHaveText('2 files')
+    } finally {
+      await next.close().catch(() => {})
+    }
+  })
+
+  test('a git status that hangs on the very first read shows the retry banner once git is killed, and Retry reads the change set again', async ({
+    app,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const { hangFromNowOn } = hangStatusReadsWhileFlagged(env, fx.root)
+    fs.writeFileSync(hangFromNowOn, '')
+    await app.close().catch(() => {})
+    const next = await launchApp(env)
+    try {
+      const page = await next.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await openChanges(page)
+      const banner = page.locator(CV.banner)
+      await expect(banner).toContainText('Repo too large or git unresponsive — retry.', {
+        timeout: 30_000
+      })
+      await expect(page.locator(CV.empty)).toHaveCount(0)
+
+      fs.rmSync(hangFromNowOn)
+      await banner.getByRole('button', { name: 'Retry' }).click()
+      await waitStream(page, 2)
+      await expect(badge(page)).toHaveText('2 files')
+      await expect(banner).toHaveCount(0)
     } finally {
       await next.close().catch(() => {})
     }

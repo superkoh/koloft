@@ -1,5 +1,6 @@
 import { ageLabel, type FreshLineState } from '@shared/freshnessOps'
 import type {
+  BackendId,
   CreateTabOptions,
   GithubItem,
   SessionRow,
@@ -8,6 +9,9 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { distinctName, type RouteWorktree } from '@shared/sessionRoute'
+import { worktreeBase } from '@shared/cronNames'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
   | ({ kind: 'existing' } & WorktreeInfo)
@@ -40,18 +44,94 @@ export function escPeel(l: {
 
 export type WtHot = { where: 'field' } | { where: 'list'; index: number }
 
+export interface TypedStart {
+  prompt: string
+  title: string
+}
+
+export interface PendingStart extends TypedStart {
+  path: string | null
+  worktree: RouteWorktree | null
+}
+
+export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPrompt' | 'name'> {
+  return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
+}
+
+export function pendingWorktree(
+  named: RouteWorktree | null,
+  isGit: boolean,
+  now: number
+): RouteWorktree | null {
+  if (named || !isGit) return named
+  return { kind: 'new', name: worktreeBase('session', now) }
+}
+
+export function pendingLaunch(
+  wsPath: string,
+  wt: RouteWorktree | null,
+  pending: TypedStart,
+  worktrees: WorktreeInfo[],
+  issues: GithubItem[]
+): SessionLaunchOptions {
+  if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
+  const item =
+    wt.kind === 'issue'
+      ? issues.find((i) => i.kind === 'issue' && i.number === wt.number)
+      : undefined
+  const wished = wt.kind === 'issue' ? itemWorktreeName('issue', wt.number) : wt.name
+  return {
+    cwd: wsPath,
+    worktree: distinctName(
+      wished,
+      worktrees.map((w) => w.name)
+    ),
+    ...(item ? seededItemExtras(item, pending.prompt, pending.title) : typedLaunch(pending))
+  }
+}
+
+function itemWorktreeName(kind: GithubItem['kind'], number: number): string {
+  return `${kind}-${number}`
+}
+
+export function seededItemExtras(
+  item: GithubItem,
+  prompt: string,
+  title: string
+): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
+  const base = itemLaunchExtras(item)
+  const typed = prompt.trim()
+  return {
+    ...base,
+    firstPrompt: typed ? `${base.firstPrompt}\n\n${typed}` : base.firstPrompt,
+    name: title.trim() || base.name
+  }
+}
+
 export type WtAim =
   | { kind: 'none' }
   | { kind: 'create'; name: string }
   | { kind: 'open'; name: string; dir: string }
-  | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }
+  | {
+      kind: 'recover'
+      name: string
+      dir: string
+      recoveryResourceId: string
+      backend: BackendId
+    }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
   | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
-  return w.recoveryResourceId
-    ? { kind: 'recover', name: w.name, dir: w.dir, recoveryResourceId: w.recoveryResourceId }
+  return w.recoveryResourceId && w.recoveryBackend
+    ? {
+        kind: 'recover',
+        name: w.name,
+        dir: w.dir,
+        recoveryResourceId: w.recoveryResourceId,
+        backend: w.recoveryBackend
+      }
     : { kind: 'open', name: w.name, dir: w.dir }
 }
 
@@ -70,7 +150,7 @@ export function itemFilterText(item: GithubItem): string {
 }
 
 export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): WtAim {
-  const name = `${item.kind}-${item.number}`
+  const name = itemWorktreeName(item.kind, item.number)
   const hit =
     (item.branch && worktrees.find((w) => w.branch === item.branch)) ||
     worktrees.find((w) => w.name === name)
@@ -224,10 +304,6 @@ export function freshLineCopy(
 export function pullFailedReason(reason: string): string {
   const r = reason.trim()
   return r.endsWith('.') ? r : r + '.'
-}
-
-export function mainRunningCount(rows: SessionRow[]): number {
-  return rows.filter((r) => (r.running || r.pending) && r.worktree === 'main').length
 }
 
 export function worktreeInUse(w: Pick<WorktreeInfo, 'name' | 'dir'>, rows: SessionRow[]): boolean {

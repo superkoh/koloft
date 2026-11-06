@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import type { AccountView, UsageSnapshot } from '../../src/shared/types'
+import type { AccountView, CodexLimits, UsageSnapshot } from '../../src/shared/types'
 import {
+  codexGlyph,
+  codexPoolGlyph,
+  codexPoolSnapshot,
+  codexResetOffered,
   hardLimited,
   meterLevel,
   capsuleGlyph,
@@ -20,7 +24,11 @@ import {
   FABLE_STOP,
   CAP,
   hasUsableAccount,
-  noUsableAccountLead
+  noUsableAccountLead,
+  noAccountMessage,
+  NO_USABLE_ACCOUNT,
+  launchLine,
+  launchUsageProbe
 } from '../../src/shared/accountUsage'
 import { meta } from './helpers/accounts'
 
@@ -39,6 +47,13 @@ describe('hasUsableAccount (whether a Claude or Codex session may start at all)'
     expect(hasUsableAccount([meta({ enabled: false })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
+  })
+
+  it('lets Muse, like Codex, start only on a Muse account in Koloft, never on the sign-in muse has on this Mac', () => {
+    expect(hasUsableAccount([], 'muse')).toBe(false)
+    expect(noUsableAccountLead([], 'muse')).toBe('No Muse account yet — add one in ')
+    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'muse')).toBe(true)
+    expect(hasUsableAccount([meta({ kind: 'muse-home' })], 'codex')).toBe(false)
   })
 })
 
@@ -62,6 +77,16 @@ describe('noUsableAccountLead (the line that says why a session cannot start)', 
       noUsableAccountLead([meta({ name: 'me', kind: 'apikey', status: 'unverified' })], 'claude')
     ).toMatch(/^No Claude account can be used/)
   })
+
+  it('a refused launch says the same line the shut buttons show, and the general line only when an account looked usable but none was picked', () => {
+    expect(noAccountMessage([meta({ name: 'me', status: 'expired' })], 'claude')).toBe(
+      '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([], 'codex')).toBe(
+      'No Codex account yet — add one in Settings ▸ Accounts.'
+    )
+    expect(noAccountMessage([meta({ kind: 'codex-home' })], 'codex')).toBe(NO_USABLE_ACCOUNT.codex)
+  })
 })
 
 const NOW_SEC = 1_700_000_000
@@ -79,6 +104,7 @@ function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
     r7: 0,
     roi: 0,
     overage: '?',
+    has5h: true,
     hasOi: true,
     at: NOW_MS,
     ...p
@@ -279,6 +305,76 @@ describe('capsuleGlyph — the fable layer', () => {
   })
 })
 
+describe('launchLine — the account line a Muse or Antigravity tab prints before its program starts, in the Claude shim’s words', () => {
+  it('names the account and each limit window, flags a reading older than STALE_MS, and is the name alone when there is no reading', () => {
+    const windows = [
+      { minutes: 300, used: 0.104, resetsAt: 0 },
+      { minutes: 10080, used: 0.52, resetsAt: 0 }
+    ]
+    expect(
+      launchLine(view({ name: 'ann', kind: 'muse-home', limits: { windows, at: NOW_MS } }), NOW_MS)
+    ).toBe('koloft: → ann · 5h 10% · 7d 52%')
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(view({ name: 'ann', limits: { windows, at: old } }), NOW_MS)).toMatch(
+      /^koloft: → ann · 5h 10% · 7d 52% · \d+ min ago$/
+    )
+    expect(launchLine(view({ name: 'key', kind: 'agy-home' }), NOW_MS)).toBe('koloft: → key')
+  })
+
+  it('says an API-key account is metered, in the words the Claude shim prints for one', () => {
+    expect(launchLine(view({ name: 'key', kind: 'codex-home', apiKey: true }), NOW_MS)).toBe(
+      'koloft: → key (API key, metered)'
+    )
+  })
+
+  it('reads an Antigravity bucket as one item, so its group and window do not look like two', () => {
+    const quota = [
+      { label: 'Gemini Models · 5h', used: 0.03 },
+      { label: 'Claude and GPT models · 7d', used: 0 }
+    ]
+    expect(launchLine(view({ name: 'g', kind: 'agy-home', quota }), NOW_MS)).toBe(
+      'koloft: → g · Gemini Models 5h 3% · Claude and GPT models 7d 0%'
+    )
+  })
+
+  it('leaves out an Antigravity quota its last probe failed to refresh, as a bucket carries no time to say how old it is', () => {
+    const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
+    expect(
+      launchLine(view({ name: 'g', kind: 'agy-home', quota, probeError: 'network' }), NOW_MS)
+    ).toBe('koloft: → g')
+  })
+})
+
+// CODEX§15
+describe('a Codex account in the capsule', () => {
+  const codex = (limits: Partial<CodexLimits>, p: Partial<AccountView> = {}): AccountView =>
+    view({ kind: 'codex-home', limits: { windows: [], at: NOW_MS, ...limits }, ...p })
+  const week = (used: number) => [{ minutes: 10080, used, resetsAt: 0 }]
+
+  it('draws its fullest window, walls at a full window or when Codex says a limit was reached, and greys when signed out', () => {
+    expect(
+      codexGlyph(
+        codex({ windows: [...week(0.2), { minutes: 300, used: 0.75, resetsAt: 0 }] }),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'bar', frac: 0.75, level: 'warn' })
+    expect(codexGlyph(codex({ windows: week(1) }), NOW_MS).kind).toBe('walled')
+    expect(codexGlyph(codex({ windows: week(0.3), reached: true }), NOW_MS).kind).toBe('walled')
+    expect(codexGlyph(view({ kind: 'codex-home' }), NOW_MS).kind).toBe('empty')
+    expect(codexGlyph(codex({ windows: week(0.3) }, { status: 'expired' }), NOW_MS).kind).toBe(
+      'grey'
+    )
+  })
+
+  it('offers a saved reset only to a walled account that has one, so a reset is never spent on room it still has', () => {
+    const resets = { available: 2 }
+    expect(codexResetOffered(codex({ windows: week(1), resets }))).toBe(true)
+    expect(codexResetOffered(codex({ windows: week(0.5), resets }))).toBe(false)
+    expect(codexResetOffered(codex({ windows: week(1), resets: { available: 0 } }))).toBe(false)
+    expect(codexResetOffered(codex({ windows: week(1) }))).toBe(false)
+  })
+})
+
 describe('meteredArmed', () => {
   const walledSnap = snap({ s5: 'rejected', r5: NOW_SEC + 7_200, u5: 1 })
   const sub = (p: Partial<AccountView>): AccountView => view({ kind: 'oauth', ...p })
@@ -336,6 +432,31 @@ describe('oldestAt', () => {
   })
 })
 
+describe('launchUsageProbe — what opening Koloft reads before any tab starts', () => {
+  it('reads every account once a Claude subscription account is on', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth' }), meta({ kind: 'apikey' })])).toBe(
+      'everyAccount'
+    )
+  })
+
+  it('reads a Codex, Muse or Antigravity account with no Claude subscription, because reading their limits makes no model call', () => {
+    for (const kind of ['codex-home', 'muse-home', 'agy-home'] as const)
+      expect(launchUsageProbe([meta({ kind })])).toBe('signInFoldersOnly')
+  })
+
+  it('reads a metered Claude account on launch only beside a subscription account, as that read is a billed request', () => {
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'codex-home' })])).toBe(
+      'signInFoldersOnly'
+    )
+    expect(launchUsageProbe([meta({ kind: 'apikey' }), meta({ kind: 'custom' })])).toBe(null)
+  })
+
+  it('leaves a switched-off account out', () => {
+    expect(launchUsageProbe([meta({ kind: 'oauth', enabled: false })])).toBe(null)
+    expect(launchUsageProbe([meta({ kind: 'codex-home', enabled: false })])).toBe(null)
+  })
+})
+
 describe('autoProbeDue', () => {
   const M = 60_000
   const aged = (name: string, ageMs: number): AccountView =>
@@ -359,6 +480,17 @@ describe('autoProbeDue', () => {
   })
   it('a row with NO snapshot is stale however fresh its neighbours are', () => {
     expect(autoProbeDue([aged('alpha', 1_000), cold('bravo')], null, NOW_MS)).toBe(true)
+  })
+  it('a Codex account counts like a Claude one: no reading yet, or an old one, is a reason to probe', () => {
+    const codex = (limits?: { at: number }): AccountView =>
+      view({
+        name: 'codex',
+        kind: 'codex-home',
+        ...(limits && { limits: { windows: [], at: limits.at } })
+      })
+    expect(autoProbeDue([aged('alpha', 1_000), codex()], null, NOW_MS)).toBe(true)
+    expect(autoProbeDue([codex({ at: NOW_MS - 60 * M })], null, NOW_MS)).toBe(true)
+    expect(autoProbeDue([codex({ at: NOW_MS - 1_000 })], null, NOW_MS)).toBe(false)
   })
   it('rows that can never carry a number are not a reason to probe', () => {
     const rows = [
@@ -587,6 +719,21 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
     expect(p.t5).toBeCloseTo(0.75, 10)
     expect(p.t7).toBeCloseTo(0.75, 10)
   })
+  it('T5 averages only the accounts that have a 5-hour limit, and is null when none has', () => {
+    const mixed = [
+      view({ usage: snap({ u5: 0.6, u7: 0.2 }) }),
+      view({ name: 'b', usage: snap({ u5: 0.2, u7: 0.4 }) }),
+      view({ name: 'ultra', usage: snap({ has5h: false, u7: 0.9 }) })
+    ]
+    const p = poolSnapshot(mixed, NOW_MS)
+    expect(p.t5).toBeCloseTo(0.4, 10)
+    expect(p.t7).toBeCloseTo(0.5, 10)
+    const allUltra = [
+      view({ usage: snap({ has5h: false, u7: 0.3 }) }),
+      view({ name: 'b', usage: snap({ has5h: false, u7: 0.5 }) })
+    ]
+    expect(poolSnapshot(allUltra, NOW_MS).t5).toBeNull()
+  })
   it('a soon/due member is measured and usable, never walled', () => {
     const rows = [
       view({ usage: snap({ s5: 'rejected', r5: NOW_SEC + 60, u5: 1 }) }),
@@ -636,7 +783,7 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
       usable: 1,
       walled: 0,
       tension: 0,
-      t5: 0,
+      t5: null,
       t7: 0,
       tfable: null,
       fableSpentAll: false,
@@ -677,6 +824,55 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
       view({ name: 'dead', status: 'expired', usage: snap({ at: NOW_MS - 900_000 }) })
     ]
     expect(poolSnapshot(rows, NOW_MS).oldestAt).toBe(NOW_MS - 5_000)
+  })
+})
+
+// CODEX§15
+describe('codexPoolSnapshot — the Codex pool reads like the Claude one', () => {
+  const codex = (name: string, limits?: Partial<CodexLimits>, p: Partial<AccountView> = {}) =>
+    view({
+      name,
+      kind: 'codex-home',
+      ...(limits && { limits: { windows: [], at: NOW_MS, ...limits } }),
+      ...p
+    })
+  const win = (minutes: number, used: number, resetsAt = 0) => ({ minutes, used, resetsAt })
+
+  it('averages each window over the measured accounts that have it, counts a walled one as full, and leaves out the signed-out and the unread', () => {
+    const p = codexPoolSnapshot(
+      [
+        codex('a', { windows: [win(10080, 0.2), win(300, 0.6)] }),
+        codex('b', { windows: [win(10080, 1.4, NOW_SEC + 900)] }),
+        codex('c', { windows: [win(10080, 0.3)], reached: true }),
+        codex('cold'),
+        codex('out', { windows: [win(10080, 0.9)] }, { status: 'expired' })
+      ],
+      NOW_MS
+    )
+    expect(p).toMatchObject({
+      measured: 3,
+      usable: 2,
+      walled: 2,
+      earliestBack: NOW_SEC + 900,
+      windows: [
+        { minutes: 300, mean: 0.6 },
+        { minutes: 10080, mean: 0.5 }
+      ]
+    })
+    expect(p.tension).toBeCloseTo((0.6 + 1 + 1) / 3)
+  })
+
+  it('draws a pool bar only from two measured accounts on, and walls it only when every one is walled', () => {
+    expect(codexPoolGlyph([codex('a', { windows: [win(10080, 0.2)] }), codex('b')], NOW_MS)).toBe(
+      null
+    )
+    const two = [
+      codex('a', { windows: [win(10080, 0.2)] }),
+      codex('b', { windows: [win(10080, 1)] })
+    ]
+    expect(codexPoolGlyph(two, NOW_MS)).toMatchObject({ kind: 'bar', frac: 0.6 })
+    const allOut = [codex('a', { reached: true }), codex('b', { windows: [win(10080, 1)] })]
+    expect(codexPoolGlyph(allOut, NOW_MS)?.kind).toBe('walled')
   })
 })
 

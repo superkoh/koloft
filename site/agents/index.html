@@ -6,10 +6,9 @@
     <title>Agents can use Koloft too — Koloft</title>
     <meta
       name="description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/agents/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -19,7 +18,7 @@
     <meta property="og:title" content="Agents can use Koloft too — Koloft" />
     <meta
       property="og:description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
     <meta property="og:url" content="__SITE_URL__/agents/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -27,34 +26,47 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Agents can use Koloft too — Koloft" />
     <meta
       name="twitter:description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Butler</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/" aria-current="page">agents</a>
@@ -77,11 +89,12 @@
 
         <h2>The koloft command</h2>
         <p>
-          Every session Koloft starts on this Mac, Claude or Codex, gets a <code>koloft</code>
-          command. It is on by default. The switch is Settings ▸ Extensions ▸ "Let agents use
-          Koloft". Turning it on reaches sessions you start after that. Turning it off stops the
-          command in every session at once. When an agent changes a scheduled job, a small message
-          pops up to tell you.
+          Every session Koloft starts gets a <code>koloft</code> command: Claude, Codex, Muse or
+          Antigravity, on this Mac and on a <a href="../remote/">remote folder</a>'s machine. It is
+          on by default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it
+          on reaches sessions you start after that. Turning it off stops the command in every
+          session at once. When an agent changes a scheduled job, a small message pops up to tell
+          you.
         </p>
         <p>With it, the agent can:</p>
 
@@ -92,8 +105,59 @@
             <a href="../workbench/#web-tabs">web tabs</a>)
           </li>
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
-          <li><code>koloft note</code> — read the folder's note, or add a line to the end of it</li>
+          <li>
+            when the session has a <a href="../discord/#rooms">room on Discord</a> and you are away
+            or talking to it from there, what <code>koloft open</code> and
+            <code>koloft diff</code> show also goes to that room
+          </li>
+          <li>
+            <code>koloft note</code> — read the <a href="../workbench/#note">note</a> it shows (its
+            folder's, or the butler's own), or add a line to the end of it
+          </li>
         </ul>
+
+        <h3 id="secrets">Passwords and codes</h3>
+        <p>
+          When the session needs something only you know, it asks you in its own tab. The agent
+          never sees what you give.
+        </p>
+        <ul class="dash">
+          <li>
+            <code>sudo</code> (the admin command) — a <code>sudo</code> the session runs with no
+            terminal opens a <code>Sudo password</code> box over that session's terminal, with the
+            command it runs. Type the password and press <code>Pass on</code>
+            <span class="why">(Koloft types it into sudo itself)</span>
+          </li>
+          <li>
+            <code>koloft secret page "&lt;css selector&gt;"</code> (the field's address on the page)
+            — a password or one-time code for a field on a web page in its Workbench. That page
+            comes to the front with a bar above it:
+            <code>This session needs your &lt;field&gt; on this page.</code> Type into the page
+            itself, then press <code>Done</code>; when the page moves on, Koloft counts it as done
+          </li>
+          <li>
+            <code>koloft secret url "&lt;sign-in address&gt;"</code> — a sign-in that ends on a
+            <code>127.0.0.1</code> or <code>localhost</code> address (an address on the machine
+            itself). It opens in the session's Workbench with the bar
+            <code>This session needs you to finish this sign-in here.</code> Sign in there; once it
+            lands on that last page, Koloft is done, with nothing for you to paste
+          </li>
+        </ul>
+        <p>
+          <code>Cancel</code> (or <kbd>Esc</kbd> in the box) tells the session you turned it down.
+          While the box or bar waits, the session's row is amber, as when it needs your OK. While
+          you are away from the Mac, or talking to that session from Discord, a card comes to
+          Discord too (see <a href="../discord/#secrets">passwords and codes on Discord</a>), and
+          the first answer wins. The other one closes. With no Discord set up, the box and the bar
+          still work. Koloft does this the same way for every agent, on this Mac and in a
+          <a href="../remote/">remote folder</a>. While you
+          <a href="../sessions/#asleep">sleep</a> (the moon in the sidebar is on), all three are
+          refused at once:
+          <code
+            >koloft: the owner is asleep and cannot give a password or a code now. Skip this step,
+            go on with the rest, and say in your report that it waits for the owner.</code
+          >
+        </p>
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
@@ -108,19 +172,31 @@
         <h3>Sessions</h3>
         <ul class="dash">
           <li>
-            <code>koloft session list</code> — see this folder's sessions, and whether each is
-            working, waiting for you, or idle
+            <code>koloft session list</code> — see every session the folder shows in the sidebar:
+            the open ones first, and whether each is working, asking you a question, finished its
+            turn, or idle; then the closed and sleeping ones, with when each was last active and its
+            id. A session started with <code class="nowrap">session new</code> also says who started
+            it: <code class="nowrap">started by: you</code>, or the starter's name. An open session
+            of any agent also says where its transcript is (the file that holds its whole
+            conversation), as <code class="nowrap">transcript: …</code>; an agent on a remote
+            machine gets this only for sessions on that same machine
           </li>
           <li>
-            <code>koloft session new</code> — start a session of the same kind (Claude starts
-            Claude, Codex starts Codex), in its own git worktree if asked. Only a conductor (see
-            below) can pick the other kind, with <code class="nowrap">--backend</code>. Its row
-            hangs under the session that started it (see
-            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
-            starts gets a short title that <a href="../accounts/#assist">Koloft Assist</a> makes
-            from its task (with Assist off, the first line of the task), or the name the agent gave
-            it with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
-            <code class="nowrap">session list</code> and in Discord. Codex names it itself.
+            <code>koloft session new</code> — start a session of the same kind (a Claude session
+            starts Claude, and so on), or the kind <code class="nowrap">--backend</code> picks; in
+            its own git worktree with <code class="nowrap">-w</code>; a worktree name already in use
+            gets <code class="nowrap">-2</code> after it. When your butler (see below) starts one in
+            a folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
+            worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs
+            under the session that started it (see
+            <a href="../sessions/#session-tree">sessions an agent starts</a>). A session it starts
+            gets a short title that <a href="../accounts/#assist">Assist</a> makes from its task
+            (with Assist off, the first line of the task), or the name the agent gave it with
+            <code class="nowrap">--name</code>; the same title shows in the sidebar, in
+            <code class="nowrap">session list</code> and in Discord. Every kind of session gets
+            this, except an Antigravity session in a <a href="../remote/">remote folder</a>:
+            Antigravity names that one itself, and <code class="nowrap">--name</code> is turned
+            down.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
@@ -129,59 +205,111 @@
           <li>
             <code>koloft session send</code> — Codex: message another Codex session (a Claude
             session uses its own SendMessage tool). Any session: report back to the session or
-            conductor that started it, by the id it was given. If that one is asleep or its tab was
+            butler that started it, by the id it was given. If that one is asleep or its tab was
             closed, Koloft starts it again first. The report arrives marked
-            <code class="nowrap">(From the session "…", id …:)</code>.
+            <code class="nowrap">(From the session "…", id …:)</code>. When a session that
+            <code class="nowrap">session new</code> started ends its first turn without reporting,
+            Koloft hands its reply to the starter by itself, the same way; a reply already sent with
+            <code class="nowrap">session send</code> is not sent twice.
           </li>
           <li>
-            <code>koloft session close</code> — close itself, or a session it started, for good: its
-            tab, its row in the sidebar, and its worktree and branches if it had one. Koloft says
-            no, and lists what is left, while:
+            <code>koloft session close</code> — close itself, or any session started under it with
+            <code class="nowrap">session new</code> (by it, by one it started, and so on down the
+            chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
+            had one. The ended sessions it started are closed with it, and so are the ones those
+            started; Koloft names any it left (still open, or holding work). When you ask, it may
+            also close any other session on this Mac, open or ended (an open one is ended first);
+            your butler and a session on another machine are refused. Koloft says no, and lists what
+            is left, while:
             <ul class="dash">
+              <li>its Workbench has unsaved edits</li>
+              <li>a Codex session asked you a question nobody answered</li>
               <li>a file is not committed</li>
-              <li>a commit is not on the remote yet</li>
+              <li>
+                a commit is not on the remote yet
+                <span class="why"
+                  >(unless GitHub shows they are the last commits of a pull request that was merged,
+                  as after a squash merge that deleted the branch)</span
+                >
+              </li>
               <li>another open session uses that worktree</li>
             </ul>
           </li>
+          <li>
+            <code>koloft session resume</code> and <code>koloft session stop</code> — resume a
+            closed session, with a first message if it likes; close a session's tab and keep it in
+            the list
+          </li>
+          <li>
+            <code>koloft session screen</code>, <code>koloft session keys</code> and
+            <code>koloft session answer</code> — see what an open session's terminal shows, press
+            keys in it as you would at the Mac, or answer the question it is showing: pick an option
+            number, say yes or no, or type your own words if the question lets you
+          </li>
+          <li>
+            <code>koloft session command</code> — run one slash command (like <code>/compact</code>)
+            in a session, or in itself, once that session is idle; what it printed comes back as a
+            message from Koloft
+          </li>
+          <li><code>koloft workspace list</code> — list the folders in the sidebar</li>
         </ul>
         <p>
           <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
           at the top of that folder's list (see
-          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
-          started in a remote folder this way.
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). The folder may be a
+          <a href="../remote/">remote folder</a>: the session then runs on that machine, and a
+          Claude Code session there is reached with <code class="nowrap">session send</code>, since
+          Claude's own messages between sessions stay on one machine.
+        </p>
+        <p>
+          With "Let agents use Koloft" on, every session is also told which helper fits which job.
+          Work that needs its own branch or worktree goes to a Koloft session started with
+          <code class="nowrap">-w</code>. It never goes to a hidden helper, or to a branch in the
+          folder other sessions share. Work that ends in several pull requests (proposed code
+          changes) gets one such session each. If one builds on another, its session is started only
+          after that branch is pushed.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
+        <h3 id="gh">GitHub</h3>
+        <ul class="dash">
+          <li>
+            <code>koloft gh</code> — run one of <code>gh</code>'s own commands (<code>gh</code> is
+            GitHub's command-line tool) with the GitHub account Koloft picked for the folder, in the
+            session's own folder, and print what it said. Refused: <code>gh auth</code>,
+            <code>alias</code>, <code>extension</code>, <code>config</code> and
+            <code>copilot</code>, aliases and extensions, a <code>--jq</code> filter that reads the
+            environment, and a <code>--</code>, since each could reach the GitHub sign-in
+          </li>
+        </ul>
         <p>
-          A conductor, the session you talk to from Discord, gets a few more: it can answer a
-          session's question, resume it, stop it, close it once it has ended, run a slash command in
-          it, see its screen and press keys in it, send you files, and ask GitHub questions or open
-          an issue with <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). It
-          only passes work on; see <a href="../discord/">A butler on Discord</a>.
+          Your <a href="../accounts/#butler">butler</a>, Koloft's own AI that you talk to from the
+          sidebar or from Discord, uses the same commands. Only it, with a Discord channel bound,
+          can use <code>koloft discord send</code> and <code>shot</code> to send you files or a
+          picture of a page. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">
+        <figure class="shot" style="--ar: 1322 / 691; --ar-phone: 736 / 744">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/i-settings-extensions-phone2.webp"
-                width="710"
-                height="590"
+                srcset="../img/i-settings-extensions-phone3.webp"
+                width="736"
+                height="744"
               />
               <img
-                src="../img/i-settings-extensions.webp"
+                src="../img/i-settings-extensions3.webp"
                 width="1322"
-                height="661"
+                height="691"
                 loading="lazy"
                 alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             Settings ▸ Extensions: the two switches that decide what an agent may use
@@ -192,17 +320,29 @@
         <p>
           Browser tools for agents normally start a browser of their own. It is a second browser you
           cannot see, and it is signed into nothing. Koloft offers its web tabs instead. Every
-          Claude session on this Mac starts with a secret CDP address (CDP is the Chrome DevTools
-          Protocol, the way tools steer a browser). A browser tool that uses it steers
+          session on this Mac gets a secret CDP address (CDP is the Chrome DevTools Protocol, the
+          way tools steer a browser). A browser tool that uses it steers
           <mark class="hl">that session's own web tabs</mark>. This works while Settings ▸
-          Extensions ▸ "Let agents drive this Browser" is on.
+          Extensions ▸ "Let agents drive this Browser" is on. How the address reaches the tool
+          differs by tool.
         </p>
+
+        <h3>playwright-cli, for every agent</h3>
+        <p>
+          <code>playwright-cli</code> (a command that controls a browser: open a page, click, type,
+          read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code, Codex, Muse or
+          Antigravity session on this Mac can run it by name, with nothing to install. With "Let
+          agents drive this Browser" on, it opens its pages as new web tabs of that session, marked
+          as driven by the agent. With it off, it starts a hidden browser of its own. A session's
+          web tabs take one tool at a time. If the Playwright MCP tools below (an MCP server is a
+          box of tools an agent can call) are already driving them, the second tool is refused.
+        </p>
+        <h3>Claude Code</h3>
         <ul class="dash">
           <li>
-            playwright-mcp and the Playwright CLI (command-line interface), tools that steer a
-            browser: nothing to set up. Both read <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is
-            already set for the session, so they open a tab in Koloft and not a browser of their
-            own.
+            playwright-mcp: nothing to set up. It reads
+            <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session, so it
+            opens a tab in Koloft and not a browser of its own.
           </li>
           <li>
             your own Playwright script: one line, with the address in
@@ -211,7 +351,49 @@
         </ul>
         <p class="command">
           <code id="cmd-cdp">chromium.connectOverCDP(process.env.KOLOFT_BROWSER_CDP)</code>
-          <button type="button" class="copy" data-copy="cmd-cdp">Copy</button>
+          <button type="button" class="copy" data-copy="cmd-cdp">
+            <span class="idle"
+              ><svg class="icon" aria-hidden="true"><use href="../icons.svg#copy" /></svg>
+              Copy</span
+            ><span class="done"
+              ><svg class="icon" aria-hidden="true"><use href="../icons.svg#check" /></svg>
+              Copied</span
+            >
+          </button>
+        </p>
+        <h3>Codex</h3>
+        <p>
+          Koloft hands the address to the Playwright MCP server in your Codex settings. If your
+          Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
+          Koloft and not a browser of their own. In a session on this Mac they also run without
+          asking first, unless you set <code>default_tools_approval_mode</code> on that entry
+          yourself; on a remote machine, that machine's Codex settings decide. Those tools and
+          <code>playwright-cli</code> reach the web tabs. To let them, the session's sandbox (the
+          box Codex runs commands in) gets Playwright's cache folder, for that session only; every
+          Codex session's sandbox already has the network. A session started with
+          <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
+          this.
+        </p>
+        <h3>Antigravity</h3>
+        <p>
+          In an Antigravity session on this Mac, a Playwright MCP entry in your Antigravity MCP
+          settings (<code>~/.gemini/config/mcp_config.json</code>) gets the session's address, so
+          its tools open tabs in Koloft, and they run without asking first; your other MCP servers
+          still ask. If your own Antigravity permissions name that server, Koloft adds nothing and
+          your rules decide. In a remote folder, Koloft adds none of this.
+        </p>
+        <h3>Muse</h3>
+        <p>
+          In a Muse session on this Mac, a Playwright MCP entry in your Muse settings
+          (<code>~/.config/muse/settings.json</code>) gets the session's address too, so its tools
+          open tabs in Koloft. Its tools that change a page run without asking first. Your other MCP
+          servers still ask. An "Always allow" or a refusal you saved for one of its tools stays. To
+          do this, Koloft gives each account its own copy of your settings file, and starts Muse on
+          this Mac on that copy. A setting you change inside such a session (with
+          <code>/theme</code> or <code>/permissions</code>, say) is copied back into your file the
+          next time Muse starts on that account. A change you make to your file by hand reaches
+          those sessions the next time they start. In a remote folder, Koloft adds none of this, and
+          Muse uses your settings file there as it is.
         </p>
 
         <h3>What to expect</h3>
@@ -226,7 +408,11 @@
             <tbody>
               <tr>
                 <td>it connects</td>
-                <td>It just drives. Nothing is asked. The switch is the one control.</td>
+                <td>
+                  It just drives. Koloft asks nothing; the switch is its one control. On this Mac,
+                  the Playwright MCP tools of Codex, Antigravity and Muse sessions run without
+                  asking (see above); any other question about allowing a tool is the agent's own.
+                </td>
               </tr>
               <tr>
                 <td>pages it opens</td>
@@ -240,7 +426,8 @@
                 <td>pages it can see</td>
                 <td>
                   That session's tabs only. Each session has its own address, reachable only from
-                  this Mac, behind a path no one can guess.
+                  this Mac, behind a path no one can guess. A Claude Code session on a remote folder
+                  also reaches it from that machine, through Koloft's ssh link.
                 </td>
               </tr>
               <tr>
@@ -263,7 +450,38 @@
           </table>
         </div>
 
-        <h3>If you run tools another way</h3>
+        <h3 id="remote-browser">Claude Code on a remote folder</h3>
+        <p>
+          A Claude Code session on a <a href="../remote/">remote folder</a> can drive its web tabs
+          too, through Koloft's own ssh link to that machine. There it works only through
+          <code>playwright-cli</code>, not Playwright MCP tools. Koloft puts
+          <code>playwright-cli</code> on the machine with <code>npm</code> (Node's package tool) the
+          first time the session runs it (see
+          <a href="../remote/#installs">what Koloft installs there</a>), and it finds the address on
+          its own each time it runs.
+        </p>
+        <ul class="dash">
+          <li>
+            The web tabs live on your Mac, so from the machine it can never open a file of your Mac,
+            upload one, or open a web server running on your Mac (at your Mac's own name or network
+            address, say). It is told:
+            <code
+              >a session on another machine cannot reach files or servers of the Mac Koloft runs
+              on</code
+            >, and when it opened or went to an address, also
+            <code>only localhost, 127.0.0.1 and [::1] mean the machine</code>. So a web server it
+            starts there opens at <code>localhost</code>, through Koloft's ssh link to the machine
+            (see <a href="../remote/#localhost">localhost on a remote folder</a>).
+          </li>
+          <li>A web tab it has used keeps these limits for you too, until you close it.</li>
+          <li>
+            With the switch off, while Koloft is not connected to the machine, or when the machine's
+            ssh server does not allow port forwarding, <code>playwright-cli</code> says why and
+            cannot reach the web tabs.
+          </li>
+        </ul>
+
+        <h3>If you run tools another way (Claude Code)</h3>
         <ul class="dash">
           <li>
             an explicit <code class="nowrap">--cdp-endpoint</code> wins, so you can point one tool
@@ -278,33 +496,49 @@
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>
-            <s class="struck">the browser in Codex</s>
-            <span class="why">(a Codex session has the koloft command, but not the web tabs)</span>
-          </li>
-          <li>
-            <s class="struck">either one in remote folders</s>
-            <span class="why">(a session on another machine has neither, yet)</span>
+            <s class="struck">the browser for Codex, Muse and Antigravity in remote folders</s>
+            <span class="why"
+              >(they have the koloft command there, but cannot drive the web tabs yet)</span
+            >
           </li>
         </ul>
 
-        <p class="next">next page -&gt; <a href="../scheduled/">Sessions on a timer</a></p>
+        <p class="next">Next page → <a href="../scheduled/">Sessions on a timer</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

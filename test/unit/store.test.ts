@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import type { SessionInfo, UpdateCheckResult, WorkspaceRows } from '@shared/types'
 import {
   boundSessionId,
+  launchToStartAgain,
   tabForSession,
   useStore,
   openInterceptedFile,
@@ -67,6 +68,80 @@ describe('store: claude → shell revert, only after a session actually bound', 
     expect(t.sessionId).toBeUndefined()
   })
 
+  it('keeps a tab whose agent exited unexpectedly as that agent, dead, with the row and workspace it had, when its session leaves the list', () => {
+    const s = useStore.getState()
+    const row = { id: 'sid-end1', title: 'My run', worktree: 'main', cwd: '/w', running: true }
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        {
+          workspace: { path: '/w', missing: false, isGit: true, hasHistory: true },
+          rows: [{ ...row, invalidCwd: false, mtime: 0, backendId: 'codex', host: 'local' }]
+        }
+      ]
+    })
+    s.addTab({ id: 'end1', kind: 'codex', title: 'My run', cwd: '/w', alive: true })
+    s.setSessions([session('end1')])
+    s.keepEndedTab('end1', 'exited (code 1)')
+    s.setTabAlive('end1', true)
+    s.setSessions([])
+    const t = useStore.getState().tabs.find((x) => x.id === 'end1')!
+    expect(t).toMatchObject({
+      kind: 'codex',
+      title: 'My run',
+      alive: false,
+      sessionId: 'sid-end1',
+      ended: { note: 'exited (code 1)', wsPath: '/w', row }
+    })
+  })
+
+  it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
+    useStore.setState({
+      butlerWorkspace: null,
+      workspaceRows: [
+        { workspace: { path: '/w', missing: false, isGit: true, hasHistory: false }, rows: [] }
+      ]
+    })
+    const s = useStore.getState()
+    const launch = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1' }
+    s.addTab({ id: 'end2', kind: 'codex', title: 'Codex', cwd: '/w', alive: true, launch })
+    s.addTab({ id: 'end3', kind: 'claude', title: 'Claude', cwd: '/w/.wt/pr-7', alive: true })
+    expect(s.keepEndedTab('end2', 'exited (code 3)')).toBe(true)
+    expect(s.keepEndedTab('end3', 'exited (code 1)')).toBe(true)
+    const ended = (id: string): unknown => useStore.getState().tabs.find((x) => x.id === id)!.ended
+    expect(ended('end2')).toMatchObject({
+      wsPath: '/w',
+      row: { id: 'end2', title: 'Codex', worktree: 'fix-1', backendId: 'codex' }
+    })
+    expect(ended('end3')).toMatchObject({ wsPath: '/w', row: { worktree: 'pr-7' } })
+  })
+
+  it('starts a launch that got a worktree from Koloft again in that worktree, so ⇧⌘R never makes a second one; a launch whose agent makes its own keeps its name', () => {
+    const codex = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1', firstPrompt: 'go' }
+    expect(launchToStartAgain(codex, '/w/.wt/fix-1')).toEqual({
+      kind: 'codex',
+      cwd: '/w/.wt/fix-1',
+      worktree: undefined,
+      worktreeResourceId: undefined,
+      firstPrompt: 'go'
+    })
+    const rebuilt = { kind: 'muse' as const, cwd: '/w', worktreeResourceId: 'r1' }
+    expect(launchToStartAgain(rebuilt, '/w/.wt/r1')).toMatchObject({
+      cwd: '/w/.wt/r1',
+      worktreeResourceId: undefined
+    })
+    const claude = { kind: 'claude' as const, cwd: '/w', worktree: 'fix-2' }
+    expect(launchToStartAgain(claude, '/w')).toBe(claude)
+  })
+
+  it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {
+    useStore.setState({ butlerWorkspace: null, workspaceRows: [] })
+    const s = useStore.getState()
+    s.addTab({ id: 'end4', kind: 'codex', title: 'Codex', cwd: '/elsewhere', alive: true })
+    expect(s.keepEndedTab('end4', 'exited (code 1)')).toBe(false)
+    expect(useStore.getState().tabs.find((x) => x.id === 'end4')).toMatchObject({ alive: true })
+  })
+
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {
     const s = useStore.getState()
     s.addTab({ id: 'nev1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
@@ -102,6 +177,100 @@ describe('store: claude → shell revert, only after a session actually bound', 
     useStore.setState({ openFiles: { P: { src: '/w/NOTES.md', label: 'NOTES.md' } } })
     s.setSessions([])
     expect(useStore.getState().openFiles['P']).toBeUndefined()
+  })
+})
+
+describe('store: closing the session you watch lands on the butler, whichever of session end and terminal exit comes first', () => {
+  let butlersOpened: number
+  const { settings, butlerTab } = useStore.getState()
+  afterEach(() => useStore.setState({ settings, butlerTab }))
+  beforeEach(() => {
+    butlersOpened = 0
+    ;(globalThis as { window?: unknown }).window = {
+      api: {
+        conductors: {
+          open: () => {
+            butlersOpened++
+            return new Promise(() => {})
+          }
+        }
+      }
+    }
+    useStore.setState({
+      butlerTab: null,
+      settings: { ...useStore.getState().settings, assist: { on: true, backend: 'claude' } }
+    })
+  })
+
+  it('lands on the butler when the session ended before its terminal exited', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'end-first', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.setSessions([session('end-first')])
+    s.setSessions([])
+    expect(useStore.getState().tabs[0].kind).toBe('shell')
+
+    useStore.getState().removeTab('end-first')
+
+    expect(butlersOpened).toBe(1)
+  })
+
+  it('does not start the butler again when the butler’s own session ended before its terminal exited', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'own-butler', kind: 'claude', title: 'Alfred', cwd: '/w', alive: true })
+    s.setSessions([{ ...session('own-butler'), butler: true }])
+    s.setSessions([])
+
+    useStore.getState().removeTab('own-butler')
+
+    expect(butlersOpened).toBe(0)
+  })
+
+  it('stays put when a session that ended in a background tab is picked and closed later', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'bg-ended', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.addTab({ id: 'bg-watched', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.setSessions([session('bg-ended'), session('bg-watched')])
+    s.setSessions([session('bg-watched')])
+    s.setActive('bg-ended')
+
+    useStore.getState().removeTab('bg-ended')
+
+    expect(butlersOpened).toBe(0)
+  })
+
+  it('stays put when a plain terminal that once ran claude is closed', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'plain-term', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.setSessions([session('plain-term')])
+    s.setSessions([])
+
+    useStore.getState().removeTab('plain-term')
+
+    expect(butlersOpened).toBe(0)
+  })
+})
+
+describe('store: a sessions push changes only what it changed', () => {
+  it('a push that changes nothing leaves the sessions array as it was and notifies nobody', () => {
+    const s = useStore.getState()
+    s.setSessions([session('q1'), session('q2')])
+    const before = useStore.getState().sessions
+    const heard = vi.fn()
+    const off = useStore.subscribe(heard)
+    s.setSessions([session('q1'), session('q2')])
+    off()
+    expect(useStore.getState().sessions).toBe(before)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('a push keeps the object of every session it did not change', () => {
+    const s = useStore.getState()
+    s.setSessions([session('k1'), session('k2')])
+    const [k1] = useStore.getState().sessions
+    s.setSessions([session('k1'), { ...session('k2'), title: 'Renamed' }])
+    const after = useStore.getState().sessions
+    expect(after[0]).toBe(k1)
+    expect(after[1].title).toBe('Renamed')
   })
 })
 
@@ -726,5 +895,28 @@ describe('selectWorkspace: a session tab and a workspace head are one selection'
     useStore.getState().setResumeLaunch({ id: 'sess-cold', title: 'old session' })
     expect(useStore.getState().selectedWs).toBeNull()
     expect(useStore.getState().resumeLaunch?.id).toBe('sess-cold')
+  })
+})
+
+describe('activateTab: a tab main started but has not announced yet', () => {
+  it('goes active the moment it spawns, so an Assist opened on a slow backend still comes to the front', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'late0', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.activateTab('late1')
+    expect(useStore.getState().activeTabId).toBe('late0')
+
+    s.addTabQuiet({ id: 'late1', kind: 'codex', title: 'Assist', cwd: '/w/b', alive: true })
+    expect(useStore.getState().activeTabId).toBe('late1')
+  })
+
+  it('stays put when the person picked another tab in the meantime', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'late2', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.addTab({ id: 'late3', kind: 'claude', title: 'B', cwd: '/w/a', alive: true })
+    s.activateTab('late4')
+    s.activateTab('late2')
+
+    s.addTabQuiet({ id: 'late4', kind: 'codex', title: 'Assist', cwd: '/w/b', alive: true })
+    expect(useStore.getState().activeTabId).toBe('late2')
   })
 })

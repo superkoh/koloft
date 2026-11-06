@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GitNumstatMap, GitStatusMap } from '@shared/types'
-import type { BaseChoice } from './filesModel'
+import type { BackendSessionInfo, BaseChoice, GitNumstatMap, GitStatusMap } from '@shared/types'
 
 export interface GitChangeSet {
   git: GitStatusMap
@@ -8,6 +7,7 @@ export interface GitChangeSet {
   base: string | null | undefined
   rootMissing: boolean
   watchDead: boolean
+  firstReadFailed: boolean
   reread: () => void
 }
 
@@ -26,18 +26,20 @@ function sameMap<V>(
 
 export function useWatchlessRefresh(
   enabled: boolean,
-  activityAt: number | undefined,
+  session: Pick<BackendSessionInfo, 'updatedAt' | 'liveWrites'> | null | undefined,
   throttleMs: number,
   refresh: () => void
 ): void {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activityAt = session?.updatedAt
+  const writes = session?.liveWrites
   useEffect(() => {
     if (!enabled || timer.current) return
     timer.current = setTimeout(() => {
       timer.current = null
       refresh()
     }, throttleMs)
-  }, [enabled, activityAt, throttleMs, refresh])
+  }, [enabled, activityAt, writes, throttleMs, refresh])
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
@@ -58,8 +60,12 @@ export function useGitChangeSet(
   const [base, setBase] = useState<string | null | undefined>(undefined)
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
   const fetchNow = useRef<(() => void) | null>(null)
-  const reread = useCallback(() => fetchNow.current?.(), [])
+  const reread = useCallback(() => {
+    setReadFailed(false)
+    fetchNow.current?.()
+  }, [])
 
   useEffect(() => {
     setGit({})
@@ -67,6 +73,7 @@ export function useGitChangeSet(
     setBase(undefined)
     setRootMissing(false)
     setWatchDead(false)
+    setReadFailed(false)
   }, [root])
 
   useEffect(() => {
@@ -74,6 +81,7 @@ export function useGitChangeSet(
     setGit({})
     setNumstat({})
     setBase(undefined)
+    setReadFailed(false)
   }, [active])
 
   useEffect(() => {
@@ -82,31 +90,22 @@ export function useGitChangeSet(
     let seq = 0
     const fetchGit = (): void => {
       const mine = ++seq
-      const resolve: Promise<string | null> =
-        baseChoice === 'head' ? Promise.resolve('HEAD') : window.api.fs.diffBase(dir)
-      resolve
-        .catch(() => null)
-        .then((b) => {
-          if (mine !== seq) return undefined
-          setBase(b)
-          const arg = b ?? undefined
-          return Promise.all([
-            window.api.fs.gitStatus(dir, arg),
-            window.api.fs.gitNumstat(dir, arg),
-            window.api.fs.dirExists(dir).then((ok) => !ok)
-          ])
-        })
+      window.api.fs
+        .gitChanges(dir, baseChoice)
         .then((r) => {
-          if (!r || mine !== seq) return
-          const [g, ns, missing] = r
-          setGit((prev) => (sameMap(prev, g, (x, y) => x === y) ? prev : g))
+          if (mine !== seq) return
+          setBase(r.base)
+          setGit((prev) => (sameMap(prev, r.status, (x, y) => x === y) ? prev : r.status))
           setNumstat((prev) =>
-            sameMap(prev, ns, (x, y) => x.added === y.added && x.removed === y.removed) ? prev : ns
+            sameMap(prev, r.numstat, (x, y) => x.added === y.added && x.removed === y.removed)
+              ? prev
+              : r.numstat
           )
-          setRootMissing(missing)
+          setRootMissing(r.missing)
+          setReadFailed(false)
         })
         .catch(() => {
-          if (mine !== seq) return
+          if (mine === seq) setReadFailed(true)
         })
     }
     fetchGit()
@@ -127,5 +126,6 @@ export function useGitChangeSet(
     }
   }, [active, root, baseChoice, refreshNonce])
 
-  return { git, numstat, base, rootMissing, watchDead, reread }
+  const firstReadFailed = readFailed && base === undefined
+  return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
 }

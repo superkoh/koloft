@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { PreviewItem } from '@shared/types'
-import {
-  docLanding,
-  previewDocs,
-  type PreviewDoc
-} from '../../src/renderer/src/components/workbenchPreviewModel'
+import { routeFor } from '@shared/browserRoute'
+import { previewDocs } from '../../src/renderer/src/components/workbenchPreviewModel'
 import type { WorkbenchTab } from '../../src/renderer/src/components/workbenchTabs'
 
 const wrote = (src: string, wroteAt: number): PreviewItem => ({
@@ -113,11 +110,13 @@ describe('Workbench preview card: the docs it lists', () => {
     expect(docs).toEqual([])
   })
 
-  it('opens Markdown rendered, a local page in a web tab, and a page on an ssh machine as source', () => {
-    const doc = (src: string, kind: PreviewDoc['kind']): PreviewDoc => ({ src, kind, at: 0 })
-    expect(docLanding(doc('/repo/a.md', 'markdown'))).toBe('reading-rendered')
-    expect(docLanding(doc('ssh://devbox/home/koh/a.md', 'markdown'))).toBe('reading-rendered')
-    expect(docLanding(doc('/repo/a.html', 'page'))).toBe('web-tab')
-    expect(docLanding(doc('ssh://devbox/home/koh/a.html', 'page'))).toBe('reading-source')
+  it('lists a page the agent opened on an ssh machine by its path there, once, beside the same file it wrote', () => {
+    const src = 'ssh://devbox/home/koh/report.html'
+    const docs = previewDocs({
+      files: [wrote(src, 100)],
+      webTabs: [webTab(routeFor(src, 'agent').target, 200)],
+      openFile: null
+    })
+    expect(docs).toEqual([{ src, kind: 'page', at: 200 }])
   })
 })

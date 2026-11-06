@@ -1,0 +1,28 @@
+.wspicker .btn-primary .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  opacity: 0.65;
+}
+.wsp-list {
+  padding: 4px;
+  max-height: 300px;
+  overflow: hidden auto;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+}
+.wsp-list .cb-row:hover,
+.pal-results .cb-row:hover {
+  color: var(--fg);
+}
+.wsp-num {
+  flex: 0 0 auto;
+  width: 9px;
+  color: var(--fg-faint);
+}
+.wsp-name {
+  flex-shrink: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

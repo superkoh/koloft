@@ -1,63 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
-  acceptBypassWarning,
   acceptClaudeTrust,
-  bypassWarningAccepted,
+  claudeProjectKey,
   claudeTrustsFolder,
-  isTrustedByClaude
+  isTrustedByClaude,
+  markClaudeOnboarded
 } from '../../src/main/claudeTrust'
-
-// CC§9
-describe('the one-time "skip permissions" warning Claude shows', () => {
-  const files = (): { dir: string; claudeJson: string; settings: string } => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-bypass-'))
-    return {
-      dir,
-      claudeJson: path.join(dir, '.claude.json'),
-      settings: path.join(dir, '.claude', 'settings.json')
-    }
-  }
-
-  it('counts as accepted by either key Claude reads, and not when neither file says so', () => {
-    const f = files()
-    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(false)
-    fs.writeFileSync(f.claudeJson, JSON.stringify({ bypassPermissionsModeAccepted: true }))
-    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(true)
-    fs.rmSync(f.claudeJson)
-    fs.mkdirSync(path.dirname(f.settings))
-    fs.writeFileSync(f.settings, JSON.stringify({ skipDangerousModePermissionPrompt: true }))
-    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(true)
-    fs.rmSync(f.dir, { recursive: true, force: true })
-  })
-
-  it('accepting writes only skipDangerousModePermissionPrompt and keeps every other setting', () => {
-    const f = files()
-    expect(acceptBypassWarning(f.settings)).toBe(true)
-    expect(JSON.parse(fs.readFileSync(f.settings, 'utf8'))).toEqual({
-      skipDangerousModePermissionPrompt: true
-    })
-    fs.writeFileSync(f.settings, JSON.stringify({ model: 'opus', hooks: { Stop: [] } }))
-    acceptBypassWarning(f.settings)
-    expect(JSON.parse(fs.readFileSync(f.settings, 'utf8'))).toEqual({
-      model: 'opus',
-      hooks: { Stop: [] },
-      skipDangerousModePermissionPrompt: true
-    })
-    fs.rmSync(f.dir, { recursive: true, force: true })
-  })
-
-  it('never overwrites a settings file it cannot read as JSON', () => {
-    const f = files()
-    fs.mkdirSync(path.dirname(f.settings))
-    fs.writeFileSync(f.settings, '{ "model": "opus", ')
-    expect(acceptBypassWarning(f.settings)).toBe(false)
-    expect(fs.readFileSync(f.settings, 'utf8')).toBe('{ "model": "opus", ')
-    fs.rmSync(f.dir, { recursive: true, force: true })
-  })
-})
 
 const doc =
   (projects: Record<string, unknown>): (() => unknown) =>
@@ -67,12 +18,14 @@ const doc =
 describe('isTrustedByClaude', () => {
   it('says yes for the folder itself', () => {
     const read = doc({ '/Users/me/repo': { hasTrustDialogAccepted: true } })
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(true)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(true)
   })
 
   it('says yes when an ancestor was trusted', () => {
     const read = doc({ '/Users/me/repo': { hasTrustDialogAccepted: true } })
-    expect(isTrustedByClaude(read, '/Users/me/repo/.claude/worktrees/job-260906-0900')).toBe(true)
+    expect(isTrustedByClaude(read, '/Users/me/repo/.claude/worktrees/job-260906-0900', null)).toBe(
+      true
+    )
   })
 
   it('says no for a folder nobody answered for, and for one answered with false', () => {
@@ -80,16 +33,124 @@ describe('isTrustedByClaude', () => {
       '/Users/me/other': { hasTrustDialogAccepted: true },
       '/Users/me/repo': { hasTrustDialogAccepted: false }
     })
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(false)
-    expect(isTrustedByClaude(read, '/Users/me/fresh')).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/fresh', null)).toBe(false)
   })
 
   it('says no when the file cannot be read', () => {
     const read = (): unknown => {
       throw new Error('ENOENT')
     }
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(false)
-    expect(isTrustedByClaude(() => null, '/Users/me/repo')).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(false)
+    expect(isTrustedByClaude(() => null, '/Users/me/repo', null)).toBe(false)
+  })
+})
+
+// CC§9
+describe('claudeTrustsFolder stops looking up at the top of the git repo', () => {
+  let tmp: string
+  let file: string
+  beforeEach(() => {
+    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-trust-')))
+    file = path.join(tmp, '.claude.json')
+  })
+  afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }))
+
+  const linkedWorktree = (worktree: string, commonGitDir: string): void => {
+    const admin = path.join(commonGitDir, 'worktrees', path.basename(worktree))
+    fs.mkdirSync(admin, { recursive: true })
+    fs.mkdirSync(worktree, { recursive: true })
+    fs.writeFileSync(path.join(admin, 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${admin}\n`)
+  }
+  const repoWithWorktree = (): { repo: string; worktree: string } => {
+    const repo = path.join(tmp, 'repo')
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w')
+    fs.mkdirSync(path.join(repo, 'sub'), { recursive: true })
+    linkedWorktree(worktree, path.join(repo, '.git'))
+    return { repo, worktree }
+  }
+  const trustOnly = (dir: string): void =>
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ projects: { [dir]: { hasTrustDialogAccepted: true } } })
+    )
+
+  it('says no for a repo inside a trusted folder, and acceptClaudeTrust then records the repo', () => {
+    const { repo } = repoWithWorktree()
+    trustOnly(tmp)
+
+    expect(claudeTrustsFolder(file, repo)).toBe(false)
+    expect(claudeTrustsFolder(file, path.join(repo, 'sub'))).toBe(false)
+    acceptClaudeTrust(file, repo)
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).projects[repo]).toEqual({
+      hasTrustDialogAccepted: true
+    })
+  })
+
+  it('says yes for a plain folder inside a trusted folder', () => {
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+    trustOnly(tmp)
+
+    expect(claudeTrustsFolder(file, path.join(tmp, 'plain', 'sub'))).toBe(true)
+  })
+
+  it('says yes for a subfolder of a trusted repo and for a worktree under it', () => {
+    const { repo, worktree } = repoWithWorktree()
+    trustOnly(repo)
+
+    expect(claudeTrustsFolder(file, path.join(repo, 'sub'))).toBe(true)
+    expect(claudeTrustsFolder(file, worktree)).toBe(true)
+  })
+
+  it('says no for a worktree of a bare repo inside a trusted folder, its top being the folder that holds the bare repo', () => {
+    const outer = path.join(tmp, 'outer')
+    const worktree = path.join(outer, 'wt')
+    linkedWorktree(worktree, path.join(outer, 'proj.git'))
+    trustOnly(tmp)
+
+    expect(claudeTrustsFolder(file, worktree)).toBe(false)
+    trustOnly(outer)
+    expect(claudeTrustsFolder(file, worktree)).toBe(true)
+  })
+
+  it('says no for a submodule, or a worktree whose main repo is gone, under a trusted repo: a .git file with no readable commondir is its own top', () => {
+    const repo = path.join(tmp, 'repo')
+    const submodule = path.join(repo, 'sub')
+    const moduleGitDir = path.join(repo, '.git', 'modules', 'sub')
+    fs.mkdirSync(moduleGitDir, { recursive: true })
+    fs.mkdirSync(submodule)
+    fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
+    const orphan = path.join(repo, 'orphan')
+    fs.mkdirSync(orphan)
+    fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(tmp, 'gone', '.git')}\n`)
+    trustOnly(repo)
+
+    expect(claudeTrustsFolder(file, submodule)).toBe(false)
+    expect(claudeTrustsFolder(file, orphan)).toBe(false)
+    trustOnly(submodule)
+    expect(claudeTrustsFolder(file, submodule)).toBe(true)
+  })
+})
+
+// CC§22
+describe('claudeProjectKey names the ~/.claude.json projects entry Claude Code keeps a folder’s local MCP servers under', () => {
+  it('a folder inside a repo and a linked worktree of it share the main checkout’s key; a plain folder keeps its own', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-projkey-')))
+    const repo = path.join(tmp, 'repo')
+    const worktree = path.join(tmp, 'wt')
+    const admin = path.join(repo, '.git', 'worktrees', 'wt')
+    fs.mkdirSync(path.join(repo, 'sub'), { recursive: true })
+    fs.mkdirSync(admin, { recursive: true })
+    fs.mkdirSync(worktree, { recursive: true })
+    fs.writeFileSync(path.join(admin, 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${admin}\n`)
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+
+    expect(claudeProjectKey(path.join(repo, 'sub'))).toBe(repo)
+    expect(claudeProjectKey(worktree)).toBe(repo)
+    expect(claudeProjectKey(path.join(tmp, 'plain', 'sub'))).toBe(path.join(tmp, 'plain', 'sub'))
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })
 
@@ -117,5 +178,43 @@ describe('acceptClaudeTrust', () => {
     expect(fs.statSync(file).mode & 0o777).toBe(0o600)
     expect(claudeTrustsFolder(file, link)).toBe(true)
     fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('records trust when ~/.claude.json does not exist yet, creating it', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-trust-')))
+    const file = path.join(tmp, '.claude.json')
+
+    acceptClaudeTrust(file, tmp)
+
+    expect(claudeTrustsFolder(file, tmp)).toBe(true)
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+})
+
+// CC§10
+describe('markClaudeOnboarded', () => {
+  const claudeJson = (): string =>
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-onboarded-')), '.claude.json')
+
+  it('marks the first-run page done, creating the file when missing and keeping every other key', () => {
+    const missing = claudeJson()
+    markClaudeOnboarded(missing)
+    expect(JSON.parse(fs.readFileSync(missing, 'utf8'))).toEqual({ hasCompletedOnboarding: true })
+
+    const fresh = claudeJson()
+    fs.writeFileSync(fresh, JSON.stringify({ installMethod: 'native', projects: {} }))
+    markClaudeOnboarded(fresh)
+    expect(JSON.parse(fs.readFileSync(fresh, 'utf8'))).toEqual({
+      installMethod: 'native',
+      projects: {},
+      hasCompletedOnboarding: true
+    })
+  })
+
+  it('never overwrites a file it cannot read as JSON', () => {
+    const file = claudeJson()
+    fs.writeFileSync(file, '{ half')
+    markClaudeOnboarded(file)
+    expect(fs.readFileSync(file, 'utf8')).toBe('{ half')
   })
 })

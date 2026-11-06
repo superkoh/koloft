@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -8,78 +9,35 @@ import {
   useState,
   type JSX
 } from 'react'
-import {
-  LuAlignLeft,
-  LuCloudUpload,
-  LuDownload,
-  LuEllipsis,
-  LuFileText,
-  LuGitCommitHorizontal,
-  LuGitPullRequest,
-  LuGitPullRequestCreate,
-  LuGithub,
-  LuGlobe,
-  LuLink,
-  LuListTree,
-  LuMaximize2,
-  LuMinimize2,
-  LuPencil,
-  LuPlus,
-  LuRotateCw,
-  LuSend,
-  LuTerminal,
-  LuVolume2,
-  LuVolumeX,
-  LuX
-} from 'react-icons/lu'
-import { routeFor } from '@shared/browserRoute'
-import {
-  CDP_GUEST_ID_RETRIES,
-  CDP_GUEST_ID_RETRY_MS,
-  CDP_MOUNT_ATTACH_MS,
-  CDP_MOUNT_SETTLE_MS
-} from '@shared/cdpBudget'
+import { IconDownload, IconMore } from '../icons'
+import { folderFileOf, loopbackPortOf, routeFor } from '@shared/browserRoute'
+import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
-import type {
-  ArtifactView,
-  BrowserCdpOp,
-  BrowserCdpOpResult,
-  BrowserPermissionAsk,
-  BrowserPermissionRefusal,
-  EditFingerprint,
-  GitFileStatus,
-  GitStepResult,
-  GithubInfo,
-  GithubTarget,
-  PrChecks,
-  SessionInfo
-} from '@shared/types'
+import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { isWorkspaceWorkbenchKey } from '@shared/workbenchState'
+import type { ArtifactView, BrowserCdpOp, EditFingerprint, GithubTarget } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
-import { commentBlocked } from './changesModel'
-import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
+import { useChangeTotals } from './FilesTabLabel'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
-import { BrowserGuest, type GuestElement, type GuestFailure } from './BrowserGuest'
+import { PICK_MSG_PAGE_NOT_SHOWN, useElementPick } from './useElementPick'
+import type { GuestElement } from './BrowserGuest'
 import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
-import { BrowserDownloads } from './BrowserDownloads'
+import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
-import {
-  applyDownloadEvent,
-  clearFinishedDownloads,
-  hasDownloads,
-  type DownloadList
-} from './downloadList'
-import { FindBar } from './FindBar'
-import { NO_FOCUS_SIGNAL, TerminalView } from './TerminalView'
+import { SecretPageBar, webAskOf } from './SecretAsk'
+import { hasDownloads } from './downloadList'
+import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
-import { GIT_LETTER, relOf, splitPath } from './filesModel'
-import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
-import { EditPane, editRefusal, useEditProbe } from './EditPane'
+import { relOf } from './filesModel'
+import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
+import { editRefusal, useEditProbe } from './EditPane'
 import {
   allEditTabs,
   beginEdit,
+  dirtyTabsOf,
   discardTab,
   endEdit,
   getEntry,
@@ -90,11 +48,10 @@ import {
 } from '../editRegistry'
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
-import { boundSessionId, useStore } from '../store'
+import { useStore } from '../store'
 import {
   FILES_TAB_ID,
   activateTab,
-  cdpVisibleTabs,
   closeTab,
   cycleTab,
   dialogHasLiveOwner,
@@ -107,104 +64,45 @@ import {
   setTabScrollTop,
   setTabView,
   shortAuxCwd,
-  tabLabel,
   type OpenTabResult,
   type WorkbenchTab,
   type WorkbenchTabSet
 } from './workbenchTabs'
 import type { WorkbenchCommandSignal } from './workbenchCommands'
-import { useDomFind, type FindCount } from '../useDomFind'
+import { FileTabBar, FullWidthButton } from './WorkbenchBars'
+import { WorkbenchFind } from './WorkbenchFind'
+import { GithubMenu, useWorkbenchGithub } from './workbenchGithub'
+import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
+import { WorkbenchTabStrip, type TabAudio } from './WorkbenchTabStrip'
+import { FileTabHost, TerminalHost } from './WorkbenchTabHosts'
+import {
+  BLANK_RUNTIME,
+  WebGuestHost,
+  WebPageState,
+  guestHistory,
+  guestId,
+  guestUrl,
+  type GuestEvents,
+  type TabRuntime
+} from './WorkbenchWebGuests'
+import { useBrowserPermissions } from './useBrowserPermissions'
+import { useCdpOps, useStripReport } from './useCdpOps'
+import '../workbench.css'
 
 function globalLiveGuestLimit(): number {
   return window.api.browserGuestLimit
 }
 
-interface TabRuntime {
-  loading: boolean
-  canBack: boolean
-  canForward: boolean
-  fail: GuestFailure | null
-  crashed: boolean
-  zoom: number
-  mountToken: number
-  pendingUrl: string
-}
-
-const BLANK_RUNTIME: TabRuntime = {
-  loading: false,
-  canBack: false,
-  canForward: false,
-  fail: null,
-  crashed: false,
-  zoom: 1,
-  mountToken: 0,
-  pendingUrl: ''
-}
-
 const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
-const CAPTURE_AFTER_PAINT_MS = 90
-const PERMISSION_REFUSAL_NOTICE_MS = 4000
 const WATCHLESS_REFRESH_THROTTLE_MS = 600
 
-const GUEST_ID_RETRY_MS = CDP_GUEST_ID_RETRY_MS
-const GUEST_ID_RETRIES = CDP_GUEST_ID_RETRIES
+const NO_TABS = emptyTabSet()
 
 const PREARMED_COMMANDS: ReadonlySet<WorkbenchCommandSignal['id']> = new Set([
   'find-files',
   'browser-new-tab'
 ])
-
-const DOT_WORD: Record<ChecksDot, string> = {
-  pass: 'passed',
-  fail: 'failing',
-  pending: 'running'
-}
-
-const VIEW_LABEL: Record<ArtifactView, string> = {
-  render: 'Rendered',
-  diff: 'Diff',
-  source: 'Source'
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host || url
-  } catch {
-    return url
-  }
-}
-
-// PLATFORM§8
-function history(el: GuestElement | undefined): { canBack: boolean; canForward: boolean } {
-  try {
-    return { canBack: el?.canGoBack() ?? false, canForward: el?.canGoForward() ?? false }
-  } catch {
-    return { canBack: false, canForward: false }
-  }
-}
-
-// PLATFORM§8
-function guestId(el: GuestElement | undefined): number {
-  try {
-    return el?.getWebContentsId() ?? 0
-  } catch {
-    return 0
-  }
-}
-
-// PLATFORM§8
-function guestUrl(el: GuestElement | undefined): string {
-  try {
-    return el?.getURL() ?? ''
-  } catch {
-    return ''
-  }
-}
-
-function isCertFailure(fail: GuestFailure): boolean {
-  return /^ERR_(CERT|SSL)/.test(fail.description)
-}
 
 export interface WorkbenchPaneProps {
   tabId: string | null
@@ -228,7 +126,6 @@ export interface WorkbenchPaneProps {
   onEscapeFellThrough: () => void
   onReturnFocus: () => void
   treeRoot: string | null
-  session: SessionInfo | null
   activeTabId: string | null
   pinned: Record<string, string[]>
   tabForSession: (sessionId: string) => string | undefined
@@ -237,87 +134,7 @@ export interface WorkbenchPaneProps {
   onCdpCreate: (sessionId: string, url: string) => Promise<string | null>
 }
 
-function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void }): void {
-  e.stopPropagation()
-  e.preventDefault()
-}
-
-function sameGithub(a: GithubInfo | null, b: GithubInfo | null): boolean {
-  if (!a || !b) return a === b
-  return (
-    a.repoUrl === b.repoUrl &&
-    a.pullsUrl === b.pullsUrl &&
-    a.branch === b.branch &&
-    a.pr === b.pr &&
-    a.pending === b.pending &&
-    a.failed === b.failed
-  )
-}
-
-function useGithubInfo(root: string | null): {
-  info: GithubInfo | null
-  recheck: () => void
-} {
-  const [got, setGot] = useState<{ root: string; info: GithubInfo | null } | null>(null)
-  const [nonce, setNonce] = useState(0)
-  const forcedRecheckRoot = useRef<string | null>(null)
-  useEffect(() => {
-    if (!root) return undefined
-    let alive = true
-    const force = forcedRecheckRoot.current === root
-    if (force) forcedRecheckRoot.current = null
-    const settle = (info: GithubInfo | null): void => {
-      setGot((prev) =>
-        prev && prev.root === root && sameGithub(prev.info, info) ? prev : { root, info }
-      )
-      if (!force || !info || info.pending) return
-      const st = useStore.getState()
-      if (info.failed) st.showToast('Could not reach GitHub.')
-      else if (info.pr === null) {
-        st.showToast(`No pull request found for ${info.branch ?? 'this checkout'}.`)
-      }
-    }
-    void window.api.github.info(root, force).then((info) => {
-      if (alive) settle(info)
-    })
-    const off = window.api.github.onInfo((r, info) => {
-      if (alive && r === root) settle(info)
-    })
-    return () => {
-      alive = false
-      off()
-    }
-  }, [root, nonce])
-  const recheck = useCallback((): void => {
-    if (!root) return
-    forcedRecheckRoot.current = root
-    setNonce((n) => n + 1)
-  }, [root])
-  return { info: got && got.root === root ? got.info : null, recheck }
-}
-
-function useGithubChecks(
-  root: string | null,
-  pr: number | null
-): { checks: PrChecks | null; refresh: () => void } {
-  const [got, setGot] = useState<{ key: string; checks: PrChecks } | null>(null)
-  const [nonce, setNonce] = useState(0)
-  const key = root && pr !== null ? `${root}#${pr}` : null
-  useEffect(() => {
-    if (!root || pr === null) return undefined
-    let alive = true
-    void window.api.github.checks(root, pr).then((checks) => {
-      if (alive) setGot({ key: `${root}#${pr}`, checks })
-    })
-    return () => {
-      alive = false
-    }
-  }, [root, pr, nonce])
-  const refresh = useCallback((): void => setNonce((n) => n + 1), [])
-  return { checks: got && got.key === key ? got.checks : null, refresh }
-}
-
-export function WorkbenchPane({
+export const WorkbenchPane = memo(function WorkbenchPane({
   tabId: ownerTab,
   states,
   liveTabs,
@@ -335,7 +152,6 @@ export function WorkbenchPane({
   onEscapeFellThrough,
   onReturnFocus,
   treeRoot,
-  session,
   activeTabId,
   pinned,
   tabForSession,
@@ -343,27 +159,27 @@ export function WorkbenchPane({
   onCdpDone,
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
+  const session = useStore((s) => s.sessions.find((x) => x.tabId === activeTabId) ?? null)
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
+  const ownerBackend = useStore(
+    (s) =>
+      backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ??
+      s.settings.sessionMethods.defaultBackend
+  )
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
   const [findOpen, setFindOpen] = useState(false)
   const [findFocusTick, setFindFocusTick] = useState(0)
-  const [query, setQuery] = useState('')
-  const [guestFindCount, setGuestFindCount] = useState<FindCount>({ current: 0, total: 0 })
-  const [downloads, setDownloads] = useState<DownloadList>({ items: [] })
+  const { downloads, clearFinished } = useBrowserDownloads()
   const [dlOpen, setDlOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [ghMenu, setGhMenu] = useState(false)
-  const github = useGithubInfo(visible ? treeRoot : null)
-  const ghChecks = useGithubChecks(visible ? treeRoot : null, github.info?.pr ?? null)
   const [commitOpen, setCommitOpen] = useState(false)
-  const [permAsk, setPermAsk] = useState<BrowserPermissionAsk | null>(null)
-  const [permRefusal, setPermRefusal] = useState<BrowserPermissionRefusal | null>(null)
-  const [audio, setAudio] = useState<Record<string, { audible: boolean; muted: boolean }>>({})
-  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
+  const perms = useBrowserPermissions()
+  const [audio, setAudio] = useState<TabAudio>({})
   const [pageFullscreen, setPageFullscreen] = useState(false)
   const [zoom, setZoom] = useState<string | null>(null)
   const [caps, setCaps] = useState<Record<string, ArtifactCaps>>({})
@@ -371,36 +187,38 @@ export function WorkbenchPane({
   const [reloadNonce, setReloadNonce] = useState<Record<string, number>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
-  const [, bumpEdit] = useReducer((n: number) => n + 1, 0)
+  const [editTick, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead, reread } = useGitChangeSet(
+  const { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread } = useGitChangeSet(
     treeRoot,
     visible,
     files.baseChoice,
     files.refreshNonce
   )
+  const gh = useWorkbenchGithub(visible, treeRoot, session, onReturnFocus, reread)
 
   const addressRef = useRef<HTMLInputElement>(null)
-  const findInputRef = useRef<HTMLInputElement>(null)
   const els = useRef(new Map<string, GuestElement>())
   const bodies = useRef(new Map<string, HTMLElement>())
   // PLATFORM§9
   const mountOrder = useRef<string[]>([])
-  const everLive = useRef(new Set<string>())
+  const [everLive, setEverLive] = useState<ReadonlySet<string>>(() => new Set())
   const [visited, setVisited] = useState<string[]>([])
 
   const statesRef = useRef(states)
   statesRef.current = states
-  const set = (ownerTab && states[ownerTab]) || emptyTabSet()
+  const set = (ownerTab && states[ownerTab]) || NO_TABS
   const activeTab = set.tabs.find((t) => t.id === set.activeId) ?? null
   const activeKind = activeTab?.kind ?? 'files'
   const activeRuntime = activeTab ? (runtime[activeTab.id] ?? BLANK_RUNTIME) : BLANK_RUNTIME
   const activeCaps = (activeTab && caps[activeTab.id]) || NO_CAPS
   const editProbe = useEditProbe(activeKind === 'file' ? (activeTab?.path ?? null) : null)
   const sessionCold = !!ownerTab && !liveTabs.has(ownerTab)
+  const ofWorkspace = isWorkspaceWorkbenchKey(ownerTab)
+  const canTerminal = !sessionCold && !ofWorkspace
   const liveTabsRef = useRef(liveTabs)
   liveTabsRef.current = liveTabs
 
@@ -434,6 +252,9 @@ export function WorkbenchPane({
   const panelWorkspace = useStore((s) =>
     ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
   )
+  const panelMachine = useStore(
+    (s) => s.workspaceRows.find((w) => w.workspace.path === panelWorkspace)?.workspace.remote
+  )
 
   // PLATFORM§9
   const [staged, setStaged] = useState<ReadonlySet<string>>(() => new Set())
@@ -459,7 +280,7 @@ export function WorkbenchPane({
   }, [pinnedIds])
 
   const makeLive = useCallback((id: string): void => {
-    everLive.current.add(id)
+    setEverLive((ever) => (ever.has(id) ? ever : new Set(ever).add(id)))
     if (!mountOrder.current.includes(id)) mountOrder.current.push(id)
     setLive((prev) => {
       const next = prev.filter((x) => x !== id && webIndexRef.current.has(x))
@@ -522,10 +343,11 @@ export function WorkbenchPane({
   const activate = useCallback(
     (id: string): void => {
       if (!ownerTab) return
-      const restore = id === set.activeId ? () => {} : keepCaret()
+      const shown = statesRef.current[ownerTab] ?? NO_TABS
+      const restore = id === shown.activeId ? () => {} : keepCaret()
       onUpdate(ownerTab, (prev) => activateTab(prev, id))
       restore()
-      const tab = set.tabs.find((t) => t.id === id)
+      const tab = shown.tabs.find((t) => t.id === id)
       if (!tab) return
       if (tab.kind === 'file') {
         setVisited((prev) => (prev.includes(id) ? prev : [...prev, id]))
@@ -536,7 +358,7 @@ export function WorkbenchPane({
       if (tab.url && !els.current.has(id)) applyLive(id, tab.url)
       else makeLive(id)
     },
-    [ownerTab, sessionCold, set, onUpdate, applyLive, makeLive, keepCaret]
+    [ownerTab, sessionCold, onUpdate, applyLive, makeLive, keepCaret]
   )
 
   const closeNow = useCallback(
@@ -575,116 +397,10 @@ export function WorkbenchPane({
     [ownerTab, sessionCold, visible, onUpdate, applyLive, makeLive, keepCaret, unstage]
   )
 
-  const pendingMounts = useRef(new Map<string, () => void>())
-  const pendingSettles = useRef(new Map<string, () => void>())
-  const doneOps = useRef(new Set<string>())
-
-  // PLATFORM§8
-  const waitGuestId = useCallback(
-    async (tabId: string): Promise<number> => {
-      for (let i = 0; i < GUEST_ID_RETRIES; i++) {
-        const id = guestIdOf(tabId)
-        if (id) return id
-        await new Promise((r) => setTimeout(r, GUEST_ID_RETRY_MS))
-      }
-      throw new Error('the page never reported its id')
-    },
-    [guestIdOf]
-  )
-
-  const inFlightMounts = useRef(new Map<string, Promise<number>>())
-
-  const settled = useCallback((tabId: string): Promise<void> => {
-    return new Promise<void>((resolve) => {
-      const done = (): void => {
-        pendingSettles.current.delete(tabId)
-        clearTimeout(timer)
-        resolve()
-      }
-      const timer = setTimeout(done, CDP_MOUNT_SETTLE_MS)
-      pendingSettles.current.set(tabId, done)
-    })
-  }, [])
-
-  const guestLoading = useCallback((tabId: string): boolean => {
-    try {
-      return els.current.get(tabId)?.isLoading() ?? false
-    } catch {
-      return false
-    }
-  }, [])
-
-  const doMount = useCallback(
-    async (opOwner: string, tabId: string, urlHint?: string): Promise<number> => {
-      const url = urlHint ?? webIndexRef.current.get(tabId)?.tab.url
-      if (url === undefined) throw new Error(`no tab ${tabId}`)
-      // PLATFORM§9
-      stage(tabId)
-      const fresh = !els.current.has(tabId)
-      if (fresh) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            pendingMounts.current.delete(tabId)
-            reject(new Error('the page did not open'))
-          }, CDP_MOUNT_ATTACH_MS)
-          pendingMounts.current.set(tabId, () => {
-            clearTimeout(timer)
-            resolve()
-          })
-          applyLiveIn(opOwner, tabId, url || 'about:blank')
-        })
-      } else {
-        makeLive(tabId)
-      }
-      // PLATFORM§8
-      if (fresh || guestLoading(tabId)) await settled(tabId)
-      return await waitGuestId(tabId)
-    },
-    [applyLiveIn, makeLive, settled, waitGuestId, guestLoading, stage]
-  )
-
-  const mountTab = useCallback(
-    (opOwner: string, tabId: string, urlHint?: string): Promise<number> => {
-      const already = inFlightMounts.current.get(tabId)
-      if (already) return already
-      const p = doMount(opOwner, tabId, urlHint)
-        .catch((e: unknown) => {
-          if (!pinnedRef.current.has(tabId)) unstage(tabId)
-          throw e
-        })
-        .finally(() => inFlightMounts.current.delete(tabId))
-      inFlightMounts.current.set(tabId, p)
-      return p
-    },
-    [doMount, unstage]
-  )
-
-  const bindings = useStore((s) =>
-    s.tabs.map((t) => `${t.id}=${boundSessionId(s, t.id) ?? ''}`).join(' ')
-  )
-  const lastReport = useRef(new Map<string, string>())
-  useEffect(() => {
-    const st = useStore.getState()
-    for (const [owner, s] of Object.entries(states)) {
-      const sid = boundSessionId(st, owner)
-      if (!sid) continue
-      const targets = cdpVisibleTabs(s).map((t) => ({
-        targetId: t.id,
-        url: t.url ?? '',
-        title: t.title,
-        guestId: guestIdOf(t.id) || null
-      }))
-      const json = JSON.stringify(targets)
-      if (lastReport.current.get(sid) === json) continue
-      lastReport.current.set(sid, json)
-      window.api.browser.reportStrip(sid, targets)
-    }
-  }, [states, live, attached, guestIdOf, bindings])
-
   const close = useCallback(
     (id: string): void => {
       if (!ownerTab || id === FILES_TAB_ID) return
-      if (set.tabs.find((t) => t.id === id)?.kind === 'terminal') {
+      if (statesRef.current[ownerTab]?.tabs.find((t) => t.id === id)?.kind === 'terminal') {
         useStore.getState().closeTerminalTab(id)
         closeNow(id)
         return
@@ -723,61 +439,33 @@ export function WorkbenchPane({
         }
       })
     },
-    [ownerTab, set, treeRoot, closeNow, activate, refreshFiles]
+    [ownerTab, treeRoot, closeNow, activate, refreshFiles]
   )
 
-  useEffect(() => {
-    if (!cdpOps.length) return
-    for (const id of [...doneOps.current]) {
-      if (!cdpOps.some((o) => o.opId === id)) doneOps.current.delete(id)
-    }
-    for (const op of cdpOps) {
-      if (doneOps.current.has(op.opId)) continue
-      doneOps.current.add(op.opId)
-      const finish = (res: Omit<BrowserCdpOpResult, 'opId'>): void => {
-        window.api.browser.answerCdpOp({ opId: op.opId, ...res })
-        onCdpDone(op.opId)
-      }
-      const fail = (e: unknown): void =>
-        finish({ ok: false, error: e instanceof Error ? e.message : String(e) })
+  const closeIn = useCallback(
+    (owner: string, id: string): void => {
+      if (owner === ownerTab) close(id)
+      else onUpdate(owner, (prev) => closeTab(prev, id))
+    },
+    [ownerTab, close, onUpdate]
+  )
 
-      const opOwner = tabForSession(op.sessionId)
-      if (!opOwner) {
-        fail(new Error(`no session ${op.sessionId}`))
-        continue
-      }
-
-      if (op.kind === 'mount' && op.targetId) {
-        mountTab(opOwner, op.targetId).then(
-          (gid) => finish({ ok: true, targetId: op.targetId, guestId: gid }),
-          fail
-        )
-      } else if (op.kind === 'create') {
-        const url = op.url || 'about:blank'
-        void onCdpCreate(op.sessionId, url).then((tabId) => {
-          if (!tabId) {
-            finish({ ok: false, error: 'the tab limit is full of pages an agent is driving' })
-            return
-          }
-          mountTab(opOwner, tabId, url).then(
-            (gid) => finish({ ok: true, targetId: tabId, guestId: gid }),
-            fail
-          )
-        }, fail)
-      } else if (op.kind === 'close' && op.targetId) {
-        const id = op.targetId
-        if (opOwner === ownerTab) close(id)
-        else onUpdate(opOwner, (prev) => closeTab(prev, id))
-        setLive((prev) => prev.filter((x) => x !== id))
-        finish({ ok: true })
-      } else if (op.kind === 'stage' && op.targetId) {
-        stage(op.targetId)
-        requestAnimationFrame(() => setTimeout(() => finish({ ok: true }), CAPTURE_AFTER_PAINT_MS))
-      } else {
-        finish({ ok: false, error: `unknown op ${op.kind}` })
-      }
-    }
-  }, [cdpOps, mountTab, onCdpCreate, onCdpDone, close, onUpdate, ownerTab, tabForSession, stage])
+  useStripReport(states, live, attached, guestIdOf)
+  const { waitGuestId, onAttached, settled, mounting } = useCdpOps({
+    els,
+    webIndexRef,
+    pinnedRef,
+    stage,
+    unstage,
+    applyLiveIn,
+    makeLive,
+    setLive,
+    cdpOps,
+    tabForSession,
+    onCdpCreate,
+    onCdpDone,
+    closeIn
+  })
 
   const enterEdit = useCallback(
     (tabId: string, path: string, created?: EditFingerprint): void => {
@@ -871,9 +559,18 @@ export function WorkbenchPane({
   }, [openHere])
 
   const newTerminal = useCallback((): void => {
-    if (!ownerTab || sessionCold) return
+    if (!ownerTab || !canTerminal) return
     useStore.getState().openTerminalTab(ownerTab)
-  }, [ownerTab, sessionCold])
+  }, [ownerTab, canTerminal])
+
+  const openFileTab = useCallback(
+    (path: string): void => {
+      openHere({ kind: 'file', path, source: 'user' }, (r) =>
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      )
+    },
+    [openHere]
+  )
 
   const openFilePicker = useCallback((): void => {
     void window.api.preview.openFileDialog().then((picked) => {
@@ -886,30 +583,91 @@ export function WorkbenchPane({
         )
         return
       }
-      openHere({ kind: 'file', path: picked, source: 'user' }, (r) =>
-        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-      )
+      openFileTab(picked)
     })
-  }, [openHere, applyLive])
+  }, [openHere, applyLive, openFileTab])
 
-  const submitAddress = useCallback(
-    (raw: string): void => {
+  const latestAddress = useRef(0)
+
+  const showInWebTab = useCallback(
+    (url: string): void => {
       if (!ownerTab) return
-      const decision = routeFor(raw, 'address')
-      if (decision.dest !== 'browser') return
-      const url = decision.target
-      if (!activeTab || activeTab.kind !== 'web') {
+      const shown = statesRef.current[ownerTab] ?? NO_TABS
+      const active = shown.tabs.find((t) => t.id === shown.activeId)
+      if (active?.kind !== 'web') {
         openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
         return
       }
-      onUpdate(ownerTab, (prev) => navigateTab(prev, activeTab.id, url))
-      applyLive(activeTab.id, url)
+      onUpdate(ownerTab, (prev) => navigateTab(prev, active.id, url))
+      applyLive(active.id, url)
     },
-    [ownerTab, activeTab, onUpdate, openHere, applyLive]
+    [ownerTab, onUpdate, openHere, applyLive]
+  )
+
+  const submitAddress = useCallback(
+    async (raw: string): Promise<void> => {
+      const entry = raw.trim()
+      const submitted = ++latestAddress.current
+      const inFolder = folderFileOf(entry, treeRoot)
+      if (inFolder && (await fileExists(inFolder.path))) {
+        if (submitted !== latestAddress.current) return
+        const page = routeFor(inFolder.path, 'user')
+        if (page.dest === 'browser') showInWebTab(page.target + inFolder.suffix)
+        else openFileTab(inFolder.path)
+        return
+      }
+      if (submitted !== latestAddress.current) return
+      const decision = routeFor(
+        entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
+        'address'
+      )
+      if (decision.dest === 'preview') openFileTab(decision.target)
+      else if (decision.dest === 'browser') showInWebTab(decision.target)
+    },
+    [treeRoot, showInWebTab, openFileTab]
   )
 
   const guestOf = (id: string | undefined): GuestElement | undefined =>
     id ? els.current.get(id) : undefined
+
+  const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
+  const secretAsk = useStore((s) => webAskOf(s.secretAsks, ownerTab))
+  const secretBarAsk =
+    secretAsk &&
+    activeWebId &&
+    (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
+      ? secretAsk
+      : undefined
+  const askedGuest = secretAsk?.kind === 'page' ? secretAsk.guestId : undefined
+  useEffect(() => {
+    if (askedGuest === undefined || !ownerTab) return
+    const hit = (statesRef.current[ownerTab] ?? NO_TABS).tabs.find(
+      (t) => t.kind === 'web' && guestIdOf(t.id) === askedGuest
+    )
+    if (!hit) return
+    const st = useStore.getState()
+    if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
+    activate(hit.id)
+  }, [askedGuest, ownerTab])
+  const secretBarGuest = visible && secretBarAsk ? activeWebId : null
+  useEffect(() => {
+    if (!secretBarGuest) return undefined
+    const raf = requestAnimationFrame(() => els.current.get(secretBarGuest)?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [secretBarGuest, secretBarAsk?.id])
+  const activeGuestId = useCallback(
+    () => (activeWebId ? guestIdOf(activeWebId) : 0),
+    [activeWebId, guestIdOf]
+  )
+  const pickBlocked =
+    gh.sendBlocked ?? (activeRuntime.fail || activeRuntime.crashed ? PICK_MSG_PAGE_NOT_SHOWN : null)
+  const pick = useElementPick(
+    session?.tabId ?? null,
+    activeGuestId,
+    visible ? activeWebId : null,
+    pickBlocked,
+    onReturnFocus
+  )
 
   const reload = useCallback((): void => {
     if (!activeTab) return
@@ -936,14 +694,6 @@ export function WorkbenchPane({
     [activeTab, runtime, patchRuntime]
   )
 
-  const activeId = activeTab?.id
-  const getFindRoot = useCallback(
-    (): HTMLElement | null => (activeId ? (bodies.current.get(activeId) ?? null) : null),
-    [activeId]
-  )
-  const dom = useDomFind(getFindRoot)
-  const domClear = dom.clear
-
   const rootRef = useRef<HTMLDivElement>(null)
 
   const seenPanelFocus = useRef(0)
@@ -954,41 +704,28 @@ export function WorkbenchPane({
       if (set.activeId) useStore.getState().focusPanelTerm(set.activeId)
       return undefined
     }
+    const caretBefore = document.activeElement
     const raf = requestAnimationFrame(() => {
+      const root = rootRef.current
+      const caret = document.activeElement
+      const placedInPanelMeanwhile =
+        caret !== caretBefore && caret !== root && root?.contains(caret)
+      if (placedInPanelMeanwhile) return
       const guest = activeKind === 'web' ? guestOf(set.activeId) : undefined
       if (guest) guest.focus()
-      else rootRef.current?.focus()
+      else root?.focus()
     })
     return () => cancelAnimationFrame(raf)
   }, [panelFocus])
 
   const closeFind = useCallback((): void => {
     setFindOpen(false)
-    setQuery('')
-    setGuestFindCount({ current: 0, total: 0 })
-    domClear()
     for (const el of els.current.values()) {
       try {
         el.stopFindInPage('clearSelection')
       } catch {}
     }
-  }, [domClear])
-
-  const searchGuest = useCallback(
-    (q: string, options?: { forward?: boolean; findNext?: boolean }): void => {
-      const el = guestOf(activeTab?.id)
-      if (!el) return
-      try {
-        if (!q) {
-          el.stopFindInPage('clearSelection')
-          setGuestFindCount({ current: 0, total: 0 })
-          return
-        }
-        el.findInPage(q, options ?? { findNext: true })
-      } catch {}
-    },
-    [activeTab?.id]
-  )
+  }, [])
 
   const openFind = useCallback((): void => {
     if (activeTab && editing[activeTab.id]) return
@@ -1172,49 +909,14 @@ export function WorkbenchPane({
     activate(load.tabId)
   }, [load, ownerTab, activate])
 
-  useEffect(() => {
-    return window.api.browser.onDownloadEvent((event) => {
-      setDownloads((prev) => applyDownloadEvent(prev, event))
-    })
-  }, [])
-
-  const permQueue = useRef<BrowserPermissionAsk[]>([])
-  useEffect(() => {
-    const offAsk = window.api.browser.onPermissionAsk((ask) => {
-      setPermAsk((current) => {
-        if (current) {
-          permQueue.current.push(ask)
-          return current
-        }
-        return ask
-      })
-    })
-    const offRefused = window.api.browser.onPermissionRefused((r) => setPermRefusal(r))
-    const offDrop = window.api.browser.onPermissionDrop((id) => {
-      permQueue.current = permQueue.current.filter((a) => a.id !== id)
-      setPermAsk((current) => (current?.id === id ? (permQueue.current.shift() ?? null) : current))
-    })
-    return () => {
-      offAsk()
-      offRefused()
-      offDrop()
-    }
-  }, [])
-
+  const cancelPermissions = perms.cancelAll
   const cancelPrompts = useCallback((): void => {
-    const releaseWaitingPage = (askId: string): void => window.api.browser.cancelPermission(askId)
-    setPermAsk((current) => {
-      if (current) releaseWaitingPage(current.id)
-      for (const queued of permQueue.current) releaseWaitingPage(queued.id)
-      permQueue.current = []
-      return null
-    })
-    setPermRefusal(null)
+    cancelPermissions()
     setDlOpen(false)
     setMenuOpen(false)
     setNewMenuOpen(false)
     setGhMenu(false)
-  }, [])
+  }, [cancelPermissions])
 
   const resetOwner = useRef(ownerTab)
   useEffect(() => {
@@ -1239,7 +941,8 @@ export function WorkbenchPane({
     return window.api.browser.onFullscreen((on) => setPageFullscreen(on))
   }, [])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!pageFullscreen) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
@@ -1250,17 +953,6 @@ export function WorkbenchPane({
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
   }, [pageFullscreen, activeTab])
-
-  useEffect(() => {
-    if (!permRefusal) return
-    const timer = setTimeout(() => setPermRefusal(null), PERMISSION_REFUSAL_NOTICE_MS)
-    return () => clearTimeout(timer)
-  }, [permRefusal])
-
-  const answerPermission = useCallback((id: string, granted: boolean) => {
-    window.api.browser.answerPermission(id, granted)
-    setPermAsk(permQueue.current.shift() ?? null)
-  }, [])
 
   useEffect(() => {
     return window.api.browser.onAudioState((state) => {
@@ -1283,24 +975,20 @@ export function WorkbenchPane({
     })
   }, [])
 
-  const dropTab = useCallback(
-    (to: number) => {
-      const id = drag?.id
-      setDrag(null)
-      if (!id || !ownerTab) return
+  const moveTabTo = useCallback(
+    (id: string, to: number) => {
+      if (!ownerTab) return
       onUpdate(ownerTab, (prev) => {
         const from = prev.tabs.findIndex((t) => t.id === id)
         const target = from >= 0 && from < to ? to - 1 : to
         return moveTab(prev, id, target)
       })
     },
-    [drag, ownerTab, onUpdate]
+    [ownerTab, onUpdate]
   )
 
   useEffect(() => {
-    mountOrder.current = mountOrder.current.filter(
-      (id) => webIndex.has(id) || inFlightMounts.current.has(id)
-    )
+    mountOrder.current = mountOrder.current.filter((id) => webIndex.has(id) || mounting(id))
   }, [webIndex])
 
   useEffect(() => {
@@ -1308,7 +996,7 @@ export function WorkbenchPane({
       const next = prev.filter((id) => {
         const owner = webIndexRef.current.get(id)?.owner
         if (!owner || !liveTabs.has(owner)) {
-          return inFlightMounts.current.has(id)
+          return mounting(id)
         }
         return true
       })
@@ -1359,38 +1047,16 @@ export function WorkbenchPane({
     if (report()) return
     let tries = 0
     const timer = setInterval(() => {
-      if (report() || ++tries >= GUEST_ID_RETRIES) clearInterval(timer)
-    }, GUEST_ID_RETRY_MS)
+      if (report() || ++tries >= CDP_GUEST_ID_RETRIES) clearInterval(timer)
+    }, CDP_GUEST_ID_RETRY_MS)
     return () => clearInterval(timer)
   }, [ownerTab, activeTab?.id, activeTab?.url, live, attached, openDedupedIntoShownTabNonce])
-
-  useLayoutEffect(() => {
-    if (!findFocusTick) return
-    findInputRef.current?.focus()
-    findInputRef.current?.select()
-  }, [findFocusTick])
 
   useEffect(() => {
     closeFind()
   }, [activeTab?.id, ownerTab])
 
-  useEffect(() => {
-    const el = guestOf(activeTab?.id)
-    if (!findOpen || !el) return
-    const onFound = (e: Event): void => {
-      const r = (e as Event & { result?: { activeMatchOrdinal: number; matches: number } }).result
-      if (r) setGuestFindCount({ current: r.activeMatchOrdinal, total: r.matches })
-    }
-    el.addEventListener('found-in-page', onFound)
-    return () => el.removeEventListener('found-in-page', onFound)
-  }, [findOpen, activeTab?.id, live])
-
-  useWatchlessRefresh(
-    watchDead && visible,
-    session?.updatedAt,
-    WATCHLESS_REFRESH_THROTTLE_MS,
-    reread
-  )
+  useWatchlessRefresh(watchDead && visible, session, WATCHLESS_REFRESH_THROTTLE_MS, reread)
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {
     setCaps((prev) => (sameCaps(prev[tabId] ?? NO_CAPS, next) ? prev : { ...prev, [tabId]: next }))
@@ -1433,6 +1099,9 @@ export function WorkbenchPane({
     setOutlineOpen((prev) => ({ ...prev, [tabId]: false }))
     outlineBtnRef.current?.focus()
   }, [])
+  const toggleOutline = useCallback((tabId: string): void => {
+    setOutlineOpen((prev) => ({ ...prev, [tabId]: !prev[tabId] }))
+  }, [])
   const closeZoom = useCallback((): void => setZoom(null), [])
   const keepScrollTop = useCallback(
     (tabId: string, scrollTop: number): void => {
@@ -1458,93 +1127,96 @@ export function WorkbenchPane({
         useStore.getState().showToast('All tabs have unsaved changes')
         return
       }
-      if (r.openedNew) setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      if (r.tabId !== tabId)
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+    },
+    [ownerTab, onUpdate]
+  )
+  const setActiveView = useCallback(
+    (tabId: string, view: ArtifactView): void => {
+      if (ownerTab) onUpdate(ownerTab, (prev) => setTabView(prev, tabId, view))
     },
     [ownerTab, onUpdate]
   )
 
-  const recordVisit = (owner: string, tab: WorkbenchTab, url: string): void => {
-    if (pinnedRef.current.has(tab.id)) return
-    const key = historyKey(url)
-    if (countedUrl.current.get(tab.id) === key) return
-    countedUrl.current.set(tab.id, key)
-    const { workspaceRows, sessions } = useStore.getState()
-    const ws = workspaceOfTab(workspaceRows, sessions, owner) ?? undefined
-    saveHistory(remember(loadHistory(), url, '', ws))
-  }
-
-  const recordTitle = (tab: WorkbenchTab, url: string, title: string): void => {
-    if (!pinnedRef.current.has(tab.id)) saveHistory(remember(loadHistory(), url, title))
-  }
-
-  const guestHandlers = (owner: string, tab: WorkbenchTab) => ({
-    onElement: (el: GuestElement | null): void => {
-      if (el) {
-        els.current.set(tab.id, el)
-        return
-      }
-      els.current.delete(tab.id)
-      countedUrl.current.delete(tab.id)
-      setAudio((prev) => {
-        if (!(tab.id in prev)) return prev
-        const rest = { ...prev }
-        delete rest[tab.id]
-        return rest
-      })
-    },
-    onAttached: (): void => {
-      waitGuestId(tab.id).then(
-        (gid) => window.api.browser.setGuestOwner(gid, owner),
-        () => {}
-      )
-      setAttached((n) => n + 1)
-      const waiting = pendingMounts.current.get(tab.id)
-      if (waiting) {
-        pendingMounts.current.delete(tab.id)
-        waiting()
-      }
-    },
-    onLoading: (loading: boolean): void => {
-      patchRuntime(tab.id, { loading, ...history(guestOf(tab.id)) })
-      if (loading) return
-      let evidence = { guestUrl: '', targetUrl: '', isLoading: false }
-      try {
-        const el = guestOf(tab.id)
-        evidence = {
-          guestUrl: el?.getURL() ?? '',
-          targetUrl: runtime[tab.id]?.pendingUrl || tab.url || '',
-          isLoading: el?.isLoading() ?? false
-        }
-      } catch {
-        return
-      }
-      if (stopEndsMount(evidence)) pendingSettles.current.get(tab.id)?.()
-    },
-    onNavigate: (url: string): void => {
-      patchRuntime(tab.id, {
-        pendingUrl: '',
-        fail: null,
-        crashed: false,
-        ...history(guestOf(tab.id))
-      })
-      onUpdate(owner, (prev) => navigateTab(prev, tab.id, url))
-      recordVisit(owner, tab, url)
-    },
-    onTitle: (title: string): void => {
-      onUpdate(owner, (prev) => retitleTab(prev, tab.id, title))
-      const url = guestUrl(guestOf(tab.id))
-      if (url) recordTitle(tab, url, title)
-    },
-    onFail: (fail: GuestFailure): void => {
-      patchRuntime(tab.id, { fail, loading: false })
-      pendingSettles.current.get(tab.id)?.()
-    },
-    onCrash: (): void => patchRuntime(tab.id, { crashed: true, loading: false }),
-    onClose: (): void => {
-      if (owner === ownerTab) close(tab.id)
-      else onUpdate(owner, (prev) => closeTab(prev, tab.id))
+  const latest = useRef({ onUpdate, runtime, closeIn })
+  latest.current = { onUpdate, runtime, closeIn }
+  const guestEvents = useMemo<GuestEvents>(() => {
+    const elOf = (tabId: string): GuestElement | undefined => els.current.get(tabId)
+    const recordVisit = (owner: string, tabId: string, url: string): void => {
+      if (pinnedRef.current.has(tabId)) return
+      const key = historyKey(url)
+      if (countedUrl.current.get(tabId) === key) return
+      countedUrl.current.set(tabId, key)
+      const { workspaceRows, sessions } = useStore.getState()
+      const ws = workspaceOfTab(workspaceRows, sessions, owner) ?? undefined
+      saveHistory(remember(loadHistory(), url, '', ws))
     }
-  })
+    return {
+      element: (_owner, tabId, el) => {
+        if (el) {
+          els.current.set(tabId, el)
+          return
+        }
+        els.current.delete(tabId)
+        countedUrl.current.delete(tabId)
+        setAudio((prev) => {
+          if (!(tabId in prev)) return prev
+          const rest = { ...prev }
+          delete rest[tabId]
+          return rest
+        })
+      },
+      attached: (owner, tabId) => {
+        waitGuestId(tabId).then(
+          (gid) => window.api.browser.setGuestOwner(gid, owner),
+          () => {}
+        )
+        setAttached((n) => n + 1)
+        onAttached(tabId)
+      },
+      loading: (_owner, tabId, loading) => {
+        patchRuntime(tabId, { loading, ...guestHistory(elOf(tabId)) })
+        if (loading) return
+        let evidence = { guestUrl: '', targetUrl: '', isLoading: false }
+        try {
+          const el = elOf(tabId)
+          evidence = {
+            guestUrl: el?.getURL() ?? '',
+            targetUrl:
+              latest.current.runtime[tabId]?.pendingUrl ||
+              webIndexRef.current.get(tabId)?.tab.url ||
+              '',
+            isLoading: el?.isLoading() ?? false
+          }
+        } catch {
+          return
+        }
+        if (stopEndsMount(evidence)) settled(tabId)
+      },
+      navigate: (owner, tabId, url) => {
+        patchRuntime(tabId, {
+          pendingUrl: '',
+          fail: null,
+          crashed: false,
+          ...guestHistory(elOf(tabId))
+        })
+        latest.current.onUpdate(owner, (prev) => navigateTab(prev, tabId, url))
+        recordVisit(owner, tabId, url)
+      },
+      title: (owner, tabId, title) => {
+        latest.current.onUpdate(owner, (prev) => retitleTab(prev, tabId, title))
+        const url = guestUrl(elOf(tabId))
+        if (url && !pinnedRef.current.has(tabId)) saveHistory(remember(loadHistory(), url, title))
+      },
+      fail: (_owner, tabId, fail) => {
+        patchRuntime(tabId, { fail, loading: false })
+        settled(tabId)
+      },
+      crash: (_owner, tabId) => patchRuntime(tabId, { crashed: true, loading: false }),
+      close: (owner, tabId) => latest.current.closeIn(owner, tabId)
+    }
+  }, [patchRuntime, waitGuestId, onAttached, settled])
 
   const mountedWebTabs = mountOrder.current
     .filter((id) => live.includes(id))
@@ -1563,155 +1235,14 @@ export function WorkbenchPane({
     return out
   }, [states, liveTabs])
   const changedCount = Object.keys(git).length
+  const totals = useChangeTotals(git, numstat, treeRoot, base)
   const backlink =
     activeTab?.sourceTabId && set.tabs.some((t) => t.id === activeTab.sourceTabId)
       ? activeTab.sourceTabId
       : null
-
-  const iconFor = (t: WorkbenchTab): JSX.Element =>
-    t.kind === 'files' ? (
-      <LuListTree size={13} />
-    ) : t.kind === 'terminal' ? (
-      <LuTerminal size={12} />
-    ) : t.kind === 'web' ? (
-      <LuGlobe size={12} />
-    ) : (
-      <LuFileText size={12} />
-    )
-
-  const fail = activeRuntime.fail
-  const webOverlay =
-    activeKind !== 'web' ? null : sessionCold ? (
-      <div className="bempty">
-        <div className="bstate-t">Session ended</div>
-        <div className="bstate-sub">{activeTab?.url ? hostOf(activeTab.url) : ''}</div>
-        <button onClick={() => activeTab && activate(activeTab.id)}>Reload</button>
-      </div>
-    ) : activeRuntime.crashed && activeTab ? (
-      <div className="bcrash">
-        <div className="bstate-t">This page crashed</div>
-        <div className="bstate-sub">{hostOf(activeTab.url ?? '')}</div>
-        <button
-          onClick={() =>
-            patchRuntime(activeTab.id, {
-              crashed: false,
-              pendingUrl: activeTab.url ?? '',
-              mountToken: (runtime[activeTab.id]?.mountToken ?? 0) + 1
-            })
-          }
-        >
-          Reload
-        </button>
-      </div>
-    ) : fail && isCertFailure(fail) && activeTab ? (
-      <div className="bcert">
-        <div className="bstate-t">Your connection is not private</div>
-        <div className="bstate-sub">
-          {hostOf(fail.url)} · {fail.description}
-        </div>
-        <button
-          onClick={() => {
-            void Promise.resolve(onCertProceed(fail.url)).then(() => {
-              patchRuntime(activeTab.id, { fail: null })
-              applyLive(activeTab.id, fail.url)
-            })
-          }}
-        >
-          Proceed anyway (unsafe)
-        </button>
-      </div>
-    ) : fail && activeTab ? (
-      <div className="berror">
-        <div className="bstate-t">Can't reach {hostOf(fail.url)}</div>
-        <div className="bstate-sub">{fail.description}</div>
-        <button onClick={() => applyLive(activeTab.id, fail.url)}>Retry</button>
-      </div>
-    ) : activeTab && !activeTab.url ? (
-      <div className="bempty">
-        <div className="bstate-t">No page open yet</div>
-        <div className="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
-        <div className="bempty-hint">Click a link in the terminal</div>
-        <div className="bempty-hint">Or let Claude open one</div>
-      </div>
-    ) : activeTab && !live.includes(activeTab.id) ? (
-      <div className="bempty">
-        <div className="bstate-t">Not loaded</div>
-        <div className="bstate-sub">{hostOf(activeTab.url ?? '')}</div>
-        <button onClick={() => activate(activeTab.id)}>Load</button>
-      </div>
-    ) : null
-
-  const renderTab = (t: WorkbenchTab, i: number): JSX.Element => (
-    <span
-      key={t.id}
-      className={
-        'wb-tab' +
-        (t.kind === 'files' ? ' pinned' : '') +
-        (t.id === set.activeId ? ' on' : '') +
-        (t.unread ? ' agent' : '') +
-        (t.kind === 'web' && pinnedIds.has(t.id) ? ' driven' : '') +
-        (t.kind === 'web' && !live.includes(t.id) && everLive.current.has(t.id) ? ' frozen' : '') +
-        (drag?.id === t.id ? ' dragging' : '') +
-        (drag && drag.over === i && drag.id !== t.id ? ' dropbefore' : '')
-      }
-      title={t.url || t.path || undefined}
-      data-wb-tab-id={t.id}
-      onMouseDown={() => activate(t.id)}
-      draggable={t.kind !== 'files' && t.kind !== 'terminal'}
-      onDragStart={(e) => {
-        if (t.kind === 'files' || t.kind === 'terminal') return
-        e.dataTransfer.effectAllowed = 'move'
-        // PLATFORM§10
-        e.dataTransfer.setData('text/plain', t.id)
-        setDrag({ id: t.id, over: i })
-      }}
-      onDragOver={(e) => {
-        if (!drag) return
-        e.preventDefault()
-        if (drag.over !== i) setDrag({ ...drag, over: i })
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        dropTab(i)
-      }}
-      data-drop-index={i}
-      onDragEnd={() => setDrag(null)}
-    >
-      <span className="ic">{iconFor(t)}</span>
-      <span className="lb">{tabLabel(set, t)}</span>
-      {t.kind === 'files' && changedCount > 0 && <span className="cnt">{changedCount}</span>}
-      {(audio[t.id]?.audible || audio[t.id]?.muted) && (
-        <span
-          className={'btab-spk' + (audio[t.id]?.muted ? ' muted' : '')}
-          title={audio[t.id]?.muted ? 'Unmute tab' : 'Mute tab'}
-          aria-label={audio[t.id]?.muted ? 'Unmute tab' : 'Mute tab'}
-          onMouseDown={pressOnTabControl}
-          onClick={() => toggleMute(t.id)}
-        >
-          {audio[t.id]?.muted ? <LuVolumeX size={13} /> : <LuVolume2 size={13} />}
-        </span>
-      )}
-      {t.kind !== 'files' && (
-        <span
-          className="x"
-          title="Close tab"
-          aria-label="Close tab"
-          onMouseDown={pressOnTabControl}
-          onClick={() => close(t.id)}
-        >
-          {ownerTab && isTabDirty(ownerTab, t.id) ? (
-            <>
-              <span className="dirty" title="Unsaved changes" />
-              <span className="xhov">
-                <LuX size={12} />
-              </span>
-            </>
-          ) : (
-            <LuX size={12} />
-          )}
-        </span>
-      )}
-    </span>
+  const dirtyIds = useMemo(
+    () => new Set(ownerTab ? dirtyTabsOf(ownerTab).map((d) => d.tabId) : []),
+    [ownerTab, editTick]
   )
 
   const openGithub = useCallback(
@@ -1726,83 +1257,30 @@ export function WorkbenchPane({
     },
     [treeRoot, openHere, applyLive]
   )
-
-  // ADR-0017
-  useEffect(() => {
-    useStore.getState().setGithubBtn(visible && !!github.info)
-  }, [visible, github.info])
-
-  const ghInfo = github.info
-  const ghDot = ghInfo?.pr ? checksDot(ghChecks.checks) : null
-  const ghLabel = ghInfo?.pr
-    ? `Open pull request #${ghInfo.pr}${ghDot ? ` · checks ${DOT_WORD[ghDot]}` : ''} · right-click for more`
-    : 'Open this repository on GitHub · right-click for more'
-  const checksText = ghInfo?.pr ? checksLine(ghChecks.checks) : null
-  const failing = failingChecks(ghChecks.checks)
-  const sendBlocked = commentBlocked(session)
-  const pasteTab = session?.tabId ?? null
-  const refreshChecks = ghChecks.refresh
-
-  const sendFailingChecks = useCallback(async (): Promise<void> => {
-    const pr = ghInfo?.pr
-    if (!treeRoot || !pasteTab || !pr) return
-    const text = await window.api.github.failingChecksText(treeRoot, pr)
-    if (!text) {
-      useStore.getState().showToast('No failing checks to send.')
-      return
-    }
-    await window.api.terminal.paste(pasteTab, text)
-    onReturnFocus()
-  }, [treeRoot, pasteTab, ghInfo?.pr, onReturnFocus])
-
-  const gitStep = useCallback(
-    async (step: Promise<GitStepResult>, done: string): Promise<boolean> => {
-      const r = await step
-      useStore.getState().showToast(r.ok ? done : r.reason)
-      if (r.ok) {
-        reread()
-        refreshChecks()
-      }
-      return r.ok
+  const openGithubFromButton = useCallback(
+    (what: GithubTarget): void => {
+      setNewMenuOpen(false)
+      setGhMenu(false)
+      openGithub(what)
     },
-    [reread, refreshChecks]
+    [openGithub]
   )
+  const refreshChecks = gh.refreshChecks
+  const openGithubMenu = useCallback((): void => {
+    setNewMenuOpen(false)
+    setDlOpen(false)
+    setGhMenu(true)
+    refreshChecks()
+  }, [refreshChecks])
+  const toggleNewMenu = useCallback((): void => {
+    setMenuOpen(false)
+    setDlOpen(false)
+    setGhMenu(false)
+    setNewMenuOpen((v) => !v)
+  }, [])
 
-  const ghButton = ghInfo ? (
-    <button
-      className={'wb-gh' + (ghInfo.pr ? ' has' : '') + (ghInfo.pending ? ' pending' : '')}
-      aria-label={ghLabel}
-      title={ghLabel}
-      onClick={() => {
-        setNewMenuOpen(false)
-        setGhMenu(false)
-        openGithub(ghInfo.pr ? 'pr' : 'repo')
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        setNewMenuOpen(false)
-        setDlOpen(false)
-        setGhMenu(true)
-        refreshChecks()
-      }}
-    >
-      <LuGithub size={13} />
-      {ghInfo.pr !== null && <span className="n">{`#${ghInfo.pr}`}</span>}
-      {ghDot && <span className={'ci ' + ghDot} />}
-    </button>
-  ) : null
-
-  const fullBtn = (
-    <button
-      className="icobtn"
-      aria-label={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
-      aria-pressed={full}
-      title={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
-      onClick={onToggleFull}
-    >
-      {full ? <LuMinimize2 size={14} /> : <LuMaximize2 size={14} />}
-    </button>
-  )
+  const fullBtn = <FullWidthButton full={full} onToggle={onToggleFull} />
+  const ghInfo = gh.info
 
   return (
     <div
@@ -1814,166 +1292,36 @@ export function WorkbenchPane({
       /* PLATFORM§9 */
       style={{ visibility: visible || staged.size > 0 ? undefined : 'hidden' }}
     >
-      <div
-        className="wb-tabs"
-        onWheel={(e) => {
-          const strip = e.currentTarget
-          if (strip.scrollWidth <= strip.clientWidth) return
-          if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
-          e.preventDefault()
-          strip.scrollLeft += e.deltaY
-        }}
-      >
-        <div className="wb-pin">
-          {set.tabs[0] && renderTab(set.tabs[0], 0)}
-          {ghButton}
-          {set.tabs.length > 1 && <span className="wb-sep" />}
-        </div>
-        {set.tabs.slice(1).map((t, i) => renderTab(t, i + 1))}
-        <div className="wb-drag" />
-        <div className="wb-spill">
-          <button
-            className="wb-new"
-            aria-label="New tab"
-            title="New tab ⌘T"
-            onClick={() => {
-              setMenuOpen(false)
-              setDlOpen(false)
-              setGhMenu(false)
-              setNewMenuOpen((v) => !v)
-            }}
-          >
-            <LuPlus size={14} />
-          </button>
-          {session?.sessionId && (pinned[session.sessionId]?.length ?? 0) > 0 && (
-            <span className="bdriven" title="A CDP client is driving tabs in this session">
-              agent driving
-            </span>
-          )}
-        </div>
-      </div>
+      <WorkbenchTabStrip
+        set={set}
+        live={live}
+        everLive={everLive}
+        pinnedIds={pinnedIds}
+        dirtyIds={dirtyIds}
+        audio={audio}
+        totals={totals}
+        driving={!!session?.sessionId && (pinned[session.sessionId]?.length ?? 0) > 0}
+        github={ghInfo}
+        githubDot={gh.dot}
+        githubLabel={gh.label}
+        onGithubOpen={openGithubFromButton}
+        onGithubMenu={openGithubMenu}
+        onActivate={activate}
+        onClose={close}
+        onToggleMute={toggleMute}
+        onMove={moveTabTo}
+        onNewMenu={toggleNewMenu}
+      />
 
       {ghMenu && ghInfo && (
-        <div
-          className="menu wb-ghmenu"
-          role="menu"
-          onMouseLeave={() => setGhMenu(false)}
-          ref={(el) => {
-            el?.focus()
-          }}
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setGhMenu(false)
-          }}
-        >
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setGhMenu(false)
-              openGithub('repo')
-            }}
-          >
-            <LuGithub size={14} />
-            Open repository
-          </button>
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setGhMenu(false)
-              openGithub('pulls')
-            }}
-          >
-            <LuGitPullRequest size={14} />
-            Open pull requests
-          </button>
-          {ghInfo.pr !== null && (
-            <button
-              className="mi"
-              role="menuitem"
-              onClick={() => {
-                setGhMenu(false)
-                openGithub('pr')
-              }}
-            >
-              <LuGitPullRequest size={14} />
-              {`Open pull request #${ghInfo.pr}`}
-            </button>
-          )}
-          <div className="sep" />
-          {checksText && (
-            <>
-              <div className="mi head">{checksText}</div>
-              {failing > 0 && (
-                <button
-                  className={'mi' + (sendBlocked ? ' disabled' : '')}
-                  role="menuitem"
-                  onClick={() => {
-                    if (sendBlocked) return
-                    setGhMenu(false)
-                    void sendFailingChecks()
-                  }}
-                >
-                  <LuSend size={14} />
-                  Send failing checks
-                </button>
-              )}
-              <div className="sep" />
-            </>
-          )}
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setGhMenu(false)
-              setCommitOpen(true)
-            }}
-          >
-            <LuGitCommitHorizontal size={14} />
-            Commit…
-          </button>
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setGhMenu(false)
-              if (treeRoot) void gitStep(window.api.github.push(treeRoot), 'Pushed.')
-            }}
-          >
-            <LuCloudUpload size={14} />
-            Push
-          </button>
-          {ghInfo.pr === null && ghInfo.branch !== null && (
-            <button
-              className="mi"
-              role="menuitem"
-              onClick={() => {
-                setGhMenu(false)
-                if (!treeRoot) return
-                void gitStep(window.api.github.push(treeRoot), 'Pushed.').then((ok) => {
-                  if (ok) openGithub('compare')
-                })
-              }}
-            >
-              <LuGitPullRequestCreate size={14} />
-              Open pull request…
-            </button>
-          )}
-          <div className="sep" />
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setGhMenu(false)
-              github.recheck()
-              refreshChecks()
-            }}
-          >
-            <LuRotateCw size={14} />
-            Check again
-          </button>
-        </div>
+        <GithubMenu
+          gh={gh}
+          info={ghInfo}
+          treeRoot={treeRoot}
+          onClose={() => setGhMenu(false)}
+          onOpen={openGithub}
+          onCommit={() => setCommitOpen(true)}
+        />
       )}
 
       {commitOpen && treeRoot && (
@@ -1981,7 +1329,7 @@ export function WorkbenchPane({
           branch={ghInfo?.branch ?? null}
           onCancel={() => setCommitOpen(false)}
           onCommit={async (message) => {
-            const ok = await gitStep(window.api.github.commit(treeRoot, message), 'Committed.')
+            const ok = await gh.gitStep(window.api.github.commit(treeRoot, message), 'Committed.')
             if (ok) setCommitOpen(false)
             return ok
           }}
@@ -1989,60 +1337,22 @@ export function WorkbenchPane({
       )}
 
       {newMenuOpen && (
-        <div
-          className="menu wb-newmenu"
-          role="menu"
-          onMouseLeave={() => setNewMenuOpen(false)}
-          ref={(el) => {
-            el?.focus()
-          }}
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setNewMenuOpen(false)
-          }}
-        >
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setNewMenuOpen(false)
-              newWebTab()
-            }}
-          >
-            <LuGlobe size={14} />
-            New web tab
-          </button>
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={() => {
-              setNewMenuOpen(false)
-              openFilePicker()
-            }}
-          >
-            <LuFileText size={14} />
-            Open file…
-          </button>
-          {!sessionCold && (
-            <button
-              className="mi"
-              role="menuitem"
-              onClick={() => {
-                setNewMenuOpen(false)
-                newTerminal()
-              }}
-            >
-              <LuTerminal size={14} />
-              New terminal
-            </button>
-          )}
-        </div>
+        <NewTabMenu
+          canTerminal={canTerminal}
+          onClose={() => setNewMenuOpen(false)}
+          onWeb={newWebTab}
+          onFile={openFilePicker}
+          onTerminal={newTerminal}
+        />
       )}
 
       {activeKind === 'web' ? (
         <BrowserAddressBar
           url={activeTab?.url ?? ''}
           workspace={panelWorkspace}
+          machine={
+            panelMachine && loopbackPortOf(activeTab?.url ?? '') !== null ? panelMachine : null
+          }
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
           canForward={activeRuntime.canForward}
@@ -2055,6 +1365,9 @@ export function WorkbenchPane({
           onExternalOpen={() => {
             if (activeTab?.url) onExternalOpen(activeTab.url)
           }}
+          picking={pick.picking}
+          pickBlocked={pickBlocked}
+          onPick={pick.togglePick}
           actions={
             <>
               {backlink && (
@@ -2085,7 +1398,7 @@ export function WorkbenchPane({
                     setDlOpen((v) => !v)
                   }}
                 >
-                  <LuDownload size={16} />
+                  <IconDownload size={16} />
                 </button>
               )}
             </>
@@ -2101,7 +1414,7 @@ export function WorkbenchPane({
                   setMenuOpen((v) => !v)
                 }}
               >
-                <LuEllipsis size={16} />
+                <IconMore size={16} />
               </button>
               {fullBtn}
             </>
@@ -2115,87 +1428,34 @@ export function WorkbenchPane({
           {fullBtn}
         </div>
       ) : activeKind === 'file' && activeTab ? (
-        (() => {
-          const path = activeTab.path ?? ''
-          const editingHere = !!editing[activeTab.id]
-          const { dir, name } = splitPath(path, treeRoot)
-          const status = git[path]
-          const delta = numstat[path]
-          return (
-            <div className="wb-bar">
-              <span className="wb-title" title={path}>
-                {dir && <span className="dir">{dir}</span>}
-                <span className="nm">{name}</span>
-              </span>
-              {status && (
-                <span className={'ft-gbadge git-' + status} title={status}>
-                  {GIT_LETTER[status]}
-                </span>
-              )}
-              {delta && (delta.added > 0 || delta.removed > 0) && (
-                <span className="ft-delta">
-                  {delta.added > 0 && <span className="add">+{delta.added}</span>}
-                  {delta.removed > 0 && <span className="del">−{delta.removed}</span>}
-                </span>
-              )}
-              {activeCaps.views.length > 0 && (
-                <div className="seg" role="group" aria-label="View mode">
-                  {activeCaps.views.map((v) => (
-                    <button
-                      key={v}
-                      className={!editingHere && v === activeCaps.current ? 'on' : undefined}
-                      aria-pressed={!editingHere && v === activeCaps.current}
-                      disabled={v === 'diff' && !activeCaps.hasDiff}
-                      onClick={() => {
-                        if (editingHere) exitEdit(activeTab.id)
-                        if (ownerTab)
-                          onUpdate(ownerTab, (prev) => setTabView(prev, activeTab.id, v))
-                      }}
-                    >
-                      {VIEW_LABEL[v]}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                className="icobtn"
-                onClick={reload}
-                title={editingHere ? 'Not while you are editing' : 'Reload'}
-                aria-label="Reload"
-                disabled={editingHere}
-              >
-                <LuRotateCw size={14} />
-              </button>
-              <button
-                className={'icobtn wb-edit' + (editingHere ? ' on' : '')}
-                aria-label="Edit"
-                aria-pressed={editingHere}
-                title={editingHere ? 'Stop editing' : editProbe.title || 'Edit'}
-                disabled={!editingHere && !editProbe.can}
-                onClick={() =>
-                  editingHere ? exitEdit(activeTab.id) : enterEdit(activeTab.id, path)
-                }
-              >
-                <LuPencil size={13} />
-              </button>
-              <button
-                ref={outlineBtnRef}
-                className={'icobtn' + (outlineOpen[activeTab.id] ? ' on' : '')}
-                title="Outline"
-                aria-label="Outline"
-                disabled={!activeCaps.hasOutline}
-                onClick={() =>
-                  setOutlineOpen((prev) => ({ ...prev, [activeTab.id]: !prev[activeTab.id] }))
-                }
-              >
-                <LuAlignLeft size={14} />
-              </button>
-              {fullBtn}
-            </div>
-          )
-        })()
+        <FileTabBar
+          tabId={activeTab.id}
+          path={activeTab.path ?? ''}
+          treeRoot={treeRoot}
+          status={git[activeTab.path ?? '']}
+          added={numstat[activeTab.path ?? '']?.added ?? 0}
+          removed={numstat[activeTab.path ?? '']?.removed ?? 0}
+          caps={activeCaps}
+          editing={!!editing[activeTab.id]}
+          editProbe={editProbe}
+          outlineOpen={!!outlineOpen[activeTab.id]}
+          outlineBtnRef={outlineBtnRef}
+          full={full}
+          onToggleFull={onToggleFull}
+          onView={setActiveView}
+          onReload={reload}
+          onEnterEdit={enterEdit}
+          onExitEdit={exitEdit}
+          onToggleOutline={toggleOutline}
+        />
       ) : (
-        <FilesBar c={files} changedCount={changedCount} fullBtn={fullBtn} />
+        <FilesBar
+          c={files}
+          changedCount={changedCount}
+          full={full}
+          onToggleFull={onToggleFull}
+          sessionOwned={!ofWorkspace}
+        />
       )}
 
       {dlOpen && (
@@ -2204,128 +1464,90 @@ export function WorkbenchPane({
           onReveal={(path) => window.api.fs.reveal(path)}
           onCancel={(id) => window.api.browser.cancelDownload(id)}
           onRetry={(id) => window.api.browser.retryDownload(id)}
-          onClear={() => setDownloads((prev) => clearFinishedDownloads(prev))}
+          onClear={clearFinished}
           onClose={() => setDlOpen(false)}
         />
       )}
 
-      {menuOpen && (
-        <div
-          className="bmenu"
-          role="menu"
-          onMouseLeave={() => setMenuOpen(false)}
-          ref={(el) => {
-            el?.focus()
-          }}
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setMenuOpen(false)
-          }}
-        >
-          <button
-            className="bmenu-item"
-            role="menuitem"
-            onClick={() => {
-              if (activeTab?.url) window.api.browser.copyText(activeTab.url)
-              setMenuOpen(false)
-            }}
-          >
-            <LuLink size={14} />
-            Copy current URL
-          </button>
-        </div>
-      )}
+      {menuOpen && <PageMoreMenu url={activeTab?.url} onClose={() => setMenuOpen(false)} />}
 
       <BrowserPermissionBar
-        ask={permAsk}
-        refusal={permAsk ? null : permRefusal}
-        onAnswer={answerPermission}
-        onDismissRefusal={() => setPermRefusal(null)}
+        ask={perms.ask}
+        refusal={perms.ask ? null : perms.refusal}
+        onAnswer={perms.answer}
+        onDismissRefusal={perms.dismissRefusal}
         onEscapeHatch={(origin) => {
-          setPermRefusal(null)
+          perms.dismissRefusal()
           onExternalOpen(activeTab?.url || origin)
         }}
       />
+
+      {secretBarAsk && <SecretPageBar ask={secretBarAsk} />}
 
       <div className="wb-body">
         {/* PLATFORM§9 */}
         {mountedWebTabs.map(({ owner, tab }) => {
           const onScreen = visible && owner === ownerTab && tab.id === set.activeId && !sessionCold
           return (
-            <BrowserGuest
+            <WebGuestHost
               key={`${tab.id}:${runtime[tab.id]?.mountToken ?? 0}`}
+              owner={owner}
+              tabId={tab.id}
               url={runtime[tab.id]?.pendingUrl || tab.url || ''}
               /* PLATFORM§9 */
               visible={onScreen || staged.has(tab.id)}
               staged={staged.has(tab.id) && !onScreen}
-              {...guestHandlers(owner, tab)}
+              events={guestEvents}
             />
           )
         })}
 
         {/* PLATFORM§21 */}
         {termTabs.map(({ owner, tab }) => (
-          <div
+          <TerminalHost
             key={tab.id}
-            className="wb-host wb-term"
-            data-pty={tab.id}
-            style={{
-              display: owner === ownerTab && tab.id === set.activeId ? undefined : 'none'
-            }}
-          >
-            <TerminalView
-              id={tab.id}
-              active={owner === ownerTab && tab.id === set.activeId}
-              autoFocus={false}
-              focusSignal={termFocus.ptyId === tab.id ? termFocus.n : NO_FOCUS_SIGNAL}
-            />
-          </div>
+            id={tab.id}
+            shown={owner === ownerTab && tab.id === set.activeId}
+            focusSignal={termFocus.ptyId === tab.id ? termFocus.n : NO_FOCUS_SIGNAL}
+          />
         ))}
 
-        {fileTabs.map((t) => (
-          <div
-            key={t.id}
-            className="wb-host"
-            style={{ visibility: t.id === set.activeId ? undefined : 'hidden' }}
-          >
-            {ownerTab && editing[t.id] && getEntry(ownerTab, t.id) ? (
-              <EditPane
+        {ownerTab &&
+          fileTabs.map((t) => {
+            const unsaved = dirtyIds.has(t.id)
+            const editingHere = !!editing[t.id] && !!getEntry(ownerTab, t.id)
+            return (
+              <FileTabHost
+                key={t.id}
                 ownerTab={ownerTab}
-                tabId={t.id}
-                focusNonce={editFocus[t.id] ?? 0}
-                onSaved={refreshFiles}
-              />
-            ) : (
-              <ArtifactPane
                 tabId={t.id}
                 path={t.path ?? ''}
                 view={t.view}
-                wsRoot={treeRoot}
                 line={t.line}
+                scrollTop={t.scrollTop}
+                shown={t.id === set.activeId}
+                editing={editingHere}
+                editFocus={editFocus[t.id] ?? 0}
+                editText={unsaved && !editingHere ? getEntry(ownerTab, t.id)?.text : undefined}
+                editUnsaved={unsaved}
+                wsRoot={treeRoot}
                 base={base}
                 changed={!!(t.path && git[t.path])}
-                initialScrollTop={t.scrollTop}
                 reloadNonce={reloadNonce[t.id] ?? 0}
                 outlineOpen={!!outlineOpen[t.id]}
+                zoom={t.id === set.activeId ? zoom : null}
+                onSaved={refreshFiles}
                 onCaps={reportCaps}
                 onNavigate={retarget}
                 onBody={reportBody}
                 onZoomImage={setZoom}
-                zoom={t.id === set.activeId ? zoom : null}
                 onCloseZoom={closeZoom}
                 onOutlineClose={closeOutline}
                 onClose={close}
                 onUnmount={keepScrollTop}
-                editText={
-                  ownerTab && isTabDirty(ownerTab, t.id)
-                    ? getEntry(ownerTab, t.id)?.text
-                    : undefined
-                }
-                editUnsaved={!!ownerTab && isTabDirty(ownerTab, t.id)}
               />
-            )}
-          </div>
-        ))}
+            )
+          })}
 
         <div
           className="wb-host"
@@ -2339,6 +1561,8 @@ export function WorkbenchPane({
             git={git}
             numstat={numstat}
             base={base}
+            firstReadFailed={firstReadFailed}
+            onReread={reread}
             active={visible && activeKind === 'files'}
             onBody={reportFilesBody}
             onOpenWeb={openWebFromFiles}
@@ -2351,34 +1575,46 @@ export function WorkbenchPane({
           />
         </div>
 
-        {webOverlay}
+        {activeKind === 'web' && (
+          <WebPageState
+            tab={activeTab}
+            runtime={activeRuntime}
+            sessionCold={sessionCold}
+            live={!!activeTab && live.includes(activeTab.id)}
+            agentLabel={BACKEND_LABEL[ownerBackend]}
+            machine={panelMachine?.host ?? null}
+            onLoad={(t) => activate(t.id)}
+            onReloadCrashed={(t) =>
+              patchRuntime(t.id, {
+                crashed: false,
+                pendingUrl: t.url ?? '',
+                mountToken: (runtime[t.id]?.mountToken ?? 0) + 1
+              })
+            }
+            onCertProceed={(t, url) => {
+              void Promise.resolve(onCertProceed(url)).then(() => {
+                patchRuntime(t.id, { fail: null })
+                applyLive(t.id, url)
+              })
+            }}
+            onRetry={(t, url) => applyLive(t.id, url)}
+          />
+        )}
       </div>
 
       {findOpen && (
-        <FindBar
-          inputRef={findInputRef}
-          query={query}
-          onQueryChange={(q) => {
-            setQuery(q)
-            if (activeKind === 'web') searchGuest(q)
-            else dom.search(q)
-          }}
-          count={activeKind === 'web' ? guestFindCount : dom.count}
-          onNext={() =>
-            activeKind === 'web'
-              ? searchGuest(query, { findNext: false, forward: true })
-              : dom.next()
-          }
-          onPrev={() =>
-            activeKind === 'web'
-              ? searchGuest(query, { findNext: false, forward: false })
-              : dom.prev()
-          }
+        <WorkbenchFind
+          els={els}
+          bodies={bodies}
+          activeId={activeTab?.id}
+          web={activeKind === 'web'}
+          live={live}
+          focusTick={findFocusTick}
           onClose={closeFind}
         />
       )}
 
-      {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
+      {dialog && visible && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
     </div>
   )
-}
+})

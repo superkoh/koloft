@@ -1,46 +1,55 @@
-import {
-  BACKEND_LABEL,
-  capabilitiesFor,
-  identityOf,
-  unsupportedPairMessage
-} from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, identityOf, type LaunchMenu } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
   type JSX,
-  type MouseEvent
+  type MouseEvent,
+  type RefObject
 } from 'react'
 import { createPortal } from 'react-dom'
-import { GoGitBranch, GoGitPullRequest, GoIssueOpened } from 'react-icons/go'
 import {
-  LuAlarmClock,
-  LuCheck,
-  LuChevronDown,
-  LuChevronRight,
-  LuFileText,
-  LuFolder,
-  LuFolderOpen,
-  LuGitBranchPlus,
-  LuPin,
-  LuPlus,
-  LuX
-} from 'react-icons/lu'
-import type { BackendId, SessionRow } from '@shared/types'
+  IconAssist,
+  IconBranch,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconFile,
+  IconFolder,
+  IconFolderOpen,
+  IconIssue,
+  IconNewWorktree,
+  IconPin,
+  IconPlus,
+  IconPullRequest,
+  IconScheduled
+} from '../icons'
+import type {
+  BackendId,
+  HeldCommand,
+  HostId,
+  MachineState,
+  QueuedLaunch,
+  SessionRow
+} from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { ATTENTION_REASON } from '@shared/types'
-import { popoverX } from '@shared/accountUsage'
+import { attentionReason } from '@shared/types'
+import { noAccountLine, popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
-  attentionOnRow,
+  endedTabOf,
   isOrphanRow,
   liveTabOf,
   marqueeAnim,
@@ -48,14 +57,18 @@ import {
   sessionActivityBadge,
   leftoverLabel,
   relTime,
+  rowLookups,
+  rowActivityLine,
   rowStateClass,
+  statusWithSecrets,
   rowsUnder,
   sessionsInside,
   sessionsNeedYou,
   sessionTree,
+  shortDur,
+  shownRows,
   shownTitle,
   statusUnavailable,
-  tabOfRow,
   workspaceName,
   type RowNode
 } from '../sessionRows'
@@ -65,10 +78,14 @@ import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
 import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
 import { fitGithubCounts } from '../wsHeadFit'
+import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
+import { ButlerRow } from './ButlerRow'
+import { InboxRow } from './Inbox'
+import { everyWorkspaceRows } from '../butlerRows'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -78,11 +95,34 @@ import {
   removeUnsavedNote,
   saveAll
 } from '../unsavedGuard'
+import '../workspaceSidebar.css'
 
 const FORCE_CLOSE_FAILED_NOTICE =
   'Could not force close — the session may be running outside Koloft.'
 
 const CRON_BADGE_MS = 30_000
+
+const ENDED_ROW_TIP = 'Click to see its last screen · ⇧⌘R starts it again · ⌘W closes it'
+
+const GIB = 2 ** 30
+const SMALLEST_MEMORY_SHOWN_GB = 0.05
+const PRESSURE_LABEL: Record<number, string> = { 1: 'normal', 2: 'warning', 4: 'critical' }
+const DONT_WAIT = "Don't wait for the machine"
+
+const gbLabel = (bytes: number): string => `≈${(bytes / GIB).toFixed(1)} GB`
+
+function memoryShown(machine: MachineState | null, tabId: string | undefined): string | undefined {
+  const bytes = machine?.busy && tabId ? machine.memory[tabId] : undefined
+  return bytes !== undefined && bytes / GIB >= SMALLEST_MEMORY_SHOWN_GB ? gbLabel(bytes) : undefined
+}
+
+const heldTitle = (held: HeldCommand, nowMs: number): string =>
+  `Waiting for the machine before: ${held.command} — ${shortDur(nowMs - held.since)} so far. Right-click › ${DONT_WAIT}`
+
+function machineBusyTitle(m: MachineState): string {
+  const vm = m.sharedVmBytes > 0 ? ` · docker VM ${gbLabel(m.sharedVmBytes)}` : ''
+  return `Memory pressure: ${PRESSURE_LABEL[m.pressure ?? 0] ?? '-'} · load ${m.load1} on ${m.cores} cores${vm}. Background sessions wait until the machine has room.`
+}
 
 function removeConfirmText(running: number, jobs: number): string {
   const s = `${running} running session${running === 1 ? '' : 's'} will be closed`
@@ -101,7 +141,6 @@ const MENU_ITEM_H = 31
 const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
-const FRESH_POP_H = 250
 
 type MenuTarget =
   | { kind: 'session'; wsPath: string; row: SessionRow }
@@ -111,6 +150,7 @@ type MenuTarget =
       missing: boolean
       isGit: boolean
     }
+  | { kind: 'queued'; launch: QueuedLaunch }
 
 // ADR-0025
 const machineOf = (wsPath: string): string | undefined => parseRemoteKey(wsPath)?.host ?? undefined
@@ -122,7 +162,8 @@ interface MenuState {
 }
 
 export function useDismissOnOutside(open: boolean, dismiss: (none: null) => void): void {
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (!open) return
     const close = (): void => dismiss(null)
     const onKey = (e: KeyboardEvent): void => {
@@ -148,13 +189,35 @@ export function menuPosFor(el: HTMLElement, itemCount: number): { left: number; 
   return { left, top }
 }
 
+const DROP_GAP = 4
+
+export function dropPosFor(
+  el: HTMLElement,
+  itemCount: number,
+  itemH: number,
+  width: number
+): { left: number; top: number } {
+  const r = el.getBoundingClientRect()
+  const estH = itemCount * itemH + MENU_PAD_H
+  const below = r.bottom + DROP_GAP
+  return {
+    left: Math.max(4, r.right - width),
+    top: below + estH <= window.innerHeight - 4 ? below : Math.max(4, r.top - DROP_GAP - estH)
+  }
+}
+
 function cardPosFor(el: HTMLElement): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   return {
     left: popoverX(r.left + r.width / 2, FRESH_POP_W, window.innerWidth),
-    top: Math.min(r.bottom + 6, Math.max(4, window.innerHeight - FRESH_POP_H - 4))
+    top: r.bottom + 6
   }
 }
+
+const doorFor = (isGit: boolean): { title: string; label: string; Icon: typeof IconPlus } =>
+  isGit
+    ? { title: 'New worktree session · ⇧⌘N', label: 'New worktree…', Icon: IconNewWorktree }
+    : { title: 'New session', label: 'New session', Icon: IconPlus }
 
 function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
   const src = useStore((s) => (s.openFiles[tabId]?.unseen ? s.openFiles[tabId]?.src : undefined))
@@ -164,55 +227,414 @@ function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
       className="ws-tab-opened"
       title={`${basename(src)} was opened here — select this session to see it`}
     >
-      <LuFileText size={12} />
+      <IconFile size={12} />
     </span>
   )
 }
 
-export function WorkspaceSidebar({
+function useMarquee(): {
+  on: boolean
+  box: RefObject<HTMLSpanElement | null>
+  text: RefObject<HTMLElement | null>
+  start: () => void
+  stop: () => void
+} {
+  const [overflow, setOverflow] = useState(0)
+  const box = useRef<HTMLSpanElement>(null)
+  const text = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = text.current
+    if (!overflow || !el) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const spec = marqueeAnim(overflow)
+    if (!spec) return
+    const anim = el.animate(spec.frames, spec.timing)
+    return () => anim.cancel()
+  }, [overflow])
+  const start = (): void => {
+    const t = box.current
+    const clipped = t ? t.scrollWidth - t.clientWidth : 0
+    if (clipped > 0) setOverflow(clipped)
+  }
+  return { on: overflow > 0, box, text, start, stop: () => setOverflow(0) }
+}
+
+interface SidebarActions {
+  openRow: (id: string) => void
+  rowMenu: (e: MouseEvent, id: string) => void
+  rowEnter: (e: MouseEvent, id: string) => void
+  leave: () => void
+  openParked: (e: MouseEvent, id: string) => void
+  toggleFold: (id: string) => void
+  selectWs: (path: string) => void
+  toggleCollapsed: (path: string) => void
+  headMenu: (e: MouseEvent, path: string) => void
+  headEnter: (e: MouseEvent, path: string) => void
+  dragStart: (e: DragEvent<HTMLElement>, path: string) => void
+  dragEnd: () => void
+  gitEnter: (e: MouseEvent, path: string) => void
+  gitLeave: (e: MouseEvent, path: string) => void
+  behindClick: (e: MouseEvent, path: string) => void
+  openList: (e: MouseEvent, path: string, what: 'issues' | 'pulls') => void
+  openDoor: (path: string, isGit: boolean) => void
+}
+
+const CronMark = (): JSX.Element => (
+  <span className="ws-tab-cron" title="started by a scheduled job">
+    <IconScheduled size={12} />
+  </span>
+)
+
+function QueuedRowView({
+  launch,
+  waited,
+  floating
+}: {
+  launch: QueuedLaunch
+  waited: string
+  floating: RefObject<FloatingCtl | null>
+}): JSX.Element {
+  const target: MenuTarget = { kind: 'queued', launch }
+  return (
+    <div
+      className="ws-tab st-queued"
+      data-tab-id={launch.tabId}
+      onContextMenu={(e) => floating.current?.menuNow(e, target)}
+      onMouseEnter={(e) => floating.current?.hoverMenu(e, () => target)}
+      onMouseLeave={() => floating.current?.scheduleClose()}
+    >
+      <div className="ws-tab-main">
+        {launch.jobId && <CronMark />}
+        <span className="ws-tab-title">
+          <i>{launch.title}</i>
+        </span>
+      </div>
+      <div className="ws-tab-sub">
+        <span>{`Queued · waiting for room · ${waited}`}</span>
+      </div>
+    </div>
+  )
+}
+
+const SessionRowView = memo(function SessionRowView({
+  id,
+  className,
+  tabId,
+  tooltip,
+  cron,
+  resident,
+  title,
+  callingReason,
+  badgeText,
+  badgeLines,
+  badgeHeading,
+  badgeRunning,
+  waitingTitle,
+  callingHidden,
+  hiddenCount,
+  parent,
+  folded,
+  backend,
+  startedBy,
+  worktree,
+  memory,
+  activity,
+  actions
+}: {
+  id: string
+  className: string
+  tabId: string | undefined
+  tooltip: string | undefined
+  cron: boolean
+  resident: boolean
+  title: string
+  callingReason: string | undefined
+  badgeText: string | undefined
+  badgeLines: string | undefined
+  badgeHeading: string | undefined
+  badgeRunning: boolean
+  waitingTitle: string | undefined
+  callingHidden: number
+  hiddenCount: number
+  parent: boolean
+  folded: boolean
+  backend: BackendId | undefined
+  startedBy: string | undefined
+  worktree: string
+  memory: string | undefined
+  activity: string | undefined
+  actions: SidebarActions
+}): JSX.Element {
+  const mq = useMarquee()
+  return (
+    <div
+      className={className}
+      data-tab-id={tabId}
+      title={tooltip}
+      onClick={() => actions.openRow(id)}
+      onContextMenu={(e) => actions.rowMenu(e, id)}
+      onMouseEnter={(e) => {
+        actions.rowEnter(e, id)
+        mq.start()
+      }}
+      onMouseLeave={() => {
+        actions.leave()
+        mq.stop()
+      }}
+    >
+      <div className="ws-tab-main">
+        {cron && <CronMark />}
+        {resident && (
+          <span
+            className="ws-tab-resident"
+            title="Keep running — never sleeps, and starts again each time Koloft opens"
+          >
+            <IconPin size={12} />
+          </span>
+        )}
+        <span ref={mq.box} className={'ws-tab-title' + (mq.on ? ' mq' : '')}>
+          <i ref={mq.text}>{title}</i>
+        </span>
+        {tabId && <UnseenFileMark tabId={tabId} />}
+        {callingReason !== undefined && <span className="ws-tab-unread" title={callingReason} />}
+        {waitingTitle !== undefined && (
+          <button className="ws-tab-parked" title={waitingTitle}>
+            waiting
+          </button>
+        )}
+        {badgeText !== undefined && (
+          <button
+            className={'ws-tab-parked' + (badgeRunning ? ' bg-run' : '')}
+            title={badgeLines}
+            aria-label={badgeHeading}
+            onClick={(e) => actions.openParked(e, id)}
+          >
+            {badgeText}
+          </button>
+        )}
+        {callingHidden > 0 && (
+          <span className="ws-tab-parked ws-unread-count" title={sessionsNeedYou(callingHidden)}>
+            {callingHidden}
+          </span>
+        )}
+        {folded && (
+          <span className="ws-tab-parked" title={sessionsInside(hiddenCount)}>
+            {hiddenCount}
+          </span>
+        )}
+        {parent && (
+          <button
+            className="icobtn ws-tab-fold"
+            title={folded ? 'Unfold' : 'Fold'}
+            aria-label={folded ? 'Unfold' : 'Fold'}
+            onClick={(e) => {
+              e.stopPropagation()
+              actions.toggleFold(id)
+            }}
+          >
+            {folded ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+          </button>
+        )}
+      </div>
+      <div className="ws-tab-sub">
+        {startedBy && (
+          <span className="session-backend-icon" title={`started by ${startedBy}`}>
+            <IconAssist size={12} />
+          </span>
+        )}
+        {backend && <SessionBackendIcon backend={backend} />}
+        <span>{worktree}</span>
+        {memory !== undefined && <span>{memory}</span>}
+      </div>
+      {activity !== undefined && <div className="ws-tab-act">{activity}</div>}
+    </div>
+  )
+})
+
+const WorkspaceHead = memo(function WorkspaceHead({
+  path,
+  name,
+  missing,
+  isGit,
+  remoteHost,
+  remoteTitle,
+  remoteConnected,
+  remoteDot,
+  gitPanel,
+  issues,
+  prs,
+  open,
+  active,
+  callingInside,
+  behindCls,
+  behindLabel,
+  behindName,
+  actions
+}: {
+  path: string
+  name: string
+  missing: boolean
+  isGit: boolean
+  remoteHost: string | undefined
+  remoteTitle: string | undefined
+  remoteConnected: boolean
+  remoteDot: string | undefined
+  gitPanel: boolean
+  issues: number
+  prs: number
+  open: boolean
+  active: boolean
+  callingInside: number
+  behindCls: string | undefined
+  behindLabel: string | undefined
+  behindName: string | undefined
+  actions: SidebarActions
+}): JSX.Element {
+  const mq = useMarquee()
+  const door = doorFor(isGit)
+  const listsReachable = remoteHost === undefined || remoteConnected
+  return (
+    <div
+      className={'ws-head' + (missing ? ' missing' : '') + (active ? ' active' : '')}
+      title={missing ? 'folder deleted' : path}
+      draggable
+      onDragStart={(e) => actions.dragStart(e, path)}
+      onDragEnd={actions.dragEnd}
+      onClick={() => {
+        if (missing) return
+        actions.selectWs(path)
+      }}
+      onContextMenu={(e) => actions.headMenu(e, path)}
+      onMouseEnter={(e) => {
+        actions.headEnter(e, path)
+        mq.start()
+      }}
+      onMouseLeave={() => {
+        actions.leave()
+        mq.stop()
+      }}
+    >
+      <span
+        className="fico"
+        title={open ? 'Fold' : 'Unfold'}
+        onClick={(e) => {
+          e.stopPropagation()
+          actions.toggleCollapsed(path)
+        }}
+      >
+        {open ? <IconFolderOpen size={15} /> : <IconFolder size={15} />}
+      </span>
+      <span ref={mq.box} className={'ws-name' + (mq.on ? ' mq' : '')}>
+        <i ref={mq.text}>{name}</i>
+      </span>
+      {remoteHost !== undefined && (
+        <span className="ws-remote" title={remoteTitle}>
+          {remoteHost}
+          <span className={'ws-conn' + (remoteConnected ? ' on' : '')} title={remoteDot} />
+        </span>
+      )}
+      {isGit && !missing && (
+        <span
+          className="ws-git"
+          title={gitPanel ? NO_INHERITED_TOOLTIP : 'git repository'}
+          onMouseEnter={gitPanel ? (e) => actions.gitEnter(e, path) : undefined}
+          onMouseLeave={gitPanel ? (e) => actions.gitLeave(e, path) : undefined}
+        >
+          <IconBranch size={12} />
+          {behindCls !== undefined && (
+            <button
+              className={behindCls}
+              aria-label={behindName}
+              onClick={(e) => actions.behindClick(e, path)}
+            >
+              {behindLabel}
+            </button>
+          )}
+          {(issues > 0 || prs > 0) && (
+            <span className="ws-gh">
+              {issues > 0 && (
+                <button
+                  aria-label={openIssuesLabel(issues)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'issues')}
+                >
+                  <IconIssue size={12} />
+                  {countLabel(issues)}
+                </button>
+              )}
+              {prs > 0 && (
+                <button
+                  aria-label={openPullsLabel(prs)}
+                  disabled={!listsReachable}
+                  onClick={(e) => actions.openList(e, path, 'pulls')}
+                >
+                  <IconPullRequest size={12} />
+                  {countLabel(prs)}
+                </button>
+              )}
+            </span>
+          )}
+        </span>
+      )}
+      {callingInside > 0 && (
+        <span className="ws-tab-parked ws-unread-count" title={sessionsNeedYou(callingInside)}>
+          {callingInside}
+        </span>
+      )}
+      {!missing && (
+        <button
+          className="hact"
+          title={door.title}
+          aria-label={door.title}
+          onClick={(e) => {
+            e.stopPropagation()
+            actions.openDoor(path, isGit)
+          }}
+        >
+          <door.Icon size={16} />
+        </button>
+      )}
+    </div>
+  )
+})
+
+interface FloatingCtl {
+  armMenu: (e: { buttons: number }, el: HTMLElement, target: MenuTarget) => void
+  hoverMenu: (e: MouseEvent, targetWhenItOpens: () => MenuTarget) => void
+  menuNow: (e: MouseEvent, target: MenuTarget) => void
+  scheduleClose: () => void
+  dismissMenu: () => void
+  openCard: (el: HTMLElement, path: string) => void
+  leaveCard: () => void
+  openParked: (el: HTMLElement, rowId: string) => void
+  closeAll: () => void
+}
+
+function SidebarFloating({
+  ctl,
+  launchable,
   onNewSession,
-  namedMethods,
   onNewWorktreeSession,
   onRestoreSession,
-  onScheduledJobs
+  onScheduledJobs,
+  onRemoveWorkspace
 }: {
+  ctl: RefObject<FloatingCtl | null>
+  launchable: Record<HostId, LaunchMenu>
   onNewSession: (wsPath: string, backend?: BackendId) => void
-  namedMethods: [BackendId, BackendId] | null
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
+  onRemoveWorkspace: (wsPath: string) => void
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
-  const welcomeActive = useStore((s) => s.welcomeActive)
-  const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
-  const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
-  const activeTabId = useStore((s) => s.activeTabId)
-  const resumeLaunch = useStore((s) => s.resumeLaunch)
-  const selectedWs = useStore((s) => s.selectedWs)
-  const selectWorkspace = useStore((s) => s.selectWorkspace)
-  const showToast = useStore((s) => s.showToast)
-  const conductorBindings = useStore((s) => s.settings.discord.bindings)
-  const setBindConductor = useStore((s) => s.setBindConductor)
-  const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [foldedRows, setFoldedRows] = useState<Record<string, boolean>>({})
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const machine = useStore((s) => s.machine)
+  const accounts = useStore((s) => s.accounts)
   const [menu, setMenu] = useState<MenuState | null>(null)
-  const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
-  const [mq, setMq] = useState<{ id: string; overflow: number } | null>(null)
-  const mqRef = useRef<HTMLElement | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<{
-    path: string
-    running: number
-    jobs: number
-    dirty: DirtyTab[]
-  } | null>(null)
-  const [removing, setRemoving] = useState(false)
-  const removeCancelRef = useRef<HTMLButtonElement>(null)
-  const confirmOrphan = useStore((s) => s.orphanConfirm)
-  const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
   const [parkedPop, setParkedPop] = useState<{ rowId: string; left: number; top: number } | null>(
     null
@@ -221,155 +643,90 @@ export function WorkspaceSidebar({
   const setFreshBusy = useCallback((busy: boolean) => {
     freshBusy.current = busy
   }, [])
-  const closeFloating = (): void => {
-    setMenu(null)
-    setParkedPop(null)
-    if (!freshBusy.current) setFresh(null)
-  }
-  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
-  useEffect(() => {
-    if (sidebarHidden) closeFloating()
-  }, [sidebarHidden])
-  const [, bumpCronClock] = useState(0)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const tabIdFor = (sessionId: string): string | undefined =>
-    liveTabOf(sessionId, sessions, storeTabs)
-  const tabIdOfRow = (row: SessionRow): string | undefined => tabOfRow(row, sessions, storeTabs)
-  const callingAmong = (rows: SessionRow[]): number =>
-    rows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
-
-  useEffect(() => {
-    const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
-    return () => clearInterval(t)
-  }, [])
-
-  useEffect(() => {
-    if (confirmRemove && confirmRemove.dirty.length > 0) removeCancelRef.current?.focus()
-  }, [confirmRemove])
-
-  useEffect(() => {
-    const cold = new Set<string>()
-    for (const w of rows) for (const r of w.rows) if (!r.running) cold.add(r.id)
-    releaseSettledResumes(cold)
-  }, [rows])
-
-  useEffect(() => {
-    const el = mqRef.current
-    if (!mq || !el) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const spec = marqueeAnim(mq.overflow)
-    if (!spec) return
-    const anim = el.animate(spec.frames, spec.timing)
-    return () => anim.cancel()
-  }, [mq])
-
-  const marqueeIfClipped = (host: HTMLElement, selector: string, id: string): void => {
-    const t = host.querySelector(selector)
-    const overflow = t ? t.scrollWidth - t.clientWidth : 0
-    if (overflow > 0) setMq({ id, overflow })
-  }
-  const stopMarquee = (id: string): void => setMq((m) => (m?.id === id ? null : m))
-
-  const listRef = useRef<HTMLDivElement>(null)
-  const fitHeads = useCallback((): void => {
-    listRef.current?.querySelectorAll<HTMLElement>('.ws-head').forEach(fitGithubCounts)
-  }, [])
-  useLayoutEffect(fitHeads, [rows, fitHeads])
-  useEffect(() => {
-    const list = listRef.current
-    if (!list) return
-    const ro = new ResizeObserver(fitHeads)
-    ro.observe(list)
-    return () => ro.disconnect()
-  }, [fitHeads])
+  const menuWaitsForMove = useRef<{ el: HTMLElement; target: () => MenuTarget } | null>(null)
 
   const clearTimers = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
     hoverTimer.current = null
     leaveTimer.current = null
+    menuWaitsForMove.current = null
   }
 
+  const closeAll = (): void => {
+    clearTimers()
+    setMenu(null)
+    setParkedPop(null)
+    if (!freshBusy.current) setFresh(null)
+  }
+  useEffect(() => {
+    if (sidebarHidden) closeAll()
+  }, [sidebarHidden])
+
   useDismissOnOutside(!!menu, setMenu)
+  useDismissOnOutside(!!parkedPop, setParkedPop)
+
+  const tabIdFor = (sessionId: string): string | undefined =>
+    liveTabOf(sessionId, sessions, storeTabs)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
-    const sess = row.running ? sessions.find((s) => s.tabId === tabIdFor(row.id)) : undefined
+    const tabId = rowLookups(sessions, storeTabs, []).tabOf(row)
+    const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
 
-  useDismissOnOutside(!!parkedPop, setParkedPop)
+  const waitingTabOf = (row: SessionRow): string | undefined => {
+    const tabId = tabIdFor(row.id)
+    return tabId && machine?.busy && machine.background.includes(tabId) ? tabId : undefined
+  }
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, canBind: canBind(t.wsPath) })
-      : t.row.pending
-        ? 1
-        : t.row.running
-          ? 3
-          : 5
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
+      : t.kind === 'queued'
+        ? 2
+        : endedTabOf(t.row, storeTabs, sessions)
+          ? 2
+          : t.row.pending
+            ? 1
+            : t.row.running
+              ? 3 + (waitingTabOf(t.row) ? 1 : 0)
+              : 5
 
   const openMenuAt = (el: HTMLElement, target: MenuTarget): void => {
     const pos = menuPosFor(el, menuItemCount(target))
     setMenu({ target, ...pos })
   }
 
-  const armMenu = (e: MouseEvent, el: HTMLElement, target: MenuTarget): void => {
+  const armMenu = (e: { buttons: number }, el: HTMLElement, target: MenuTarget): void => {
     const draggingThrough = e.buttons !== 0
     if (draggingThrough) return
     hoverTimer.current = setTimeout(() => openMenuAt(el, target), HOVER_MENU_MS)
   }
-  const armHoverMenu = (e: MouseEvent, target: MenuTarget): void => {
-    clearTimers()
-    armMenu(e, e.currentTarget as HTMLElement, target)
-  }
+  const latestArmMenu = useRef(armMenu)
+  latestArmMenu.current = armMenu
+  // PLATFORM§24
+  useEffect(() => {
+    const armOnFirstMoveOverRow = (e: globalThis.MouseEvent): void => {
+      const waiting = menuWaitsForMove.current
+      if (!waiting) return
+      menuWaitsForMove.current = null
+      if (!waiting.el.contains(e.target as Node)) return
+      latestArmMenu.current(e, waiting.el, waiting.target())
+    }
+    window.addEventListener('mousemove', armOnFirstMoveOverRow)
+    return () => window.removeEventListener('mousemove', armOnFirstMoveOverRow)
+  }, [])
   const scheduleClose = (): void => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current)
-    hoverTimer.current = null
-    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    clearTimers()
     leaveTimer.current = setTimeout(() => setMenu(null), MENU_LEAVE_MS)
   }
   const keepMenu = (): void => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
     leaveTimer.current = null
-  }
-  const openMenuNow = (e: MouseEvent, target: MenuTarget): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    clearTimers()
-    openMenuAt(e.currentTarget as HTMLElement, target)
-  }
-
-  const wsPaths = rows.map((r) => r.workspace.path)
-  const startWorkspaceDrag = (e: DragEvent<HTMLElement>, path: string): void => {
-    clearTimers()
-    closeFloating()
-    e.dataTransfer.effectAllowed = 'move'
-    // PLATFORM§10
-    e.dataTransfer.setData('text/plain', path)
-    setDrag({ path, over: null })
-  }
-  const dragOverWorkspaces = (e: DragEvent<HTMLElement>): void => {
-    if (!drag) return
-    e.preventDefault()
-    const block = (e.target as Element).closest<HTMLElement>('.ws[data-ws-path]')
-    let over: number | null = null
-    if (block) {
-      const box = block.getBoundingClientRect()
-      const below = e.clientY >= box.top + box.height / 2
-      const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
-      const from = wsPaths.indexOf(drag.path)
-      if (slot !== from && slot !== from + 1) over = slot
-    }
-    if (drag.over !== over) setDrag({ ...drag, over })
-  }
-  const dropWorkspace = (e: DragEvent<HTMLElement>): void => {
-    e.preventDefault()
-    setDrag(null)
-    if (drag?.over == null) return
-    void window.api.workspace.move(drag.path, wsPaths[drag.over] ?? null)
   }
 
   const keepCard = (): void => {
@@ -393,46 +750,32 @@ export function WorkspaceSidebar({
     }, MENU_LEAVE_MS)
   }
 
-  const forceCloseSession = async (id: string): Promise<void> => {
-    const r = await window.api.sessions.forceClose(id)
-    if (!r.ok) showToast(FORCE_CLOSE_FAILED_NOTICE)
-  }
-
-  const removeWorkspace = async (path: string): Promise<void> => {
-    const dirty = dirtyInWorkspace(path)
-    const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
-      (r) => r.running || r.pending
-    ).length
-    const jobsHere = useStore.getState().cron.jobs.filter((j) => j.workspacePath === path).length
-    const plan = removePlan(running, dirty.length)
-    if (plan === 'remove') {
-      const r = await window.api.workspace.remove(path)
-      if (!r.removed) {
-        setRemoving(false)
-        setConfirmRemove({ path, running: r.running, jobs: r.jobs, dirty: [] })
-      }
-      return
-    }
-    if (plan === 'confirm-running') {
-      setRemoving(false)
-      setConfirmRemove({ path, running, jobs: jobsHere, dirty })
-      return
-    }
-    useStore.getState().setUnsavedPrompt({
-      files: labelPaths(dirty),
-      jobs: jobsHere,
-      onCancel: () => {},
-      onDiscard: () => {
-        discardAll(dirty)
-        void window.api.workspace.removeConfirmed(path)
-      },
-      onSave: async () => {
-        const ok = await saveAll(dirty)
-        useStore.getState().setUnsavedPrompt(null)
-        if (ok) void window.api.workspace.removeConfirmed(path)
-      }
-    })
-  }
+  useImperativeHandle(ctl, () => ({
+    armMenu,
+    hoverMenu: (e, targetWhenItOpens) => {
+      clearTimers()
+      menuWaitsForMove.current = { el: e.currentTarget as HTMLElement, target: targetWhenItOpens }
+    },
+    menuNow: (e, target) => {
+      e.preventDefault()
+      e.stopPropagation()
+      clearTimers()
+      openMenuAt(e.currentTarget as HTMLElement, target)
+    },
+    scheduleClose,
+    dismissMenu: () => {
+      clearTimers()
+      setMenu(null)
+    },
+    openCard,
+    leaveCard,
+    openParked: (el, rowId) => {
+      clearTimers()
+      setMenu(null)
+      setParkedPop({ rowId, ...cardPosFor(el) })
+    },
+    closeAll
+  }))
 
   const copy = (text: string): void => {
     navigator.clipboard?.writeText(text).catch(() => {})
@@ -468,7 +811,7 @@ export function WorkspaceSidebar({
       Keep running
       {row.resident && (
         <span className="k on">
-          <LuCheck size={14} />
+          <IconCheck size={14} />
         </span>
       )}
     </div>
@@ -479,14 +822,13 @@ export function WorkspaceSidebar({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
+      const { named: namedMethods, sole: soleMethod } = launchable[hostOf(target.wsPath)]
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
-        const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
+        const shut = accounts && noAccountLine(accounts, backend ?? soleMethod)
         return (
           <div
-            className={'mi' + (refusal ? ' disabled' : '')}
-            title={refusal}
+            className={'mi' + (shut ? ' disabled' : '')}
             onClick={() => {
-              if (refusal) return
               setMenu(null)
               onNewSession(target.wsPath, backend)
             }}
@@ -510,8 +852,11 @@ export function WorkspaceSidebar({
                     '⌘N'
                   )
                 : newSessionItem('New session', undefined, '⌘N')}
-              {namedMethods &&
-                newSessionItem(`New ${BACKEND_LABEL[namedMethods[1]]} session`, namedMethods[1])}
+              {namedMethods?.slice(1).map((other) => (
+                <Fragment key={other}>
+                  {newSessionItem(`New ${BACKEND_LABEL[other]} session`, other)}
+                </Fragment>
+              ))}
               {target.isGit && (
                 <div
                   className="mi"
@@ -541,17 +886,6 @@ export function WorkspaceSidebar({
               >
                 Scheduled jobs…
               </div>
-              {canBind(target.wsPath) && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    setBindConductor({ scope: target.wsPath })
-                  }}
-                >
-                  Bind Discord channel…
-                </div>
-              )}
               <div className="sep" />
             </>
           )}
@@ -559,7 +893,7 @@ export function WorkspaceSidebar({
             className="mi danger"
             onClick={() => {
               setMenu(null)
-              void removeWorkspace(target.wsPath)
+              onRemoveWorkspace(target.wsPath)
             }}
           >
             Remove workspace
@@ -567,7 +901,58 @@ export function WorkspaceSidebar({
         </div>
       )
     }
+    if (target.kind === 'queued') {
+      const { tabId } = target.launch
+      return (
+        <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              void window.api.machine.free(tabId)
+            }}
+          >
+            Start now
+          </div>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              void window.api.machine.drop(tabId)
+            }}
+          >
+            Close
+          </div>
+        </div>
+      )
+    }
     const { row } = target
+    const ended = endedTabOf(row, storeTabs, sessions)
+    if (ended) {
+      return (
+        <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              useStore.getState().activateTab(ended.id)
+              useStore.getState().restartActiveSession()
+            }}
+          >
+            Start again<span className="k">⇧⌘R</span>
+          </div>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              requestCloseTab(ended.id)
+            }}
+          >
+            Close<span className="k">⌘W</span>
+          </div>
+        </div>
+      )
+    }
     if (row.pending) {
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
@@ -584,6 +969,7 @@ export function WorkspaceSidebar({
       )
     }
     if (row.running) {
+      const waitingTab = waitingTabOf(row)
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
           {revealOrCopyPath(target)}
@@ -596,6 +982,17 @@ export function WorkspaceSidebar({
           >
             Copy session ID
           </div>
+          {waitingTab && (
+            <div
+              className="mi"
+              onClick={() => {
+                setMenu(null)
+                void window.api.machine.free(waitingTab)
+              }}
+            >
+              {DONT_WAIT}
+            </div>
+          )}
           {keepRunningItem(row)}
           <div
             className="mi"
@@ -689,14 +1086,14 @@ export function WorkspaceSidebar({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !w.workspace.github) return null
+    if (!f && !w.workspace.github && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
         wsPath={fresh.path}
         f={f}
         github={w.workspace.github}
-        rows={w.rows}
+        remote={w.workspace.remote}
         left={fresh.left}
         top={fresh.top}
         onClose={() => setFresh(null)}
@@ -709,14 +1106,388 @@ export function WorkspaceSidebar({
 
   return (
     <>
+      {renderMenu()}
+      {renderFresh()}
+      {renderParked()}
+    </>
+  )
+}
+
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
+  onNewSession,
+  launchable,
+  onNewWorktreeSession,
+  onRestoreSession,
+  onScheduledJobs
+}: {
+  onNewSession: (wsPath: string, backend?: BackendId) => void
+  launchable: Record<HostId, LaunchMenu>
+  onNewWorktreeSession: (wsPath: string) => void
+  onRestoreSession: (wsPath: string) => void
+  onScheduledJobs: (wsPath: string, jobId?: string) => void
+}): JSX.Element {
+  const listedRows = useStore((s) => s.workspaceRows)
+  const welcomeActive = useStore((s) => s.welcomeActive)
+  const butlerName = useStore((s) => s.settings.butler.name)
+  const listedButler = useStore((s) => s.butlerWorkspace)
+  const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
+  const cron = useStore((s) => s.cron)
+  const sessions = useStore((s) => s.sessions)
+  const leftovers = useStore((s) => s.leftovers)
+  const attention = useStore((s) => s.attention)
+  const storeTabs = useStore((s) => s.tabs)
+  const { workspaceRows: rows, butlerWorkspace } = useMemo(
+    () => shownRows({ workspaceRows: listedRows, butlerWorkspace: listedButler, tabs: storeTabs }),
+    [listedRows, listedButler, storeTabs]
+  )
+  const activeTabId = useStore((s) => s.activeTabId)
+  const secretAsks = useStore((s) => s.secretAsks)
+  const resumeLaunch = useStore((s) => s.resumeLaunch)
+  const selectedWs = useStore((s) => s.selectedWs)
+  const showToast = useStore((s) => s.showToast)
+  const machine = useStore((s) => s.machine)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [foldedRows, setFoldedRows] = useState<Record<string, boolean>>({})
+  const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState<{
+    path: string
+    running: number
+    jobs: number
+    dirty: DirtyTab[]
+  } | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const removeCancelRef = useRef<HTMLButtonElement>(null)
+  const confirmOrphan = useStore((s) => s.orphanConfirm)
+  const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
+  const floating = useRef<FloatingCtl | null>(null)
+  const [, bumpCronClock] = useState(0)
+
+  const showsAClock =
+    cron.jobs.length > 0 || !!machine?.queued.length || Object.keys(machine?.held ?? {}).length > 0
+  useEffect(() => {
+    if (!showsAClock) return
+    const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
+    return () => clearInterval(t)
+  }, [showsAClock])
+
+  useEffect(() => {
+    if (confirmRemove && confirmRemove.dirty.length > 0) removeCancelRef.current?.focus()
+  }, [confirmRemove])
+
+  useEffect(() => {
+    const cold = new Set<string>()
+    for (const w of rows) for (const r of w.rows) if (!r.running) cold.add(r.id)
+    releaseSettledResumes(cold)
+  }, [rows])
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const fitHeads = useCallback((): void => {
+    const list = listRef.current
+    if (list) fitGithubCounts(list.querySelectorAll<HTMLElement>('.ws-head'))
+  }, [])
+  useLayoutEffect(fitHeads, [rows, fitHeads])
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const ro = new ResizeObserver(fitHeads)
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [fitHeads])
+
+  const reveal = useStore((s) => s.revealRow)
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const revealed = useRef<typeof reveal>(null)
+  useLayoutEffect(() => {
+    if (!reveal || reveal === revealed.current || sidebarHidden) return
+    revealed.current = reveal
+    const st = useStore.getState()
+    const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
+    for (const w of everyWorkspaceRows(shownRows(st))) {
+      const row = w.rows.find(
+        (r) => (endedTabOf(r, st.tabs, st.sessions)?.id ?? lookNow.tabOf(r)) === reveal.tabId
+      )
+      if (!row) continue
+      setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
+      const byId = new Map(w.rows.map((r) => [r.id, r]))
+      setFoldedRows((f) => {
+        let next = f
+        const seen = new Set<string>()
+        for (let at = row.parentId; at && !seen.has(at); at = byId.get(at)?.parentId) {
+          seen.add(at)
+          if (next[at]) next = { ...next, [at]: false }
+        }
+        return next
+      })
+      const frame = requestAnimationFrame(() =>
+        listRef.current
+          ?.querySelector(rowSelector(reveal.tabId))
+          ?.scrollIntoView({ block: 'nearest' })
+      )
+      return () => cancelAnimationFrame(frame)
+    }
+  }, [reveal, sidebarHidden])
+
+  const now = new Date()
+  const look = rowLookups(sessions, storeTabs, attention)
+  const callingAmong = (list: SessionRow[]): number =>
+    list.filter((r) => look.attentionOn(r.id, look.tabOf(r))).length
+  const cronLiveTabs = new Set(cron.live.map((l) => l.tabId))
+  const cronLiveSessions = new Set(cron.live.map((l) => l.sessionId))
+  const cronWorktreePrefixes = new Map<string, string[]>()
+  for (const j of cron.jobs) {
+    const list = cronWorktreePrefixes.get(j.workspacePath) ?? []
+    list.push(slugOf(j.name) + '-')
+    cronWorktreePrefixes.set(j.workspacePath, list)
+  }
+  const live = useRef({ onNewSession, onNewWorktreeSession })
+  live.current = { onNewSession, onNewWorktreeSession }
+
+  const actions = useMemo<SidebarActions>(() => {
+    const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
+      const w = everyWorkspaceRows(shownRows(useStore.getState())).find((w) =>
+        w.rows.some((r) => r.id === id)
+      )!
+      const row = w.rows.find((r) => r.id === id)!
+      const { sessions, tabs } = useStore.getState()
+      const running = rowLookups(sessions, tabs, []).running(row)
+      return { kind: 'session', wsPath: w.workspace.path, row: { ...row, running } }
+    }
+    const wsTarget = (path: string): MenuTarget => {
+      const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === path)!.workspace
+      return { kind: 'workspace', wsPath: path, missing: ws.missing, isGit: ws.isGit }
+    }
+    return {
+      openRow: (id) => {
+        floating.current?.dismissMenu()
+        const { row, wsPath } = rowTarget(id)
+        openSessionRow(row, wsPath)
+      },
+      rowMenu: (e, id) => floating.current?.menuNow(e, rowTarget(id)),
+      rowEnter: (e, id) => floating.current?.hoverMenu(e, () => rowTarget(id)),
+      leave: () => floating.current?.scheduleClose(),
+      openParked: (e, id) => {
+        e.stopPropagation()
+        floating.current?.openParked(e.currentTarget as HTMLElement, id)
+      },
+      toggleFold: (id) => setFoldedRows((f) => ({ ...f, [id]: !f[id] })),
+      selectWs: (path) => useStore.getState().selectWorkspace(path),
+      toggleCollapsed: (path) => setCollapsed((c) => ({ ...c, [path]: !c[path] })),
+      headMenu: (e, path) => floating.current?.menuNow(e, wsTarget(path)),
+      headEnter: (e, path) => floating.current?.hoverMenu(e, () => wsTarget(path)),
+      dragStart: (e, path) => {
+        floating.current?.closeAll()
+        e.dataTransfer.effectAllowed = 'move'
+        // PLATFORM§10
+        e.dataTransfer.setData('text/plain', path)
+        setDrag({ path, over: null })
+      },
+      dragEnd: () => setDrag(null),
+      gitEnter: (e, path) => floating.current?.openCard(e.currentTarget as HTMLElement, path),
+      gitLeave: (e, path) => {
+        floating.current?.leaveCard()
+        const head = (e.currentTarget as HTMLElement).closest('.ws-head')
+        floating.current?.armMenu(e, head as HTMLElement, wsTarget(path))
+      },
+      behindClick: (e, path) => {
+        e.stopPropagation()
+        floating.current?.openCard((e.currentTarget as HTMLElement).parentElement!, path)
+      },
+      openList: (e, path, what) => {
+        e.stopPropagation()
+        floating.current?.closeAll()
+        useStore.getState().openWorkspaceList(path, what)
+      },
+      openDoor: (path, isGit) => {
+        floating.current?.dismissMenu()
+        if (isGit) live.current.onNewWorktreeSession(path)
+        else live.current.onNewSession(path)
+      }
+    }
+  }, [])
+
+  const wsPaths = rows.map((r) => r.workspace.path)
+  const dragOverWorkspaces = (e: DragEvent<HTMLElement>): void => {
+    if (!drag) return
+    e.preventDefault()
+    const block = (e.target as Element).closest<HTMLElement>('.ws[data-ws-path]')
+    let over: number | null = null
+    if (block) {
+      const box = block.getBoundingClientRect()
+      const below = e.clientY >= box.top + box.height / 2
+      const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
+      const from = wsPaths.indexOf(drag.path)
+      if (slot !== from && slot !== from + 1) over = slot
+    }
+    if (drag.over !== over) setDrag({ ...drag, over })
+  }
+  const dropWorkspace = (e: DragEvent<HTMLElement>): void => {
+    e.preventDefault()
+    setDrag(null)
+    if (drag?.over == null) return
+    void window.api.workspace.move(drag.path, wsPaths[drag.over] ?? null)
+  }
+
+  const forceCloseSession = async (id: string): Promise<void> => {
+    const r = await window.api.sessions.forceClose(id)
+    if (!r.ok && rowStillRuns(id)) showToast(FORCE_CLOSE_FAILED_NOTICE)
+  }
+
+  const rowStillRuns = (id: string): boolean => {
+    const st = useStore.getState()
+    const lookNow = rowLookups(st.sessions, st.tabs, [])
+    return everyWorkspaceRows(shownRows(st)).some((w) =>
+      w.rows.some((r) => r.id === id && !endedTabOf(r, st.tabs, st.sessions) && lookNow.running(r))
+    )
+  }
+
+  const removeWorkspace = async (path: string): Promise<void> => {
+    const dirty = dirtyInWorkspace(path)
+    const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
+      (r) => look.running(r) || r.pending
+    ).length
+    const jobsHere = useStore.getState().cron.jobs.filter((j) => j.workspacePath === path).length
+    const plan = removePlan(running, dirty.length)
+    if (plan === 'remove') {
+      const r = await window.api.workspace.remove(path)
+      if (!r.removed) {
+        setRemoving(false)
+        setConfirmRemove({ path, running: r.running, jobs: r.jobs, dirty: [] })
+      }
+      return
+    }
+    if (plan === 'confirm-running') {
+      setRemoving(false)
+      setConfirmRemove({ path, running, jobs: jobsHere, dirty })
+      return
+    }
+    useStore.getState().setUnsavedPrompt({
+      files: labelPaths(dirty),
+      jobs: jobsHere,
+      onCancel: () => {},
+      onDiscard: () => {
+        discardAll(dirty)
+        void window.api.workspace.removeConfirmed(path)
+      },
+      onSave: async () => {
+        const ok = await saveAll(dirty)
+        useStore.getState().setUnsavedPrompt(null)
+        if (ok) void window.api.workspace.removeConfirmed(path)
+      }
+    })
+  }
+
+  const rowRenderer = (
+    wsPath: string,
+    sessionRows: SessionRow[]
+  ): ((node: RowNode<SessionRow>) => JSX.Element) => {
+    const showBackend = mixesBackends(sessionRows)
+    const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
+    const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
+      const { row } = node
+      const ended = endedTabOf(row, storeTabs, sessions)
+      const running = !ended && look.running(row)
+      const tabId = ended?.id ?? look.tabOf(row)
+      const calling = look.attentionOn(row.id, tabId)
+      const sess = tabId ? look.sessionOn(tabId) : undefined
+      const stateCls = ended
+        ? rowStateClass(false, undefined)
+        : statusUnavailable(sess)
+          ? ''
+          : rowStateClass(
+              running,
+              statusWithSecrets(sess?.status, tabId, secretAsks),
+              row.pending,
+              sess?.turnOver
+            )
+      const badge = sessionActivityBadge(sess, leftovers[row.id])
+      const held = tabId ? machine?.held[tabId] : undefined
+      const launching = resumeLaunch?.id === row.id
+      const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
+      const resumingNow =
+        !ended && !running && !row.pending && (launching || look.hasAliveTab(row.id))
+      const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
+      const isCronRow =
+        capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
+        ((!!tabId && cronLiveTabs.has(tabId)) ||
+          cronLiveSessions.has(row.id) ||
+          (row.worktree !== 'main' && cronPrefixes.some((p) => row.worktree.startsWith(p))))
+      const folded = node.children.length > 0 && !!foldedRows[row.id]
+      const hidden = folded ? rowsUnder(node) : []
+      return (
+        <Fragment key={row.id}>
+          <SessionRowView
+            id={row.id}
+            className={'ws-tab ' + shownCls + (active ? ' active' : '')}
+            tabId={tabId}
+            tooltip={
+              ended
+                ? ENDED_ROW_TIP
+                : running || row.pending
+                  ? undefined
+                  : relTime(row.mtime, now.getTime()) +
+                    (row.invalidCwd
+                      ? ' — worktree deleted; click to rebuild and resume'
+                      : ' — click to resume')
+            }
+            cron={isCronRow}
+            resident={!!row.resident}
+            title={shownTitle(row.title, sess?.title)}
+            callingReason={calling && attentionReason(calling)}
+            badgeText={badge?.text}
+            badgeLines={badge?.lines.join('\n')}
+            badgeHeading={badge?.heading}
+            badgeRunning={!!badge?.running}
+            waitingTitle={held && heldTitle(held, now.getTime())}
+            callingHidden={callingAmong(hidden)}
+            hiddenCount={hidden.length}
+            parent={node.children.length > 0}
+            folded={folded}
+            backend={showBackend ? row.backendId : undefined}
+            startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
+            worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
+            memory={memoryShown(machine, tabId)}
+            activity={rowActivityLine(shownCls, sess)}
+            actions={actions}
+          />
+          {node.children.length > 0 && !folded && (
+            <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
+          )}
+        </Fragment>
+      )
+    }
+    return sessionRow
+  }
+
+  const queuedIn = (path: string): QueuedLaunch[] =>
+    machine?.queued.filter((q) => q.cwd === path) ?? []
+  const queuedRow = (q: QueuedLaunch): JSX.Element => (
+    <QueuedRowView
+      key={q.tabId}
+      launch={q}
+      waited={shortDur(now.getTime() - q.since)}
+      floating={floating}
+    />
+  )
+
+  return (
+    <>
       <div className="island flat isl-sessions">
         <div
           ref={listRef}
           className="ws-list"
-          onScroll={closeFloating}
+          onScroll={() => floating.current?.closeAll()}
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
+          <InboxRow />
+          <ButlerRow>
+            {butlerWorkspace && [
+              ...queuedIn(butlerWorkspace.workspace.path).map(queuedRow),
+              ...sessionTree(butlerWorkspace.rows).map(
+                rowRenderer(butlerWorkspace.workspace.path, butlerWorkspace.rows)
+              )
+            ]}
+          </ButlerRow>
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
@@ -727,166 +1498,20 @@ export function WorkspaceSidebar({
 
           {rows.map(({ workspace: ws, rows: sessionRows }, wsIndex) => {
             const open = !collapsed[ws.path]
-            const wsTarget: MenuTarget = {
-              kind: 'workspace',
-              wsPath: ws.path,
-              missing: ws.missing,
-              isGit: ws.isGit
-            }
-            const badge = behindBadge(ws.freshness, Date.now())
-            const gitPanel = freshnessShown(ws.freshness) || !!ws.github
-            const nameMq = `ws:${ws.path}`
-            const door = ws.isGit
-              ? {
-                  title: 'New worktree session · ⇧⌘N',
-                  label: 'New worktree…',
-                  Icon: LuGitBranchPlus
-                }
-              : { title: 'New session', label: 'New session', Icon: LuPlus }
-            const openDoor = (): void => {
-              clearTimers()
-              setMenu(null)
-              if (ws.isGit) onNewWorktreeSession(ws.path)
-              else onNewSession(ws.path)
-            }
+            const behind = behindBadge(ws.freshness, now.getTime())
+            const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
-            const cronNow = new Date()
-            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
-            const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
-              const { row } = node
-              const tabId = tabIdOfRow(row)
-              const calling = attentionOnRow(row.id, tabId, attention)
-              const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-              const stateCls = statusUnavailable(sess)
-                ? ''
-                : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
-              const badge = sessionActivityBadge(sess, leftovers[row.id])
-              const launching = resumeLaunch?.id === row.id
-              const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-              const resumingNow =
-                !row.running &&
-                !row.pending &&
-                (launching || storeTabs.some((t) => t.sessionId === row.id && t.alive))
-              const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
-              const rowTarget: MenuTarget = {
-                kind: 'session',
-                wsPath: ws.path,
-                row
-              }
-              const isCronRow =
-                capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
-                (cron.live.some((l) => (!!tabId && l.tabId === tabId) || l.sessionId === row.id) ||
-                  (row.worktree !== 'main' &&
-                    cron.jobs.some(
-                      (j) =>
-                        j.workspacePath === ws.path && row.worktree.startsWith(slugOf(j.name) + '-')
-                    )))
-              const folded = node.children.length > 0 && !!foldedRows[row.id]
-              const hidden = folded ? rowsUnder(node) : []
-              const callingHidden = callingAmong(hidden)
-              return (
-                <Fragment key={row.id}>
-                  <div
-                    className={'ws-tab ' + shownCls + (active ? ' active' : '')}
-                    data-tab-id={tabId}
-                    title={
-                      row.running || row.pending
-                        ? undefined
-                        : relTime(row.mtime, Date.now()) +
-                          (row.invalidCwd
-                            ? ' — worktree deleted; click to rebuild and resume'
-                            : ' — click to resume')
-                    }
-                    onClick={() => openSessionRow(row, ws.path)}
-                    onContextMenu={(e) => openMenuNow(e, rowTarget)}
-                    onMouseEnter={(e) => {
-                      armHoverMenu(e, rowTarget)
-                      marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
-                    }}
-                    onMouseLeave={() => {
-                      scheduleClose()
-                      stopMarquee(row.id)
-                    }}
-                  >
-                    <div className="ws-tab-main">
-                      {isCronRow && (
-                        <span className="ws-tab-cron" title="started by a scheduled job">
-                          <LuAlarmClock size={12} />
-                        </span>
-                      )}
-                      {row.resident && (
-                        <span
-                          className="ws-tab-resident"
-                          title="Keep running — never sleeps, and starts again each time Koloft opens"
-                        >
-                          <LuPin size={12} />
-                        </span>
-                      )}
-                      <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
-                        <i ref={mq?.id === row.id ? mqRef : undefined}>
-                          {shownTitle(row.title, sess?.title)}
-                        </i>
-                      </span>
-                      {tabId && <UnseenFileMark tabId={tabId} />}
-                      {calling && (
-                        <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
-                      )}
-                      {badge && (
-                        <button
-                          className={'ws-tab-parked' + (badge.running ? ' bg-run' : '')}
-                          title={badge.lines.join('\n')}
-                          aria-label={badge.heading}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            clearTimers()
-                            setMenu(null)
-                            setParkedPop({
-                              rowId: row.id,
-                              ...cardPosFor(e.currentTarget as HTMLElement)
-                            })
-                          }}
-                        >
-                          {badge.text}
-                        </button>
-                      )}
-                      {callingHidden > 0 && (
-                        <span
-                          className="ws-tab-parked ws-unread-count"
-                          title={sessionsNeedYou(callingHidden)}
-                        >
-                          {callingHidden}
-                        </span>
-                      )}
-                      {folded && (
-                        <span className="ws-tab-parked" title={sessionsInside(hidden.length)}>
-                          {hidden.length}
-                        </span>
-                      )}
-                      {node.children.length > 0 && (
-                        <button
-                          className="icobtn ws-tab-fold"
-                          title={folded ? 'Unfold' : 'Fold'}
-                          aria-label={folded ? 'Unfold' : 'Fold'}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setFoldedRows((f) => ({ ...f, [row.id]: !f[row.id] }))
-                          }}
-                        >
-                          {folded ? <LuChevronRight size={12} /> : <LuChevronDown size={12} />}
-                        </button>
-                      )}
-                    </div>
-                    <div className="ws-tab-sub">
-                      {mixesBackends(sessionRows) && <SessionBackendIcon backend={row.backendId} />}
-                      <span>{row.worktree}</span>
-                    </div>
-                  </div>
-                  {node.children.length > 0 && !folded && (
-                    <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
-                  )}
-                </Fragment>
-              )
-            }
+            const soon =
+              ws.missing || !open ? null : forecastFor(cron.jobs, cron.live, ws.path, now)
+            const sessionRow = rowRenderer(ws.path, sessionRows)
+            const queuedHere = queuedIn(ws.path)
+            const waitingHere =
+              queuedHere.length +
+              sessionRows.filter((r) => {
+                const tabId = look.tabOf(r)
+                return !!tabId && !!machine?.held[tabId]
+              }).length
+            const busyHere = machine?.busy && waitingHere > 0 ? machine : null
             return (
               <div
                 className={
@@ -898,153 +1523,63 @@ export function WorkspaceSidebar({
                 key={ws.path}
                 data-ws-path={ws.path}
               >
-                <div
-                  className={
-                    'ws-head' +
-                    (ws.missing ? ' missing' : '') +
-                    (selectedWs === ws.path && activeTabId === null ? ' active' : '')
-                  }
-                  title={ws.missing ? 'folder deleted' : ws.path}
-                  draggable
-                  onDragStart={(e) => startWorkspaceDrag(e, ws.path)}
-                  onDragEnd={() => setDrag(null)}
-                  onClick={() => {
-                    if (ws.missing) return
-                    selectWorkspace(ws.path)
-                  }}
-                  onContextMenu={(e) => openMenuNow(e, wsTarget)}
-                  onMouseEnter={(e) => {
-                    armHoverMenu(e, wsTarget)
-                    marqueeIfClipped(e.currentTarget, '.ws-name', nameMq)
-                  }}
-                  onMouseLeave={() => {
-                    scheduleClose()
-                    stopMarquee(nameMq)
-                  }}
-                >
-                  <span
-                    className="fico"
-                    title={open ? 'Fold' : 'Unfold'}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setCollapsed((c) => ({ ...c, [ws.path]: !c[ws.path] }))
-                    }}
-                  >
-                    {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
-                  </span>
-                  <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
-                    <i ref={mq?.id === nameMq ? mqRef : undefined}>{workspaceName(ws)}</i>
-                  </span>
-                  {ws.remote && (
-                    <span
-                      className="ws-remote"
-                      title={remoteCopyText(ws.remote.host, ws.remote.path)}
-                    >
-                      {ws.remote.host}
-                      <span
-                        className={'ws-conn' + (ws.remote.connected ? ' on' : '')}
-                        title={remoteDotTitle(ws.remote)}
-                      />
-                    </span>
-                  )}
-                  {ws.isGit && !ws.missing && (
-                    <span
-                      className="ws-git"
-                      title={gitPanel ? NO_INHERITED_TOOLTIP : 'git repository'}
-                      onMouseEnter={
-                        gitPanel
-                          ? (e) => openCard(e.currentTarget as HTMLElement, ws.path)
-                          : undefined
-                      }
-                      onMouseLeave={
-                        gitPanel
-                          ? (e) => {
-                              leaveCard()
-                              const head = (e.currentTarget as HTMLElement).closest('.ws-head')
-                              armMenu(e, head as HTMLElement, wsTarget)
-                            }
-                          : undefined
-                      }
-                    >
-                      <GoGitBranch size={12} />
-                      {badge && (
-                        <button
-                          className={badge.cls}
-                          aria-label={badge.name}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openCard((e.currentTarget as HTMLElement).parentElement!, ws.path)
-                          }}
-                        >
-                          {badge.label}
-                        </button>
-                      )}
-                      {ws.github && (ws.github.issues > 0 || ws.github.prs > 0) && (
-                        <span className="ws-gh">
-                          {ws.github.issues > 0 && (
-                            <span aria-label={openIssuesLabel(ws.github.issues)}>
-                              <GoIssueOpened size={12} />
-                              {countLabel(ws.github.issues)}
-                            </span>
-                          )}
-                          {ws.github.prs > 0 && (
-                            <span aria-label={openPullsLabel(ws.github.prs)}>
-                              <GoGitPullRequest size={12} />
-                              {countLabel(ws.github.prs)}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {callingInside > 0 && (
-                    <span
-                      className="ws-tab-parked ws-unread-count"
-                      title={sessionsNeedYou(callingInside)}
-                    >
-                      {callingInside}
-                    </span>
-                  )}
-                  {!ws.missing && (
-                    <button
-                      className="hact"
-                      title={door.title}
-                      aria-label={door.title}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openDoor()
-                      }}
-                    >
-                      <door.Icon size={16} />
-                    </button>
-                  )}
-                </div>
+                <WorkspaceHead
+                  path={ws.path}
+                  name={workspaceName(ws)}
+                  missing={ws.missing}
+                  isGit={ws.isGit}
+                  remoteHost={ws.remote?.host}
+                  remoteTitle={ws.remote && remoteCopyText(ws.remote.host, ws.remote.path)}
+                  remoteConnected={!!ws.remote?.connected}
+                  remoteDot={ws.remote && remoteDotTitle(ws.remote)}
+                  gitPanel={freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable}
+                  issues={ws.github?.issues ?? 0}
+                  prs={ws.github?.prs ?? 0}
+                  open={open}
+                  active={selectedWs === ws.path && activeTabId === null}
+                  callingInside={callingInside}
+                  behindCls={behind?.cls}
+                  behindLabel={behind?.label}
+                  behindName={behind?.name}
+                  actions={actions}
+                />
 
                 {open && (soon || sessionRows.length > 0 || !ws.missing) && (
                   <div className="ws-tabs">
+                    {busyHere && (
+                      <div className="ws-next" title={machineBusyTitle(busyHere)}>
+                        <span className="ws-next-name">Machine busy</span>
+                        <span className="ws-next-dot">·</span>
+                        <span className="ws-next-at soon">{`${waitingHere} held`}</span>
+                      </div>
+                    )}
                     {soon && (
                       <div
                         className="ws-next"
                         title={soon.title}
                         onClick={(e) => {
                           e.stopPropagation()
-                          clearTimers()
-                          setMenu(null)
+                          floating.current?.dismissMenu()
                           onScheduledJobs(ws.path, soon.id)
                         }}
                       >
-                        <LuAlarmClock size={12} className="ws-next-ico" />
+                        <IconScheduled size={12} className="ws-next-ico" />
                         <span className="ws-next-name">{soon.name}</span>
                         {soon.more > 0 && <span className="ws-next-more">{`+${soon.more}`}</span>}
                         <span className="ws-next-dot">·</span>
                         <span className={'ws-next-at' + (soon.soon ? ' soon' : '')}>
-                          {describeWhen(soon.at, cronNow)}
+                          {describeWhen(soon.at, now)}
                         </span>
                       </div>
                     )}
+                    {queuedHere.map(queuedRow)}
                     {sessionTree(sessionRows).map(sessionRow)}
-                    {sessionRows.length === 0 && !ws.missing && (
-                      <div className="ws-empty" title={door.title} onClick={openDoor}>
+                    {sessionRows.length === 0 && queuedHere.length === 0 && !ws.missing && (
+                      <div
+                        className="ws-empty"
+                        title={door.title}
+                        onClick={() => actions.openDoor(ws.path, ws.isGit)}
+                      >
                         <door.Icon size={12} />
                         <span>{door.label}</span>
                       </div>
@@ -1060,9 +1595,15 @@ export function WorkspaceSidebar({
       {/* ADR-0013 */}
       {createPortal(
         <>
-          {renderMenu()}
-          {renderFresh()}
-          {renderParked()}
+          <SidebarFloating
+            ctl={floating}
+            launchable={launchable}
+            onNewSession={onNewSession}
+            onNewWorktreeSession={onNewWorktreeSession}
+            onRestoreSession={onRestoreSession}
+            onScheduledJobs={onScheduledJobs}
+            onRemoveWorkspace={(path) => void removeWorkspace(path)}
+          />
 
           {confirmRemove && (
             <div className="modal-backdrop" onClick={() => !removing && setConfirmRemove(null)}>
@@ -1074,7 +1615,7 @@ export function WorkspaceSidebar({
                     onClick={() => !removing && setConfirmRemove(null)}
                     aria-label="Close"
                   >
-                    <LuX size={16} />
+                    <IconClose size={16} />
                   </span>
                 </div>
                 <div className="modal-body">
@@ -1137,7 +1678,7 @@ export function WorkspaceSidebar({
                     onClick={() => setConfirmOrphan(null)}
                     aria-label="Close"
                   >
-                    <LuX size={16} />
+                    <IconClose size={16} />
                   </span>
                 </div>
                 <div className="modal-body">
@@ -1169,4 +1710,4 @@ export function WorkspaceSidebar({
       )}
     </>
   )
-}
+})

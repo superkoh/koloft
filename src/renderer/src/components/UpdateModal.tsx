@@ -1,8 +1,9 @@
 import { useEffect, useMemo, type JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useStore } from '../store'
+import '../updateModal.css'
 
 const md = new MarkdownIt({ html: false, linkify: false, breaks: false })
 
@@ -50,7 +51,6 @@ export function UpdateModal(): JSX.Element | null {
   const close = (): void => setUpdate({ open: false })
   const percent = update.percent ?? -1
   const dismiss = downloading ? undefined : close
-  const whatsNew = update.phase === 'whats-new'
   const notes = releases.length > 0 && (
     <div className="update-notes">
       {releases.map((r, i) => (
@@ -72,10 +72,10 @@ export function UpdateModal(): JSX.Element | null {
     <div className="modal-backdrop" onClick={dismiss}>
       <div className="modal update-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{whatsNew ? `What’s new in Koloft ${update.current}` : 'Software Update'}</span>
+          <span>Software Update</span>
           {!downloading && (
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           )}
         </div>
@@ -152,17 +152,6 @@ export function UpdateModal(): JSX.Element | null {
               </div>
               <div className="update-hint">
                 Koloft downloads the new version, replaces itself, and relaunches.
-              </div>
-            </>
-          )}
-
-          {whatsNew && (
-            <>
-              {notes}
-              <div className="update-actions">
-                <button className="btn-primary" onClick={close}>
-                  Close
-                </button>
               </div>
             </>
           )}

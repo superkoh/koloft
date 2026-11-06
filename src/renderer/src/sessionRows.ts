@@ -4,14 +4,17 @@ import type {
   BackgroundItem,
   LeftoverProcess,
   SessionInfo,
+  SessionRow,
   SessionStatus,
   TabKind,
   WorkspaceRows
 } from '@shared/types'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
+import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
+import { everyWorkspaceRows } from './butlerRows'
 
 export { statusUnavailable }
 
@@ -23,7 +26,7 @@ export function relTime(mtimeMs: number, nowMs: number): string {
   return `${s}s ago`
 }
 
-function shortDur(ms: number): string {
+export function shortDur(ms: number): string {
   const m = Math.floor(ms / 60_000)
   if (m >= 60) return `${Math.floor(m / 60)}h`
   return m >= 1 ? `${m}m` : '<1m'
@@ -59,7 +62,11 @@ export function parkedBadge(
       ? 'Programs this session started keep running on their own. Stop any you no longer need.'
       : backend === 'codex'
         ? 'Stop these tasks in the Codex session to free the resources.'
-        : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
+        : backend === 'muse'
+          ? 'Stop them in the Muse session (/tasks lists them) to free the resources.'
+          : backend === 'agy'
+            ? 'Stop them in the Antigravity session (/tasks lists them) to free the resources.'
+            : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
   }
 }
 
@@ -103,6 +110,14 @@ export function sessionActivityBadge(
   }
 }
 
+export function statusWithSecrets(
+  status: SessionStatus | undefined,
+  tabId: string | undefined,
+  secretAsks: readonly { tabId: string }[]
+): SessionStatus | undefined {
+  return tabId && secretAsks.some((a) => a.tabId === tabId) ? 'approval' : status
+}
+
 export function rowStateClass(
   running: boolean,
   status: SessionStatus | undefined,
@@ -113,7 +128,7 @@ export function rowStateClass(
   if (!running) return 'cold'
   switch (status) {
     case 'working':
-      return turnOver ? 'st-waiting' : 'st-working'
+      return turnOver ? 'st-waiting st-bg-run' : 'st-working'
     case 'waiting':
       return 'st-waiting'
     case 'approval':
@@ -123,6 +138,17 @@ export function rowStateClass(
   }
 }
 
+export function rowActivityLine(
+  shownCls: string,
+  session?: Pick<SessionInfo, 'lastAction' | 'asking'>
+): string | undefined {
+  if (!session || !shownCls.startsWith('st-') || shownCls === 'st-pending') return undefined
+  if (shownCls === 'st-approval' && session.asking) return session.asking
+  const did = session.lastAction
+  if (!did || shownCls === 'st-working' || did === PLAN_READY) return did
+  return `Last: ${did}`
+}
+
 export function sessionsNeedYou(n: number): string {
   return n > 1 ? `${n} sessions need you` : '1 session needs you'
 }
@@ -130,6 +156,8 @@ export function sessionsNeedYou(n: number): string {
 export function sessionsInside(n: number): string {
   return n > 1 ? `${n} sessions inside` : '1 session inside'
 }
+
+export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
 export interface RowNode<R extends { id: string; parentId?: string }> {
   row: R
@@ -163,43 +191,41 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
-export function attentionOnRow(
-  rowId: string,
+function markOn(
+  e: AttentionEvent,
   tabId: string | undefined,
-  pending: AttentionEvent[]
-): AttentionEvent | undefined {
-  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
+  sessionId: string | undefined
+): boolean {
+  return e.tabId === tabId || (!!sessionId && e.sessionId === sessionId)
+}
+
+export function waitingTabs(
+  pending: readonly AttentionEvent[],
+  tabs: readonly { id: string; sessionId?: string }[]
+): string[] {
+  const waiting: string[] = []
+  for (const e of [...pending].sort((a, b) => a.at - b.at)) {
+    const tab = tabs.find((t) => markOn(e, t.id, t.sessionId))
+    if (tab && !waiting.includes(tab.id)) waiting.push(tab.id)
+  }
+  return waiting
 }
 
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
-  tabs: readonly { id: string }[]
+  tabs: readonly { id: string; sessionId?: string }[]
 ): string | undefined {
-  return pending
-    .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
-    .sort((a, b) => a.at - b.at)[0]?.tabId
+  const waiting = waitingTabs(pending, tabs)
+  return waiting[(waiting.indexOf(activeTabId ?? '') + 1) % waiting.length]
 }
 
-// CODEX§9
 export function liveTabOf(
   sessionId: string,
   sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
   tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
 ): string | undefined {
-  return (
-    sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    tabs.find((t) => (t.alive || t.asleep) && t.sessionId === sessionId)?.id
-  )
-}
-
-export function tabOfRow(
-  row: { id: string; running: boolean; pending?: boolean },
-  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
-  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
-): string | undefined {
-  if (row.pending) return row.id
-  return row.running ? liveTabOf(row.id, sessions, tabs) : undefined
+  return rowLookups(sessions, tabs, []).tabOf({ id: sessionId, running: true })
 }
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
@@ -208,6 +234,11 @@ export function shownTitle(rowTitle: string, liveTitle: string | undefined): str
 
 export function workspaceName(ws: WorkspaceRows['workspace']): string {
   return basename(ws.remote?.path ?? ws.path)
+}
+
+export function workspacePlace(ws: WorkspaceRows['workspace']): string {
+  const name = workspaceName(ws)
+  return ws.remote ? `${ws.remote.host}:${name}` : name
 }
 
 export function isOrphanRow(
@@ -222,6 +253,122 @@ export function isOrphanRow(
       (t.alive && (t.id === bound || t.sessionId === row.id)) ||
       (t.asleep && t.sessionId === row.id)
   )
+}
+
+interface RowLookups<S> {
+  running: (row: { id: string; running: boolean }) => boolean
+  boundTabOf: (sessionId: string) => string | undefined
+  tabOf: (row: { id: string; running: boolean; pending?: boolean }) => string | undefined
+  sessionOn: (tabId: string) => S | undefined
+  attentionOn: (rowId: string, tabId: string | undefined) => AttentionEvent | undefined
+  hasAliveTab: (sessionId: string) => boolean
+}
+
+// CODEX§9
+export function rowLookups<S extends { sessionId: string; tabId: string; alive: boolean }>(
+  sessions: readonly S[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[],
+  attention: readonly AttentionEvent[]
+): RowLookups<S> {
+  const firstBy = <T, K>(items: readonly T[], key: (item: T) => K | undefined): Map<K, T> => {
+    const m = new Map<K, T>()
+    for (const item of items) {
+      const k = key(item)
+      if (k !== undefined && !m.has(k)) m.set(k, item)
+    }
+    return m
+  }
+  const sessionOnTab = firstBy(sessions, (s) => s.tabId)
+  const liveTabOfSession = firstBy(sessions, (s) => (s.alive ? s.sessionId : undefined))
+  const openTabOfSession = firstBy(tabs, (t) => (t.alive || t.asleep ? t.sessionId : undefined))
+  const aliveTabSessions = new Set(tabs.filter((t) => t.alive).map((t) => t.sessionId))
+  const aliveTabIds = new Set(tabs.filter((t) => t.alive).map((t) => t.id))
+  const boundInAliveTab = firstBy(sessions, (s) =>
+    s.alive && aliveTabIds.has(s.tabId) ? s.sessionId : undefined
+  )
+  const boundTabOf = (sessionId: string): string | undefined =>
+    boundInAliveTab.get(sessionId)?.tabId
+  return {
+    running: (row) => row.running || !!boundTabOf(row.id),
+    boundTabOf,
+    tabOf: (row) => {
+      if (row.pending) return row.id
+      const bound = boundTabOf(row.id)
+      if (bound || !row.running) return bound
+      return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
+    },
+    sessionOn: (tabId) => sessionOnTab.get(tabId),
+    attentionOn: (rowId, tabId) => attention.find((e) => markOn(e, tabId, rowId)),
+    hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
+  }
+}
+
+interface EndedTab {
+  id: string
+  title: string
+  sessionId?: string
+  ended?: { row: SessionRow; wsPath: string }
+}
+
+type Ended<T extends EndedTab> = T & { ended: NonNullable<T['ended']> }
+
+const isEnded = <T extends EndedTab>(t: T): t is Ended<T> => !!t.ended
+
+type LiveSession = { sessionId: string; tabId: string; alive: boolean }
+
+const liveElsewhere = (t: EndedTab, sessions: readonly LiveSession[]): boolean =>
+  !!t.sessionId && sessions.some((s) => s.alive && s.sessionId === t.sessionId && s.tabId !== t.id)
+
+export function endedTabOf<T extends EndedTab>(
+  row: { id: string },
+  tabs: readonly T[],
+  sessions: readonly LiveSession[]
+): Ended<T> | undefined {
+  const ended = tabs.find(
+    (t): t is Ended<T> => isEnded(t) && (t.id === row.id || t.sessionId === row.id)
+  )
+  return ended && !liveElsewhere(ended, sessions) ? ended : undefined
+}
+
+export function endedTabsLiveElsewhere<T extends EndedTab>(
+  tabs: readonly T[],
+  sessions: readonly LiveSession[]
+): Ended<T>[] {
+  return tabs.filter((t): t is Ended<T> => isEnded(t) && liveElsewhere(t, sessions))
+}
+
+export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): WorkspaceRows[] {
+  const ended = tabs.filter(isEnded)
+  if (!ended.length) return all
+  const shown = new Set(all.flatMap((w) => w.rows.map((r) => r.id)))
+  const lost = ended.filter(
+    (t) => ![t.id, t.sessionId, t.ended.row.id].some((id) => id !== undefined && shown.has(id))
+  )
+  if (!lost.length) return all
+  return all.map((w) => {
+    const here = lost.filter((t) => t.ended.wsPath === w.workspace.path)
+    if (!here.length) return w
+    const kept = here.map(({ title, ended: { row } }): SessionRow => ({
+      ...row,
+      title: row.pending ? title : row.title,
+      running: false,
+      pending: false
+    }))
+    return { ...w, rows: [...kept, ...w.rows] }
+  })
+}
+
+export function shownRows(s: {
+  workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
+  tabs: readonly EndedTab[]
+}): { workspaceRows: WorkspaceRows[]; butlerWorkspace: WorkspaceRows | null } {
+  const every = everyWorkspaceRows(s)
+  const all = withEndedRows(every, s.tabs)
+  if (all === every) return { workspaceRows: s.workspaceRows, butlerWorkspace: s.butlerWorkspace }
+  return s.butlerWorkspace
+    ? { workspaceRows: all.slice(0, -1), butlerWorkspace: all[all.length - 1] }
+    : { workspaceRows: all, butlerWorkspace: null }
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {
@@ -261,7 +408,7 @@ export function welcomeTarget(
   return live.find((w) => w.workspace.path === lastPath) ?? live[0] ?? null
 }
 
-function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
+export function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
   return (
     rows.find((w) => !w.workspace.missing && w.rows.some((r) => r.id === rowId))?.workspace.path ??
     null
@@ -276,6 +423,7 @@ export function workspaceOfTab(
   sessions: readonly SessionInfo[],
   tabId: string
 ): string | null {
+  if (isWorkspaceWorkbenchKey(tabId)) return workspaceOfWorkbenchKey(tabId)
   return workspaceOfRow(rows, rowIdOfTab(sessions, tabId))
 }
 

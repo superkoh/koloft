@@ -1,0 +1,25 @@
+name: PR title
+
+# A squash merge makes the PR title main's commit subject, and the release notes and
+# the site changelog sort a release by that subject's type. No checkout: nothing from
+# the branch runs here, and the title reaches the shell only through env.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -qE '^(feat|fix|perf|refactor|docs|test|chore|build|ci|style|revert)(\([^)]+\))?!?: \S'; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::The PR title needs a type prefix, as in 'feat(assist): talk to it from the sidebar' — on squash it becomes main's commit subject. Got: $TITLE"
+            exit 1
+          fi

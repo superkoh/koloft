@@ -278,7 +278,7 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
       await page.waitForTimeout(GRACE_FOR_A_WRONG_LAUNCH_MS)
       await expect(dlg).toBeVisible()
       await expect(field(dlg)).toHaveValue('Main')
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -299,7 +299,7 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
       await page.keyboard.press('Enter')
       await page.waitForTimeout(GRACE_FOR_A_WRONG_LAUNCH_MS)
       await expect(dlg).toBeVisible()
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -358,7 +358,7 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
       await page.waitForTimeout(GRACE_FOR_A_WRONG_LAUNCH_MS)
       await expect(dlg).toBeVisible()
       await expect(field(dlg)).toHaveValue('')
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -389,7 +389,7 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
       await page.waitForTimeout(GRACE_FOR_A_WRONG_LAUNCH_MS)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -433,7 +433,7 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
     try {
       await startMainSession(page, 'repo-one')
       const running = rowsWithSub(page, 'repo-one', 'main').and(
-        page.locator('.ws-tab:not(.cold):not(.st-pending)')
+        page.locator('.ws .ws-tab:not(.cold):not(.st-pending)')
       )
       await expect(running).toHaveCount(1, { timeout: 60_000 })
 

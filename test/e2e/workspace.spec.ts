@@ -98,7 +98,7 @@ test.describe('Workspace management: every add goes through the workspace:add IP
       code: 'added',
       path: env.workspaces.a
     })
-    const row = page.locator('.ws-tab', { hasText: 'Fake session: project notes' })
+    const row = page.locator('.ws .ws-tab', { hasText: 'Fake session: project notes' })
     await expect(row).toBeVisible({ timeout: 20_000 })
     await expect(row).toHaveClass(/\bcold\b/)
     await row.click()
@@ -116,7 +116,7 @@ test.describe('Workspace management: every add goes through the workspace:add IP
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      const row = page.locator('.ws-tab', { hasText: 'Doomed dir session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Doomed dir session' })
       await expect(row).toBeVisible({ timeout: 20_000 })
       await expect(row).toHaveAttribute('title', /click to resume$/)
 

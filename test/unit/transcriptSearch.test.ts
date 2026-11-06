@@ -88,10 +88,13 @@ describe('searchTranscript', () => {
     execFileSync('mkfifo', [fifo])
     const searching = searchTranscript(fifo, 'needle')
     const writer = fs.createWriteStream(fifo)
-    writer.write(user('the needle comes first') + '\n')
+    const written = new Promise<void>((resolve) =>
+      writer.write(user('the needle comes first') + '\n', () => resolve())
+    )
     try {
       expect((await searching)?.match).toBe('needle')
     } finally {
+      await written
       writer.destroy()
     }
   })

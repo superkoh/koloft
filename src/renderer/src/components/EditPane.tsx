@@ -8,7 +8,7 @@ import {
   useState,
   type JSX
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import {
   AUTOSAVE_DELAY_MS,
   autosaveAllowed,
@@ -34,6 +34,8 @@ import {
   subscribeDirty
 } from '../editRegistry'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
+import '../editPane.css'
+import '../artifactPane.css'
 
 const CARET_READOUT_THROTTLE_MS = 100
 
@@ -99,6 +101,7 @@ export interface EditPaneProps {
   onSaved: () => void
   prose?: boolean
   autosave?: boolean
+  placeholder?: string
 }
 
 export function EditPane({
@@ -107,7 +110,8 @@ export function EditPane({
   focusNonce,
   onSaved,
   prose = false,
-  autosave = false
+  autosave = false,
+  placeholder
 }: EditPaneProps): JSX.Element {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const [, bump] = useReducer((n: number) => n + 1, 0)
@@ -361,7 +365,7 @@ export function EditPane({
             aria-label="Dismiss"
             onClick={() => clearConflict(ownerTab, tabId)}
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}
@@ -372,6 +376,7 @@ export function EditPane({
         className="ed-area"
         spellCheck={prose}
         aria-label="File contents"
+        placeholder={placeholder}
         readOnly={!!entry?.readOnly}
         defaultValue={text}
         onInput={(e) => {
@@ -414,7 +419,7 @@ export function EditPane({
               aria-label="Close"
               onClick={() => setShowConflict(false)}
             >
-              <LuX size={14} />
+              <IconClose size={14} />
             </button>
           </div>
           <div className="ed-conflict-body">

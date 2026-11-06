@@ -1,6 +1,7 @@
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
+import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
+import type { InboxSnapshot } from '@shared/inbox'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
@@ -8,16 +9,20 @@ import {
   type AdoptableTab,
   type ArtifactView,
   type AttentionEvent,
+  type SecretAskView,
+  type BaseChoice,
   type BrowserJsDialog,
   type CronState,
   type SessionWorkbenchState,
   type LoginProgress,
   type LeftoverProcess,
+  type MachineState,
+  type CreateTabOptions,
   type SessionInfo,
+  type SessionRow,
   type TabKind,
   type Settings,
   type ReleaseNotes,
-  type WhatsNew,
   type UpdateCheckResult,
   type WorkspaceRows
 } from '@shared/types'
@@ -25,10 +30,12 @@ import { basename } from '@shared/preview'
 import { resolveOnHost } from '@shared/remoteKey'
 import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
-import type { BaseChoice, FilesTab } from './components/filesModel'
+import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { selectionRoot } from './sessionRows'
+import { endedTabsLiveElsewhere, selectionRoot, welcomeTarget, workspaceOfRow } from './sessionRows'
+import { inRoot } from './browseModel'
+import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -45,7 +52,12 @@ import {
   TERMINAL_CAP_NOTICE,
   type WorkbenchTabSet
 } from './components/workbenchTabs'
-import { DEFAULT_PANEL_OPEN } from '@shared/workbenchState'
+import {
+  DEFAULT_PANEL_OPEN,
+  isWorkspaceWorkbenchKey,
+  workspaceWorkbenchKey
+} from '@shared/workbenchState'
+import type { SettingsPaneId } from '@shared/paletteFeatures'
 
 export interface Tab {
   id: string
@@ -55,9 +67,19 @@ export interface Tab {
   sessionId?: string
   alive: boolean
   resuming?: boolean
+  respawning?: true
   jobId?: string
   asleep?: true
   ghost?: string
+  wakeOverdue?: true
+  launch?: CreateTabOptions
+  ended?: TabEnded
+}
+
+export interface TabEnded {
+  note: string
+  row: SessionRow
+  wsPath: string
 }
 
 export interface OpenFile {
@@ -71,7 +93,7 @@ export interface OpenFile {
 }
 
 export type UpdatePhase =
-  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error' | 'whats-new'
+  'checking' | 'available' | 'current' | 'restart-required' | 'downloading' | 'error'
 
 export interface UpdateState {
   open: boolean
@@ -87,17 +109,24 @@ export interface UpdateState {
   error?: string
 }
 
+export type SettingsFocus = 'git-accounts' | 'git-token' | null
+
 interface AppState {
   tabs: Tab[]
   activeTabId: string | null
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
+  secretAsks: SecretAskView[]
+  inbox: InboxSnapshot
+  inboxOpen: boolean
+  revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
+  settingsPane: SettingsPaneId | null
+  settingsFocus: SettingsFocus
   welcomeActive: boolean
-  onboardingStep: number
-  bypassAccepted: boolean | null
+  welcomeReplay: boolean
   accounts: AccountView[] | null
   signIn: { tabId: string; backToSettings: boolean } | null
   accountLogin: LoginFlowState | null
@@ -107,6 +136,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -119,6 +149,7 @@ interface AppState {
   workbenchFull: boolean
   overlay: { url: string; unread: boolean; open: boolean } | null
   cdpAttached: Record<string, string[]>
+  followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
   githubBtn: boolean
@@ -130,6 +161,7 @@ interface AppState {
   resumeDialog: ResumeDialogState | null
   resumeLaunch: { id: string; title: string } | null
   cron: CronState
+  machine: MachineState | null
   closeConfirm: {
     tabId: string
     title: string
@@ -148,35 +180,48 @@ interface AppState {
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
-  conductorTabs: Record<string, string>
-  bindConductor: { scope?: string; editId?: string } | null
-  discordSetupStep: number | null
+  butlerTab: string | null
+  assistAsked: boolean
+  bindButler: boolean
+  renameButler: boolean
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
   setCron: (s: CronState) => void
+  setMachine: (s: MachineState | null) => void
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
+  landOnButler: () => void
+  openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
+  keepEndedTab: (id: string, note: string) => boolean
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
+  revealTab: (id: string) => void
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
+  setSecretAsks: (asks: SecretAskView[]) => void
+  setInbox: (inbox: InboxSnapshot) => void
+  setInboxOpen: (open: boolean) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
+  openSettingsPane: (pane: SettingsPaneId) => void
+  setSettingsFocus: (focus: SettingsFocus) => void
+  gitAccountsMachine: string | undefined
+  openGitAccounts: (focus?: 'git-token', machine?: string) => void
   setWelcomeActive: (on: boolean) => void
-  setOnboardingStep: (step: number) => void
-  setBypassAccepted: (accepted: boolean) => void
+  setWelcomeReplay: (on: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
+  openSignInTab: (tab: { tabId: string; cwd: string }, title: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -194,9 +239,10 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setConductorTab: (bindingId: string, tabId: string) => void
-  setBindConductor: (b: AppState['bindConductor']) => void
-  setDiscordSetupStep: (step: number | null) => void
+  setButlerTab: (tabId: string) => void
+  setAssistAsked: (asked: boolean) => void
+  setBindButler: (open: boolean) => void
+  setRenameButler: (open: boolean) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -224,8 +270,10 @@ interface AppState {
   setOverlayDialog: (d: BrowserJsDialog | null) => void
   setCdpAttached: (sessionId: string, targetIds: string[]) => void
   openCdpTab: (tabId: string, url: string) => Promise<string | null>
+  followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
+  openWorkspaceList: (path: string, what: 'issues' | 'pulls') => void
 
   focusPanelTerm: (ptyId: string) => void
 
@@ -237,7 +285,6 @@ interface AppState {
   setTermTabCwd: (ptyId: string, cwd: string) => void
 
   openUpdateCheck: () => void
-  openWhatsNew: (w: WhatsNew) => void
   startUpdateDownload: () => void
   setUpdate: (patch: Partial<UpdateState>) => void
 }
@@ -248,11 +295,14 @@ export function tabEvictedNotice(title: string): string {
 
 const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
+const watchedSessionEndedIn = new Set<string>()
 const restarting = new Set<string>()
 const restartedPtys = new Set<string>()
 const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
+const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
+const GITHUB_LIST_UNREACHABLE_NOTICE = 'Could not find this workspace’s GitHub page — try again.'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -280,6 +330,47 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+function rowOfTab(
+  s: Pick<AppState, 'workspaceRows' | 'butlerWorkspace'>,
+  tab: Tab
+): { row: SessionRow; wsPath: string } | undefined {
+  const cwd = tab.launch?.cwd ?? tab.cwd
+  const wsPath = everyWorkspaceRows(s)
+    .map((w) => w.workspace.path)
+    .filter((p) => inRoot(cwd, p))
+    .sort((a, b) => b.length - a.length)[0]
+  if (!wsPath || !isSessionKind(tab.kind)) return undefined
+  return {
+    wsPath,
+    row: {
+      id: tab.id,
+      title: tab.title,
+      worktree: tab.launch?.worktree ?? (cwd === wsPath ? 'main' : basename(cwd)),
+      cwd,
+      running: false,
+      invalidCwd: false,
+      mtime: Date.now(),
+      ...sourceOf(tab.kind, wsPath)
+    }
+  }
+}
+
+export function tabEverBound(tabId: string): boolean {
+  return lastSessionId.has(tabId)
+}
+
+function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
+  const leaving = s.tabs.find((t) => t.id === tabId)
+  return (
+    s.activeTabId === tabId &&
+    (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
+    !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
+    butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
+    !isButlerTab(s.sessions, s.butlerTab, tabId)
+  )
+}
+
 function samePersistedTabs(a: WorkbenchTabSet, b: WorkbenchTabSet): boolean {
   const x = persistTabs(a)
   const y = persistTabs(b)
@@ -322,16 +413,55 @@ function panelStateMoved(
   }
 }
 
-function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
+function workbenchStateDropped(
+  s: AppState,
+  ids: string[]
+): Pick<
+  AppState,
+  | 'openFiles'
+  | 'changesBase'
+  | 'workbench'
+  | 'workbenchOpen'
+  | 'workbenchFetched'
+  | 'workbenchWidths'
+  | 'workbenchLoad'
+  | 'filesReveal'
+  | 'followsAgentBrowser'
+> {
+  const without = <T>(m: Record<string, T>): Record<string, T> => {
+    const next = { ...m }
+    for (const id of ids) delete next[id]
+    return next
+  }
+  return {
+    openFiles: without(s.openFiles),
+    changesBase: without(s.changesBase),
+    workbench: without(s.workbench),
+    workbenchOpen: without(s.workbenchOpen),
+    workbenchFetched: without(s.workbenchFetched),
+    workbenchWidths: without(s.workbenchWidths),
+    workbenchLoad: without(s.workbenchLoad),
+    filesReveal: without(s.filesReveal),
+    followsAgentBrowser: without(s.followsAgentBrowser)
+  }
+}
+
+function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   const parked = workbenchParked.get(oldId)
   if (parked) {
     workbenchParked.delete(oldId)
     workbenchParked.set(newId, parked)
   }
   rekeyOwner(oldId, newId)
+  window.api.tabs.moved(oldId, newId)
   everBoundSession.delete(oldId)
   lastSessionId.delete(oldId)
-  lastSessionId.set(newId, sessionId)
+  watchedSessionEndedIn.delete(oldId)
+  if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
+}
+
+function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxOpen: false } {
+  return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
 }
 
 function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
@@ -339,17 +469,46 @@ function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
     tabs: s.tabs.map((x) =>
       x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
     ),
-    activeTabId: select || s.activeTabId === asleep.id ? t.id : s.activeTabId,
-    resumeLaunch: select ? null : s.resumeLaunch,
+    ...(select
+      ? shownTab(t.id)
+      : { activeTabId: s.activeTabId === asleep.id ? t.id : s.activeTabId }),
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+}
+
+// CC§9
+const A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS = 2000
+const wakeQuietTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function noteWakingOutput(tabId: string): void {
+  clearTimeout(wakeQuietTimers.get(tabId))
+  wakeQuietTimers.set(
+    tabId,
+    setTimeout(() => {
+      wakeQuietTimers.delete(tabId)
+      useStore.setState((s) =>
+        s.tabs.some((t) => t.id === tabId && t.ghost && !t.wakeOverdue)
+          ? { tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, wakeOverdue: true } : t)) }
+          : s
+      )
+    }, A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS)
+  )
 }
 
 function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
   return t.sessionId
     ? s.tabs.find((x) => x.asleep && x.sessionId === t.sessionId && x.id !== t.id)
     : undefined
+}
+
+function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
+  const before = new Map(prev.map((x) => [x.tabId, x]))
+  const next = pushed.map((x) => {
+    const old = before.get(x.tabId)
+    return old && JSON.stringify(old) === JSON.stringify(x) ? old : x
+  })
+  return next.length === prev.length && next.every((x, i) => x === prev[i]) ? prev : next
 }
 
 function tabIsWoken(s: Pick<AppState, 'sessions'>, tabId: string): boolean {
@@ -364,6 +523,14 @@ export function boundSessionId(
   return sess?.sessionId || s.tabs.find((t) => t.id === tabId)?.sessionId || undefined
 }
 
+export function workbenchOwnerLive(s: Pick<AppState, 'sessions' | 'tabs'>, tab: Tab): boolean {
+  if (!hasWorkbench(tab)) return false
+  if (tab.respawning) return true
+  const sess = s.sessions.find((x) => x.tabId === tab.id)
+  if (sess && !sess.alive) return false
+  return !!boundSessionId(s, tab.id)
+}
+
 export function tabForSession(
   s: Pick<AppState, 'sessions' | 'tabs'>,
   sessionId: string
@@ -372,9 +539,30 @@ export function tabForSession(
   return s.tabs.find((t) => boundSessionId(s, t.id) === sessionId)?.id
 }
 
-export function panelTabId(s: Pick<AppState, 'tabs' | 'activeTabId'>): string | undefined {
+export function welcomeWorkbenchKey(
+  s: Pick<AppState, 'workspaceRows' | 'lastWsPath' | 'resumeLaunch' | 'welcomeActive'>
+): string | undefined {
+  if (s.resumeLaunch || s.welcomeActive) return undefined
+  const ws = welcomeTarget(s.workspaceRows, s.lastWsPath)
+  return ws ? workspaceWorkbenchKey(ws.workspace.path) : undefined
+}
+
+export function panelTabId(
+  s: Pick<
+    AppState,
+    'tabs' | 'activeTabId' | 'workspaceRows' | 'lastWsPath' | 'resumeLaunch' | 'welcomeActive'
+  >
+): string | undefined {
+  if (!s.activeTabId) return welcomeWorkbenchKey(s)
   const tab = s.tabs.find((t) => t.id === s.activeTabId)
   return hasWorkbench(tab) ? tab?.id : undefined
+}
+
+export function workbenchStoreKey(
+  s: Pick<AppState, 'sessions' | 'tabs'>,
+  tabId: string
+): string | undefined {
+  return isWorkspaceWorkbenchKey(tabId) ? tabId : boundSessionId(s, tabId)
 }
 
 export function panelIsOpen(
@@ -413,7 +601,12 @@ function bindParkedWorkbench(): void {
   }
 }
 
-function workbenchAllowed(s: Pick<AppState, 'tabs'>, tabId: string | null): boolean {
+function workbenchAllowed(
+  s: Pick<AppState, 'tabs' | 'workspaceRows'>,
+  tabId: string | null | undefined
+): boolean {
+  if (isWorkspaceWorkbenchKey(tabId))
+    return s.workspaceRows.some((w) => workspaceWorkbenchKey(w.workspace.path) === tabId)
   return hasWorkbench(s.tabs.find((t) => t.id === tabId))
 }
 
@@ -421,7 +614,7 @@ function whenWorkbenchFetched(tabId: string, fn: () => void): void {
   const s = useStore.getState()
   if (!workbenchAllowed(s, tabId)) return
   if (s.workbenchFetched[tabId]) return fn()
-  if (!boundSessionId(s, tabId)) return parkWorkbench(tabId, fn)
+  if (!workbenchStoreKey(s, tabId)) return parkWorkbench(tabId, fn)
   void s
     .ensureWorkbench(tabId)
     .catch(() => useStore.getState().ensureWorkbench(tabId))
@@ -431,7 +624,7 @@ function whenWorkbenchFetched(tabId: string, fn: () => void): void {
 }
 
 function writeWorkbench(tabId: string, s: AppState): void {
-  const sid = boundSessionId(s, tabId)
+  const sid = workbenchStoreKey(s, tabId)
   if (!sid) return
   window.api.workbench.setState(sid, {
     open: s.workbenchOpen[tabId] ?? DEFAULT_PANEL_OPEN,
@@ -443,17 +636,36 @@ function persistWorkbench(tabId: string): void {
   whenWorkbenchFetched(tabId, () => writeWorkbench(tabId, useStore.getState()))
 }
 
+let activateOnceSpawned: string | null = null
+
+function landInWorkbench(tabId: string, wbTabId: string): void {
+  const s = useStore.getState()
+  if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
+  useStore.setState((st) => ({
+    workbenchLoad: {
+      ...st.workbenchLoad,
+      [tabId]: { tabId: wbTabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
+    }
+  }))
+}
+
 export const useStore = create<AppState>((set, get) => ({
   tabs: [],
   activeTabId: null,
   sessions: [],
   leftovers: {},
   attention: [],
+  secretAsks: [],
+  inbox: { cards: [], ready: [] },
+  inboxOpen: false,
+  revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
+  settingsPane: null,
+  settingsFocus: null,
+  gitAccountsMachine: undefined,
   welcomeActive: false,
-  onboardingStep: 1,
-  bypassAccepted: null,
+  welcomeReplay: false,
   accounts: null,
   signIn: null,
   accountLogin: null,
@@ -463,6 +675,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
+  butlerWorkspace: null,
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -476,6 +689,7 @@ export const useStore = create<AppState>((set, get) => ({
   overlay: null,
   overlayDialog: null,
   cdpAttached: {},
+  followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
   githubBtn: false,
   lastWsPath: null,
@@ -487,23 +701,36 @@ export const useStore = create<AppState>((set, get) => ({
   resumeLaunch: null,
   closeConfirm: null,
   cron: { jobs: [], live: [], folders: {}, notes: {} },
+  machine: null,
   unsavedPrompt: null,
-  conductorTabs: {},
-  bindConductor: null,
-  discordSetupStep: null,
+  butlerTab: null,
+  assistAsked: false,
+  bindButler: false,
+  renameButler: false,
   orphanConfirm: null,
 
   addTab: (t) => {
+    activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
-    set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
+    set((s) => ({ tabs: [...s.tabs, t], ...shownTab(t.id) }))
   },
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, false)
-    set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] }))
+    const awaited = activateOnceSpawned === t.id
+    if (awaited) activateOnceSpawned = null
+    set((s) =>
+      s.tabs.some((x) => x.id === t.id)
+        ? s
+        : {
+            tabs: [...s.tabs, t],
+            ...(awaited && shownTab(t.id))
+          }
+    )
   },
   setCron: (cron) => set({ cron }),
+  setMachine: (machine) => set({ machine }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
     if (!fresh.length) {
@@ -540,64 +767,84 @@ export const useStore = create<AppState>((set, get) => ({
     }))
   },
   removeTab: (id) => {
+    const toButler = watchedSessionLeavesForButler(get(), id)
     killTerminalsOf(id)
     endEditsOf(id)
     set((s) => {
       everBoundSession.delete(id)
       lastSessionId.delete(id)
+      watchedSessionEndedIn.delete(id)
       workbenchParked.delete(id)
       const tabs = s.tabs.filter((t) => t.id !== id)
-      const openFiles = { ...s.openFiles }
-      delete openFiles[id]
       let activeTabId = s.activeTabId
       if (activeTabId === id) activeTabId = tabs.length ? tabs[tabs.length - 1].id : null
-      const workbench = { ...s.workbench }
-      const workbenchOpen = { ...s.workbenchOpen }
-      const workbenchFetched = { ...s.workbenchFetched }
-      const workbenchWidths = { ...s.workbenchWidths }
-      const workbenchLoad = { ...s.workbenchLoad }
-      const filesReveal = { ...s.filesReveal }
-      delete workbench[id]
-      delete workbenchOpen[id]
-      delete workbenchFetched[id]
-      delete workbenchWidths[id]
-      delete workbenchLoad[id]
-      delete filesReveal[id]
       return {
         ...(s.signIn?.tabId === id && {
           signIn: null,
           settingsOpen: s.settingsOpen || s.signIn.backToSettings
         }),
         tabs,
-        openFiles,
         activeTabId,
-        workbench,
-        workbenchOpen,
-        workbenchFetched,
-        workbenchWidths,
-        workbenchLoad,
-        filesReveal
+        ...workbenchStateDropped(s, [id])
       }
     })
+    if (toButler && !get().inboxOpen) get().landOnButler()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
   },
+  landOnButler: () => {
+    const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
+    if (live) return get().activateTab(live)
+    const landedOn = get().activeTabId
+    void window.api.conductors.open().then((r) => {
+      if (!r.ok) return get().showToast(r.error)
+      get().setButlerTab(r.tabId)
+      if (get().activeTabId === landedOn) get().activateTab(r.tabId)
+    })
+  },
+  openButler: async (fresh = false) => {
+    const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
+    if (!r.ok) return r.error
+    const st = get()
+    st.setButlerTab(r.tabId)
+    st.activateTab(r.tabId)
+    return null
+  },
   setActive: (id) => set({ activeTabId: id }),
   setTabTitle: (id, title) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.title === title) return {}
+      if (!cur || cur.title === title) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) }
     }),
   setTabAlive: (id, alive) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.alive === alive || cur.asleep) return {}
+      if (!cur || cur.alive === alive || cur.asleep || cur.ended) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
+  keepEndedTab: (id, note) => {
+    const s = get()
+    const tab = s.tabs.find((t) => t.id === id)
+    const sessionId = boundSessionId(s, id) ?? lastSessionId.get(id)
+    const at =
+      everyWorkspaceRows(s)
+        .flatMap((w) => w.rows.map((row) => ({ row, wsPath: w.workspace.path })))
+        .find(({ row }) => row.id === id || row.id === sessionId) ??
+      (tab && rowOfTab(s, tab))
+    if (!at) return false
+    set({
+      tabs: s.tabs.map((t) =>
+        t.id === id
+          ? { ...t, alive: false, resuming: undefined, sessionId, ended: { note, ...at } }
+          : t
+      )
+    })
+    return true
+  },
   setTabAsleep: (id) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -613,9 +860,11 @@ export const useStore = create<AppState>((set, get) => ({
       )
     })),
   activateTab: (id) => {
-    if (!get().tabs.some((x) => x.id === id)) return
-    set({ activeTabId: id, resumeLaunch: null })
+    activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
+    if (activateOnceSpawned) return
+    set(shownTab(id))
   },
+  revealTab: (id) => set({ revealRow: { tabId: id } }),
 
   restartActiveSession: () => {
     const { tabs, activeTabId, sessions } = get()
@@ -626,79 +875,138 @@ export const useStore = create<AppState>((set, get) => ({
     if (restarting.has(tab.id)) return
     const oldId = tab.id
     const liveClaude = !!sess?.alive && !!sess.sessionId
+    const sayNoConversation = (live: boolean): void => {
+      if (!get().tabs.some((x) => x.id === oldId)) return
+      get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+    }
+    const swapTo = (res: { id: string; cwd: string }, patch: Partial<Tab>): void => {
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId
+            ? {
+                ...x,
+                ...patch,
+                id: res.id,
+                cwd: res.cwd,
+                alive: true,
+                respawning: undefined,
+                ended: undefined
+              }
+            : x
+        ),
+        activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
+        ...panelStateMoved(s, oldId, res.id)
+      }))
+      tabStateMoved(oldId, res.id, patch.sessionId)
+      restarting.add(res.id)
+      setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
+    }
+    const relaunch = (launch: CreateTabOptions): void => {
+      restarting.add(oldId)
+      window.api.terminal.kill(oldId, true)
+      void window.api.terminal
+        .create(launch)
+        .then((res) => {
+          if (!res.ok) return get().showToast(RELAUNCH_REFUSED_NOTICE)
+          if (!get().tabs.some((x) => x.id === oldId)) return window.api.terminal.kill(res.id)
+          swapTo(res, { sessionId: undefined })
+        })
+        .catch((e) => get().showToast(ipcErrorText(e)))
+        .finally(() => restarting.delete(oldId))
+    }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
       const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
       // CC§2
       let hasTranscript = false
+      let noAccount: string | null = null
       try {
-        hasTranscript = await window.api.sessions.transcriptExists(resumeId)
+        ;[hasTranscript, noAccount] = await Promise.all([
+          window.api.sessions.transcriptExists(resumeId),
+          window.api.sessions.noAccountToResume(resumeId)
+        ])
       } catch {
         restarting.delete(oldId)
         return
       }
       if (!hasTranscript) {
         restarting.delete(oldId)
-        get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+        if (tab.ended && tab.launch) return relaunch(tab.launch)
+        sayNoConversation(live)
         return
       }
       if (!get().tabs.some((x) => x.id === oldId)) {
         restarting.delete(oldId)
         return
       }
-      restartedPtys.add(oldId)
-      get().setTabTitle(oldId, sess?.title ?? tab.title)
+      if (noAccount) {
+        restarting.delete(oldId)
+        get().showToast(noAccount)
+        return
+      }
+      if (!tab.ended) restartedPtys.add(oldId)
+      const title = sess?.title ?? tab.title
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId ? { ...x, title, ...(live ? { respawning: true as const } : {}) } : x
+        )
+      }))
       window.api.terminal.kill(oldId, true)
+      const failed = (why?: string): void => {
+        if (why && get().tabs.some((x) => x.id === oldId)) get().showToast(why)
+        set((s) => ({
+          tabs: s.tabs.map((x) =>
+            x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+          )
+        }))
+      }
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {
-          if (!res.ok) throw new Error(res.code)
+          if (!res.ok) {
+            const main =
+              res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
+            if (!main) return failed(resumeFailureMessage(res))
+            get().setResumeDialog({
+              kind: 'escape',
+              target: { backendId: backend, id: resumeId, title },
+              worktreeName: basename(cwd),
+              cwd: main
+            })
+            return failed()
+          }
           if (!get().tabs.some((x) => x.id === oldId)) {
             window.api.terminal.kill(res.id)
             return
           }
-          set((s) => ({
-            tabs: s.tabs.map((x) =>
-              x.id === oldId
-                ? {
-                    ...x,
-                    id: res.id,
-                    kind: backend,
-                    cwd: res.cwd,
-                    sessionId: resumeId,
-                    alive: true
-                  }
-                : x
-            ),
-            activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
-            ...panelStateMoved(s, oldId, res.id)
-          }))
-          tabStateMoved(oldId, res.id, resumeId)
-          restarting.add(res.id)
-          setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
+          swapTo(res, { kind: backend, sessionId: resumeId })
         })
-        .catch(() => {
-          get().setTabAlive(oldId, false)
-        })
+        .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
     if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
+    if (tab.ended && tab.launch) return relaunch(tab.launch)
     restarting.add(oldId)
     void window.api.sessions
       .list()
       .then((live) => {
         restarting.delete(oldId)
         const bound = live.find((s) => s.tabId === oldId && s.sessionId)
-        if (!bound) return
-        void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        if (bound) return void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        const now = get().tabs.find((x) => x.id === oldId)
+        if (now && isSessionKind(now.kind)) sayNoConversation(now.alive)
       })
       .catch(() => restarting.delete(oldId))
   },
 
-  setSessions: (sessions) => {
+  setSessions: (pushed) => {
     set((s) => {
+      const sessions = keepUnchangedSessions(s.sessions, pushed)
       const liveTabs = new Set(sessions.map((x) => x.tabId))
-      for (const id of liveTabs) everBoundSession.add(id)
+      for (const id of liveTabs) {
+        everBoundSession.add(id)
+        watchedSessionEndedIn.delete(id)
+      }
       for (const x of sessions) {
         if (!x.sessionId) continue
         lastSessionId.set(x.tabId, x.sessionId)
@@ -713,24 +1021,28 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           return {
             ...t,
-            ...(woken ? { ghost: undefined } : {}),
+            ...(woken ? { ghost: undefined, wakeOverdue: undefined } : {}),
             ...(bound ? { resuming: undefined } : {})
           }
         }
         if (
           isSessionKind(t.kind) &&
           !t.asleep &&
+          !t.ended &&
           !liveTabs.has(t.id) &&
           everBoundSession.has(t.id) &&
           !restarting.has(t.id)
         ) {
           changed = true
-          if (t.id === s.activeTabId) activeReverted = true
+          if (t.id === s.activeTabId) {
+            activeReverted = true
+            if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+          }
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
         }
         return t
       })
-      if (!changed) return { sessions }
+      if (!changed) return sessions === s.sessions ? s : { sessions }
       if (!activeReverted) return { sessions, tabs }
       const openFiles = { ...s.openFiles }
       if (s.activeTabId) delete openFiles[s.activeTabId]
@@ -740,24 +1052,38 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
+  setSecretAsks: (secretAsks) => set({ secretAsks }),
+  setInbox: (inbox) => set({ inbox }),
+  setInboxOpen: (inboxOpen) => set({ inboxOpen }),
   setSettings: (settings) => set({ settings }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
+  openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),
+  setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
+  openGitAccounts: (focus, machine) =>
+    set({
+      settingsFocus: focus ?? 'git-accounts',
+      gitAccountsMachine: machine,
+      settingsOpen: true
+    }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
-  setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
-  setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
+  setWelcomeReplay: (welcomeReplay) => set({ welcomeReplay }),
   setAccounts: (accounts) => set({ accounts }),
   showSignInTab: (tabId) =>
     set((s) => ({
       signIn: { tabId, backToSettings: s.settingsOpen },
       settingsOpen: false
     })),
+  openSignInTab: ({ tabId, cwd }, title) => {
+    get().showSignInTab(tabId)
+    get().addTab({ id: tabId, kind: 'shell', title, cwd, alive: true })
+  },
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),
   clearLogin: () => set({ accountLogin: null }),
   setOpenFile: (f, tabId) => {
     const s = get()
-    const id = tabId ?? s.activeTabId
+    const id = tabId ?? s.activeTabId ?? welcomeWorkbenchKey(s)
     if (!id) return
     if (f) revealFiles(id, 'browse')
     set((st) => ({ openFiles: { ...st.openFiles, [id]: f } }))
@@ -772,11 +1098,28 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ workbenchWidth: w, workbenchWidths: { ...s.workbenchWidths, [tabId]: w } })),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setNotesHeight: (notesHeight) => set({ notesHeight }),
-  setWorkspaceRows: (workspaceRows) =>
-    set((s) => ({
-      workspaceRows,
-      selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs) ? s.selectedWs : null
-    })),
+  setWorkspaceRows: (all) => {
+    const kept = new Set(all.map((w) => workspaceWorkbenchKey(w.workspace.path)))
+    const s = get()
+    const gone = [
+      ...new Set([...Object.keys(s.workbench), ...Object.keys(s.workbenchOpen)])
+    ].filter((k) => isWorkspaceWorkbenchKey(k) && !kept.has(k))
+    for (const k of gone) {
+      endEditsOf(k)
+      workbenchParked.delete(k)
+    }
+    set((s) => {
+      const workspaceRows = all.filter((w) => !w.workspace.butler)
+      return {
+        ...(gone.length > 0 && workbenchStateDropped(s, gone)),
+        workspaceRows,
+        butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
+        selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
+          ? s.selectedWs
+          : null
+      }
+    })
+  },
   showToast: (msg, reveal) => {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
@@ -794,10 +1137,10 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setConductorTab: (bindingId, tabId) =>
-    set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
-  setBindConductor: (bindConductor) => set({ bindConductor }),
-  setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
+  setButlerTab: (butlerTab) => set({ butlerTab }),
+  setAssistAsked: (assistAsked) => set({ assistAsked }),
+  setBindButler: (bindButler) => set({ bindButler }),
+  setRenameButler: (renameButler) => set({ renameButler }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
@@ -805,11 +1148,12 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().workbenchFetched[tabId]) return Promise.resolve()
     const inflight = workbenchFetches.get(tabId)
     if (inflight) return inflight
-    const sid = boundSessionId(get(), tabId)
+    const sid = workbenchStoreKey(get(), tabId)
     if (!sid) return Promise.resolve()
     const p = window.api.workbench
       .get(sid)
       .then((st) => {
+        if (!workbenchAllowed(get(), tabId)) return
         if (st) get().setWorkbenchState(tabId, st)
         else set((s) => ({ workbenchFetched: { ...s.workbenchFetched, [tabId]: true } }))
         runParked(tabId)
@@ -862,16 +1206,10 @@ export const useStore = create<AppState>((set, get) => ({
           }
         }))
       }
-      if (!s.workbenchOpen[tabId]) get().setWorkbenchOpen(tabId, true)
-      set((st) => ({
-        workbenchLoad: {
-          ...st.workbenchLoad,
-          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
-        }
-      }))
+      landInWorkbench(tabId, r.tabId)
     }),
   setWorkbenchFull: (workbenchFull) => {
-    if (workbenchFull && !workbenchAllowed(get(), get().activeTabId)) return
+    if (workbenchFull && !workbenchAllowed(get(), panelTabId(get()))) return
     set({ workbenchFull })
   },
   landOverlay: (url, presentation) => {
@@ -900,11 +1238,32 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
     persistWorkbench(tabId)
     if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
+    if (s.followsAgentBrowser[tabId]) landInWorkbench(tabId, r.tabId)
     return r.tabId
+  },
+  followAgentBrowser: (tabId) => {
+    set((s) => ({ followsAgentBrowser: { ...s.followsAgentBrowser, [tabId]: true } }))
+    get().setWorkbenchOpen(tabId, true)
   },
   setLastWsPath: (lastWsPath) => set({ lastWsPath }),
   selectWorkspace: (path) =>
-    set({ selectedWs: path, activeTabId: null, lastWsPath: path, resumeLaunch: null }),
+    set({
+      selectedWs: path,
+      activeTabId: null,
+      lastWsPath: path,
+      resumeLaunch: null,
+      workbenchFull: false
+    }),
+  openWorkspaceList: (path, what) => {
+    get().selectWorkspace(path)
+    void window.api.github
+      .target(path, what)
+      .then((url) => {
+        if (!url) return get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE)
+        get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
+      })
+      .catch(() => get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE))
+  },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25
@@ -1000,7 +1359,7 @@ export const useStore = create<AppState>((set, get) => ({
       .check()
       .then((r) =>
         set((s) => {
-          if (!s.update.open) return {}
+          if (!s.update.open) return s
           if (r.status === 'available') {
             return {
               update: {
@@ -1041,16 +1400,6 @@ export const useStore = create<AppState>((set, get) => ({
         )
       )
   },
-  openWhatsNew: (w) =>
-    set({
-      update: {
-        open: true,
-        phase: 'whats-new',
-        current: w.current,
-        releases: w.releases,
-        omittedReleases: w.omittedReleases
-      }
-    }),
   startUpdateDownload: () => {
     set((s) => ({ update: { ...s.update, phase: 'downloading', percent: 0 } }))
     void window.api.update
@@ -1072,21 +1421,30 @@ export const useStore = create<AppState>((set, get) => ({
         set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrorText(e) } }))
       )
   },
-  setUpdate: (patch) => {
-    const prev = get().update
-    const update = { ...prev, ...patch }
-    if (prev.open && !update.open && update.phase === 'whats-new' && update.current) {
-      void window.api.settings.set({ lastSeenVersion: update.current })
-    }
-    set({ update })
-  }
+  setUpdate: (patch) => set((s) => ({ update: { ...s.update, ...patch } }))
 }))
 
 export const useActiveOpenFile = (): OpenFile | null =>
-  useStore((s) => (s.activeTabId ? (s.openFiles[s.activeTabId] ?? null) : null))
+  useStore((s) => {
+    const id = s.activeTabId ?? welcomeWorkbenchKey(s)
+    return id ? (s.openFiles[id] ?? null) : null
+  })
 
 export function consumeRestartExit(ptyId: string): boolean {
   return restartedPtys.delete(ptyId)
+}
+
+export function launchToStartAgain(launch: CreateTabOptions, landedIn: string): CreateTabOptions {
+  const madeAWorktree =
+    (launch.worktree !== undefined || launch.worktreeResourceId !== undefined) &&
+    landedIn !== launch.cwd
+  return madeAWorktree
+    ? { ...launch, cwd: landedIn, worktree: undefined, worktreeResourceId: undefined }
+    : launch
+}
+
+export function keptTabsToClose(s: Pick<AppState, 'tabs' | 'sessions'>): Tab[] {
+  return endedTabsLiveElsewhere(s.tabs, s.sessions).filter((t) => !restarting.has(t.id))
 }
 
 export function conversationTabFor(ptyId: string): string {
@@ -1128,6 +1486,10 @@ export function openInterceptedFile(
     view,
     openedAt: source === 'agent' ? Date.now() : undefined
   }
+  if (isWorkspaceWorkbenchKey(tabId)) {
+    setOpenFile(file, tabId)
+    return
+  }
   if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) {
     setOpenFile({ ...file, unseen: true }, tabId)
     return
@@ -1146,10 +1508,9 @@ export function previewLinkTarget(href: string, fromSrc: string): string {
 
 export function openWebPage(src: string, sourceTabId?: string, sourcePath?: string): void {
   const st = useStore.getState()
-  const selected = st.tabs.find((t) => t.id === st.activeTabId)
   const decision = routeFor(src, 'user')
   if (decision.dest !== 'browser') return
-  const tabId = hasWorkbench(selected) ? selected?.id : undefined
+  const tabId = panelTabId(st)
   if (!tabId) {
     st.landOverlay(decision.target, 'now')
     return

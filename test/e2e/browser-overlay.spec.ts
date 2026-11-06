@@ -278,6 +278,40 @@ test.describe("App-level browser overlay: a page no session's Browser can show l
     }
   })
 
+  test('BB-19: an overlay page’s alert and confirm take the keys at once: Enter answers the focused button, and Esc cancels without closing the overlay', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const server = await startEchoServer()
+    try {
+      await overlayShowing(page, env, server.url('/dialogs'))
+      const guest = await guestByUrl(app, '/dialogs')
+      const modal = page.locator(OVERLAY.modal)
+      const result = guest.locator('#result')
+
+      void guest.locator('#do-confirm').click()
+      await expect(modal.getByRole('button', { name: 'Cancel' })).toBeFocused({ timeout: 30_000 })
+      await page.keyboard.press('Enter')
+      await expect(result).toHaveText('confirm:false', { timeout: 20_000 })
+
+      void guest.locator('#do-alert').click()
+      await expect(modal.getByRole('button', { name: 'OK' })).toBeFocused({ timeout: 30_000 })
+      await page.keyboard.press('Enter')
+      await expect(result).toHaveText('alert-returned', { timeout: 20_000 })
+
+      void guest.locator('#do-confirm').click()
+      await expect(modal.getByRole('button', { name: 'Cancel' })).toBeFocused({ timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect(result).toHaveText('confirm:false', { timeout: 20_000 })
+      await expect(page.locator(BROWSER.modal)).toHaveCount(0)
+      await expect(page.locator(OVERLAY.root)).toBeVisible()
+    } finally {
+      await server.close()
+    }
+  })
+
   test('BB-16: page permissions in the overlay are refused, with no prompt bar', async ({
     app,
     page,

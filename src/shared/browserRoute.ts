@@ -1,4 +1,5 @@
 import { previewKindForPath, isWebPagePath } from './preview'
+import { formatRemoteKey, parseRemoteKey, resolveOnHost, type RemoteKey } from './remoteKey'
 
 export type RouteSource = 'agent' | 'user' | 'address'
 
@@ -25,8 +26,83 @@ export function schemeOf(target: string): string {
   return m ? m[0].toLowerCase() : ''
 }
 
+function encodedPath(p: string): string {
+  return p.split('/').map(encodeURIComponent).join('/')
+}
+
 function fileUrlFor(p: string): string {
-  return `file://${p.split('/').map(encodeURIComponent).join('/')}`
+  return `file://${encodedPath(p)}`
+}
+
+export const MACHINE_PAGE_SCHEME = 'koloft-machine'
+const NOT_AN_IP_ADDRESS_PREFIX = 'm'
+const MACHINE_HOST = new RegExp(`^${NOT_AN_IP_ADDRESS_PREFIX}((?:[0-9a-f]{2})+)$`)
+
+function hexOf(text: string): string {
+  return [...new TextEncoder().encode(text)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function textOfHex(hex: string): string {
+  return new TextDecoder().decode(Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16)))
+}
+
+function machineUrl(scheme: string, host: string, p: string): string {
+  return `${scheme}://${NOT_AN_IP_ADDRESS_PREFIX}${hexOf(host)}${encodedPath(p)}`
+}
+
+function decodedPathOf(u: URL): string | null {
+  try {
+    return decodeURIComponent(u.pathname)
+  } catch {
+    return null
+  }
+}
+
+function machineFileOf(u: URL, hex: string): RemoteKey | null {
+  const p = decodedPathOf(u)
+  return p === null ? null : parseRemoteKey(formatRemoteKey(textOfHex(hex), p))
+}
+
+export function machinePageUrl(host: string, p: string): string {
+  return machineUrl(MACHINE_PAGE_SCHEME, host, p)
+}
+
+export function machinePageOf(url: string): RemoteKey | null {
+  const u = urlOrNull(url)
+  const hex = MACHINE_HOST.exec(u?.hostname ?? '')?.[1]
+  if (u?.protocol !== `${MACHINE_PAGE_SCHEME}:` || !hex) return null
+  return machineFileOf(u, hex)
+}
+
+export const PREVIEW_FILE_SCHEME = 'koloft-file'
+const THIS_MAC = 'localhost'
+
+export function previewFileUrl(p: string): string {
+  const remote = parseRemoteKey(p)
+  return remote
+    ? machineUrl(PREVIEW_FILE_SCHEME, remote.host, remote.path)
+    : `${PREVIEW_FILE_SCHEME}://${THIS_MAC}${encodedPath(p)}`
+}
+
+export function previewFileOf(url: string): string | null {
+  const u = urlOrNull(url)
+  if (u?.protocol !== `${PREVIEW_FILE_SCHEME}:`) return null
+  const hex = MACHINE_HOST.exec(u.hostname)?.[1]
+  const machine = hex ? machineFileOf(u, hex) : null
+  if (machine) return formatRemoteKey(machine.host, machine.path)
+  return u.hostname === THIS_MAC ? decodedPathOf(u) : null
+}
+
+export function pagePathOf(url: string): string | null {
+  const machine = machinePageOf(url)
+  return machine ? formatRemoteKey(machine.host, machine.path) : fileUrlPath(url)
+}
+
+function machineTarget(key: string): RouteDecision {
+  const remote = parseRemoteKey(key)
+  return remote && isWebPagePath(remote.path)
+    ? { dest: 'browser', target: machinePageUrl(remote.host, remote.path) }
+    : drop('blocked-scheme')
 }
 
 function localTarget(p: string): RouteDecision {
@@ -36,21 +112,34 @@ function localTarget(p: string): RouteDecision {
 }
 
 function isHostPort(raw: string): boolean {
-  return !/\s/.test(raw) && HOST_LIKE.test(raw.split('/')[0])
+  const host = raw.split('/')[0]
+  return !/\s/.test(raw) && HOST_LIKE.test(host) && !isWebPagePath(host)
 }
 
 function addressEntry(raw: string): RouteDecision {
+  if (raw.startsWith('/')) return localTarget(raw)
   if (isHostPort(raw)) return { dest: 'browser', target: `http://${raw}` }
   return { dest: 'browser', target: SEARCH_URL + encodeURIComponent(raw) }
 }
 
-export function fileUrlPath(url: string): string | null {
+function fileUrlPath(url: string): string | null {
   try {
     const u = new URL(url)
     return u.protocol === 'file:' ? decodeURIComponent(u.pathname) : null
   } catch {
     return null
   }
+}
+
+export function folderFileOf(
+  entry: string,
+  root: string | null
+): { path: string; suffix: string } | null {
+  if (!root || schemeOf(entry) || /^~?\//.test(entry) || /\s/.test(entry)) return null
+  const path = resolveOnHost(`${root}/`, entry)
+  if (!path.startsWith(`${root}/`)) return null
+  const at = entry.search(/[?#]/)
+  return { path, suffix: at < 0 ? '' : entry.slice(at) }
 }
 
 export function routeFor(target: string, source: RouteSource): RouteDecision {
@@ -61,7 +150,10 @@ export function routeFor(target: string, source: RouteSource): RouteDecision {
       return source === 'address' ? addressEntry(raw) : localTarget(raw)
     case 'http:':
     case 'https:':
+    case `${MACHINE_PAGE_SCHEME}:`:
       return { dest: 'browser', target: raw }
+    case 'ssh:':
+      return machineTarget(raw)
     case 'file:': {
       if (source === 'address') return { dest: 'browser', target: raw }
       const p = fileUrlPath(raw)
@@ -88,6 +180,67 @@ export function opensAsWebTab(path: string): boolean {
 export function canOpenExternally(target: string): boolean {
   const scheme = schemeOf(target.trim())
   return scheme === 'http:' || scheme === 'https:' || scheme === 'mailto:' || scheme === 'tel:'
+}
+
+const DISCORD_DESKTOP_APP_HOST = '127.0.0.1'
+const DISCORD_DESKTOP_APP_FIRST_PORT = 6463
+const DISCORD_DESKTOP_APP_LAST_PORT = 6472
+export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+export const LOOPBACK_NAME = /^(localhost|.+\.localhost)\.?$/i
+
+export function urlOrNull(raw: string): URL | null {
+  try {
+    return new URL(raw)
+  } catch {
+    return null
+  }
+}
+
+const SECURE_SCHEMES = new Set(['https:', 'wss:'])
+const FORWARDABLE_SCHEMES = new Set(['http:', 'ws:', ...SECURE_SCHEMES])
+
+export function loopbackHttp(text: string): string | undefined {
+  const url = urlOrNull(text.trim())
+  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
+}
+
+export function loopbackPortOf(url: string): number | null {
+  const u = urlOrNull(url)
+  if (!u || !FORWARDABLE_SCHEMES.has(u.protocol) || !LOOPBACK_HOSTS.has(u.hostname)) return null
+  return Number(u.port) || (SECURE_SCHEMES.has(u.protocol) ? 443 : 80)
+}
+
+const PAGE_LOADS = new Set(['mainFrame', 'subFrame'])
+
+export function aPageOnTheMachineAsks(
+  resourceType: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (PAGE_LOADS.has(resourceType) || initiatorOrigin === undefined) return true
+  return loopbackPortOf(initiatorOrigin) !== null
+}
+
+export function onMacPort(url: string, macPort: number): string {
+  const u = new URL(url)
+  u.port = String(macPort)
+  return u.toString()
+}
+
+// PLATFORM§39
+export function webPageReachesDiscordDesktopApp(
+  target: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (!initiatorOrigin) return false
+  const from = urlOrNull(initiatorOrigin)
+  if (from && LOOPBACK_HOSTS.has(from.hostname)) return false
+  const to = urlOrNull(target)
+  const port = Number(to?.port)
+  return (
+    to?.hostname === DISCORD_DESKTOP_APP_HOST &&
+    port >= DISCORD_DESKTOP_APP_FIRST_PORT &&
+    port <= DISCORD_DESKTOP_APP_LAST_PORT
+  )
 }
 
 export function dedupKey(target: string): string {

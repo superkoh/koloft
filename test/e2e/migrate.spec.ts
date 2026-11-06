@@ -50,8 +50,8 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
 
       await expect(page.locator('.ws-head .ws-name')).toHaveText(['repo'], { timeout: 20_000 })
 
-      const mainRow = page.locator('.ws-tab', { hasText: 'Migrated main session' })
-      const wtRow = page.locator('.ws-tab', { hasText: 'Migrated worktree session' })
+      const mainRow = page.locator('.ws .ws-tab', { hasText: 'Migrated main session' })
+      const wtRow = page.locator('.ws .ws-tab', { hasText: 'Migrated worktree session' })
       await expect(mainRow).toBeVisible({ timeout: 20_000 })
       await expect(wtRow).toBeVisible()
       await expect(mainRow).toHaveClass(/\bcold\b/)
@@ -59,8 +59,8 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
       await expect(mainRow.locator('.ws-tab-sub')).toHaveText('main')
       await expect(wtRow.locator('.ws-tab-sub')).toHaveText('wtm')
 
-      await expect(page.locator('.ws-tab')).toHaveCount(2)
-      await expect(page.locator('.ws-tab.active')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(2)
+      await expect(page.locator('.ws .ws-tab.active')).toHaveCount(0)
       await expect(page.locator('.center')).toContainText('No running session')
 
       const layout = layoutOnDisk(env)
@@ -99,7 +99,7 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
       await page.waitForLoadState('domcontentloaded')
 
       await expect(page.locator('.ws-head .ws-name').first()).toBeVisible({ timeout: 20_000 })
-      await expect(page.locator('.ws-tab', { hasText: 'External session' })).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'External session' })).toHaveCount(0)
 
       const after = layoutOnDisk(env)
       expect(after.members).not.toContain(histId)

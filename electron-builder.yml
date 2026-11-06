@@ -14,6 +14,8 @@ directories:
 # what ballooned the dmg from ~120 MB (0.5.0) to ~385 MB (0.5.1+).
 files:
   - out/**
+  - '!out/THIRD-PARTY-NOTICES.txt'
+  - '!out/*/.vite/**'
 
 # Chromium UI locales shipped inside Electron Framework — 220 .lproj folders, ~48 MB.
 # Koloft's own UI is English; these strings only surface in Chromium-internal chrome
@@ -22,6 +24,21 @@ files:
 electronLanguages:
   - en
   - zh_CN
+
+# Downloads the pinned gh (GitHub CLI), git and Git Credential Manager into vendor/,
+# checksum-checked, so a new Mac has them without installing anything
+# (scripts/vendor-release.json pins them).
+beforePack: scripts/fetch-vendor.cjs
+
+extraResources:
+  - from: vendor/gh
+    to: gh
+  - from: vendor/git
+    to: git
+  - from: vendor/gcm
+    to: gcm
+  - from: out/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
 
 # Runs after the app is assembled and before it is signed, so the signature covers the
 # stripped native binaries.
@@ -32,6 +49,12 @@ asarUnpack:
   # executed by an external bash wrapper (src/main/statusline.ts) via
   # ELECTRON_RUN_AS_NODE — must exist as real files, not asar entries
   - '**/node_modules/ccstatusline/**'
+  # run the same way by the playwright-cli wrapper (src/main/playwrightCli.ts); the
+  # packager hoists its own playwright and playwright-core to the top of node_modules,
+  # and the CLI's require of them fails unless they sit unpacked beside it
+  - '**/node_modules/@playwright/cli/**'
+  - '**/node_modules/playwright/**'
+  - '**/node_modules/playwright-core/**'
 
 mac:
   target:

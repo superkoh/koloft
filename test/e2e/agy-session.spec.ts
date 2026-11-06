@@ -1,0 +1,1244 @@
+import fs from 'fs'
+import path from 'path'
+import { execFileSync, spawn, type ChildProcess } from 'child_process'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  launchApp,
+  pendingAttention,
+  pretendWindowFocused,
+  quitAndClose
+} from './helpers/app'
+import {
+  E2E_AGY_ACCOUNT,
+  UNPACKAGED_BUILD_AGY_SVC,
+  agyCalls,
+  agySessionCalls as sessionCalls,
+  agyTranscriptOf as transcriptOf,
+  installAgy,
+  ownersGemini,
+  seededAccount,
+  seedSettings,
+  trustInAgy,
+  type AgyCall,
+  type E2EEnv
+} from './helpers/env'
+import {
+  agentRow,
+  agyConversationOnceFirstTurnEnded,
+  centerTerm,
+  chooseBackend,
+  dialogPrimary,
+  gitCommitAll,
+  gitInit,
+  newSessionInWith,
+  oneStillRunning,
+  openMenu,
+  openWorktreeSession,
+  processAlive,
+  readAllCalls,
+  readCalls,
+  restoreOffered,
+  runIn,
+  seedWorktreeInterruptedBeforeAnySessionBound,
+  sendShortcut,
+  sendTwoLinesJoinedByShiftEnter,
+  startSessionIn,
+  staysOnTheFolderPageNotTheButler,
+  switchToRow,
+  terminalText,
+  termIds,
+  TWO_LINE_PROMPT,
+  waitBooted,
+  waitConductorStarted,
+  wsGroup,
+  wsRows
+} from './helpers/p1'
+import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { WORKBENCH, workbenchIcon, workbenchPanel } from './helpers/workbench'
+
+test.setTimeout(120_000)
+
+const FAKE_AGY = path.join(__dirname, 'fixtures', 'fake-agy.js')
+const TURN_LONG_ENOUGH_TO_SEE_WORKING_MS = '1500'
+const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
+const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
+const OWNER = { id: '555', username: 'letian' }
+const CHANNEL = '222'
+const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
+const AGY_SETUP_SCREEN = { timeout: 20_000 }
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS = '10000'
+
+const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
+const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
+
+function agyRows(page: Page, ws = 'ws-a'): Locator {
+  return wsRows(page, ws).filter({
+    hasNot: page.getByRole('img', { name: 'Claude', exact: true })
+  })
+}
+
+function fileLines(file: string): Record<string, unknown>[] {
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+}
+
+const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
+  fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
+const injected = (env: E2EEnv): Record<string, unknown>[] =>
+  fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
+
+async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> {
+  const before = sessionCalls(env).length
+  await newSessionInWith(page, ws, 'Antigravity')
+  await expect.poll(() => sessionCalls(env).length).toBe(before + 1)
+  return sessionCalls(env)[before]
+}
+
+async function boundAgy(page: Page): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find((x) => x.backendId === 'agy' && x.alive && x.nativeSessionId)
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
+      },
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+  return found!
+}
+
+function lockHolders(lock: string): string {
+  try {
+    return execFileSync('lsof', ['-t', lock]).toString().trim()
+  } catch {
+    return ''
+  }
+}
+
+function seedConductor(env: E2EEnv): void {
+  seedSettings(env, {
+    hintsOff: true,
+    assist: { on: true, backend: 'claude' },
+    discord: {
+      userId: OWNER.id,
+      userName: OWNER.username,
+      channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
+    }
+  })
+}
+
+async function connected(
+  env: E2EEnv,
+  fake: FakeDiscord
+): Promise<{ app: ElectronApplication; page: Page }> {
+  const app = await launchApp(env)
+  const page = await app.firstWindow()
+  await waitBooted(page)
+  await expect.poll(() => fake.identifies).toBe(1)
+  await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
+  return { app, page }
+}
+
+async function showChanges(page: Page): Promise<void> {
+  const panel = workbenchPanel(page)
+  if (!(await panel.isVisible())) {
+    await workbenchIcon(page).click()
+    await expect(panel).toBeVisible({ timeout: 20_000 })
+  }
+  const pinned = page.locator(WORKBENCH.tabFiles)
+  if (!(await pinned.getAttribute('class'))?.split(/\s+/).includes('on')) await pinned.click()
+  const changes = page
+    .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+    .filter({ hasText: 'Changes' })
+  await expect(changes).toBeVisible({ timeout: 20_000 })
+  if ((await changes.getAttribute('aria-pressed')) !== 'true') await changes.click()
+}
+
+function shownPaths(page: Page): Promise<string[]> {
+  return page
+    .locator('.wb-panel .cv-row')
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path ?? ''))
+}
+
+async function onlyThisSessionsFiles(page: Page): Promise<void> {
+  const menu = page.locator('.wb-bar .fv-menu')
+  await page.locator('.wb-bar .seg button', { hasText: 'Filter' }).click()
+  await expect(menu).toBeVisible()
+  const chip = page.locator(
+    '.fv-filters .fv-fgroup[aria-label="Ownership"] .ft-chip[data-chip="session"]'
+  )
+  await chip.click()
+  await expect(chip).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+}
+
+test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
+  // AGY§1 AGY§7
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key, the account named above agy's screen; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
+    env
+  }) => {
+    const PROMPT = 'Tidy the agy readme'
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    fs.writeFileSync(
+      path.join(env.home, 'fake-claude-assist-reply'),
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', why: 'ws-a.' })
+    )
+    fs.writeFileSync(path.join(env.home, 'fake-agy-delay'), TURN_LONG_ENOUGH_TO_SEE_WORKING_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:command-palette')
+      const palette = page.locator('.modal.palette')
+      const askBox = palette.getByRole('textbox', { name: 'Ask or jump' })
+      await expect(askBox).toBeFocused()
+      await askBox.fill(PROMPT)
+      await palette.getByRole('button', { name: 'Pick an agent' }).click()
+      await agentRow(page, 'Antigravity').click()
+
+      await expect.poll(() => sessionCalls(env).length, { timeout: 40_000 }).toBe(1)
+      const [call] = sessionCalls(env)
+      expect(fs.realpathSync(call.cwd)).toBe(env.workspaces.a)
+      expect(call.argv[0]).toBe(`--gemini_dir=${accountHome(env)}`)
+      expect(call.argv[1]).toMatch(/^--csrf_token=[0-9a-f]{48}$/)
+      expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions', '-i', PROMPT])
+      expect(call.env.WSL_INTEROP).toBe('koloft')
+      expect(call.env.GEMINI_API_KEY).toBe(true)
+      expect(readAllCalls(env)).toHaveLength(0)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_AGY_ACCOUNT}`
+      )
+
+      const row = agyRows(page)
+      await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(row).toContainText('Agy readme', { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
+      const { id } = await boundAgy(page)
+      expect(transcriptOf(env, id)).toContain(`Answer to: ${PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("answering No, exit to agy's trust question before it ever started a conversation puts you back on the folder page, and never opens the butler", async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('2')
+
+      await expect(agyRows(page)).toHaveCount(0, { timeout: 30_000 })
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§4 AGY§11 AGY§12
+  test("the account's folder links the owner's ~/.gemini conversations, brain, annotations, presence, summaries and config files, holds Koloft's koloft hook entry and title command, and Koloft's guide and the reply-language reminder quoting the prompt reach the model", async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'first words here')
+      await expect(agyRows(page)).toContainText('first words here', { timeout: 30_000 })
+      await expect(agyRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'second words here')
+      await expect
+        .poll(() => injected(env).filter((r) => r.event === 'request').length, { timeout: 30_000 })
+        .toBe(2)
+
+      const home = accountHome(env)
+      for (const shared of [
+        'antigravity-cli/conversations',
+        'antigravity-cli/brain',
+        'antigravity-cli/annotations',
+        'antigravity-cli/presence',
+        'antigravity-cli/conversation_summaries.db',
+        'config/projects',
+        'config/GEMINI.md',
+        'config/config.json',
+        'GEMINI.md'
+      ]) {
+        const own = path.join(home, shared)
+        expect(fs.lstatSync(own).isSymbolicLink(), shared).toBe(true)
+        expect(fs.readlinkSync(own), shared).toBe(path.join(ownersGemini(env), shared))
+      }
+      const hooks = JSON.parse(
+        fs.readFileSync(path.join(home, 'config', 'hooks.json'), 'utf8')
+      ) as Record<string, Record<string, unknown>>
+      expect(Object.keys(hooks.koloft).sort()).toEqual([
+        'PostToolUse',
+        'PreInvocation',
+        'PreToolUse',
+        'SessionStart',
+        'Stop'
+      ])
+      expect(JSON.stringify(hooks.koloft.SessionStart)).toContain('koloft-agy-hook')
+      const settings = JSON.parse(
+        fs.readFileSync(path.join(home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ) as { title: { command: string }; modelProvider: string; trustedWorkspaces: string[] }
+      expect(settings.title.command).toContain('koloft-agy-title')
+      expect(settings.modelProvider).toBe('gemini')
+      expect(settings.trustedWorkspaces).toContain(env.workspaces.a)
+
+      const starts = injected(env).filter((r) => r.event === 'SessionStart')
+      expect(starts).toHaveLength(1)
+      expect(String(starts[0].systemMessage)).toContain('koloft help')
+      const reminders = injected(env)
+        .filter((r) => r.event === 'request')
+        .flatMap((r) => r.ephemeralMessages as string[])
+      expect(reminders.some((m) => m.includes('second words here'))).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§9
+  test('/clear keeps the tab and moves it to the new conversation; the cleared one leaves the list for Restore session, which resumes it with --conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'first topic')
+      await expect(agyRows(page).filter({ hasText: 'first topic' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+      const old = await boundAgy(page)
+      await runIn(page, centerTerm(page), '/clear')
+      await runIn(page, centerTerm(page), 'second topic')
+      await expect(agyRows(page).filter({ hasText: 'second topic' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+      await expect(agyRows(page)).toHaveCount(1)
+      const now = await boundAgy(page)
+      expect(now.tabId).toBe(old.tabId)
+      expect(now.id).not.toBe(old.id)
+      expect(sessionCalls(env)).toHaveLength(1)
+      expect(sessionCalls(env)[0].pid).toBe(first.pid)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      await history.getByRole('button').filter({ hasText: 'first topic' }).click()
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${old.id}`
+      ])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§14 AGY§16
+  test('a file agy asks to write shows the row waiting for approval; the butler answering yes with koloft session answer allows it through the local API, the file is written, and the Changes list shows it as this session’s', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    seedConductor(env)
+    seedSettings(env, { skipPermissions: false })
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'warm up')
+      const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
+      await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), tabId)
+      const target = path.join(env.workspaces.a, 'agy-notes.txt')
+      await expect(agyRows(page)).toHaveClass(/\bst-approval\b/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
+      await expect(agyRows(page).locator('.ws-tab-act')).toHaveText('Wants to edit: agy-notes.txt')
+      expect(fs.existsSync(target)).toBe(false)
+
+      fake.say(OWNER, `/koloft session answer ${id} yes`)
+      await expect
+        .poll(() => (fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : ''), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe('written by fake agy\n')
+      const answered = apiCalls(env).filter((c) => c.method === 'HandleCascadeUserInteraction')
+      expect(answered).toEqual([
+        expect.objectContaining({
+          authorized: true,
+          body: expect.objectContaining({
+            cascadeId: id,
+            interaction: expect.objectContaining({ permission: { allow: true } })
+          })
+        })
+      ])
+      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-act')).toHaveText('Last: Wrote agy-notes.txt')
+
+      await agyRows(page).click()
+      await showChanges(page)
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toContain('agy-notes.txt')
+      await onlyThisSessionsFiles(page)
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['agy-notes.txt'])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // AGY§16
+  test('a session that agy started with koloft session new --name keeps that name as its row title, and Koloft renames the conversation in agy to it through agy’s local API; it reports back with koloft session send: the message reaches agy through its local API, marked with who sent it, and agy answers it', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'plan the work')
+      const parent = await agyConversationOnceFirstTurnEnded(page)
+
+      await page.evaluate(
+        (t) =>
+          window.api.terminal.write(
+            t,
+            '!koloft session new --name kid-agy -- report back when done\r'
+          ),
+        parent.tabId
+      )
+      const kidRow = wsGroup(page, 'ws-a').locator(
+        `.ws-tab[data-tab-id="${parent.tabId}"] + .ws-subtabs > .ws-tab`
+      )
+      await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+      const renames = (): unknown[] =>
+        apiCalls(env)
+          .filter((c) => c.method === 'UpdateConversationAnnotations')
+          .map((c) => c.body)
+      await expect
+        .poll(renames, { timeout: 30_000 })
+        .toContainEqual(expect.objectContaining({ annotations: { title: 'kid-agy' } }))
+      await expect(kidRow.locator('.ws-tab-title', { hasText: /^kid-agy$/ })).toHaveCount(1)
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [kidTab, `!koloft session send ${parent.id} all done`]
+      )
+
+      const sent = (): string[] =>
+        apiCalls(env)
+          .filter((c) => c.method === 'SendUserCascadeMessage')
+          .map((c) => JSON.stringify(c.body))
+      await expect
+        .poll(() => sent().join('\n'), { timeout: 60_000 })
+        .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+      await expect
+        .poll(() => transcriptOf(env, parent.id), { timeout: 30_000 })
+        .toMatch(/Answer to: \(From the session .+all done/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§12 AGY§17
+  test('a command agy leaves running in the background shows breathing green with ↻, named by its command line, until it ends; /compact shows the row working while agy compacts and ends done, not working', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.home, 'fake-agy-compact-ms'),
+      COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      const row = agyRows(page)
+      await runIn(page, centerTerm(page), '/bg sleep 6')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await expect(row).toHaveClass(/st-waiting/)
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('command · sleep 6 · working')
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 20_000 })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 20_000 })
+
+      await runIn(page, centerTerm(page), '/compact')
+      await expect(row).toHaveClass(/st-working/)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 20_000 })
+      const { id } = await boundAgy(page)
+      expect(transcriptOf(env, id)).toContain('Resuming from a compaction')
+      expect(apiCalls(env).some((c) => c.method === 'StreamAgentStateUpdates')).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§9 AGY§24
+  test('a conversation another agy process holds is refused on resume, with the reason that it is open in another agy window', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    let other: ChildProcess | undefined
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'held elsewhere')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(agyRows(page)).toHaveClass(/cold/)
+
+      other = spawn(
+        process.execPath,
+        [FAKE_AGY, `--gemini_dir=${accountHome(env)}`, `--conversation=${id}`],
+        {
+          cwd: env.workspaces.a,
+          env: { ...env.launchEnv, PWD: env.workspaces.a, GEMINI_API_KEY: 'fake-gemini-key' },
+          stdio: ['pipe', 'ignore', 'ignore']
+        }
+      )
+      const lock = path.join(ownersApp(env), 'presence', `${id}.lock`)
+      await expect.poll(() => lockHolders(lock), { timeout: 20_000 }).toBe(String(other.pid))
+
+      await agyRows(page).click()
+      await expect(page.getByText(/open in another agy window/)).toBeVisible({ timeout: 20_000 })
+      expect(sessionCalls(env).filter((c) => c.pid !== other!.pid)).toHaveLength(1)
+    } finally {
+      other?.kill('SIGTERM')
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('closing the tab ends agy; its row stays, cold, and clicking it brings the same conversation back — in a folder agy no longer trusts too, masked as resuming only until agy names the conversation, which it does with the trust question still up, so the mask lifts over the question and yes carries on', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(agyRows(page)).toContainText('keep me', { timeout: 30_000 })
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(agyRows(page)).toHaveClass(/cold/)
+
+      fs.writeFileSync(
+        path.join(ownersApp(env), 'settings.json'),
+        JSON.stringify({ trustedWorkspaces: [] })
+      )
+      const ownSettings = path.join(accountHome(env), 'antigravity-cli', 'settings.json')
+      fs.writeFileSync(
+        ownSettings,
+        JSON.stringify({
+          ...JSON.parse(fs.readFileSync(ownSettings, 'utf8')),
+          trustedWorkspaces: []
+        })
+      )
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-open-ms'),
+        NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS
+      )
+
+      await agyRows(page).click()
+      const mask = page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })
+      await expect(mask).toBeVisible({ timeout: 20_000 })
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
+      await expect(mask).toHaveCount(0)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?')
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'trusted once more')
+      await expect
+        .poll(() => transcriptOf(env, id), { timeout: 30_000 })
+        .toContain('Answer to: trusted once more')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity tab still open when Koloft quits comes back running the same conversation after a restart, its unread red dot still on its row; clicking the row in a focused window keeps the dot, and agy working again clears it', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'survive a restart')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect(agyRows(page)).toHaveCount(1)
+      await expect(agyRows(page)).toContainText('survive a restart')
+      await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(agyRows(page)).not.toHaveClass(/\bactive\b/)
+
+      await pretendWindowFocused(app)
+      await switchToRow(page, agyRows(page))
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-delay'),
+        A_TURN_LONG_ENOUGH_TO_SEE_THE_DOT_GO_MS
+      )
+      await runIn(page, centerTerm(page), 'work again')
+      await expect(agyRows(page)).toHaveClass(/st-working/)
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(sessionCalls(env)).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session marked Keep running never goes to sleep for being idle, while an ordinary one beside it does, red dot and all, and a click wakes that same conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const kept = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'stay up')
+      await agyConversationOnceFirstTurnEnded(page)
+      await openMenu(page, agyRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(agyRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+
+      const ordinary = agyRows(page, 'ws-b')
+      const sleeper = await startAgy(page, env, 'ws-b')
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'nod off')
+      const sleeperTab = await ordinary.getAttribute('data-tab-id')
+      expect(sleeperTab).toBeTruthy()
+      const { id } = await agyConversationOnceFirstTurnEnded(page, sleeperTab!)
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
+
+      await expect.poll(() => processAlive(sleeper.pid), { timeout: 40_000 }).toBe(false)
+      expect(processAlive(kept.pid)).toBe(true)
+      await expect(agyRows(page)).not.toHaveClass(/\bcold\b/)
+      await expect(ordinary).toHaveClass(/\bst-idle\b/)
+      await expect(ordinary.locator('.ws-tab-unread')).toHaveCount(1)
+      expect(sessionCalls(env)).toHaveLength(2)
+
+      await ordinary.click()
+      await expect.poll(() => sessionCalls(env).length).toBe(3)
+      expect(sessionCalls(env)[2].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect(ordinary).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await expect
+        .poll(async () => {
+          const all = await page.evaluate(() => window.api.sessions.list())
+          return all.filter((s) => s.backendId === 'agy' && s.alive && s.nativeSessionId === id)
+            .length
+        })
+        .toBe(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session marked Keep running starts again by itself when Koloft reopens even though its tab was closed, on the same conversation, and selects nothing', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'keep me running')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      await openMenu(page, agyRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(agyRows(page)).toHaveClass(/cold/)
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect(agyRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(agyRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a new Antigravity worktree session runs agy in its own worktree folder, trusted there for it, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await dialog.locator('input').fill('agy-tree')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      const [call] = sessionCalls(env)
+      expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions'])
+      expect(fs.realpathSync(call.cwd)).not.toBe(fs.realpathSync(env.workspaces.a))
+      expect(path.basename(call.cwd)).toBe('agy-tree')
+      await runIn(page, centerTerm(page), 'work in the tree')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain('Answer to: work in the tree')
+      await expect(agyRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§15
+  test('⇧⏎ in an Antigravity tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain(
+        JSON.stringify(`Answer to: ${TWO_LINE_PROMPT}`).slice(1, -1)
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an Antigravity session whose .claude/worktrees folder was deleted and whose worktree Koloft has no record of is rebuilt there from its branch on a click, for the same conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    let app = await launchApp(env)
+    let first: AgyCall
+    let id = ''
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await dialog.locator('input').fill('agy-lost')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      first = sessionCalls(env)[0]
+      await runIn(page, centerTerm(page), 'keep the tree')
+      id = (await agyConversationOnceFirstTurnEnded(page)).id
+      fs.writeFileSync(path.join(first.cwd, 'kept.txt'), 'committed on the branch')
+      gitCommitAll(first.cwd)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(agyRows(page)).toHaveClass(/cold/)
+    } finally {
+      await quitAndClose(app)
+    }
+    const storeFile = path.join(env.userData, 'agy-sessions.json')
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    store.resources = {}
+    for (const member of Object.values<{ worktreeResourceId?: string }>(store.members))
+      delete member.worktreeResourceId
+    fs.writeFileSync(storeFile, JSON.stringify(store))
+    fs.rmSync(first.cwd, { recursive: true, force: true })
+
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await agyRows(page).click()
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].cwd).toBe(first.cwd)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+      await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
+      expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
+        'committed on the branch'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('C8: typing the name of an Antigravity worktree whose preparation was interrupted says it will start Antigravity, and recovers it into an Antigravity session that, as agy trusts its workspace, takes the first line typed as a prompt rather than asking its trust question', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    gitInit(env.workspaces.a)
+    const name = 'interrupted-agy'
+    const { resourceId, cwd, baseline, saved } = seedWorktreeInterruptedBeforeAnySessionBound(
+      env,
+      'agy-sessions.json',
+      name
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dialog = await openWorktreeSession(page, 'ws-a')
+      await expect(dialog.locator('.wt-list .cb-row', { hasText: name })).toContainText(
+        'Recover worktree'
+      )
+      await page.getByRole('textbox', { name: 'Worktree', exact: true }).fill(name)
+      await expect(
+        dialog.locator('.field-hint').filter({ hasText: 'Recover the saved' })
+      ).toContainText('and start Antigravity.')
+      await expect(dialogPrimary(dialog)).toContainText('Recover · Antigravity')
+      await dialogPrimary(dialog).click()
+      await expect.poll(() => sessionCalls(env).length).toBe(1)
+      expect(sessionCalls(env)[0].cwd).toBe(cwd)
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
+        baseline
+      )
+      await runIn(page, centerTerm(page), 'work in the recovered tree')
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain('Answer to: work in the recovered tree')
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(saved().resources[resourceId].state).toBe('ready')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks', async ({
+    env
+  }) => {
+    const TASK = '/daily-report now'
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true, skipPermissions: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill(TASK)
+      const chip = (text: string): Locator =>
+        dlg.locator('.chip', { hasText: new RegExp(`^${text}$`) })
+      const thinking = dlg.locator('.chip', {
+        hasText: /^(Same as usual|Low|Medium|High|Extra high|Max)$/
+      })
+
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'High'])
+      await chip('Gemini 4 Argon').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'Medium', 'High'])
+      await chip('Medium').click()
+      await chip('Gemini 3.1 Pro').click()
+      await expect(thinking).toHaveText(['Same as usual', 'Low', 'High'])
+      await expect(dlg.locator('.chip.on', { hasText: /^Same as usual$/ })).toHaveCount(1)
+      await chip('Gemini 4 Argon').click()
+      await expect(dlg.locator('.chip.on', { hasText: /^Medium$/ })).toHaveCount(1)
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gemini-4-argon · medium`)
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(sessionCalls(env)[0].argv.slice(2)).toEqual([
+        '--model',
+        'gemini-4-argon',
+        '--effort',
+        'medium',
+        '--dangerously-skip-permissions',
+        '-i',
+        TASK
+      ])
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§6
+  test('Settings ▸ Sessions lists Antigravity as found; Settings ▸ Accounts shows the Antigravity account signed in, Paste Gemini API key clicked at the bottom edge of the pane scrolls its whole form into view, and a pasted Gemini API key adds an account kept in the Keychain and opens agy on it at once; once its colour and Terms screens are answered the row is ready, marked API KEY and metered', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
+      const enable = page.getByRole('switch', { name: 'Enable Antigravity', exact: true })
+      await expect(enable).toBeChecked()
+      await expect(page.locator('.set-row', { has: enable }).locator('.set-lab')).toContainText(
+        '1.4.0 · found'
+      )
+
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const seeded = page.locator('.acct-row', { hasText: E2E_AGY_ACCOUNT })
+      await expect(seeded.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(seeded.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited'
+      )
+      const paste = page.getByRole('button', { name: 'Paste Gemini API key' })
+      await paste.evaluate((b) => b.scrollIntoView({ block: 'end' }))
+      await paste.click()
+      await expect(page.locator('.acct-add-title')).toHaveText('Add Gemini API key')
+      const form = await page.locator('.acct-add').boundingBox()
+      const modal = await page.locator('.modal').boundingBox()
+      expect(form!.y + form!.height).toBeLessThanOrEqual(modal!.y + modal!.height)
+      await page.locator('.acct-add input[type="text"]').fill('second')
+      await page.locator('.acct-add input[type="password"]').fill('AIza-second-key')
+      const termsBefore = await termIds(page)
+      await page.locator('.acct-add-actions button', { hasText: 'Save' }).click()
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Antigravity sign in: second', {
+        timeout: 20_000
+      })
+      let setupTab = ''
+      await expect
+        .poll(async () => {
+          setupTab = (await termIds(page)).find((id) => !termsBefore.includes(id)) ?? ''
+          return setupTab && (await terminalText(page, setupTab))
+        }, AGY_SETUP_SCREEN)
+        .toContain('Choose your color scheme')
+      await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
+      await expect
+        .poll(() => terminalText(page, setupTab), AGY_SETUP_SCREEN)
+        .toContain('Terms of Service')
+      await page.evaluate((t) => window.api.terminal.write(t, '\r'), setupTab)
+      const onboarding = path.join(
+        env.userData,
+        'agy-homes',
+        'second',
+        'antigravity-cli',
+        'cache',
+        'onboarding.json'
+      )
+      await expect.poll(() => fs.existsSync(onboarding), AGY_SETUP_SCREEN).toBe(true)
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      const added = page.locator('.acct-row', { hasText: 'second' })
+      await expect(added).toBeVisible({ timeout: 20_000 })
+      await expect(added.locator('.acct-badge')).toHaveText('API KEY')
+      await expect(added.locator('.acct-note')).toHaveText(
+        'Metered — used only when every subscription is rate-limited',
+        { timeout: 20_000 }
+      )
+      await expect(added.locator('.acct-status')).toHaveCount(0)
+      const kc = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+        string,
+        Record<string, string>
+      >
+      expect(kc[UNPACKAGED_BUILD_AGY_SVC].second).toBe('AIza-second-key')
+      const own = JSON.parse(
+        fs.readFileSync(
+          path.join(env.userData, 'agy-homes', 'second', 'antigravity-cli', 'settings.json'),
+          'utf8'
+        )
+      ) as { modelProvider?: string }
+      expect(own.modelProvider).toBe('gemini')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§23
+  test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it and names it for a screen reader, with no tab started and nothing clicked', async ({
+    env
+  }) => {
+    const binary = path.join(env.fakeBin, 'agy')
+    fs.symlinkSync(FAKE_AGY, binary)
+    env.launchEnv.KOLOFT_AGY_CMD = binary
+    const appDir = path.join(accountHome(env), 'antigravity-cli')
+    fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+    fs.writeFileSync(
+      path.join(appDir, 'cache', 'onboarding.json'),
+      JSON.stringify({ onboardingComplete: true })
+    )
+    fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(page.locator('.tbu .tbu-bar')).toHaveCount(1)
+      await expect(page.locator('.tbu')).toHaveAttribute('aria-label', /Antigravity/)
+      expect(agyCalls(env).filter((c) => c.argv.includes('/usage'))).toHaveLength(1)
+      expect(sessionCalls(env)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a Sign in with Google tab closed with its Cancel before agy is signed in brings Settings ▸ Accounts back saying the sign-in did not complete, with no row left for the new account', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      await page.locator('.acct-add input[type="text"]').fill('fresh')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Antigravity sign in: fresh', {
+        timeout: 20_000
+      })
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'You are currently not signed in',
+        { timeout: 20_000 }
+      )
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText('Sign in to Antigravity', {
+        timeout: 20_000
+      })
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.'
+      )
+      await expect(page.locator('.acct-name', { hasText: /^fresh$/ })).toHaveCount(0)
+      await expect(page.locator('.acct-name', { hasText: /^e2e-agy$/ })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§3
+  test('with no agy on this Mac, Sign in with Google in Settings ▸ Accounts says it installs it first, then one terminal tab runs the official installer and goes straight on to agy on the new account’s own folder', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_AGY_CMD = path.join(env.home, '.local', 'bin', 'agy')
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
+      __dirname,
+      'fixtures',
+      'fake-tool-installer.js'
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      const dialog = page.locator('.acct-add')
+      await dialog.locator('input[type="text"]').fill('fresh')
+      await expect(dialog.locator('.field-hint')).toContainText(
+        'Antigravity is not on this Mac yet, so the tab installs it first.'
+      )
+      await dialog.getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      await expect
+        .poll(() => agyCalls(env).map((c) => c.geminiDir), { timeout: 30_000 })
+        .toContain(path.join(env.userData, 'agy-homes', 'fresh'))
+      expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe('agy\n')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§20
+  test('Assist set to Antigravity routes a ⌘P start with agy -p in a throwaway Gemini folder, which it removes after, and leaves no Antigravity row in the sidebar', async ({
+    env
+  }) => {
+    const PROMPT = 'Fix the flaky login test'
+    installAgy(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'agy' } })
+    fs.writeFileSync(
+      path.join(env.home, 'fake-agy-assist-reply'),
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:command-palette')
+      const askBox = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
+      await expect(askBox).toBeFocused()
+      await askBox.fill(PROMPT)
+      await page.keyboard.press('Enter')
+
+      await expect.poll(() => readAllCalls(env).length, { timeout: 40_000 }).toBe(1)
+      const shots = path.join(env.userData, 'agy-one-shots')
+      const oneShots = agyCalls(env).filter(
+        (c) => c.argv.includes('-p') && !c.argv.includes('/usage')
+      )
+      expect(oneShots.length).toBeGreaterThanOrEqual(1)
+      for (const shot of oneShots) {
+        expect(shot.argv[0].startsWith(`--gemini_dir=${shots}${path.sep}agy-`)).toBe(true)
+        expect(shot.argv.slice(1, 2)).toEqual(['-p'])
+        expect(shot.argv.slice(3)).toEqual(['--output-format', 'json'])
+        expect(shot.env.GEMINI_API_KEY).toBe(true)
+      }
+      expect(oneShots.some((c) => c.argv[2].includes(PROMPT))).toBe(true)
+      expect(sessionCalls(env)).toHaveLength(0)
+      await expect.poll(() => fs.readdirSync(shots)).toEqual([])
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+      await expect(
+        wsRows(page, 'ws-a').getByRole('img', { name: 'Antigravity', exact: true })
+      ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8
+  test('an agy conversation started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting its .db there turns it off again', async ({
+    env
+  }) => {
+    installAgy(env)
+    fs.mkdirSync(ownersApp(env), { recursive: true })
+    fs.writeFileSync(
+      path.join(ownersApp(env), 'settings.json'),
+      JSON.stringify({
+        trustedWorkspaces: [fs.realpathSync(env.workspaces.a)],
+        modelProvider: 'gemini'
+      })
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      const printed = execFileSync(
+        process.execPath,
+        [FAKE_AGY, '-p', 'started in a plain terminal', '--output-format', 'json'],
+        {
+          cwd: env.workspaces.a,
+          env: { ...env.launchEnv, PWD: env.workspaces.a, GEMINI_API_KEY: 'fake-gemini-key' }
+        }
+      ).toString()
+      const id = (JSON.parse(printed) as { conversation_id: string }).conversation_id
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(true)
+      fs.unlinkSync(path.join(ownersApp(env), 'conversations', `${id}.db`))
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 15_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})

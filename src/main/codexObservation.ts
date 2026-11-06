@@ -1,17 +1,24 @@
-import type { BackgroundItem } from '@shared/types'
+import { PLAN_READY, type BackgroundItem } from '@shared/types'
+import { codexEditTarget, codexItemDid } from './rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
+import {
+  costUsdOf,
+  longContextSurchargeUsd,
+  resolvePricing,
+  type TokenCounts
+} from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
+import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import {
   codexQuestionOf,
+  type Asked,
   type CodexApproval,
-  type CodexQuestion,
-  type Question
+  type CodexQuestion
 } from './discord/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
@@ -28,7 +35,6 @@ export interface CodexThread {
   createdAt?: number
   updatedAt?: number
   path?: string | null
-  cliVersion?: string
   ephemeral?: boolean
   parentThreadId?: string | null
   threadSource?: string
@@ -56,7 +62,7 @@ export function userThread(value: unknown): CodexThread | null {
     Object.hasOwn(record(t.source), 'subAgent')
   )
     return null
-  for (const key of ['name', 'preview', 'path', 'cliVersion', 'model']) {
+  for (const key of ['name', 'preview', 'path', 'model']) {
     if (t[key] !== undefined && t[key] !== null && typeof t[key] !== 'string') return null
   }
   return t as unknown as CodexThread
@@ -114,12 +120,88 @@ export function codexTurns(turns: unknown): TurnLog {
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
 
+// CODEX§4 CODEX§12
+function itemFinished(item: Record<string, unknown>): boolean {
+  if (item.status === 'completed') return true
+  return (
+    item.type === 'commandExecution' &&
+    item.status === 'failed' &&
+    typeof item.exitCode === 'number' &&
+    item.exitCode > 0
+  )
+}
+
 function openTarget(command: string, cwd: unknown): string | null {
   const m = OPEN_ONE_TARGET.exec(command.trim())
   const arg = m && (m[1] ?? m[2] ?? m[3])
   if (!arg) return null
   if (schemeOf(arg)) return arg
   return typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null
+}
+
+const THREAD_OPENERS = ['thread/start', 'thread/resume', 'thread/fork']
+const CLIENT_METHODS_OBSERVED = [...THREAD_OPENERS, 'thread/unsubscribe', 'turn/start']
+const SERVER_METHODS_OBSERVED = [
+  'item/started',
+  'item/completed',
+  'thread/status/changed',
+  'turn/started',
+  'turn/completed',
+  'thread/name/updated',
+  'thread/tokenUsage/updated',
+  'error'
+]
+
+// CODEX§3
+function asksTheOwner(method: string): boolean {
+  return (
+    method.endsWith('/requestApproval') ||
+    method === 'item/tool/requestUserInput' ||
+    method === 'mcpServer/elicitation/request'
+  )
+}
+
+function noAnswers(result: unknown): boolean {
+  const answers = record(result).answers
+  return !!answers && typeof answers === 'object' && Object.keys(answers).length === 0
+}
+
+interface WireTokens {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  cacheWriteInputTokens?: number
+}
+
+function isTokenCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
+
+function isWireTokens(t: Record<string, unknown>): t is Record<string, unknown> & WireTokens {
+  return (
+    isTokenCount(t.inputTokens) &&
+    isTokenCount(t.outputTokens) &&
+    isTokenCount(t.cachedInputTokens) &&
+    (t.cacheWriteInputTokens === undefined || isTokenCount(t.cacheWriteInputTokens))
+  )
+}
+
+// CODEX§13
+function tokenCountsOf(t: WireTokens): TokenCounts {
+  return {
+    inTok: Math.max(0, t.inputTokens - t.cachedInputTokens),
+    outTok: t.outputTokens,
+    cacheReadTok: t.cachedInputTokens,
+    cacheWriteTok: t.cacheWriteInputTokens ?? 0,
+    cacheWrite1hTok: 0
+  }
+}
+
+export interface QueuedByKoloft {
+  text: string
+  sentAgain: boolean
+  started: boolean
+  turnId?: string
 }
 
 interface Activity extends BackgroundItem {
@@ -137,15 +219,18 @@ export class CodexObservation {
   private approvalThreads = new Map<string | number, string>()
   private approvalAsks = new Map<
     string | number,
-    { command?: string; reason?: string; question?: Question }
+    { command?: string; reason?: string; question?: Asked }
   >()
   private generation = 0
   private threadId?: string
   private liveTurns = new Set<string>()
   private model?: string
+  private pricedThrough = 0
+  private longContextSurchargeUsd = 0
   private mainTurn: Turn = 'ended'
   private publishedTurn?: Turn
   private waitingForInput = false
+  private unanswered = false
   private roots = new Set<string>()
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
@@ -154,23 +239,82 @@ export class CodexObservation {
   private lastTouched?: string
   private lastWritten?: string
   private liveWrites = 0
-  private queued = new Set<string>()
+  private planReady = false
+  private editing = new Map<string, string>()
+  private queuedByKoloft = new Map<string, QueuedByKoloft>()
+  private serverWasReplaced = false
   unsubscribed = false
   turns = new TurnLog()
 
-  constructor(private emit: (event: CodexEvent) => void) {}
+  constructor(
+    private emit: (event: CodexEvent) => void,
+    private takeShellWrites: () => Promise<string[]> = async () => []
+  ) {}
+
+  private async noteShellWrites(): Promise<void> {
+    const thread = this.threadId
+    const wrote = await this.takeShellWrites()
+    if (!wrote.length || thread !== this.threadId) return
+    for (const file of wrote) noteWrite(this.touched, file, 0, 0, Date.now())
+    this.lastTouched = this.lastWritten = wrote[wrote.length - 1]
+    this.liveWrites++
+    this.publishFiles()
+  }
 
   // CODEX§17
-  queuedMessage(clientId: string): void {
-    this.queued.add(clientId)
+  queuedMessage(clientId: string, text: string, sentAgain = false): void {
+    this.queuedByKoloft.set(clientId, { text, sentAgain, started: false })
   }
 
   queueRefused(clientId: string): void {
-    this.queued.delete(clientId)
+    this.queuedByKoloft.delete(clientId)
   }
 
   queueDrained(): boolean {
-    return this.queued.size === 0
+    for (const sent of this.queuedByKoloft.values()) if (!sent.started) return false
+    return true
+  }
+
+  turnRunning(): boolean {
+    return this.publishedTurn === 'working'
+  }
+
+  // CODEX§34
+  screenLeft(): void {
+    this.requests.clear()
+  }
+
+  serverReplaced(): void {
+    this.serverWasReplaced = true
+    this.forgetRunningTurns()
+    this.activities.clear()
+    this.childRoots.clear()
+    this.childTurns.clear()
+    const cutOff = this.turns.open()
+    if (cutOff) this.turns.end(cutOff)
+    this.publishActivity()
+  }
+
+  takeQueuedCutOffByAReplacedServer(): QueuedByKoloft[] {
+    if (!this.serverWasReplaced) return []
+    this.serverWasReplaced = false
+    const cutOff: QueuedByKoloft[] = []
+    for (const [clientId, sent] of this.queuedByKoloft) {
+      if (!sent.started) continue
+      this.queuedByKoloft.delete(clientId)
+      cutOff.push(sent)
+    }
+    return cutOff
+  }
+
+  private forgetRunningTurns(): void {
+    this.liveTurns.clear()
+    this.approvals.clear()
+    this.approvalThreads.clear()
+    this.approvalAsks.clear()
+    this.editing.clear()
+    this.waitingForInput = false
+    this.mainTurn = 'ended'
   }
 
   // CODEX§3
@@ -178,6 +322,11 @@ export class CodexObservation {
     for (const [id, method] of this.approvals)
       if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
     return undefined
+  }
+
+  // CODEX§20
+  questionWentUnanswered(): boolean {
+    return this.unanswered
   }
 
   // CODEX§20
@@ -189,17 +338,25 @@ export class CodexObservation {
     return undefined
   }
 
+  wants(direction: 'client' | 'server', { method, replyTo }: CodexFrameHead): boolean {
+    if (method !== undefined)
+      return direction === 'client'
+        ? CLIENT_METHODS_OBSERVED.includes(method)
+        : SERVER_METHODS_OBSERVED.includes(method) || asksTheOwner(method)
+    return (
+      replyTo !== undefined &&
+      (direction === 'client' ? this.approvals : this.requests).has(replyTo)
+    )
+  }
+
   receive(direction: 'client' | 'server', value: unknown): void {
     const f = record(value),
       p = record(f.params)
     const id = typeof f.id === 'string' || typeof f.id === 'number' ? f.id : undefined
     const method = typeof f.method === 'string' ? f.method : undefined
+    if (!this.wants(direction, method !== undefined ? { method } : { replyTo: id })) return
     if (direction === 'client') {
-      if (
-        id !== undefined &&
-        method &&
-        ['thread/start', 'thread/resume', 'thread/fork'].includes(method)
-      ) {
+      if (id !== undefined && method && THREAD_OPENERS.includes(method)) {
         if (p.ephemeral === true || p.threadSource === 'system') return
         this.unsubscribed = false
         this.requests.set(id, {
@@ -213,7 +370,11 @@ export class CodexObservation {
         this.requests.set(id, { method, generation: this.generation, threadId: this.threadId })
       }
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
-      if (id !== undefined && !method && this.approvals.delete(id)) {
+      if (id !== undefined && !method) {
+        // CODEX§20
+        if (this.approvals.get(id) === 'item/tool/requestUserInput')
+          this.unanswered = noAnswers(f.result)
+        this.approvals.delete(id)
         this.approvalThreads.delete(id)
         this.approvalAsks.delete(id)
         if (!this.approvals.size) {
@@ -244,20 +405,23 @@ export class CodexObservation {
         this.degraded('Codex returned an unsupported session response.')
         return
       }
+      // CODEX§34
+      const reopened = thread.id === this.threadId
+      if (!reopened) {
+        this.unanswered = false
+        this.serverWasReplaced = false
+        this.queuedByKoloft.clear()
+        this.forgetRunningTurns()
+        this.touched.clear()
+        this.lastTouched = this.lastWritten = undefined
+        this.liveWrites = 0
+        this.planReady = false
+        this.pricedThrough = this.longContextSurchargeUsd = 0
+      }
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
-      this.liveTurns.clear()
-      this.queued.clear()
-      this.approvals.clear()
-      this.approvalThreads.clear()
-      this.approvalAsks.clear()
-      this.waitingForInput = false
-      this.mainTurn = 'ended'
       this.publishedTurn = undefined
-      this.touched.clear()
-      this.lastTouched = this.lastWritten = undefined
-      this.liveWrites = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
@@ -268,8 +432,11 @@ export class CodexObservation {
         thread: { ...thread, cwd, model: this.model },
         change: req.method === 'thread/start' ? 'replace' : 'switch'
       })
-      this.seedFilesFromHistory(record(result.thread))
-      this.turns = codexTurns(record(result.thread).turns)
+      if (reopened) this.publishFiles()
+      else {
+        this.seedFilesFromHistory(record(result.thread))
+        this.turns = codexTurns(record(result.thread).turns)
+      }
       this.status(thread.status)
       return
     }
@@ -283,28 +450,30 @@ export class CodexObservation {
       (method === 'item/started' || method === 'item/completed') &&
       item.type === 'userMessage' &&
       typeof item.clientId === 'string'
-    )
-      this.queued.delete(item.clientId)
+    ) {
+      const sent = this.queuedByKoloft.get(item.clientId)
+      if (sent) {
+        sent.started = true
+        if (typeof p.turnId === 'string') sent.turnId = p.turnId
+      }
+    }
     if (method === 'item/completed') {
       if (this.noteFiles(item, true)) this.publishFiles()
+      if (item.type === 'commandExecution') void this.noteShellWrites()
       this.observeOpen(item)
       const at = typeof p.completedAtMs === 'number' ? p.completedAtMs : Date.now()
       const line = ownedChild ? null : codexTurnLine(item, at)
       if (line) this.turns.add(line, true)
     }
     // CODEX§3
-    if (
-      id !== undefined &&
-      method &&
-      (method.endsWith('/requestApproval') ||
-        method === 'item/tool/requestUserInput' ||
-        method === 'mcpServer/elicitation/request')
-    ) {
+    if (id !== undefined && method && asksTheOwner(method)) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
       const question = codexQuestionOf(method, p)
+      const file = typeof p.itemId === 'string' ? this.editing.get(p.itemId) : undefined
       this.approvalAsks.set(id, {
         ...(typeof p.command === 'string' ? { command: p.command } : {}),
+        ...(file ? { file } : {}),
         ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
         ...(question ? { question } : {})
       })
@@ -312,18 +481,38 @@ export class CodexObservation {
       this.publishActivity()
     } else if (ownedChild) {
       return
+    } else if (method === 'item/started') {
+      const file = codexEditTarget(item)
+      if (file && typeof item.id === 'string') this.editing.set(item.id, file)
+    } else if (method === 'item/completed') {
+      if (typeof item.id === 'string') this.editing.delete(item.id)
+      const did =
+        item.type === 'plan' ? PLAN_READY : itemFinished(item) ? codexItemDid(item) : undefined
+      if (!did) return
+      this.planReady = did === PLAN_READY
+      this.emit({ type: 'did', what: did })
     } else if (method === 'thread/status/changed') {
       this.status(p.status)
     } else if (method === 'turn/started') {
       const turn = record(p.turn)
       if (typeof turn.id === 'string') this.liveTurns.add(turn.id)
       this.waitingForInput = false
+      this.unanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
+      if (this.planReady) {
+        this.planReady = false
+        this.emit({ type: 'did', what: undefined })
+      }
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
+      if (typeof turn.id === 'string')
+        for (const [clientId, sent] of this.queuedByKoloft)
+          if (sent.started && (sent.turnId ?? turn.id) === turn.id)
+            this.queuedByKoloft.delete(clientId)
       const fresh = typeof turn.id === 'string' && this.liveTurns.delete(turn.id)
       if (!fresh) return
+      void this.noteShellWrites()
       for (const [id, owner] of this.approvalThreads) {
         if (owner === this.threadId) {
           this.approvals.delete(id)
@@ -333,6 +522,7 @@ export class CodexObservation {
       }
       this.waitingForInput = false
       this.markBackgroundCommands(this.threadId)
+      // CODEX§32
       this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
       this.publishActivity()
       const finished = this.turns.open()
@@ -344,29 +534,23 @@ export class CodexObservation {
       const u = record(p.tokenUsage),
         total = record(u.total),
         last = record(u.last)
-      const n = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0
-      if (
-        !n(total.inputTokens) ||
-        !n(total.outputTokens) ||
-        !n(total.cachedInputTokens) ||
-        (total.cacheWriteInputTokens !== undefined && !n(total.cacheWriteInputTokens))
-      )
-        return
-      const ctx = n(last.totalTokens) ? last.totalTokens : undefined
-      const window = n(u.modelContextWindow) ? u.modelContextWindow : undefined
-      // CODEX§13
-      const tokens = {
-        inTok: Math.max(0, total.inputTokens - total.cachedInputTokens),
-        outTok: total.outputTokens,
-        cacheReadTok: total.cachedInputTokens,
-        cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0
-      }
+      if (!isWireTokens(total)) return
+      const ctx = isTokenCount(last.totalTokens) ? last.totalTokens : undefined
+      const window = isTokenCount(u.modelContextWindow) ? u.modelContextWindow : undefined
+      const tokens = tokenCountsOf(total)
       const pricing = this.model ? resolvePricing(this.model) : undefined
+      const through = total.inputTokens + total.outputTokens
+      if (pricing && through > this.pricedThrough && isWireTokens(last)) {
+        this.pricedThrough = through
+        this.longContextSurchargeUsd += longContextSurchargeUsd(pricing, tokenCountsOf(last))
+      }
       this.emit({
         type: 'usage',
         usage: {
           ...tokens,
-          ...(pricing ? { costUsd: costUsdOf(pricing, tokens) } : {}),
+          ...(pricing
+            ? { costUsd: costUsdOf(pricing, tokens) + this.longContextSurchargeUsd }
+            : {}),
           ctxTokens: ctx,
           ...(window && ctx !== undefined ? { ctxPct: ctx / window } : {}),
           model: this.model
@@ -379,13 +563,12 @@ export class CodexObservation {
 
   // CODEX§12
   private seedFilesFromHistory(thread: Record<string, unknown>): void {
-    let changed = false
     for (const turn of Array.isArray(thread.turns) ? thread.turns.map(record) : []) {
       for (const item of Array.isArray(turn.items) ? turn.items.map(record) : []) {
-        if (this.noteFiles(item, false)) changed = true
+        this.noteFiles(item, false)
       }
     }
-    if (changed) this.publishFiles()
+    this.publishFiles()
   }
 
   // CODEX§12

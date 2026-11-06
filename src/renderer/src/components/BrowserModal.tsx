@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useLayoutEffect, useRef, useState, type JSX } from 'react'
+
+const CAPTURE_BEFORE_XTERM = true
 
 export interface BrowserDialog {
   id: string
@@ -28,9 +30,17 @@ export function BrowserModal({
   const [user, setUser] = useState('')
   const [pass, setPass] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
+  const safeButton = useRef<HTMLButtonElement>(null)
+  const box = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    firstField.current?.focus()
+  // PLATFORM§25
+  useLayoutEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    const shown = box.current
+    ;(firstField.current ?? safeButton.current)?.focus()
+    return () => {
+      if (shown?.contains(document.activeElement)) before?.focus()
+    }
   }, [dialog.id])
 
   const accept = (): void => {
@@ -39,27 +49,31 @@ export function BrowserModal({
     else onAnswer(dialog.id, { ok: true })
   }
   const cancel = (): void => onAnswer(dialog.id, { ok: false })
+  const latestCancel = useRef(cancel)
+  latestCancel.current = cancel
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
-      cancel()
+      e.stopPropagation()
+      latestCancel.current()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
+    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+    return () => window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+  }, [])
 
   return (
     <div className="bmodal-backdrop" onMouseDown={cancel}>
       <div
+        ref={box}
         className="bmodal"
         role="dialog"
         aria-modal="true"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') accept()
-          else if (e.key === 'Escape') cancel()
+          if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) accept()
         }}
       >
         <div className="bmodal-head">
@@ -103,11 +117,15 @@ export function BrowserModal({
         </div>
         <div className="bmodal-foot">
           {dialog.kind !== 'alert' && (
-            <button className="mini" onClick={cancel}>
+            <button className="mini" ref={safeButton} onClick={cancel}>
               Cancel
             </button>
           )}
-          <button className="btn-primary" onClick={accept}>
+          <button
+            className="btn-primary"
+            ref={dialog.kind === 'alert' ? safeButton : undefined}
+            onClick={accept}
+          >
             OK
           </button>
         </div>

@@ -29,10 +29,10 @@ test.describe('order-of-magnitude guardrails over a 300-session storage (catches
       await page.waitForLoadState('domcontentloaded')
       await expect(page.locator('.ws-list')).toBeVisible({ timeout: 20_000 })
 
-      await expect(page.locator('.ws-tab', { hasText: 'Perf session 150' })).toBeVisible({
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Perf session 150' })).toBeVisible({
         timeout: FIRST_ROW_BUDGET_MS
       })
-      await expect(page.locator('.ws-tab')).toHaveCount(COUNT)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(COUNT)
 
       const inListViewport = (): Promise<boolean> =>
         page.evaluate((title) => {
@@ -63,10 +63,10 @@ test.describe('order-of-magnitude guardrails over a 300-session storage (catches
       )
       await snap(page, 'T-PERF-01')
 
-      await page.locator('.ws-tab', { hasText: OLDEST }).click()
+      await page.locator('.ws .ws-tab', { hasText: OLDEST }).click()
       const calls = await waitForCalls(env, 1)
       expect(resumedId(calls[0])).toBe(oldestId)
-      await expect(page.locator('.ws-tab.active', { hasText: OLDEST })).toBeVisible({
+      await expect(page.locator('.ws .ws-tab.active', { hasText: OLDEST })).toBeVisible({
         timeout: 30_000
       })
     } finally {

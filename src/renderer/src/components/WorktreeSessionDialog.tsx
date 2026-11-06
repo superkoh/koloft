@@ -1,6 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -8,7 +9,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { IconCheck, IconClose, IconWarning } from '../icons'
 import type {
   BackendId,
   GithubItem,
@@ -21,7 +22,6 @@ import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
 import { ageLabel, freshLineState } from '@shared/freshnessOps'
 import {
-  actionText,
   escPeel,
   freshLineCopy,
   isDimmed,
@@ -29,7 +29,6 @@ import {
   itemFilterText,
   itemLabel,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   primaryKind,
   primaryLabel,
@@ -47,13 +46,16 @@ import {
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
+import { startOrList } from '../agentChoice'
 import {
+  BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
+  useLaunchLock,
   useSessionLaunch,
   type SessionLaunchOptions,
   type StartSession
@@ -70,7 +72,7 @@ export function WorktreeSessionDialog({
   onClose: () => void
   onStart: StartSession
 }): JSX.Element {
-  const { path: wsPath, isGit, remote } = ws.workspace
+  const { path: wsPath, isGit } = ws.workspace
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -79,6 +81,7 @@ export function WorktreeSessionDialog({
   const [checking, setChecking] = useState(false)
   const [fetched, setFetched] = useState<WorkspaceFreshness | null>(null)
   const [phase, setPhase] = useState<PullPhase>('idle')
+  const [pullingAs, setPullingAs] = useState<BackendId | null>(null)
   const [failReason, setFailReason] = useState('')
   const [confirm, setConfirm] = useState<number | null>(null)
   const [items, setItems] = useState<GithubOpenItems | null>(null)
@@ -87,7 +90,7 @@ export function WorktreeSessionDialog({
   const showToast = useStore((s) => s.showToast)
   const gitAutoFetch = useStore((s) => s.settings.gitAutoFetch)
   const sessionLaunch = useSessionLaunch(hostOf(wsPath), onStart, onClose)
-  const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
+  const [listOpen, setListOpen] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -108,7 +111,7 @@ export function WorktreeSessionDialog({
   }, [wsPath])
 
   useEffect(() => {
-    if (!isGit || remote || !gitAutoFetch) return
+    if (!isGit || !gitAutoFetch) return
     let live = true
     setChecking(true)
     void window.api.workspace.fetchFreshness(wsPath).then(
@@ -124,7 +127,7 @@ export function WorktreeSessionDialog({
     return () => {
       live = false
     }
-  }, [wsPath, isGit, remote, gitAutoFetch])
+  }, [wsPath, isGit, gitAutoFetch])
 
   useEffect(() => {
     if (!isGit) return
@@ -176,22 +179,15 @@ export function WorktreeSessionDialog({
     item: aim.kind === 'item' ? aim.item.number : undefined
   }
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
-  const backends =
+  useLaunchLock(launchLock, locked)
+  const choice =
     aim.kind === 'recover'
-      ? sessionLaunch.usable.filter((b) => b === 'codex')
-      : sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+      ? sessionLaunch.choice({ backends: [aim.backend], chosen: aim.backend })
+      : sessionLaunch.choice()
+  const confirmBackend = useRef<BackendId>(choice.lead)
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       const layer = escPeel({
@@ -210,7 +206,8 @@ export function WorktreeSessionDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [locked, confirm, hot, query, onClose])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     inputRef.current?.focus()
   }, [locked, confirm])
@@ -219,9 +216,9 @@ export function WorktreeSessionDialog({
     if (!locked) onClose()
   }
 
-  const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
-    if (locked || sessionLaunch.issue(backend)) return
-    const method = target.kind === 'recover' ? 'codex' : backend
+  const launch = (target: WtAim, backend = choice.lead): void => {
+    const method = target.kind === 'recover' ? target.backend : backend
+    if (locked || sessionLaunch.issue(method)) return
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {
@@ -256,6 +253,7 @@ export function WorktreeSessionDialog({
     if (!freshness) return
     const { branch, head } = freshness
     setConfirm(null)
+    setPullingAs(backend)
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(wsPath, { branch, head })
@@ -270,13 +268,13 @@ export function WorktreeSessionDialog({
     launch(aim, backend)
   }
 
-  const submit = (backend = sessionLaunch.methods.defaultBackend): void => {
+  const submit = (backend = choice.lead): void => {
     if (!actionable || locked || confirm !== null || sessionLaunch.issue(backend)) return
     if (primary !== 'pull') {
       launch(aim, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, wsPath)
     confirmBackend.current = backend
     if (count > 0) setConfirm(count)
     else void doPull(backend)
@@ -292,7 +290,7 @@ export function WorktreeSessionDialog({
       setHot((h) => moveHot(h, names, query, 'up'))
     } else if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault()
-      submit(e.shiftKey && other ? other : undefined)
+      startOrList(e.shiftKey, choice, submit, () => actionable && setListOpen(true))
     }
   }
 
@@ -306,7 +304,7 @@ export function WorktreeSessionDialog({
       return (
         <p className="field-hint">
           Recover the saved worktree at <code>{shortenHome(aim.dir, window.api.home)}</code> and
-          start Codex.
+          start {BACKEND_LABEL[aim.backend]}.
         </p>
       )
     }
@@ -354,18 +352,9 @@ export function WorktreeSessionDialog({
     )
   }
 
-  const busyLine = (text: string): JSX.Element => (
-    <div className="fresh-line busy">
-      <span className="fico-l">
-        <LuLoaderCircle size={14} />
-      </span>
-      <span>{text}</span>
-    </div>
-  )
-
   const freshLine = (): JSX.Element | null => {
-    if (sessionLaunch.starting) return busyLine('Starting…')
-    if (phase === 'pulling' && freshness) return busyLine(`Pulling ${freshness.defRef}…`)
+    if (sessionLaunch.starting) return <BusyLine>Starting…</BusyLine>
+    if (phase === 'pulling' && freshness) return <BusyLine>Pulling {freshness.defRef}…</BusyLine>
     if (line === 'hidden') return null
     if (phase === 'failed') {
       return (
@@ -375,15 +364,13 @@ export function WorktreeSessionDialog({
         </p>
       )
     }
-    if (line === 'checking') return busyLine('Checking origin…')
+    if (line === 'checking') return <BusyLine>Checking origin…</BusyLine>
     const copy = freshness && freshLineCopy(line, freshness, now)
     if (!copy) return null
     const good = line === 'ok'
     return (
       <div className={'fresh-line ' + (good ? 'okv' : 'stale')}>
-        <span className="fico-l">
-          {good ? <LuCheck size={14} /> : <LuTriangleAlert size={14} />}
-        </span>
+        <span className="fico-l">{good ? <IconCheck size={14} /> : <IconWarning size={14} />}</span>
         <span>
           <b>{copy.strong}</b>
           {copy.rest}
@@ -472,7 +459,7 @@ export function WorktreeSessionDialog({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">
@@ -544,22 +531,21 @@ export function WorktreeSessionDialog({
               Cancel
             </button>
             <SessionLaunchButtons
-              launch={sessionLaunch}
-              backends={backends}
+              choice={phase === 'pulling' && pullingAs ? { ...choice, lead: pullingAs } : choice}
+              open={listOpen}
+              onOpen={setListOpen}
               busy={locked}
               disabled={!actionable || locked || confirm !== null}
-              label={(backend, isDefault) => {
+              label={(backend) => {
                 if (sessionLaunch.starting) return 'Starting…'
                 if (primary === 'pulling') return primaryLabel(primary, action)
-                if (isDefault)
-                  return primaryLabel(
-                    primary,
-                    action,
-                    backends.length > 1 || aim.kind === 'recover'
-                      ? BACKEND_LABEL[backend]
-                      : undefined
-                  )
-                return `${primary === 'pull' ? 'Pull & ' : ''}${actionText(action, false)} · ${BACKEND_LABEL[backend]}`
+                return primaryLabel(
+                  primary,
+                  action,
+                  choice.listed.length > 1 || aim.kind === 'recover'
+                    ? BACKEND_LABEL[backend]
+                    : undefined
+                )
               }}
               onStart={submit}
             />

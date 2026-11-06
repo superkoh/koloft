@@ -27,6 +27,10 @@ export function noteWrite(
   }
 }
 
+export function shellWrittenFiles(wrote: unknown): string[] {
+  return Array.isArray(wrote) ? wrote.filter((f): f is string => typeof f === 'string') : []
+}
+
 export function noteRead(files: Map<string, FileAcc>, abs: string): void {
   if (!files.has(abs)) files.set(abs, { access: 'read', added: 0, removed: 0, wroteAt: 0 })
 }
@@ -37,6 +41,16 @@ export function touchedItem(src: string, acc: FileAcc): PreviewItem {
   if (acc.removed) item.removed = acc.removed
   if (acc.access === 'wrote') item.wroteAt = acc.wroteAt
   return item
+}
+
+export function wroteEvent(touched: Map<string, FileAcc>, last: string, liveWrites: number) {
+  return {
+    type: 'files-changed' as const,
+    files: capTouched([...touched].map(([src, acc]) => touchedItem(src, acc))),
+    lastTouched: last,
+    lastWritten: last,
+    liveWrites
+  }
 }
 
 export function capTouched(all: PreviewItem[]): PreviewItem[] {

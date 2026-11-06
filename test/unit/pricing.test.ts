@@ -23,6 +23,12 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('claude-sonnet-4-99')).toBeUndefined()
   })
 
+  it('falls back to a family row only for a date stamp, so the next minor version (5-6 after 5) is unknown, never priced as its elder', () => {
+    expect(resolvePricing('claude-opus-5-6')).toBeUndefined()
+    expect(resolvePricing('claude-sonnet-5-6')).toBeUndefined()
+    expect(resolvePricing('claude-fable-5-2')).toBeUndefined()
+  })
+
   it('prices the DATED 4.0-generation ids real transcripts record, since one unknown id strips the $ from the whole session', () => {
     const opus = resolvePricing('claude-opus-4-20250514')!
     expect(opus.inPerM).toBe(15)
@@ -39,6 +45,29 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('gpt-5')!.cacheWritePerM).toBe(0)
     expect(resolvePricing('gpt-5-mini')).toBeUndefined()
     expect(resolvePricing('gpt-6-astra-2026-09-01')).toBeUndefined()
+  })
+
+  // AGY§21
+  it.each([
+    ['gemini-3.1-pro-low', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],
+    ['gemini-3.1-pro-preview', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],
+    ['gemini-3.8-flash-high', { inPerM: 0.75, outPerM: 3.75, cacheReadPerM: 0.075 }],
+    ['gemini-3.1-flash-lite-preview', { inPerM: 0.25, outPerM: 1.5, cacheReadPerM: 0.025 }]
+  ])(
+    'prices the Gemini id %s, effort or preview suffix and all, at its base model, with no cache-write charge and a 1M window',
+    (id, expected) => {
+      expect(resolvePricing(id)).toEqual({
+        ...expected,
+        cacheWritePerM: 0,
+        cacheWrite1hPerM: 0,
+        windowTokens: 1_048_576
+      })
+    }
+  )
+
+  it('leaves a Gemini model with no price row of its own unpriced, never borrowing a sibling', () => {
+    expect(resolvePricing('gemini-3.9-flash-low')).toBeUndefined()
+    expect(resolvePricing('gemini-3.1-pro-ultra')).toBeUndefined()
   })
 
   it('returns undefined for unknown / synthetic / empty ids (design D6: no $)', () => {
@@ -73,6 +102,34 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(p5.windowTokens).toBe(1_000_000)
   })
 
+  it.each([
+    ['claude-sonnet-5-5', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1, windowTokens: 1_000_000 }],
+    [
+      'claude-haiku-5-5',
+      {
+        inPerM: 0.1,
+        outPerM: 0.5,
+        cacheReadPerM: expect.closeTo(0.01, 10),
+        windowTokens: 1_000_000
+      }
+    ],
+    ['gpt-6.1-sol', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1 }],
+    [
+      'gpt-6.1-terra',
+      {
+        inPerM: 1,
+        outPerM: 5,
+        cacheReadPerM: 0.05,
+        longContext: { aboveInputTokens: 272_000, inPerM: 2, cacheReadPerM: 0.1, outPerM: 7.5 }
+      }
+    ]
+  ])(
+    'prices %s, a model Claude Code 2.1.293+ or Codex 0.161+ offers, at its own row',
+    (id, expected) => {
+      expect(resolvePricing(id)).toMatchObject(expected)
+    }
+  )
+
   it('uses real per-model context windows: 1M for current families, 200k for Haiku/legacy (#7)', () => {
     expect(resolvePricing('claude-fable-5')!.windowTokens).toBe(1_000_000)
     expect(resolvePricing('claude-opus-4-8')!.windowTokens).toBe(1_000_000)
@@ -83,11 +140,15 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('claude-sonnet-4-5')!.windowTokens).toBe(200_000)
   })
 
-  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment)', () => {
+  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment), but for the 5.5-generation rows with their own cache-read price', () => {
+    const OWN_CACHE_READ: Record<string, number> = {
+      'claude-fable-5-1': 0.25,
+      'claude-opus-5-5': 0.2,
+      'claude-sonnet-5-5': 0.1
+    }
     for (const [id, p] of Object.entries(MODEL_PRICING)) {
       expect(p.cacheWritePerM, id).toBeCloseTo(p.inPerM * 1.25, 10)
-      if (id !== 'claude-fable-5-1' && id !== 'claude-opus-5-5')
-        expect(p.cacheReadPerM, id).toBeCloseTo(p.inPerM * 0.1, 10)
+      expect(p.cacheReadPerM, id).toBeCloseTo(OWN_CACHE_READ[id] ?? p.inPerM * 0.1, 10)
       expect([200_000, 1_000_000]).toContain(p.windowTokens)
     }
   })

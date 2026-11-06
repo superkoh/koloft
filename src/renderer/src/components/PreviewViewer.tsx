@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { previewFileUrl } from '@shared/browserRoute'
 import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { renderMarkdown } from '../markdown'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import '../previewViewer.css'
 
 export interface MdHeading {
   id: string
@@ -325,14 +327,11 @@ export function PreviewViewer({
     case 'image':
       return (
         <div className="img-wrap">
-          <img
-            src={window.api.preview.fileUrl(item.src) + (tick ? `?v=${tick}` : '')}
-            alt={item.label}
-          />
+          <img src={previewFileUrl(item.src) + (tick ? `?v=${tick}` : '')} alt={item.label} />
         </div>
       )
     case 'pdf':
-      return <WebView src={window.api.preview.fileUrl(item.src)} reloadToken={tick} />
+      return <WebView src={previewFileUrl(item.src)} reloadToken={tick} />
     default:
       return <div className="hint">Unsupported preview type.</div>
   }

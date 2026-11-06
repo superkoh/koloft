@@ -4,8 +4,7 @@ const path = require('path')
 const cp = require('child_process')
 const readline = require('readline')
 
-const LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION = '/fake/versions/8.8.8'
-const TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE = '9.9.9-fake'
+const FAKE_CLAUDE_VERSION = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
 const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 
@@ -35,6 +34,15 @@ const typedInATerminal = require('tty').isatty(0) && require('tty').isatty(1)
 if (argv[0] === '-p' && !typedInATerminal) {
   const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : ''
   const input = require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8')
+  const sentinelHome = process.env.HOME || require('os').homedir()
+  const assistReply = path.join(sentinelHome, 'fake-claude-assist-reply')
+  if (fs.existsSync(assistReply)) {
+    fs.appendFileSync(path.join(sentinelHome, 'fake-claude-assist-asked.txt'), input + '\n')
+    const waitMsFile = path.join(sentinelHome, 'fake-claude-assist-ms')
+    if (fs.existsSync(waitMsFile)) sleepBlockingMs(Number(fs.readFileSync(waitMsFile, 'utf8')))
+    process.stdout.write(fs.readFileSync(assistReply, 'utf8'))
+    process.exit(0)
+  }
   const WRITTEN_LIST = 'Files the agent wrote this turn:\n'
   if (input.includes(WRITTEN_LIST)) {
     const [asked, written] = input.split(WRITTEN_LIST)
@@ -84,6 +92,7 @@ let sessionId = argVal('--session-id') || argVal('--resume') || require('crypto'
 const settingsPath = argVal('--settings')
 // CC§2
 const launchCwd = fs.realpathSync(process.cwd())
+const launchedInTheButlersFolder = path.basename(path.dirname(launchCwd)) === 'conductors'
 const home = process.env.HOME || require('os').homedir()
 
 function writeCallLog(effCwd) {
@@ -222,7 +231,7 @@ function reportedBackgroundMs() {
 }
 
 function nextFreshLaunchTitleFromFile() {
-  if (argVal('--resume')) return null
+  if (argVal('--resume') || launchedInTheButlersFolder) return null
   const f = path.join(home, 'fake-claude-next-title')
   try {
     const v = fs.readFileSync(f, 'utf8').trim()
@@ -275,22 +284,62 @@ const EVENT_KEY = {
   ask: 'PermissionRequest',
   compacting: 'PreCompact'
 }
+function fireToolHooks(event, payload) {
+  for (const group of hooks?.[event] ?? []) {
+    if (group.matcher !== '*' && group.matcher !== payload.tool_name) continue
+    for (const hook of group.hooks ?? [])
+      try {
+        cp.execSync(hook.command, {
+          input: JSON.stringify({ session_id: sessionId, ...payload }),
+          stdio: ['pipe', 'ignore', 'ignore']
+        })
+      } catch {}
+  }
+}
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
   if (!cmd) return ''
   // CC§1
   const body = 'session_id' in payload ? payload : { ...payload, session_id: sessionId }
+  let out = ''
   try {
-    return cp.execSync(cmd, {
+    out = cp.execSync(cmd, {
       input: JSON.stringify(body),
       stdio: ['pipe', 'pipe', 'ignore'],
-      encoding: 'utf8',
-      // CC§1
-      env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
+      encoding: 'utf8'
     })
   } catch {
     return ''
   }
+  if (event === 'stop' && !payload.stop_hook_active) keepGoingIfStopped(out, payload)
+  return out
+}
+
+// CC§21
+function keepGoingIfStopped(out, payload) {
+  let reason
+  try {
+    const parsed = JSON.parse(out)
+    if (parsed.decision === 'block') reason = parsed.reason
+  } catch {
+    return
+  }
+  if (typeof reason !== 'string') return
+  append([
+    {
+      type: 'user',
+      isMeta: true,
+      message: { role: 'user', content: `Stop hook feedback:\n${reason}` },
+      cwd
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text: `Stop said: ${reason}` }] },
+      cwd
+    }
+  ])
+  fireHook('stop', { ...payload, stop_hook_active: true })
 }
 
 function append(lines) {
@@ -335,7 +384,7 @@ function renderStatuslineWithoutBlockingSessionStart() {
     model: { id: PRICED_MODEL_ID, display_name: 'Opus 4.8' },
     effort: { level: 'xhigh' },
     workspace: { current_dir: cwd, project_dir: cwd, added_dirs: [] },
-    version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+    version: FAKE_CLAUDE_VERSION,
     cost: {
       total_cost_usd: 0.01,
       total_duration_ms: 1000,
@@ -373,9 +422,9 @@ function renderStatuslineWithoutBlockingSessionStart() {
   } catch {}
 }
 
-function taskNotification(toolUseId, status, summary) {
+function taskNotification(taskId, toolUseId, status, summary) {
   return (
-    `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
+    `<task-notification>\n<task-id>${taskId}</task-id>\n` +
     `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
     `<summary>${summary}</summary>\n</task-notification>`
   )
@@ -470,7 +519,7 @@ function startupTurn() {
     { type: 'summary', summary: sessionTitle() },
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {
@@ -493,13 +542,48 @@ function startupTurn() {
   process.stdout.write(`\r\n[fake-claude] session ${sessionId} ready in ${cwd}\r\n> `)
 }
 
-const startDelay = delayMs()
-if (startDelay > 0) {
-  process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
-  setTimeout(startupTurn, startDelay)
-} else {
-  startupTurn()
+function startAfterDelay() {
+  const startDelay = delayMs()
+  if (startDelay > 0) {
+    process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
+    setTimeout(startupTurn, startDelay)
+  } else {
+    startupTurn()
+  }
 }
+
+// CC§9
+async function askTrustThenStart(question) {
+  let trusted = false
+  const draw = () =>
+    process.stdout.write(
+      '\r\nQuick safety check: Is this a project you created or one you trust?\r\n' +
+        `${trusted ? ' ' : '❯'} No, exit\r\n${trusted ? '❯' : ' '} Yes, I trust this folder\r\n`
+    )
+  draw()
+  for (;;) {
+    const key = await keyOnTheDialog()
+    if (key.includes('\x1b[B') || key.includes('\x1b[A')) trusted = !trusted
+    if (key.includes('\r')) break
+    draw()
+  }
+  if (!trusted) process.exit(1)
+  fs.rmSync(question, { force: true })
+  startAfterDelay()
+}
+
+function asksTrustFor(file) {
+  try {
+    return fs.readFileSync(file, 'utf8').trim() === resumeId
+  } catch {
+    return false
+  }
+}
+
+const trustQuestion = path.join(home, 'fake-claude-trust-question')
+if (resumeId && asksTrustFor(trustQuestion))
+  setImmediate(() => void askTrustThenStart(trustQuestion))
+else startAfterDelay()
 
 let waitingHook = null
 // CC§14
@@ -539,9 +623,25 @@ function removalMs() {
 }
 
 // CC§4
+const CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS = 50
+
+// CC§1
+const A_FLAG_VALUE_CLAUDE_REPEATS_IN_ITS_RESUME_HINT = /^[\w./:+][\w./:@=+-]*$/
+
+// CC§1
+function flagsRepeatedInTheResumeHint() {
+  return settingsPath && A_FLAG_VALUE_CLAUDE_REPEATS_IN_ITS_RESUME_HINT.test(settingsPath)
+    ? `--settings ${settingsPath} `
+    : ''
+}
+
+// CC§4
 function removeWorktree(then) {
-  process.stdout.write('\x1b]0;\x07Removing worktree…\r\n')
-  setTimeout(() => {
+  const hasMessage = fs.existsSync(transcript) && fs.statSync(transcript).size > 0
+  const resumeHint = hasMessage
+    ? `\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude ${flagsRepeatedInTheResumeHint()}--resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22m`
+    : ''
+  const remove = () => {
     if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
       process.stdout.write(
         `Could not finish removing the worktree at ${cwd}; it may be partly deleted. Delete the folder if you no longer need it.\r\n`
@@ -552,7 +652,12 @@ function removeWorktree(then) {
     git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
     process.stdout.write('Worktree removed.\r\n')
     then()
-  }, removalMs())
+  }
+  process.stdout.write('\x1b]0;\x07')
+  setTimeout(() => {
+    process.stdout.write(`${resumeHint}Removing worktree…\r\n`)
+    setTimeout(remove, removalMs())
+  }, CLAUDE_WRITES_ITS_EMPTY_TITLE_AND_THE_LINE_SEPARATELY_MS)
 }
 
 let worktreeChoicePending = false
@@ -608,9 +713,22 @@ function registerPeer() {
     })
   )
 }
+// CC§17
+function hookContext(output) {
+  try {
+    const text = JSON.parse(output).hookSpecificOutput.additionalContext
+    return [
+      { type: 'attachment', attachment: { type: 'hook_additional_context', content: [text] } }
+    ]
+  } catch {
+    return []
+  }
+}
 // CC§13
 function peerTurn(content) {
-  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  const context = hookContext(
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
+  )
   append([
     {
       type: 'user',
@@ -622,6 +740,7 @@ function peerTurn(content) {
       },
       cwd
     },
+    ...context,
     {
       type: 'assistant',
       timestamp: new Date().toISOString(),
@@ -653,20 +772,151 @@ const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
 const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
 const ESC = /\x1b/g
-process.stdin.on('data', (chunk) =>
+// CC§12
+const STATUS_REPLY = /\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)/
+const STATUS_QUERY_WAITS_MS = 1000
+const statusQueried = !!process.env.KOLOFT_FAKE_PROGRAM_STATUS && process.stdin.isTTY
+let reportsState = false
+const reportState = (body) => {
+  if (reportsState) process.stdout.write(`\x1b]7501;${body}:app=claude-code\x07`)
+}
+const stopStatusQuery = () => {
+  if (!dialogKey) process.stdin.setRawMode(false)
+}
+if (statusQueried) {
+  process.stdin.setRawMode(true)
+  process.stdout.write('\x1b]7501;?\x07')
+  setTimeout(stopStatusQuery, STATUS_QUERY_WAITS_MS)
+}
+process.stdin.on('data', (chunk) => {
+  if (statusQueried && STATUS_REPLY.test(String(chunk))) {
+    reportsState = true
+    stopStatusQuery()
+    chunk = String(chunk).replace(STATUS_REPLY, '')
+    if (!chunk) return
+  }
   dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
-)
+})
 process.stdin.on('end', () => typedLines.end())
 // CC§14
-function keyOnTheDialog() {
+function keysOnTheDialog(answerOnceDone) {
+  const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    // PLATFORM§35
+    if (paneRaw) fs.writeFileSync(paneRaw, '')
+    reportState('state=blocked:kind=permission')
+    const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
+      if (fs.existsSync(dropKey)) return void fs.rmSync(dropKey, { force: true })
+      const answer = answerOnceDone(key)
+      if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
-      resolve(key)
+      if (paneRaw) fs.rmSync(paneRaw, { force: true })
+      reportState('state=working')
+      resolve(answer)
     }
   })
+}
+const keyOnTheDialog = () => keysOnTheDialog((key) => key)
+const untilExists = (file) =>
+  new Promise((resolve) => {
+    const tick = setInterval(() => {
+      if (!fs.existsSync(file)) return
+      clearInterval(tick)
+      resolve()
+    }, 200)
+  })
+const DOWN_KEYS = ['\x1b[B', '\x1bOB']
+const UP_KEYS = ['\x1b[A', '\x1bOA']
+const BACK_A_TAB = '\x1b[Z'
+// CC§14
+function questionDialogKeys(questions) {
+  const reviewPage = questions.length > 1 || questions[0].multiSelect
+  const state = questions.map(() => ({
+    ticked: new Set(),
+    words: '',
+    wordsUnticked: false,
+    pick: 0
+  }))
+  let at = 0
+  let row = 0
+  let typing = false
+  const next = () => {
+    at += 1
+    row = 0
+    typing = false
+  }
+  const answerOf = (q, s) =>
+    q.multiSelect
+      ? [
+          ...[...s.ticked].sort((a, b) => a - b).map((n) => q.labels[n - 1]),
+          ...(s.words && !s.wordsUnticked ? [s.words] : [])
+        ].join(', ')
+      : s.words || q.labels[s.pick - 1]
+  const answers = () => questions.map((q, i) => answerOf(q, state[i])).join(', ')
+  const press = (key) => {
+    const q = questions[at]
+    const s = state[at]
+    const options = q.labels.length
+    const chatRow = q.multiSelect ? options + 2 : options + 1
+    const tick = (n) => (s.ticked.has(n) ? s.ticked.delete(n) : s.ticked.add(n))
+    const moved = DOWN_KEYS.includes(key)
+      ? Math.min(row + 1, chatRow)
+      : UP_KEYS.includes(key)
+        ? (row || options + 1) - 1
+        : undefined
+    if (moved !== undefined) {
+      row = moved
+      typing = row === options
+      return
+    }
+    if (typing) {
+      if (key === BACK_A_TAB) return
+      if (key === '\x15') s.words = ''
+      else if (q.multiSelect && key === '\t') {
+        typing = false
+        row = options + 1
+      } else if (key === '\r' && q.multiSelect) s.wordsUnticked = !s.wordsUnticked
+      else if (key === '\r') next()
+      else s.words += key
+      return
+    }
+    if (key === BACK_A_TAB) {
+      if (row < options && at > 0) {
+        at -= 1
+        row = 0
+      }
+      return
+    }
+    if (row === chatRow) return
+    if (/^\d$/.test(key) && Number(key) >= 1 && Number(key) <= options) {
+      if (q.multiSelect) tick(Number(key))
+      else {
+        s.pick = Number(key)
+        s.words = ''
+        next()
+      }
+    } else if (!q.multiSelect && key === String(options + 1)) {
+      typing = true
+      row = options
+    } else if (q.multiSelect && key === '\t') next()
+    else if (q.multiSelect && key === '\r') {
+      if (row === options + 1) next()
+      else tick(row + 1)
+    }
+  }
+  return (key) => {
+    if (at === questions.length && reviewPage && key === BACK_A_TAB) {
+      at -= 1
+      row = 0
+      return undefined
+    }
+    if (at === questions.length) return reviewPage && key === '1' ? answers() : undefined
+    press(key)
+    return at === questions.length && !reviewPage ? answers() : undefined
+  }
 }
 const rl = readline.createInterface({ input: typedLines })
 const PASTE_START = '\x1b[200~'
@@ -681,6 +931,32 @@ rl.on('line', (line) => {
   pasted = null
   handleLine(whole)
 })
+// CC§1
+function compact(trigger, firstRecord, lastRecord) {
+  fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
+  fireHook('start', {
+    session_id: sessionId,
+    transcript_path: transcript,
+    cwd,
+    hook_event_name: 'SessionStart',
+    source: 'compact'
+  })
+  append([
+    firstRecord,
+    {
+      type: 'user',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: {
+        role: 'user',
+        content: 'This session is being continued from a previous conversation.'
+      },
+      cwd
+    },
+    lastRecord
+  ])
+}
+
 function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
@@ -771,29 +1047,10 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] ${entering ? 'entered' : 'left'} ${dest}\r\n> `)
     return
   }
-  // CC§1
   if (text === '/compact') {
-    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'manual' })
-    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
-    fireHook('start', {
-      session_id: sessionId,
-      transcript_path: transcript,
-      cwd,
-      hook_event_name: 'SessionStart',
-      source: 'compact'
-    })
-    append([
+    compact(
+      'manual',
       { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
-      {
-        type: 'user',
-        isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
-        message: {
-          role: 'user',
-          content: 'This session is being continued from a previous conversation.'
-        },
-        cwd
-      },
       {
         type: 'system',
         subtype: 'local_command',
@@ -801,8 +1058,27 @@ function handleLine(line) {
           '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
         cwd
       }
-    ])
+    )
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
+    return
+  }
+  if (text === '/compact-while-idle') {
+    fireHook('notify', {
+      hook_event_name: 'Notification',
+      message: 'Claude is waiting for your input',
+      notification_type: 'idle_prompt'
+    })
+    compact(
+      'auto',
+      { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' }, cwd },
+      {
+        type: 'system',
+        subtype: 'informational',
+        content: 'Compacted while idle, before the prompt cache expired',
+        cwd
+      }
+    )
+    process.stdout.write(`\r\n[fake-claude] compacted while idle\r\n> `)
     return
   }
   // CC§2
@@ -851,7 +1127,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -876,7 +1152,10 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [{ id: 'abg_e2e', type: 'subagent', status: 'running', description: 'bg' }]
+    })
 
     const subDir = path.join(projDir, sessionId, 'subagents')
     fs.mkdirSync(subDir, { recursive: true })
@@ -902,21 +1181,21 @@ function handleLine(line) {
             type: 'queue-operation',
             operation: 'enqueue',
             timestamp: new Date().toISOString(),
-            content: taskNotification(bgToolUseId, 'completed', 'background work done')
+            content: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done')
           },
           {
             type: 'attachment',
             timestamp: new Date().toISOString(),
             attachment: {
               type: 'queued_command',
-              prompt: taskNotification(bgToolUseId, 'completed', 'background work done'),
+              prompt: taskNotification('abg_e2e', bgToolUseId, 'completed', 'background work done'),
               commandMode: 'task-notification'
             },
             cwd
           },
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: done.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -929,7 +1208,7 @@ function handleLine(line) {
             cwd
           }
         ])
-        fireHook('stop', { hook_event_name: 'Stop' })
+        fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
         process.stdout.write('[fake-claude] bg-work finished\r\n> ')
       }
     }, 500)
@@ -944,7 +1223,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -968,7 +1247,7 @@ function handleLine(line) {
       append([
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -988,6 +1267,46 @@ function handleLine(line) {
     return
   }
   // CC§8
+  if (text === '/bg-plugin-monitor') {
+    const notification =
+      '<task-notification>\n<task-id>mon_plugin_e2e</task-id>\n' +
+      '<summary>Monitor event: "service errors"</summary>\n' +
+      '<event>15:05 ERROR connection dropped</event>\n</task-notification>'
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: notification })
+    const meta = usageMeta()
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        origin: { kind: 'task-notification', producer: 'session-task' },
+        message: { role: 'user', content: notification },
+        cwd
+      },
+      {
+        type: 'assistant',
+        version: FAKE_CLAUDE_VERSION,
+        requestId: meta.requestId,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          id: meta.id,
+          model: meta.model,
+          content: [{ type: 'text', text: 'A network blip, nothing for you to do.' }],
+          usage: meta.usage
+        },
+        cwd
+      }
+    ])
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'mon_plugin_e2e', type: 'shell', status: 'running', description: 'watch.sh' }
+      ]
+    })
+    process.stdout.write('[fake-claude] plugin monitor event answered\r\n> ')
+    return
+  }
+  // CC§8
   if (text === '/bg-monitor') {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     const monToolUseId = 'toolu_monitor_e2e'
@@ -996,7 +1315,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1050,7 +1369,7 @@ function handleLine(line) {
       { type: 'user', message: { role: 'user', content: text }, cwd },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1087,9 +1406,22 @@ function handleLine(line) {
         cwd
       }
     ])
-    fireHook('stop', { hook_event_name: 'Stop' })
+    // CC§8
+    const tasksDir = path.join(home, '.claude-tmp', sessionId, 'tasks')
+    fs.mkdirSync(tasksDir, { recursive: true })
+    const outputFd = fs.openSync(path.join(tasksDir, 'bash_e2e.output'), 'a')
+    const toolShell = cp.spawn('/bin/sh', ['-c', 'eval "sleep 5"; true'], {
+      stdio: ['ignore', outputFd, 'ignore']
+    })
+    fs.closeSync(outputFd)
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'bash_e2e', type: 'shell', status: 'running', description: 'npm test' }
+      ]
+    })
 
-    setTimeout(() => {
+    toolShell.on('exit', () => {
       const done = usageMeta()
       append([
         {
@@ -1097,14 +1429,19 @@ function handleLine(line) {
           timestamp: new Date().toISOString(),
           attachment: {
             type: 'queued_command',
-            prompt: taskNotification(shToolUseId, 'completed', 'Background command completed'),
+            prompt: taskNotification(
+              'bash_e2e',
+              shToolUseId,
+              'completed',
+              'Background command completed'
+            ),
             commandMode: 'task-notification'
           },
           cwd
         },
         {
           type: 'assistant',
-          version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+          version: FAKE_CLAUDE_VERSION,
           requestId: done.requestId,
           timestamp: new Date().toISOString(),
           message: {
@@ -1117,9 +1454,9 @@ function handleLine(line) {
           cwd
         }
       ])
-      fireHook('stop', { hook_event_name: 'Stop' })
+      fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-shell finished\r\n> ')
-    }, 5000)
+    })
     process.stdout.write('[fake-claude] bg-shell running\r\n> ')
     return
   }
@@ -1142,7 +1479,7 @@ function handleLine(line) {
       },
       {
         type: 'assistant',
-        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        version: FAKE_CLAUDE_VERSION,
         requestId: meta.requestId,
         timestamp: new Date().toISOString(),
         message: {
@@ -1164,6 +1501,46 @@ function handleLine(line) {
     }, MID_TURN_WRITE_HOLD_MS_OUTLASTING_500MS_JSONL_POLL)
     return
   }
+  if (text.startsWith('/run ')) {
+    const command = text.slice('/run '.length).trim()
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+    const meta = usageMeta()
+    const toolUseId = `toolu_run_${require('crypto').randomUUID()}`
+    const call = { tool_name: 'Bash', tool_input: { command }, tool_use_id: toolUseId, cwd }
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: { role: 'user', content: text },
+        cwd
+      },
+      {
+        type: 'assistant',
+        version: FAKE_CLAUDE_VERSION,
+        requestId: meta.requestId,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          id: meta.id,
+          model: meta.model,
+          content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command } }],
+          usage: meta.usage
+        },
+        cwd
+      }
+    ])
+    fireToolHooks('PreToolUse', { hook_event_name: 'PreToolUse', ...call })
+    cp.execFile('/bin/sh', ['-c', command], { cwd, env: process.env }, (e, out, err) => {
+      fireToolHooks('PostToolUse', {
+        hook_event_name: 'PostToolUse',
+        ...call,
+        tool_response: { stdout: out, stderr: err }
+      })
+      fireHook('stop', { hook_event_name: 'Stop' })
+      process.stdout.write(`[fake-claude] ran ${command}\r\n> `)
+    })
+    return
+  }
   // CC§2
   if (text.startsWith('/scratch ')) {
     const name = text.slice('/scratch '.length).trim()
@@ -1175,13 +1552,20 @@ function handleLine(line) {
     process.stdout.write(`[fake-claude] scratched ${name}\r\n> `)
     return
   }
+  if (text.startsWith('/later ')) {
+    const later = text.slice('/later '.length)
+    const marker = path.join(home, 'go-later')
+    void untilExists(marker).then(() => {
+      fs.rmSync(marker, { force: true })
+      handleLine(later)
+    })
+    process.stdout.write(`[fake-claude] armed ${later}\r\n> `)
+    return
+  }
   if (text.startsWith('/open-later ')) {
     const target = text.slice('/open-later '.length).trim()
     if (!target) return void process.stdout.write('> ')
-    const marker = path.join(home, 'go-open')
-    const tick = setInterval(() => {
-      if (!fs.existsSync(marker)) return
-      clearInterval(tick)
+    void untilExists(path.join(home, 'go-open')).then(() => {
       try {
         cp.execFileSync('open', [target], {
           cwd,
@@ -1189,7 +1573,7 @@ function handleLine(line) {
           env: openEnvRoutingPastShimToRecordingFakeOpen()
         })
       } catch {}
-    }, 200)
+    })
     process.stdout.write(`[fake-claude] armed open ${target}\r\n> `)
     return
   }
@@ -1208,13 +1592,18 @@ function handleLine(line) {
     }
     return
   }
-  if (text.startsWith('/koloft ')) {
-    const rest = text.slice('/koloft '.length).trim()
-    cp.execFile('/bin/sh', ['-c', `koloft ${rest}`], { cwd, env: process.env }, (e, out, err) => {
+  const runAndEcho = (label, command) =>
+    cp.execFile('/bin/sh', ['-c', command], { cwd, env: process.env }, (e, out, err) => {
       const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
       const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
-      process.stdout.write(`${said}[fake-claude] koloft exit=${code}\r\n> `)
+      process.stdout.write(`${said}[fake-claude] ${label} exit=${code}\r\n> `)
     })
+  if (text.startsWith('/koloft ')) {
+    runAndEcho('koloft', `koloft ${text.slice('/koloft '.length).trim()}`)
+    return
+  }
+  if (text.startsWith('/sh ')) {
+    runAndEcho('sh', text.slice('/sh '.length).trim())
     return
   }
   if (text === '/busy') {
@@ -1230,7 +1619,7 @@ function handleLine(line) {
         append([
           {
             type: 'assistant',
-            version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+            version: FAKE_CLAUDE_VERSION,
             requestId: meta.requestId,
             timestamp: new Date().toISOString(),
             message: {
@@ -1283,7 +1672,7 @@ function handleLine(line) {
     return
   }
   // CC§14
-  const ask = async (name, input, allowed, keyed) => {
+  const ask = async (name, input, allowed, keyed, dialogKeys = (key) => key) => {
     const toolUseId = `toolu_ask_${Date.now()}`
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([
@@ -1312,7 +1701,7 @@ function handleLine(line) {
     if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
     else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
     else {
-      const key = keyOnTheDialog()
+      const key = keysOnTheDialog(dialogKeys)
       process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
       // CC§14
       setTimeout(() => {
@@ -1322,7 +1711,7 @@ function handleLine(line) {
             message: `Claude needs your permission to use ${name}`
           })
       }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
-      picked = keyed(await key)
+      picked = await keyed(await key)
     }
     append([
       {
@@ -1345,33 +1734,43 @@ function handleLine(line) {
     process.stdout.write(`[fake-claude] ${picked}\r\n> `)
   }
   if (text.startsWith('/ask ')) {
-    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const questions = text
+      .slice('/ask '.length)
+      .split('||')
+      .map((part) => {
+        const [question, ...labels] = part.split('|')
+        const multiSelect = question.startsWith('+')
+        return { question: multiSelect ? question.slice(1) : question, labels, multiSelect }
+      })
     const input = {
-      questions: [
-        {
-          question,
-          header: 'Pick',
-          options: labels.map((label) => ({ label, description: `The ${label} one` })),
-          multiSelect: false
-        }
-      ]
+      questions: questions.map((q) => ({
+        question: q.question,
+        header: 'Pick',
+        options: q.labels.map((label) => ({ label, description: `The ${label} one` })),
+        multiSelect: q.multiSelect
+      }))
     }
     const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
       (updated) => pickedText(Object.values(updated.answers).join(', ')),
-      (key) => pickedText(labels[Number(key) - 1] ?? key)
+      pickedText,
+      questionDialogKeys(questions)
     )
   }
   if (text.startsWith('/bash ')) {
     const command = text.slice('/bash '.length)
     const ran = `Ran: ${command}`
+    const runs = async () => {
+      if (command.startsWith('slow ')) await untilExists(path.join(home, 'go-run'))
+      return ran
+    }
     return ask(
       'Bash',
       { command, description: 'A command' },
       () => ran,
-      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+      (key) => (key === '1' ? runs() : `Denied: key ${JSON.stringify(key)}`)
     )
   }
   if (text === '/need-approval') {
@@ -1383,13 +1782,16 @@ function handleLine(line) {
     return
   }
   if (!text) return void process.stdout.write('> ')
-  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  const context = hookContext(
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+  )
   const meta = usageMeta()
   append([
     { type: 'user', message: { role: 'user', content: text }, cwd },
+    ...context,
     {
       type: 'assistant',
-      version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+      version: FAKE_CLAUDE_VERSION,
       requestId: meta.requestId,
       timestamp: new Date().toISOString(),
       message: {

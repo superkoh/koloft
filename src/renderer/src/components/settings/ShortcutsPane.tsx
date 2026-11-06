@@ -12,10 +12,10 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     items: [
       {
         keys: ['⌘P'],
-        name: 'Jump to',
+        name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens a list of every session, every workspace and the app actions. Type a few letters, ⏎ opens the one picked.'
+            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your default method (⌘⏎ another one), in the workspace, worktree and title Koloft Assist picks, or in the one you name with @; ⇧⏎ starts a new line; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -27,7 +27,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { what: 'Starts a session in your workspace with the default method.' },
           {
             where: 'Several workspaces',
-            what: 'Asks which one. Enter uses the default method, ⇧⏎ the other one.'
+            what: 'Asks which one. Enter uses the default method, ⇧⏎ another one (a list when there are several).'
           },
           { where: 'No workspace yet', what: 'Shows a notice instead.' }
         ]
@@ -84,16 +84,6 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Shows the session that has waited longest for you, in any workspace, and clears its red dot.'
           },
           { where: 'Nothing waiting', what: 'Nothing.' }
-        ]
-      },
-      {
-        keys: ['⌥⌘F'],
-        name: 'Search sessions',
-        uses: [
-          {
-            what: 'Lists every session, in every workspace, whose conversation or title holds the words.'
-          },
-          { where: 'No workspace', what: 'No matches.' }
         ]
       },
       {
@@ -170,7 +160,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { where: 'Workbench', what: 'Finds in the active tab: file, file list or web page.' },
           { where: 'Terminal tab', what: 'Nothing.' },
           { where: 'Editing a file', what: 'Off.' },
-          { where: 'Conversation', what: 'Goes to Claude.' }
+          { where: 'Conversation', what: 'Goes to the agent.' }
         ]
       },
       {
@@ -182,7 +172,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Saves the file being edited. Nothing when it is unchanged.'
           },
           { where: 'Note', what: 'Saves the note.' },
-          { where: 'Conversation', what: 'Goes to Claude.' }
+          { where: 'Conversation', what: 'Goes to the agent.' }
         ]
       },
       {
@@ -194,7 +184,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Closes the first thing open, in this order: image zoom, find bar, menu, then full width back to side-by-side.'
           },
           { where: 'Terminal tab', what: 'Goes to the shell.' },
-          { where: 'Conversation', what: 'Goes to Claude (interrupt).' },
+          // CODEX§25 MUSE§7 AGY§15
+          { where: 'Conversation', what: 'Goes to the agent, which stops a running turn.' },
           { where: 'Note', what: 'Sends the caret back to where it was.' },
           { where: 'Dialog', what: 'Closes it.' }
         ]
@@ -252,7 +243,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       {
         keys: ['⇧⏎'],
         name: 'New line',
-        uses: [{ what: "Adds a line in Claude's input box without sending." }]
+        // CC§12 CODEX§2 MUSE§7 AGY§15
+        uses: [{ what: "Adds a line in the agent's input box without sending." }]
       }
     ]
   },

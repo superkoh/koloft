@@ -1,10 +1,11 @@
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { useEffect, useState, type JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
+import { IconClose } from '../icons'
 import type { SessionRow } from '@shared/types'
 import { basename } from '@shared/preview'
 import { mixesBackends, relTime } from '../sessionRows'
 import { mayBeRunningElsewhere } from '../resumeFlow'
+import '../restoreDialog.css'
 
 export function RestoreDialog({
   wsPath,
@@ -30,7 +31,8 @@ export function RestoreDialog({
     }
   }, [wsPath])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
@@ -51,7 +53,7 @@ export function RestoreDialog({
         <div className="modal-header">
           <span>Restore session · {basename(wsPath)}</span>
           <span className="modal-close" onClick={onClose} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">

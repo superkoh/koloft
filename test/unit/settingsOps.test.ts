@@ -19,7 +19,7 @@ describe('buildResetPatch (FR-12)', () => {
     expect(patch).not.toHaveProperty('fablePriority')
   })
 
-  it('leaves the Discord block alone, so a reset keeps every conductor binding', () => {
+  it('leaves the Discord block alone, so a reset keeps the butler’s channel', () => {
     expect(buildResetPatch()).not.toHaveProperty('discord')
   })
 
@@ -30,17 +30,17 @@ describe('buildResetPatch (FR-12)', () => {
         'agentTools',
         'browserControl',
         'browserPaneWidth',
-        'conductorsFolded',
         'dockBadge',
         'filePaneWidth',
         'fileTreeHeight',
         'fontFamily',
         'fontSize',
         'gitAutoFetch',
+        'gitAutoPull',
         'hintsOff',
         'hintsSeen',
         'keepAwake',
-        'lastSeenVersion',
+        'ownerAsleepSince',
         'onboardingSeen',
         'notesFolded',
         'notesHeight',
@@ -48,7 +48,6 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
-        'showUsage',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
@@ -156,21 +155,18 @@ describe('sanitizeLoadedSettings and the Notes keys: a hand-edited settings.json
     expect(sanitizeLoadedSettings({ notesHeight: 320 }).notesHeight).toBe(320)
   })
 
-  it('forces notesFolded and conductorsFolded to a real boolean, keeping one that already is', () => {
+  it('forces notesFolded to a real boolean, keeping one that already is', () => {
     expect(sanitizeLoadedSettings({ notesFolded: 'yes' }).notesFolded).toBe(
       DEFAULT_SETTINGS.notesFolded
     )
     expect(sanitizeLoadedSettings({ notesFolded: true }).notesFolded).toBe(true)
     expect(sanitizeLoadedSettings({ notesFolded: false }).notesFolded).toBe(false)
-    expect(sanitizeLoadedSettings({ conductorsFolded: 'no' }).conductorsFolded).toBe(true)
-    expect(sanitizeLoadedSettings({ conductorsFolded: false }).conductorsFolded).toBe(false)
   })
 
-  it('leaves the Notes keys at their defaults when the file says nothing, and the Conductors island starts folded', () => {
+  it('leaves the Notes keys at their defaults when the file says nothing', () => {
     const loaded = sanitizeLoadedSettings({})
     expect(loaded.notesHeight).toBe(DEFAULT_SETTINGS.notesHeight)
     expect(loaded.notesFolded).toBe(DEFAULT_SETTINGS.notesFolded)
-    expect(loaded.conductorsFolded).toBe(true)
   })
 })
 
@@ -206,6 +202,57 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
 
   it('About ▸ Reset leaves the choice alone', () => {
     expect(buildResetPatch()).not.toHaveProperty('assist')
+  })
+})
+
+describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft keeps', () => {
+  it('counts an upgrade that finished Assist setup with prompts skipped as agreed, so it is not asked again; one that said "ask me first", or is still in setup, as not yet', () => {
+    const done = { fontSize: 13, assist: { on: true, backend: 'claude' } }
+    expect(sanitizeLoadedSettings(done).skipPermissionsAgreed).toBe(true)
+    expect(sanitizeLoadedSettings({ ...done, skipPermissions: false }).skipPermissionsAgreed).toBe(
+      false
+    )
+    expect(sanitizeLoadedSettings({ fontSize: 13 }).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({}).skipPermissionsAgreed).toBe(false)
+  })
+
+  it('keeps a saved answer, and About ▸ Reset leaves it alone', () => {
+    const saved = { assist: { on: true, backend: 'claude' }, skipPermissionsAgreed: false }
+    expect(sanitizeLoadedSettings(saved).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({ skipPermissionsAgreed: true }).skipPermissionsAgreed).toBe(true)
+    expect(buildResetPatch()).not.toHaveProperty('skipPermissionsAgreed')
+  })
+})
+
+describe('sanitizeLoadedSettings and where new projects go', () => {
+  it('starts empty — no folder is guessed — and keeps only non-empty paths per machine', () => {
+    expect(sanitizeLoadedSettings({}).newProjectFolders).toEqual({})
+    expect(
+      sanitizeLoadedSettings({
+        newProjectFolders: { local: '/Users/me/code', devbox: '', other: 3 } as never
+      }).newProjectFolders
+    ).toEqual({ local: '/Users/me/code' })
+    expect(sanitizeLoadedSettings({ newProjectFolders: 'x' as never }).newProjectFolders).toEqual(
+      {}
+    )
+  })
+
+  it('About ▸ Reset leaves the remembered folders alone', () => {
+    expect(buildResetPatch()).not.toHaveProperty('newProjectFolders')
+  })
+})
+
+describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
+  it('drops the last-seen version an older build kept for its What’s new window, so the next save clears it from disk', () => {
+    expect(
+      sanitizeLoadedSettings({ fontSize: 13, lastSeenVersion: '0.59.1' } as never)
+    ).not.toHaveProperty('lastSeenVersion')
+  })
+
+  it('drops the cost and context usage switch an older build saved, so the next save clears it from disk', () => {
+    expect(sanitizeLoadedSettings({ fontSize: 13, showUsage: true } as never)).not.toHaveProperty(
+      'showUsage'
+    )
   })
 })
 
@@ -266,28 +313,70 @@ describe('sanitizeLoadedSettings and worldClocks', () => {
 })
 
 describe('session methods', () => {
-  it('loads old settings with Claude as default and both methods enabled', () => {
+  it('loads old settings with Claude as default and every method enabled', () => {
     expect(sanitizeLoadedSettings({}).sessionMethods).toEqual({
       defaultBackend: 'claude',
-      enabled: { claude: true, codex: true }
+      enabled: { claude: true, codex: true, muse: true, agy: true }
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })
-  it('keeps Claude enabled and replaces a disabled or unknown default', () => {
-    for (const raw of [
-      null,
-      'codex',
-      { defaultBackend: 'unknown' },
-      { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
-    ]) {
+  it('replaces a disabled or unknown default with the first method still on', () => {
+    for (const raw of [null, 'codex', { defaultBackend: 'unknown' }]) {
       const methods = sanitizeLoadedSettings({ sessionMethods: raw }).sessionMethods
       expect(methods.defaultBackend).toBe('claude')
       expect(methods.enabled.claude).toBe(true)
     }
     expect(
       sanitizeLoadedSettings({
+        sessionMethods: { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'muse',
+      enabled: { claude: false, codex: false, muse: true, agy: true }
+    })
+    expect(
+      sanitizeLoadedSettings({
         sessionMethods: { defaultBackend: 'codex', enabled: { codex: true } }
       }).sessionMethods.defaultBackend
     ).toBe('codex')
+  })
+  it('lets Claude be off while another method is on, and turns Claude back on when nothing is', () => {
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'claude',
+          enabled: { claude: false, codex: true, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'codex',
+      enabled: { claude: false, codex: true, muse: false, agy: false }
+    })
+    expect(
+      sanitizeLoadedSettings({
+        sessionMethods: {
+          defaultBackend: 'agy',
+          enabled: { claude: false, codex: false, muse: false, agy: false }
+        }
+      }).sessionMethods
+    ).toEqual({
+      defaultBackend: 'claude',
+      enabled: { claude: true, codex: false, muse: false, agy: false }
+    })
+  })
+  it('moves Assist off a method that is switched off, to the default method, and leaves it on one that is on', () => {
+    const off = { claude: false, codex: true, muse: true, agy: true }
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: true, backend: 'claude' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: true, backend: 'muse' })
+    expect(
+      sanitizeLoadedSettings({
+        assist: { on: false, backend: 'agy' },
+        sessionMethods: { defaultBackend: 'muse', enabled: off }
+      }).assist
+    ).toEqual({ on: false, backend: 'agy' })
   })
 })

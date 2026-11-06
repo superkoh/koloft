@@ -1,5 +1,12 @@
 import type { JSX } from 'react'
-import { LuBell, LuCamera, LuClipboard, LuMapPin, LuMic, LuShieldOff } from 'react-icons/lu'
+import {
+  IconBlocked,
+  IconCamera,
+  IconClipboard,
+  IconLocation,
+  IconMicrophone,
+  IconNotifications
+} from '../icons'
 import type { BrowserPermissionAsk, BrowserPermissionRefusal } from '@shared/types'
 
 const LABEL: Record<string, string> = {
@@ -13,12 +20,12 @@ const LABEL: Record<string, string> = {
 }
 
 const ICON: Record<string, JSX.Element> = {
-  microphone: <LuMic size={16} />,
-  camera: <LuCamera size={16} />,
-  'camera-and-microphone': <LuCamera size={16} />,
-  notifications: <LuBell size={16} />,
-  geolocation: <LuMapPin size={16} />,
-  'clipboard-read': <LuClipboard size={16} />
+  microphone: <IconMicrophone size={16} />,
+  camera: <IconCamera size={16} />,
+  'camera-and-microphone': <IconCamera size={16} />,
+  notifications: <IconNotifications size={16} />,
+  geolocation: <IconLocation size={16} />,
+  'clipboard-read': <IconClipboard size={16} />
 }
 
 function label(permission: string): string {
@@ -41,7 +48,7 @@ export function BrowserPermissionBar({
   if (ask) {
     return (
       <div className="bperm" role="alertdialog" aria-label="Page permission request">
-        <span className="bperm-ico">{ICON[ask.permission] ?? <LuShieldOff size={16} />}</span>
+        <span className="bperm-ico">{ICON[ask.permission] ?? <IconBlocked size={16} />}</span>
         <span className="bperm-msg">
           <b>{ask.origin}</b> wants to use <b>{label(ask.permission)}</b>
         </span>
@@ -60,7 +67,7 @@ export function BrowserPermissionBar({
     return (
       <div className="bperm refused" role="status">
         <span className="bperm-ico">
-          <LuShieldOff size={16} />
+          <IconBlocked size={16} />
         </span>
         <span className="bperm-msg">
           Blocked <b>{refusal.origin}</b> from <b>{label(refusal.permission)}</b> — Koloft&rsquo;s

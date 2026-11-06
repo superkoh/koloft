@@ -1,6 +1,5 @@
 import type { JSX } from 'react'
 import { SessionMethodsSection } from './SessionMethodsSection'
-import { AssistSection } from './AssistSection'
 
 export function SessionsPane(): JSX.Element {
   return (
@@ -11,7 +10,6 @@ export function SessionsPane(): JSX.Element {
       </div>
 
       <SessionMethodsSection />
-      <AssistSection />
     </>
   )
 }

@@ -521,31 +521,26 @@ describe('retargetTab (FR-34)', () => {
     expect(retargetTab(set, set.tabs[1].id, '/ws/b.ts').tabs[1].line).toBeUndefined()
   })
 
-  it('keeps the id, the unread mark and the FR-56 backlink, and touches no other tab', () => {
+  it('keeps the id and the unread mark, drops the FR-56 backlink to the old file, and touches no other tab', () => {
     const source = openTab(emptyTabSet(), { kind: 'file', path: '/ws/src.md', source: 'user' })
     const r = openTab(source.set, {
       kind: 'file',
       path: '/ws/a.ts',
       source: 'agent',
-      sourceTabId: source.tabId
+      sourceTabId: source.tabId,
+      sourcePath: '/ws/src.md'
     })
 
     const next = retargetTab(r.set, r.tabId, '/ws/b.ts')
 
     const moved = next.tabs.find((t) => t.id === r.tabId)!
     expect(moved.unread).toBe(true)
-    expect(moved.sourceTabId).toBe(source.tabId)
+    expect(moved.sourceTabId).toBeUndefined()
+    expect(moved.sourcePath).toBeUndefined()
     expect(next.tabs[0]).toBe(r.set.tabs[0])
     expect(next.tabs[1]).toBe(r.set.tabs[1])
     expect(next.activeId).toBe(r.set.activeId)
     expect(next.recency).toEqual(r.set.recency)
-  })
-
-  it('never folds into a tab already on the target path — FR-34 is "same tab"', () => {
-    const set = fileTabs(['/ws/a.ts', '/ws/b.ts'])
-    const next = retargetTab(set, set.tabs[1].id, '/ws/b.ts')
-    expect(next.tabs).toHaveLength(3)
-    expect(paths(next)).toEqual(['/ws/b.ts', '/ws/b.ts'])
   })
 
   it('ignores a tab id the set does not have', () => {
@@ -1037,7 +1032,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
 
     const r = retargetOrOpenTab(set, id, '/ws/b.ts', 12, () => false)
 
-    expect(r.openedNew).toBe(false)
     expect(r.tabId).toBe(id)
     expect(r.set.tabs).toHaveLength(2)
     expect(r.set.tabs[1]).toMatchObject({ id, path: '/ws/b.ts', line: 12 })
@@ -1049,8 +1043,21 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
 
     const r = retargetOrOpenTab(set, id, '/ws/b.ts', 12)
 
-    expect(r.openedNew).toBe(false)
+    expect(r.tabId).toBe(id)
     expect(r.set).toEqual(retargetTab(set, id, '/ws/b.ts', 12))
+  })
+
+  it('a clean tab whose target is already open in another tab lands on that tab, at the asked line, and closes', () => {
+    const set = fileTabs(['/ws/a.ts', '/ws/b.ts'])
+    const [, a, b] = set.tabs
+
+    const r = retargetOrOpenTab(activateTab(set, a.id), a.id, '/ws/b.ts', 9, () => false)
+
+    expect(r.tabId).toBe(b.id)
+    expect(paths(r.set)).toEqual(['/ws/b.ts'])
+    expect(r.set.activeId).toBe(b.id)
+    expect(r.set.tabs.find((t) => t.id === b.id)!.line).toBe(9)
+    expect(r.set.recency).not.toContain(a.id)
   })
 
   it('B-28: a dirty tab opens a new tab instead, keeping its own text where it is', () => {
@@ -1059,7 +1066,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
 
     const r = retargetOrOpenTab(set, id, '/ws/b.ts', 12, (t) => t === id)
 
-    expect(r.openedNew).toBe(true)
     expect(r.tabId).not.toBe(id)
     expect(paths(r.set)).toEqual(['/ws/a.ts', '/ws/b.ts'])
     expect(r.set.tabs[1]).toBe(set.tabs[1])
@@ -1073,7 +1079,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
 
     const r = retargetOrOpenTab(set, id, '/ws/b.ts', undefined, (t) => t === id)
 
-    expect(r.openedNew).toBe(true)
     expect(r.tabId).toBe(set.tabs[2].id)
     expect(paths(r.set)).toEqual(['/ws/a.ts', '/ws/b.ts'])
   })
@@ -1084,7 +1089,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
     const r = retargetOrOpenTab(set, set.tabs[1].id, '/ws/f9.ts', undefined, () => true)
 
     expect(r.refused).toBe('all-dirty')
-    expect(r.openedNew).toBe(false)
     expect(r.set).toBe(set)
   })
 })
@@ -1124,10 +1128,10 @@ describe('a terminal tab (R2/R19)', () => {
     expect(set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(2)
   })
 
-  it('lands at the RIGHT end, and a later web tab goes in FRONT of it', () => {
+  it('keeps the order tabs were opened in — a later web tab goes AFTER it, not in front', () => {
     const withTerm = withShells(1)
     const after = openTab(withTerm, { kind: 'web', url: 'http://h/p', source: 'user' }).set
-    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'terminal'])
+    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'terminal', 'web'])
   })
 
   it('refuses the ninth instead of evicting one of the eight, which could kill a running shell (R2)', () => {
@@ -1146,7 +1150,7 @@ describe('a terminal tab (R2/R19)', () => {
     expect(r.set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(KIND_TAB_CAP)
   })
 
-  it('takes no part in drag ordering, in either direction', () => {
+  it('drags like any other tab, and a web tab can be dragged past it', () => {
     let set = openTab(emptyTabSet(), { kind: 'web', url: 'http://h/a', source: 'user' }).set
     set = openTab(set, {
       kind: 'terminal',
@@ -1155,12 +1159,11 @@ describe('a terminal tab (R2/R19)', () => {
       title: 'zsh',
       source: 'user'
     }).set
-    set = openTab(set, { kind: 'web', url: 'http://h/b', source: 'user' }).set
-    expect(set.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moveTab(set, 'pty1', 1)).toBe(set)
-    const moved = moveTab(set, set.tabs[1].id, 9)
-    expect(moved.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moved.tabs[3].id).toBe('pty1')
+    const webA = set.tabs[1].id
+    const left = moveTab(set, 'pty1', 0)
+    expect(left.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, 'pty1', webA])
+    const right = moveTab(left, webA, 1)
+    expect(right.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, webA, 'pty1'])
   })
 
   it('labels itself with its title alone (R19), never with its directory', () => {

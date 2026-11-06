@@ -12,6 +12,10 @@ package-lock.json
 # Verbatim GPL-3.0.
 LICENSE
 
+# The site's recordings: frames and the app's compiled CSS, written by site-recordings.spec.ts.
+site/demo/*.frames.js
+site/demo/app.css
+
 # Prose stays hand-wrapped. Prettier does not reflow paragraphs, so all it would do here
 # is swap *emphasis* for _emphasis_ and repad tables — churn with nothing behind it, in
 # the one place where a human's line breaks carry meaning.

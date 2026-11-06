@@ -1,19 +1,18 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
 import {
   escPeel,
   freshLineCopy,
-  mainRunningCount,
   primaryLabel,
   pullFailedReason,
   type PullPhase
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { useStore } from '../store'
 import {
   digitPick,
@@ -24,13 +23,22 @@ import {
   type PickerMode
 } from '../workspacePicker'
 import { PullConfirm } from './PullConfirm'
-import { SessionLaunchButtons, SessionLaunchStatus, useSessionLaunch } from './SessionLaunchButtons'
+import { enterHint, startOrList } from '../agentChoice'
+import {
+  BusyLine,
+  SessionLaunchButtons,
+  SessionLaunchStatus,
+  useLaunchLock,
+  useSessionLaunch
+} from './SessionLaunchButtons'
+import '../workspacePicker.css'
 
 export function WorkspacePicker({
   mode,
   rows,
   lastWsPath,
   pinned,
+  chosen,
   onClose,
   onConfirm,
   launchLock
@@ -39,6 +47,7 @@ export function WorkspacePicker({
   rows: WorkspaceRows[]
   lastWsPath: string | null
   pinned?: WorkspaceRows
+  chosen?: BackendId
   onClose: () => void
   onConfirm: (ws: WorkspaceRows, backend: BackendId) => Promise<void>
   launchLock: { current: boolean }
@@ -46,6 +55,7 @@ export function WorkspacePicker({
   const visible = useMemo(() => pickerRows(rows, mode), [rows, mode])
   const [hot, setHot] = useState(() => preselectIndex(rows, mode, lastWsPath))
   const [phase, setPhase] = useState<PullPhase>('idle')
+  const [pullingAs, setPullingAs] = useState<BackendId | null>(null)
   const [failReason, setFailReason] = useState('')
   const [failedFor, setFailedFor] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
@@ -66,19 +76,11 @@ export function WorkspacePicker({
     },
     onClose
   )
-  const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
-  const backends = sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+  const choice = sessionLaunch.choice({ chosen })
+  const [listOpen, setListOpen] = useState(false)
+  const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
-  useEffect(() => {
-    launchLock.current = locked
-    return () => {
-      launchLock.current = false
-    }
-  }, [locked, launchLock])
+  useLaunchLock(launchLock, locked)
   const failedHere = phase === 'failed' && !!target && failedFor === target.workspace.path
   const morph =
     mode === 'main' &&
@@ -92,6 +94,7 @@ export function WorkspacePicker({
     if (!f) return
     setConfirm(null)
     setConfirmWs(null)
+    setPullingAs(backend)
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(ws.workspace.path, { branch: f.branch, head: f.head })
@@ -107,11 +110,9 @@ export function WorkspacePicker({
     void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
   }
 
-  const submit = (
-    ws: WorkspaceRows | undefined,
-    backend = sessionLaunch.methods.defaultBackend
-  ): void => {
+  const submit = (ws: WorkspaceRows | undefined, picked?: BackendId): void => {
     if (!ws || locked || confirm !== null) return
+    const backend = picked ?? sessionLaunch.choice({ on: hostOf(ws.workspace.path), chosen }).lead
     if (mode === 'worktree') {
       void onConfirm(ws, backend)
       return
@@ -122,7 +123,7 @@ export function WorkspacePicker({
       void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, ws.workspace.path)
     if (count > 0) {
       confirmBackend.current = backend
       setConfirmWs(ws)
@@ -134,7 +135,8 @@ export function WorkspacePicker({
     if (!locked) onClose()
   }
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
         const layer = escPeel({ locked, confirmOpen: confirm !== null })
@@ -149,7 +151,14 @@ export function WorkspacePicker({
       if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (e.key === 'Enter') {
         e.preventDefault()
-        submit(target, e.shiftKey && other ? other : undefined)
+        if (mode !== 'main') submit(target)
+        else
+          startOrList(
+            e.shiftKey,
+            choice,
+            (backend) => submit(target, backend),
+            () => target && setListOpen(true)
+          )
         return
       }
       if (pinned) return
@@ -171,7 +180,8 @@ export function WorkspacePicker({
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     if (locked || confirm !== null) return
     boxRef.current?.focus()
   }, [locked, confirm])
@@ -183,14 +193,9 @@ export function WorkspacePicker({
     const f = target?.workspace.freshness
     if (locked) {
       return (
-        <div className="fresh-line busy">
-          <span className="fico-l">
-            <LuLoaderCircle size={14} />
-          </span>
-          <span>
-            {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
-          </span>
-        </div>
+        <BusyLine>
+          {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
+        </BusyLine>
       )
     }
     if (failedHere) {
@@ -207,7 +212,7 @@ export function WorkspacePicker({
     return (
       <div className="fresh-line stale">
         <span className="fico-l">
-          <LuTriangleAlert size={14} />
+          <IconWarning size={14} />
         </span>
         <span>
           <b>{copy.strong}</b>
@@ -233,7 +238,7 @@ export function WorkspacePicker({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">
@@ -271,8 +276,8 @@ export function WorkspacePicker({
             {mode === 'main' && <SessionLaunchStatus launch={sessionLaunch} />}
             {!pinned && (
               <p className="field-hint">
-                ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`} · Esc cancel
+                ↓↑ move · digit picks · {(mode === 'main' && enterHint(choice)) || '⏎ confirm'} ·
+                Esc cancel
               </p>
             )}
           </div>
@@ -296,16 +301,15 @@ export function WorkspacePicker({
               </button>
             ) : (
               <SessionLaunchButtons
-                launch={sessionLaunch}
-                backends={backends}
+                choice={phase === 'pulling' && pullingAs ? { ...choice, lead: pullingAs } : choice}
+                open={listOpen}
+                onOpen={setListOpen}
                 busy={locked}
                 disabled={!target || locked || confirm !== null}
-                label={(backend, isDefault) => {
+                label={(backend) => {
                   if (sessionLaunch.starting) return 'Starting…'
-                  if (kind === 'pulling' || backends.length === 1) return primaryLabel(kind)
-                  return isDefault
-                    ? primaryLabel(kind, undefined, BACKEND_LABEL[backend])
-                    : `${primaryLabel(kind)} ${BACKEND_LABEL[backend]}`
+                  if (kind === 'pulling' || choice.listed.length === 1) return primaryLabel(kind)
+                  return primaryLabel(kind, undefined, BACKEND_LABEL[backend])
                 }}
                 onStart={(backend) => submit(target, backend)}
               />

@@ -617,17 +617,17 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     }
   })
 
-  test('BB-C33: with no selected running session the Workbench icon is disabled', async ({
+  test('BB-C33: with no selected running session the Workbench icon is the welcome page workspace’s, and no Preview or Terminal icon shows', async ({
     page
   }) => {
     test.setTimeout(120_000)
     await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 30_000 })
-    await expect(page.locator('.ws-tab')).toHaveCount(0)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
 
     await expect(page.locator('.aux-icons .aux-ico')).toHaveCount(1, { timeout: 20_000 })
     await expect(auxIcon(page, 'Preview')).toHaveCount(0)
     await expect(globeIcon(page)).toBeVisible({ timeout: 20_000 })
-    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'true')
+    await expect(globeIcon(page)).toHaveAttribute('aria-disabled', 'false')
     await expect(auxIcon(page, 'Terminal')).toHaveCount(0)
   })
 
@@ -1149,6 +1149,10 @@ test.describe('Workbench browser cases between the other browser specs: agent op
 
         await agentOpen(page, server.localhostUrl('/a'))
         await expect(openTabs(page)).toHaveCount(1, { timeout: 40_000 })
+        await expect(
+          openTabs(page).first().locator(BROWSER.tabLabel),
+          'the tab has narrowed to the page title, so a click on it cannot land on its close button'
+        ).toHaveText('Page A', { timeout: 40_000 })
 
         await openTabs(page).first().click()
         await expect.poll(() => server.count('/a'), { timeout: 40_000 }).toBe(1)

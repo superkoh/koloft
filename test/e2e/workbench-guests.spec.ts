@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 import { startEchoServer, type FixtureServer } from './helpers/fixtureServer'
 import {
   centerTerm,
+  closeKeptTab,
   killSession,
   runIn,
   sendShortcut,
@@ -12,10 +13,12 @@ import {
   wsRows
 } from './helpers/p1'
 import { setGuestLimit } from './helpers/env'
+import { guestByUrl } from './helpers/browser'
 import {
   waitPanelAttached,
   wbActiveTab,
   wbFrozenTabs,
+  wbTabByTitle,
   wbTabs,
   workbenchPanel
 } from './helpers/workbench'
@@ -69,14 +72,14 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     expect(await inGuest<number>(page, 'scrollY')).toBeGreaterThan(0)
 
     await startSessionIn(page, 'ws-a')
-    await expect(page.locator('.ws-tab')).toHaveCount(2, { timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(2, { timeout: 25_000 })
     await page
       .locator('.hint-card[data-hint="worktree"]')
       .getByRole('button', { name: 'Got it', exact: true })
       .click()
-    await page.locator('.ws-tab').nth(1).click()
+    await page.locator('.ws .ws-tab').nth(1).click()
     await expect(workbenchPanel(page)).toBeVisible()
-    await page.locator('.ws-tab').nth(0).click()
+    await page.locator('.ws .ws-tab').nth(0).click()
 
     await expect
       .poll(() => inGuest<string>(page, `document.getElementById('f').value`))
@@ -150,17 +153,15 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
 
     await startSessionIn(page, 'ws-a')
     await agentOpen(page, pageNamed('a'))
-    await wbTabs(page).nth(1).click()
+    await wbTabByTitle(page, 'T13b a').click()
     await expect.poll(() => server.count('/t13b-a'), { timeout: 30_000 }).toBeGreaterThan(0)
     await wbTabs(page).nth(0).click()
     await expect(wbActiveTab(page)).toHaveClass(/pinned/)
 
     await startSessionIn(page, 'ws-b')
-    for (const [i, n] of ['b', 'c'].entries()) {
+    for (const n of ['b', 'c']) {
       await agentOpen(page, pageNamed(n))
-      await wbTabs(page)
-        .nth(i + 1)
-        .click()
+      await wbTabByTitle(page, `T13b ${n}`).click()
       await expect.poll(() => server.count(`/t13b-${n}`), { timeout: 30_000 }).toBeGreaterThan(0)
     }
 
@@ -182,6 +183,7 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     await wbTabs(page).nth(1).click()
     await expect.poll(() => server.count('/k04'), { timeout: 30_000 }).toBeGreaterThan(0)
 
+    await (await guestByUrl(app, '/k04')).waitForLoadState('load')
     await page.locator('.wb-panel webview').first().click()
 
     await sendShortcut(app, 'shortcut:find')
@@ -232,6 +234,7 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     killSession(session.pid, env)
     const row = wsRows(page, 'ws-a').first()
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+    await closeKeptTab(page, row)
     await expect(workbenchPanel(page)).not.toBeVisible()
 
     await row.click()

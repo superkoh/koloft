@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { directoryListingHtml } from '../../src/main/dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from '../../src/main/dirListing'
 
 describe('directoryListingHtml', () => {
   it('lists every entry, directories first, each as an absolute file:// link', () => {
@@ -28,5 +28,13 @@ describe('directoryListingHtml', () => {
     ])
     expect(html).not.toContain('<img src=x')
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;.txt')
+  })
+})
+
+describe('fileNotFoundHtml', () => {
+  it('is not a place a missing path can inject markup', () => {
+    const html = fileNotFoundHtml('/ws/<img src=x onerror=alert(1)>.html')
+    expect(html).not.toContain('<img src=x')
+    expect(html).toContain('File not found: /ws/&lt;img src=x onerror=alert(1)&gt;.html')
   })
 })

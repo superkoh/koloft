@@ -4,8 +4,9 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   FAKE_SESSION_TITLE,
-  gitCommitAll,
   gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   openWorktreeSession,
   resumedId,
   sendShortcut,
@@ -35,7 +36,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+      const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
       await expect.poll(async () => row.isVisible(), { timeout: 30_000 }).toBe(true)
       await expect(row.locator('.ws-tab-sub')).toHaveText('feat1')
 
@@ -54,11 +55,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
   }) => {
     test.setTimeout(180_000)
     const ws = env.workspaces.a
-    gitInit(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n.env\n')
-    fs.writeFileSync(path.join(ws, '.worktreeinclude'), '.env\n')
-    gitCommitAll(ws)
-    fs.writeFileSync(path.join(ws, '.env'), 'PORT=3000\n')
+    gitRepoWithAnIncludedEnv(ws)
 
     const app = await launchApp(env)
     try {
@@ -70,7 +67,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+      const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
       await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
       const [first] = await waitForCalls(env, 1)
       expect(first.portOffset).toBe(String(portOffset('feat2')))
@@ -92,7 +89,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await row.click()
       const calls = await waitForCalls(env, 2, 60_000)
       expect(resumedId(calls[calls.length - 1])).toBe(first.sessionId)
-      expect(fs.readFileSync(path.join(wtDir, '.env'), 'utf8')).toBe('PORT=3000\n')
+      expect(fs.readFileSync(path.join(wtDir, '.env'), 'utf8')).toBe(INCLUDED_ENV)
     } finally {
       await quitAndClose(app)
     }

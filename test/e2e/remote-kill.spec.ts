@@ -1,10 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   test,
   expect,
   expectNoToastAtAnyMomentOfAWindow,
+  osOutlets,
   pendingAttention,
   quitAndClose
 } from './helpers/app'
@@ -40,6 +41,7 @@ import {
 const MIRROR_PULL_SETTLE_MS = 4000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_CLOSE_MS = 3000
+const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -47,10 +49,14 @@ function tmuxName(id: string): string {
   return `k-${id}`
 }
 
+function closeConfirm(page: Page): Locator {
+  return page.locator('.modal', { hasText: 'Close running session?' })
+}
+
 async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws-tab.active').first().click()
+  await page.locator('.ws .ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
-  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  const confirm = closeConfirm(page)
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
     await confirm
       .locator('.btn-primary, button', { hasText: /^Close$/ })
@@ -88,6 +94,36 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bcold\b/, {
         timeout: 60_000
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-31: ⌘W on a remote tab asks first while its turn runs, and closes without asking once the row reads waiting', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      const dialog = closeConfirm(page)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      expect(killLines(env, first.sessionId)).toHaveLength(0)
+      await row.click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => killLines(env, first.sessionId).length, { timeout: 30_000 }).toBe(1)
     } finally {
       await quitAndClose(app)
     }
@@ -166,7 +202,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark, drawn as a red dot on its row, once the machine’s tmux list has lost it', async ({
+  test('E-RW-20: a remote claude that dies without an end report keeps its tab saying it ended with its exit code, its row reading “exited (code 137)”, and raises the “exited” mark, drawn as a red dot on its row and said in an OS notification, once the machine’s tmux list has lost it', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -175,17 +211,28 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const [first] = await waitForCalls(env, 1)
-      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/st-waiting|st-idle/, {
-        timeout: 60_000
-      })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) ?? ''
 
       killSession(first.pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain('stopped with exit code 137')
+      await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)')
 
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')
       await expect(wsRows(page, REMOTE_WS_NAME).locator('.ws-tab-unread')).toHaveCount(1)
       expect(killLines(env, first.sessionId)).toEqual([])
+      const exited = (await pendingAttention(page)).find((a) => a.kind === 'exited')!
+      expect(exited.title).toBeTruthy()
+      expect((await osOutlets(app)).notifications).toContainEqual({
+        title: exited.title,
+        body: `session exited unexpectedly · ${REMOTE_WS_NAME}`
+      })
     } finally {
       await quitAndClose(app)
     }
@@ -208,7 +255,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
-        .toContain('press Enter to close')
+        .toContain('stopped with exit code')
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')
@@ -297,9 +344,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await startSessionIn(page, 'ws-a')
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      await remoteRow.click()
       await localRow.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
       const asleepTab = await remoteRow.getAttribute('data-tab-id')
 
       await expect.poll(() => killLines(env, first.sessionId), { timeout: 60_000 }).toHaveLength(1)

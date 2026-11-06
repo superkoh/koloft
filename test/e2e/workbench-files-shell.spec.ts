@@ -1,7 +1,9 @@
-import { test, expect } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { clickAppMenuItem, startSessionIn } from './helpers/p1'
-import { layoutState, workbenchPanel } from './helpers/workbench'
+import { installCodex, seedSettings } from './helpers/env'
+import { claudeRows, codexRows, startCodex } from './helpers/codex'
+import { clickAppMenuItem, startSessionIn, waitBooted } from './helpers/p1'
+import { WELCOME_PAGE, layoutState, workbenchPanel } from './helpers/workbench'
 
 async function toggleFull(app: ElectronApplication, page: Page): Promise<void> {
   await clickAppMenuItem(app, page, 'toggle-focus-mode')
@@ -75,7 +77,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     expect(await layoutState(page)).toBe('T2')
   })
 
-  test('WB-B02: ⌘⇧F does nothing without a session, else expands to T2, activates Files and focuses search; a second press closes and clears it but keeps T2', async ({
+  test('WB-B02: ⌘⇧F with no session searches the welcome page workspace’s own Workbench; in a session it expands to T2, activates Files and focuses search; a second press closes and clears it but keeps T2', async ({
     app,
     page
   }) => {
@@ -83,7 +85,10 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
     const searchInput = page.locator('.wb-panel .ft-search-input')
 
     await findFiles()
-    await expect(workbenchPanel(page)).toHaveCount(0)
+    await expect(searchInput).toBeFocused()
+    await expect(page.locator(WELCOME_PAGE)).toBeVisible()
+    await clickAppMenuItem(app, page, 'toggle-browser')
+    await expect.poll(() => layoutState(page)).toBe('T1')
 
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
@@ -134,7 +139,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
   }) => {
     await startSessionIn(page, 'ws-a')
     await startSessionIn(page, 'ws-a')
-    const rows = page.locator('.ws-tab')
+    const rows = page.locator('.ws .ws-tab')
     await expect(rows).toHaveCount(2, { timeout: 25_000 })
     await dismissWorktreeHintCardCoveringTheRows(page)
     const rowB = rows.nth(0)
@@ -173,5 +178,49 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
       'aria-checked',
       'true'
     )
+  })
+
+  test('WB-C05 with a Codex tab: the view, the base choice and the filter chips set in a Codex tab stay with it across a switch to a Claude tab and back', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      await startCodex(page, env)
+      const claudeRow = claudeRows(page)
+      const codexRow = codexRows(page)
+      const browseBtn = (): Locator => viewSwitch(page).locator('button').nth(1)
+      const changesBtn = (): Locator => viewSwitch(page).locator('button').first()
+      const docsChip = page.locator('.fv-filters .ft-chip[data-chip="docs"]')
+
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      await baseBtn(page).click()
+      await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
+      await expect(baseBtn(page)).toHaveText(/vs HEAD/)
+      await filterBtn(page).click()
+      await docsChip.click()
+      await expect(docsChip).toHaveAttribute('aria-checked', 'true')
+      await page.keyboard.press('Escape')
+      await browseBtn().click()
+      await expect(browseBtn()).toHaveAttribute('aria-pressed', 'true')
+
+      await claudeRow.click()
+      await expect(workbenchPanel(page)).toBeVisible()
+      await expect(changesBtn()).toHaveAttribute('aria-pressed', 'true')
+      await expect(baseBtn(page)).toHaveText(/base/)
+
+      await codexRow.click()
+      await expect(browseBtn()).toHaveAttribute('aria-pressed', 'true')
+      await changesBtn().click()
+      await expect(baseBtn(page)).toHaveText(/vs HEAD/)
+      await filterBtn(page).click()
+      await expect(docsChip).toHaveAttribute('aria-checked', 'true')
+    } finally {
+      await quitAndClose(app)
+    }
   })
 })

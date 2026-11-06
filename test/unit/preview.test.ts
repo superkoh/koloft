@@ -5,8 +5,23 @@ import {
   dirname,
   previewKindForPath,
   isWebPagePath,
+  stateAfterReadError,
   VIEWABLE_EXTENSIONS
 } from '@shared/preview'
+
+describe('what a Workbench file view shows after a read fails (BB-N10)', () => {
+  it('a passing read error keeps the last good text on a reload, and is an error only on the first read of that file', () => {
+    expect(stateAfterReadError('EMFILE: too many open files', false)).toBeNull()
+    expect(stateAfterReadError('EMFILE: too many open files', true)).toBe('error')
+  })
+
+  it('a gone, too large or binary file says so on any read', () => {
+    expect(stateAfterReadError('Error: KOLOFT_READ_FAILED', false)).toBe('missing')
+    expect(stateAfterReadError('Error: KOLOFT_NOT_FILE', false)).toBe('missing')
+    expect(stateAfterReadError('Error: KOLOFT_TOO_LARGE', false)).toBe('tooLarge')
+    expect(stateAfterReadError('Error: KOLOFT_BINARY', false)).toBe('binary')
+  })
+})
 
 describe('preview helpers', () => {
   it('extOf lowercases and includes the dot; empty for no extension', () => {

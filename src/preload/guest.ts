@@ -5,6 +5,10 @@ import type { BrowserDialogAnswer } from '@shared/types'
 const ask = (kind: string, message: string, defaultValue: string): BrowserDialogAnswer =>
   ipcRenderer.sendSync('browser:js-dialog', { kind, message, defaultValue })
 
+// PLATFORM§11
+const undecided = (name: string): boolean =>
+  ipcRenderer.sendSync('browser:permission-undecided', name) === true
+
 interface GuestClick {
   isTrusted: boolean
   target: { closest?(selector: string): { href?: string } | null } | null
@@ -48,7 +52,10 @@ guest.addEventListener('click', backgroundOpen, true)
 guest.addEventListener('auxclick', backgroundOpen, true)
 
 contextBridge.executeInMainWorld({
-  func: (ask: (kind: string, message: string, defaultValue: string) => BrowserDialogAnswer) => {
+  func: (
+    ask: (kind: string, message: string, defaultValue: string) => BrowserDialogAnswer,
+    undecided: (name: string) => boolean
+  ) => {
     // PLATFORM§14
     const nativeSource = new WeakMap<object, string>()
     const asNative = <T extends (...args: never[]) => unknown>(fn: T): T => {
@@ -144,6 +151,26 @@ contextBridge.executeInMainWorld({
       }
     }
 
+    const statusProto = (globalThis as unknown as { PermissionStatus?: { prototype: object } })
+      .PermissionStatus?.prototype
+    const stateDesc = statusProto && Object.getOwnPropertyDescriptor(statusProto, 'state')
+    const realState = stateDesc?.get
+    if (statusProto && realState) {
+      const holder = {
+        get state() {
+          const state = realState.call(this) as string
+          return state === 'denied' && undecided(String((this as { name?: unknown }).name))
+            ? 'prompt'
+            : state
+        }
+      }
+      // PLATFORM§11
+      Object.defineProperty(statusProto, 'state', {
+        ...stateDesc,
+        get: asNative(Object.getOwnPropertyDescriptor(holder, 'state')!.get!)
+      })
+    }
+
     // PLATFORM§12
     const dialogs = {
       alert(...args: unknown[]): void {
@@ -162,5 +189,5 @@ contextBridge.executeInMainWorld({
     page.confirm = asNative(dialogs.confirm)
     page.prompt = asNative(dialogs.prompt)
   },
-  args: [ask]
+  args: [ask, undecided]
 })

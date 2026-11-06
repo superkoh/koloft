@@ -2,9 +2,24 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { launchApp } from './app'
-import type { E2EEnv } from './env'
-import { encodeCwd, killSession, waitBooted } from './p1'
+import { expect, launchApp } from './app'
+import { agyCalls, installAgy, installCodex, installMuse, type AgyCall, type E2EEnv } from './env'
+import {
+  type AgentName,
+  centerTerm,
+  encodeCwd,
+  killSession,
+  runIn,
+  terminalText,
+  termIds,
+  waitBooted
+} from './p1'
+import {
+  PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
+  PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
+} from '../../../src/main/remote/playwrightCli'
+import type { BackendId } from '../../../src/shared/types'
+import { identityOf } from '../../../src/shared/sessionBackend'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -106,6 +121,17 @@ export function dropTabLinkWhileItsSessionDies(env: E2EEnv, pid: number): void {
   killSession(pid, env)
 }
 
+export function tmuxClientsOf(tmuxName: string): number[] {
+  const lines = execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split('\n')
+  const named = new RegExp(`fake-tmux\\.js .*-[st] ${tmuxName}(\\s|$)`)
+  return lines.filter((l) => named.test(l)).map((l) => Number(l.trim().split(/\s+/)[0]))
+}
+
+export function dropTabLinkWhileItsSessionLives(env: E2EEnv, tmuxName: string): void {
+  fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
+  for (const pid of tmuxClientsOf(tmuxName)) process.kill(pid, 'SIGKILL')
+}
+
 export function healConnection(env: E2EEnv): void {
   fs.rmSync(path.join(stateDir(env), 'hb-fail'), { force: true })
 }
@@ -202,8 +228,187 @@ export function installFakeRemote(env: E2EEnv): void {
     path.join(nodeWhereEnsureShLooksSoItNeverReachesForCurlOrSudo, 'node'),
     `#!/bin/sh\nexec ${JSON.stringify(nodeBin)} "$@"\n`
   )
+  const playwrightCliTheWrapperFindsSoItNeverReachesForNpm = path.dirname(
+    path.join(
+      machine,
+      '.koloft',
+      PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME,
+      PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER
+    )
+  )
+  fs.mkdirSync(path.dirname(playwrightCliTheWrapperFindsSoItNeverReachesForNpm), {
+    recursive: true
+  })
+  // PLATFORM§62
+  fs.rmSync(playwrightCliTheWrapperFindsSoItNeverReachesForNpm, { force: true, recursive: true })
+  fs.symlinkSync(
+    path.dirname(require.resolve('@playwright/cli/package.json')),
+    playwrightCliTheWrapperFindsSoItNeverReachesForNpm
+  )
 
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state
+}
+
+// AGY§3 AGY§5
+export function installRemoteAgy(env: E2EEnv): void {
+  const bin = path.join(machineHome(env), '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), path.join(bin, 'agy'))
+  fs.chmodSync(path.join(bin, 'agy'), 0o755)
+  const settings = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'settings.json')
+  fs.mkdirSync(path.dirname(settings), { recursive: true })
+  fs.writeFileSync(settings, JSON.stringify({ trustedWorkspaces: [remoteDir(env)] }))
+}
+
+export function machineAgyCalls(env: E2EEnv): AgyCall[] {
+  return agyCalls(env, machineHome(env)).filter(
+    (c) => !c.argv.includes('-p') && !c.argv.includes('--version')
+  )
+}
+
+export function machineAgyApiCalls(
+  env: E2EEnv
+): { method: string; body: unknown; authorized: boolean }[] {
+  const file = path.join(machineHome(env), 'fake-agy-api.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { method: string; body: unknown; authorized: boolean })
+}
+
+export async function agyReady(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        for (const id of await termIds(page))
+          if ((await terminalText(page, id)).includes('Antigravity CLI')) return true
+        return false
+      },
+      { timeout: 90_000 }
+    )
+    .toBe(true)
+}
+
+export async function boundRemoteSession(
+  page: Page,
+  backend: BackendId
+): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find(
+          (x) =>
+            x.backendId === backend &&
+            identityOf(x.sessionId).sourceId === REMOTE_HOST &&
+            x.alive &&
+            x.nativeSessionId
+        )
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+  return found!
+}
+
+export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'
+
+export function installCodexOnFakeRemote(env: E2EEnv): void {
+  installCodex(
+    env,
+    JSON.stringify({ tokens: { access_token: MAC_CODEX_ACCESS_TOKEN, account_id: 'mac-account' } })
+  )
+  const bin = path.join(machineHome(env), '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  writeExec(
+    path.join(bin, 'codex'),
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'))} "$@"\n`
+  )
+}
+
+export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(machineHome(env), name)
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as T)
+}
+
+export function installMuseOnMachine(env: E2EEnv): void {
+  const machine = machineHome(env)
+  const bin = path.join(machine, '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), path.join(bin, 'muse'))
+  fs.chmodSync(path.join(bin, 'muse'), 0o755)
+  fs.mkdirSync(remoteDir(env), { recursive: true })
+  const config = path.join(machine, '.config', 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(
+    path.join(config, 'trust.json'),
+    JSON.stringify({
+      schema_version: 1,
+      projects: { [fs.realpathSync(remoteDir(env))]: { decision: 'trusted' } }
+    })
+  )
+}
+
+export interface MachineMuseCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  sessionId: string
+  configHome: string | null
+  credentials: string | null
+}
+
+export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
+  const file = path.join(machineHome(env), 'fake-muse-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as MachineMuseCall)
+}
+
+export type OtherAgentName = Exclude<AgentName, 'Claude'>
+
+export const OTHER_AGENTS_ON_THE_MACHINE: {
+  label: OtherAgentName
+  install: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}[] = [
+  { label: 'Codex', install: installCodexOnFakeRemote },
+  {
+    label: 'Muse',
+    install: (env) => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+  },
+  {
+    label: 'Antigravity',
+    install: (env) => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    bound: async (page) => {
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      return boundRemoteSession(page, 'agy')
+    }
+  }
+]
+
+export function dropTmuxPassthrough(env: E2EEnv): void {
+  fs.writeFileSync(path.join(stateDir(env), 'no-passthrough'), '')
 }
 
 export async function launchWithRemote(
