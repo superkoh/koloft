@@ -30,7 +30,7 @@ import { CodexSessions } from './codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
-  museShowsItsInputBox,
+  museShowsAPanel,
   type MuseHomePick,
   type MuseRemoteDeps
 } from './museSessions'
@@ -783,7 +783,7 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
     return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
   codex: panelOnScreen(codexShowsAPanel),
-  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
+  muse: panelOnScreen(museShowsAPanel),
   agy: async () => undefined
 }
 

@@ -175,6 +175,102 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
+  // CODEX§21
+  test('D-CMD-1 with a Codex butler: /run /status types it into the butler and posts its screen in its channel, since Codex draws /status only there; /compact runs Codex’s compaction turn and posts Done.', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'codex' } })
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.interact(OWNER, 'run', { command: '/status' })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([
+          expect.stringMatching(
+            /^⌨️ \*\*Alfred\*\* ran \/status:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Model: fake-codex/
+          )
+        ])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
+      const wire = fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+      expect(wire).toContain('"method":"thread/compact/start"')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // MUSE§9 MUSE§19
+  test('D-CMD-1 with a Muse butler: /run /usage types it into the butler and posts its screen in its channel, since Muse draws a command’s output only there; /compact compacts it and posts Done.', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'muse' } })
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.interact(OWNER, 'run', { command: '/usage' })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([
+          expect.stringMatching(
+            /^⌨️ \*\*Alfred\*\* ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
+          )
+        ])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // AGY§8 AGY§23
+  test('D-CMD-1 with an Antigravity butler: /run /usage types it into the butler and posts the panel it drew in its channel, since agy shows a command’s output only on screen; /compact compacts it and posts Done.', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedConductor(env)
+    seedSettings(env, { assist: { on: true, backend: 'agy' } })
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    try {
+      await waitBooted(await app.firstWindow())
+      await expect.poll(() => fake.identifies).toBe(1)
+      await expect
+        .poll(() => agySessionCalls(env).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe(1)
+      fake.interact(OWNER, 'run', { command: '/usage' })
+      await expect
+        .poll(() => ran(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/usage:\n[\s\S]*Models & Quota/)])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('D-CMD-2: a message that starts with a slash runs in the conductor itself; its /clear gives the conductor a new conversation that it keeps on the next start', async ({
     env
   }) => {
