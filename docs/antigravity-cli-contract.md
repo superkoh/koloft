@@ -873,8 +873,9 @@ only downloaded the public release.
   Apple, Cherry` (option order); Space, Down, Down, Space, Enter the same; `1`, `1`, Enter
   or Enter alone sent `A1: ` (empty); a digit above the options did nothing. Write-in:
   `4` (or Enter on its row) opens "Your answer:" under the list with the ticks kept, and
-  Enter there sends at once: `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks
-  first, then the write-in, `A1: Apple, A ripe mango`. With two questions and the
+  Enter there sends at once on the last question (on question 1 of 2 it moves to question
+  2): `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks first, then the write-in,
+  `A1: Apple, A ripe mango`. With two questions and the
   several-pick one first, its footer says "enter Submit" but Enter goes to "Question
   2/2", whose digit then sends both: `1`, `3`, Enter, `2` sent `A1: Apple, Cherry\nA2:
   Medium`; with it second, `2`, then its ticks and Enter, sent `A1: Medium\nA2: Apple,

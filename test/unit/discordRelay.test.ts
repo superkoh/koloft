@@ -920,7 +920,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // MUSE§11 AGY§14
-  it('a Muse or Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each agent ticks: Muse a digit and Space for each, then its Submit row and review page; Antigravity each digit, then Enter; own words go in as for one pick', async () => {
+  it('a Muse or Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each agent ticks: Muse a digit and Space for each, then its Submit row and review page; Antigravity each digit, then Enter; own words go in as for one pick; a whole line naming one option counts though the name holds a comma, and more or fewer picks than the question takes are refused with its limits', async () => {
     const fruits = {
       question: 'Which fruits?',
       options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
@@ -959,6 +959,17 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
       'Reply with one line per question: a number (or several, split by commas, where it takes more than one) or your own answer.'
     )
     expect(await pressed('1, 3\n2')).toEqual(['1', ' ', '3', ' ', '5', '\r', '2', '\r', '\r'])
+
+    question = { id: 'u3', questions: [{ ...fruits, fewest: 2, most: 2 }] }
+    expect(await relay.answerSession(MANAGED, '1')).toBe(
+      'Reply with the numbers of the options you pick, split by commas, or your own answer. “Which fruits?” takes 2 to 2 picks.'
+    )
+    expect(await relay.answerSession(MANAGED, '1, 2, 3')).toContain('takes 2 to 2 picks')
+    question = {
+      id: 'u4',
+      questions: [{ ...fruits, options: [{ label: 'Red, dark' }, { label: 'Blue' }] }]
+    }
+    expect(await pressed('red, dark')).toEqual(['1', ' ', '4', '\r', '\r'])
 
     backend = 'agy'
     question = { id: 'hook:1', questions: [fruits] }
