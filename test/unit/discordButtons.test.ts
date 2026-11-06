@@ -130,6 +130,22 @@ describe('answering a question with a button in Discord', () => {
     expect(s.edits).toEqual([])
   })
 
+  it('a press the session did not take, on a question that closed meanwhile, still takes the buttons off, without naming the answer that was not taken', async () => {
+    const s = setup({
+      answer: async (tab, reply) => {
+        s.buttons.answered(tab, reply)
+        s.close()
+        return ANSWER_NOT_TAKEN
+      }
+    })
+    s.buttons.placed(s.card, PLACED)
+    await s.buttons.press(s.press(0))
+    expect(s.followUps).toEqual([ANSWER_NOT_TAKEN])
+    expect(s.edits).toEqual([
+      { messageId: '900', footer: `-# ${ANSWERED_ON_THE_COMPUTER}`, buttons: 0 }
+    ])
+  })
+
   it('an answer that fails while being typed is told to the presser too, and the buttons stay', async () => {
     let fails = true
     const s = setup({

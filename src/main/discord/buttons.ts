@@ -105,14 +105,17 @@ export class AskButtons {
       return
     }
     ask.pressing = true
+    let error: string | undefined
     try {
       await this.d.respond(i, { type: UPDATE_MESSAGE_LATER })
-      const error = await this.d.answer(ask.tabId, choice.reply).catch(errorText)
-      if (error) await this.d.followUp(i, error)
-      else this.settle(id, `✅ ${choice.label}`)
+      error = await this.d.answer(ask.tabId, choice.reply).catch(errorText)
     } finally {
       ask.pressing = false
     }
+    if (!error) return this.settle(id, `✅ ${choice.label}`)
+    ask.reply = undefined
+    await this.d.followUp(i, error)
+    await this.check(ask.tabId)
   }
 
   forget(tabId: string, footer = SESSION_CLOSED): void {

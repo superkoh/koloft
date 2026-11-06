@@ -656,8 +656,8 @@ export class DiscordRelay {
     await this.d.type(tab, keys)
   }
 
-  answerSession(tab: string, reply: string): Promise<string | undefined> {
-    return this.answerTaken(tab, () => this.sendAnswer(tab, reply))
+  answerSession(tab: string, reply: string, toItsCard = false): Promise<string | undefined> {
+    return this.answerTaken(tab, () => this.sendAnswer(tab, reply, toItsCard))
   }
 
   // CC§14 CODEX§3 MUSE§11 AGY§14
@@ -688,11 +688,7 @@ export class DiscordRelay {
     return (await took) ? undefined : ANSWER_NOT_TAKEN
   }
 
-  private async sendAnswer(
-    tab: string,
-    reply: string,
-    howFor: (q: CodexQuestion) => string = howToAnswer
-  ): Promise<SentAnswer> {
+  private async sendAnswer(tab: string, reply: string, toItsCard: boolean): Promise<SentAnswer> {
     const backend = this.d.backendOf(tab)
     const answerKeysFor = answerKeysOf(backend)
     if (backend && answerKeysFor) {
@@ -705,7 +701,7 @@ export class DiscordRelay {
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
-        if (!key) return { error: takesYesOrNo(label) }
+        if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
         this.d.answered(tab, reply)
         await this.press(tab, [key])
         return { watch: true }
@@ -714,7 +710,7 @@ export class DiscordRelay {
       if (!question)
         return { error: this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG }
       const answers = questionAnswers(question, reply)
-      if (!answers) return { error: howFor(question) }
+      if (!answers) return { error: toItsCard ? cannotAnswer(question) : howToAnswer(question) }
       this.d.answered(tab, reply)
       await this.press(tab, answerKeys(answerKeysFor, question, answers))
       return { watch: true }
@@ -768,14 +764,10 @@ export class DiscordRelay {
     this.postAsk(tab, channelId, this.askCard(tab, view, how, shown))
   }
 
-  // CC§14
-  private heldInTerminal(tab: string): boolean {
-    const ask = this.openAsk(tab)
-    return !!ask && !ask.hook && !(this.d.turnOver(tab) && !this.d.awaitsInput(tab))
-  }
-
   private answerDialog(tab: string, m: DiscordMessage): Promise<string | undefined> | undefined {
-    if (this.openAsk(tab)?.hook || this.heldInTerminal(tab))
+    const ask = this.openAsk(tab)
+    // CC§14
+    if (ask && (ask.hook || !(this.d.turnOver(tab) && !this.d.awaitsInput(tab))))
       return this.answerSession(tab, m.content)
     this.asks.delete(tab)
     const asked = this.codexAsks.get(tab)
@@ -785,10 +777,11 @@ export class DiscordRelay {
       this.codexAsks.delete(tab)
       return undefined
     }
-    return this.answerTaken(tab, () => this.sendAnswer(tab, m.content, cannotAnswer))
+    return this.answerSession(tab, m.content, true)
   }
 
   forget(tab: string): void {
+    for (const settle of this.awaitingTaken.get(tab) ?? []) settle(false)
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.askHooks.delete(tab)

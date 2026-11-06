@@ -831,6 +831,14 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     expect(await second).toBeUndefined()
   })
 
+  it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
+    const { relay } = codexAsking()
+    const answered = relay.answerSession(TAB, '2')
+    await vi.advanceTimersByTimeAsync(0)
+    relay.forget(TAB)
+    expect(await answered).toBe(ANSWER_NOT_TAKEN)
+  })
+
   it('an answer the session took in place, not as keys, counts at once', async () => {
     const { relay, writes } = codexAsking({ answerInPlace: async () => ({}) })
     expect(await relay.answerSession(TAB, '2')).toBeUndefined()
