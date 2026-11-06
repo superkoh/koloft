@@ -445,6 +445,7 @@ function tui() {
         const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
         const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
         process.stdout.write(`${said}[fake-muse] koloft exit=${code}\r\n`)
+        inputBox()
       })
       return
     }
