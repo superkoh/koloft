@@ -205,7 +205,7 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
-test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close on Escape and on a click outside, like the app’s other menus', async ({
+test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close on Escape like the app’s other menus, and on a click outside, even on another card’s Open button', async ({
   page
 }) => {
   await waitBooted(page)
@@ -226,6 +226,11 @@ test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close 
   await expect
     .poll(() => terminalText(page, tabId), { timeout: 15_000 })
     .toContain('Added card pr-9.')
+  const other = JSON.stringify({ title: 'Pull request 10 has a new comment', level: 'low' })
+  await runIn(page, centerTerm(page), `/koloft inbox add pr-10 -- '${other}'`)
+  await expect
+    .poll(() => terminalText(page, tabId), { timeout: 15_000 })
+    .toContain('Added card pr-10.')
   await openInbox(page)
   const shown = inboxCard(page, 'Pull request 9 is ready to merge')
   const opened = page.locator('.inbox-page .ibx-menu, .inbox-page .ibx-pop')
@@ -244,7 +249,7 @@ test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close 
 
   await shown.locator('.ibx-dots').click()
   await expect(opened).toHaveCount(1)
-  await page.locator('.ibx-hello').click()
+  await inboxCard(page, 'Pull request 10').locator('.ibx-btn', { hasText: 'Open' }).click()
   await expect(opened).toHaveCount(0)
 })
 

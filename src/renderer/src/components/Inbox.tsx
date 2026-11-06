@@ -805,13 +805,16 @@ function Card({
   if (!open) {
     const first = out[0]
     const needsOpen = !first || first.style === 'danger' || !!first.takes?.length
+    const openUnlessInActs = (e: MouseEvent): void => {
+      if (!(e.target as HTMLElement).closest('.ibx-acts')) onOpen()
+    }
     return (
-      <div className="ibx-item" data-cid={card.id} onClick={onOpen}>
+      <div className="ibx-item" data-cid={card.id} onClick={openUnlessInActs}>
         <Head card={card} menu={menu} setMenu={setMenu} />
         <div className="ibx-what">{card.title}</div>
         <div className="ibx-foot">
           {when}
-          <div className="ibx-acts" onClick={stop}>
+          <div className="ibx-acts">
             {undo ||
               spinning ||
               (needsOpen ? (
