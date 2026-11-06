@@ -1403,7 +1403,8 @@ a session from before Koloft kept them) resumes it in the default home, at most 
 thread a run, on an app-server of its own that it closes at once — never on the long-lived one, which would keep
 `codex resume <id>` in the default home from writing to it. A rollout from 0.165.0
 copied with its old mtime into a running 0.166.0 home's `sessions/` was not listed at
-all, even after a resume; why was not looked into.
+all, even after a resume — unlike the copies on 0.162.0 and 0.164.0 above, which were
+listed; why was not looked into (Koloft links `sessions/`, it never copies a rollout).
 
 **A session started on one login takes a model turn on another.** Checked 2026-10-09
 with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
