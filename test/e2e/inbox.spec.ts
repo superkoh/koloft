@@ -3,7 +3,6 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
-  agyApiCalls,
   installAgy,
   installCodex,
   installMuse,
@@ -74,13 +73,6 @@ function peerMessages(env: E2EEnv): string {
         .join('\n')
         .replace(/\\n/g, '\n')
     : ''
-}
-
-function agyMessages(env: E2EEnv): string[] {
-  return agyApiCalls(env)
-    .filter((c) => c.method === 'SendUserCascadeMessage')
-    .flatMap((c) => ((c.body as { items?: { text?: string }[] }).items ?? []).map((i) => i.text))
-    .filter((t): t is string => !!t)
 }
 
 function codexAnswers(env: E2EEnv): unknown[] {
@@ -403,8 +395,11 @@ test('a plan an Antigravity session waits on is a card quoting the whole plan; A
     const card = inboxCard(page, 'asks you to approve a plan')
     await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
     await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    const sentToAgy = path.join(env.home, 'fake-agy-api.jsonl')
     await expect
-      .poll(() => agyMessages(env), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .poll(() => (fs.existsSync(sentToAgy) ? fs.readFileSync(sentToAgy, 'utf8') : ''), {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+      })
       .toContain('[Approved] implementation_plan.md')
     await expect(await doneStatus(page, 'asks you to approve a plan')).toContainText('Answered')
   } finally {
