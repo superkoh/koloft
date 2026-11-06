@@ -508,22 +508,26 @@ describe('AgySessions launch', () => {
   })
 
   // AGY§31
-  it("puts the koloft skill as a real file in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on", async () => {
-    const skillHere = (): string =>
-      path.join(picked!.home, 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+  it("puts the koloft skill as real files in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on, and the koloft-docs skill always", async () => {
+    const skillsHere = (): string => path.join(picked!.home, 'antigravity-cli', 'skills')
+    const skillHere = (): string => path.join(skillsHere(), 'koloft', 'SKILL.md')
+    const docsHere = (): string => path.join(skillsHere(), 'koloft-docs', 'references', 'core.md')
+    const fromPackage = '"$M/agent-plugin/skills/koloft"'
+    const docsFromPackage = '"$M/docs-plugin/skills/koloft-docs"'
     agentTools = true
     await launch()
     expect(fs.lstatSync(skillHere()).isFile()).toBe(true)
     expect(fs.readFileSync(skillHere(), 'utf8')).toMatch(/^---\nname: koloft\n/)
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
-    const fromPackage = '/agent-plugin/skills/koloft/SKILL.md'
     expect(machine.launches[0].program.run).toContain(fromPackage)
     agentTools = false
     await launch()
     expect(fs.existsSync(skillHere())).toBe(false)
+    expect(fs.lstatSync(docsHere()).isFile()).toBe(true)
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
     expect(machine.launches[1].program.run).not.toContain(fromPackage)
-    expect(machine.launches[1].program.run).toContain('rm -rf "$A/antigravity-cli/skills/koloft"')
+    expect(machine.launches[1].program.run).toContain(docsFromPackage)
+    expect(machine.launches[1].program.run).toContain('"$A/antigravity-cli/skills/koloft"')
   })
 
   // AGY§9 AGY§24

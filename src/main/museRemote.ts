@@ -5,7 +5,7 @@ import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from
 import { museHookScript } from './museHooks'
 import { remoteDiscordSaidFile, remoteNoticeFile } from './hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
-import { KOLOFT_SKILL } from './agentPlugin'
+import { skillsFromMachineLine } from './remote/launch'
 import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
@@ -367,6 +367,7 @@ export interface MuseRunSpec {
   args: string[]
   trust: string[]
   trustIf?: string
+  koloftSkill: boolean
   sandboxed: boolean
 }
 
@@ -395,8 +396,7 @@ export function museRunLines(s: MuseRunSpec): string {
   G="$A/muse/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}"
   [ -L "$G" ] && [ ! -e "$G" ] && rm -f "$G"
   [ -e "$G" ] || [ ! -e "$O/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}" ] || ln -s "$O/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}" "$G"
-  S="$A/muse/skills"; mkdir -p "$S"; rm -rf "$S/${KOLOFT_SKILL}"
-  [ -f "$T.skill.md" ] && mkdir -p "$S/${KOLOFT_SKILL}" && mv -f "$T.skill.md" "$S/${KOLOFT_SKILL}/SKILL.md"
+  S="$A/muse/skills"; ${skillsFromMachineLine('$S', '$M', s.koloftSkill)}
   for s in "$O/skills"/*; do
     [ -e "$s" ] && [ ! -e "$S/\${s##*/}" ] && [ ! -L "$S/\${s##*/}" ] && ln -s "$s" "$S/"
   done

@@ -129,7 +129,7 @@ export interface MuseMachineLaunch {
   trust: string[]
   trustIf?: string
   context?: string
-  skill?: string
+  koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
   holdWhileBusy?: boolean
@@ -1077,7 +1077,6 @@ export class SshHost implements Host {
           )
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
-        if (spec.skill) files[`${tabId}.skill.md`] = spec.skill
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
@@ -1097,7 +1096,8 @@ export class SshHost implements Host {
               args: spec.args,
               sandboxed: spec.sandboxed,
               trust: spec.trust.map((p) => this.bare(p)),
-              trustIf: bareOrNot(spec.trustIf)
+              trustIf: bareOrNot(spec.trustIf),
+              koloftSkill: spec.koloftSkill
             }),
             files
           )
