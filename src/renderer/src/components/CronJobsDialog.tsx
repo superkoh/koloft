@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { IconClose, IconDelete, IconEdit, IconPlay } from '../icons'
 import type {
   BackendId,
@@ -219,7 +219,8 @@ export function CronJobsDialog({
     if (form) nameRef.current?.focus()
   }, [form])
 
-  useEffect(() => {
+  // PLATFORM§25
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.stopPropagation()

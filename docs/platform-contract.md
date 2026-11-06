@@ -1234,7 +1234,7 @@ inferred, not checked.
   **A zustand store update has no such gap.** zustand reads the store through
   `useSyncExternalStore`, whose render React runs on the sync lane and flushes that
   render's `useEffect`s inside the commit, so only a component's own `useState` set
-  from a promise or an IPC callback has the gap. Measured 2026-11-04, react-dom 19.3.1,
+  from a promise, an IPC callback or a timer (a hover delay) has the gap. Measured 2026-11-04, react-dom 19.3.1,
   zustand 5.0.16, in headless Chrome 156 the same way as above, and again in jsdom
   28.1.0 under vitest with React's `setImmediate` delayed 40 ms: a `window` Escape
   listener added by `useEffect` received an Escape dispatched from the
@@ -1242,7 +1242,13 @@ inferred, not checked.
   showed it, and 0 of 3 when a `useState` set from a resolved promise did
   (`useLayoutEffect`: 3 of 3 both ways). A `document` listener in the capture phase
   lags the same way: `workbenchPane.test.tsx`'s page full screen case goes red with
-  `useEffect`.
+  `useEffect`. Checked 2026-11-05 the same jsdom way (`ipcShownDialogKeys.test.tsx`):
+  a `useState` set from a `setTimeout` callback lags like one set from a promise. The
+  tip card, shown from a timer, got an Esc in its `useEffect` listener with React's
+  tasks delayed (one run of a throwaway unit case, not kept; not repeated), as its
+  `useLayoutEffect` sets state in the same commit. Why that closes the gap — React runs
+  any waiting `useEffect`s before it starts the next render — is inferred from that one
+  run, not checked.
 - **Chromium drops focus to `body` when the focused field or button becomes
   `disabled`, and enabling it again does not bring focus back.** jsdom keeps focus on
   the disabled element and ignores `blur()` on it. Measured 2026-11-03, headless
@@ -3017,3 +3023,27 @@ Antigravity sign-in into the user's login shell with an account's environment, a
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
 `diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+
+## §65 The `electron` npm package loaded by plain Node
+
+- **Loading it downloads the Electron binary when the binary is not there.** Under plain
+  Node, `require('electron')` runs `node_modules/electron/index.js`, which exports the
+  binary's path. When `path.txt` or the binary under `dist/` is missing, it first runs
+  `install.js` (a download from GitHub's releases) with `spawnSync`, and throws `Electron
+  failed to install correctly` if that fails. `npm ci` does not fetch the binary, so a
+  fresh CI runner downloads it again in every vitest worker that loads the package; a
+  GitHub 504 there failed whole unit test files (issue #1496).
+- **`ELECTRON_OVERRIDE_DIST_PATH` skips it.** With the variable set, `index.js` returns
+  that folder joined with `path.txt`'s text (or `electron`) without looking for the
+  binary or downloading it.
+- **A `resolve.alias` cannot do the same.** Vitest leaves `node_modules` packages to
+  plain Node, so a package such as `electron-chrome-extensions` reaches the real
+  `electron` through its own `require`, past any alias.
+- Measured 2026-11-05, electron 43.8.6, vitest 5.0.5, macOS: with `path.txt` moved
+  aside and `ELECTRON_MIRROR` pointing at a closed port, the whole unit suite failed 21
+  files on `Downloading Electron binary...`; with the variable set in `test.env`, all of
+  it passed and nothing downloaded. The third point is read from `index.js` and vitest's
+  defaults, not checked.
+
+Koloft dependents: `test.env` in `vitest.config.ts`, so no unit test needs the binary;
+`electronPackage.test.ts` fails if that setting goes.
