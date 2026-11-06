@@ -6,7 +6,6 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MuseSessions,
-  museShowsAPanel,
   museShowsItsInputBox,
   museTrustsFolder,
   trustMuseFolder,
@@ -890,12 +889,6 @@ describe('reading the Muse screen before typing into it', () => {
       ])
     ).toBe(false)
     expect(museShowsItsInputBox(['❯'])).toBe(false)
-  })
-
-  it('reads a panel where the input box is missing from a drawn screen, but cannot tell from a screen with nothing drawn on it yet', () => {
-    expect(museShowsAPanel([RULE, '❯ ', RULE, STATUS])).toBe(false)
-    expect(museShowsAPanel(['Session usage', '  Turns         0'])).toBe(true)
-    expect(museShowsAPanel(['', '  ', ''])).toBeUndefined()
   })
 })
 

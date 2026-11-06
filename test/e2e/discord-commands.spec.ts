@@ -143,8 +143,8 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  // AGY§8
-  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and what it ran is posted soon after', async ({
+  // AGY§8 AGY§23
+  test('a slash command that is the first thing an Antigravity butler opened on connect gets is typed into it, which gives it its conversation in the same process, and the panel it drew is posted in its channel soon after; /compact then compacts it and posts Done.', async ({
     env
   }) => {
     installAgy(env)
@@ -168,7 +168,14 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       expect(processAlive(agySessionCalls(env)[0].pid)).toBe(true)
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model/)])
+        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/model:\n[\s\S]*Select model/)])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
+
+      fake.interact(OWNER, 'compact', {})
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
+        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -226,38 +233,6 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
             /^⌨️ \*\*Alfred\*\* ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
           )
         ])
-      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
-
-      fake.interact(OWNER, 'compact', {})
-      await expect
-        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
-        .toMatch(/^⌨️ \*\*Alfred\*\* ran \/compact:\nDone\.$/)
-      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
-    } finally {
-      await quitAndClose(app)
-      await fake.close()
-    }
-  })
-
-  // AGY§8 AGY§23
-  test('D-CMD-1 with an Antigravity butler: /run /usage types it into the butler and posts the panel it drew in its channel, since agy shows a command’s output only on screen; /compact compacts it and posts Done.', async ({
-    env
-  }) => {
-    installAgy(env)
-    seedConductor(env)
-    seedSettings(env, { assist: { on: true, backend: 'agy' } })
-    const fake = await startFakeDiscord(env)
-    const app = await launchApp(env)
-    try {
-      await waitBooted(await app.firstWindow())
-      await expect.poll(() => fake.identifies).toBe(1)
-      await expect
-        .poll(() => agySessionCalls(env).length, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toBe(1)
-      fake.interact(OWNER, 'run', { command: '/usage' })
-      await expect
-        .poll(() => ran(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([expect.stringMatching(/^⌨️ \*\*Alfred\*\* ran \/usage:\n[\s\S]*Models & Quota/)])
       expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
 
       fake.interact(OWNER, 'compact', {})

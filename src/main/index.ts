@@ -30,7 +30,7 @@ import { CodexSessions } from './codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
-  museShowsAPanel,
+  museShowsItsInputBox,
   type MuseHomePick,
   type MuseRemoteDeps
 } from './museSessions'
@@ -770,7 +770,8 @@ type PanelOpen = (
 function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
   return async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
-    return lines && shows(lines)
+    const somethingDrawn = lines?.some((line) => line.trim())
+    return lines && somethingDrawn ? shows(lines) : undefined
   }
 }
 
@@ -783,7 +784,7 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
     return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
   codex: panelOnScreen(codexShowsAPanel),
-  muse: panelOnScreen(museShowsAPanel),
+  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
   agy: async () => undefined
 }
 

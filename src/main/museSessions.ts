@@ -196,11 +196,6 @@ export function museShowsItsInputBox(lines: string[]): boolean {
   return inputBoxDraft(lines) !== undefined
 }
 
-export function museShowsAPanel(lines: string[]): boolean | undefined {
-  if (!lines.some((line) => line.trim())) return undefined
-  return !museShowsItsInputBox(lines)
-}
-
 // MUSE§1
 const MUSE: CliSpec = {
   command: 'muse',
