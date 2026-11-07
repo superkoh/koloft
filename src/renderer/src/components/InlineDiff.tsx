@@ -26,24 +26,22 @@ export const InlineDiff = memo(function InlineDiff({
   const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
   const hasDel = useMemo(() => rows.some((r) => r.kind === 'del'), [rows])
   const [hl, setHl] = useState<Hl | null>(null)
+  const [colorQueue] = useState(() => ({}))
 
   const lang = langForPath(src)
   useEffect(() => {
     setHl(null)
     if (truncated) return
     let cancelled = false
-    Promise.all([
-      highlightLinesOffThread(newText, lang),
-      hasDel ? highlightLinesOffThread(oldText, lang) : Promise.resolve<string[]>([])
-    ])
-      .then(([newHtml, oldHtml]) => {
+    highlightLinesOffThread(colorQueue, hasDel ? [newText, oldText] : [newText], lang)
+      .then(([newHtml, oldHtml = []]) => {
         if (!cancelled) setHl({ newHtml, oldHtml })
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [newText, oldText, lang, truncated, hasDel])
+  }, [newText, oldText, lang, truncated, hasDel, colorQueue])
 
   const rowsHtml = useMemo<(string | null)[]>(() => {
     if (!hl) return shown.map(() => null)

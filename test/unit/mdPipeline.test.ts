@@ -3,12 +3,12 @@ import { renderBlocks } from '../../src/renderer/src/markdown/render'
 import '../../src/renderer/src/markdown/index'
 
 vi.mock('dompurify', () => ({
-  default: {
+  default: () => ({
     sanitize: (html: string) => html,
     addHook: (name: string, fn: (node: unknown) => void) => {
       purifyHooks[name] = fn
     }
-  }
+  })
 }))
 
 const purifyHooks = vi.hoisted(() => ({}) as Record<string, (node: unknown) => void>)
@@ -103,24 +103,23 @@ describe('renderMarkdown', () => {
     SHIKI_2000_LINES_TIMEOUT_MS_ON_A_BUSY_MACHINE
   )
 
-  it('leaves a mermaid fence as a placeholder and reports it as a diagram', async () => {
+  it('leaves a mermaid fence as a placeholder carrying its source', async () => {
     const doc = await render('```mermaid\nflowchart TD\n  A --> B\n```\n')
-    expect(doc.diagrams).toEqual([{ id: 'mmd-0', code: 'flowchart TD\n  A --> B' }])
     expect(doc.html).toContain('class="mmd"')
     expect(payload(doc.html)).toBe('flowchart TD\n  A --> B')
     expect(doc.html).not.toContain('md-code-copy')
   })
 
-  it('gives repeated identical diagrams distinct ids', async () => {
+  it('renders a diagram the same wherever it sits, so adding one above leaves the ones below untouched on a reload', async () => {
     const one = '```mermaid\nflowchart TD\n  A --> B\n```\n'
-    const doc = await render(one + '\n' + one)
-    expect(doc.diagrams.map((d) => d.id)).toEqual(['mmd-0', 'mmd-1'])
-    expect(doc.diagrams[0].code).toBe(doc.diagrams[1].code)
+    const before = await render('text\n\n' + one)
+    const after = await render(one + '\ntext\n\n' + one)
+    expect(after.blocks.at(-1)).toBe(before.blocks.at(-1))
   })
 
   it('leaves an unsupported diagram language as an ordinary code block (FR-16)', async () => {
     const doc = await render('```plantuml\n@startuml\n@enduml\n```\n')
-    expect(doc.diagrams).toEqual([])
+    expect(doc.html).not.toContain('class="mmd"')
     expect(doc.html).toContain('md-code-copy')
     expect(doc.html).toContain('@startuml')
   })
@@ -163,12 +162,10 @@ describe('renderMarkdown', () => {
     expect(doc.html).toContain('the note')
   })
 
-  it('returns front matter as data and as a card, and null when there is none', async () => {
+  it('shows front matter as a card', async () => {
     const doc = await render('---\ntitle: Design draft\n---\n\nbody\n')
-    expect(doc.frontMatter).toEqual({ title: 'Design draft' })
     expect(doc.html).toContain('md-frontmatter')
-    expect((await render('body\n')).frontMatter).toBeNull()
-    expect((await render('---\n---\n\nbody\n')).frontMatter).toBeNull()
+    expect(doc.html).toContain('Design draft')
   })
 
   it('wraps a table so the overflow happens inside it (FR-17)', async () => {
@@ -252,10 +249,24 @@ describe('renderMarkdown', () => {
     expect(doc.blocks[2]).toBe('<p>after</p>\n')
   })
 
+  it('still splits a README whose raw HTML at the top and bottom closes where it opens', async () => {
+    const body = Array.from({ length: 50 }, (_, i) => `para ${i}`).join('\n\n')
+    const doc = await render(
+      `<p align="center"><img src="logo.png"></p>\n\n${body}\n\n<!-- footer -->\n<br>\n`
+    )
+    expect(doc.blocks.length).toBeGreaterThan(50)
+  })
+
+  it('keeps the whole footnote list in one block however many footnotes there are', async () => {
+    const doc = await render('a[^1] b[^2] c^[inline]\n\n[^1]: one\n[^2]: two\n')
+    const notes = doc.blocks.filter((b) => b.includes('footnote-item'))
+    expect(notes).toHaveLength(1)
+    expect(notes[0]).toMatch(/^<hr class="footnotes-sep">[\s\S]*<\/section>\n$/)
+  })
+
   it('renders an empty document without throwing', async () => {
     const doc = await render('')
     expect(doc.headings).toEqual([])
-    expect(doc.diagrams).toEqual([])
-    expect(doc.frontMatter).toBeNull()
+    expect(doc.blocks).toEqual([])
   })
 })

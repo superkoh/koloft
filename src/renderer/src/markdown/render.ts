@@ -15,12 +15,25 @@ import { escapeHtml as esc } from '@shared/escapeHtml'
 export interface RenderedDoc {
   blocks: string[]
   headings: { id: string; text: string; level: number }[]
-  diagrams: { id: string; code: string }[]
-  frontMatter: Record<string, string> | null
 }
 
 const MAX_HIGHLIGHT_LINES = 2000
-const COLORED_FENCES_KEPT = 500
+const COLORED_FENCE_CHARS_KEPT = 8_000_000
+const VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'source',
+  'track',
+  'wbr'
+])
 
 const KATEX_OPTIONS: MarkdownKatexOptions & KatexOptions = {
   trust: false,
@@ -32,7 +45,7 @@ const KATEX_OPTIONS: MarkdownKatexOptions & KatexOptions = {
   maxExpand: 1000
 }
 
-const BIDI_RE = /[؜‎‏‪-‮⁦-⁩]/g
+const BIDI_RE = /[\u{61C}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2066}-\u{2069}]/gu
 
 function markBidi(html: string): string {
   return html.replace(BIDI_RE, (c) => {
@@ -45,7 +58,6 @@ interface RenderEnv extends Env {
   srcPath: string
   koloftToken: string
   koloftHighlight: Map<string, string>
-  koloftDiagrams: { id: string; code: string }[]
 }
 
 function fenceLang(token: Token): string {
@@ -77,9 +89,7 @@ function renderFence(token: Token, env: RenderEnv): string {
   const code = fenceCode(token)
 
   if (isDiagram(label)) {
-    const id = `mmd-${env.koloftDiagrams.length}`
-    env.koloftDiagrams.push({ id, code })
-    return `<div class="mmd" data-k="${env.koloftToken}" data-id="${id}" data-code="${payload(code)}"></div>\n`
+    return `<div class="mmd" data-k="${env.koloftToken}" data-code="${payload(code)}"></div>\n`
   }
 
   const highlighted = env.koloftHighlight?.get(cacheKey(label, code)) ?? plainCode(code)
@@ -141,11 +151,18 @@ function outline(tokens: Token[]): RenderedDoc['headings'] {
 }
 
 const colored = new Map<string, string>()
+let coloredChars = 0
 
 function keepColored(key: string, html: string): void {
+  coloredChars -= colored.get(key)?.length ?? 0
   colored.delete(key)
   colored.set(key, html)
-  if (colored.size > COLORED_FENCES_KEPT) colored.delete(colored.keys().next().value!)
+  coloredChars += html.length
+  for (const [oldest, was] of colored) {
+    if (coloredChars <= COLORED_FENCE_CHARS_KEPT || oldest === key) break
+    colored.delete(oldest)
+    coloredChars -= was.length
+  }
 }
 
 async function warmHighlight(tokens: Token[], env: RenderEnv): Promise<void> {
@@ -160,14 +177,8 @@ async function warmHighlight(tokens: Token[], env: RenderEnv): Promise<void> {
   }
   await Promise.all(
     [...jobs].map(async ([key, job]) => {
-      const done = colored.get(key)
-      if (done !== undefined) {
-        keepColored(key, done)
-        env.koloftHighlight.set(key, done)
-        return
-      }
       try {
-        const html = await highlightCodeLight(job.code, job.lang)
+        const html = colored.get(key) ?? (await highlightCodeLight(job.code, job.lang))
         keepColored(key, html)
         env.koloftHighlight.set(key, html)
       } catch {}
@@ -192,15 +203,35 @@ function unescapeAttr(s: string): string {
     .replace(/&amp;/g, '&')
 }
 
+const RAW_TAG_RE = /<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g
+
+function tagsLeftOpen(html: string): number {
+  let open = 0
+  for (const m of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(RAW_TAG_RE)) {
+    if (m[3] || VOID_TAGS.has(m[2].toLowerCase())) continue
+    open += m[1] ? -1 : 1
+  }
+  return open
+}
+
+function rawHtmlIn(token: Token): string {
+  if (token.type === 'html_block') return token.content
+  if (token.type !== 'inline') return ''
+  return (token.children ?? [])
+    .filter((c) => c.type === 'html_inline')
+    .map((c) => c.content)
+    .join('')
+}
+
 function topLevelBlocks(tokens: Token[]): [number, number][] {
-  const firstRaw = tokens.findIndex((t) => t.type === 'html_block')
-  const lastRaw = tokens.findLastIndex((t) => t.type === 'html_block')
   const out: [number, number][] = []
   let start = 0
+  let depth = 0
+  let rawOpen = 0
   for (let i = 0; i < tokens.length; i++) {
-    const ends = tokens[i].level === 0 && tokens[i].nesting <= 0
-    const rawHtmlMayStillBeOpen = i >= firstRaw && i < lastRaw
-    if (!ends || rawHtmlMayStillBeOpen) continue
+    depth += tokens[i].nesting
+    rawOpen = Math.max(0, rawOpen + tagsLeftOpen(rawHtmlIn(tokens[i])))
+    if (depth !== 0 || rawOpen > 0) continue
     out.push([start, i + 1])
     start = i + 1
   }
@@ -215,8 +246,7 @@ export async function renderBlocks(
   const env: RenderEnv = {
     srcPath: opts.srcPath,
     koloftToken: opts.token,
-    koloftHighlight: new Map(),
-    koloftDiagrams: []
+    koloftHighlight: new Map()
   }
   if (text.includes('$')) await loadKatex().catch(() => {})
   const tokens = md.parse(text, env)
@@ -224,11 +254,5 @@ export async function renderBlocks(
   const blocks = topLevelBlocks(tokens).map(([from, to]) =>
     keepErrorSource(md.renderer.render(tokens.slice(from, to), md.options, env))
   )
-  const fm = env.frontMatter
-  return {
-    blocks,
-    headings: outline(tokens),
-    diagrams: env.koloftDiagrams,
-    frontMatter: fm && typeof fm === 'object' ? (fm as Record<string, string>) : null
-  }
+  return { blocks, headings: outline(tokens) }
 }

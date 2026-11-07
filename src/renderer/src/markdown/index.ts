@@ -31,7 +31,9 @@ const SANITIZE: Config & { RETURN_DOM_FRAGMENT: true } = {
 const LOCAL_URL = /^(?:koloft-file:|data:)/i
 const CSS_URL = /url\(\s*['"]?([^'")]*)/gi
 
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+const purify = DOMPurify()
+
+purify.addHook('afterSanitizeAttributes', (node) => {
   const el = node as Element
   const src = el.getAttribute?.('src')
   if (src && !LOCAL_URL.test(src)) {
@@ -49,7 +51,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 })
 
 export function cleanBlock(html: string): DocumentFragment {
-  return DOMPurify.sanitize(html, SANITIZE)
+  return purify.sanitize(html, SANITIZE)
 }
 
 let katexStyle: Promise<unknown> | null = null
@@ -57,13 +59,14 @@ function loadKatexStyle(): Promise<unknown> {
   return (katexStyle ??= import('katex/dist/katex.min.css').catch(() => (katexStyle = null)))
 }
 
-export async function renderMarkdown(
-  text: string,
-  opts: { srcPath: string; token: string }
-): Promise<RenderedDoc> {
+export async function renderMarkdown(ask: {
+  text: string
+  srcPath: string
+  token: string
+}): Promise<RenderedDoc> {
   const [doc] = await Promise.all([
-    renderMarkdownOffThread(text, opts.srcPath, opts.token),
-    text.includes('$') ? loadKatexStyle() : null
+    renderMarkdownOffThread(ask),
+    ask.text.includes('$') ? loadKatexStyle() : null
   ])
   return doc
 }

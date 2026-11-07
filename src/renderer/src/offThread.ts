@@ -2,15 +2,15 @@ import type { RenderedDoc } from './markdown/render'
 
 type Job =
   | { job: 'markdown'; text: string; srcPath: string; token: string }
-  | { job: 'lines'; code: string; lang: string }
+  | { job: 'lines'; codes: string[]; lang: string }
 
 export type OffThreadAsk = Job & { id: number }
 
 export type OffThreadReply =
-  | { id: number; ok: true; value: RenderedDoc | string[] }
+  | { id: number; ok: true; value: RenderedDoc | string[][] }
   | { id: number; ok: false; message: string }
 
-type Waiting = { resolve: (v: RenderedDoc | string[]) => void; reject: (e: Error) => void }
+type Waiting = { resolve: (v: RenderedDoc | string[][]) => void; reject: (e: Error) => void }
 
 let worker: Worker | null = null
 let nextId = 0
@@ -40,7 +40,7 @@ function theWorker(): Worker {
   return (worker = w)
 }
 
-function ask(job: Job): Promise<RenderedDoc | string[]> {
+function ask(job: Job): Promise<RenderedDoc | string[][]> {
   const id = ++nextId
   return new Promise((resolve, reject) => {
     waiting.set(id, { resolve, reject })
@@ -48,14 +48,50 @@ function ask(job: Job): Promise<RenderedDoc | string[]> {
   })
 }
 
-export function renderMarkdownOffThread(
-  text: string,
-  srcPath: string,
+export function renderMarkdownOffThread(doc: {
+  text: string
+  srcPath: string
   token: string
-): Promise<RenderedDoc> {
-  return ask({ job: 'markdown', text, srcPath, token }) as Promise<RenderedDoc>
+}): Promise<RenderedDoc> {
+  return ask({ job: 'markdown', ...doc }) as Promise<RenderedDoc>
 }
 
-export function highlightLinesOffThread(code: string, lang: string): Promise<string[]> {
-  return ask({ job: 'lines', code, lang }) as Promise<string[]>
+interface LinesWanted {
+  codes: string[]
+  lang: string
+  resolve: (v: string[][]) => void
+  reject: (e: Error) => void
+}
+
+const colorQueues = new Map<object, { busy: boolean; next: LinesWanted | null }>()
+
+function colorNext(owner: object): void {
+  const q = colorQueues.get(owner)
+  const want = q?.next
+  if (!q || !want) {
+    colorQueues.delete(owner)
+    return
+  }
+  q.next = null
+  q.busy = true
+  ;(ask({ job: 'lines', codes: want.codes, lang: want.lang }) as Promise<string[][]>)
+    .then(want.resolve, want.reject)
+    .finally(() => {
+      q.busy = false
+      colorNext(owner)
+    })
+}
+
+export function highlightLinesOffThread(
+  owner: object,
+  codes: string[],
+  lang: string
+): Promise<string[][]> {
+  return new Promise((resolve, reject) => {
+    const q = colorQueues.get(owner) ?? { busy: false, next: null }
+    colorQueues.set(owner, q)
+    q.next?.reject(new Error('superseded'))
+    q.next = { codes, lang, resolve, reject }
+    if (!q.busy) colorNext(owner)
+  })
 }
