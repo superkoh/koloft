@@ -443,8 +443,15 @@ function tui() {
     if (text === '/silent') {
       const turnId = turn(text)
       return later(() => {
+        logRecord(session.id, 'runtime.session', {
+          kind: 'run',
+          run_id: turnId,
+          event: { kind: 'terminal', terminal: 'completed' }
+        })
         inputBox()
-        fire('Stop', { turn_id: turnId, last_assistant_message: null, stop_hook_active: false })
+        const stop = { turn_id: turnId, last_assistant_message: null, stop_hook_active: false }
+        fire('Stop', stop)
+        fire('Stop', stop)
         status('state=done:app=muse')
       })
     }

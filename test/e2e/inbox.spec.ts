@@ -517,10 +517,6 @@ for (const remote of [false, true]) {
     if (remote) {
       installFakeRemote(env)
       installMuseOnMachine(env)
-      fs.writeFileSync(
-        path.join(machineHome(env), 'fake-muse-delay'),
-        A_MUSE_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS
-      )
     } else trustInMuse(env, env.workspaces.a)
     const app = await launchApp(env)
     try {
@@ -532,6 +528,11 @@ for (const remote of [false, true]) {
       const row = wsRows(page, ws).first()
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const tabId = (await row.getAttribute('data-tab-id')) as string
+      if (remote)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-muse-delay'),
+          A_MUSE_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS
+        )
       await typeInto(page, tabId, '/silent')
       await openInbox(page)
       const card = inboxCard(page, 'finished and waits for you')

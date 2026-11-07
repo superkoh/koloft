@@ -1011,8 +1011,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const prompt = run.prompt
     const reply = replyIn(r)
     if (prompt && reply?.turnId === prompt.turnId) prompt.reply = reply.text
-    if (prompt && turnEndedIn(r) === prompt.turnId)
-      this.endTurn(run, prompt.turnId, prompt.reply ?? '')
+    if (prompt?.reply && turnEndedIn(r) === prompt.turnId)
+      this.endTurn(run, prompt.turnId, prompt.reply)
     const job = firedJob(r)
     if (job && run.jobs.get(job) === false) {
       run.jobs.delete(job)
