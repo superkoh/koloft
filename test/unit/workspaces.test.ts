@@ -444,6 +444,20 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
     await vi.waitFor(() => expect(dropped).toEqual(['cold: no transcript found and not running']))
   })
 
+  it("removing a stopped session's title sidecar brings back the transcript's own title", async () => {
+    writeJsonl(repo, 'cold')
+    own('cold')
+    const bucket = path.join(projectsRoot, encodeCwd(repo))
+    const sidecar = path.join(bucket, 'cold.title')
+    fs.writeFileSync(sidecar, 'Sidecar name\n')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Sidecar name']))
+    await settle()
+
+    fs.rmSync(sidecar)
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['a session']))
+  })
+
   it("a mirror pull that grows a running remote session's transcript rescans nothing; one that grows a stopped session's, or brings the running one in under its worktree's folder, still does", async () => {
     const worktree = `${RPATH}/.claude/worktrees/feature`
     writeMirrorJsonl('live')
@@ -1312,8 +1326,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
     expect(titleOf('settled-1')).toBe('Settled name')
   })
 
-  it('a restart opens no transcript whose head it already read, unless that reading was saved by another Koloft version', async () => {
-    const CACHE_SAVE_WAIT_MS = 10_000
+  it('a restart opens no transcript whose head it already read, even when the last run quit at once, unless that reading was saved by another Koloft version', async () => {
     const file = path.join(root, 'transcript-heads.json')
     writeJsonl(repo, 'kept-1')
     own('kept-1')
@@ -1329,7 +1342,6 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
 
     await launch('1.0.0')
     expect(jsonlOpened()).toBe(1)
-    await vi.waitFor(() => expect(fs.existsSync(file)).toBe(true), { timeout: CACHE_SAVE_WAIT_MS })
 
     opened.mockClear()
     await launch('1.0.0')
@@ -1337,7 +1349,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
 
     await launch('1.1.0')
     expect(jsonlOpened()).toBe(1)
-  }, 20_000)
+  })
 
   it('does not remember a head it could not open, so the next rescan reads it (else an unreadable, never-growing file keeps its age title for good)', async () => {
     const dir = path.join(projectsRoot, encodeCwd(repo))

@@ -60,10 +60,10 @@ import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
 import { isUnderAnyRoot } from './browserSecurity'
 import { mergeUse } from '@shared/firstRun'
+import { BackgroundFile } from './backgroundFile'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
-const HEAD_CACHE_SAVE_DEBOUNCE_MS = 5000
 // CC§2
 const A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS = 30_000
 const A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS = 10_000
@@ -279,17 +279,21 @@ export class WorkspaceManager {
   private headScans = new Map<string, HeadScan>()
   private headScansSeen = new Set<string>()
   private headCacheLoaded: Promise<void> = Promise.resolve()
-  private headCacheTimer?: NodeJS.Timeout
+  private headDisk?: BackgroundFile
+  private headScansChanged = false
+  private headCacheSavedOnce = false
   private statByFile = new Map<string, FileStamp>()
   private knownTranscripts = new Set<string>()
   private appendedTranscripts = new Set<string>()
-  private asked: 'nothing' | 'appends-only' | 'everything' = 'everything'
+  private fullScanAsked = true
   private lookedEverywhereAt = 0
   private worktreeDirsByStamp = new Map<string, { stamp: number; dirs: string[] }>()
   private lastAdditionalKey = ''
 
   constructor(private deps: WorkspaceManagerDeps) {
     this.layout = deps.loadLayout()
+    const cache = deps.headCache
+    if (cache) this.headDisk = new BackgroundFile(() => cache.file)
   }
 
   start(): void {
@@ -303,23 +307,18 @@ export class WorkspaceManager {
     if (!cache) return
     try {
       const saved = JSON.parse(await fs.promises.readFile(cache.file, 'utf8')) as HeadCacheFile
-      if (saved.version === cache.version) this.headScans = new Map(saved.heads)
+      if (saved.version !== cache.version) return
+      for (const [file, head] of saved.heads)
+        if (!this.headScans.has(file)) this.headScans.set(file, head)
     } catch {}
   }
 
-  private saveHeadCacheSoon(): void {
+  private saveHeadCache(): void {
     const cache = this.deps.headCache
-    if (!cache || this.headCacheTimer) return
-    this.headCacheTimer = setTimeout(() => {
-      this.headCacheTimer = undefined
-      const saved: HeadCacheFile = { version: cache.version, heads: [...this.headScans] }
-      const tmp = cache.file + '.tmp'
-      void fs.promises
-        .writeFile(tmp, JSON.stringify(saved))
-        .then(() => fs.promises.rename(tmp, cache.file))
-        .catch(() => undefined)
-    }, HEAD_CACHE_SAVE_DEBOUNCE_MS)
-    this.headCacheTimer.unref()
+    if (!cache || !this.headScansChanged) return
+    this.headScansChanged = false
+    const saved: HeadCacheFile = { version: cache.version, heads: [...this.headScans] }
+    this.headDisk?.write(JSON.stringify(saved))
   }
 
   rows(): WorkspaceRows[] {
@@ -769,6 +768,8 @@ export class WorkspaceManager {
   dispose(): void {
     this.disposed = true
     this.flushPanelSave()
+    this.saveHeadCache()
+    this.headDisk?.flushSync()
     if (this.timer) clearTimeout(this.timer)
     for (const done of this.scanWaiters.splice(0)) done()
     for (const w of this.rootWatchers.values()) w.close()
@@ -834,7 +835,7 @@ export class WorkspaceManager {
   }
 
   private scheduleRescan(): void {
-    this.asked = 'everything'
+    this.fullScanAsked = true
     this.armRescan()
   }
 
@@ -870,18 +871,20 @@ export class WorkspaceManager {
     await this.headCacheLoaded
     this.watchRoots()
 
-    const everywhere =
-      this.asked !== 'appends-only' ||
-      Date.now() - this.lookedEverywhereAt >= A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS
-    this.asked = 'nothing'
-    if (everywhere) this.lookedEverywhereAt = Date.now()
     const appended = [...this.appendedTranscripts]
     this.appendedTranscripts.clear()
+    const everywhere =
+      this.fullScanAsked ||
+      appended.length === 0 ||
+      Date.now() - this.lookedEverywhereAt >= A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS
+    this.fullScanAsked = false
+    if (everywhere) this.lookedEverywhereAt = Date.now()
+    const boundAtStart = this.deps.runningBindings()
     this.headScansSeen.clear()
     if (everywhere) this.statByFile.clear()
     else {
       for (const file of appended) this.statByFile.delete(file)
-      for (const id of this.deps.runningBindings().keys()) {
+      for (const id of boundAtStart.keys()) {
         const file = this.transcriptFileById.get(id)
         if (file) this.statByFile.delete(file)
       }
@@ -892,7 +895,6 @@ export class WorkspaceManager {
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    const boundAtStart = this.deps.runningBindings()
     this.lastRunningKey = [...boundAtStart.keys()].join(',')
     for (const [id, leaving] of this.leavingTheirWorktree) {
       const tab = boundAtStart.get(id)
@@ -1025,7 +1027,7 @@ export class WorkspaceManager {
     for (const file of this.headScans.keys()) {
       if (this.headScansSeen.has(file)) continue
       this.headScans.delete(file)
-      this.saveHeadCacheSoon()
+      this.headScansChanged = true
     }
     this.knownTranscripts = new Set(this.statByFile.keys())
     if (everywhere) await this.dropMembersWithoutTranscript(slugsOf)
@@ -1039,6 +1041,10 @@ export class WorkspaceManager {
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)
     this.firstScanDone()
+    if (!this.headCacheSavedOnce) {
+      this.headCacheSavedOnce = true
+      this.saveHeadCache()
+    }
     this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
   }
 
@@ -1233,7 +1239,7 @@ export class WorkspaceManager {
         // PLATFORM§40
         const watcher = fs.watch(dir, (_event, filename) => {
           if (!filename) return this.scheduleRescan()
-          void this.onBucketEntryChanged(path.join(dir, filename.toString()))
+          this.onBucketEntryChanged(path.join(dir, filename.toString()))
         })
         watcher.on('error', () => {
           watcher.close()
@@ -1245,18 +1251,11 @@ export class WorkspaceManager {
   }
 
   // PLATFORM§40
-  private async onBucketEntryChanged(file: string): Promise<void> {
+  private onBucketEntryChanged(file: string): void {
     if (this.isLiveTranscript(file)) return
-    if (this.knownTranscripts.has(file)) {
-      this.appendedTranscripts.add(file)
-      if (this.asked === 'nothing') this.asked = 'appends-only'
-      return this.armRescan()
-    }
-    const exists = await fs.promises.access(file).then(
-      () => true,
-      () => false
-    )
-    if (exists) this.scheduleRescan()
+    if (!this.knownTranscripts.has(file)) return this.scheduleRescan()
+    this.appendedTranscripts.add(file)
+    this.armRescan()
   }
 
   private isLiveTranscript(file: string): boolean {
@@ -1333,16 +1332,14 @@ export class WorkspaceManager {
     this.headScansSeen.add(file)
     const st = stats.get(file) ?? (await stampOf(file))
     const prev = this.headScans.get(file)
-    if (prev && st && prev.ino === st.ino) {
-      const same = prev.final
-        ? st.size >= prev.size
-        : st.size === prev.size && st.mtimeMs === prev.mtimeMs
+    if (prev && st) {
+      const same = prev.final ? prev.ino === st.ino && st.size >= prev.size : sameStamp(prev, st)
       if (same) return prev.meta
     }
     const { meta, opened, eof } = await readJsonlHeadMeta(file)
     if (st && opened) {
       this.headScans.set(file, { ...st, meta, final: !eof })
-      this.saveHeadCacheSoon()
+      this.headScansChanged = true
     }
     return meta
   }
@@ -1355,7 +1352,7 @@ export class WorkspaceManager {
     const tail = extractJsonlTail(await readJsonlTailLines(file, untilWorktreeRecord))
     if (head && st) {
       head.tail = { ...st, tail }
-      this.saveHeadCacheSoon()
+      this.headScansChanged = true
     }
     return tail
   }
