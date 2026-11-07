@@ -1,14 +1,11 @@
+import { endsMidPair } from '@shared/utf16'
+
 export const DISCORD_MESSAGE_LIMIT = 2000
 
 const CLOSE_FENCE = '\n```'
 
 export function isFence(line: string): boolean {
   return line.trimStart().startsWith('```')
-}
-
-function endsMidPair(text: string, cut: number): boolean {
-  const code = text.charCodeAt(cut - 1)
-  return code >= 0xd800 && code <= 0xdbff
 }
 
 // PLATFORM§39
