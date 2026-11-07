@@ -423,20 +423,19 @@ describe('pageOfEntries', () => {
     expect(pageOfEntries(big, 1, none).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
     expect(pageOfEntries(big, 1, none).firstHidden).toBe(big[DIR_PAGE_ROWS].path)
     expect(pageOfEntries(big, 2, none).rows).toHaveLength(DIR_PAGE_ROWS * 2)
-    expect(pageOfEntries(big, 3, none).nextPage).toBe(7)
-    expect(pageOfEntries(big, 4, none)).toEqual({ rows: big, notShown: 0, nextPage: 0 })
+    expect(pageOfEntries(big, 4, none)).toEqual({ rows: big, notShown: 0 })
   })
 
-  it('a file to keep in sight (open, being written, written or changed) stays shown past the page, with the folder that holds it, and Show more counts only rows it will add', () => {
+  it('a file to keep in sight (open, being written, written or changed) stays shown past the page, with the folder that holds it, and each Show more still adds a full page of new rows', () => {
     const late = big[DIR_PAGE_ROWS]
     const dir: DirEntry = { name: 'zz', path: `${ROOT}/many/zz`, isDir: true }
     const list = [...big, dir]
     const keep = pathsWithTheirFolders([late.path, dir.path + '/deep/file.ts', undefined])
-    const { rows, notShown, nextPage, firstHidden } = pageOfEntries(list, 1, keep)
+    const { rows, notShown, firstHidden } = pageOfEntries(list, 1, keep)
     expect(rows.slice(DIR_PAGE_ROWS)).toEqual([late, dir])
     expect(notShown).toBe(list.length - DIR_PAGE_ROWS - 2)
-    expect(nextPage).toBe(DIR_PAGE_ROWS - 1)
     expect(firstHidden).toBe(big[DIR_PAGE_ROWS + 1].path)
+    expect(pageOfEntries(list, 2, keep).rows.length - rows.length).toBe(DIR_PAGE_ROWS)
   })
 })
 

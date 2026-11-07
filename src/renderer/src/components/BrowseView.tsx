@@ -24,6 +24,7 @@ import { basename } from '@shared/preview'
 import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
+  DIR_PAGE_ROWS,
   NO_MATCHES,
   SEARCH_DEBOUNCE_MS,
   ancestorDirs,
@@ -219,7 +220,7 @@ export function BrowseView({
   showIgnoredRef.current = showIgnored
   const childrenRef = useRef(children)
   childrenRef.current = children
-  const listAsksRef = useRef(new Map<string, number>())
+  const askedAgainWhileListingRef = useRef(new Map<string, boolean>())
 
   const home = window.api.home
   const scratchpadDir = session?.scratchpadDir
@@ -228,15 +229,18 @@ export function BrowseView({
   const loadDir = useCallback(async (dir: string): Promise<void> => {
     if (loadedRef.current.has(dir)) return
     loadedRef.current.add(dir)
+    const listing = askedAgainWhileListingRef.current
+    if (listing.has(dir)) {
+      listing.set(dir, true)
+      return
+    }
+    listing.set(dir, false)
     const gen = genRef.current
-    const ask = (listAsksRef.current.get(dir) ?? 0) + 1
-    listAsksRef.current.set(dir, ask)
-    const stale = (): boolean => gen !== genRef.current || ask !== listAsksRef.current.get(dir)
     const showsLoading = childrenRef.current[dir] === undefined
     if (showsLoading) setLoading((s) => new Set(s).add(dir))
     try {
       const entries = await window.api.fs.listDir(dir, { showIgnored: showIgnoredRef.current })
-      if (stale()) return
+      if (gen !== genRef.current) return
       setErrors((s) => {
         if (!s.has(dir)) return s
         const n = new Set(s)
@@ -245,8 +249,8 @@ export function BrowseView({
       })
       setChildren((m) => (sameEntries(m[dir], entries) ? m : { ...m, [dir]: entries }))
     } catch {
-      if (stale()) return
       loadedRef.current.delete(dir)
+      if (gen !== genRef.current) return
       setChildren((m) => ({ ...m, [dir]: [] }))
       setErrors((s) => new Set(s).add(dir))
     } finally {
@@ -256,6 +260,12 @@ export function BrowseView({
           n.delete(dir)
           return n
         })
+      const again = listing.get(dir)
+      listing.delete(dir)
+      if (again && gen === genRef.current) {
+        loadedRef.current.delete(dir)
+        void loadDir(dir)
+      }
     }
   }, [])
 
@@ -289,6 +299,7 @@ export function BrowseView({
     }
     genRef.current++
     loadedRef.current = new Set()
+    askedAgainWhileListingRef.current = new Map()
     setChildren({})
     setErrors(new Set())
     setLoading(new Set())
@@ -403,7 +414,8 @@ export function BrowseView({
     relistWithScratch()
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed, changes) => {
-      if (changed === dir) relistWithScratch(relistChanged(changes))
+      if (changed === dir)
+        relistWithScratch(relistChanged(changes ?? { listsChanged: [], replacedTrees: [dir] }))
     })
     return () => {
       off()
@@ -786,7 +798,7 @@ export function BrowseView({
     if (visible.length === 0 && hiddenNodes.length === 0)
       return <div className="ft-hint bv-empty-dir">Empty</div>
     const shownPages = pages[dir] ?? 1
-    const { rows, notShown, nextPage, firstHidden } = pageOfEntries(visible, shownPages, keepShown)
+    const { rows, notShown, firstHidden } = pageOfEntries(visible, shownPages, keepShown)
     const moreId = section + ':' + dir + ':more'
     const showMore = (): void => {
       setPages((m) => ({ ...m, [dir]: shownPages + 1 }))
@@ -807,7 +819,7 @@ export function BrowseView({
             data-row-id={moreId}
             onClick={showMore}
           >
-            <span className="ft-name">Show {nextPage} more</span>
+            <span className="ft-name">Show {Math.min(DIR_PAGE_ROWS, notShown)} more</span>
             <span className="ft-loc">{notShown} not shown</span>
           </div>
         )}

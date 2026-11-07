@@ -244,7 +244,8 @@ export function pathsWithTheirFolders(paths: Iterable<string | null | undefined>
   for (let p of paths) {
     while (p && !out.has(p)) {
       out.add(p)
-      p = p.slice(0, p.lastIndexOf('/'))
+      const cut = p.lastIndexOf('/')
+      p = cut > 0 ? p.slice(0, cut) : ''
     }
   }
   return out
@@ -254,20 +255,20 @@ export function pageOfEntries(
   entries: readonly DirEntry[],
   pages: number,
   keep: ReadonlySet<string>
-): { rows: readonly DirEntry[]; notShown: number; nextPage: number; firstHidden?: string } {
+): { rows: readonly DirEntry[]; notShown: number; firstHidden?: string } {
   const limit = pages * DIR_PAGE_ROWS
-  if (entries.length <= limit) return { rows: entries, notShown: 0, nextPage: 0 }
+  if (entries.length <= limit) return { rows: entries, notShown: 0 }
   const rows: DirEntry[] = []
-  let nextPage = 0
+  let paged = 0
   let firstHidden: string | undefined
-  entries.forEach((e, i) => {
-    if (i < limit || keep.has(e.path)) rows.push(e)
-    else if (i < limit + DIR_PAGE_ROWS) {
-      nextPage++
-      firstHidden ??= e.path
-    }
-  })
-  return { rows, notShown: entries.length - rows.length, nextPage, firstHidden }
+  for (const e of entries) {
+    if (keep.has(e.path)) rows.push(e)
+    else if (paged < limit) {
+      rows.push(e)
+      paged++
+    } else firstHidden ??= e.path
+  }
+  return { rows, notShown: entries.length - rows.length, firstHidden }
 }
 
 export function foldersToRelist(open: Iterable<string>, changes: DirChanges | undefined): string[] {

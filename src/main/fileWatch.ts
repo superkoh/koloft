@@ -98,6 +98,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
+    entry.changed = null
     try {
       entry.watcher.close()
     } catch {}
