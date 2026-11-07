@@ -18,7 +18,7 @@ import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
 import { parseUnifiedDiff } from '@shared/unifiedDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { highlightCode, langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
 import '../artifactPane.css'
 
 interface Sym {
@@ -133,11 +133,18 @@ function CodeSource({
   line?: number
 }): JSX.Element {
   const [html, setHtml] = useState('')
+  const [colorAsked, setColorAsked] = useState(false)
+  const [askDismissed, setAskDismissed] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const lang = langForPath(path)
+  const tooBig = useMemo(() => tooBigToColorUnasked(text), [text])
+  const colored = lang !== 'text' && (colorAsked || !tooBig)
+  const showPlain = !colored || (colorAsked && !html)
 
   useEffect(() => {
+    if (!colored) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
+    highlightCode(text, lang)
       .then((h) => {
         if (!cancelled) setHtml(h)
       })
@@ -145,23 +152,41 @@ function CodeSource({
     return () => {
       cancelled = true
     }
-  }, [text, path])
+  }, [text, lang, colored])
 
+  const plainHtml = useMemo(() => (showPlain ? plainCodeHtml(text) : ''), [showPlain, text])
+  const shownHtml = showPlain ? plainHtml : html
   // PLATFORM§25
-  const codeHtml = useMemo(() => ({ __html: html }), [html])
+  const codeHtml = useMemo(() => ({ __html: shownHtml }), [shownHtml])
 
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
-    if (!line || jumpedLine.current === line || !html) return
+    if (!line || jumpedLine.current === line || !shownHtml) return
     jumpedLine.current = line
     bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
       block: 'center'
     })
-  }, [line, html])
+  }, [line, shownHtml])
 
   return (
     <div className="code-wrap">
       <div className="code-body" ref={bodyRef} dangerouslySetInnerHTML={codeHtml} />
+      {lang !== 'text' && !colored && !askDismissed && (
+        <div className="fp-stale" role="status">
+          <span className="fp-stale-msg">Large file — shown without colors.</span>
+          <button className="fp-stale-btn" onClick={() => setColorAsked(true)}>
+            Show colors
+          </button>
+          <button
+            className="fp-stale-x"
+            onClick={() => setAskDismissed(true)}
+            title="Dismiss"
+            aria-label="Dismiss"
+          >
+            <IconClose size={14} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
