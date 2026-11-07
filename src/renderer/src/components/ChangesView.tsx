@@ -190,6 +190,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     }
     setExpanded(onlyStillChanged)
     setExpandCut(onlyStillChanged)
+    setOpened(onlyStillChanged)
+    setBlockView(onlyStillChanged)
   }, [git, base])
 
   const trigger = useRef({ refreshNonce, retryNonce, base, root })

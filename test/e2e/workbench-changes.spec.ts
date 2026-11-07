@@ -320,7 +320,9 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
       fx.editTracked(leaves)
       await waitStream(p, 2)
+      await waitGitQuiet(env)
       await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
     } finally {
       await relaunched.app.close().catch(() => {})
     }
