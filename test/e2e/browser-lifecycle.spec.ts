@@ -301,7 +301,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
 
-      expect(await wbTabTitles(page)).toEqual([FILES_LABEL, 'Page A', 'Page B'])
+      await expect.poll(() => wbTabTitles(page)).toEqual([FILES_LABEL, 'Page A', 'Page B'])
       await expect(wbActiveTab(page).locator(BROWSER.tabLabel)).toHaveText('Page A')
     } finally {
       await srv.close()
