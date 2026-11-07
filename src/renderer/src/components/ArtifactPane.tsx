@@ -139,22 +139,33 @@ function CodeSource({
   const askFirst = useMemo(() => lang !== 'text' && tooBigToColorUnasked(text), [lang, text])
   const waitingToBeAsked = askFirst && colorAskedFor !== text
   const colored = lang !== 'text' && !waitingToBeAsked
-  const coloredHtml = colored && colors && (colors.text === text || !askFirst) ? colors.html : null
-  const showPlain = coloredHtml === null
+  const plainUntilColored = lang === 'text' || askFirst
+  const coloredHtml = plainUntilColored
+    ? colored && colors?.text === text
+      ? colors.html
+      : null
+    : (colors?.html ?? '')
 
   useEffect(() => {
     if (!colored) return
     let cancelled = false
-    highlightCode(text, lang)
-      .then((html) => {
-        if (!cancelled) setColors({ text, html })
-      })
-      .catch(() => {})
+    const color = (): void => {
+      highlightCode(text, lang)
+        .then((html) => {
+          if (!cancelled) setColors({ text, html })
+        })
+        .catch(() => {})
+    }
+    let frame = 0
+    if (askFirst) frame = requestAnimationFrame(() => (frame = requestAnimationFrame(color)))
+    else color()
     return () => {
       cancelled = true
+      cancelAnimationFrame(frame)
     }
-  }, [text, lang, colored])
+  }, [text, lang, colored, askFirst])
 
+  const showPlain = coloredHtml === null
   const plainHtml = useMemo(() => (showPlain ? plainCodeHtml(text) : ''), [showPlain, text])
   const shownHtml = coloredHtml ?? plainHtml
   // PLATFORM§25
@@ -162,12 +173,12 @@ function CodeSource({
 
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
-    if (!line || jumpedLine.current === line) return
+    if (!line || jumpedLine.current === line || !shownHtml) return
     jumpedLine.current = line
     bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
       block: 'center'
     })
-  }, [line])
+  }, [line, shownHtml])
 
   return (
     <div className="code-wrap">
