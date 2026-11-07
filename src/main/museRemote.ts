@@ -244,6 +244,10 @@ def poll():
     follow_log()
 
 
+def heard(keys):
+    return keys
+
+
 ${RELAY_LOOP_PY}`
 
 // MUSE§9 MUSE§17 ADR-0031
