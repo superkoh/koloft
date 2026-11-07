@@ -249,11 +249,14 @@ describe('renderMarkdown', () => {
     expect(doc.blocks[2]).toBe('<p>after</p>\n')
   })
 
-  it('still splits a README whose raw HTML at the top and bottom closes where it opens', async () => {
+  it.each([
+    ['closes every tag', '<p align="center"><img src="logo.png"></p>'],
+    ['leaves out an end tag HTML lets go unwritten', '<p align="center"><img src="logo.png">'],
+    ['has a stray inline tag', 'Made with <b>care'],
+    ['has a self-closing svg', '<svg width="8" height="8"><circle r="4"/></svg>']
+  ])('still splits a README whose raw HTML at the top %s', async (_case, top) => {
     const body = Array.from({ length: 50 }, (_, i) => `para ${i}`).join('\n\n')
-    const doc = await render(
-      `<p align="center"><img src="logo.png"></p>\n\n${body}\n\n<!-- footer -->\n<br>\n`
-    )
+    const doc = await render(`${top}\n\n${body}\n\n<!-- footer -->\n<br>\n`)
     expect(doc.blocks.length).toBeGreaterThan(50)
   })
 

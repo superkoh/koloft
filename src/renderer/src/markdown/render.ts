@@ -18,8 +18,8 @@ export interface RenderedDoc {
 }
 
 const MAX_HIGHLIGHT_LINES = 2000
-const COLORED_FENCE_CHARS_KEPT = 8_000_000
-const VOID_TAGS = new Set([
+const COLORED_FENCE_CHARS_KEPT = 2_000_000
+const TAGS_THAT_NEED_NO_CLOSE = new Set([
   'area',
   'base',
   'br',
@@ -32,7 +32,23 @@ const VOID_TAGS = new Set([
   'meta',
   'source',
   'track',
-  'wbr'
+  'wbr',
+  'p',
+  'li',
+  'dt',
+  'dd',
+  'tr',
+  'td',
+  'th',
+  'thead',
+  'tbody',
+  'tfoot',
+  'colgroup',
+  'caption',
+  'option',
+  'optgroup',
+  'rp',
+  'rt'
 ])
 
 const KATEX_OPTIONS: MarkdownKatexOptions & KatexOptions = {
@@ -205,22 +221,22 @@ function unescapeAttr(s: string): string {
 
 const RAW_TAG_RE = /<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g
 
-function tagsLeftOpen(html: string): number {
+function tagsLeftOpen(html: string, countOpeners: boolean): number {
   let open = 0
   for (const m of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(RAW_TAG_RE)) {
-    if (m[3] || VOID_TAGS.has(m[2].toLowerCase())) continue
-    open += m[1] ? -1 : 1
+    if (m[3] || TAGS_THAT_NEED_NO_CLOSE.has(m[2].toLowerCase())) continue
+    if (m[1]) open--
+    else if (countOpeners) open++
   }
   return open
 }
 
-function rawHtmlIn(token: Token): string {
-  if (token.type === 'html_block') return token.content
-  if (token.type !== 'inline') return ''
+function rawTagsLeftOpen(token: Token): number {
+  if (token.type === 'html_block') return tagsLeftOpen(token.content, true)
+  if (token.type !== 'inline') return 0
   return (token.children ?? [])
     .filter((c) => c.type === 'html_inline')
-    .map((c) => c.content)
-    .join('')
+    .reduce((n, c) => n + tagsLeftOpen(c.content, false), 0)
 }
 
 function topLevelBlocks(tokens: Token[]): [number, number][] {
@@ -230,7 +246,7 @@ function topLevelBlocks(tokens: Token[]): [number, number][] {
   let rawOpen = 0
   for (let i = 0; i < tokens.length; i++) {
     depth += tokens[i].nesting
-    rawOpen = Math.max(0, rawOpen + tagsLeftOpen(rawHtmlIn(tokens[i])))
+    rawOpen = Math.max(0, rawOpen + rawTagsLeftOpen(tokens[i]))
     if (depth !== 0 || rawOpen > 0) continue
     out.push([start, i + 1])
     start = i + 1

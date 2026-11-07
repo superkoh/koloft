@@ -1,4 +1,4 @@
-import { highlightLines } from './highlight'
+import { highlightCode, highlightLines } from './highlight'
 import { renderBlocks } from './markdown/render'
 import type { OffThreadAsk, OffThreadReply } from './offThread'
 
@@ -29,7 +29,9 @@ scope.onmessage = async (e) => {
     const value =
       ask.job === 'markdown'
         ? await renderBlocks(ask.text, { srcPath: ask.srcPath, token: ask.token })
-        : await Promise.all(ask.codes.map((code) => colorText(code, ask.lang)))
+        : ask.job === 'code'
+          ? await highlightCode(ask.code, ask.lang)
+          : await Promise.all(ask.codes.map((code) => colorText(code, ask.lang)))
     scope.postMessage({ id: ask.id, ok: true, value })
   } catch (err) {
     scope.postMessage({ id: ask.id, ok: false, message: String((err as Error)?.message ?? err) })

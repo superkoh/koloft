@@ -3,14 +3,16 @@ import type { RenderedDoc } from './markdown/render'
 type Job =
   | { job: 'markdown'; text: string; srcPath: string; token: string }
   | { job: 'lines'; codes: string[]; lang: string }
+  | { job: 'code'; code: string; lang: string }
+
+type Answer = RenderedDoc | string[][] | string
 
 export type OffThreadAsk = Job & { id: number }
 
 export type OffThreadReply =
-  | { id: number; ok: true; value: RenderedDoc | string[][] }
-  | { id: number; ok: false; message: string }
+  { id: number; ok: true; value: Answer } | { id: number; ok: false; message: string }
 
-type Waiting = { resolve: (v: RenderedDoc | string[][]) => void; reject: (e: Error) => void }
+type Waiting = { resolve: (v: Answer) => void; reject: (e: Error) => void }
 
 let worker: Worker | null = null
 let nextId = 0
@@ -40,7 +42,7 @@ function theWorker(): Worker {
   return (worker = w)
 }
 
-function ask(job: Job): Promise<RenderedDoc | string[][]> {
+function ask(job: Job): Promise<Answer> {
   const id = ++nextId
   return new Promise((resolve, reject) => {
     waiting.set(id, { resolve, reject })
@@ -54,6 +56,10 @@ export function renderMarkdownOffThread(doc: {
   token: string
 }): Promise<RenderedDoc> {
   return ask({ job: 'markdown', ...doc }) as Promise<RenderedDoc>
+}
+
+export function highlightCodeOffThread(code: string, lang: string): Promise<string> {
+  return ask({ job: 'code', code, lang }) as Promise<string>
 }
 
 interface LinesWanted {
@@ -80,6 +86,12 @@ function colorNext(owner: object): void {
       q.busy = false
       colorNext(owner)
     })
+}
+
+export function dropQueuedColoring(owner: object): void {
+  const q = colorQueues.get(owner)
+  q?.next?.reject(new Error('superseded'))
+  if (q) q.next = null
 }
 
 export function highlightLinesOffThread(

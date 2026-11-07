@@ -78,6 +78,19 @@ function blockImage(img: HTMLImageElement): void {
   img.replaceWith(box)
 }
 
+function reuseDrawnDiagrams(block: HTMLElement, body: HTMLElement): void {
+  for (const fig of block.querySelectorAll<HTMLElement>('.mmd')) {
+    if (fig.dataset.k !== TOKEN || !fig.dataset.code) continue
+    const drawn = body.querySelector<HTMLElement>(
+      `.mmd[data-state="done"][data-k="${TOKEN}"][data-code="${CSS.escape(fig.dataset.code)}"]`
+    )
+    if (!drawn) continue
+    fig.innerHTML = drawn.innerHTML
+    fig.dataset.state = 'done'
+    settleDiagram(fig)
+  }
+}
+
 function blockElement(html: string): HTMLDivElement {
   const el = document.createElement('div')
   el.append(cleanBlock(html))
@@ -139,47 +152,26 @@ export function PreviewViewer({
   const shown = useRef<Shown[]>([])
   const diagrams = useRef<Diagrams>({ watch: () => {}, forgetRemoved: () => {} })
   const zoomFrom = useRef<HTMLElement | null>(null)
-  const reading = useRef(false)
-  const readAgain = useRef(false)
-  const gone = useRef(false)
-
-  useEffect(
-    () => () => {
-      gone.current = true
-    },
-    []
-  )
+  const pipeline = useRef({ busy: false, again: false, read: () => {} })
+  const tellHeadings = useRef(onHeadings)
+  tellHeadings.current = onHeadings
 
   useEffect(() => {
     if (item.kind !== 'markdown') return
-    const read = (): void => {
-      if (reading.current) {
-        readAgain.current = true
+    const p = pipeline.current
+    p.read = () => {
+      if (p.busy) {
+        p.again = true
         return
       }
-      reading.current = true
+      p.busy = true
       window.api.preview
         .readText(item.src)
         .then((text) => renderMarkdown({ text, srcPath: item.src, token: TOKEN }))
-        .then((d) => {
-          if (!gone.current) setDoc(d)
-        })
-        .catch(() => {
-          if (!gone.current) setDoc((d) => d ?? UNREADABLE)
-        })
-        .finally(() => {
-          reading.current = false
-          if (!readAgain.current || gone.current) return
-          readAgain.current = false
-          read()
-        })
+        .then(setDoc, () => setDoc((d) => (d ? { ...d } : UNREADABLE)))
     }
-    read()
+    p.read()
   }, [item.src, item.kind, tick])
-
-  useEffect(() => {
-    if (doc) onHeadings?.(doc.headings)
-  }, [doc, onHeadings])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -202,6 +194,15 @@ export function PreviewViewer({
         if (el.dataset.k === TOKEN && !el.dataset.state) diagrams.current.watch(el)
     }
 
+    const painted = (): void => {
+      tellHeadings.current?.(doc.headings)
+      const p = pipeline.current
+      p.busy = false
+      if (!p.again) return
+      p.again = false
+      p.read()
+    }
+
     let i = 0
     const nextSlice = new MessageChannel()
     const step = (): void => {
@@ -211,10 +212,12 @@ export function PreviewViewer({
         const kept = reusable.get(html)?.shift()
         const b = kept ?? { html, el: blockElement(html) }
         now.push(b)
-        if (!kept) fresh.push(b)
         if (firstPaint) {
           body.append(b.el)
           watch(b)
+        } else if (!kept) {
+          reuseDrawnDiagrams(b.el, body)
+          fresh.push(b)
         }
         if (performance.now() >= until) break
       }
@@ -222,11 +225,13 @@ export function PreviewViewer({
         nextSlice.port2.postMessage(null)
         return
       }
-      if (firstPaint) return
-      placeInOrder(body, was, now)
-      diagrams.current.forgetRemoved()
-      for (const b of fresh) watch(b)
-      shown.current = now
+      if (!firstPaint) {
+        placeInOrder(body, was, now)
+        diagrams.current.forgetRemoved()
+        for (const b of fresh) watch(b)
+        shown.current = now
+      }
+      painted()
     }
     nextSlice.port1.onmessage = step
     step()
