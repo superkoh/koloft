@@ -428,8 +428,8 @@ export function BrowseView({
   const live = livePath(session)
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
   const keepShown = useMemo(
-    () => pathsWithTheirFolders([current, live, ...idx.touchedInProject, ...Object.keys(git)]),
-    [current, live, idx.touchedInProject, git]
+    () => pathsWithTheirFolders([current, live, ...idx.touchedInProject]),
+    [current, live, idx.touchedInProject]
   )
 
   const scratchEntries = useMemo(

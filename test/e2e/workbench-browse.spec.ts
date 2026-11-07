@@ -440,17 +440,16 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await restarted.app.close().catch(() => {})
   })
 
-  test('WB-B10: a folder of 1,203 files shows one page of 500 and a Show more row that adds a page per click, a file past the page opened from search is still revealed, and a file written into it appears', async ({
+  test('WB-B10: an untracked folder of 1,203 files shows one page of 500 and a Show more row that adds a page per click, a file past the page opened from search is still revealed, and a file written into it appears', async ({
     page,
     env
   }) => {
     test.slow()
-    const many = path.join(env.workspaces.a, 'many')
-    fs.mkdirSync(many)
-    for (let i = 0; i < BIG_FOLDER_FILES; i++)
-      fs.writeFileSync(path.join(many, `f${String(i).padStart(4, '0')}.txt`), 'a\n')
     const fx = setupChangeFixture(env.workspaces.a)
     const dir = path.join(fx.root, 'many')
+    fs.mkdirSync(dir)
+    for (let i = 0; i < BIG_FOLDER_FILES; i++)
+      fs.writeFileSync(path.join(dir, `f${String(i).padStart(4, '0')}.txt`), 'a\n')
     await startSessionIn(page, 'ws-a')
     await browseReady(page, fx.root)
 
