@@ -1615,3 +1615,17 @@ describe('DiscordRelay: an Antigravity butler that has no conversation yet', () 
     expect(reactions).toContain('701 +✅')
   })
 })
+
+// AGY§19
+it('the card for a plan an Antigravity session waits on asks to approve that plan and quotes it whole, not as a command to run', async () => {
+  const { relay, posts } = setup({}, [], { backendOf: () => 'agy' })
+  relay.codexAsked(TAB, {
+    id: 'plan:c1:implementation_plan.md',
+    command: 'implementation_plan.md',
+    reason: '# Plan\n\n1. Do the thing.',
+    plan: true
+  })
+  await vi.waitFor(() => expect(posts).toHaveLength(1))
+  expect(posts[0].text).toContain('Approve this plan?\n\n# Plan\n\n1. Do the thing.')
+  expect(posts[0].text).not.toContain('asks to run')
+})

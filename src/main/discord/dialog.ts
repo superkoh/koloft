@@ -73,10 +73,16 @@ function toolText(p: AskPayload): string {
     : `${p.tool_name ?? 'A tool'} asks to run:\n${JSON.stringify(p.tool_input ?? {})}`
 }
 
+export const PLAN_IS_IN_ITS_SESSION = 'Open the session to read the plan.'
+
+function planText(plan: string): string {
+  return `Approve this plan?\n\n${plan}`
+}
+
 export function dialogText(p: AskPayload): string {
   if (p.tool_name === 'AskUserQuestion') return questionsOf(p).map(questionText).join('\n\n')
   const plan = planOf(p)
-  return plan === undefined ? toolText(p) : `Approve this plan?\n\n${plan}`
+  return plan === undefined ? toolText(p) : planText(plan)
 }
 
 export interface Choice {
@@ -113,12 +119,13 @@ export function choicesOf(p: AskPayload): Choice[] {
     const q = singlePick(p)
     return q ? optionChoices(q) : []
   }
-  if (planOf(p) === undefined) return YES_OR_NO
-  return [
-    { label: 'Approve', reply: 'yes', style: 'success' },
-    { label: 'Reject', reply: 'no', style: 'danger' }
-  ]
+  return planOf(p) === undefined ? YES_OR_NO : APPROVE_OR_REJECT
 }
+
+const APPROVE_OR_REJECT: Choice[] = [
+  { label: 'Approve', reply: 'yes', style: 'success' },
+  { label: 'Reject', reply: 'no', style: 'danger' }
+]
 
 export interface DialogView {
   text: string
@@ -130,6 +137,8 @@ export function claudeDialog(p: AskPayload): DialogView {
 }
 
 export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
+  if (!('questions' in a) && a.plan)
+    return { text: planText(a.reason ?? PLAN_IS_IN_ITS_SESSION), choices: APPROVE_OR_REJECT }
   if (!('questions' in a)) return { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
   const [only, ...more] = a.questions
   return {

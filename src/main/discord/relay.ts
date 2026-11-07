@@ -800,7 +800,8 @@ export class DiscordRelay {
     const question = 'questions' in a
     const how = question ? howToAnswer(a) : CODEX_NEEDS_YES_OR_NO
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
-    const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
+    const shown =
+      question || a.plan ? view.text : `${label} asks to run: ${view.text || 'a command'}`
     this.postAsk(tab, channelId, this.askCard(tab, view, how, shown))
   }
 
