@@ -104,6 +104,7 @@ export function TerminalView({
       repaint()
       return
     }
+    stopWaitingForSyncFrame()
     syncFrameWaitRef.current = {
       closed: term.onWriteParsed(() => {
         if (!isSyncWindowOpen(term)) repaint()
@@ -114,7 +115,7 @@ export function TerminalView({
         repaint()
       }, SYNC_FRAME_NEVER_CLOSED_AFTER_MS)
     }
-  }, [repaint])
+  }, [repaint, stopWaitingForSyncFrame])
 
   const safeFit = useCallback((): void => {
     const el = ref.current

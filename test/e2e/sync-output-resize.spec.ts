@@ -1,8 +1,17 @@
-import fs from 'fs'
 import type { Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import { seedSettings } from './helpers/env'
-import { setNextSessionTitle, startSessionIn, switchToRow, termIds, waitBooted } from './helpers/p1'
+import { test, expect } from './helpers/app'
+import {
+  growWindowHeightBy,
+  launchWithWebGL,
+  readAllCalls,
+  rowTitled,
+  setNextSessionTitle,
+  startSessionIn,
+  switchToRow,
+  terminalText,
+  termIds,
+  writeTo
+} from './helpers/p1'
 
 const REPAINT_BUDGET_UNDER_1S_SYNC_SAFETY_TIMEOUT_MS = 600
 const SYNC_FRAME_NEVER_CLOSED_REPAINT_BUDGET_MS = 1600
@@ -13,16 +22,9 @@ type Term = {
   rows: number
   cols: number
   element?: HTMLElement
-  write(data: string, cb?: () => void): void
+  dimensions?: { css: { cell: { height: number } } }
   onRender(cb: () => void): void
-  buffer: {
-    active: {
-      viewportY: number
-      baseY: number
-      length: number
-      getLine(i: number): { translateToString(trim?: boolean): string } | undefined
-    }
-  }
+  buffer: { active: { viewportY: number; baseY: number } }
   _core?: { coreService?: { decPrivateModes?: { synchronizedOutput?: boolean } } }
 }
 
@@ -47,19 +49,6 @@ function rendersOf(page: Page, id: string): Promise<number> {
   )
 }
 
-function writeTo(page: Page, id: string, data: string): Promise<void> {
-  return page.evaluate(
-    ({ tabId, data }) =>
-      new Promise<void>((done) =>
-        (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[tabId].write(
-          data,
-          done
-        )
-      ),
-    { tabId: id, data }
-  )
-}
-
 function screenOf(
   page: Page,
   id: string
@@ -67,43 +56,22 @@ function screenOf(
   onScreen: boolean
   syncOpen: boolean
   atBottom: boolean
-  text: string
   cols: number
   rows: number
 }> {
   return page.evaluate((tabId) => {
     const t = (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[tabId]
-    const b = t.buffer.active
-    const lines: string[] = []
-    for (let i = 0; i < b.length; i++) lines.push(b.getLine(i)?.translateToString(true) ?? '')
     return {
       onScreen: (t.element?.clientHeight ?? 0) > 0,
       syncOpen: t._core?.coreService?.decPrivateModes?.synchronizedOutput === true,
-      atBottom: b.viewportY === b.baseY,
-      text: lines.join('\n'),
+      atBottom: t.buffer.active.viewportY === t.buffer.active.baseY,
       cols: t.cols,
       rows: t.rows
     }
   }, id)
 }
 
-function rowTitled(page: Page, title: string) {
-  return page
-    .locator('.ws .ws-tab')
-    .filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
-}
-
-async function launchWithWebGL(env: Parameters<typeof launchApp>[0]) {
-  delete env.launchEnv.KOLOFT_DOM_RENDERER
-  seedSettings(env, { hintsOff: true })
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await waitBooted(page)
-  return { app, page }
-}
-
-test('a fit landing inside a DEC-2026 sync window still repaints promptly, with no second of black terminal on resize', async ({
+test("a Claude Code tab's claude starts told to wrap every frame in sync output and scroll by region, without the Apple_Terminal name that keeps it from asking; a fit landing inside a sync window still repaints promptly, with no second of black terminal on resize", async ({
   env
 }) => {
   const { app, page } = await launchWithWebGL(env)
@@ -111,6 +79,13 @@ test('a fit landing inside a DEC-2026 sync window still repaints promptly, with 
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     await startSessionIn(page, 'ws-a')
+    const launches = readAllCalls(env)
+    expect(launches.length).toBeGreaterThan(0)
+    for (const l of launches) {
+      expect(l.forceSyncOutput).toBe('1')
+      expect(l.decstbm).toBe('1')
+      expect(l.termProgram).toBeNull()
+    }
     const [tab] = await termIds(page)
     await countRenders(page, tab)
     expect((await screenOf(page, tab)).rows).toBeGreaterThan(4)
@@ -118,13 +93,11 @@ test('a fit landing inside a DEC-2026 sync window still repaints promptly, with 
 
     const fitRenderDelay = async (dh: number): Promise<number> => {
       const mark = await rendersOf(page, tab)
-      await app.evaluate(({ BrowserWindow }, delta) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        const [width, height] = win.getSize()
-        win.setSize(width, height + delta)
-      }, dh)
+      await growWindowHeightBy(app, dh)
       const t0 = Date.now()
-      await expect.poll(() => rendersOf(page, tab), { timeout: 3000 }).toBeGreaterThan(mark)
+      await expect
+        .poll(() => rendersOf(page, tab), { timeout: 3000, intervals: [20] })
+        .toBeGreaterThan(mark)
       return Date.now() - t0
     }
 
@@ -135,9 +108,8 @@ test('a fit landing inside a DEC-2026 sync window still repaints promptly, with 
     await writeTo(page, tab, '\x1b[?2026h')
     const bugDelay = await fitRenderDelay(80)
     expect(bugDelay).toBeLessThan(REPAINT_BUDGET_UNDER_1S_SYNC_SAFETY_TIMEOUT_MS)
-    const after = await screenOf(page, tab)
-    expect(after.text).toContain(WIDE_LINE)
-    expect(after.atBottom).toBe(true)
+    expect(await terminalText(page, tab)).toContain(WIDE_LINE)
+    expect((await screenOf(page, tab)).atBottom).toBe(true)
 
     expect(errors).toEqual([])
   } finally {
@@ -174,35 +146,21 @@ test("a fit or a re-show that keeps the terminal's size leaves an open sync fram
       await expect.poll(() => rendersOf(page, s1)).toBeGreaterThan(renders)
       const now = await screenOf(page, s1)
       expect(now.syncOpen).toBe(false)
-      expect(now.text).toContain(WIDE_LINE)
-      expect(now.text).toContain(line)
       expect(now.atBottom).toBe(true)
+      const text = await terminalText(page, s1)
+      expect(text).toContain(WIDE_LINE)
+      expect(text).toContain(line)
     }
 
     // PLATFORM§21 CC§12
     const heightLeavingTheRowCountAlone = await page.evaluate((tabId) => {
-      const t = (
-        window as unknown as {
-          __koloftTerms: Record<
-            string,
-            {
-              element?: HTMLElement
-              _core?: { _renderService?: { dimensions?: { css: { cell: { height: number } } } } }
-            }
-          >
-        }
-      ).__koloftTerms[tabId]
-      const cell = t._core!._renderService!.dimensions!.css.cell.height
-      const spare = t.element!.parentElement!.clientHeight % cell
+      const t = (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[tabId]
+      const spare = t.element!.parentElement!.clientHeight % t.dimensions!.css.cell.height
       return spare >= 2 ? -1 : 1
     }, s1)
     await writeTo(page, s1, `\x1b[?2026h半帧-甲\r\n`)
     let renders = await rendersOf(page, s1)
-    await app.evaluate(({ BrowserWindow }, delta) => {
-      const win = BrowserWindow.getAllWindows()[0]
-      const [width, height] = win.getSize()
-      win.setSize(width, height + delta)
-    }, heightLeavingTheRowCountAlone)
+    await growWindowHeightBy(app, heightLeavingTheRowCountAlone)
     await page.waitForTimeout(FIT_DONE_WELL_INSIDE_XTERMS_1S_SYNC_TIMEOUT_MS)
     await expectFrameHeld(renders)
     await writeTo(page, s1, '\x1b[?2026l')
@@ -224,34 +182,15 @@ test("a fit or a re-show that keeps the terminal's size leaves an open sync fram
     const shownAt = Date.now()
     await switchToRow(page, rowTitled(page, 'S1'))
     await expect
-      .poll(() => rendersOf(page, s1), { timeout: SYNC_FRAME_NEVER_CLOSED_REPAINT_BUDGET_MS })
+      .poll(() => rendersOf(page, s1), {
+        timeout: SYNC_FRAME_NEVER_CLOSED_REPAINT_BUDGET_MS,
+        intervals: [20]
+      })
       .toBeGreaterThan(renders)
     expect(Date.now() - shownAt).toBeLessThan(SYNC_FRAME_NEVER_CLOSED_REPAINT_BUDGET_MS)
     await expectWholeFramePainted(renders, '半帧-丙')
 
     expect(errors).toEqual([])
-  } finally {
-    await app.close().catch(() => {})
-  }
-})
-
-test("a Claude Code tab's claude starts told to wrap every frame in sync output and scroll by region, without the Apple_Terminal name that keeps it from asking", async ({
-  env
-}) => {
-  const { app, page } = await launchWithWebGL(env)
-  try {
-    await startSessionIn(page, 'ws-a')
-    const launches = fs
-      .readFileSync(env.claudeCalls, 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map((l) => JSON.parse(l) as Record<string, unknown>)
-    expect(launches.length).toBeGreaterThan(0)
-    for (const l of launches) {
-      expect(l.forceSyncOutput).toBe('1')
-      expect(l.decstbm).toBe('1')
-      expect(l.termProgram).toBeNull()
-    }
   } finally {
     await app.close().catch(() => {})
   }
