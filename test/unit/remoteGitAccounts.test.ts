@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -7,6 +7,7 @@ import { REMOTE_ENV_LINES, remoteShCommand } from '../../src/main/remote/install
 import { formatRemoteKey } from '../../src/shared/remoteKey'
 import {
   CLUE_ALL,
+  MACHINE_LOGIN_PATH,
   RECEIVE_FILES,
   SYNC_FILES,
   fileLines,
@@ -459,6 +460,76 @@ describe('the gh wrapper on a machine', () => {
     const status = spawnSync('gh', ['auth', 'status'], { cwd: repo, env, encoding: 'utf8' })
     expect(status.status).toBe(1)
     expect(status.stderr).toContain('Settings ▸ Accounts')
+  })
+})
+
+describe("Koloft's own gh run on a machine", () => {
+  const LOGIN_SHELL_RUNS = (): number =>
+    fs.existsSync(path.join(home, 'login-shell-runs'))
+      ? fs.readFileSync(path.join(home, 'login-shell-runs'), 'utf8').split('\n').length - 1
+      : 0
+
+  function machineWhoseLoginShellSets(loginPath: string): {
+    gh: () => ReturnType<GitMachineAccounts['gh']>
+  } {
+    const repo = path.join(home, 'repo')
+    sh(`git init -q '${repo}'`)
+    const helper = path.join(home, 'helper.sh')
+    fs.writeFileSync(helper, `#!/bin/sh\n[ "$2" = get ] && printf 'password=GH-TOKEN\\n'\n`)
+    for (const [k, v] of [
+      ['account', 'github.com/bob'],
+      ['platform', 'github'],
+      ['helper', helper]
+    ])
+      sh(`git -C '${repo}' config koloft.${k} '${v}'`)
+    const brew = path.join(home, 'brew', 'bin')
+    fs.mkdirSync(brew, { recursive: true })
+    fs.writeFileSync(path.join(brew, 'gh'), '#!/bin/sh\necho "brew gh $GH_TOKEN $*"\n', {
+      mode: 0o755
+    })
+    fs.writeFileSync(path.join(repo, 'gh'), '#!/bin/sh\necho "the folder\'s own gh"\n', {
+      mode: 0o755
+    })
+    const shell = path.join(home, 'login-shell')
+    fs.writeFileSync(
+      shell,
+      `#!/bin/sh\n[ "$1" = -lic ] || exit 2\necho run >> "$HOME/login-shell-runs"\necho "Welcome to the box"\nsleep 6 &\nPATH="${loginPath}" exec /bin/sh -c "$2"\n`,
+      { mode: 0o755 }
+    )
+    const machine = new GitMachineAccounts(async (_m, script, args = []) => {
+      const r = sh(script, { args, env: { SHELL: shell } })
+      const banner = script === MACHINE_LOGIN_PATH ? 'Welcome to the box' : ''
+      return { code: r.status, stdout: banner + r.stdout, stderr: r.stderr }
+    })
+    return { gh: () => machine.gh('box', repo, ['api', 'user']) }
+  }
+
+  it("finds a gh only the user's login shell puts on PATH, asking that shell once per machine, whatever it prints or leaves running", async () => {
+    const machine = machineWhoseLoginShellSets(`${home}/brew/bin:/usr/bin:/bin`)
+    for (let i = 0; i < 2; i++) {
+      const r = await machine.gh()
+      expect(r.stdout).toBe('brew gh GH-TOKEN api user\n')
+      expect(r.missing).toBe(false)
+    }
+    expect(LOGIN_SHELL_RUNS()).toBe(1)
+  })
+
+  it("takes only the absolute folders of the login shell's PATH, so a gh in the repository's folder never runs, and a machine with no gh asks its login shell once, then again only an hour later", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const machine = machineWhoseLoginShellSets(`:.:bin:/usr/bin::/bin:`)
+      for (let i = 0; i < 2; i++) {
+        const r = await machine.gh()
+        expect(r.missing).toBe(true)
+        expect(r.stdout).toBe('')
+      }
+      expect(LOGIN_SHELL_RUNS()).toBe(1)
+      vi.setSystemTime(Date.now() + 60 * 60_000)
+      await machine.gh()
+      expect(LOGIN_SHELL_RUNS()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
