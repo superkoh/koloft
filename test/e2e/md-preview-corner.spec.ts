@@ -1013,6 +1013,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 20_000 })
     await startSessionIn(page, 'ws-a')
     await openDoc(page, env, 'c25.md')
+    await expect(mdBody(page).locator('.mmd')).toHaveCount(3, { timeout: 30_000 })
     await scrollToBottom(page)
     await expect(diagrams(page)).toHaveCount(3, { timeout: 180_000 })
 
