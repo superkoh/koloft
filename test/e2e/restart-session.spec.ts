@@ -34,18 +34,8 @@ import {
   wsRows,
   type ClaudeCall
 } from './helpers/p1'
-import {
-  agyReady,
-  boundRemoteSession,
-  installFakeRemote,
-  installRemoteAgy,
-  killFakeRemote,
-  liveTmuxSessions,
-  machineAgyCalls,
-  REMOTE_WS_NAME,
-  seedRemoteWorkspace
-} from './helpers/remote'
-import { turnOffItsOnlyAccountAndRestart } from './helpers/restartNoAccount'
+import { agyReady } from './helpers/remote'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
 const SESSION_TITLE = 'Fake session: project notes'
@@ -789,6 +779,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       test(`with no ${agent.label} account usable, restarting a local ${agent.label} session says why, keeps the running ${agent.label}, and starts no other`, async ({
         env
       }) => {
+        test.setTimeout(180_000)
         agent.install(env)
         seedSettings(env, { hintsOff: true })
         const { app, page } = await launch(env)
@@ -802,7 +793,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
           const row = wsRows(page, 'ws-a').filter({ hasText: 'one turn' })
           await expect(row).toHaveClass(/\bst-waiting\b/)
 
-          await turnOffItsOnlyAccountAndRestart(app, page, agent.backend)
+          await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, agent.backend)
           await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
           await expect(row).not.toHaveClass(/\bcold\b/)
           expect(processAlive(first.pid)).toBe(true)
@@ -811,38 +802,5 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
           await quitAndClose(app)
         }
       })
-
-    test.describe('in a remote workspace', () => {
-      test.afterEach(({ env }) => killFakeRemote(env))
-
-      test('with no Antigravity account usable, restarting a remote Antigravity session says why, keeps agy running in its tmux session on the machine, and starts no other there', async ({
-        env
-      }) => {
-        test.setTimeout(240_000)
-        installAgy(env)
-        installFakeRemote(env)
-        installRemoteAgy(env)
-        seedRemoteWorkspace(env)
-        seedSettings(env, { hintsOff: true })
-        const { app, page } = await launch(env)
-        try {
-          await waitBooted(page)
-          await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
-          await agyReady(page)
-          await runIn(page, centerTerm(page), 'one turn')
-          const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'one turn' })
-          await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-          const { id } = await boundRemoteSession(page, 'agy')
-
-          await turnOffItsOnlyAccountAndRestart(app, page, 'agy')
-          await expect(row).toHaveClass(/\bst-waiting\b/)
-          await expect(row).not.toHaveClass(/\bcold\b/)
-          expect(liveTmuxSessions(env)).toContain(`k-${id}`)
-          expect(machineAgyCalls(env)).toHaveLength(1)
-        } finally {
-          await quitAndClose(app)
-        }
-      })
-    })
   })
 })

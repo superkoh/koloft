@@ -36,7 +36,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { turnOffItsOnlyAccountAndRestart } from './helpers/restartNoAccount'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 
 test.setTimeout(240_000)
@@ -465,7 +465,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       const row = remoteRows(page).filter({ hasText: 'one turn' })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
 
-      await turnOffItsOnlyAccountAndRestart(app, page, 'muse')
+      await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, 'muse')
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(liveTmuxSessions(env)).toContain(`k-${first.sessionId}`)

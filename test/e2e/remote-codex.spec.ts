@@ -46,7 +46,7 @@ import {
 } from './helpers/remote'
 import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
-import { turnOffItsOnlyAccountAndRestart } from './helpers/restartNoAccount'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
 test.setTimeout(180_000)
 
@@ -499,9 +499,9 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     try {
       await addRemoteWorkspace(page, env)
       const server = await startRemoteCodex(page, env)
-      const row = wsRows(page, REMOTE_WS_NAME)
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
 
-      await turnOffItsOnlyAccountAndRestart(app, page, 'codex')
+      await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, 'codex')
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(serverAlive(env, server.tabId!)).toBe(true)
