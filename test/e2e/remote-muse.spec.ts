@@ -36,6 +36,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { turnOffItsOnlyAccountAndRestart } from './helpers/restartNoAccount'
 import { MUSE_SANDBOX_CANNOT_START } from '../../src/main/museSandbox'
 
 test.setTimeout(240_000)
@@ -445,6 +446,30 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       )
       expect(fs.existsSync(path.join(call.cwd, '.git'))).toBe(true)
       expect(fs.readFileSync(path.join(call.cwd, '.env'), 'utf8')).toBe(INCLUDED_ENV)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RM-12: with no Muse account usable, restarting a remote Muse session says why, keeps muse running in its tmux session on the machine, and starts no other there', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await runIn(page, centerTerm(page), 'one turn')
+      const row = remoteRows(page).filter({ hasText: 'one turn' })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+
+      await turnOffItsOnlyAccountAndRestart(app, page, 'muse')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(liveTmuxSessions(env)).toContain(`k-${first.sessionId}`)
+      expect(machineMuseCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }

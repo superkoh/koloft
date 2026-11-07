@@ -46,6 +46,7 @@ import {
 } from './helpers/remote'
 import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
+import { turnOffItsOnlyAccountAndRestart } from './helpers/restartNoAccount'
 
 test.setTimeout(180_000)
 
@@ -488,6 +489,27 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
     const [side] = sideServers(env)
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
+  })
+
+  test('E-RC-17: with no Codex account usable, restarting a remote Codex session says why, keeps its Codex and its app-server on the machine running, and starts no other', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const row = wsRows(page, REMOTE_WS_NAME)
+
+      await turnOffItsOnlyAccountAndRestart(app, page, 'codex')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(serverAlive(env, server.tabId!)).toBe(true)
+      expect(machineServers(env)).toHaveLength(1)
+      expect(tuiCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('E-RC-15: ⌘W on a remote Codex tab with ssh down closes the tab and says Codex is still running on the machine, where its app-server stays up', async ({
