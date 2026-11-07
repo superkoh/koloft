@@ -71,6 +71,26 @@ nothing is to not destroy the window when the owner clicks the red button. Which
 to do changes what the owner sees, so it waits for the owner (see the issue's progress
 comment).
 
+What "the red button only hides the window" has to handle, found in the code:
+
+- There is no `close` handler on the window today, only `closed`. A `close` that hides
+  must let a real quit through (`quitCommitted`), or ⌘Q never ends.
+- `app.on('activate')` creates a window only when none exists; a hidden one still counts,
+  so a Dock click has to show it instead.
+- ⌘Q while hidden: the unsaved-edits question goes to the hidden window
+  (`askQuit` → `App.tsx`), nobody sees it, and the 5 s fallback (`quitGuard.ts`) quits and
+  drops the unsaved edits. Today a closed window means Koloft quits at once. The window
+  has to show itself before asking.
+- Background throttling is on in the shipped app (PLATFORM§5): a hidden window draws
+  nothing and acks terminal output slowly, the same as a minimized window today.
+- A sign-in popup (`signInWindow.ts`) is its own window and still appears while the main
+  window is hidden; `keptBySignInWindow` also shows the main window.
+- Scheduled tasks wait for a window (`cronRunner` `ready`): today a closed window holds
+  them back; a hidden one lets them run.
+- T-REL-05 (`reload-recovery.spec.ts`) asserts that a close and an `activate` build a new
+  window; it changes with this option.
+- Window size saving (ADR-0005) is not affected.
+
 ## Eight tab kinds
 
 All eight (Claude Code, Codex, Muse Code, Antigravity; each local and over SSH) read
@@ -80,10 +100,19 @@ the same way from any option. Two named differences:
 - A remote tab's terminal is a tmux client. tmux repaints the whole pane on a resize, so
   after a reopen a remote tab likely comes back with its whole pane, where a local one
   shows only what the agent redraws. Inferred, not checked.
-- Discord's `/run`, `/compact` and other slash commands read the screen too: for Codex
-  and Muse to see whether a panel is open, for Antigravity to read the command's output
-  (AGY§23). With the window closed those reads fail the same way. Claude Code's panel
-  check reads its session registry instead, so it does not need the window.
+- Discord's `/run`, `/compact` and other slash commands read the screen too: for every
+  agent to check that the typed Enter landed and whether anything came back
+  (`discord/slash.ts`, `checkTheEnterLanded`, `nothingCameBack`), for Codex and Muse to
+  see whether a panel is open, and for Antigravity to read the command's output
+  (AGY§23). With the window closed those reads fail quietly. Only Claude Code's panel
+  check reads its session registry instead of the screen.
+- These numbers come from the e2e window, where background throttling is off
+  (`BACKGROUND_TEST`, PLATFORM§5). How fast a hidden window answers a screen read in the
+  shipped app, where throttling is on, is not probed yet.
+- The read waits for the window to listen: the renderer listens for screen requests only
+  once its first terminal view is mounted (`terminalScreens.ts`), and answers `null` for a
+  tab whose view is not mounted yet. So a reopen step has to wait for that tab's terminal
+  to attach (`CH.terminal.attach`), not just for the window to load.
 
 ## The probe spec
 
