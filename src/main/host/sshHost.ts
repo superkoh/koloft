@@ -944,8 +944,8 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  watchDir(dir: string, onChange: (dir: string) => void): boolean {
-    this.deps.watch(this.bare(dir), () => onChange(dir))
+  watchDir(dir: string, onChange: (dir: string, changedDirs?: string[]) => void): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir, [dir]))
     return false
   }
 

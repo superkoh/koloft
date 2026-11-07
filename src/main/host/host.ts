@@ -106,7 +106,7 @@ export interface Host {
     opts?: { force?: unknown; eol?: unknown }
   ): Promise<EditWriteResult>
   createFile(dir: string, name: string): Promise<EditCreateResult>
-  watchDir(root: string, onChange: (root: string) => void): boolean
+  watchDir(root: string, onChange: (root: string, changedDirs?: string[]) => void): boolean
   unwatchDir(root: string): void
   watchFile(
     file: string,

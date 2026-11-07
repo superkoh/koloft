@@ -124,6 +124,8 @@ async function streamAt(page: Page, rel: string): Promise<{ scrollTop: number; b
 
 const CONTENT_SEARCH_HIT_CAP = 300
 
+const BIG_FOLDER_FILES = 1203
+
 const AT_SIGN_PLUS_TRAILING_SPACE = 2
 
 const panelOwnedWidthToggle = /^(Full width|Restore)/
@@ -436,6 +438,53 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
       .toBe(true)
 
     await restarted.app.close().catch(() => {})
+  })
+
+  test('WB-B10: a folder of 1,203 files shows one page of 500 and a Show more row that adds a page per click, a file past the page opened from search is still revealed, and a file written into it appears', async ({
+    page,
+    env
+  }) => {
+    test.slow()
+    const many = path.join(env.workspaces.a, 'many')
+    fs.mkdirSync(many)
+    for (let i = 0; i < BIG_FOLDER_FILES; i++)
+      fs.writeFileSync(path.join(many, `f${String(i).padStart(4, '0')}.txt`), 'a\n')
+    const fx = setupChangeFixture(env.workspaces.a)
+    const dir = path.join(fx.root, 'many')
+    await startSessionIn(page, 'ws-a')
+    await browseReady(page, fx.root)
+
+    const tree = page.locator('.wb-panel .bv-sec[data-section="tree"]')
+    const kids = tree.locator(`.ft-node[data-path^="${dir}/"]`)
+    const more = tree.locator('.ft-node[data-kind="more"]')
+    await browseRow(page, dir).click()
+    await expect(kids).toHaveCount(500, { timeout: 30_000 })
+    await expect(more).toHaveText(/Show 500 more\s*703 not shown/)
+    await more.click()
+    await expect(kids).toHaveCount(1000)
+    await more.click()
+    await expect(kids).toHaveCount(BIG_FOLDER_FILES)
+    await expect(more).toHaveCount(0)
+
+    await browseRow(page, dir).click()
+    await expect(kids).toHaveCount(0)
+    await browseRow(page, dir).click()
+    await expect(kids).toHaveCount(500, { timeout: 30_000 })
+
+    const late = path.join(dir, 'f1100.txt')
+    await searchToggle(page).click()
+    await searchInput(page).fill('f1100')
+    await page.locator(`.wb-panel .ft-result[data-path="${late}"]`).click({ timeout: 25_000 })
+    await expect(readingTitle(page)).toHaveText('many/f1100.txt', { timeout: 25_000 })
+    await searchToggle(page).click()
+    const revealed = browseRow(page, late)
+    await expect(revealed).toHaveClass(/\bactive\b/, { timeout: 25_000 })
+    await expect.poll(() => rowInsideScrollingTreeBody(page, late), { timeout: 15_000 }).toBe(true)
+    await expect(kids).toHaveCount(501)
+
+    const written = path.join(dir, 'a-new.txt')
+    fs.writeFileSync(written, 'n\n')
+    await expect(browseRow(page, written)).toBeVisible({ timeout: 25_000 })
   })
 
   test('WB-B07: Recents caps at 12, moves a reopened file to the front, and never records an agent open even though it lands in the reading area', async ({

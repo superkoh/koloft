@@ -399,7 +399,8 @@ const api: KoloftApi = {
     watchDir: (root) => ipcRenderer.invoke(CH.fs.watchDir, root),
     unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
     onDirChange: (cb) => {
-      const handler = (_e: unknown, root: string): void => cb(root)
+      const handler = (_e: unknown, root: string, changedDirs?: string[]): void =>
+        cb(root, changedDirs)
       ipcRenderer.on(CH.fs.dirChanged, handler)
       return () => ipcRenderer.removeListener(CH.fs.dirChanged, handler)
     },

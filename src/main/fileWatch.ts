@@ -43,10 +43,13 @@ export function closeAllFileWatchers(): void {
   entries.clear()
 }
 
+export type DirChangeListener = (root: string, changedDirs?: string[]) => void
+
 interface DirWatch {
   watcher: fs.FSWatcher
   count: number
   timer: ReturnType<typeof setTimeout> | null
+  changed: Set<string> | null
 }
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
@@ -65,13 +68,28 @@ function closeWatcher(entry: DirWatch): void {
   } catch {}
 }
 
-function attachWatcher(root: string, entry: DirWatch, onChange: (root: string) => void): void {
+function noteChange(root: string, entry: DirWatch, filename: string | Buffer | null): void {
+  if (!entry.changed) return
+  const rel = filename === null ? '' : filename.toString()
+  if (!rel || path.basename(rel) === '.gitignore') {
+    entry.changed = null
+    return
+  }
+  const full = path.join(root, rel)
+  entry.changed.add(full)
+  entry.changed.add(path.dirname(full))
+}
+
+function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
   entry.watcher.on('change', (_event, filename) => {
     if (watchIgnored(filename)) return
+    noteChange(root, entry, filename)
     if (entry.timer) return
     entry.timer = setTimeout(() => {
       entry.timer = null
-      onChange(root)
+      const changed = entry.changed
+      entry.changed = new Set()
+      onChange(root, changed ? [...changed] : undefined)
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
@@ -88,7 +106,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: (root: string) =
   })
 }
 
-export function watchDir(root: string, onChange: (root: string) => void): boolean {
+export function watchDir(root: string, onChange: DirChangeListener): boolean {
   const existing = dirWatchers.get(root)
   if (existing) {
     existing.count++
@@ -100,7 +118,7 @@ export function watchDir(root: string, onChange: (root: string) => void): boolea
   } catch {
     return false
   }
-  const entry: DirWatch = { watcher, count: 1, timer: null }
+  const entry: DirWatch = { watcher, count: 1, timer: null, changed: new Set() }
   attachWatcher(root, entry, onChange)
   dirWatchers.set(root, entry)
   return true

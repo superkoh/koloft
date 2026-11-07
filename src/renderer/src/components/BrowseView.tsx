@@ -23,6 +23,7 @@ import { basename } from '@shared/preview'
 import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
+  DIR_PAGE_ROWS,
   NO_MATCHES,
   SEARCH_DEBOUNCE_MS,
   ancestorDirs,
@@ -37,7 +38,9 @@ import {
   locFor,
   midTruncate,
   outsideFiles,
+  pageOfEntries,
   persistableExpansion,
+  sameEntries,
   scratchpadEntries,
   sessionIndex,
   truncationNotice,
@@ -183,8 +186,8 @@ export function BrowseView({
   const [extOpen, setExtOpen] = useState(true)
   const [bmOpen, setBmOpen] = useState(true)
   const [recentOpen, setRecentOpen] = useState(true)
-  const [fsTick, setFsTick] = useState(0)
   const [treeLive, setTreeLive] = useState(true)
+  const [pages, setPages] = useState<Record<string, number>>({})
 
   const [query, setQuery] = useState('')
   const [searchMode, setSearchMode] = useState<SearchMode>('name')
@@ -212,6 +215,8 @@ export function BrowseView({
   activeRef.current = active
   const showIgnoredRef = useRef(showIgnored)
   showIgnoredRef.current = showIgnored
+  const childrenRef = useRef(children)
+  childrenRef.current = children
 
   const home = window.api.home
   const scratchpadDir = session?.scratchpadDir
@@ -221,7 +226,8 @@ export function BrowseView({
     if (loadedRef.current.has(dir)) return
     loadedRef.current.add(dir)
     const gen = genRef.current
-    setLoading((s) => new Set(s).add(dir))
+    const showsLoading = childrenRef.current[dir] === undefined
+    if (showsLoading) setLoading((s) => new Set(s).add(dir))
     try {
       const entries = await window.api.fs.listDir(dir, { showIgnored: showIgnoredRef.current })
       if (gen !== genRef.current) return
@@ -231,18 +237,19 @@ export function BrowseView({
         n.delete(dir)
         return n
       })
-      setChildren((m) => ({ ...m, [dir]: entries }))
+      setChildren((m) => (sameEntries(m[dir], entries) ? m : { ...m, [dir]: entries }))
     } catch {
       loadedRef.current.delete(dir)
       if (gen !== genRef.current) return
       setChildren((m) => ({ ...m, [dir]: [] }))
       setErrors((s) => new Set(s).add(dir))
     } finally {
-      setLoading((s) => {
-        const n = new Set(s)
-        n.delete(dir)
-        return n
-      })
+      if (showsLoading)
+        setLoading((s) => {
+          const n = new Set(s)
+          n.delete(dir)
+          return n
+        })
     }
   }, [])
 
@@ -252,6 +259,19 @@ export function BrowseView({
       void loadDir(dir)
     },
     [loadDir]
+  )
+
+  const relistAllWhenShown = useRef(false)
+  const relistChanged = useCallback(
+    (changedDirs?: readonly string[]): void => {
+      if (!activeRef.current) {
+        relistAllWhenShown.current = true
+        return
+      }
+      const open = expandedRef.current
+      for (const d of changedDirs ?? open) if (open.has(d)) relist(d)
+    },
+    [relist]
   )
 
   const firstRoot = useRef(root)
@@ -266,6 +286,7 @@ export function BrowseView({
     setErrors(new Set())
     setLoading(new Set())
     setKbdRow(null)
+    setPages({})
     setTreeLive(true)
     setScratchOpen(true)
     setExtOpen(true)
@@ -287,16 +308,15 @@ export function BrowseView({
     window.api.fs.watchDir(root).then((live) => {
       if (watching) setTreeLive(live)
     })
-    const off = window.api.fs.onDirChange((changed) => {
-      if (changed !== root) return
-      setFsTick((x) => x + 1)
+    const off = window.api.fs.onDirChange((changed, changedDirs) => {
+      if (changed === root) relistChanged(changedDirs)
     })
     return () => {
       watching = false
       off()
       window.api.fs.unwatchDir(root)
     }
-  }, [root])
+  }, [root, relistChanged])
 
   const watchedDirs = useRef(new Set<string>())
   // PLATFORM§57
@@ -328,21 +348,14 @@ export function BrowseView({
     }
   }, [])
 
-  const relistOwedWhileHidden = useRef(false)
   const refreshNonceAtMount = useRef(refreshNonce)
   useEffect(() => {
-    if (fsTick === 0 && refreshNonce === refreshNonceAtMount.current) return
-    if (!active) {
-      relistOwedWhileHidden.current = true
-      return
-    }
-    relistOwedWhileHidden.current = false
-    for (const d of expandedRef.current) relist(d)
-  }, [fsTick, refreshNonce, active, relist])
+    if (refreshNonce !== refreshNonceAtMount.current) relistChanged()
+  }, [refreshNonce, relistChanged])
 
   useEffect(() => {
-    if (!active || !relistOwedWhileHidden.current) return
-    relistOwedWhileHidden.current = false
+    if (!active || !relistAllWhenShown.current) return
+    relistAllWhenShown.current = false
     for (const d of expandedRef.current) relist(d)
   }, [active, relist])
 
@@ -383,16 +396,16 @@ export function BrowseView({
     }
     relistWithScratch()
     window.api.fs.watchDir(dir)
-    const off = window.api.fs.onDirChange((changed) => {
+    const off = window.api.fs.onDirChange((changed, changedDirs) => {
       if (changed !== dir) return
       relistWithScratch()
-      setFsTick((x) => x + 1)
+      relistChanged(changedDirs)
     })
     return () => {
       off()
       window.api.fs.unwatchDir(dir)
     }
-  }, [active, scratchpadDir, agyScratch, scratchLive, root, relist])
+  }, [active, scratchpadDir, agyScratch, scratchLive, root, relist, relistChanged])
 
   const idx = useMemo(() => sessionIndex(session, root), [session, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
@@ -547,6 +560,12 @@ export function BrowseView({
       if (next.has(dir)) {
         next.delete(dir)
         loadedRef.current.delete(dir)
+        setPages((m) => {
+          if (!(dir in m)) return m
+          const rest = { ...m }
+          delete rest[dir]
+          return rest
+        })
       } else {
         next.add(dir)
         void loadDir(dir)
@@ -758,12 +777,26 @@ export function BrowseView({
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)
       return <div className="ft-hint bv-empty-dir">Empty</div>
+    const { rows, notShown } = pageOfEntries(visible, pages[dir] ?? 1, [current, live])
+    const moreId = section + ':' + dir + ':more'
     return (
       <>
-        {visible.map((e) =>
+        {rows.map((e) =>
           e.isDir
             ? lazyDir(e.path, e.name, section, e.ignored)
             : fileRow(e.path, e.name, section, e.ignored ? { ignored: true } : undefined)
+        )}
+        {notShown > 0 && (
+          <div
+            key={moreId}
+            className={'ft-node' + kbdCls(moreId)}
+            data-kind="more"
+            data-row-id={moreId}
+            onClick={() => setPages((m) => ({ ...m, [dir]: (m[dir] ?? 1) + 1 }))}
+          >
+            <span className="ft-name">Show {Math.min(DIR_PAGE_ROWS, notShown)} more</span>
+            <span className="ft-loc">{notShown} not shown</span>
+          </div>
         )}
         {hiddenNodes.length > 0 && renderSyn(hiddenNodes, section)}
       </>

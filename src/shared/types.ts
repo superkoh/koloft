@@ -1260,7 +1260,7 @@ export interface KoloftApi {
     gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     watchDir(root: string): Promise<boolean>
     unwatchDir(root: string): void
-    onDirChange(cb: (root: string) => void): () => void
+    onDirChange(cb: (root: string, changedDirs?: string[]) => void): () => void
     watchFile(path: string): void
     unwatchFile(path: string): void
     // PLATFORM§28

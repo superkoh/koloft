@@ -7313,7 +7313,9 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
+      ? hosts
+          .of(root)
+          .watchDir(root, (r, changedDirs) => sendToRenderer(CH.fs.dirChanged, r, changedDirs))
       : false
   )
   ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DirEntry, PreviewItem, SessionInfo } from '../../src/shared/types'
 import {
+  DIR_PAGE_ROWS,
   NO_MATCHES,
   ancestorDirs,
   buildSyn,
@@ -16,8 +17,10 @@ import {
   locFor,
   midTruncate,
   outsideFiles,
+  pageOfEntries,
   persistableExpansion,
   relTo,
+  sameEntries,
   scratchpadEntries,
   sessionIndex,
   truncationNotice
@@ -376,5 +379,54 @@ describe('FR-47 — persisted expansion', () => {
     expect([...initialExpansion(null, ROOT)]).toEqual([ROOT])
     expect([...initialExpansion([], ROOT)]).toEqual([ROOT])
     expect([...initialExpansion([ROOT + '/src'], ROOT)]).toEqual([ROOT + '/src', ROOT])
+  })
+})
+
+describe('sameEntries', () => {
+  const a: DirEntry[] = [
+    { name: 'src', path: ROOT + '/src', isDir: true },
+    { name: 'x.ts', path: ROOT + '/x.ts', isDir: false }
+  ]
+
+  it('a re-list that found the same names keeps the old list, so the tree does not redraw', () => {
+    expect(
+      sameEntries(
+        a,
+        a.map((e) => ({ ...e }))
+      )
+    ).toBe(true)
+  })
+
+  it('a re-list that only changed which entries git ignores is new, so the faded rows update', () => {
+    expect(sameEntries(a, [a[0], { ...a[1], ignored: true }])).toBe(false)
+  })
+
+  it('a folder listed for the first time, or with a name added, is new', () => {
+    expect(sameEntries(undefined, a)).toBe(false)
+    expect(sameEntries(a, [...a, { name: 'y.ts', path: ROOT + '/y.ts', isDir: false }])).toBe(false)
+  })
+})
+
+describe('pageOfEntries', () => {
+  const big: DirEntry[] = Array.from({ length: DIR_PAGE_ROWS * 3 + 7 }, (_, i) => ({
+    name: `f${i}`,
+    path: `${ROOT}/many/f${i}`,
+    isDir: false
+  }))
+
+  it('a big folder shows one page at first, and each Show more adds one more page', () => {
+    expect(pageOfEntries(big, 1, []).rows).toHaveLength(DIR_PAGE_ROWS)
+    expect(pageOfEntries(big, 1, []).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
+    expect(pageOfEntries(big, 2, []).rows).toHaveLength(DIR_PAGE_ROWS * 2)
+    expect(pageOfEntries(big, 4, [])).toEqual({ rows: big, notShown: 0 })
+  })
+
+  it('the open file and the file the agent is writing stay shown past the page, with the folder that holds them', () => {
+    const late = big[DIR_PAGE_ROWS + 3]
+    const dir: DirEntry = { name: 'zz', path: `${ROOT}/many/zz`, isDir: true }
+    const list = [...big, dir]
+    const { rows, notShown } = pageOfEntries(list, 1, [late.path, dir.path + '/deep/file.ts'])
+    expect(rows.slice(DIR_PAGE_ROWS)).toEqual([late, dir])
+    expect(notShown).toBe(list.length - DIR_PAGE_ROWS - 2)
   })
 })

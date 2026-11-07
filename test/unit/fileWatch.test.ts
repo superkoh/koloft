@@ -187,6 +187,32 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(await until(() => roots.length > 0)).toBe(true)
   })
 
+  it('names the folders whose list of names may have changed, so Browse re-lists only those and not every open folder', async () => {
+    const sub = path.join(dir, 'a', 'b')
+    fs.mkdirSync(sub, { recursive: true })
+    const reports: (string[] | undefined)[] = []
+    expect(watchDir(dir, (_r, changed) => reports.push(changed))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.writeFileSync(path.join(sub, 'new.txt'), 'x')
+    expect(await until(() => reports.length > 0)).toBe(true)
+    expect(reports[0]).toContain(sub)
+    expect(reports[0]).not.toContain(dir)
+  })
+
+  it('reports no folder list when a .gitignore changes, since that can hide or show files in every folder under it', async () => {
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'a\n')
+    const reports: (string[] | undefined)[] = []
+    expect(watchDir(dir, (_r, changed) => reports.push(changed))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.appendFileSync(path.join(dir, '.gitignore'), 'b\n')
+    expect(await until(() => reports.length > 0)).toBe(true)
+    expect(reports).toContain(undefined)
+  })
+
   it('after an FSWatcher error rebuilds the watcher in place with its ref count kept, and keeps reporting changes', async () => {
     const realWatch = fs.watch
     const watchers: fs.FSWatcher[] = []

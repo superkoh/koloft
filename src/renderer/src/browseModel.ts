@@ -229,6 +229,29 @@ export function persistableExpansion(expanded: Iterable<string>, root: string): 
   return [...expanded].filter((d) => inRoot(d, root))
 }
 
+export function sameEntries(a: readonly DirEntry[] | undefined, b: readonly DirEntry[]): boolean {
+  if (!a || a.length !== b.length) return false
+  return a.every(
+    (e, i) => e.path === b[i].path && e.isDir === b[i].isDir && !!e.ignored === !!b[i].ignored
+  )
+}
+
+export const DIR_PAGE_ROWS = 500
+
+export function pageOfEntries(
+  entries: readonly DirEntry[],
+  pages: number,
+  keep: readonly (string | null | undefined)[]
+): { rows: readonly DirEntry[]; notShown: number } {
+  const limit = pages * DIR_PAGE_ROWS
+  if (entries.length <= limit) return { rows: entries, notShown: 0 }
+  const wanted = keep.filter((k): k is string => !!k)
+  const rows = entries.filter(
+    (e, i) => i < limit || wanted.some((k) => k === e.path || k.startsWith(e.path + '/'))
+  )
+  return { rows, notShown: entries.length - rows.length }
+}
+
 export function initialExpansion(saved: readonly string[] | null, root: string): Set<string> {
   const exp = new Set(saved && saved.length ? saved : [root])
   exp.add(root)
