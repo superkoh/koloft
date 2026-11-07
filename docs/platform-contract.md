@@ -1216,6 +1216,14 @@ inferred, not checked.
   until the mouse was moved again (`sidebar-hover-menu.spec.ts` T-HM-04, red before
   hover-intent waited for a move, green after). Not yet measured with a real mouse on a
   shown window.
+- **`content-visibility: auto` does not skip anything on the frame an element first
+  appears**: Chromium lays out every such element once before it decides which are off
+  screen. Measured 2026-11-07 (Electron 43.8.6, the hidden e2e window, a Chrome trace of
+  switching to Changes with 100 changed files): placeholders that held each file's code
+  as visible text (100 × 400 lines) cost one 158 ms forced layout of only 434 dirty
+  objects; the same text in a `hidden` element, the placeholder sized by row count, cost
+  no task over 50 ms. A `hidden` element's text is still in the DOM, so a TreeWalker (DOM
+  ⌘F) finds it, but its ranges have no box and copy leaves it out.
 
 ## §25 React and zustand
 
