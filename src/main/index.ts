@@ -22,7 +22,7 @@ import { pathToFileURL } from 'url'
 import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
-import { FlowGate } from './flowControl'
+import { FlowGate, TerminalOutput } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
@@ -651,8 +651,16 @@ function flowGateFor(id: string): FlowGate {
   }
   return gate
 }
-let resetAllFlow: () => void = () => {}
-let flushHeldData: () => void = () => {}
+const terminalOutput = new TerminalOutput({
+  gate: flowGateFor,
+  send: (id, data) => sendToRenderer(CH.terminal.data, { id, data }),
+  rendererUp: () => rendererReady,
+  now: () => performance.now()
+})
+function resetAllFlow(): void {
+  terminalOutput.clear()
+  for (const gate of flowGates.values()) gate.reset()
+}
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
@@ -3301,35 +3309,6 @@ app.whenReady().then(() => {
   guard.start()
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
-  const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
-  const pendingData = new Map<string, string>()
-  let flushTimer: ReturnType<typeof setTimeout> | null = null
-  const flushData = (): void => {
-    flushTimer = null
-    for (const [id, data] of pendingData) {
-      const gate = flowGateFor(id)
-      const utf16Units = data.length
-      if (!gate.maySend()) {
-        gate.onBacklog(utf16Units)
-        continue
-      }
-      if (!sendToRenderer(CH.terminal.data, { id, data })) {
-        gate.reset()
-        pendingData.delete(id)
-        continue
-      }
-      gate.onForwarded(utf16Units)
-      gate.onBacklog(0)
-      pendingData.delete(id)
-    }
-  }
-  resetAllFlow = (): void => {
-    pendingData.clear()
-    for (const gate of flowGates.values()) gate.reset()
-  }
-  flushHeldData = (): void => {
-    if (!flushTimer) flushTimer = setTimeout(flushData, 0)
-  }
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     // CC§12
     if (sleepers.has(d.id)) return
@@ -3337,8 +3316,7 @@ app.whenReady().then(() => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
-    pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
-    if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
     sendToRenderer(CH.terminal.processTitle, t)
@@ -3410,6 +3388,7 @@ app.whenReady().then(() => {
       void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
+      terminalOutput.end(e.id, false)
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
       return
@@ -3430,13 +3409,8 @@ app.whenReady().then(() => {
       if (claudeSaid)
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
-    flushData()
     // PLATFORM§21
-    const held = pendingData.get(e.id)
-    if (held !== undefined) {
-      pendingData.delete(e.id)
-      if (!sleepers.has(e.id)) sendToRenderer(CH.terminal.data, { id: e.id, data: held })
-    }
+    terminalOutput.end(e.id, !sleepers.has(e.id))
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
@@ -6455,13 +6429,13 @@ function registerIpc(): void {
       ackedUtf16Units > 0
     ) {
       if (flowGates.get(id)?.onAck(ackedUtf16Units)) {
-        flushHeldData()
+        terminalOutput.wake(id)
       }
     }
   })
   ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
-    flushHeldData()
+    terminalOutput.wake(id)
   })
   ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))

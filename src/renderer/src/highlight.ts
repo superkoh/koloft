@@ -197,6 +197,23 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => HTML_ESC[c])
 }
 
+export const COLOR_UNASKED_MAX_CHARS = 128 * 1024
+export const COLOR_UNASKED_MAX_LINES = 3000
+
+export function tooBigToColorUnasked(text: string): boolean {
+  if (text.length > COLOR_UNASKED_MAX_CHARS) return true
+  let newlines = 0
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) {
+    if (++newlines > COLOR_UNASKED_MAX_LINES) return true
+  }
+  return false
+}
+
+export function plainCodeHtml(text: string): string {
+  const lines = text.split(/\r?\n/).map((l) => `<span class="line">${escapeHtml(l)}</span>`)
+  return `<pre><code>${lines.join('\n')}</code></pre>`
+}
+
 const SHIKI_FONT_ITALIC = 1
 const SHIKI_FONT_BOLD = 2
 const SHIKI_FONT_UNDERLINE = 4
