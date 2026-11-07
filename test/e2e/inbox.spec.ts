@@ -542,7 +542,7 @@ for (const remote of [false, true]) {
       await card.locator('.ibx-btn', { hasText: 'Send' }).click()
       await expect
         .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
-        .toMatch(/echo: .*carry on please/)
+        .toContain('«carry on please»')
       await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
     } finally {
       await quitAndClose(app)
