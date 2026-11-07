@@ -603,19 +603,25 @@ export function BrowseView({
     if (grew) applyExpansion(next)
   }, [current])
 
-  const unrevealed = useRef<string | null>(null)
+  const revealed = useRef<string | null>(null)
   useEffect(() => {
-    unrevealed.current = current
-  }, [current])
-  useEffect(() => {
-    if (!unrevealed.current) return
-    const ownRow = bodyRef.current?.querySelector(
-      '.bv-sec:not([data-section="bookmarks"]):not([data-section="recents"]) .ft-node.active'
+    const body = bodyRef.current
+    if (!current) revealed.current = null
+    if (!current || !body || revealed.current === current) return
+    const ownRow = body.querySelector(
+      ['tree', 'scratchpad', 'outside']
+        .map((s) => `[data-section="${s}"] .ft-node.active`)
+        .join(', ')
     )
-    if (!ownRow) return
-    unrevealed.current = null
-    ownRow.scrollIntoView({ block: 'nearest' })
-  })
+    const treeRowStillComing =
+      !ownRow &&
+      activeRef.current &&
+      inRoot(current, root) &&
+      !ancestorDirs(current, root).every((d) => expanded.has(d) && children[d])
+    if (treeRowStillComing) return
+    revealed.current = current
+    ;(ownRow ?? body.querySelector('.ft-node.active'))?.scrollIntoView({ block: 'nearest' })
+  }, [current, expanded, children, searchActive, root])
 
   const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')
   useEffect(() => {
