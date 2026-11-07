@@ -410,6 +410,18 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§32
+  it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
+    const memory = path.join(repo, 'AGENTS.md')
+    await launch()
+    expect(fs.existsSync(memory)).toBe(false)
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toMatch(/memory/)
+    fs.writeFileSync(memory, 'Favourite fruit: lychee.\n')
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
+  })
+
   // AGY§5
   it('trusts a worktree Koloft made in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders, but never a git worktree the person made', async () => {
     const recover = async (workspace: string, name: string, managed = true): Promise<string> => {

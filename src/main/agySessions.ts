@@ -91,6 +91,7 @@ import {
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
+import { seedAssistMemory } from './assistMemory'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -600,6 +601,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const permission = this.permissionOf(opts)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
