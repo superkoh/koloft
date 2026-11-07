@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remove on a down machine</title>
+<style>
+:root {
+  --bg-0: #0d0d0f; --bg-1: #161618; --bg-2: #1c1c1f; --bg-3: #27272c; --bg-4: #34343a;
+  --line: rgba(255, 255, 255, 0.1); --line-2: rgba(255, 255, 255, 0.17);
+  --fg: #f3f1ee; --fg-dim: #bdb9b2; --fg-faint: #908b84;
+  --accent: #ec9670; --accent-soft: rgba(236, 150, 112, 0.18); --accent-line: rgba(236, 150, 112, 0.45);
+  --good: #8fc69a; --amber: #f0a830; --red: #d9776a;
+  --r-sm: 7px; --switch-sm-w: 0px;
+  --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+body { margin: 0; background: var(--bg-0); color: var(--fg); font-family: var(--font); }
+.page { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px; }
+.explain { font-size: 14px; line-height: 1.6; color: var(--fg-dim); }
+.explain h1 { font-size: 20px; color: var(--fg); margin: 0 0 8px; }
+.explain h2 { font-size: 15px; color: var(--fg); margin: 26px 0 6px; }
+.explain table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+.explain td, .explain th { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.explain th { color: var(--fg); background: var(--bg-2); }
+.explain pre { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; font-size: 12px; overflow-x: auto; }
+.frame { border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg-1); padding: 4px 18px 18px; margin: 10px 0 6px; }
+.cap { font-size: 12px; color: var(--accent); font-family: var(--mono); margin-top: 18px; }
+
+.set-grp { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-faint); font-weight: 650; margin: 18px 0 -2px; }
+.set-row { display: flex; align-items: center; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.set-lab { flex: 1; min-width: 0; }
+.set-lab b { display: block; font-weight: 550; font-size: 13px; color: var(--fg); }
+.set-lab small { display: block; color: var(--fg-faint); font-size: 11.5px; line-height: 1.55; margin-top: 1px; }
+.seg { flex: 0 0 auto; display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg > button { display: flex; align-items: center; gap: 5px; padding: 3px 9px; border: none; background: var(--bg-1); font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+.seg > .on { background: var(--bg-4); color: var(--fg); }
+.acct-section { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.acct-list { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.acct-row { display: flex; flex-direction: column; gap: 5px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.acct-row:last-child { border-bottom: none; }
+.acct-main { display: flex; align-items: center; gap: 9px; }
+.acct-name { font-family: var(--mono); font-size: 13.5px; font-weight: 700; color: var(--fg); }
+.acct-badge, .acct-status { display: inline-flex; align-items: center; align-self: center; font-family: var(--mono); font-size: 10px; font-weight: 700; border-radius: 5px; padding: 1px 7px; border: 1px solid; white-space: nowrap; }
+.acct-badge.fable { color: var(--good); border-color: rgba(143, 198, 154, 0.4); background: rgba(143, 198, 154, 0.12); }
+.acct-status.stale { color: var(--amber); border-color: rgba(240, 168, 48, 0.45); background: rgba(240, 168, 48, 0.1); }
+.acct-x { margin-left: auto; color: var(--fg-faint); opacity: 0.5; background: none; border: 0; padding: 0; font-size: 13px; }
+.acct-row.confirming .acct-x { opacity: 0.25; }
+.acct-meters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-left: var(--switch-sm-w); }
+.acct-note { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
+.acct-relogin { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 5px; padding: 1px 8px; }
+.acct-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; padding: 7px 10px; background: rgba(217, 119, 106, 0.08); border: 1px solid rgba(217, 119, 106, 0.35); border-radius: var(--r-sm); font-size: 12px; color: var(--fg-dim); }
+.acct-confirm span { flex: 1; min-width: 180px; }
+.mini { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-4); color: var(--fg); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 14px; font-family: var(--font); font-size: 13px; font-weight: 600; line-height: 1; }
+.mini:disabled { opacity: 0.45; }
+.mini.danger { background: transparent; border-color: rgba(217, 119, 106, 0.45); color: var(--red); }
+.field-hint { font-size: 12.5px; color: var(--fg-dim); line-height: 1.6; }
+.new { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+<div class="explain">
+<h1>Removing a git account kept on a machine Koloft cannot reach (issue #623)</h1>
+<p><b>Who and when:</b> a user has a git account on a remote machine (Settings ▸ Accounts ▸ Git accounts, machine <code>devbox</code>) and removes it while <code>devbox</code> is asleep or the VPN is down.</p>
+<p><b>Today:</b> the row disappears at once and nothing looks wrong. On <code>devbox</code> the token file, the account's helper script and the pick that points at it all stay. When <code>devbox</code> is back, Koloft sessions there still send the removed account's token. The next change on <code>devbox</code> clears the helper and the pick, but the token file itself is never deleted.</p>
+<pre>
+ click Remove ──► ssh devbox "delete token"  ✗ (machine down, result ignored)
+              ──► drop account from the Mac's list  ✓
+              ──► ssh devbox "rewrite config"     ✗ (ignored)
+ row is gone; token, helper and pick stay on devbox
+</pre>
+<h2>The two choices</h2>
+<table>
+<tr><th></th><th>A. Refuse while the machine is out of reach (recommended)</th><th>B. Remember it and finish later</th></tr>
+<tr><td>What the user sees</td><td>The row waits ("Removing…", up to about 10 s on a machine that does not answer), then says Koloft could not reach devbox and the account is still there. Buttons: Try again, Remove from list anyway, Cancel.</td><td>The row disappears at once, as today. Nothing tells the user the token is still on devbox.</td></tr>
+<tr><td>What is stored</td><td>Nothing new.</td><td>A "remove this from devbox" note in Koloft's settings, kept until it is done.</td></tr>
+<tr><td>If devbox never comes back</td><td>"Remove from list anyway" drops it from Koloft and says the token stays on devbox (the machine is gone, so that is the true outcome).</td><td>The note stays in settings forever, unseen.</td></tr>
+<tr><td>When devbox is back</td><td>Nothing pending; the user clicks Remove again (or already chose "anyway").</td><td>Koloft needs a new "reached devbox" trigger to run the removal. Until it runs, a session started on devbox still gets the token.</td></tr>
+</table>
+</div>
+
+<div class="cap">A · step 1 — confirm (same as today)</div>
+<div class="frame">
+  <div class="set-grp">Git accounts</div>
+  <div class="set-row"><div class="set-lab"><b>Machine</b><small>Each machine keeps its own git accounts. Pick the one to manage.</small></div>
+    <div class="seg"><button>This Mac</button><button class="on">devbox</button></div></div>
+  <div class="acct-section"><div class="acct-list">
+    <div class="acct-row confirming">
+      <div class="acct-main"><span class="acct-name">carol</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
+      <div class="acct-confirm"><span>Remove <b>carol</b> (github.com) from devbox? 1 workspace — api — goes back to your own git setup.</span>
+        <button class="mini danger">Remove</button><button class="mini">Cancel</button></div>
+      <div class="acct-meters"><span class="acct-note">Signed in · used by 1 workspace</span></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap">A · step 2 — waiting for devbox (new)</div>
+<div class="frame">
+  <div class="acct-section"><div class="acct-list">
+    <div class="acct-row confirming">
+      <div class="acct-main"><span class="acct-name">carol</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
+      <div class="acct-confirm new"><span>Removing <b>carol</b> from devbox…</span>
+        <button class="mini danger" disabled>Removing…</button><button class="mini" disabled>Cancel</button></div>
+      <div class="acct-meters"><span class="acct-note">Signed in · used by 1 workspace</span></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap">A · step 3 — devbox did not answer (new)</div>
+<div class="frame">
+  <div class="acct-section"><div class="acct-list">
+    <div class="acct-row confirming">
+      <div class="acct-main"><span class="acct-name">carol</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
+      <div class="acct-confirm new"><span>Koloft could not reach devbox (ssh: connect to host devbox port 22: Operation timed out), so <b>carol</b> is still there. Try again when devbox is back. If devbox is gone for good, remove it from this list only — its token stays on devbox.</span>
+        <button class="mini">Try again</button><button class="mini danger">Remove from list anyway</button><button class="mini">Cancel</button></div>
+      <div class="acct-meters"><span class="acct-note">Signed in · used by 1 workspace</span></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap">B — no screen change: the row goes away as it does today</div>
+<div class="frame">
+  <div class="acct-section"><div class="acct-list">
+    <div class="acct-row">
+      <div class="acct-main"><span class="acct-name">dave</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
+      <div class="acct-meters"><span class="acct-note">Signed in · not used by any workspace yet</span></div>
+    </div>
+  </div></div>
+  <div class="explain" style="margin-top:10px;font-size:12.5px">(carol is gone from the list; the removal waits, unseen, until Koloft next reaches devbox.)</div>
+</div>
+
+<div class="explain">
+<h2>Every kind of session tab</h2>
+<p>Claude Code, Codex, Muse Code and Antigravity tabs on <code>devbox</code> all read the same git setup there, so each option behaves the same for all four. Local tabs are not touched: an account on this Mac is removed from this Mac's own keychain, which is never out of reach. The only screen that changes is Settings ▸ Accounts ▸ Git accounts, and only for option A.</p>
+</div>
+</div>
+</body>
+</html>
