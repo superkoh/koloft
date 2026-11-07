@@ -46,7 +46,7 @@ body { margin: 0; background: var(--bg-0); color: var(--fg); font-family: var(--
 .acct-status.stale { color: var(--amber); border-color: rgba(240, 168, 48, 0.45); background: rgba(240, 168, 48, 0.1); }
 .acct-x { margin-left: auto; color: var(--fg-faint); opacity: 0.5; background: none; border: 0; padding: 0; font-size: 13px; }
 .acct-row.confirming .acct-x { opacity: 0.25; }
-.acct-meters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-left: var(--switch-sm-w); }
+.acct-meters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-left: calc(var(--switch-sm-w) + 9px); }
 .acct-note { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
 .acct-relogin { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 5px; padding: 1px 8px; }
 .acct-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; padding: 7px 10px; background: rgba(217, 119, 106, 0.08); border: 1px solid rgba(217, 119, 106, 0.35); border-radius: var(--r-sm); font-size: 12px; color: var(--fg-dim); }
@@ -73,10 +73,10 @@ body { margin: 0; background: var(--bg-0); color: var(--fg); font-family: var(--
 <h2>The two choices</h2>
 <table>
 <tr><th></th><th>A. Refuse while the machine is out of reach (recommended)</th><th>B. Remember it and finish later</th></tr>
-<tr><td>What the user sees</td><td>The row waits ("Removing…", up to about 10 s on a machine that does not answer), then says Koloft could not reach devbox and the account is still there. Buttons: Try again, Remove from list anyway, Cancel.</td><td>The row disappears at once, as today. Nothing tells the user the token is still on devbox.</td></tr>
-<tr><td>What is stored</td><td>Nothing new.</td><td>A "remove this from devbox" note in Koloft's settings, kept until it is done.</td></tr>
-<tr><td>If devbox never comes back</td><td>"Remove from list anyway" drops it from Koloft and says the token stays on devbox (the machine is gone, so that is the true outcome).</td><td>The note stays in settings forever, unseen.</td></tr>
-<tr><td>When devbox is back</td><td>Nothing pending; the user clicks Remove again (or already chose "anyway").</td><td>Koloft needs a new "reached devbox" trigger to run the removal. Until it runs, a session started on devbox still gets the token.</td></tr>
+<tr><td>What the user sees</td><td>The row waits ("Removing…"; Koloft stops at the first failed try, at most 10 s on a machine that does not answer), then says Koloft could not reach devbox and the account is still there. Buttons: Try again, Remove from list anyway, Cancel.</td><td>The row disappears at once, as today. Nothing tells the user the token is still on devbox.</td></tr>
+<tr><td>What is stored</td><td>Nothing new.</td><td>A "remove this from devbox" note in Koloft's settings, kept until it is done. (A cheaper way: no note at all, and every later update of devbox also deletes token files no account owns.)</td></tr>
+<tr><td>If devbox never comes back</td><td>"Remove from list anyway" drops it from Koloft only. Should devbox come back after all, the account keeps working there until Koloft next updates devbox, and its token file stays.</td><td>The note stays in settings forever, unseen.</td></tr>
+<tr><td>When devbox is back</td><td>Nothing pending; the user clicks Remove again (or already chose "anyway").</td><td>Koloft does run things on devbox today (opening a tab, finding repositories), but none of them would run the removal: it needs a new trigger. Until it runs, sessions on devbox still send the token.</td></tr>
 </table>
 </div>
 
@@ -88,7 +88,7 @@ body { margin: 0; background: var(--bg-0); color: var(--fg); font-family: var(--
   <div class="acct-section"><div class="acct-list">
     <div class="acct-row confirming">
       <div class="acct-main"><span class="acct-name">carol</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
-      <div class="acct-confirm"><span>Remove <b>carol</b> (github.com) from devbox? 1 workspace — api — goes back to your own git setup.</span>
+      <div class="acct-confirm"><span>Remove <b>carol</b> (github.com) from devbox? 1 workspace — api — go back to your own git setup.</span>
         <button class="mini danger">Remove</button><button class="mini">Cancel</button></div>
       <div class="acct-meters"><span class="acct-note">Signed in · used by 1 workspace</span></div>
     </div>
@@ -112,7 +112,7 @@ body { margin: 0; background: var(--bg-0); color: var(--fg); font-family: var(--
   <div class="acct-section"><div class="acct-list">
     <div class="acct-row confirming">
       <div class="acct-main"><span class="acct-name">carol</span><span class="acct-note">GitHub</span><span class="acct-badge fable">DEFAULT</span><button class="acct-x">✕</button></div>
-      <div class="acct-confirm new"><span>Koloft could not reach devbox (ssh: connect to host devbox port 22: Operation timed out), so <b>carol</b> is still there. Try again when devbox is back. If devbox is gone for good, remove it from this list only — its token stays on devbox.</span>
+      <div class="acct-confirm new"><span>Koloft could not reach devbox (ssh timed out), so <b>carol</b> is still there. Try again when devbox is back. If devbox is gone for good, remove it from this list only — it keeps working on devbox until Koloft next updates devbox, and its token file stays there.</span>
         <button class="mini">Try again</button><button class="mini danger">Remove from list anyway</button><button class="mini">Cancel</button></div>
       <div class="acct-meters"><span class="acct-note">Signed in · used by 1 workspace</span></div>
     </div>
