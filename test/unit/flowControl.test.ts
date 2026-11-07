@@ -221,7 +221,7 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     vi.useRealTimers()
   })
 
-  it('a key echo on an idle tab goes out at once; output right behind it waits one frame and goes as one', () => {
+  it('a key echo on an idle tab goes out at once; output right behind it goes as one, one frame after the echo', () => {
     const { out, sent, gate } = makeOutput()
     gate('t').attach()
     out.push('t', 'a')
@@ -230,32 +230,58 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     out.push('t', 'b')
     out.push('t', 'c')
     expect(sent).toHaveLength(1)
-    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS - 2)
     expect(sent).toEqual([
       { id: 't', data: 'a' },
       { id: 't', data: 'bc' }
     ])
   })
 
-  it('a big backlog leaves in slices, one per tab per turn, in order and whole', () => {
+  it('a backlog of many small reads leaves in full slices, one per tab per turn, in order and whole', () => {
     const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
+    const read = 'y'.repeat(4000)
+    for (let i = 0; i < 70; i++) {
+      out.push('a', read)
+      out.push('b', read)
+    }
     gate('a').attach()
     gate('b').attach()
-    const big = 'x'.repeat(FLOW_SLICE_UTF16_UNITS * 2 + 7)
-    out.push('a', big)
-    out.push('b', big)
+    out.wake('a')
+    out.wake('b')
+    vi.advanceTimersToNextTimer()
     expect(sent.map((s) => s.id)).toEqual(['a', 'b'])
-    vi.advanceTimersByTime(0)
+    vi.advanceTimersToNextTimer()
     expect(sent.map((s) => s.id)).toEqual(['a', 'b', 'a', 'b'])
     vi.runAllTimers()
-    expect(sent.every((s) => s.data.length <= FLOW_SLICE_UTF16_UNITS)).toBe(true)
+    expect(sent.map((s) => s.data.length)).toEqual([
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      70 * 4000 - 2 * FLOW_SLICE_UTF16_UNITS,
+      70 * 4000 - 2 * FLOW_SLICE_UTF16_UNITS
+    ])
     for (const id of ['a', 'b'])
       expect(
         sent
           .filter((s) => s.id === id)
           .map((s) => s.data)
           .join('')
-      ).toBe(big)
+      ).toBe(read.repeat(70))
+  })
+
+  it("one tab draining a backlog does not hurry another tab's one-frame wait", () => {
+    const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
+    gate('a').attach()
+    gate('b').attach()
+    out.push('a', 'x'.repeat(FLOW_SLICE_UTF16_UNITS * 4))
+    out.push('b', 'echo')
+    vi.advanceTimersByTime(1)
+    out.push('b', 'more')
+    vi.advanceTimersByTime(2)
+    expect(sent.filter((s) => s.id === 'b').map((s) => s.data)).toEqual(['echo'])
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    expect(sent.filter((s) => s.id === 'b').map((s) => s.data)).toEqual(['echo', 'more'])
   })
 
   it('a slice never ends between the two halves of an emoji', () => {
@@ -273,31 +299,53 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     vi.runAllTimers()
     expect(sent).toEqual([])
     gate('t').attach()
-    out.wake()
+    out.wake('t')
     vi.runAllTimers()
     expect(sent).toEqual([{ id: 't', data: 'prompt$ more' }])
   })
 
-  it('a held backlog past the pause watermark pauses the pty, and draining it after attach resumes it', () => {
-    const { out, gate, calls } = makeOutput()
-    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 1))
-    expect(calls).toEqual(['pause t'])
+  it('an attached tab whose backlog passes the pause watermark pauses its pty, and resumes once it drains', () => {
+    const { out, gate, calls } = makeOutput({ sendHigh: Infinity })
     gate('t').attach()
-    out.wake()
-    for (let i = 0; i < 100 && calls.length < 2; i++) {
-      gate('t').onAck(FLOW_SEND_HIGH * 2)
-      out.wake()
-      vi.runAllTimers()
-    }
+    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
+    expect(calls).toEqual(['pause t'])
+    vi.runAllTimers()
     expect(calls).toEqual(['pause t', 'resume t'])
   })
 
-  it('with no window to show it, unattached output is dropped and never pauses the pty', () => {
-    const { out, sent, calls } = makeOutput({ rendererUp: false })
+  it('a tab no view ever shows never pauses its pty: past the watermark its held output is thrown away', () => {
+    const { out, sent, gate, calls } = makeOutput()
+    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE))
+    out.push('t', 'past the watermark')
+    out.push('t', 'kept')
+    vi.runAllTimers()
+    expect(calls).toEqual([])
+    gate('t').attach()
+    out.wake('t')
+    vi.runAllTimers()
+    expect(sent).toEqual([{ id: 't', data: 'kept' }])
+  })
+
+  it('with no window to show it, output is dropped and never pauses the pty', () => {
+    const { out, sent, gate, calls } = makeOutput({ rendererUp: false })
     out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 1))
+    gate('t').attach()
+    out.wake('t')
     vi.runAllTimers()
     expect(calls).toEqual([])
     expect(sent).toEqual([])
-    expect(out.take('t')).toBeUndefined()
+  })
+
+  it('a tab that ends hands the view its held tail in slices, gate or no gate', () => {
+    const { out, sent } = makeOutput()
+    const tail = 'z'.repeat(FLOW_SLICE_UTF16_UNITS * 2 + 1)
+    out.push('t', tail)
+    out.end('t', true)
+    expect(sent.map((s) => s.data.length)).toEqual([
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      1
+    ])
+    expect(sent.map((s) => s.data).join('')).toBe(tail)
   })
 })

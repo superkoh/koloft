@@ -7,6 +7,7 @@ export const FLOW_SLICE_UTF16_UNITS = 128 * 1024
 export const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
 
 import type { FlowStats } from '@shared/types'
+import { endsMidPair } from '@shared/utf16'
 
 export interface FlowGateCallbacks {
   onPause(): void
@@ -32,6 +33,10 @@ export class FlowGate {
 
   maySend(): boolean {
     return this.attached && !this.blocked
+  }
+
+  isAttached(): boolean {
+    return this.attached
   }
 
   onForwarded(utf16Units: number): void {
@@ -89,11 +94,37 @@ export class FlowGate {
   }
 }
 
+const HELD_FOR_AN_UNSEEN_TAB_MAX = FLOW_QUEUE_PAUSE
+
 export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): string {
   if (data.length <= maxUnits) return data
-  const last = data.charCodeAt(maxUnits - 1)
-  const endsOnHighSurrogate = last >= 0xd800 && last <= 0xdbff
-  return data.slice(0, endsOnHighSurrogate ? maxUnits - 1 : maxUnits)
+  return data.slice(0, endsMidPair(data, maxUnits) ? maxUnits - 1 : maxUnits)
+}
+
+interface TabOutput {
+  chunks: string[]
+  units: number
+  lastSentAt: number
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+function takeSlice(tab: TabOutput): string {
+  let slice = ''
+  while (tab.chunks.length) {
+    const head = tab.chunks[0]
+    const room = FLOW_SLICE_UTF16_UNITS - slice.length
+    if (head.length <= room) {
+      slice += head
+      tab.chunks.shift()
+      continue
+    }
+    const part = nextSlice(head, room)
+    slice += part
+    tab.chunks[0] = head.slice(part.length)
+    break
+  }
+  tab.units -= slice.length
+  return slice
 }
 
 export interface TerminalOutputDeps {
@@ -104,70 +135,69 @@ export interface TerminalOutputDeps {
 }
 
 export class TerminalOutput {
-  private readonly held = new Map<string, string>()
-  private readonly lastSentAt = new Map<string, number>()
-  private timer: ReturnType<typeof setTimeout> | null = null
+  private readonly tabs = new Map<string, TabOutput>()
 
   constructor(private readonly d: TerminalOutputDeps) {}
 
   push(id: string, data: string): void {
-    const queued = (this.held.get(id) ?? '') + data
-    this.held.set(id, queued)
-    const last = this.lastSentAt.get(id)
-    const idle = last === undefined || this.d.now() - last >= PTY_OUTPUT_COALESCE_ONE_FRAME_MS
-    if (!idle) this.schedule(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
-    else if (this.sendSlice(id, queued)) this.schedule(0)
+    if (!this.d.rendererUp()) return
+    let tab = this.tabs.get(id)
+    if (!tab) {
+      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null }
+      this.tabs.set(id, tab)
+    }
+    tab.chunks.push(data)
+    tab.units += data.length
+    if (tab.timer) return
+    const sinceSent = this.d.now() - tab.lastSentAt
+    if (sinceSent >= PTY_OUTPUT_COALESCE_ONE_FRAME_MS) this.sendSlice(id, tab)
+    else this.schedule(id, tab, PTY_OUTPUT_COALESCE_ONE_FRAME_MS - sinceSent)
   }
 
-  flush(): void {
-    this.timer = null
-    let more = false
-    for (const [id, data] of this.held) if (this.sendSlice(id, data)) more = true
-    if (more) this.schedule(0)
+  wake(id: string): void {
+    const tab = this.tabs.get(id)
+    if (!tab?.units) return
+    if (tab.timer) clearTimeout(tab.timer)
+    tab.timer = null
+    this.schedule(id, tab, 0)
   }
 
-  wake(): void {
-    this.schedule(0)
-  }
-
-  take(id: string): string | undefined {
-    const data = this.held.get(id)
-    this.held.delete(id)
-    this.lastSentAt.delete(id)
-    return data
+  end(id: string, showTheRest: boolean): void {
+    const tab = this.tabs.get(id)
+    if (!tab) return
+    if (tab.timer) clearTimeout(tab.timer)
+    this.tabs.delete(id)
+    while (showTheRest && tab.units) this.d.send(id, takeSlice(tab))
   }
 
   clear(): void {
-    this.held.clear()
-    this.lastSentAt.clear()
+    for (const tab of this.tabs.values()) if (tab.timer) clearTimeout(tab.timer)
+    this.tabs.clear()
   }
 
-  private schedule(ms: number): void {
-    if (!this.timer) this.timer = setTimeout(() => this.flush(), ms)
+  private schedule(id: string, tab: TabOutput, ms: number): void {
+    tab.timer = setTimeout(() => {
+      tab.timer = null
+      this.sendSlice(id, tab)
+    }, ms)
   }
 
-  private sendSlice(id: string, data: string): boolean {
+  private sendSlice(id: string, tab: TabOutput): void {
     const gate = this.d.gate(id)
     if (!gate.maySend()) {
-      if (this.d.rendererUp()) gate.onBacklog(data.length)
-      else this.held.delete(id)
-      return false
+      if (gate.isAttached()) gate.onBacklog(tab.units)
+      else if (tab.units > HELD_FOR_AN_UNSEEN_TAB_MAX) this.end(id, false)
+      return
     }
-    const slice = nextSlice(data)
+    const slice = takeSlice(tab)
     if (!this.d.send(id, slice)) {
       gate.reset()
-      this.held.delete(id)
-      return false
+      this.end(id, false)
+      return
     }
-    this.lastSentAt.set(id, this.d.now())
+    tab.lastSentAt = this.d.now()
     gate.onForwarded(slice.length)
-    const rest = data.slice(slice.length)
-    gate.onBacklog(rest.length)
-    if (!rest) {
-      this.held.delete(id)
-      return false
-    }
-    this.held.set(id, rest)
-    return gate.maySend()
+    gate.onBacklog(tab.units)
+    if (tab.units && gate.maySend()) this.schedule(id, tab, 0)
   }
 }

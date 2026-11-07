@@ -3316,7 +3316,9 @@ app.whenReady().then(() => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
-    terminalOutput.push(d.id, d.data)
+    // PLATFORM§29
+    if (ptyMgr.get(d.id)?.alive) terminalOutput.push(d.id, d.data)
+    else sendToRenderer(CH.terminal.data, d)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
     sendToRenderer(CH.terminal.processTitle, t)
@@ -3388,7 +3390,7 @@ app.whenReady().then(() => {
       void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
-      terminalOutput.take(e.id)
+      terminalOutput.end(e.id, false)
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
       return
@@ -3410,9 +3412,7 @@ app.whenReady().then(() => {
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
-    const held = terminalOutput.take(e.id)
-    if (held !== undefined && !sleepers.has(e.id))
-      sendToRenderer(CH.terminal.data, { id: e.id, data: held })
+    terminalOutput.end(e.id, !sleepers.has(e.id))
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
@@ -6431,13 +6431,13 @@ function registerIpc(): void {
       ackedUtf16Units > 0
     ) {
       if (flowGates.get(id)?.onAck(ackedUtf16Units)) {
-        terminalOutput.wake()
+        terminalOutput.wake(id)
       }
     }
   })
   ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
-    terminalOutput.wake()
+    terminalOutput.wake(id)
   })
   ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))

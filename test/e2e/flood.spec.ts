@@ -4,6 +4,8 @@ import { test, expect } from './helpers/app'
 import { openSessionTerminal, panelTerm, runIn, startSessionIn, waitBooted } from './helpers/p1'
 import type { FlowStats } from '../../src/shared/types'
 
+type FramesSeen = { painted: number; torn: string[] }
+
 const SYNC_FRAMES = 12
 const ROW_PADDING_SGR_RESETS = 4000
 const GAP_BETWEEN_FRAMES_FOR_A_PAINT_MS = 60
@@ -76,7 +78,7 @@ test('a synchronized frame several output slices long still lands on screen whol
     type Term = { rows: number; element: HTMLElement; onRender(cb: () => void): void }
     const w = window as unknown as {
       __koloftTerms: Record<string, Term>
-      __frames: { painted: number; torn: string[] }
+      __frames: FramesSeen
     }
     const term = w.__koloftTerms[id!]
     w.__frames = { painted: 0, torn: [] }
@@ -102,9 +104,7 @@ test('a synchronized frame several output slices long still lands on screen whol
   await expect(panelTerm(page).locator('.xterm-rows')).toContainText('SYNC_FRAMES_DONE', {
     timeout: 60_000
   })
-  const frames = await page.evaluate(
-    () => (window as unknown as { __frames: { painted: number; torn: string[] } }).__frames
-  )
+  const frames = await page.evaluate(() => (window as unknown as { __frames: FramesSeen }).__frames)
   expect(frames.painted).toBeGreaterThan(0)
   expect(frames.torn).toEqual([])
 })
