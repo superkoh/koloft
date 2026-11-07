@@ -4132,7 +4132,8 @@ body { background: var(--bg-0); color: var(--fg); }
   <div class="mk-note">
     <p><b>Where it sits.</b> A small <b>✎ comment</b> button shows just under the end of the selection, only in the <b>Rendered</b> view, and goes away when the selection does. Same words as the Changes button; same light look as the <b>Copy</b> button of a code block in this view.</p>
     <p><b>Nothing selected, nothing shown.</b> Reading, clicking links and copying text work as today.</p>
-    <p><b>New CSS:</b> one class <code>md-cmt</code><span class="mk-new">new</span>, added to the existing <code>.md-wrap .md-code-copy, .md-wrap .mmd-copy</code> rule (it shares that look), plus where it sits. The mockup draws it with <code>md-code-copy</code> for the look only — the real button cannot take that class, because the preview's click handler treats every <code>button.md-code-copy</code> as a Copy button.</p>
+    <p><b>It sits on the reading area, not inside the text</b> (in <code>.md-wrap</code>, beside the scrolling <code>.md-body</code>), so the block-by-block redraw of PR #1585 never moves it. It follows the selection when you scroll, and hides when the selection scrolls out of sight. Pressing it keeps the selection (the press does not take focus), so the box knows what you picked.</p>
+    <p><b>New CSS:</b> one class <code>md-cmt</code><span class="mk-new">new</span>, added to the existing <code>.md-wrap .md-code-copy, .md-wrap .mmd-copy</code> rule (it shares that look), plus where it sits. The mockup draws it with <code>md-code-copy</code> for the look only — the real button gets its own class, because <code>md-code-copy</code> also means "Copy button" to the preview's click handler and its corner position rule.</p>
     <p><b>Greyed</b> with the reason as its tooltip when the session cannot take it — the same check Changes uses (<code>commentBlocked</code>): "No running session to put it in", or "The session is waiting for an approval — answer it in the session first".</p>
   </div>
 </div>
@@ -4189,7 +4190,8 @@ body { background: var(--bg-0); color: var(--fg); }
     <p><b>It docks at the bottom of the file</b>, under the text, instead of opening inside the text as it does under a hunk. Why: the rendered file is a light page drawn outside React (and after PR #1585 it is redrawn block by block), so a dark form pushed into the middle of it would look odd and be swept away by a reload.</p>
     <p><b>Its first line names the place</b> (reusing <code>cv-hunk</code> / <code>cv-hunk-hd</code>): the path, the line, and the words you selected.</p>
     <p><b>The passage stays marked</b> while the box is open (a CSS highlight <code>::highlight(md-cmt)</code><span class="mk-new">new</span>, the same way Find marks hits), since clicking into the box clears the selection.</p>
-    <p><b>New CSS:</b> where <code>.cv-comment</code> docks inside <code>.md-wrap</code><span class="mk-new">new rule</span>; no new look.</p>
+    <p><b>New CSS:</b> while the box is open, <code>.md-wrap</code> lays the text and the box out one above the other, so the text ends where the box starts whatever the box's height<span class="mk-new">new rule</span>; no new look.</p>
+    <p><b>Shared, not copied:</b> <code>CommentBox</code> and <code>fenceFor</code> move out of the Changes files into one small shared file, so the preview does not pull in the whole Changes view.</p>
   </div>
 </div>
 
@@ -4211,7 +4213,7 @@ Selected: “Give up after 3 tries”
   <div class="mk-note">
     <p><b>How the comment names its place:</b></p>
     <ul>
-      <li><b>path:line</b> (or <b>path:first-last</b>) — the lines in the file, counted the way an editor counts them.</li>
+      <li><b>path:line</b> (or <b>path:first-last</b>) — the lines in the file, counted the way an editor counts them. The path is relative to the workspace folder, like the hunk comment's (a file tab holds the full path, and on a remote workspace the machine's key in front of it; both are taken off). A file outside the workspace keeps its full path on that machine.</li>
       <li><b>the file's own lines</b> in a fence — the Markdown source, not the rendered words. The agent can find them with a plain text search even if the file has moved on, because they are its exact text (bold marks, links and all).</li>
       <li><b>Selected:</b> the words you picked — only when they are part of those lines, so the agent knows which part you mean.</li>
     </ul>
@@ -4232,8 +4234,10 @@ Selected: “Give up after 3 tries”
   <tr><td>Codex · remote (ssh)</td><td>Same. (The old "waits on #99" is gone: #99 closed 2026-10-18.)</td><td>CODEX§23: its screen runs on the Mac, so the paste never crosses ssh.</td></tr>
   <tr><td>Muse Code · remote (ssh)</td><td>Same.</td><td>The paste crosses ssh and tmux like Claude's; not probed for Muse yet — the build's e2e covers it.</td></tr>
   <tr><td>Antigravity · remote (ssh)</td><td>Same.</td><td>As Muse.</td></tr>
+  <tr><td>Both places a Markdown file is read</td><td>The same: a file tab in the Workbench, and the reading area of the Files panel. Both draw through <code>ArtifactPane</code>, which today knows nothing of the session; the session's tab (where to paste) is handed down to it in both.</td><td><code>WorkbenchTabHosts.tsx</code>, <code>FilesView.tsx</code>.</td></tr>
+  <tr><td>A file with unsaved edits (editor closed)</td><td>The Rendered view shows the file on disk, so the line numbers are the disk's. The comment is about what you see, which is what the agent will read too.</td><td>Rendered reads the file itself, not the editor's text.</td></tr>
   <tr><td>A session tab whose session is not running, or is waiting for an approval</td><td>✎ comment shows greyed with the reason.</td><td><code>commentBlocked</code>, as in Changes.</td></tr>
-  <tr><td><b>Workspace row's own Workbench</b> (no agent)</td><td><b>No ✎ comment at all.</b> Selecting text works as today (copy).</td><td>No agent ever runs there, so the button could never work. It differs from the always-greyed "Pick an element" button there on purpose: that is one fixed toolbar button, while this one would pop up, greyed, on every selection.</td></tr>
+  <tr><td><b>Workspace row's own Workbench</b> (no agent)</td><td>✎ comment shows greyed: "No running session to put it in". Selecting and copying text work as today.</td><td>The same rule as everywhere else: <code>commentBlocked(null)</code>, which is exactly what greys the "Pick an element" button there today. One rule for every place, no special case.</td></tr>
 </table>
 
 <h2>5 · How it fits PR #1585 (the faster Markdown preview)</h2>
@@ -4241,7 +4245,8 @@ Selected: “Give up after 3 tries”
 <ul>
   <li><b>Line numbers come from markdown-it itself.</b> Every block token (heading, paragraph, list item, table row, code block) carries its source lines (<code>token.map</code>; checked with the repo's markdown-it). A small rule in <code>markdown/render.ts</code> writes them on each block element as <code>data-line</code>.</li>
   <li><b>Lines inside a block are counted from the block's start</b>, and the start of each top-level block travels next to the block list (not inside its HTML). Why: if absolute line numbers sat in the HTML, adding one line at the top would change every block below, and #1585 would have to redraw the whole file on each edit — the slowness it removes.</li>
-  <li><b>The text the comment quotes</b> is sliced from the same text the preview just read (local or over ssh), so path, line and quoted lines always agree with what is on screen.</li>
+  <li><b>The text the comment quotes</b> is sliced from the very text that was drawn. Today (and in #1585) the preview hands the text it read to the renderer and keeps none of it, and the file tab reads the file a second time on its own; quoting from that second read could be a different version if the agent wrote in between. So the preview keeps the text it drew, next to the blocks, and the comment slices from that.</li>
+  <li><b>A block with no line info</b> (the footnote list, which markdown-it-footnote opens with a token that has no <code>map</code>) takes the lines of the nearest block that has them, or no line at all — the quote still names it.</li>
   <li><b>An open box keeps what it points at</b> (path, lines, quoted text) when you open it, like the hunk comment keeps its hunk; a reload while you type does not lose it. The mark is drawn again on the new block, or dropped if those lines are gone.</li>
 </ul>
 
@@ -4257,8 +4262,8 @@ Selected: “Give up after 3 tries”
 <div class="mk-pick">
   <p style="margin-top:0"><b>Build it as shown above?</b></p>
   <ol>
-    <li><b>Yes, as shown</b> (recommended) — select → ✎ comment → box at the bottom → path:line + the file's own lines + your note, unsent in the input box; several comments simply pile up there. Cost: about 250 lines, plus e2e for all eight tab kinds; one small change to the render worker (needs #1585 merged first).</li>
-    <li><b>Yes, but name the place by the nearest heading and the selected words only</b> (no line numbers) — no change to the render worker. Cost: the agent has to search; the rendered words often do not match the file (bold marks, links), and the same words can appear twice.</li>
+    <li><b>Yes, as shown</b> (recommended) — select → ✎ comment → box at the bottom → path:line + the file's own lines + your note, unsent in the input box; several comments simply pile up there. Cost: about 300–350 lines, plus e2e for all eight tab kinds; one small change to the render worker (built after #1585 merges).</li>
+    <li><b>Yes, but quote the whole top-level block</b> — the comment takes the lines of the whole list, table or paragraph run the selection is in (the blocks #1585 already draws), with no line marks inside the HTML. Cost: a bit smaller (no marks in the render worker); a comment on one item of a 40-item list pastes all 40 lines, so the agent gets more to read and the note is less precise.</li>
     <li><b>Yes, and add a pending-comments list</b> in the Workbench with "Send all" — comments wait in Koloft, not in the input box. Cost: a new list and its state per tab (and one for Changes to match), roughly double the work; the input box already lets several comments wait.</li>
     <li><b>Don't build it</b> — close the issue. Cost: you keep copying passages into the terminal by hand.</li>
   </ol>
