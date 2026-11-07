@@ -91,6 +91,7 @@ describe('PtyManager per-tab environment', () => {
   })
 
   it("a Claude launch's synchronized-output switches outlive the strip of every inherited CLAUDE_CODE_* variable", () => {
+    const outer = process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
     process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT = 'inherited'
     try {
       const mgr = new PtyManager()
@@ -106,7 +107,8 @@ describe('PtyManager per-tab environment', () => {
       mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBeUndefined()
     } finally {
-      delete process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
+      if (outer === undefined) delete process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
+      else process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT = outer
     }
   })
 

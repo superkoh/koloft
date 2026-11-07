@@ -1,5 +1,5 @@
 import fs from 'fs'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import { setNextSessionTitle, startSessionIn, switchToRow, termIds, waitBooted } from './helpers/p1'
@@ -12,6 +12,7 @@ const WIDE_LINE = '中文宽字符一帧画完再显示'
 type Term = {
   rows: number
   cols: number
+  element?: HTMLElement
   write(data: string, cb?: () => void): void
   onRender(cb: () => void): void
   buffer: {
@@ -23,24 +24,6 @@ type Term = {
     }
   }
   _core?: { coreService?: { decPrivateModes?: { synchronizedOutput?: boolean } } }
-}
-
-async function countPtyResizes(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ ipcMain }) => {
-    const g = globalThis as unknown as { __ptyResizes?: Record<string, number> }
-    g.__ptyResizes = {}
-    ipcMain.on('terminal:resize', (_e, id: string) => {
-      g.__ptyResizes![id] = (g.__ptyResizes![id] ?? 0) + 1
-    })
-  })
-}
-
-function ptyResizesOf(app: ElectronApplication, id: string): Promise<number> {
-  return app.evaluate(
-    (_e, tabId) =>
-      (globalThis as unknown as { __ptyResizes: Record<string, number> }).__ptyResizes[tabId] ?? 0,
-    id
-  )
 }
 
 async function countRenders(page: Page, id: string): Promise<void> {
@@ -117,7 +100,6 @@ async function launchWithWebGL(env: Parameters<typeof launchApp>[0]) {
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await waitBooted(page)
-  await countPtyResizes(app)
   return { app, page }
 }
 
@@ -151,10 +133,8 @@ test('a fit landing inside a DEC-2026 sync window still repaints promptly, with 
 
     // PLATFORM§21 CC§12
     await writeTo(page, tab, '\x1b[?2026h')
-    const resizesBefore = await ptyResizesOf(app, tab)
     const bugDelay = await fitRenderDelay(80)
     expect(bugDelay).toBeLessThan(REPAINT_BUDGET_UNDER_1S_SYNC_SAFETY_TIMEOUT_MS)
-    expect(await ptyResizesOf(app, tab)).toBe(resizesBefore + 1)
     const after = await screenOf(page, tab)
     expect(after.text).toContain(WIDE_LINE)
     expect(after.atBottom).toBe(true)
@@ -165,7 +145,7 @@ test('a fit landing inside a DEC-2026 sync window still repaints promptly, with 
   }
 })
 
-test("a fit or a re-show that keeps the terminal's size tells the pty nothing and leaves an open sync frame unpainted until claude closes it, or for at most a second when it never does", async ({
+test("a fit or a re-show that keeps the terminal's size leaves an open sync frame unpainted until claude closes it, or for at most a second when it never does", async ({
   env
 }) => {
   test.setTimeout(180_000)
@@ -183,12 +163,11 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
     await writeTo(page, s1, `\r\n${WIDE_LINE}\r\n`)
     const size = await screenOf(page, s1)
 
-    const expectFrameHeld = async (resizes: number, renders: number): Promise<void> => {
+    const expectFrameHeld = async (renders: number): Promise<void> => {
       const now = await screenOf(page, s1)
       expect(now.onScreen).toBe(true)
       expect(now.syncOpen, 'the sync frame is still open').toBe(true)
       expect({ cols: now.cols, rows: now.rows }).toEqual({ cols: size.cols, rows: size.rows })
-      expect(await ptyResizesOf(app, s1), 'no resize reached the pty').toBe(resizes)
       expect(await rendersOf(page, s1), 'nothing painted inside the frame').toBe(renders)
     }
     const expectWholeFramePainted = async (renders: number, line: string): Promise<void> => {
@@ -201,7 +180,6 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
     }
 
     // PLATFORM§21 CC§12
-    const resizes = await ptyResizesOf(app, s1)
     const heightLeavingTheRowCountAlone = await page.evaluate((tabId) => {
       const t = (
         window as unknown as {
@@ -226,7 +204,7 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
       win.setSize(width, height + delta)
     }, heightLeavingTheRowCountAlone)
     await page.waitForTimeout(FIT_DONE_WELL_INSIDE_XTERMS_1S_SYNC_TIMEOUT_MS)
-    await expectFrameHeld(resizes, renders)
+    await expectFrameHeld(renders)
     await writeTo(page, s1, '\x1b[?2026l')
     await expectWholeFramePainted(renders, '半帧-甲')
 
@@ -235,7 +213,7 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
     renders = await rendersOf(page, s1)
     await rowTitled(page, 'S1').click()
     await page.waitForTimeout(FIT_DONE_WELL_INSIDE_XTERMS_1S_SYNC_TIMEOUT_MS)
-    await expectFrameHeld(resizes, renders)
+    await expectFrameHeld(renders)
     await expect(rowTitled(page, 'S1')).toHaveClass(/\bactive\b/)
     await writeTo(page, s1, '\x1b[?2026l')
     await expectWholeFramePainted(renders, '半帧-乙')
@@ -250,7 +228,6 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
       .toBeGreaterThan(renders)
     expect(Date.now() - shownAt).toBeLessThan(SYNC_FRAME_NEVER_CLOSED_REPAINT_BUDGET_MS)
     await expectWholeFramePainted(renders, '半帧-丙')
-    expect(await ptyResizesOf(app, s1)).toBe(resizes)
 
     expect(errors).toEqual([])
   } finally {

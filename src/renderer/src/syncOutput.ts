@@ -9,11 +9,7 @@ function syncModes(term: Terminal): { synchronizedOutput?: boolean } | undefined
 }
 
 export function isSyncWindowOpen(term: Terminal): boolean {
-  try {
-    return syncModes(term)?.synchronizedOutput === true
-  } catch {
-    return false
-  }
+  return syncModes(term)?.synchronizedOutput === true
 }
 
 // PLATFORM§21 CC§12

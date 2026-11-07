@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type JSX } from 'react'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IDisposable } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -56,16 +56,24 @@ export function TerminalView({
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const repaintedRef = useRef(false)
-  const repaintWaitsForSyncFrameRef = useRef(false)
-  const syncFrameDeadlineRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const sizeToldToPtyRef = useRef<{ cols: number; rows: number } | null>(null)
+  const syncFrameWaitRef = useRef<{
+    deadline: ReturnType<typeof setTimeout>
+    closed: IDisposable
+  } | null>(null)
   const fontFamily = useStore((s) => s.settings.fontFamily)
   const fontSize = useStore((s) => s.settings.fontSize)
 
+  const stopWaitingForSyncFrame = useCallback((): void => {
+    const wait = syncFrameWaitRef.current
+    if (!wait) return
+    syncFrameWaitRef.current = null
+    clearTimeout(wait.deadline)
+    wait.closed.dispose()
+  }, [])
+
   // PLATFORM§20
   const repaint = useCallback((): void => {
-    repaintWaitsForSyncFrameRef.current = false
-    clearTimeout(syncFrameDeadlineRef.current)
+    stopWaitingForSyncFrame()
     const term = termRef.current
     if (!term) return
     let repainted = false
@@ -86,7 +94,7 @@ export function TerminalView({
       } catch {}
     }
     onRepaintedRef.current?.()
-  }, [])
+  }, [stopWaitingForSyncFrame])
 
   const forceRepaint = useCallback((): void => {
     const term = termRef.current
@@ -96,14 +104,16 @@ export function TerminalView({
       repaint()
       return
     }
-    repaintWaitsForSyncFrameRef.current = true
-    clearTimeout(syncFrameDeadlineRef.current)
-    syncFrameDeadlineRef.current = setTimeout(() => {
-      const t = termRef.current
-      // PLATFORM§21
-      if (t) exitSyncWindow(t)
-      repaint()
-    }, SYNC_FRAME_NEVER_CLOSED_AFTER_MS)
+    syncFrameWaitRef.current = {
+      closed: term.onWriteParsed(() => {
+        if (!isSyncWindowOpen(term)) repaint()
+      }),
+      deadline: setTimeout(() => {
+        // PLATFORM§21
+        exitSyncWindow(term)
+        repaint()
+      }, SYNC_FRAME_NEVER_CLOSED_AFTER_MS)
+    }
   }, [repaint])
 
   const safeFit = useCallback((): void => {
@@ -119,13 +129,11 @@ export function TerminalView({
         el.style.maxWidth = `${Math.ceil(maxCols * cellWidth) + CAP_SLACK_AGAINST_FIT_ROUNDING_PX}px`
       }
       const fits = fit.proposeDimensions()
-      const told = sizeToldToPtyRef.current
-      if (fits && (fits.cols !== told?.cols || fits.rows !== told?.rows)) {
+      if (fits && (fits.cols !== term.cols || fits.rows !== term.rows)) {
         exitSyncWindow(term)
-        fit.fit()
-        window.api.terminal.resize(id, term.cols, term.rows)
-        sizeToldToPtyRef.current = { cols: term.cols, rows: term.rows }
+        term.resize(fits.cols, fits.rows)
       }
+      window.api.terminal.resize(id, term.cols, term.rows)
       screenSizedToPane(id)
       // ADR-0007
       if (consumeAdoptedNudge(id)) {
@@ -190,11 +198,6 @@ export function TerminalView({
     }
     const unregisterScreen = registerScreen(id, term)
     repaintedRef.current = false
-    repaintWaitsForSyncFrameRef.current = false
-    sizeToldToPtyRef.current = null
-    const syncFrameClosedSub = term.onWriteParsed(() => {
-      if (repaintWaitsForSyncFrameRef.current && !isSyncWindowOpen(term)) repaint()
-    })
 
     // PLATFORM§20
     let dprCleanup: (() => void) | undefined
@@ -406,6 +409,7 @@ export function TerminalView({
         if (!visible) {
           wasHidden = true
           repaintedRef.current = false
+          stopWaitingForSyncFrame()
           return
         }
         if (!wasHidden) return
@@ -421,9 +425,7 @@ export function TerminalView({
       offData()
       flushAck()
       inputSub.dispose()
-      syncFrameClosedSub.dispose()
-      clearTimeout(syncFrameDeadlineRef.current)
-      repaintWaitsForSyncFrameRef.current = false
+      stopWaitingForSyncFrame()
       cancelAnimationFrame(clampRaf)
       clearTimeout(clearTimer)
       clearTimeout(fitTimer)
@@ -441,7 +443,7 @@ export function TerminalView({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint, repaint, copiesToClipboard])
+  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 
   useEffect(() => {
     const term = termRef.current

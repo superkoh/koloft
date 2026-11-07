@@ -2229,6 +2229,11 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   2.1.319 pty setup; in Koloft's hidden window (3 runs per case, alternated) 3 s idle drew
   14 asks under Apple_Terminal and 0 unset, and 12 wheel reports 22 against 0, with the
   same count of `38;2;` and `?2026h` and the same input-to-draw median (19.75 / 19.70 ms).
+  The rest of what the 2.1.319 strings key on `Apple_Terminal` (read 2026-11-07, not
+  run): the newline hint says Option+Enter instead of Shift+Enter; the `/terminal-setup`
+  tips and command offer to change Terminal.app's own settings; a notification falls
+  back to the terminal bell; strikethrough is turned off; one of its colour helpers is held to 256 colours;
+  the welcome screen and a few key bindings take a Terminal.app branch.
 - **The XTVERSION reply picks the wheel-scroll engine.** A reply naming
   `xterm.js(<version>)` (which xterm ≥ 6.1.0-beta sends) switches fullscreen wheel
   scrolling to a paced drain of 2–3 lines per frame; no reply keeps the native profile,
