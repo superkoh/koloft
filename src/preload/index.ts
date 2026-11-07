@@ -165,6 +165,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
     },
     stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
+    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
     search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
     onSearchHits: (cb) => {
       const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)

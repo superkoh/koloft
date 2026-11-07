@@ -12,7 +12,7 @@ export interface TaggedProcess {
 
 const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.,]+)\s(.*)$/
 const TAB_TAG = /(?:^|\s)KOLOFT_(?:TAB_ID|HOLD_TAB)=(\S+)/
-const AGENT_PROGRAM =
+export const AGENT_PROGRAM =
   /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|muse|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|muse|agy)(?:\s|$))/
 // PLATFORM§59
 const SHARED_VM = /com\.apple\.Virtualization\.VirtualMachine/

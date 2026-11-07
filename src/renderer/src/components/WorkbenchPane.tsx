@@ -587,6 +587,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     })
   }, [openHere, applyLive, openFileTab])
 
+  const openPort = useCallback(
+    (port: number): void => {
+      const url = `http://localhost:${port}/`
+      openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
+    },
+    [openHere, applyLive]
+  )
+
   const latestAddress = useRef(0)
 
   const showInWebTab = useCallback(
@@ -1338,11 +1346,12 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
       {newMenuOpen && (
         <NewTabMenu
-          canTerminal={canTerminal}
+          liveSession={canTerminal ? ownerTab : null}
           onClose={() => setNewMenuOpen(false)}
           onWeb={newWebTab}
           onFile={openFilePicker}
           onTerminal={newTerminal}
+          onPort={openPort}
         />
       )}
 
