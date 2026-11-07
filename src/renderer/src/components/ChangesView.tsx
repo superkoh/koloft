@@ -937,6 +937,7 @@ function UndrawnRows({
   return (
     <div className="idiff" style={height === undefined ? undefined : { height }}>
       <div className="cv-undrawn" style={{ '--rows': shown } as CSSProperties}>
+        {/* PLATFORM§24 */}
         <div className="cv-undrawn-code" hidden>
           {code}
         </div>
