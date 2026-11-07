@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ParsedDiff } from '@shared/unifiedDiff'
-import { highlightLines, langForPath } from '../highlight'
+import { langForPath } from '../highlight'
+import { highlightLinesOffThread } from '../offThread'
 import '../inlineDiff.css'
 
 export const MAX_INLINE_ROWS = 5000
@@ -10,7 +11,7 @@ interface Hl {
   oldHtml: string[]
 }
 
-export function InlineDiff({
+export const InlineDiff = memo(function InlineDiff({
   src,
   parsed,
   line
@@ -32,8 +33,8 @@ export function InlineDiff({
     if (truncated) return
     let cancelled = false
     Promise.all([
-      highlightLines(newText, lang),
-      hasDel ? highlightLines(oldText, lang) : Promise.resolve<string[]>([])
+      highlightLinesOffThread(newText, lang),
+      hasDel ? highlightLinesOffThread(oldText, lang) : Promise.resolve<string[]>([])
     ])
       .then(([newHtml, oldHtml]) => {
         if (!cancelled) setHl({ newHtml, oldHtml })
@@ -95,4 +96,4 @@ export function InlineDiff({
       )}
     </div>
   )
-}
+})

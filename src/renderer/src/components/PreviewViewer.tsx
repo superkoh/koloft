@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { previewFileUrl } from '@shared/browserRoute'
 import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
-import { renderMarkdown } from '../markdown'
+import { cleanBlock, renderMarkdown, type RenderedDoc } from '../markdown'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
 import '../previewViewer.css'
 
@@ -13,12 +13,20 @@ export interface MdHeading {
 }
 
 const DIAGRAM_RENDER_AHEAD_PX = 150
+const BLOCKS_PER_SLICE_MS = 8
+
+const UNREADABLE: RenderedDoc = {
+  blocks: ['<p>Failed to read file.</p>'],
+  headings: [],
+  diagrams: [],
+  frontMatter: null
+}
 
 let mermaidTempIdSeq = 0
 
-interface Salvage {
-  bodyByCode: Map<string, string>
-  scrollTop: number
+interface Shown {
+  html: string
+  nodes: ChildNode[]
 }
 
 function decodeAttr(raw: string | undefined): string {
@@ -34,14 +42,25 @@ function codeOf(el: HTMLElement | null | undefined): string {
   return decodeAttr(el?.dataset.code)
 }
 
-function harvest(body: HTMLElement | null, token: string): Salvage | null {
-  if (!body) return null
+function drawnDiagrams(body: HTMLElement, token: string): Map<string, string> {
   const bodyByCode = new Map<string, string>()
   for (const el of body.querySelectorAll<HTMLElement>('.mmd')) {
     if (el.dataset.k !== token || el.dataset.state !== 'done' || !el.dataset.code) continue
     bodyByCode.set(el.dataset.code, el.innerHTML)
   }
-  return { bodyByCode, scrollTop: body.scrollTop }
+  return bodyByCode
+}
+
+function placeInOrder(body: HTMLElement, was: Shown[], now: Shown[]): void {
+  const kept = new Set(now.flatMap((b) => b.nodes))
+  for (const b of was) for (const n of b.nodes) if (!kept.has(n)) n.remove()
+  let at = body.firstChild
+  for (const b of now) {
+    for (const n of b.nodes) {
+      if (n === at) at = at.nextSibling
+      else body.insertBefore(n, at)
+    }
+  }
 }
 
 function settleDiagram(el: HTMLElement): void {
@@ -57,13 +76,14 @@ function settleDiagram(el: HTMLElement): void {
   el.setAttribute('aria-label', 'Zoom diagram')
 }
 
-function blockImage(img: HTMLImageElement): void {
+function blockImage(img: HTMLImageElement): HTMLElement {
   const addr =
     img.getAttribute('data-blocked') || img.getAttribute('data-path') || img.getAttribute('src')
   const box = document.createElement('span')
   box.className = 'md-img-blocked'
   box.textContent = addr || img.getAttribute('alt') || 'image unavailable'
   img.replaceWith(box)
+  return box
 }
 
 function fillError(el: HTMLElement, message: string, code: string, token: string): void {
@@ -109,70 +129,136 @@ export function PreviewViewer({
   tick?: number
   onHeadings?: (h: MdHeading[]) => void
 }): JSX.Element {
-  const [html, setHtml] = useState('')
-  const token = useRef('')
+  const [doc, setDoc] = useState<RenderedDoc | null>(null)
+  const [token] = useState(() => crypto.randomUUID())
   const [zoom, setZoom] = useState<{ code: string; svg: string } | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const salvage = useRef<Salvage | null>(null)
+  const shown = useRef<Shown[]>([])
+  const watchDiagram = useRef<(el: HTMLElement) => void>(() => {})
   const zoomFrom = useRef<HTMLElement | null>(null)
+  const reading = useRef(false)
+  const readAgain = useRef(false)
+  const gone = useRef(false)
+
+  useEffect(
+    () => () => {
+      gone.current = true
+    },
+    []
+  )
 
   useEffect(() => {
     if (item.kind !== 'markdown') return
-    let cancelled = false
-    window.api.preview
-      .readText(item.src)
-      .then((text) => renderMarkdown(text, { srcPath: item.src }))
-      .then((doc) => {
-        if (cancelled) return
-        salvage.current = harvest(bodyRef.current, token.current)
-        setZoom(null)
-        token.current = doc.token
-        setHtml(doc.html)
-        onHeadings?.(doc.headings)
-      })
-      .catch(() => {
-        if (!cancelled) setHtml((h) => h || '<p>Failed to read file.</p>')
-      })
-    return () => {
-      cancelled = true
+    const read = (): void => {
+      if (reading.current) {
+        readAgain.current = true
+        return
+      }
+      reading.current = true
+      window.api.preview
+        .readText(item.src)
+        .then((text) => renderMarkdown(text, { srcPath: item.src, token }))
+        .then((d) => {
+          if (!gone.current) setDoc(d)
+        })
+        .catch(() => {
+          if (!gone.current) setDoc((d) => d ?? UNREADABLE)
+        })
+        .finally(() => {
+          reading.current = false
+          if (!readAgain.current || gone.current) return
+          readAgain.current = false
+          read()
+        })
     }
-  }, [item.src, item.kind, tick, onHeadings])
+    read()
+  }, [item.src, item.kind, tick, token])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
+    if (doc) onHeadings?.(doc.headings)
+  }, [doc, onHeadings])
+
+  useEffect(() => {
     const body = bodyRef.current
-    if (item.kind !== 'markdown' || !body) return
-    const carried = salvage.current
-    salvage.current = null
+    if (!doc || !body) return
+    setZoom(null)
+    const was = shown.current
+    const firstPaint = was.length === 0
+    const reusable = new Map<string, Shown[]>()
+    for (const b of was) {
+      const same = reusable.get(b.html)
+      if (same) same.push(b)
+      else reusable.set(b.html, [b])
+    }
+    const drawn = firstPaint ? new Map<string, string>() : drawnDiagrams(body, token)
+    const now: Shown[] = []
+    const fresh: Shown[] = []
+    if (firstPaint) shown.current = now
 
-    const pending = new Set<HTMLElement>()
-    for (const el of body.querySelectorAll<HTMLElement>('.mmd')) {
-      if (el.dataset.k !== token.current) continue
-      const prev = carried && el.dataset.code ? carried.bodyByCode.get(el.dataset.code) : undefined
-      if (prev !== undefined) {
+    const make = (html: string): Shown => {
+      const frag = cleanBlock(html)
+      for (const el of frag.querySelectorAll<HTMLElement>('.mmd')) {
+        const prev =
+          el.dataset.k === token && el.dataset.code ? drawn.get(el.dataset.code) : undefined
+        if (prev === undefined) continue
         el.innerHTML = prev
         el.dataset.state = 'done'
         settleDiagram(el)
-      } else {
-        pending.add(el)
+      }
+      for (const img of frag.querySelectorAll<HTMLImageElement>('img[data-blocked]'))
+        blockImage(img)
+      // PLATFORM§26
+      for (const bad of frag.querySelectorAll<HTMLElement>('.katex-error')) {
+        const src = decodeAttr(bad.dataset.src) || bad.getAttribute('title')
+        if (src) bad.textContent = src
+      }
+      return { html, nodes: [...frag.childNodes] }
+    }
+    const watch = (b: Shown): void => {
+      for (const n of b.nodes) {
+        if (!(n instanceof HTMLElement)) continue
+        const found = [
+          ...(n.matches('.mmd') ? [n] : []),
+          ...n.querySelectorAll<HTMLElement>('.mmd')
+        ]
+        for (const el of found)
+          if (el.dataset.k === token && !el.dataset.state) watchDiagram.current(el)
       }
     }
-    for (const img of body.querySelectorAll<HTMLImageElement>('img[data-blocked]')) blockImage(img)
 
-    // PLATFORM§26
-    for (const bad of body.querySelectorAll<HTMLElement>('.katex-error')) {
-      const src = decodeAttr(bad.dataset.src) || bad.getAttribute('title')
-      if (src) bad.textContent = src
+    let i = 0
+    let timer = 0
+    const step = (): void => {
+      const until = performance.now() + BLOCKS_PER_SLICE_MS
+      while (i < doc.blocks.length) {
+        const html = doc.blocks[i++]
+        const kept = reusable.get(html)?.shift()
+        const b = kept ?? make(html)
+        now.push(b)
+        if (!kept) fresh.push(b)
+        if (firstPaint) {
+          body.append(...b.nodes)
+          watch(b)
+        }
+        if (performance.now() >= until) break
+      }
+      if (i < doc.blocks.length) {
+        timer = window.setTimeout(step)
+        return
+      }
+      if (firstPaint) return
+      placeInOrder(body, was, now)
+      for (const b of fresh) watch(b)
+      shown.current = now
     }
+    step()
+    return () => clearTimeout(timer)
+  }, [doc, token])
 
-    if (carried?.scrollTop) {
-      const want = carried.scrollTop
-      body.scrollTop = want
-      requestAnimationFrame(() => {
-        if (body.isConnected && body.scrollTop < want) body.scrollTop = want
-      })
-    }
-    if (!pending.size) return
-
+  useEffect(() => {
+    const body = bodyRef.current
+    if (item.kind !== 'markdown' || !body) return
+    const pending = new Set<HTMLElement>()
     let disposed = false
     const renderNode = async (el: HTMLElement): Promise<void> => {
       if (el.dataset.state) return
@@ -189,7 +275,7 @@ export function PreviewViewer({
         el.innerHTML = res.svg
         settleDiagram(el)
       } else {
-        fillError(el, res.message, code, token.current)
+        fillError(el, res.message, code, token)
       }
       el.dataset.state = 'done'
     }
@@ -204,14 +290,18 @@ export function PreviewViewer({
       },
       { root: body, rootMargin: `${DIAGRAM_RENDER_AHEAD_PX}px` }
     )
-    for (const el of pending) io.observe(el)
+    watchDiagram.current = (el) => {
+      pending.add(el)
+      io.observe(el)
+    }
 
     const ro = new ResizeObserver(() => {
       if (disposed || !body.clientHeight) return
       const view = body.getBoundingClientRect()
       for (const el of pending) {
-        if (el.dataset.state) {
+        if (el.dataset.state || !el.isConnected) {
           pending.delete(el)
+          io.unobserve(el)
           continue
         }
         const r = el.getBoundingClientRect()
@@ -230,14 +320,15 @@ export function PreviewViewer({
       disposed = true
       io.disconnect()
       ro.disconnect()
+      watchDiagram.current = () => {}
     }
-  }, [html, item.kind])
+  }, [item.kind, token])
 
   useEffect(() => {
     const body = bodyRef.current
     if (item.kind !== 'markdown' || !body) return
     const openZoom = (fig: HTMLElement): void => {
-      if (fig.dataset.k !== token.current) return
+      if (fig.dataset.k !== token) return
       if (!fig.querySelector('svg')) return
       zoomFrom.current = fig
       setZoom({ code: codeOf(fig), svg: fig.innerHTML })
@@ -247,7 +338,7 @@ export function PreviewViewer({
       const copy = t.closest<HTMLElement>('button.md-code-copy, button.mmd-copy')
       if (copy) {
         ev.stopPropagation()
-        if (copy.dataset.k !== token.current) return
+        if (copy.dataset.k !== token) return
         navigator.clipboard?.writeText(codeOf(copy)).catch(() => {})
         flashCopied(copy)
         return
@@ -257,7 +348,12 @@ export function PreviewViewer({
     }
     const onError = (ev: Event): void => {
       const t = ev.target
-      if (t instanceof HTMLImageElement && body.contains(t)) blockImage(t)
+      if (!(t instanceof HTMLImageElement) || !body.contains(t)) return
+      const box = blockImage(t)
+      for (const b of shown.current) {
+        const at = b.nodes.indexOf(t)
+        if (at >= 0) b.nodes[at] = box
+      }
     }
     const onKeyDown = (ev: KeyboardEvent): void => {
       if (ev.key !== 'Enter' && ev.key !== ' ') return
@@ -274,7 +370,7 @@ export function PreviewViewer({
       body.removeEventListener('keydown', onKeyDown)
       body.removeEventListener('error', onError, true)
     }
-  }, [item.kind])
+  }, [item.kind, token])
 
   useEffect(() => {
     if (!zoom) return
@@ -290,14 +386,13 @@ export function PreviewViewer({
   }, [zoom])
 
   // PLATFORM§25
-  const mdHtml = useMemo(() => ({ __html: html }), [html])
   const zoomHtml = useMemo(() => ({ __html: zoom?.svg ?? '' }), [zoom])
 
   switch (item.kind) {
     case 'markdown':
       return (
         <div className="md-wrap">
-          <div className="md-body" ref={bodyRef} dangerouslySetInnerHTML={mdHtml} />
+          <div className="md-body" ref={bodyRef} />
           {zoom && (
             <div
               className="mmd-zoom"

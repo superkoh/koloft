@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { renderMarkdown } from '../../src/renderer/src/markdown/index'
+import { renderBlocks } from '../../src/renderer/src/markdown/render'
+import '../../src/renderer/src/markdown/index'
 
 vi.mock('dompurify', () => ({
   default: {
@@ -27,7 +28,10 @@ function sanitizedAttrs(attrs: Record<string, string>): Record<string, string> {
 }
 
 const SRC = '/ws/docs/design.md'
-const render = (text: string) => renderMarkdown(text, { srcPath: SRC })
+const render = async (text: string) => {
+  const doc = await renderBlocks(text, { srcPath: SRC, token: 'T' })
+  return { ...doc, html: doc.blocks.join('') }
+}
 const SHIKI_2000_LINES_TIMEOUT_MS_ON_A_BUSY_MACHINE = 60_000
 
 function payload(html: string): string {
@@ -227,6 +231,25 @@ describe('renderMarkdown', () => {
     expect(sanitizedAttrs({ style: 'background:url(koloft-file://localhost/ws/bg.png)' })).toEqual({
       style: 'background:url(koloft-file://localhost/ws/bg.png)'
     })
+  })
+
+  it('hands back each top-level block on its own, so a big document can be put on screen a piece at a time', async () => {
+    const doc = await render('# a\n\npara\n\n- x\n- y\n\n> quote\n')
+    expect(doc.blocks).toEqual([
+      '<h1 id="a">a</h1>\n',
+      '<p>para</p>\n',
+      '<ul>\n<li>x</li>\n<li>y</li>\n</ul>\n',
+      '<blockquote>\n<p>quote</p>\n</blockquote>\n'
+    ])
+  })
+
+  it('keeps raw HTML that opens in one block and closes in a later one inside a single block, so sanitizing it alone cannot cut the element in two', async () => {
+    const doc = await render('intro\n\n<details>\n\n**inside**\n\n</details>\n\nafter\n')
+    expect(doc.blocks).toHaveLength(3)
+    expect(doc.blocks[1]).toContain('<details>')
+    expect(doc.blocks[1]).toContain('<strong>inside</strong>')
+    expect(doc.blocks[1]).toContain('</details>')
+    expect(doc.blocks[2]).toBe('<p>after</p>\n')
   })
 
   it('renders an empty document without throwing', async () => {
