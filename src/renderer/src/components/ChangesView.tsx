@@ -198,6 +198,18 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     if (manual) failed.current = false
     setLoad((l) => (l.pending ? l : { ...l, pending: true }))
 
+    const leftTheChangeSet = Object.keys(expandedRef.current).filter((p) => !(p in git))
+    if (leftTheChangeSet.length) {
+      const drop = <T,>(prev: Record<string, T>): Record<string, T> => {
+        const next = { ...prev }
+        for (const p of leftTheChangeSet) delete next[p]
+        return next
+      }
+      expandedRef.current = drop(expandedRef.current)
+      setExpanded(drop)
+      setExpandCut(drop)
+    }
+
     const mine = ++seq.current
     const arg = baseArg(base)
     let cancelled = false
