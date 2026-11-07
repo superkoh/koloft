@@ -4,6 +4,7 @@ import path from 'path'
 import {
   HIDDEN_BY_DEFAULT_NAMES,
   type BaseChoice,
+  type DirChangeListener,
   type DirEntry,
   type EditCreateResult,
   type EditFingerprint,
@@ -944,8 +945,8 @@ export class SshHost implements Host {
   }
 
   // PLATFORM§57
-  watchDir(dir: string, onChange: (dir: string) => void): boolean {
-    this.deps.watch(this.bare(dir), () => onChange(dir))
+  watchDir(dir: string, onChange: DirChangeListener): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir, { listsChanged: [dir], replacedTrees: [] }))
     return false
   }
 
