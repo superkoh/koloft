@@ -24,6 +24,7 @@ export const MUSE_WRAP_PY = `#!/usr/bin/env python3
 import fcntl, json, os, pty, re, select, signal, subprocess, sys, termios, time, tty
 
 ${STATUS_RELAY_DEFS_PY}
+HELD_STARTS = (OPEN,)
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
 LOG_MARKS = (${REMOTE_LOG_MARKS.map(pyBytes).join(', ')},)

@@ -44,19 +44,24 @@ const TMUX_READ_ALL_BEFORE = '\x1b[5n'
 const TMUX_HAS_READ = '\x1b[0n'
 const TMUX_TAKES_SYNC = '\x1b[?2026;2$y'
 
-function fakeTmux(takesSync: boolean, frameReadsAnswered: number) {
+const TMUX_ANSWERS_A_FRAME_READ_AFTER_MS = 300
+
+function fakeTmux(takesSync: boolean) {
   let asks = 0
-  const answeredAt: number[] = []
+  let latest = ''
+  const closedBeforeAnswer: boolean[] = []
   const onOutput = (out: string, stdin: NodeJS.WritableStream): void => {
+    latest = out
     for (; asks < count(out, TMUX_READ_ALL_BEFORE); asks++) {
       if (asks === 0) stdin.write((takesSync ? TMUX_TAKES_SYNC : '') + TMUX_HAS_READ)
-      else if (answeredAt.length < frameReadsAnswered) {
-        answeredAt.push(out.length)
-        setTimeout(() => stdin.write(TMUX_HAS_READ), 100)
-      }
+      else
+        setTimeout(() => {
+          closedBeforeAnswer.push(latest.endsWith(throughTmux(SYNC_OFF)))
+          stdin.write(TMUX_HAS_READ)
+        }, TMUX_ANSWERS_A_FRAME_READ_AFTER_MS)
     }
   }
-  return { answeredAt, onOutput }
+  return { closedBeforeAnswer, onOutput }
 }
 
 const FRAMING_CLAUDE_JS = `
@@ -122,8 +127,8 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       expect(count(out.slice(working), throughTmux(WORKING))).toBe(1)
     }, 20_000)
 
-    it("under a tmux that does not answer claude's synchronized-output question (before 3.7), answers yes itself and carries each frame past tmux as a passthrough window that closes only once tmux says it has read the whole frame — or a quarter second later without that — never handing claude tmux's answer", async () => {
-      const tmux = fakeTmux(false, 1)
+    it("under a tmux that does not answer claude's synchronized-output question (before 3.7), answers yes itself and carries each frame past tmux as a passthrough window that closes only once tmux says it has read the whole frame, never handing claude tmux's answers", async () => {
+      const tmux = fakeTmux(false)
       const { code, out } = await runRelay(FRAMING_CLAUDE_JS, tmux.onOutput)
       expect(code).toBe(0)
       expect(out).toContain(SYNC_ASK + TMUX_READ_ALL_BEFORE)
@@ -131,13 +136,13 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       const window = (text: string): string =>
         throughTmux(SYNC_ON) + text + TMUX_READ_ALL_BEFORE + throughTmux(SYNC_OFF)
       expect(out).toContain(window('frame-one'))
-      expect(out.indexOf(throughTmux(SYNC_OFF))).toBeGreaterThanOrEqual(tmux.answeredAt[0])
       expect(out).toContain(window('frame-two'))
       expect(count(out, throughTmux(SYNC_OFF))).toBe(2)
+      expect(tmux.closedBeforeAnswer).toEqual([false, false])
     }, 20_000)
 
     it("under a tmux that takes synchronized output itself (3.7 and later), hands claude tmux's own answer and passes claude's frames through untouched", async () => {
-      const { code, out } = await runRelay(FRAMING_CLAUDE_JS, fakeTmux(true, 0).onOutput)
+      const { code, out } = await runRelay(FRAMING_CLAUDE_JS, fakeTmux(true).onOutput)
       expect(code).toBe(0)
       expect(out).not.toContain('LEAKED')
       expect(out).toContain(SYNC_ON + 'frame-one' + SYNC_OFF)
