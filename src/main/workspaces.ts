@@ -60,9 +60,12 @@ import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
 import { isUnderAnyRoot } from './browserSecurity'
 import { mergeUse } from '@shared/firstRun'
+import { BackgroundFile } from './backgroundFile'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
+// CC§2
+const A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS = 30_000
 const A_REMOVED_WORKTREE_SESSION_ENDS_WITHIN_MS = 10_000
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
@@ -76,13 +79,22 @@ interface ListedTranscript {
   hasTitleSidecar: boolean
 }
 
-interface HeadScan {
+interface FileStamp {
   size: number
   mtimeMs: number
+  ino: number
+}
+
+interface HeadScan extends FileStamp {
   meta: Partial<SessionMeta>
   // CC§2
   final: boolean
-  tail?: { size: number; mtimeMs: number; tail: JsonlTail }
+  tail?: FileStamp & { tail: JsonlTail }
+}
+
+interface HeadCacheFile {
+  version: string
+  heads: [string, HeadScan][]
 }
 
 export interface LiveSession {
@@ -111,6 +123,7 @@ export interface WorkspaceManagerDeps {
   additionalMembers?(): Set<string>
   additionalFolders?(): Promise<DiscoveredFolder[]>
   projectsRoot: string
+  headCache?: { file: string; version: string }
   loadLayout(): LayoutV6
   saveLayout(layout: LayoutV6): void
   projectInfo(p: string): ProjectInfo
@@ -137,6 +150,19 @@ export interface WorkspaceManagerDeps {
   butlerFolder?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
+}
+
+async function stampOf(file: string): Promise<FileStamp | undefined> {
+  try {
+    const st = await fs.promises.stat(file)
+    return { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino }
+  } catch {
+    return undefined
+  }
+}
+
+function sameStamp(a: FileStamp, b: FileStamp): boolean {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino
 }
 
 function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
@@ -252,18 +278,47 @@ export class WorkspaceManager {
   private disposed = false
   private headScans = new Map<string, HeadScan>()
   private headScansSeen = new Set<string>()
-  private statByFile = new Map<string, { size: number; mtimeMs: number }>()
+  private headCacheLoaded: Promise<void> = Promise.resolve()
+  private headDisk?: BackgroundFile
+  private headScansChanged = false
+  private headCacheSavedOnce = false
+  private statByFile = new Map<string, FileStamp>()
   private knownTranscripts = new Set<string>()
+  private appendedTranscripts = new Set<string>()
+  private fullScanAsked = true
+  private lookedEverywhereAt = 0
   private worktreeDirsByStamp = new Map<string, { stamp: number; dirs: string[] }>()
   private lastAdditionalKey = ''
 
   constructor(private deps: WorkspaceManagerDeps) {
     this.layout = deps.loadLayout()
+    const cache = deps.headCache
+    if (cache) this.headDisk = new BackgroundFile(() => cache.file)
   }
 
   start(): void {
+    this.headCacheLoaded = this.loadHeadCache()
     this.watchRoots()
     this.scheduleRescan()
+  }
+
+  private async loadHeadCache(): Promise<void> {
+    const cache = this.deps.headCache
+    if (!cache) return
+    try {
+      const saved = JSON.parse(await fs.promises.readFile(cache.file, 'utf8')) as HeadCacheFile
+      if (saved.version !== cache.version) return
+      for (const [file, head] of saved.heads)
+        if (!this.headScans.has(file)) this.headScans.set(file, head)
+    } catch {}
+  }
+
+  private saveHeadCache(): void {
+    const cache = this.deps.headCache
+    if (!cache || !this.headScansChanged) return
+    this.headScansChanged = false
+    const saved: HeadCacheFile = { version: cache.version, heads: [...this.headScans] }
+    this.headDisk?.write(JSON.stringify(saved))
   }
 
   rows(): WorkspaceRows[] {
@@ -367,6 +422,10 @@ export class WorkspaceManager {
     return this.bucketDirById.get(sessionId)
   }
 
+  transcriptFileOf(sessionId: string): string | undefined {
+    return this.transcriptFileById.get(sessionId)
+  }
+
   isMember(sessionId: string): boolean {
     return (
       this.layout.members.includes(sessionId) || !!this.deps.additionalMembers?.().has(sessionId)
@@ -410,7 +469,7 @@ export class WorkspaceManager {
 
   // CC§2
   private async claudeUsedFolders(): Promise<DiscoveredFolder[]> {
-    const stats = new Map<string, { size: number; mtimeMs: number }>()
+    const stats = new Map<string, FileStamp>()
     const projects = this.deps.projectsRoot
     const used: DiscoveredFolder[] = []
     for (const slug of await this.listProjectSlugs(projects)) {
@@ -709,6 +768,8 @@ export class WorkspaceManager {
   dispose(): void {
     this.disposed = true
     this.flushPanelSave()
+    this.saveHeadCache()
+    this.headDisk?.flushSync()
     if (this.timer) clearTimeout(this.timer)
     for (const done of this.scanWaiters.splice(0)) done()
     for (const w of this.rootWatchers.values()) w.close()
@@ -774,6 +835,11 @@ export class WorkspaceManager {
   }
 
   private scheduleRescan(): void {
+    this.fullScanAsked = true
+    this.armRescan()
+  }
+
+  private armRescan(): void {
     if (this.disposed || this.timer) return
     this.timer = setTimeout(() => {
       this.timer = undefined
@@ -796,23 +862,39 @@ export class WorkspaceManager {
       for (const done of waiting) done()
       if (this.rescanQueued) {
         this.rescanQueued = false
-        this.scheduleRescan()
+        this.armRescan()
       }
     }
   }
 
   private async doRescan(): Promise<void> {
+    await this.headCacheLoaded
     this.watchRoots()
 
+    const appended = [...this.appendedTranscripts]
+    this.appendedTranscripts.clear()
+    const everywhere =
+      this.fullScanAsked ||
+      appended.length === 0 ||
+      Date.now() - this.lookedEverywhereAt >= A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS
+    this.fullScanAsked = false
+    if (everywhere) this.lookedEverywhereAt = Date.now()
+    const boundAtStart = this.deps.runningBindings()
     this.headScansSeen.clear()
-    this.statByFile.clear()
+    if (everywhere) this.statByFile.clear()
+    else {
+      for (const file of appended) this.statByFile.delete(file)
+      for (const id of boundAtStart.keys()) {
+        const file = this.transcriptFileById.get(id)
+        if (file) this.statByFile.delete(file)
+      }
+    }
     const slugsByRoot = new Map<string, Promise<string[]>>()
     const slugsOf = (root: string): Promise<string[]> => {
       let v = slugsByRoot.get(root)
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
     }
-    const boundAtStart = this.deps.runningBindings()
     this.lastRunningKey = [...boundAtStart.keys()].join(',')
     for (const [id, leaving] of this.leavingTheirWorktree) {
       const tab = boundAtStart.get(id)
@@ -943,12 +1025,33 @@ export class WorkspaceManager {
     this.state = { bucketDirs, workspaceSlugs }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
-      if (!this.headScansSeen.has(file)) this.headScans.delete(file)
+      if (this.headScansSeen.has(file)) continue
+      this.headScans.delete(file)
+      this.headScansChanged = true
     }
     this.knownTranscripts = new Set(this.statByFile.keys())
-    this.statByFile.clear()
+    if (everywhere) await this.dropMembersWithoutTranscript(slugsOf)
+    else if (appended.some((file) => !this.statByFile.has(file))) this.scheduleRescan()
 
-    // CC§2
+    this.bucketDirById = bucketDirById
+    this.transcriptFileById = transcriptFileById
+    const ordered = this.inLayoutOrder(payload)
+    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
+    this.allRowsCache = allRowsByWs
+    this.wsBySession = wsBySession
+    this.deps.pushRows(this.rowsCache)
+    this.firstScanDone()
+    if (!this.headCacheSavedOnce) {
+      this.headCacheSavedOnce = true
+      this.saveHeadCache()
+    }
+    this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
+  }
+
+  // CC§2
+  private async dropMembersWithoutTranscript(
+    slugsOf: (root: string) => Promise<string[]>
+  ): Promise<void> {
     const liveIds = new Set<string>()
     for (const root of this.roots()) {
       const slugs = await slugsOf(root)
@@ -978,16 +1081,6 @@ export class WorkspaceManager {
       this.layout = { ...this.layout, members, panels: gc.sessions, resident }
       this.deps.saveLayout(this.layout)
     }
-
-    this.bucketDirById = bucketDirById
-    this.transcriptFileById = transcriptFileById
-    const ordered = this.inLayoutOrder(payload)
-    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
-    this.allRowsCache = allRowsByWs
-    this.wsBySession = wsBySession
-    this.deps.pushRows(this.rowsCache)
-    this.firstScanDone()
-    this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
   }
 
   private async resolveBucketsReadingAhead(
@@ -1145,8 +1238,8 @@ export class WorkspaceManager {
       try {
         // PLATFORM§40
         const watcher = fs.watch(dir, (_event, filename) => {
-          if (filename && this.isLiveTranscript(path.join(dir, filename.toString()))) return
-          this.scheduleRescan()
+          if (!filename) return this.scheduleRescan()
+          this.onBucketEntryChanged(path.join(dir, filename.toString()))
         })
         watcher.on('error', () => {
           watcher.close()
@@ -1155,6 +1248,14 @@ export class WorkspaceManager {
         this.bucketWatchers.set(dir, watcher)
       } catch {}
     }
+  }
+
+  // PLATFORM§40
+  private onBucketEntryChanged(file: string): void {
+    if (this.isLiveTranscript(file)) return
+    if (!this.knownTranscripts.has(file)) return this.scheduleRescan()
+    this.appendedTranscripts.add(file)
+    this.armRescan()
   }
 
   private isLiveTranscript(file: string): boolean {
@@ -1208,13 +1309,10 @@ export class WorkspaceManager {
         .map(async (e) => {
           const file = path.join(dir, e.name)
           const id = e.name.slice(0, -'.jsonl'.length)
-          try {
-            const st = await fs.promises.stat(file)
-            stats.set(file, { size: st.size, mtimeMs: st.mtimeMs })
-            return { id, mtime: st.mtimeMs, hasTitleSidecar: files.has(id + '.title') }
-          } catch {
-            return null
-          }
+          const st = stats.get(file) ?? (await stampOf(file))
+          if (!st) return null
+          stats.set(file, st)
+          return { id, mtime: st.mtimeMs, hasTitleSidecar: files.has(id + '.title') }
         })
     )
     return found.filter((f): f is ListedTranscript => f !== null)
@@ -1232,24 +1330,17 @@ export class WorkspaceManager {
 
   private async scanHead(file: string, stats = this.statByFile): Promise<Partial<SessionMeta>> {
     this.headScansSeen.add(file)
-    let st = stats.get(file)
-    if (!st) {
-      try {
-        const s = await fs.promises.stat(file)
-        st = { size: s.size, mtimeMs: s.mtimeMs }
-      } catch {
-        st = undefined
-      }
-    }
+    const st = stats.get(file) ?? (await stampOf(file))
     const prev = this.headScans.get(file)
     if (prev && st) {
-      const same = prev.final
-        ? st.size >= prev.size
-        : st.size === prev.size && st.mtimeMs === prev.mtimeMs
+      const same = prev.final ? prev.ino === st.ino && st.size >= prev.size : sameStamp(prev, st)
       if (same) return prev.meta
     }
     const { meta, opened, eof } = await readJsonlHeadMeta(file)
-    if (st && opened) this.headScans.set(file, { ...st, meta, final: !eof })
+    if (st && opened) {
+      this.headScans.set(file, { ...st, meta, final: !eof })
+      this.headScansChanged = true
+    }
     return meta
   }
 
@@ -1257,9 +1348,12 @@ export class WorkspaceManager {
     const st = this.statByFile.get(file)
     const head = this.headScans.get(file)
     const prev = head?.tail
-    if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
+    if (prev && st && sameStamp(prev, st)) return prev.tail
     const tail = extractJsonlTail(await readJsonlTailLines(file, untilWorktreeRecord))
-    if (head && st) head.tail = { ...st, tail }
+    if (head && st) {
+      head.tail = { ...st, tail }
+      this.headScansChanged = true
+    }
     return tail
   }
 

@@ -3653,6 +3653,7 @@ app.whenReady().then(() => {
         )
       ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
     loadLayout,
     saveLayout,
     projectInfo: projectInfoFor,
