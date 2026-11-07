@@ -568,6 +568,18 @@ describe('MuseSessions turns from hooks', () => {
   })
 
   // MUSE§9
+  it('ends a turn whose last message has no words, as muse reports it with a null last_assistant_message, once, with an empty reply', async () => {
+    const id = await boundTab()
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'tidy up', turn_id: 't1' })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: null, turn_id: 't1' })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: null, turn_id: 't1' })
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('turn-ended')[0]).toMatchObject({
+      turn: { reply: '', said: [{ who: 'owner', text: 'tidy up' }] }
+    })
+  })
+
+  // MUSE§9
   it('hands on the reply of a turn muse answers by itself without a Stop hook, like a bare first "hello", from the session log, and only once when Stop does come', async () => {
     const id = await boundTab()
     const run = (turnId: string, event: Record<string, unknown>): Record<string, unknown> => ({

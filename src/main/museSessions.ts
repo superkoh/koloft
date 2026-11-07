@@ -871,6 +871,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
   }
 
+  // MUSE§9
   private endTurn(run: MuseRun, turnId: string, reply: string): void {
     if (!turnId || run.endedTurns.has(turnId)) return
     run.endedTurns.add(turnId)
@@ -882,7 +883,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       at
     }
     this.deps.events(run.tabId, { type: 'stop' })
-    if (reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+    this.deps.events(run.tabId, { type: 'turn-ended', turn })
     void this.markServers(run)
   }
 
