@@ -208,6 +208,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     trustFolder: () => {},
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
+    homeOf: () => undefined,
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
     builtInStatusLine: () => true,
