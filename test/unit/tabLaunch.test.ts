@@ -394,6 +394,15 @@ it("lets a Claude Code tab on this Mac run koloft without asking only when it br
   expect(await claudeTab(repo, {}, false)).toContain('"allowKoloft":false')
 })
 
+it('tells a Claude Code tab on this Mac to wrap every frame in synchronized output and scroll by region, and leaves one over SSH (inside tmux, where the switch does nothing) as it was', async () => {
+  const local = await claudeTab(repo, {})
+  expect(local).toContain('"CLAUDE_CODE_FORCE_SYNC_OUTPUT":"1"')
+  expect(local).toContain('"CLAUDE_CODE_DECSTBM":"1"')
+  const remote = await claudeTab(`ssh://${MACHINE}${repo}`, {})
+  expect(remote).not.toContain('CLAUDE_CODE_FORCE_SYNC_OUTPUT')
+  expect(remote).not.toContain('CLAUDE_CODE_DECSTBM')
+})
+
 it("hands a Claude Code tab on this Mac the koloft-docs plugin with agent tools on and off, and Koloft's plugin only with them on", async () => {
   const docs = '"KOLOFT_DOCS_PLUGIN":"/koloft/docs-plugin"'
   expect(await claudeTab(repo, {})).toContain(docs)

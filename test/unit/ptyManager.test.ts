@@ -90,6 +90,26 @@ describe('PtyManager per-tab environment', () => {
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
   })
 
+  it("a Claude launch's synchronized-output switches outlive the strip of every inherited CLAUDE_CODE_* variable", () => {
+    process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT = 'inherited'
+    try {
+      const mgr = new PtyManager()
+      mgr.create({
+        kind: 'claude',
+        koloftShim: SHIM,
+        cwd: os.tmpdir(),
+        extraEnv: { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDE_CODE_DECSTBM: '1' }
+      })
+      expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBe('1')
+      expect(spawnedEnv().CLAUDE_CODE_DECSTBM).toBe('1')
+      mocks.spawn.mockClear()
+      mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
+      expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBeUndefined()
+    } finally {
+      delete process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
+    }
+  })
+
   it('prepends the shim dir to PATH and injects the tab / reg / open / hook env', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
