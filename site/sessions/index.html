@@ -236,9 +236,10 @@
           <li>
             One kind of dot goes once you look at it: a turn that only reports. That is a turn that
             ends while the session waits on other work Koloft can see (a session it started or wrote
-            to that is still busy, or a background job it left running), or, with Assist on, a turn
-            whose reply Assist reads as asking you for nothing. Hover the dot: it says "just letting
-            you know".
+            to that is still busy, or a background job it left running), a turn whose last line
+            plainly says nothing is left for you, like <code>Next for you: nothing.</code>, or, with
+            Assist on, a turn whose reply Assist reads as asking you for nothing. Hover the dot: it
+            says "just letting you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -297,7 +298,10 @@
                 <td>ends its turn and needs you</td>
                 <td>
                   <code>“…” finished and waits for you</code>, with the end of what it said and a
-                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it.
+                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it. With
+                  Assist on, when one tap could answer it, Assist writes a short question and 2 to 4
+                  replies in place of the box. Tap one to send it, with the question, or type in
+                  <code>Type your own answer…</code>.
                 </td>
               </tr>
               <tr>
@@ -336,6 +340,17 @@
             <code>Handled in its tab</code>. A finished-turn card closes as
             <code>It went on</code> once its <a href="#red-dots">red dot</a> goes, as when the
             session works again or you close its tab.
+          </li>
+          <li>
+            A card that still waits on you is still there after you quit and reopen Koloft. When a
+            question or an OK went away with its stopped session, the card keeps what it asked under
+            <code>It asked</code>, has no answer buttons, and says
+            <code
+              >Its session stopped after asking, so this no longer shows there and cannot be
+              answered here. Open the session and reply to it.</code
+            >
+            A Claude session on a remote folder keeps running while Koloft is closed, so its card
+            can still be answered.
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in
