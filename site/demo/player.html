@@ -84,15 +84,19 @@
       let lastStyles = ''
       let doc = ''
       let docAt = -1
+      function applyHunks(doc, hunks) {
+        for (let i = hunks.length - 1; i >= 0; i--) {
+          const [at, cut, text] = hunks[i]
+          doc = doc.slice(0, at) + text + doc.slice(at + cut)
+        }
+        return doc
+      }
       function decode(frames, n) {
         if (n < docAt) {
           doc = ''
           docAt = -1
         }
-        while (docAt < n) {
-          const [p, s, mid] = frames[++docAt].d
-          doc = doc.slice(0, p) + mid + doc.slice(doc.length - s)
-        }
+        while (docAt < n) doc = applyHunks(doc, frames[++docAt].d)
         const [root, portals] = doc.split('\u0001')
         return { root, portals: portals ? portals.split('\u0002') : [] }
       }
