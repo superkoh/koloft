@@ -61,7 +61,10 @@
 }
 .cv-blk {
   content-visibility: auto;
-  contain-intrinsic-size: auto 600px;
+  contain-intrinsic-size: auto calc(32px + var(--hunks) * 39px + var(--rows) * 20px);
+}
+.cv-undrawn {
+  height: calc(var(--rows) * 1.6em);
 }
 .cv-blk + .cv-blk {
   border-top: 1px solid var(--line);

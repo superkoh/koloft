@@ -62,6 +62,7 @@ const CV = {
   expand: '.cv-exp:not(.cv-cmt)',
   hunk: '.cv-hunk',
   diffRow: '.idiff-row',
+  undrawn: '.cv-undrawn-code',
   token: '.idiff-code > span',
   special: '.cv-special',
   total: '.wb-panel .cv-total',
@@ -901,7 +902,8 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       }
     })
 
-  test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
+  test('WB-C16: only the blocks that have been scrolled to draw their rows and get syntax-highlighted — an unscrolled block has ZERO rows and tokens, yet ⌘F still finds its text — and nothing is truncated or dropped to afford it', async ({
+    app,
     page,
     env
   }) => {
@@ -918,16 +920,29 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(first.locator(CV.diffRow).first()).toBeVisible()
     await expect.poll(() => first.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
 
-    expect(await far.locator(CV.diffRow).count()).toBeGreaterThan(0)
-    expect.soft(await far.locator(CV.token).count()).toBe(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(0)
+    expect(await far.locator(CV.token).count()).toBe(0)
+    const undrawnLines = await far
+      .locator(CV.undrawn)
+      .evaluate((el) => (el.textContent ?? '').split('\n').length)
+    expect(undrawnLines).toBeGreaterThan(0)
     expect(await page.locator(CV.banner).count()).toBe(0)
     expect(await page.locator('.wb-panel .idiff-hint').count()).toBe(0)
+
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('part6rewritten_')
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/900$/)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
       el.scrollTop = y
     }, top)
     await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(undrawnLines)
+    await expect(bar.locator('.find-count')).toHaveText(/\/900$/)
     expect(await first.locator(CV.token).count()).toBeGreaterThan(0)
   })
 

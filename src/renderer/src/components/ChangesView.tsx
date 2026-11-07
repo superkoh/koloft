@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type JSX,
   type MouseEvent as ReactMouseEvent,
   type RefObject
@@ -24,11 +25,13 @@ import {
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
+  blocksPastBudget,
   buildEntries,
   commentBlocked,
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
+  hunkRowCount,
   isBigDiff,
   mergeSections,
   nearViewport,
@@ -126,6 +129,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const [opened, setOpened] = useState<Record<string, boolean>>({})
   const [blockView, setBlockView] = useState<Record<string, 'diff' | 'source'>>({})
   const [seen, setSeen] = useState<Record<string, true>>({})
+  const seenRef = useRef(seen)
+  seenRef.current = seen
   const [load, setLoad] = useState<LoadState>(IDLE_LOAD)
   const [retryNonce, setRetryNonce] = useState(0)
   const [current, setCurrent] = useState<string | null>(null)
@@ -299,18 +304,25 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       const box = el.getBoundingClientRect()
       if (box.height > 0 && nearViewport(box, view)) hit.push(p)
     }
-    if (!hit.length) return
-    setSeen((prev) => {
-      const next = { ...prev }
-      let added = false
-      for (const p of hit) {
-        if (!next[p]) {
-          next[p] = true
-          added = true
-        }
+    const prev = seenRef.current
+    if (hit.every((p) => prev[p])) return
+    const next = { ...prev }
+    for (const p of hit) next[p] = true
+    const blockOf = new Map<string, HTMLElement>()
+    for (const el of watched.current) if (el.dataset.abs) blockOf.set(el.dataset.abs, el)
+    const selection = document.getSelection()
+    const forget = blocksPastBudget(
+      Object.keys(next),
+      (p) => Number(blockOf.get(p)?.dataset.rows ?? 0),
+      (p) => {
+        const el = blockOf.get(p)
+        if (!el) return false
+        return nearViewport(el.getBoundingClientRect(), view) || !!selection?.containsNode(el, true)
       }
-      return added ? next : prev
-    })
+    )
+    for (const p of forget) delete next[p]
+    seenRef.current = next
+    setSeen(next)
   }, [])
 
   const ensureObs = useCallback((): IntersectionObserver | null => {
@@ -617,6 +629,8 @@ const ChangeBlock = memo(function ChangeBlock({
     () => (parsable && !folded ? splitHunks(diffText) : []),
     [parsable, folded, diffText]
   )
+  const rows = useMemo(() => hunks.reduce((n, h) => n + hunkRowCount(h.text), 0), [hunks])
+  const drawnSize = { '--rows': rows, '--hunks': hunks.length } as CSSProperties
 
   const body = ((): JSX.Element => {
     if (view === 'source') {
@@ -693,6 +707,8 @@ const ChangeBlock = memo(function ChangeBlock({
       data-kind={entry.kind}
       data-status={entry.status}
       data-ready={hasFinalHeight ? '1' : undefined}
+      data-rows={rows}
+      style={drawnSize}
       onContextMenu={(e) => onContextMenu(e, entry.path, false)}
     >
       <div className="cv-blk-hd">
@@ -877,25 +893,28 @@ function DiffRows({
 }): JSX.Element {
   const parsed = useMemo(() => parseUnifiedDiff(text), [text])
   if (seen) return <InlineDiff src={path} parsed={parsed} />
-  return <PlainRows parsed={parsed} />
+  return <UndrawnRows parsed={parsed} />
 }
 
-function PlainRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
+function UndrawnRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
   const rows = parsed.rows
   const truncated = rows.length > MAX_INLINE_ROWS
-  const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
+  const shown = truncated ? MAX_INLINE_ROWS : rows.length
+  const code = useMemo(
+    () =>
+      rows
+        .slice(0, shown)
+        .map((r) => r.text || ' ')
+        .join('\n'),
+    [rows, shown]
+  )
   return (
     <div className="idiff">
-      {shown.map((r, i) => (
-        <div key={i} className={'idiff-row idiff-' + r.kind} data-newno={r.newNo ?? undefined}>
-          <span className="idiff-num">{r.oldNo ?? ''}</span>
-          <span className="idiff-num">{r.newNo ?? ''}</span>
-          <span className="idiff-sign">
-            {r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ' '}
-          </span>
-          <span className="idiff-code">{r.text || ' '}</span>
+      <div className="cv-undrawn" style={{ '--rows': shown } as CSSProperties}>
+        <div className="cv-undrawn-code" hidden>
+          {code}
         </div>
-      ))}
+      </div>
       {truncated && (
         <div className="idiff-hint">
           Diff truncated — showing first {MAX_INLINE_ROWS} of {rows.length} lines.
