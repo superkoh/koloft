@@ -648,6 +648,11 @@ export interface DirEntry {
   ignored?: boolean
 }
 
+export interface DirChanges {
+  listsChanged: string[]
+  replacedTrees: string[]
+}
+
 // PLATFORM§3
 export interface EditFingerprint {
   mtimeMs: number
@@ -1260,7 +1265,7 @@ export interface KoloftApi {
     gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     watchDir(root: string): Promise<boolean>
     unwatchDir(root: string): void
-    onDirChange(cb: (root: string, changedDirs?: string[]) => void): () => void
+    onDirChange(cb: (root: string, changes?: DirChanges) => void): () => void
     watchFile(path: string): void
     unwatchFile(path: string): void
     // PLATFORM§28

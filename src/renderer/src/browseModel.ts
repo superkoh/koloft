@@ -1,5 +1,6 @@
 import type {
   BackendId,
+  DirChanges,
   DirEntry,
   GitNumstatMap,
   GitStatusMap,
@@ -239,17 +240,33 @@ export function sameEntries(a: readonly DirEntry[] | undefined, b: readonly DirE
 export const DIR_PAGE_ROWS = 500
 
 export function pageOfEntries(
+  dir: string,
   entries: readonly DirEntry[],
   pages: number,
-  keep: readonly (string | null | undefined)[]
-): { rows: readonly DirEntry[]; notShown: number } {
+  keep: readonly string[]
+): { rows: readonly DirEntry[]; notShown: number; nextPage: number } {
   const limit = pages * DIR_PAGE_ROWS
-  if (entries.length <= limit) return { rows: entries, notShown: 0 }
-  const wanted = keep.filter((k): k is string => !!k)
-  const rows = entries.filter(
-    (e, i) => i < limit || wanted.some((k) => k === e.path || k.startsWith(e.path + '/'))
+  if (entries.length <= limit) return { rows: entries, notShown: 0, nextPage: 0 }
+  const prefix = dir + '/'
+  const kept = new Set<string>()
+  for (const k of keep)
+    if (k.startsWith(prefix)) kept.add(prefix + k.slice(prefix.length).split('/')[0])
+  const rows: DirEntry[] = []
+  let nextPage = 0
+  entries.forEach((e, i) => {
+    if (i < limit || kept.has(e.path)) rows.push(e)
+    else if (i < limit + DIR_PAGE_ROWS) nextPage++
+  })
+  return { rows, notShown: entries.length - rows.length, nextPage }
+}
+
+export function foldersToRelist(open: Iterable<string>, changes: DirChanges | undefined): string[] {
+  const folders = [...open]
+  if (!changes) return folders
+  const lists = new Set(changes.listsChanged)
+  return folders.filter(
+    (d) => lists.has(d) || changes.replacedTrees.some((t) => d === t || d.startsWith(t + '/'))
   )
-  return { rows, notShown: entries.length - rows.length }
 }
 
 export function initialExpansion(saved: readonly string[] | null, root: string): Set<string> {

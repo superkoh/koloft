@@ -7,6 +7,7 @@ import {
   buildSyn,
   changedDirsOf,
   deltaFor,
+  foldersToRelist,
   hiddenTouchedUnder,
   hitDir,
   inRoot,
@@ -414,19 +415,50 @@ describe('pageOfEntries', () => {
     isDir: false
   }))
 
+  const many = `${ROOT}/many`
+
   it('a big folder shows one page at first, and each Show more adds one more page', () => {
-    expect(pageOfEntries(big, 1, []).rows).toHaveLength(DIR_PAGE_ROWS)
-    expect(pageOfEntries(big, 1, []).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
-    expect(pageOfEntries(big, 2, []).rows).toHaveLength(DIR_PAGE_ROWS * 2)
-    expect(pageOfEntries(big, 4, [])).toEqual({ rows: big, notShown: 0 })
+    expect(pageOfEntries(many, big, 1, []).rows).toHaveLength(DIR_PAGE_ROWS)
+    expect(pageOfEntries(many, big, 1, []).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
+    expect(pageOfEntries(many, big, 2, []).rows).toHaveLength(DIR_PAGE_ROWS * 2)
+    expect(pageOfEntries(many, big, 3, []).nextPage).toBe(7)
+    expect(pageOfEntries(many, big, 4, [])).toEqual({ rows: big, notShown: 0, nextPage: 0 })
   })
 
-  it('the open file and the file the agent is writing stay shown past the page, with the folder that holds them', () => {
+  it('a file to keep in sight (open, being written, written or changed) stays shown past the page, with the folder that holds it, and Show more counts only rows it will add', () => {
     const late = big[DIR_PAGE_ROWS + 3]
-    const dir: DirEntry = { name: 'zz', path: `${ROOT}/many/zz`, isDir: true }
+    const dir: DirEntry = { name: 'zz', path: `${many}/zz`, isDir: true }
     const list = [...big, dir]
-    const { rows, notShown } = pageOfEntries(list, 1, [late.path, dir.path + '/deep/file.ts'])
+    const { rows, notShown, nextPage } = pageOfEntries(many, list, 1, [
+      late.path,
+      dir.path + '/deep/file.ts',
+      `${ROOT}/elsewhere.ts`
+    ])
     expect(rows.slice(DIR_PAGE_ROWS)).toEqual([late, dir])
     expect(notShown).toBe(list.length - DIR_PAGE_ROWS - 2)
+    expect(nextPage).toBe(DIR_PAGE_ROWS - 1)
+  })
+})
+
+describe('foldersToRelist', () => {
+  const open = [ROOT, `${ROOT}/src`, `${ROOT}/out`, `${ROOT}/out/assets`, `${ROOT}/lib`]
+
+  it('a write re-lists only the open folder that holds it', () => {
+    expect(
+      foldersToRelist(open, {
+        listsChanged: [`${ROOT}/src`],
+        replacedTrees: [`${ROOT}/src/a.ts`]
+      })
+    ).toEqual([`${ROOT}/src`])
+  })
+
+  it('a folder replaced by a move re-lists it, its parent and every open folder under it', () => {
+    expect(foldersToRelist(open, { listsChanged: [ROOT], replacedTrees: [`${ROOT}/out`] })).toEqual(
+      [ROOT, `${ROOT}/out`, `${ROOT}/out/assets`]
+    )
+  })
+
+  it('a change with no folder list re-lists every open folder', () => {
+    expect(foldersToRelist(open, undefined)).toEqual(open)
   })
 })

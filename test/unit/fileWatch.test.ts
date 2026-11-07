@@ -10,6 +10,7 @@ import {
   unwatchDir,
   closeAllDirWatchers
 } from '../../src/main/fileWatch'
+import type { DirChanges } from '../../src/shared/types'
 
 let dir: string
 let file: string
@@ -190,21 +191,36 @@ describe('watchDir (recursive dir watcher)', () => {
   it('names the folders whose list of names may have changed, so Browse re-lists only those and not every open folder', async () => {
     const sub = path.join(dir, 'a', 'b')
     fs.mkdirSync(sub, { recursive: true })
-    const reports: (string[] | undefined)[] = []
-    expect(watchDir(dir, (_r, changed) => reports.push(changed))).toBe(true)
+    const reports: (DirChanges | undefined)[] = []
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 
     fs.writeFileSync(path.join(sub, 'new.txt'), 'x')
     expect(await until(() => reports.length > 0)).toBe(true)
-    expect(reports[0]).toContain(sub)
-    expect(reports[0]).not.toContain(dir)
+    expect(reports[0]?.listsChanged).toContain(sub)
+    expect(reports[0]?.listsChanged).not.toContain(dir)
+  })
+
+  it('names a folder moved into place as a replaced tree, so its open subfolders re-list though no event came from inside it', async () => {
+    const staged = path.join(dir, 'out.tmp')
+    fs.mkdirSync(path.join(staged, 'assets'), { recursive: true })
+    fs.writeFileSync(path.join(staged, 'assets', 'a.js'), 'x')
+    const reports: (DirChanges | undefined)[] = []
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
+    await sleep(700)
+    reports.length = 0
+
+    fs.renameSync(staged, path.join(dir, 'out'))
+    expect(
+      await until(() => reports.some((r) => r?.replacedTrees.includes(path.join(dir, 'out'))))
+    ).toBe(true)
   })
 
   it('reports no folder list when a .gitignore changes, since that can hide or show files in every folder under it', async () => {
     fs.writeFileSync(path.join(dir, '.gitignore'), 'a\n')
-    const reports: (string[] | undefined)[] = []
-    expect(watchDir(dir, (_r, changed) => reports.push(changed))).toBe(true)
+    const reports: (DirChanges | undefined)[] = []
+    expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 

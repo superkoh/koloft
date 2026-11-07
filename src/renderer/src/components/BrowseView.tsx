@@ -11,6 +11,7 @@ import {
 import { IconClose, IconFile, IconFolder, IconFolderOpen, IconStar } from '../icons'
 import type {
   ContentHit,
+  DirChanges,
   DirEntry,
   EditCreateResult,
   GitNumstatMap,
@@ -30,6 +31,7 @@ import {
   buildSyn,
   changedDirsOf,
   deltaFor,
+  foldersToRelist,
   hiddenTouchedUnder,
   hitDir,
   initialExpansion,
@@ -217,6 +219,7 @@ export function BrowseView({
   showIgnoredRef.current = showIgnored
   const childrenRef = useRef(children)
   childrenRef.current = children
+  const listAsksRef = useRef(new Map<string, number>())
 
   const home = window.api.home
   const scratchpadDir = session?.scratchpadDir
@@ -226,11 +229,14 @@ export function BrowseView({
     if (loadedRef.current.has(dir)) return
     loadedRef.current.add(dir)
     const gen = genRef.current
+    const ask = (listAsksRef.current.get(dir) ?? 0) + 1
+    listAsksRef.current.set(dir, ask)
+    const stale = (): boolean => gen !== genRef.current || ask !== listAsksRef.current.get(dir)
     const showsLoading = childrenRef.current[dir] === undefined
     if (showsLoading) setLoading((s) => new Set(s).add(dir))
     try {
       const entries = await window.api.fs.listDir(dir, { showIgnored: showIgnoredRef.current })
-      if (gen !== genRef.current) return
+      if (stale()) return
       setErrors((s) => {
         if (!s.has(dir)) return s
         const n = new Set(s)
@@ -239,8 +245,8 @@ export function BrowseView({
       })
       setChildren((m) => (sameEntries(m[dir], entries) ? m : { ...m, [dir]: entries }))
     } catch {
+      if (stale()) return
       loadedRef.current.delete(dir)
-      if (gen !== genRef.current) return
       setChildren((m) => ({ ...m, [dir]: [] }))
       setErrors((s) => new Set(s).add(dir))
     } finally {
@@ -263,13 +269,13 @@ export function BrowseView({
 
   const relistAllWhenShown = useRef(false)
   const relistChanged = useCallback(
-    (changedDirs?: readonly string[]): void => {
+    (changes?: DirChanges, alreadyRelisted: readonly (string | undefined)[] = []): void => {
       if (!activeRef.current) {
         relistAllWhenShown.current = true
         return
       }
-      const open = expandedRef.current
-      for (const d of changedDirs ?? open) if (open.has(d)) relist(d)
+      for (const d of foldersToRelist(expandedRef.current, changes))
+        if (!alreadyRelisted.includes(d)) relist(d)
     },
     [relist]
   )
@@ -308,8 +314,8 @@ export function BrowseView({
     window.api.fs.watchDir(root).then((live) => {
       if (watching) setTreeLive(live)
     })
-    const off = window.api.fs.onDirChange((changed, changedDirs) => {
-      if (changed === root) relistChanged(changedDirs)
+    const off = window.api.fs.onDirChange((changed, changes) => {
+      if (changed === root) relistChanged(changes)
     })
     return () => {
       watching = false
@@ -356,8 +362,8 @@ export function BrowseView({
   useEffect(() => {
     if (!active || !relistAllWhenShown.current) return
     relistAllWhenShown.current = false
-    for (const d of expandedRef.current) relist(d)
-  }, [active, relist])
+    relistChanged()
+  }, [active, relistChanged])
 
   // CC§2
   const scratchTimerRef = useRef<{ dir: string; t: ReturnType<typeof setTimeout> } | null>(null)
@@ -396,10 +402,10 @@ export function BrowseView({
     }
     relistWithScratch()
     window.api.fs.watchDir(dir)
-    const off = window.api.fs.onDirChange((changed, changedDirs) => {
+    const off = window.api.fs.onDirChange((changed, changes) => {
       if (changed !== dir) return
       relistWithScratch()
-      relistChanged(changedDirs)
+      relistChanged(changes, [dir, agyScratch])
     })
     return () => {
       off()
@@ -411,6 +417,11 @@ export function BrowseView({
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
   const live = livePath(session)
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
+  const keepShown = useMemo(
+    () =>
+      [current, live, ...idx.touchedInProject, ...Object.keys(git)].filter((p): p is string => !!p),
+    [current, live, idx.touchedInProject, git]
+  )
 
   const scratchEntries = useMemo(
     () =>
@@ -777,8 +788,16 @@ export function BrowseView({
     const hiddenNodes = hidden.length ? buildSyn(hidden, dir) : []
     if (visible.length === 0 && hiddenNodes.length === 0)
       return <div className="ft-hint bv-empty-dir">Empty</div>
-    const { rows, notShown } = pageOfEntries(visible, pages[dir] ?? 1, [current, live])
+    const shownPages = pages[dir] ?? 1
+    const { rows, notShown, nextPage } = pageOfEntries(dir, visible, shownPages, keepShown)
     const moreId = section + ':' + dir + ':more'
+    const showMore = (): void => {
+      setPages((m) => ({ ...m, [dir]: shownPages + 1 }))
+      if (kbdRow !== moreId) return
+      const shown = new Set(rows)
+      const first = visible.find((e, i) => i >= shownPages * DIR_PAGE_ROWS && !shown.has(e))
+      if (first) setKbdRow(section + ':' + first.path)
+    }
     return (
       <>
         {rows.map((e) =>
@@ -792,9 +811,9 @@ export function BrowseView({
             className={'ft-node' + kbdCls(moreId)}
             data-kind="more"
             data-row-id={moreId}
-            onClick={() => setPages((m) => ({ ...m, [dir]: (m[dir] ?? 1) + 1 }))}
+            onClick={showMore}
           >
-            <span className="ft-name">Show {Math.min(DIR_PAGE_ROWS, notShown)} more</span>
+            <span className="ft-name">Show {nextPage} more</span>
             <span className="ft-loc">{notShown} not shown</span>
           </div>
         )}

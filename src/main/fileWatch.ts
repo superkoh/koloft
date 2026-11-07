@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
+import type { DirChanges } from '@shared/types'
 import { passesHeavy } from './fileTree'
 
 // PLATFORM§28
@@ -43,7 +44,7 @@ export function closeAllFileWatchers(): void {
   entries.clear()
 }
 
-export type DirChangeListener = (root: string, changedDirs?: string[]) => void
+export type DirChangeListener = (root: string, changes?: DirChanges) => void
 
 interface DirWatch {
   watcher: fs.FSWatcher
@@ -53,6 +54,7 @@ interface DirWatch {
 }
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
+const CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS = 500
 
 function watchIgnored(filename: string | Buffer | null): boolean {
   if (!filename) return false
@@ -68,16 +70,24 @@ function closeWatcher(entry: DirWatch): void {
   } catch {}
 }
 
+// PLATFORM§28
 function noteChange(root: string, entry: DirWatch, filename: string | Buffer | null): void {
   if (!entry.changed) return
   const rel = filename === null ? '' : filename.toString()
-  if (!rel || path.basename(rel) === '.gitignore') {
+  if (
+    !rel ||
+    path.basename(rel) === '.gitignore' ||
+    entry.changed.size >= CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS
+  ) {
     entry.changed = null
     return
   }
-  const full = path.join(root, rel)
-  entry.changed.add(full)
-  entry.changed.add(path.dirname(full))
+  entry.changed.add(path.join(root, rel))
+}
+
+function changesOf(changedPaths: Set<string>): DirChanges {
+  const paths = [...changedPaths]
+  return { listsChanged: [...new Set(paths.map((p) => path.dirname(p)))], replacedTrees: paths }
 }
 
 function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
@@ -89,7 +99,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListene
       entry.timer = null
       const changed = entry.changed
       entry.changed = new Set()
-      onChange(root, changed ? [...changed] : undefined)
+      onChange(root, changed ? changesOf(changed) : undefined)
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
