@@ -603,14 +603,19 @@ export function BrowseView({
     if (grew) applyExpansion(next)
   }, [current])
 
+  const unrevealed = useRef<string | null>(null)
   useEffect(() => {
-    if (!current) return
-    const body = bodyRef.current
-    const row =
-      body?.querySelector('[data-section="tree"] .ft-node.active') ??
-      body?.querySelector('.ft-node.active')
-    row?.scrollIntoView({ block: 'nearest' })
-  }, [current, expanded])
+    unrevealed.current = current
+  }, [current])
+  useEffect(() => {
+    if (!unrevealed.current) return
+    const ownRow = bodyRef.current?.querySelector(
+      '.bv-sec:not([data-section="bookmarks"]):not([data-section="recents"]) .ft-node.active'
+    )
+    if (!ownRow) return
+    unrevealed.current = null
+    ownRow.scrollIntoView({ block: 'nearest' })
+  })
 
   const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')
   useEffect(() => {
