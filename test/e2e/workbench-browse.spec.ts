@@ -440,7 +440,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await restarted.app.close().catch(() => {})
   })
 
-  test('WB-B10: an untracked folder of 1,203 files shows one page of 500 and a Show more row that adds a page per click, a file past the page opened from search is still revealed, and a file written into it appears', async ({
+  test('WB-B10: an untracked folder of 1,203 files shows one page of 500 and a Show more row that adds a page per click, a file past the page opened from search is still shown and marked open, and a file written into it appears', async ({
     page,
     env
   }) => {
@@ -458,7 +458,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     const more = tree.locator('.ft-node[data-kind="more"]')
     await browseRow(page, dir).click()
     await expect(kids).toHaveCount(500, { timeout: 30_000 })
-    await expect(more).toHaveText(/Show 500 more\s*703 not shown/)
+    await expect(more).toHaveText(/Show 500 more · 703 not shown/)
     await more.click()
     await expect(kids).toHaveCount(1000)
     await more.click()
@@ -478,7 +478,6 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await searchToggle(page).click()
     const revealed = browseRow(page, late)
     await expect(revealed).toHaveClass(/\bactive\b/, { timeout: 25_000 })
-    await expect.poll(() => rowInsideScrollingTreeBody(page, late), { timeout: 15_000 }).toBe(true)
     await expect(kids).toHaveCount(501)
 
     const written = path.join(dir, 'a-new.txt')

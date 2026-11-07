@@ -819,8 +819,9 @@ export function BrowseView({
             data-row-id={moreId}
             onClick={showMore}
           >
-            <span className="ft-name">Show {Math.min(DIR_PAGE_ROWS, notShown)} more</span>
-            <span className="ft-loc">{notShown} not shown</span>
+            <span className="ft-name">
+              Show {Math.min(DIR_PAGE_ROWS, notShown)} more · {notShown} not shown
+            </span>
           </div>
         )}
         {hiddenNodes.length > 0 && renderSyn(hiddenNodes, section)}
