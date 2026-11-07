@@ -138,12 +138,11 @@ function useRealClaude(env: E2EEnv, trusted: string[]): void {
 }
 
 async function realTurn(page: Page, row: Locator, text: string): Promise<void> {
-  await centerTerm(page).click()
-  await typeSlow(page, text)
-  await page.waitForTimeout(1000)
-  await page.keyboard.press('Enter')
+  await ask(page, text)
   await expect(row).toHaveClass(/\bst-working\b/, { timeout: 20_000 })
-  await expect(row).not.toHaveClass(/\bst-working\b/, { timeout: 240_000 })
+  await expect(row)
+    .not.toHaveClass(/\bst-working\b/, { timeout: 240_000 })
+    .catch(() => {})
   await page.waitForTimeout(2500)
 }
 

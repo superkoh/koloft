@@ -2,11 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import vm from 'vm'
 import { describe, expect, it } from 'vitest'
-import { packFilm, type RawFrame } from '../e2e/helpers/siteFilm'
+import { packFilm, type Hunk, type RawFrame } from '../e2e/helpers/siteFilm'
 
 const SITE = path.join(__dirname, '..', '..', 'site')
-
-type Hunk = [at: number, cut: number, text: string]
+const DEMO = path.join(SITE, 'demo')
 
 interface PackedFrame {
   t: number
@@ -24,7 +23,10 @@ interface PackedFilm {
   marks: Record<string, number>
 }
 
-const FILMS = ['assist', 'browser', 'pal-jump', 'pal-search', 'pal-start', 'tree']
+const FILMS = fs
+  .readdirSync(DEMO)
+  .filter((f) => f.endsWith('.frames.js'))
+  .map((f) => f.replace(/\.frames\.js$/, ''))
 
 function readFilm(text: string): PackedFilm {
   const ctx = { window: {} as { KOLOFT_FRAMES?: PackedFilm } }
@@ -32,18 +34,13 @@ function readFilm(text: string): PackedFilm {
   return ctx.window.KOLOFT_FRAMES!
 }
 
-function playersApplyHunks(): (doc: string, hunks: Hunk[]) => string {
-  const player = fs.readFileSync(path.join(SITE, 'demo', 'player.html'), 'utf8')
-  const source = /function applyHunks\(doc, hunks\) \{[\s\S]*?\n {6}\}/.exec(player)![0]
-  return new Function(`${source}\nreturn applyHunks`)()
-}
+type Decode = (frames: PackedFrame[], n: number) => { root: string; portals: string[] }
 
 function unpack(film: PackedFilm): RawFrame[] {
-  const applyHunks = playersApplyHunks()
-  let doc = ''
-  return film.frames.map((f) => {
-    doc = applyHunks(doc, f.d)
-    const [root, portals] = doc.split('\u0001')
+  const player = {} as { decode: Decode }
+  vm.runInNewContext(fs.readFileSync(path.join(DEMO, 'film.js'), 'utf8'), player)
+  return film.frames.map((f, n) => {
+    const { root, portals } = player.decode(film.frames, n)
     return {
       t: f.t,
       w: f.w,
@@ -52,7 +49,7 @@ function unpack(film: PackedFilm): RawFrame[] {
       body: f.body,
       styles: f.s.map((i) => film.styles[i]),
       root,
-      portals: portals ? portals.split('\u0002') : []
+      portals
     }
   })
 }
@@ -88,11 +85,19 @@ describe('site films', () => {
   })
 
   it.each(FILMS)(
-    'the committed %s film is exactly what packFilm makes of the frames the player unpacks from it',
+    'the committed %s film plays the same frames after packFilm packs what the player unpacks from it',
     (name) => {
-      const text = fs.readFileSync(path.join(SITE, 'demo', `${name}.frames.js`), 'utf8')
-      const film = readFilm(text)
-      expect(packFilm([unpack(film)], film.marks)).toBe(text)
+      const film = readFilm(fs.readFileSync(path.join(DEMO, `${name}.frames.js`), 'utf8'))
+      const isHunk = (h: unknown): boolean =>
+        Array.isArray(h) &&
+        typeof h[0] === 'number' &&
+        typeof h[1] === 'number' &&
+        typeof h[2] === 'string'
+      expect(film.frames.every((f) => f.d.every(isHunk))).toBe(true)
+      const frames = unpack(film)
+      const again = readFilm(packFilm([frames], film.marks))
+      expect(unpack(again)).toEqual(frames)
+      expect(again.marks).toEqual(film.marks)
     }
   )
 

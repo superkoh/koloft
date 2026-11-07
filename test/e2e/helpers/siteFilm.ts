@@ -25,10 +25,8 @@ interface GuestView extends HTMLElement {
   }>
 }
 
-type ShotFrame = RawFrame & { styleHash: string }
-
-function frameOf(page: Page, knownStyleHash: string): Promise<ShotFrame> {
-  return page.evaluate(async (knownStyleHash) => {
+function frameOf(page: Page, firstOfFilm: boolean): Promise<RawFrame> {
+  return page.evaluate(async (firstOfFilm) => {
     for (const s of document.body.querySelectorAll('script')) s.remove()
     for (const t of document.querySelectorAll('textarea')) t.textContent = t.value
     for (const i of document.querySelectorAll('input')) i.setAttribute('value', i.value)
@@ -74,11 +72,11 @@ function frameOf(page: Page, knownStyleHash: string): Promise<ShotFrame> {
     for (const sheet of document.adoptedStyleSheets ?? [])
       styles.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
     const all = styles.join('\u0000')
-    let fnv = 0x811c9dc5
-    for (let i = 0; i < all.length; i++) fnv = Math.imul(fnv ^ all.charCodeAt(i), 0x01000193)
-    const styleHash = `${all.length}:${fnv >>> 0}`
-    return styleHash === knownStyleHash ? { ...frame, styleHash } : { ...frame, styleHash, styles }
-  }, knownStyleHash)
+    const sent = window as unknown as { __siteFilmStylesSent?: string }
+    if (!firstOfFilm && sent.__siteFilmStylesSent === all) return frame
+    sent.__siteFilmStylesSent = all
+    return { ...frame, styles }
+  }, firstOfFilm)
 }
 
 const TYPE_SLOW_CHUNK = 3
@@ -95,63 +93,51 @@ export async function typeSlow(
   }
 }
 
-export interface Reel {
-  shot(): Promise<void>
-  roll(ms: number, every?: number): Promise<void>
-  rollInBackground(every: number): void
-  mark(name: string): void
-  save(name: string): Promise<void>
-}
-
-export function reel(page: Page): Reel {
+export function reel(page: Page) {
   let frames: RawFrame[] = []
   let marks: Record<string, number> = {}
-  let styleHash = ''
   let shooting = false
-  let background: { on: boolean; loop: Promise<void> } | null = null
+  let stopBackground = async (): Promise<void> => {}
   const shot = async (): Promise<void> => {
     shooting = true
     const t = Date.now()
     try {
-      const frame = await frameOf(page, styleHash)
-      styleHash = frame.styleHash
-      frames.push({ t, ...frame })
+      frames.push({ t, ...(await frameOf(page, frames.length === 0)) })
     } finally {
       shooting = false
     }
   }
   return {
     shot,
-    async roll(ms, every = 150) {
+    async roll(ms: number, every = 150): Promise<void> {
       const end = Date.now() + ms
       while (Date.now() < end) {
         await shot()
         await page.waitForTimeout(every)
       }
     },
-    rollInBackground(every) {
-      const run = { on: true, loop: Promise.resolve() }
-      run.loop = (async () => {
-        while (run.on) {
+    rollInBackground(every: number): void {
+      let on = true
+      const loop = (async () => {
+        while (on) {
           await shot().catch(() => {})
           await new Promise((ok) => setTimeout(ok, every))
         }
       })()
-      background = run
+      stopBackground = async () => {
+        on = false
+        await loop
+      }
     },
-    mark(name) {
+    mark(name: string): void {
       marks[name] = frames.length + (shooting ? 1 : 0)
     },
-    async save(name) {
-      if (background) {
-        background.on = false
-        await background.loop
-        background = null
-      }
+    async save(name: string): Promise<void> {
+      await stopBackground()
+      stopBackground = async () => {}
       writeFilm(name, [frames], marks)
       frames = []
       marks = {}
-      styleHash = ''
     }
   }
 }
@@ -183,7 +169,7 @@ interface PlainFrame {
   portals: string[]
 }
 
-type Hunk = [at: number, cut: number, text: string]
+export type Hunk = [at: number, cut: number, text: string]
 type Run = { a0: number; a1: number; b0: number; b1: number }
 
 const MOST_TAG_EDITS_WORTH_DIFFING = 2000
@@ -274,7 +260,15 @@ function hunksBetween(prev: string, doc: string): Hunk[] {
       last[1] = at + cut - last[0]
     } else hunks.push([at, cut, text])
   }
-  return hunks
+  return hunks.map(([at, cut, text]) => {
+    const old = prev.slice(at, at + cut)
+    const most = Math.min(old.length, text.length)
+    let p = 0
+    while (p < most && old.charCodeAt(p) === text.charCodeAt(p)) p++
+    let s = 0
+    while (s < most - p && old.charCodeAt(cut - 1 - s) === text.charCodeAt(text.length - 1 - s)) s++
+    return [at + p, cut - p - s, text.slice(p, text.length - s)]
+  })
 }
 
 export function packFilm(takes: RawFrame[][], marks: Record<string, number>): string {
@@ -332,7 +326,7 @@ export function packFilm(takes: RawFrame[][], marks: Record<string, number>): st
   )
 }
 
-export function writeFilm(name: string, takes: RawFrame[][], marks: Record<string, number>): void {
+function writeFilm(name: string, takes: RawFrame[][], marks: Record<string, number>): void {
   fs.writeFileSync(path.join(SITE_DEMO, `${name}.frames.js`), packFilm(takes, marks))
 }
 
