@@ -373,6 +373,9 @@ export async function putCommentOnFirstHunkInSession(
   return `${rel}\n\`\`\`diff\n${header}\n`
 }
 
+export const viewedButton = (block: Locator): Locator =>
+  block.locator('.cv-blk-hd button', { hasText: /^✓ Viewed$/ })
+
 export async function commentOnFirstHunk(page: Page, rel: string, note: string): Promise<string> {
   const head = await putCommentOnFirstHunkInSession(page, rel, note)
   await page.keyboard.type(TYPED_AFTER_THE_PASTE)

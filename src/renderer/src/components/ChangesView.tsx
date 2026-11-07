@@ -20,6 +20,7 @@ import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
 import { isComposing, keepCaretInSessionTerminal } from '../keys'
+import { IconCheck } from '../icons'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
@@ -27,19 +28,25 @@ import {
   baseUnresolved,
   blocksPastBudget,
   buildEntries,
+  canMarkViewed,
   commentBlocked,
   emptyStreamMessage,
+  flagCutTail,
+  flipViewed,
   groupByDir,
   hunkPrompt,
   isBigDiff,
+  loadViewed,
   mergeSections,
   nearViewport,
   passesFilters,
+  saveViewed,
   sectionsByPath,
   splitAggregateDiff,
   splitHunks,
   stableEntries,
   totalDelta,
+  viewedNow,
   writtenPaths,
   type ChangeEntry,
   type DiffSection,
@@ -157,6 +164,19 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const groups = useMemo(() => groupByDir(shown), [shown])
   const totals = useMemo(() => totalDelta(shown), [shown])
 
+  const [marksFor, setMarksFor] = useState(() => ({ root, marks: loadViewed(root) }))
+  if (marksFor.root !== root) setMarksFor({ root, marks: loadViewed(root) })
+  const viewed = useMemo(() => viewedNow(marksFor.marks, sections), [marksFor, sections])
+  const viewedShown = useMemo(() => shown.filter((e) => viewed.has(e.path)).length, [shown, viewed])
+  const toggleViewed = useCallback(
+    (path: string, section: DiffSection): void => {
+      const marks = flipViewed(loadViewed(root), path, section)
+      saveViewed(root, marks)
+      setMarksFor({ root, marks })
+    },
+    [root]
+  )
+
   const resetStream = useCallback((): void => {
     setAgg({})
     setPerFile({})
@@ -215,7 +235,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       if (cancelled || mine !== seq.current) return
       const { text, truncated, notRepo, toplevel } = res
       const paths = Object.keys(git)
-      const secs = splitAggregateDiff(text)
+      const secs = flagCutTail(splitAggregateDiff(text), truncated)
       const map = sectionsByPath(secs, paths, toplevel)
       const wanted = truncated
         ? []
@@ -499,6 +519,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
             <span className="cv-total-n">
               {totals.files} {totals.files === 1 ? 'file' : 'files'}
               {totals.noCount > 0 && ` · ${totals.noCount} not counted`}
+              {viewedShown > 0 && ` · ${viewedShown} viewed`}
             </span>
             <span className="ft-delta">
               <span className="add">+{totals.added}</span>
@@ -516,11 +537,17 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                   className={'ft-node cv-row' + (current === e.rel ? ' active' : '')}
                   data-path={e.rel}
                   data-status={e.status}
+                  data-viewed={viewed.has(e.path) ? '1' : undefined}
                   title={e.rel}
                   onClick={() => clickRow(e)}
                   onContextMenu={(ev) => onContextMenu(ev, e.path, false)}
                 >
                   <span className="ft-name">{e.name}</span>
+                  {viewed.has(e.path) && (
+                    <span className="bv-bm" title="Viewed" aria-label="Viewed">
+                      <IconCheck size={10} />
+                    </span>
+                  )}
                   {e.delta && (e.delta.added > 0 || e.delta.removed > 0) && (
                     <span className="ft-delta">
                       {e.delta.added > 0 && <span className="add">+{e.delta.added}</span>}
@@ -554,6 +581,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                 view={blockView[e.path] ?? 'diff'}
                 sourceNonce={blockView[e.path] === 'source' ? refreshNonce : 0}
                 seen={!!seen[e.path]}
+                viewed={viewed.has(e.path)}
                 truncated={load.truncated}
                 cut={!!sections[e.path]?.truncated || !!expandCut[e.path]}
                 loading={
@@ -565,6 +593,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                 blocked={blocked}
                 onToggleExpand={toggleExpand}
                 onToggleOpen={toggleOpen}
+                onToggleViewed={toggleViewed}
                 onSetView={setView}
                 onSplit={splitBlock}
                 onContextMenu={onContextMenu}
@@ -584,6 +613,7 @@ interface BlockProps {
   view: 'diff' | 'source'
   sourceNonce: number
   seen: boolean
+  viewed: boolean
   truncated: boolean
   cut: boolean
   loading: boolean
@@ -591,6 +621,7 @@ interface BlockProps {
   blocked: string | null
   onToggleExpand: (path: string) => void
   onToggleOpen: (path: string) => void
+  onToggleViewed: (path: string, section: DiffSection) => void
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
@@ -605,6 +636,7 @@ const ChangeBlock = memo(function ChangeBlock({
   view,
   sourceNonce,
   seen,
+  viewed,
   truncated,
   cut,
   loading,
@@ -612,6 +644,7 @@ const ChangeBlock = memo(function ChangeBlock({
   blocked,
   onToggleExpand,
   onToggleOpen,
+  onToggleViewed,
   onSetView,
   onSplit,
   onContextMenu,
@@ -631,10 +664,10 @@ const ChangeBlock = memo(function ChangeBlock({
   const showsRows = view === 'diff' && (!special || opened)
   const hunks = useMemo(
     () =>
-      parsable && !folded && showsRows
+      parsable && !folded && !viewed && showsRows
         ? splitHunks(diffText).map((h) => ({ ...h, parsed: parseUnifiedDiff(h.text) }))
         : [],
-    [parsable, folded, showsRows, diffText]
+    [parsable, folded, viewed, showsRows, diffText]
   )
   const rows = hunks.reduce((n, h) => n + Math.min(h.parsed.rows.length, MAX_INLINE_ROWS), 0)
   const drawnSize = { '--rows': rows, '--hunks': hunks.length } as CSSProperties
@@ -703,7 +736,7 @@ const ChangeBlock = memo(function ChangeBlock({
     )
   })()
 
-  const hasFinalHeight = view === 'source' || special || folded || hunks.length > 0
+  const hasFinalHeight = viewed || view === 'source' || special || folded || hunks.length > 0
 
   return (
     <div
@@ -713,6 +746,7 @@ const ChangeBlock = memo(function ChangeBlock({
       data-abs={entry.path}
       data-kind={entry.kind}
       data-status={entry.status}
+      data-viewed={viewed ? '1' : undefined}
       data-ready={hasFinalHeight ? '1' : undefined}
       data-rows={rows}
       style={drawnSize}
@@ -737,10 +771,29 @@ const ChangeBlock = memo(function ChangeBlock({
           </span>
         )}
         <span className="cv-gap" />
+        <div className="seg">
+          <button
+            className={viewed ? 'on' : undefined}
+            aria-pressed={viewed}
+            disabled={!canMarkViewed(section)}
+            title={
+              viewed
+                ? 'Viewed — uncheck to show the diff again'
+                : 'Mark this file as viewed and fold its diff'
+            }
+            onMouseDown={keepCaretInSessionTerminal}
+            onClick={() => {
+              if (canMarkViewed(section)) onToggleViewed(entry.path, section)
+            }}
+          >
+            ✓ Viewed
+          </button>
+        </div>
         <div className="seg" role="group" aria-label="Block view">
           <button
             className={view === 'diff' ? 'on' : undefined}
             aria-pressed={view === 'diff'}
+            disabled={viewed}
             onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'diff')}
           >
@@ -749,6 +802,7 @@ const ChangeBlock = memo(function ChangeBlock({
           <button
             className={view === 'source' ? 'on' : undefined}
             aria-pressed={view === 'source'}
+            disabled={viewed}
             onMouseDown={keepCaretInSessionTerminal}
             onClick={() => onSetView(entry.path, 'source')}
           >
@@ -759,8 +813,12 @@ const ChangeBlock = memo(function ChangeBlock({
           </button>
         </div>
       </div>
-      {body}
-      {cut && <div className="cv-note">{MSG.fileCutOff}</div>}
+      {!viewed && (
+        <>
+          {body}
+          {cut && <div className="cv-note">{MSG.fileCutOff}</div>}
+        </>
+      )}
     </div>
   )
 })

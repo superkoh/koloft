@@ -42,14 +42,6 @@
   color: var(--fg);
 }
 
-.bv-bm {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--accent);
-  opacity: 0.9;
-}
-
 .bv-dot {
   flex: 0 0 auto;
   font-size: 9px;

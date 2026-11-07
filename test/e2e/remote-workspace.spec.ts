@@ -100,6 +100,7 @@ import {
   showBrowse,
   showChanges,
   shownPaths,
+  viewedButton,
   wbActiveTab
 } from './helpers/workbench'
 
@@ -475,7 +476,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     bound?: (page: Page) => Promise<unknown>
   }[] = [{ label: 'Claude' }, ...OTHER_AGENTS_ON_THE_MACHINE]
   for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
-    test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes`, async ({
+    test(`after /clear in a ${agent.label} tab on the machine, Changes' Ownership ▸ This session wrote drops the files the old session wrote, and lists only what the new session writes; a file marked viewed before /clear is still viewed after it`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -508,6 +509,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           .toEqual(['old-session.txt', 'tracked.txt'])
         await pickChip(page, 'Ownership', 'session')
         await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['old-session.txt'])
+        const oldBlock = page.locator('.wb-panel .cv-blk[data-path="old-session.txt"]')
+        await expect(oldBlock.locator('.cv-hunk')).toHaveCount(1, { timeout: 30_000 })
+        await viewedButton(oldBlock).click()
+        await expect(oldBlock).toHaveAttribute('data-viewed', '1')
 
         const old = await sessionInRow(page, row)
         await runIn(page, centerTerm(page), '/clear')
@@ -518,6 +523,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         await expect
           .poll(() => shownPaths(page), { timeout: A_WRITE_REACHES_CHANGES_MS })
           .toEqual(['new-session.txt'])
+
+        await pickChip(page, 'Ownership', 'all')
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toContain('old-session.txt')
+        await expect(oldBlock).toHaveAttribute('data-viewed', '1')
+        await expect(oldBlock.locator('.cv-hunk')).toHaveCount(0)
       } finally {
         await quitAndClose(app)
       }
@@ -731,6 +741,49 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
       await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-60: a remote file marked ✓ Viewed stays folded while the session works and after Reload, since its diff did not change', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const block = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"]')
+      await expect(block.locator('.cv-hunk')).toHaveCount(1, { timeout: 30_000 })
+      await viewedButton(block).click()
+      await expect(block).toHaveAttribute('data-viewed', '1')
+      await expect(block.locator('.cv-hunk')).toHaveCount(0)
+
+      fs.writeFileSync(path.join(dir, 'extra.txt'), 'new\n')
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(page.locator('.wb-panel .cv-row[data-path="extra.txt"]')).toBeVisible({
+        timeout: 90_000
+      })
+      await expect(block).toHaveAttribute('data-viewed', '1')
+
+      await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
+      await expect(block).toHaveAttribute('data-viewed', '1')
+      await expect(page.locator('.wb-panel .cv-row[data-path="tracked.txt"] .bv-bm')).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

@@ -1,5 +1,6 @@
 import type { GitFileStatus, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
-import { isDocPath, relOf, splitPath, type ChangeFilters } from './filesModel'
+import { fnv1a32 } from '@shared/fnv1a'
+import { isDocPath, loadList, relOf, saveList, splitPath, type ChangeFilters } from './filesModel'
 
 export type ChangeKind = 'text' | 'renamed' | 'binary' | 'deleted' | 'conflict'
 
@@ -120,7 +121,8 @@ export function mergeSections(
       old &&
       old.text === section.text &&
       old.binary === section.binary &&
-      old.renameFrom === section.renameFrom
+      old.renameFrom === section.renameFrom &&
+      old.truncated === section.truncated
     ) {
       out[path] = old
     } else {
@@ -286,6 +288,57 @@ export function totalDelta(entries: readonly ChangeEntry[]): ChangeTotals {
     out.removed += e.delta.removed
   }
   return out
+}
+
+export type ViewedMarks = Record<string, number>
+
+export const VIEWED_MARKS_KEPT_PER_FOLDER = 500
+
+const markOf = new WeakMap<DiffSection, number>()
+
+function diffMark(section: DiffSection): number {
+  let mark = markOf.get(section)
+  if (mark === undefined) {
+    mark = fnv1a32(section.text)
+    markOf.set(section, mark)
+  }
+  return mark
+}
+
+export function canMarkViewed(section: DiffSection | undefined): section is DiffSection {
+  return !!section && !section.truncated
+}
+
+export function viewedNow(marks: ViewedMarks, sections: Record<string, DiffSection>): Set<string> {
+  const out = new Set<string>()
+  for (const [path, mark] of Object.entries(marks)) {
+    const section = sections[path]
+    if (canMarkViewed(section) && diffMark(section) === mark) out.add(path)
+  }
+  return out
+}
+
+export function flipViewed(marks: ViewedMarks, path: string, section: DiffSection): ViewedMarks {
+  const { [path]: was, ...rest } = marks
+  const mark = diffMark(section)
+  if (was === mark) return rest
+  return Object.fromEntries(
+    [...Object.entries(rest), [path, mark]].slice(-VIEWED_MARKS_KEPT_PER_FOLDER)
+  )
+}
+
+const viewedKey = (root: string): string => 'koloft.cv.viewed:' + root
+
+export const loadViewed = (root: string): ViewedMarks =>
+  Object.fromEntries(loadList<[string, number]>(viewedKey(root)))
+
+export const saveViewed = (root: string, marks: ViewedMarks): void =>
+  saveList(viewedKey(root), Object.entries(marks))
+
+export function flagCutTail(sections: DiffSection[], truncated: boolean): DiffSection[] {
+  if (!truncated || sections.length === 0) return sections
+  const last = sections[sections.length - 1]
+  return [...sections.slice(0, -1), { ...last, truncated: true }]
 }
 
 export const HIGHLIGHT_LEAD_IN = 400
