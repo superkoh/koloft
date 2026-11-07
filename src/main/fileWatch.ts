@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
-import type { DirChanges } from '@shared/types'
+import type { DirChangeListener, DirChanges } from '@shared/types'
 import { passesHeavy } from './fileTree'
 
 // PLATFORM§28
@@ -44,8 +44,6 @@ export function closeAllFileWatchers(): void {
   entries.clear()
 }
 
-export type DirChangeListener = (root: string, changes?: DirChanges) => void
-
 interface DirWatch {
   watcher: fs.FSWatcher
   count: number
@@ -73,16 +71,13 @@ function closeWatcher(entry: DirWatch): void {
 // PLATFORM§28
 function noteChange(root: string, entry: DirWatch, filename: string | Buffer | null): void {
   if (!entry.changed) return
-  const rel = filename === null ? '' : filename.toString()
-  if (
-    !rel ||
-    path.basename(rel) === '.gitignore' ||
-    entry.changed.size >= CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS
-  ) {
+  const rel = filename?.toString()
+  if (!rel || entry.changed.size >= CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS) {
     entry.changed = null
     return
   }
-  entry.changed.add(path.join(root, rel))
+  const full = path.join(root, rel)
+  entry.changed.add(path.basename(rel) === '.gitignore' ? path.dirname(full) : full)
 }
 
 function changesOf(changedPaths: Set<string>): DirChanges {

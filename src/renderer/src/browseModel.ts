@@ -239,34 +239,42 @@ export function sameEntries(a: readonly DirEntry[] | undefined, b: readonly DirE
 
 export const DIR_PAGE_ROWS = 500
 
+export function pathsWithTheirFolders(paths: Iterable<string | null | undefined>): Set<string> {
+  const out = new Set<string>()
+  for (let p of paths) {
+    while (p && !out.has(p)) {
+      out.add(p)
+      p = p.slice(0, p.lastIndexOf('/'))
+    }
+  }
+  return out
+}
+
 export function pageOfEntries(
-  dir: string,
   entries: readonly DirEntry[],
   pages: number,
-  keep: readonly string[]
-): { rows: readonly DirEntry[]; notShown: number; nextPage: number } {
+  keep: ReadonlySet<string>
+): { rows: readonly DirEntry[]; notShown: number; nextPage: number; firstHidden?: string } {
   const limit = pages * DIR_PAGE_ROWS
   if (entries.length <= limit) return { rows: entries, notShown: 0, nextPage: 0 }
-  const prefix = dir + '/'
-  const kept = new Set<string>()
-  for (const k of keep)
-    if (k.startsWith(prefix)) kept.add(prefix + k.slice(prefix.length).split('/')[0])
   const rows: DirEntry[] = []
   let nextPage = 0
+  let firstHidden: string | undefined
   entries.forEach((e, i) => {
-    if (i < limit || kept.has(e.path)) rows.push(e)
-    else if (i < limit + DIR_PAGE_ROWS) nextPage++
+    if (i < limit || keep.has(e.path)) rows.push(e)
+    else if (i < limit + DIR_PAGE_ROWS) {
+      nextPage++
+      firstHidden ??= e.path
+    }
   })
-  return { rows, notShown: entries.length - rows.length, nextPage }
+  return { rows, notShown: entries.length - rows.length, nextPage, firstHidden }
 }
 
 export function foldersToRelist(open: Iterable<string>, changes: DirChanges | undefined): string[] {
   const folders = [...open]
   if (!changes) return folders
   const lists = new Set(changes.listsChanged)
-  return folders.filter(
-    (d) => lists.has(d) || changes.replacedTrees.some((t) => d === t || d.startsWith(t + '/'))
-  )
+  return folders.filter((d) => lists.has(d) || changes.replacedTrees.some((t) => inRoot(d, t)))
 }
 
 export function initialExpansion(saved: readonly string[] | null, root: string): Set<string> {

@@ -24,7 +24,6 @@ import { basename } from '@shared/preview'
 import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
-  DIR_PAGE_ROWS,
   NO_MATCHES,
   SEARCH_DEBOUNCE_MS,
   ancestorDirs,
@@ -41,6 +40,7 @@ import {
   midTruncate,
   outsideFiles,
   pageOfEntries,
+  pathsWithTheirFolders,
   persistableExpansion,
   sameEntries,
   scratchpadEntries,
@@ -269,13 +269,14 @@ export function BrowseView({
 
   const relistAllWhenShown = useRef(false)
   const relistChanged = useCallback(
-    (changes?: DirChanges, alreadyRelisted: readonly (string | undefined)[] = []): void => {
+    (changes?: DirChanges): string[] => {
       if (!activeRef.current) {
         relistAllWhenShown.current = true
-        return
+        return []
       }
-      for (const d of foldersToRelist(expandedRef.current, changes))
-        if (!alreadyRelisted.includes(d)) relist(d)
+      const due = foldersToRelist(expandedRef.current, changes)
+      for (const d of due) relist(d)
+      return due
     },
     [relist]
   )
@@ -396,16 +397,13 @@ export function BrowseView({
   useEffect(() => {
     const dir = scratchpadDir
     if (!active || !dir) return
-    const relistWithScratch = (): void => {
-      relist(dir)
-      if (agyScratch) relist(agyScratch)
+    const relistWithScratch = (alreadyRelisted: readonly string[] = []): void => {
+      for (const d of [dir, agyScratch]) if (d && !alreadyRelisted.includes(d)) relist(d)
     }
     relistWithScratch()
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed, changes) => {
-      if (changed !== dir) return
-      relistWithScratch()
-      relistChanged(changes, [dir, agyScratch])
+      if (changed === dir) relistWithScratch(relistChanged(changes))
     })
     return () => {
       off()
@@ -418,8 +416,7 @@ export function BrowseView({
   const live = livePath(session)
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks])
   const keepShown = useMemo(
-    () =>
-      [current, live, ...idx.touchedInProject, ...Object.keys(git)].filter((p): p is string => !!p),
+    () => pathsWithTheirFolders([current, live, ...idx.touchedInProject, ...Object.keys(git)]),
     [current, live, idx.touchedInProject, git]
   )
 
@@ -789,14 +786,11 @@ export function BrowseView({
     if (visible.length === 0 && hiddenNodes.length === 0)
       return <div className="ft-hint bv-empty-dir">Empty</div>
     const shownPages = pages[dir] ?? 1
-    const { rows, notShown, nextPage } = pageOfEntries(dir, visible, shownPages, keepShown)
+    const { rows, notShown, nextPage, firstHidden } = pageOfEntries(visible, shownPages, keepShown)
     const moreId = section + ':' + dir + ':more'
     const showMore = (): void => {
       setPages((m) => ({ ...m, [dir]: shownPages + 1 }))
-      if (kbdRow !== moreId) return
-      const shown = new Set(rows)
-      const first = visible.find((e, i) => i >= shownPages * DIR_PAGE_ROWS && !shown.has(e))
-      if (first) setKbdRow(section + ':' + first.path)
+      if (kbdRow === moreId && firstHidden) setKbdRow(section + ':' + firstHidden)
     }
     return (
       <>

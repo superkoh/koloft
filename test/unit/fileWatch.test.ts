@@ -217,16 +217,17 @@ describe('watchDir (recursive dir watcher)', () => {
     ).toBe(true)
   })
 
-  it('reports no folder list when a .gitignore changes, since that can hide or show files in every folder under it', async () => {
-    fs.writeFileSync(path.join(dir, '.gitignore'), 'a\n')
+  it('names the folder of a changed .gitignore as a replaced tree, since it can hide or show files in every folder under it', async () => {
+    const sub = path.join(dir, 'pkg')
+    fs.mkdirSync(sub)
+    fs.writeFileSync(path.join(sub, '.gitignore'), 'a\n')
     const reports: (DirChanges | undefined)[] = []
     expect(watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
     reports.length = 0
 
-    fs.appendFileSync(path.join(dir, '.gitignore'), 'b\n')
-    expect(await until(() => reports.length > 0)).toBe(true)
-    expect(reports).toContain(undefined)
+    fs.appendFileSync(path.join(sub, '.gitignore'), 'b\n')
+    expect(await until(() => reports.some((r) => r?.replacedTrees.includes(sub)))).toBe(true)
   })
 
   it('after an FSWatcher error rebuilds the watcher in place with its ref count kept, and keeps reporting changes', async () => {

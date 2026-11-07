@@ -19,6 +19,7 @@ import {
   midTruncate,
   outsideFiles,
   pageOfEntries,
+  pathsWithTheirFolders,
   persistableExpansion,
   relTo,
   sameEntries,
@@ -415,28 +416,27 @@ describe('pageOfEntries', () => {
     isDir: false
   }))
 
-  const many = `${ROOT}/many`
+  const none = new Set<string>()
 
   it('a big folder shows one page at first, and each Show more adds one more page', () => {
-    expect(pageOfEntries(many, big, 1, []).rows).toHaveLength(DIR_PAGE_ROWS)
-    expect(pageOfEntries(many, big, 1, []).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
-    expect(pageOfEntries(many, big, 2, []).rows).toHaveLength(DIR_PAGE_ROWS * 2)
-    expect(pageOfEntries(many, big, 3, []).nextPage).toBe(7)
-    expect(pageOfEntries(many, big, 4, [])).toEqual({ rows: big, notShown: 0, nextPage: 0 })
+    expect(pageOfEntries(big, 1, none).rows).toHaveLength(DIR_PAGE_ROWS)
+    expect(pageOfEntries(big, 1, none).notShown).toBe(DIR_PAGE_ROWS * 2 + 7)
+    expect(pageOfEntries(big, 1, none).firstHidden).toBe(big[DIR_PAGE_ROWS].path)
+    expect(pageOfEntries(big, 2, none).rows).toHaveLength(DIR_PAGE_ROWS * 2)
+    expect(pageOfEntries(big, 3, none).nextPage).toBe(7)
+    expect(pageOfEntries(big, 4, none)).toEqual({ rows: big, notShown: 0, nextPage: 0 })
   })
 
   it('a file to keep in sight (open, being written, written or changed) stays shown past the page, with the folder that holds it, and Show more counts only rows it will add', () => {
-    const late = big[DIR_PAGE_ROWS + 3]
-    const dir: DirEntry = { name: 'zz', path: `${many}/zz`, isDir: true }
+    const late = big[DIR_PAGE_ROWS]
+    const dir: DirEntry = { name: 'zz', path: `${ROOT}/many/zz`, isDir: true }
     const list = [...big, dir]
-    const { rows, notShown, nextPage } = pageOfEntries(many, list, 1, [
-      late.path,
-      dir.path + '/deep/file.ts',
-      `${ROOT}/elsewhere.ts`
-    ])
+    const keep = pathsWithTheirFolders([late.path, dir.path + '/deep/file.ts', undefined])
+    const { rows, notShown, nextPage, firstHidden } = pageOfEntries(list, 1, keep)
     expect(rows.slice(DIR_PAGE_ROWS)).toEqual([late, dir])
     expect(notShown).toBe(list.length - DIR_PAGE_ROWS - 2)
     expect(nextPage).toBe(DIR_PAGE_ROWS - 1)
+    expect(firstHidden).toBe(big[DIR_PAGE_ROWS + 1].path)
   })
 })
 
