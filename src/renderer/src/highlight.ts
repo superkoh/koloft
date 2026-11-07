@@ -202,15 +202,15 @@ export const COLOR_UNASKED_MAX_LINES = 3000
 
 export function tooBigToColorUnasked(text: string): boolean {
   if (text.length > COLOR_UNASKED_MAX_CHARS) return true
-  let lines = 1
+  let newlines = 0
   for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) {
-    if (++lines > COLOR_UNASKED_MAX_LINES) return true
+    if (++newlines > COLOR_UNASKED_MAX_LINES) return true
   }
   return false
 }
 
 export function plainCodeHtml(text: string): string {
-  const lines = text.split('\n').map((l) => `<span class="line">${escapeHtml(l)}</span>`)
+  const lines = text.split(/\r?\n/).map((l) => `<span class="line">${escapeHtml(l)}</span>`)
   return `<pre><code>${lines.join('\n')}</code></pre>`
 }
 

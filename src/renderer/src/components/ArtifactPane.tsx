@@ -132,21 +132,22 @@ function CodeSource({
   text: string
   line?: number
 }): JSX.Element {
-  const [html, setHtml] = useState('')
-  const [colorAsked, setColorAsked] = useState(false)
-  const [askDismissed, setAskDismissed] = useState(false)
+  const [colors, setColors] = useState<{ text: string; html: string } | null>(null)
+  const [colorAskedFor, setColorAskedFor] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const lang = langForPath(path)
-  const tooBig = useMemo(() => tooBigToColorUnasked(text), [text])
-  const colored = lang !== 'text' && (colorAsked || !tooBig)
-  const showPlain = !colored || (colorAsked && !html)
+  const askFirst = useMemo(() => lang !== 'text' && tooBigToColorUnasked(text), [lang, text])
+  const waitingToBeAsked = askFirst && colorAskedFor !== text
+  const colored = lang !== 'text' && !waitingToBeAsked
+  const coloredHtml = colored && colors && (colors.text === text || !askFirst) ? colors.html : null
+  const showPlain = coloredHtml === null
 
   useEffect(() => {
     if (!colored) return
     let cancelled = false
     highlightCode(text, lang)
-      .then((h) => {
-        if (!cancelled) setHtml(h)
+      .then((html) => {
+        if (!cancelled) setColors({ text, html })
       })
       .catch(() => {})
     return () => {
@@ -155,35 +156,27 @@ function CodeSource({
   }, [text, lang, colored])
 
   const plainHtml = useMemo(() => (showPlain ? plainCodeHtml(text) : ''), [showPlain, text])
-  const shownHtml = showPlain ? plainHtml : html
+  const shownHtml = coloredHtml ?? plainHtml
   // PLATFORM§25
   const codeHtml = useMemo(() => ({ __html: shownHtml }), [shownHtml])
 
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
-    if (!line || jumpedLine.current === line || !shownHtml) return
+    if (!line || jumpedLine.current === line) return
     jumpedLine.current = line
     bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
       block: 'center'
     })
-  }, [line, shownHtml])
+  }, [line])
 
   return (
     <div className="code-wrap">
       <div className="code-body" ref={bodyRef} dangerouslySetInnerHTML={codeHtml} />
-      {lang !== 'text' && !colored && !askDismissed && (
+      {waitingToBeAsked && (
         <div className="fp-stale" role="status">
           <span className="fp-stale-msg">Large file — shown without colors.</span>
-          <button className="fp-stale-btn" onClick={() => setColorAsked(true)}>
+          <button className="fp-stale-btn" onClick={() => setColorAskedFor(text)}>
             Show colors
-          </button>
-          <button
-            className="fp-stale-x"
-            onClick={() => setAskDismissed(true)}
-            title="Dismiss"
-            aria-label="Dismiss"
-          >
-            <IconClose size={14} />
           </button>
         </div>
       )}

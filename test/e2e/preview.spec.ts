@@ -148,7 +148,7 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     await expect(page.locator(WORKBENCH.reload)).toBeVisible()
   })
 
-  test('a code file too big to color without freezing the window opens as plain text with a Show colors notice that colors it on click; a plain-text file never offers colors and shows its markup as text', async ({
+  test('a code file too big to color without freezing the window opens as plain text with a Show colors notice that colors it on click, and an edit on disk brings the plain text and the notice back; a plain-text file never offers colors and shows its markup as text', async ({
     page,
     env
   }) => {
@@ -173,6 +173,11 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     await expect(code.locator('.shiki')).toHaveCount(1, { timeout: 30_000 })
     await expect(code.locator('.line')).toHaveCount(bigLines + 1)
     await expect(notice).toHaveCount(0)
+
+    fs.appendFileSync(path.join(env.workspaces.a, 'src', 'big.ts'), 'export const more = 1\n')
+    await expect(code.locator('.line')).toHaveCount(bigLines + 2, { timeout: 15_000 })
+    await expect(code.locator('.shiki')).toHaveCount(0)
+    await expect(notice.getByRole('button', { name: 'Show colors' })).toBeVisible()
 
     await openArtifact(page, env, 'run.log')
     const log = artifactBody(page).locator('.code-body')

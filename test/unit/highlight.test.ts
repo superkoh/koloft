@@ -61,18 +61,24 @@ describe('highlighted HTML is safe to inject with dangerouslySetInnerHTML (Chang
     expect(textOf(html)).toBe(HOSTILE_FILE)
     expect(html.match(/class="line"/g)).toHaveLength(HOSTILE_FILE.split('\n').length)
   })
+
+  it('plainCodeHtml ends a Windows CRLF line where its LF does, so no blank line shows between lines', () => {
+    const html = plainCodeHtml('one\r\ntwo\r\n')
+    expect(html).not.toContain('\r')
+    expect(html.match(/class="line"/g)).toHaveLength(3)
+  })
 })
 
 describe('a code file colors itself on open only while coloring it cannot freeze the window', () => {
   const line = 'const x = 1\n'
 
   it('colors a file at the line and size limits without asking', () => {
-    expect(tooBigToColorUnasked(line.repeat(COLOR_UNASKED_MAX_LINES - 1))).toBe(false)
+    expect(tooBigToColorUnasked(line.repeat(COLOR_UNASKED_MAX_LINES))).toBe(false)
     expect(tooBigToColorUnasked('x'.repeat(COLOR_UNASKED_MAX_CHARS))).toBe(false)
   })
 
   it('waits to be asked for a file one line or one character over a limit', () => {
-    expect(tooBigToColorUnasked(line.repeat(COLOR_UNASKED_MAX_LINES))).toBe(true)
+    expect(tooBigToColorUnasked(line.repeat(COLOR_UNASKED_MAX_LINES + 1))).toBe(true)
     expect(tooBigToColorUnasked('x'.repeat(COLOR_UNASKED_MAX_CHARS + 1))).toBe(true)
   })
 })
