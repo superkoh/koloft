@@ -1314,8 +1314,11 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   out are in both builds. 2.1.319 also adds a server-sent model mix (`modelMix`,
   `tengu_zesty_horizon`, absent from 2.1.318) that sets `CLAUDE_CODE_SUBAGENT_MODEL` and
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` itself; it steps aside when either name is already
-  in the env, so the pins the shim passes for a custom endpoint stay (`strings`, not
-  run: inferred, not checked).
+  in the env, so the pins the shim passes for a custom endpoint with a model set stay
+  (`strings`, not run: inferred, not checked). A custom-endpoint account with no model
+  gets no pins from the shim (`src/main/shim.ts`), so there the mix could pick a
+  subagent model the endpoint does not serve; whether the server sends the mix to such
+  an endpoint is not probed yet.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
   a cloud or self-hosted runner session uses that session's id again) is read only when
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
@@ -1715,8 +1718,11 @@ inferred, not checked.
   id. On 2.1.319 the command finished (PostToolUse 37 s after `/clear`, `agent_id` set,
   new session id), then the same SubagentStop → wake turn → Stop. In the 2.1.319 run a
   second agent id with no transcript and no `agent_type` ran the same command 27 s after
-  `/clear`; seen once, not explained. `ownsHookReport` in `src/main/hookRouting.ts`
-  takes these reports, as they carry the tab's new id.
+  `/clear`; seen once, not explained. On 2.1.319 every such report came after the
+  `clear` SessionStart, so `ownsHookReport` in `src/main/hookRouting.ts` takes it, as
+  the tab is already bound to the new id. 2.1.318's early PostToolUseFailure came while
+  the tab was still bound to the old id, so Koloft dropped that one `shell-after`
+  report.
 
 Evidence: 2026-09-05, CC 2.1.261 — binary reading of the Stop-hook module, 251 real
 Stop records in Koloft's run-state logs cross-checked
@@ -1849,7 +1855,8 @@ other bullets of §9 were not re-measured on this build.
   again printed only the answer on stdout and nothing on stderr (2026-11-07). Its new
   "Warning: the claude.ai login on this machine has ended. This run uses the sign-in
   from ant auth login …" line (`strings`) needs an ended claude.ai login plus an
-  `ant auth login` profile under `~/.config/anthropic/`; that case is not probed yet.
+  `ant auth login` profile under `~/.config/anthropic/`; that case, and whether the line
+  goes to stdout (which Assist reads as the answer) or stderr, are not probed yet.
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
@@ -2161,11 +2168,16 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   (`strings`, darwin-arm64 and linux-arm64, 2026-11-07, not run: inferred, not checked;
   whether `claude --version` reaches the check is not read.) Koloft writes only
   `~/.claude.json` (`src/main/claudeTrust.ts` locally, `src/main/remote/launch.ts`
-  remotely), never `.config.json`. But both writers create `~/.claude.json` when it is
-  missing, so on a home whose claude runs from a non-empty `~/.claude/.config.json`
-  alone, Koloft's first launch makes the second file: on both builds the onboarding flag
-  and folder trust it writes go unread, and on 2.1.319 every run prints the notice. How
-  many homes still hold `.config.json` is not probed.
+  remotely), never `.config.json`, and never looks at `CLAUDE_CONFIG_DIR`. The local
+  writer creates `~/.claude.json` when it is missing; the remote one does so only when
+  Koloft supplied the login (the tab's `.env` file exists). So on a home whose claude
+  runs from a non-empty `~/.claude/.config.json` alone, Koloft's first launch makes the
+  second file: on both builds the onboarding flag and folder trust it writes go unread,
+  on 2.1.319 every run prints the notice, and on a remote machine the warm-up, which
+  looks for `cachedGrowthBookFeatures` in `~/.claude.json`, runs at every launch. A user
+  who exports `CLAUDE_CONFIG_DIR` has claude read `$CLAUDE_CONFIG_DIR/.claude.json`, so
+  Koloft's writes go unread there too. Neither case has been seen on a user's machine,
+  and how many homes still hold `.config.json` is not probed.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
@@ -2795,12 +2807,13 @@ below was one run.
   before E-SSH-10/11/12/15/17, all green (2026-10-21), and on linux-arm64 2.1.308 before
   E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22),
   and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
-  is a different gate, about files in the uploads folder, gone again from 2.1.319, whose
-  `tengu_moss_anchor` fallback is still `k("tengu_moss_anchor",!1)` in `strings`,
-  2026-11-07), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
+  is a different gate, about files in the uploads folder), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
   green (2026-10-25), and on linux-arm64 2.1.311 the same (2026-10-27), and on
   linux-arm64 2.1.312 the same (2026-10-28), and on linux-arm64 2.1.314 the same
-  (2026-10-30), and on linux-arm64 2.1.319 the same (2026-11-07). A user's own `claude -p` in a Koloft terminal is the measured case.
+  (2026-10-30), and on linux-arm64 2.1.319 before E-SSH-10/11/12/15/17/C2, all green
+  (2026-11-07; `tengu_mossy_anchor` is gone again from 2.1.319, and the
+  `tengu_moss_anchor` fallback is still `k("tengu_moss_anchor",!1)` in `strings`). A
+  user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
@@ -3047,8 +3060,10 @@ below was one run.
   PermissionRequest, then an immediate deny (no Notification, no PermissionDenied hook),
   the tool result "…this session has no approval surface … do not retry it …"; with a
   hook that answered `allow` after 4 s, CC waited and ran the command. So the setting
-  only replaces the on-screen dialog — a tab whose hook answers nothing (every remote
-  tab) would be refused instead of asked. From `strings` (darwin-arm64 and linux-arm64,
+  only replaces the on-screen dialog — a tab whose hook answers nothing would be refused
+  instead of asked: every remote tab (`dialogs: 'record-only'`), and a local tab whose
+  `ask` hook turns into the logging-only `asked` (no `.answerable` file, or a `.typed`
+  one, in `src/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
   not run: inferred, not checked): it is read from user settings, `--settings` and
   managed settings, not project or local settings; it also stops offering
   `AskUserQuestion` and plan mode's tools to the model; and a run of refusals ends the
@@ -3469,8 +3484,10 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   and kept with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`): a send-now that interrupts
   a foreground Bash kills it with no result, so no PostToolUse fires on 2.1.318 or
   2.1.319; a send-now during a running PostToolUse hook queues and waits for the hook
-  (12 s) on 2.1.319. Koloft's `tool` and `shell-after` hooks write no run-state event
-  (`src/main/hooks.ts`), so a late one cannot mark a tab running or done.
+  (12 s) on 2.1.319. None of Koloft's PostToolUse hooks (`tool`, `shell-after`,
+  `posttool` in `src/main/hooks.ts`) writes a running or done state, so a late one
+  cannot mark a tab running or done; a late `shell-after` still appends a `shell-wrote`
+  record, which reaches the changed-files list only through `ownsHookReport`.
 
 ## §20 `/code-review <level>` run under `claude -p`
 
