@@ -1977,7 +1977,7 @@ const inbox = new Inbox(
       queueMicrotask(() => {
         inboxPushQueued = false
         const now = inbox.snapshot()
-        saveInbox(now)
+        if (!quitCommitted) saveInbox(now)
         sendToRenderer(CH.inbox.changed, now)
       })
     }

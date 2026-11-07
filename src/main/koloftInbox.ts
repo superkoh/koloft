@@ -14,6 +14,7 @@ import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
   planOf,
   questionsOf,
+  questionText,
   type CodexApproval,
   type CodexQuestion,
   ANSWER_NOT_TAKEN,
@@ -73,6 +74,9 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }
+
+export const ASK_NO_LONGER_ON_SCREEN =
+  'Its session stopped after asking, so this no longer shows there and cannot be answered here. Open the session and reply to it.'
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
@@ -346,6 +350,9 @@ export class KoloftInbox {
   sync(): void {
     const marks = this.d.marks().filter((m) => m.sessionId)
     const standing = new Set(marks.map(signalKey))
+    const askOnceOnScreen = new Set(
+      marks.filter((m) => m.kind === 'turn-done').map((m) => signalKey({ ...m, kind: 'approval' }))
+    )
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
@@ -354,6 +361,10 @@ export class KoloftInbox {
         c.press?.step === 'working'
       )
         continue
+      if (askOnceOnScreen.has(c.key)) {
+        if (c.actions.length) this.askOnlyInItsTab(c)
+        continue
+      }
       try {
         this.d.inbox.move(
           KOLOFT,
@@ -366,6 +377,31 @@ export class KoloftInbox {
     for (const m of marks)
       if (m.kind !== 'turn-done' && !this.d.inbox.find(KOLOFT, signalKey(m)))
         void this.post(m, true)
+  }
+
+  private askOnlyInItsTab(c: InboxCard): void {
+    const blocks: InboxBlock[] = c.blocks.map((b) =>
+      b.type === 'choice'
+        ? {
+            type: 'quote',
+            who: 'It asked',
+            text: b.questions
+              .map((q) =>
+                questionText({
+                  question: q.text,
+                  options: q.options.map((o) => ({ label: o.label, description: o.detail }))
+                })
+              )
+              .join('\n\n')
+          }
+        : b
+    )
+    try {
+      this.d.inbox.update(KOLOFT, c.key, {
+        blocks: [...blocks, { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }],
+        actions: []
+      })
+    } catch {}
   }
 
   turnEnded(tabId: string, reply: string, handedOff: boolean): void {
