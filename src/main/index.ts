@@ -2038,11 +2038,14 @@ const claudeDialogs = new ClaudeDialogWatch({
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  closed: (tabId) => {
+  dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
+  closed: (tabId, stateAfter) => {
     askEnded(tabId, true)
     void askButtons?.check(tabId)
+    if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
+tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)

@@ -525,6 +525,7 @@ export class SessionTracker extends SessionRuntime {
       sessionId
     )
   leftBehind?: (sessionId: string) => boolean
+  dialogJustClosed?: (tabId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
 
@@ -616,6 +617,8 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    // CC§14
+    if (event.type === 'notify' && this.dialogJustClosed?.(tabId)) return
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
       if (t) this.compaction(t, event)
@@ -656,6 +659,11 @@ export class SessionTracker extends SessionRuntime {
     if (!t?.idleCompaction) return false
     t.idleCompaction = false
     return true
+  }
+
+  // CC§14
+  dialogAnswered(tabId: string): void {
+    if (this.turnNow(tabId) !== 'working') this.recordHookTurn(tabId, 'working')
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
