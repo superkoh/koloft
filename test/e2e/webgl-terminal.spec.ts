@@ -1,27 +1,18 @@
 import fs from 'fs'
-import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import type { Page } from '@playwright/test'
+import { test, expect } from './helpers/app'
 import {
   centerTerm,
   clickAppMenuItem,
+  launchWithWebGL,
   openSessionTerminal,
+  rowTitled,
   setNextSessionTitle,
   startSessionIn,
   termIds,
-  waitBooted
+  writeTo
 } from './helpers/p1'
 import { WORKBENCH } from './helpers/workbench'
-
-async function launchWithWebGL(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
-  delete env.launchEnv.KOLOFT_DOM_RENDERER
-  seedSettings(env, { hintsOff: true })
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await waitBooted(page)
-  return { app, page }
-}
 
 async function expectDrawnByWebGL(page: Page, tabId: string): Promise<void> {
   const hasGlyphAtlas = await page.evaluate((id) => {
@@ -33,21 +24,6 @@ async function expectDrawnByWebGL(page: Page, tabId: string): Promise<void> {
     return !!t?._core?._renderService?._renderer?.value?._charAtlas
   }, tabId)
   expect(hasGlyphAtlas, `${tabId} draws through the WebGL glyph atlas`).toBe(true)
-}
-
-async function writeTo(page: Page, tabId: string, text: string): Promise<void> {
-  await page.evaluate(
-    ({ id, text }) =>
-      new Promise<void>((done) => {
-        const t = (
-          window as unknown as {
-            __koloftTerms: Record<string, { write(s: string, cb: () => void): void }>
-          }
-        ).__koloftTerms[id]
-        t.write(text, done)
-      }),
-    { id: tabId, text }
-  )
 }
 
 async function pixelsOf(page: Page, tabId: string): Promise<Buffer> {
@@ -197,12 +173,6 @@ function cjkColorStorm(): string {
     }
   }
   return s + '\x1b[0m'
-}
-
-function rowTitled(page: Page, title: string) {
-  return page
-    .locator('.ws .ws-tab')
-    .filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
 }
 
 test.describe('the WebGL terminal users run (the suite otherwise draws with the DOM renderer): common moves leave it drawn, judged by where its screenshot has ink', () => {

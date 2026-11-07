@@ -275,6 +275,17 @@ describe('claude shim (registration — unchanged behavior)', () => {
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })
 
+  it("hides the Apple_Terminal name from the tab's own interactive claude, so it does not poll the cursor and keeps its terminal checks, and leaves -p, --version, a nested claude and any other terminal name as they were", () => {
+    const APPLE = { TERM_PROGRAM: 'Apple_Terminal' }
+    for (const args of [[], ['--resume'], ['--resume', 'abc-123'], ['--session-id', 'abc-123']]) {
+      expect(runShim(args, APPLE).realEnv?.TERM_PROGRAM, args.join(' ')).toBeUndefined()
+    }
+    expect(runShim(['-p', 'hi'], APPLE).realEnv?.TERM_PROGRAM).toBe('Apple_Terminal')
+    expect(runShim(['--version'], APPLE).realEnv?.TERM_PROGRAM).toBe('Apple_Terminal')
+    expect(runShim([], { ...APPLE, CLAUDECODE: '1' }).realEnv?.TERM_PROGRAM).toBe('Apple_Terminal')
+    expect(runShim([], { TERM_PROGRAM: 'iTerm.app' }).realEnv?.TERM_PROGRAM).toBe('iTerm.app')
+  })
+
   it('subcommands (mcp) are passed through untouched', () => {
     const { reg, realArgs } = runShim(['mcp', 'list'])
     expect(reg).toBeNull()

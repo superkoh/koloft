@@ -73,6 +73,8 @@ export type ClaudeLaunchPlan =
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
         KOLOFT_DOCS_PLUGIN?: string
+        CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
+        CLAUDE_CODE_DECSTBM?: string
       }
       machine?: MachineTab
     }

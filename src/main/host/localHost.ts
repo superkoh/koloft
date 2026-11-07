@@ -136,6 +136,9 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
+      // CC§12
+      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+      CLAUDE_CODE_DECSTBM: '1',
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,

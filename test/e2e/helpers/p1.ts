@@ -3,8 +3,8 @@ import path from 'path'
 import crypto from 'crypto'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { expect, pendingAttention } from './app'
-import type { E2EEnv } from './env'
+import { expect, launchApp, pendingAttention } from './app'
+import { seedSettings, type E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
   BackendAvailability,
@@ -36,6 +36,9 @@ export interface ClaudeCall {
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
   portOffset: string | null
+  termProgram?: string | null
+  forceSyncOutput?: string | null
+  decstbm?: string | null
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
@@ -699,6 +702,47 @@ export async function setWindowWidth(app: ElectronApplication, width: number): P
     const win = BrowserWindow.getAllWindows()[0]
     win.setSize(w, win.getSize()[1])
   }, width)
+}
+
+export async function growWindowHeightBy(app: ElectronApplication, delta: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, d) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const [width, height] = win.getSize()
+    win.setSize(width, height + d)
+  }, delta)
+}
+
+export async function launchWithWebGL(
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page }> {
+  delete env.launchEnv.KOLOFT_DOM_RENDERER
+  seedSettings(env, { hintsOff: true })
+  const app = await launchApp(env)
+  const page = await app.firstWindow()
+  await page.waitForLoadState('domcontentloaded')
+  await waitBooted(page)
+  return { app, page }
+}
+
+export async function writeTo(page: Page, tabId: string, text: string): Promise<void> {
+  await page.evaluate(
+    ({ id, text }) =>
+      new Promise<void>((done) => {
+        const t = (
+          window as unknown as {
+            __koloftTerms: Record<string, { write(s: string, cb: () => void): void }>
+          }
+        ).__koloftTerms[id]
+        t.write(text, done)
+      }),
+    { id: tabId, text }
+  )
+}
+
+export function rowTitled(page: Page, title: string): Locator {
+  return page
+    .locator('.ws .ws-tab')
+    .filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
 }
 
 export async function switchToRow(page: Page, row: Locator): Promise<void> {
