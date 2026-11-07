@@ -980,5 +980,7 @@ and `/tmp` compared before and after.
   `MEMORY.md`, macOS (§2 puts the data folder in the same place), and a real model
   choosing `add_memory` when told to remember.
 
-Koloft dependents: the Muse butler gets no `AGENTS.md` of Koloft's, unlike the Codex and
-Antigravity ones (`src/main/museSessions.ts`).
+Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
+or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
+butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.
