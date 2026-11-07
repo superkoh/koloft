@@ -273,20 +273,34 @@ export function parseClueEnv(stdout: string): NodeJS.ProcessEnv {
   return env
 }
 
-// PLATFORM§33
-const LOGIN_SHELL_PATH_TOO = `login_path="$(cd && "\${SHELL:-/bin/sh}" -lic 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')"
-[ -n "$login_path" ] && PATH="$PATH:$login_path"`
+const LOGIN_PATH_LINE_TAG = 'login-path '
 
-// PLATFORM§33 PLATFORM§49
+// PLATFORM§33
+export const MACHINE_LOGIN_PATH = `f="$(mktemp)" || exit 1
+cd
+KOLOFT_LOGIN_PATH_FILE="$f" "\${SHELL:-/bin/sh}" -lic 'printf %s "$PATH" > "$KOLOFT_LOGIN_PATH_FILE"' </dev/null >/dev/null 2>&1
+printf '\\n${LOGIN_PATH_LINE_TAG}%s\\n' "$(cat "$f")"
+rm -f "$f"
+exit 0`
+
+export function absoluteLoginPath(stdout: string): string {
+  const line = stdout.split('\n').find((l) => l.startsWith(LOGIN_PATH_LINE_TAG)) ?? ''
+  return line
+    .slice(LOGIN_PATH_LINE_TAG.length)
+    .replace(/\r$/, '')
+    .split(':')
+    .filter((d) => d.startsWith('/'))
+    .join(':')
+}
+
+// PLATFORM§49
 export const MACHINE_GH = `cd "$1" 2>/dev/null || exit 1
-shift
+[ -n "$2" ] && PATH="$PATH:$2"
+shift 2
 acct="$(git config --get koloft.account 2>/dev/null)"
 plat="$(git config --get koloft.platform 2>/dev/null)"
 ${MACHINE_TOKEN_FROM_HELPER}
 [ -n "$tok" ] || exit ${GH_SIGNED_OUT}
-command -v gh >/dev/null 2>&1 || {
-${LOGIN_SHELL_PATH_TOO}
-}
 command -v gh >/dev/null 2>&1 || exit ${GH_MISSING}
 ${GH_TOKEN_EXPORTS}
 exec gh "$@"`

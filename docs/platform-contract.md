@@ -1712,10 +1712,13 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
   `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
   `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
-  it on stdout ahead of the printed PATH, which a marker line skips. Each check took
-  about 100 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on macOS 27 to
-  OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh 5.9, reached
-  directly, a scratch node script.)
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);

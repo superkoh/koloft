@@ -19,6 +19,7 @@ import {
 import {
   dockerAvailable,
   installLabSsh,
+  installOnTarget,
   remoteKeyFor,
   runOnTarget,
   runOnTargetWhileServing,
@@ -198,7 +199,7 @@ function basicLogins(forge: FakeForge): { username: string; password: string }[]
 
 async function withGithubOnTheMachine(
   env: E2EEnv,
-  ghAt: { dir: string; pathLine?: { user: string; file: string } },
+  ghAt: { dir: string; onPathOnlyIn?: string },
   body?: (ctx: { page: Page; lab: SshLab }) => Promise<void>
 ): Promise<void> {
   const github = await startFakeGithub()
@@ -216,15 +217,13 @@ async function withGithubOnTheMachine(
         '#!/bin/sh\nprintf \'%s %s %s\\n\' "$GH_HOST" "$GH_TOKEN" "$*" >> /tmp/gh-calls.txt\n' +
           'case "$1 $2" in "api graphql") echo \'{"data":{"repository":{"issues":{"totalCount":12},"pullRequests":{"totalCount":3}}}}\' ;; *) echo \'[]\' ;; esac\n'
       )
-      execFileSync('docker', ['exec', lab.target, 'mkdir', '-p', ghAt.dir])
-      execFileSync('docker', ['cp', fakeGh, `${lab.target}:${ghAt.dir}/gh`])
-      execFileSync('docker', ['exec', lab.target, 'chmod', '755', `${ghAt.dir}/gh`])
-      if (ghAt.pathLine)
+      if (ghAt.onPathOnlyIn)
         runOnTarget(
           lab,
-          ghAt.pathLine.user,
-          `printf '%s\\n' 'export PATH="${ghAt.dir}:$PATH"' >> ${ghAt.pathLine.file}`
+          'kuser',
+          `mkdir -p ${ghAt.dir} && printf '%s\\n' 'export PATH="${ghAt.dir}:$PATH"' >> ${ghAt.onPathOnlyIn}`
         )
+      installOnTarget(lab, fakeGh, `${ghAt.dir}/gh`)
       repoOnTheMachine(lab, 'https://github.com/acme/widget.git')
       expect((await addWorkspace(page, remoteKeyFor('kt-key', 'kuser'))).code).toBe('added')
 
@@ -392,12 +391,12 @@ test.describe('Git accounts on a remote machine (Docker SSH lab)', () => {
     })
   })
 
-  test("RGA-05: a gh only the user's own interactive login shell finds (Linuxbrew's folder, put on PATH at the end of ~/.bashrc) still gives the remote workspace its GitHub counts", async ({
+  test("RGA-05: a gh only the user's own interactive login shell finds (a Linuxbrew folder, put on PATH at the end of ~/.bashrc) still gives the remote workspace its GitHub counts", async ({
     env
   }) => {
     await withGithubOnTheMachine(env, {
-      dir: '/home/linuxbrew/.linuxbrew/bin',
-      pathLine: { user: 'kuser', file: '.bashrc' }
+      dir: '/home/kuser/.linuxbrew/bin',
+      onPathOnlyIn: '.bashrc'
     })
   })
 

@@ -17,6 +17,7 @@ import {
   INCLUDE_IF_FIRST_GIT,
   INSTALL_GCM,
   MACHINE_GH,
+  MACHINE_LOGIN_PATH,
   MACHINE_PREFLIGHT,
   RECEIVE_FILES,
   REMOTE_URLS_LINE_TAG,
@@ -24,6 +25,7 @@ import {
   REPO_KEYS,
   REPO_KEYS_LINE_TAG,
   SYNC_FILES,
+  absoluteLoginPath,
   clueKey,
   fileLines,
   gcmDownload,
@@ -75,6 +77,7 @@ function filesUnder(dir: string): Map<string, Buffer> {
 
 export class GitMachineAccounts {
   private facts = new Map<string, MachineFacts>()
+  private loginPaths = new Map<string, Promise<string>>()
 
   constructor(private run: MachineRun) {}
 
@@ -208,10 +211,29 @@ export class GitMachineAccounts {
     return r.code === 0 && lines.length === repos.length ? lines : null
   }
 
+  // PLATFORM§33
+  private loginPathOn(machine: string): Promise<string> {
+    let asked = this.loginPaths.get(machine)
+    if (!asked) {
+      asked = this.run(machine, MACHINE_LOGIN_PATH, [], {
+        timeoutMs: MACHINE_STEP_TIMEOUT_MS
+      }).then((r) => {
+        if (r.code !== 0) this.loginPaths.delete(machine)
+        return r.code === 0 ? absoluteLoginPath(r.stdout) : ''
+      })
+      this.loginPaths.set(machine, asked)
+    }
+    return asked
+  }
+
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
-    const r = await this.run(machine, MACHINE_GH, [repoDir, ...args], {
-      timeoutMs: MACHINE_STEP_TIMEOUT_MS
-    })
+    const ghWith = (loginPath: string): Promise<RunResult> =>
+      this.run(machine, MACHINE_GH, [repoDir, loginPath, ...args], {
+        timeoutMs: MACHINE_STEP_TIMEOUT_MS
+      })
+    const asked = this.loginPaths.get(machine)
+    let r = await ghWith(asked ? await asked : '')
+    if (!asked && machineGhMissing(r.code)) r = await ghWith(await this.loginPathOn(machine))
     return { ...r, missing: machineGhMissing(r.code) }
   }
 
