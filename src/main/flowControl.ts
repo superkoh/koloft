@@ -94,7 +94,7 @@ export class FlowGate {
   }
 }
 
-const HELD_FOR_AN_UNSEEN_TAB_MAX = FLOW_QUEUE_PAUSE
+export const HELD_FOR_AN_UNSEEN_TAB_MAX = 1024 * 1024
 
 export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): string {
   if (data.length <= maxUnits) return data
@@ -109,19 +109,16 @@ interface TabOutput {
 }
 
 function takeSlice(tab: TabOutput): string {
-  let slice = ''
-  while (tab.chunks.length) {
+  let whole = 0
+  let units = 0
+  while (whole < tab.chunks.length && units + tab.chunks[whole].length <= FLOW_SLICE_UTF16_UNITS)
+    units += tab.chunks[whole++].length
+  let slice = tab.chunks.splice(0, whole).join('')
+  if (tab.chunks.length && units < FLOW_SLICE_UTF16_UNITS) {
     const head = tab.chunks[0]
-    const room = FLOW_SLICE_UTF16_UNITS - slice.length
-    if (head.length <= room) {
-      slice += head
-      tab.chunks.shift()
-      continue
-    }
-    const part = nextSlice(head, room)
+    const part = nextSlice(head, FLOW_SLICE_UTF16_UNITS - units)
     slice += part
     tab.chunks[0] = head.slice(part.length)
-    break
   }
   tab.units -= slice.length
   return slice
@@ -186,7 +183,7 @@ export class TerminalOutput {
     const gate = this.d.gate(id)
     if (!gate.maySend()) {
       if (gate.isAttached()) gate.onBacklog(tab.units)
-      else if (tab.units > HELD_FOR_AN_UNSEEN_TAB_MAX) this.end(id, false)
+      else while (tab.units > HELD_FOR_AN_UNSEEN_TAB_MAX) tab.units -= tab.chunks.shift()!.length
       return
     }
     const slice = takeSlice(tab)

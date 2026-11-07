@@ -8,6 +8,7 @@ import {
   FLOW_QUEUE_PAUSE,
   FLOW_QUEUE_RESUME,
   FLOW_SLICE_UTF16_UNITS,
+  HELD_FOR_AN_UNSEEN_TAB_MAX,
   PTY_OUTPUT_COALESCE_ONE_FRAME_MS
 } from '../../src/main/flowControl'
 
@@ -313,17 +314,18 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     expect(calls).toEqual(['pause t', 'resume t'])
   })
 
-  it('a tab no view ever shows never pauses its pty: past the watermark its held output is thrown away', () => {
+  it('a tab no view shows yet never pauses its pty: past its cap the oldest output goes and the newest stays', () => {
     const { out, sent, gate, calls } = makeOutput()
-    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE))
-    out.push('t', 'past the watermark')
-    out.push('t', 'kept')
+    const half = HELD_FOR_AN_UNSEEN_TAB_MAX / 2
+    out.push('t', 'a'.repeat(half))
+    out.push('t', 'b'.repeat(half))
+    out.push('t', 'newest')
     vi.runAllTimers()
     expect(calls).toEqual([])
     gate('t').attach()
     out.wake('t')
     vi.runAllTimers()
-    expect(sent).toEqual([{ id: 't', data: 'kept' }])
+    expect(sent.map((s) => s.data).join('')).toBe('b'.repeat(half) + 'newest')
   })
 
   it('with no window to show it, output is dropped and never pauses the pty', () => {

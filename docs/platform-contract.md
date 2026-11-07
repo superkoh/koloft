@@ -1391,6 +1391,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **node-pty tears down its socket about 200 ms after exit**
   (`DESTROY_SOCKET_TIMEOUT_MS = 200` in `lib/unixTerminal.js`), so a pty paused at exit
   can lose its last output.
+- **`onData` delivers everything before `onExit`.** Measured 2026-11-07 (Electron 43.8.6
+  run as node, node-pty 1.1.0, macOS 27.0.1): 60 runs of a shell printing 2 MB and
+  exiting at once, watched for 400 ms after `onExit`, got 0 bytes after it. So code
+  that sends a pty's held output at `exit` has seen all of it.
 - **`.process` is typed as string but can be `undefined`** on macOS: it is a native read
   of the tty's foreground process, and returns `undefined` between two commands (the
   darwin branch falls back to the spawn file only for `kernel_task`); it does not
