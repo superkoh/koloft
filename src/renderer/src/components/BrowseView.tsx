@@ -605,7 +605,11 @@ export function BrowseView({
 
   useEffect(() => {
     if (!current) return
-    bodyRef.current?.querySelector('.ft-node.active')?.scrollIntoView({ block: 'nearest' })
+    const body = bodyRef.current
+    const row =
+      body?.querySelector('[data-section="tree"] .ft-node.active') ??
+      body?.querySelector('.ft-node.active')
+    row?.scrollIntoView({ block: 'nearest' })
   }, [current, expanded])
 
   const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')

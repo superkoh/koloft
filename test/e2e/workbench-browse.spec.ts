@@ -126,6 +126,8 @@ const CONTENT_SEARCH_HIT_CAP = 300
 
 const AT_SIGN_PLUS_TRAILING_SPACE = 2
 
+const SIBLINGS_SORTED_ABOVE_BEACON_TO_PUSH_ITS_TREE_ROW_OUT_OF_SIGHT = 120
+
 const panelOwnedWidthToggle = /^(Full width|Restore)/
 
 test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots, search, decorations, row menu, keyboard and per-workspace memory', () => {
@@ -403,6 +405,9 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await rowMenu(page).getByText('Add bookmark', { exact: true }).click()
     await expect(browseRow(page, fx.paths.deepFile).locator('.bv-bm')).toBeVisible()
     await expect(browseRow(page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
+
+    for (let i = 0; i < SIBLINGS_SORTED_ABOVE_BEACON_TO_PUSH_ITS_TREE_ROW_OUT_OF_SIGHT; i++)
+      fs.writeFileSync(path.join(fx.paths.deepDir, `a-pad-${String(i).padStart(3, '0')}.ts`), 'x\n')
 
     const restarted = await relaunchOnSameUserData(app, env)
     await startSessionIn(restarted.page, 'ws-a')
