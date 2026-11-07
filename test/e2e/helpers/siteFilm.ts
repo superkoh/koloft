@@ -25,8 +25,10 @@ interface GuestView extends HTMLElement {
   }>
 }
 
-export function frameOf(page: Page, light = false): Promise<RawFrame> {
-  return page.evaluate(async (light) => {
+type ShotFrame = RawFrame & { styleHash: string }
+
+function frameOf(page: Page, knownStyleHash: string): Promise<ShotFrame> {
+  return page.evaluate(async (knownStyleHash) => {
     for (const s of document.body.querySelectorAll('script')) s.remove()
     for (const t of document.querySelectorAll('textarea')) t.textContent = t.value
     for (const i of document.querySelectorAll('input')) i.setAttribute('value', i.value)
@@ -62,19 +64,96 @@ export function frameOf(page: Page, light = false): Promise<RawFrame> {
         .filter((el) => el.id !== 'root' && el.tagName !== 'SCRIPT')
         .map((el) => el.outerHTML)
     }
-    if (light) return frame
     const styles = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '')
-    const sheets: string[] = []
     for (const sheet of [...document.styleSheets]) {
       if (sheet.href || sheet.ownerNode instanceof HTMLStyleElement) continue
       try {
-        sheets.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
+        styles.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
       } catch {}
     }
     for (const sheet of document.adoptedStyleSheets ?? [])
-      sheets.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
-    return { ...frame, styles: [...styles, ...sheets] }
-  }, light)
+      styles.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
+    const all = styles.join('\u0000')
+    let fnv = 0x811c9dc5
+    for (let i = 0; i < all.length; i++) fnv = Math.imul(fnv ^ all.charCodeAt(i), 0x01000193)
+    const styleHash = `${all.length}:${fnv >>> 0}`
+    return styleHash === knownStyleHash ? { ...frame, styleHash } : { ...frame, styleHash, styles }
+  }, knownStyleHash)
+}
+
+const TYPE_SLOW_CHUNK = 3
+const TYPE_SLOW_PAUSE_MS = 60
+
+export async function typeSlow(
+  page: Page,
+  text: string,
+  { chunk = TYPE_SLOW_CHUNK, between = () => page.waitForTimeout(TYPE_SLOW_PAUSE_MS) } = {}
+): Promise<void> {
+  for (let i = 0; i < text.length; i += chunk) {
+    await page.keyboard.type(text.slice(i, i + chunk))
+    await between()
+  }
+}
+
+export interface Reel {
+  shot(): Promise<void>
+  roll(ms: number, every?: number): Promise<void>
+  rollInBackground(every: number): void
+  mark(name: string): void
+  save(name: string): Promise<void>
+}
+
+export function reel(page: Page): Reel {
+  let frames: RawFrame[] = []
+  let marks: Record<string, number> = {}
+  let styleHash = ''
+  let shooting = false
+  let background: { on: boolean; loop: Promise<void> } | null = null
+  const shot = async (): Promise<void> => {
+    shooting = true
+    const t = Date.now()
+    try {
+      const frame = await frameOf(page, styleHash)
+      styleHash = frame.styleHash
+      frames.push({ t, ...frame })
+    } finally {
+      shooting = false
+    }
+  }
+  return {
+    shot,
+    async roll(ms, every = 150) {
+      const end = Date.now() + ms
+      while (Date.now() < end) {
+        await shot()
+        await page.waitForTimeout(every)
+      }
+    },
+    rollInBackground(every) {
+      const run = { on: true, loop: Promise.resolve() }
+      run.loop = (async () => {
+        while (run.on) {
+          await shot().catch(() => {})
+          await new Promise((ok) => setTimeout(ok, every))
+        }
+      })()
+      background = run
+    },
+    mark(name) {
+      marks[name] = frames.length + (shooting ? 1 : 0)
+    },
+    async save(name) {
+      if (background) {
+        background.on = false
+        await background.loop
+        background = null
+      }
+      writeFilm(name, [frames], marks)
+      frames = []
+      marks = {}
+      styleHash = ''
+    }
+  }
 }
 
 const SHIPPED_APP_RESOURCES = '/Applications/Koloft.app/Contents/Resources'

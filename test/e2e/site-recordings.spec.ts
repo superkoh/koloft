@@ -24,7 +24,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { frameOf, refreshSiteAppCss, writeFilm, type RawFrame } from './helpers/siteFilm'
+import { reel, refreshSiteAppCss, typeSlow } from './helpers/siteFilm'
 
 test.skip(
   !process.env.KOLOFT_SITE_RECORD,
@@ -137,32 +137,14 @@ function useRealClaude(env: E2EEnv, trusted: string[]): void {
   )
 }
 
-async function realTurn(
-  page: Page,
-  row: Locator,
-  text: string,
-  record = false
-): Promise<RawFrame[]> {
-  const frames: RawFrame[] = []
-  const shoot = async (): Promise<void> => {
-    if (record) frames.push({ t: Date.now(), ...(await frameOf(page)) })
-  }
+async function realTurn(page: Page, row: Locator, text: string): Promise<void> {
   await centerTerm(page).click()
-  for (let i = 0; i < text.length; i += 6) {
-    await page.keyboard.type(text.slice(i, i + 6))
-    await shoot()
-  }
+  await typeSlow(page, text)
   await page.waitForTimeout(1000)
   await page.keyboard.press('Enter')
   await expect(row).toHaveClass(/\bst-working\b/, { timeout: 20_000 })
-  const deadline = Date.now() + 240_000
-  while (Date.now() < deadline && /\bst-working\b/.test((await row.getAttribute('class')) ?? '')) {
-    await shoot()
-    await page.waitForTimeout(700)
-  }
+  await expect(row).not.toHaveClass(/\bst-working\b/, { timeout: 240_000 })
   await page.waitForTimeout(2500)
-  await shoot()
-  return frames
 }
 
 async function sizeWindow(app: ElectronApplication, w: number, h: number): Promise<void> {
@@ -170,46 +152,6 @@ async function sizeWindow(app: ElectronApplication, w: number, h: number): Promi
     ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
     [w, h]
   )
-}
-
-interface Reel {
-  shot(light?: boolean): Promise<void>
-  roll(ms: number, every?: number): Promise<void>
-  mark(name: string): void
-  save(name: string): void
-}
-
-function reel(page: Page): Reel {
-  let frames: RawFrame[] = []
-  let marks: Record<string, number> = {}
-  const shot = async (light = true): Promise<void> => {
-    frames.push({ t: Date.now(), ...(await frameOf(page, light && frames.length > 0)) })
-  }
-  return {
-    shot,
-    async roll(ms, every = 150) {
-      const end = Date.now() + ms
-      while (Date.now() < end) {
-        await shot()
-        await page.waitForTimeout(every)
-      }
-    },
-    mark(name) {
-      marks[name] = frames.length
-    },
-    save(name) {
-      writeFilm(name, [frames], marks)
-      frames = []
-      marks = {}
-    }
-  }
-}
-
-async function typeFilmed(page: Page, r: Reel, text: string): Promise<void> {
-  for (const ch of text) {
-    await page.keyboard.type(ch)
-    await r.shot()
-  }
 }
 
 async function startUsageServer(byToken: Record<string, [number, number]>): Promise<string> {
@@ -238,48 +180,9 @@ async function startUsageServer(byToken: Record<string, [number, number]>): Prom
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-interface Film {
-  mark(name: string): void
-  stop(name: string): Promise<void>
-}
-
-function startFilm(page: Page, everyMs = 600): Film {
-  const frames: RawFrame[] = []
-  const marks: Record<string, number> = {}
-  let on = true
-  let shooting = false
-  const loop = (async () => {
-    while (on) {
-      shooting = true
-      try {
-        frames.push({ t: Date.now(), ...(await frameOf(page)) })
-      } catch {}
-      shooting = false
-      await new Promise((ok) => setTimeout(ok, everyMs))
-    }
-  })()
-  return {
-    mark(name) {
-      marks[name] = frames.length + (shooting ? 1 : 0)
-    },
-    async stop(name) {
-      on = false
-      await loop
-      writeFilm(name, [frames], marks)
-    }
-  }
-}
-
-async function typeSlowly(page: Page, text: string): Promise<void> {
-  for (let i = 0; i < text.length; i += 3) {
-    await page.keyboard.type(text.slice(i, i + 3))
-    await page.waitForTimeout(60)
-  }
-}
-
 async function ask(page: Page, text: string): Promise<void> {
   await centerTerm(page).click()
-  await typeSlowly(page, text)
+  await typeSlow(page, text)
   await page.waitForTimeout(800)
   await page.keyboard.press('Enter')
 }
@@ -333,7 +236,7 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await sendShortcut(app, 'shortcut:command-palette')
     await expect(box).toBeFocused()
     await r.roll(700)
-    await typeFilmed(page, r, 'login')
+    await typeSlow(page, 'login', { chunk: 1, between: r.shot })
     await r.roll(1000)
     await page.keyboard.press('ArrowDown')
     r.mark('down')
@@ -342,13 +245,13 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     r.mark('enter')
     await expect(palette).toHaveCount(0)
     await r.roll(2500, 250)
-    r.save('pal-jump')
+    await r.save('pal-jump')
 
     await r.roll(1000)
     await sendShortcut(app, 'shortcut:command-palette')
     await expect(box).toBeFocused()
     await r.roll(700)
-    await typeFilmed(page, r, 'timer')
+    await typeSlow(page, 'timer', { chunk: 1, between: r.shot })
     await r.roll(1000)
     await page.keyboard.press('Alt+Enter')
     r.mark('search')
@@ -356,14 +259,17 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await page.keyboard.press('Enter')
     r.mark('enter')
     await r.roll(2500, 250)
-    r.save('pal-search')
+    await r.save('pal-search')
 
     await r.roll(1000)
     await sendShortcut(app, 'shortcut:command-palette')
     await expect(box).toBeFocused()
     await r.roll(700)
     r.mark('typing')
-    await typeFilmed(page, r, "tidewatch's weather calls keep failing, make them retry")
+    await typeSlow(page, "tidewatch's weather calls keep failing, make them retry", {
+      chunk: 1,
+      between: r.shot
+    })
     await r.roll(1500)
     await page.keyboard.press('Enter')
     r.mark('enter')
@@ -371,7 +277,7 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     const until = Date.now() + 90_000
     while (Date.now() < until && (await palette.count()) > 0) await r.roll(300, 150)
     await r.roll(16_000, 400)
-    r.save('pal-start')
+    await r.save('pal-start')
   } finally {
     await quitAndClose(app)
   }
@@ -384,7 +290,8 @@ test('assist: the butler starts a real claude session that adds GET /health and 
   test.setTimeout(900_000)
   const { app, page } = await launchReal(env, { assist: { on: true, backend: 'claude' } })
   try {
-    const film = startFilm(page, 800)
+    const film = reel(page)
+    film.rollInBackground(800)
     await page.waitForTimeout(1500)
     await page.locator('.isl-butler > .ws-tab').click()
     await page.waitForTimeout(12_000)
@@ -394,7 +301,7 @@ test('assist: the butler starts a real claude session that adds GET /health and 
     await expect(child).toHaveClass(/\bst-working\b/, { timeout: 120_000 })
     await expect(child).not.toHaveClass(/\bst-working\b/, { timeout: 420_000 })
     await page.waitForTimeout(ASSIST_PASSES_THE_REPORT_ON_MS)
-    await film.stop('assist')
+    await film.save('assist')
   } finally {
     await quitAndClose(app)
   }
@@ -412,7 +319,8 @@ test('tree: a real claude splits a job into two sibling sessions that hang under
     const parentId = await parent.getAttribute('data-tab-id')
     const children = page.locator(`.ws-tab[data-tab-id="${parentId}"] + .ws-subtabs > .ws-tab`)
     await page.waitForTimeout(4000)
-    const film = startFilm(page, 700)
+    const film = reel(page)
+    film.rollInBackground(700)
     await ask(
       page,
       'get two sessions on this in parallel: a /health endpoint, and a quick start in the README'
@@ -433,7 +341,7 @@ test('tree: a real claude splits a job into two sibling sessions that hang under
     await page.waitForTimeout(PARENT_PICKS_UP_THE_REPORTS_MS)
     await expect(parent).not.toHaveClass(/\bst-working\b/, { timeout: 300_000 })
     await page.waitForTimeout(6000)
-    await film.stop('tree')
+    await film.save('tree')
   } finally {
     await quitAndClose(app)
   }
@@ -470,7 +378,8 @@ test('browser: a real claude opens a page in its own Workbench, clicks Refresh a
     await startSessionIn(page, 'tidewatch')
     const row = wsRows(page, 'tidewatch').first()
     await page.waitForTimeout(4000)
-    const film = startFilm(page, 600)
+    const film = reel(page)
+    film.rollInBackground(600)
     await ask(page, `open ${demo.url} in the browser and tell me when the next high tide is`)
     await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
     const webTab = page.locator('.wb-panel .wb-tab:not(.pinned)', { hasText: 'Tidewatch' })
@@ -484,7 +393,7 @@ test('browser: a real claude opens a page in its own Workbench, clicks Refresh a
     await runIn(page, term, 'ls src && git --no-pager log --oneline -3')
     await expect(panelTerm(page)).toContainText('routes', { timeout: 20_000 })
     await page.waitForTimeout(3000)
-    await film.stop('browser')
+    await film.save('browser')
   } finally {
     await quitAndClose(app)
     await demo.close()
