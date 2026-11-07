@@ -914,6 +914,7 @@ async function startTui() {
     else if (text === '/new' || text === '/clear') await open('thread/start', { cwd })
     // CODEX§21
     else if (text === '/compact') await send('thread/compact/start', { threadId: thread.id })
+    else if (text === '/status') process.stdout.write('  Model: fake-codex\r\n> ')
     else if (text === '/fork') await open('thread/fork', { threadId: thread.id, cwd })
     else if (text.startsWith('/resume '))
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })

@@ -243,7 +243,10 @@ your Mac
           <code>❓ Alfred is waiting for you.</code>, with a button per option when the question has
           options. Once the question is answered, by a button, a typed reply or at the Mac, the card
           loses its buttons and says how it ended, like <code>✅ Answered: 2</code>,
-          <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code>
+          <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code> A button
+          counts only once the session took the answer. If it did not, the card keeps its buttons,
+          and only you see
+          <code>Koloft sent your answer, but the session still waits for it.</code>
         </p>
 
         <h3 id="at-the-mac">While you use Koloft</h3>
@@ -351,8 +354,8 @@ your Mac
           <code>koloft open</code> or <code>koloft diff</code> comes to the room too: a web page as
           pictures (at most 10, top to bottom), a Markdown file as text with the file attached, any
           other file as itself, and a diff as a picture of the changed lines. A file can be up to 20
-          MB (megabytes). A page on a remote folder's machine is not sent as a picture; the session
-          is told to describe it in words instead.
+          MB (megabytes). A page on a remote folder's machine (an HTML file there, or its
+          <code>localhost</code>) comes as pictures too, as that machine shows it.
         </p>
         <p>
           Rooms work for every agent, on your Mac and in a <a href="../remote/">remote folder</a>.

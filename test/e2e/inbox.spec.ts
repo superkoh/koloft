@@ -1,12 +1,14 @@
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installMuse,
   museCalls,
   museSaid,
+  trustInAgy,
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
@@ -27,7 +29,7 @@ import {
   installFakeRemote,
   machineHome
 } from './helpers/remote'
-import { ANSWER_NOT_TAKEN_ON_A_CARD } from '../../src/main/koloftInbox'
+import { ANSWER_NOT_TAKEN_ON_A_CARD, ASK_NO_LONGER_ON_SCREEN } from '../../src/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
@@ -60,8 +62,8 @@ function typeInto(page: Page, tabId: string, line: string): Promise<void> {
   return page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tabId, line])
 }
 
-function peerMessages(env: E2EEnv): string {
-  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+function peerMessages(env: E2EEnv, home = env.home): string {
+  const file = path.join(home, 'fake-claude-peer.jsonl')
   return fs.existsSync(file)
     ? fs
         .readFileSync(file, 'utf8')
@@ -501,3 +503,278 @@ test('a session that ends its turn waiting on the owner is a card with its last 
     timeout: 15_000
   })
 })
+
+const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
+
+async function pickNotYet(page: Page, quoted: RegExp): Promise<void> {
+  await openInbox(page)
+  const card = cardQuoting(page, quoted)
+  await expect(card.locator('.ibx-q')).toContainText('Merge PR #12?', { timeout: 30_000 })
+  await card.locator('.ibx-choice', { hasText: 'Not yet' }).click()
+}
+
+for (const remote of [false, true]) {
+  test(`a finished turn of a ${remote ? 'remote ' : ''}Claude Code session the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, ws, { remote })
+      await expect(wsRows(page, ws).first()).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await runIn(page, centerTerm(page), '/answer Shall I merge PR #12?')
+      await pickNotYet(page, /Answer to: Shall I merge PR #12\?/)
+      await expect
+        .poll(() => peerMessages(env, remote ? machineHome(env) : env.home), {
+          timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+        })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
+const fileText = (file: string): string =>
+  fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+
+const OTHER_AGENTS = [
+  {
+    name: 'Codex',
+    backend: 'codex',
+    install: (env: E2EEnv) => installCodex(env),
+    startsOnFirstLine: false,
+    askLine: 'please approve',
+    askTitle: 'wants to run a command',
+    said: /Codex fixture answered: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-codex-wire.jsonl'))
+  },
+  {
+    name: 'Muse',
+    backend: 'muse',
+    install: (env: E2EEnv) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    startsOnFirstLine: false,
+    askLine: '/approve',
+    askTitle: 'wants to run a command',
+    said: /echo: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv, page: Page, tabId: string) => terminalText(page, tabId)
+  },
+  {
+    name: 'Antigravity',
+    backend: 'agy',
+    install: (env: E2EEnv) => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    startsOnFirstLine: true,
+    askLine: '/ask Which colour?|Red|Green',
+    askTitle: 'asks a question',
+    said: /Answer to: Shall I merge PR #12\?/,
+    got: async (env: E2EEnv) => fileText(path.join(env.home, 'fake-agy-api.jsonl'))
+  }
+] as const
+
+const RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS = 120_000
+
+test('a question and a finished turn of Claude Code still waiting on the owner stay in Needs you across a Koloft restart, and the question then shows its options and sends the owner to its tab', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/answer Shall I merge it?')
+    await startSessionIn(page, 'ws-b')
+    const asker = wsRows(page, 'ws-b').first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({ timeout: 15_000 })
+    await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
+  } finally {
+    await quitAndClose(app)
+  }
+
+  fs.writeFileSync(
+    path.join(env.home, 'fake-claude-delay'),
+    String(RESUMED_CLAUDE_BINDS_AFTER_THE_TEST_MS)
+  )
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await openInbox(page)
+    await expect(inboxCard(page, 'finished and waits for you')).toBeVisible({ timeout: 15_000 })
+    const question = inboxCard(page, 'asks a question')
+    await expect(question).toContainText(/Which colour\?\s+1\. Red\b.*\s+2\. Green\b/)
+    await expectSentToItsTab(question)
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+test('a question a remote Claude Code session still shows after a Koloft restart is still a card in Needs you, and picking an answer there reaches the session', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  installFakeRemote(env)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await addRemoteWorkspace(page, env)
+    await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await runIn(page, centerTerm(page), '/ask Which colour?|Red|Green')
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    await expect(inboxCard(page, 'asks a question')).toBeVisible({ timeout: 15_000 })
+  } finally {
+    await quitAndClose(app)
+  }
+
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const asker = wsRows(page, REMOTE_WS_NAME).first()
+    await expect(asker).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+    const tabId = (await asker.getAttribute('data-tab-id')) as string
+    await openInbox(page)
+    await page.locator('.inbox-page .ibx-choice', { hasText: 'Green' }).click({ timeout: 30_000 })
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+      .toMatch(/Picked: Green/)
+    await expect(inboxCard(page, 'asks a question')).toHaveCount(0)
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+async function expectSentToItsTab(card: Locator): Promise<void> {
+  await expect(card).toContainText(ASK_NO_LONGER_ON_SCREEN, { timeout: 15_000 })
+  await expect(card.locator('.ibx-choice')).toHaveCount(0)
+  await expect(card.locator('.ibx-btn')).toHaveText(['Dismiss'])
+  await expect(card.locator('.ibx-link')).toHaveText(['Open session ›'])
+}
+
+async function sayToTheAgent(
+  page: Page,
+  agent: (typeof OTHER_AGENTS)[number],
+  line: string
+): Promise<void> {
+  if (agent.startsOnFirstLine) return runIn(page, centerTerm(page), line)
+  await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+  const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.backendId === agent.backend
+  )?.tabId as string
+  await typeInto(page, tabId, line)
+}
+
+async function acrossARestart(
+  env: E2EEnv,
+  agent: (typeof OTHER_AGENTS)[number],
+  line: string,
+  before: (page: Page) => Promise<void>,
+  after: (page: Page) => Promise<void>
+): Promise<void> {
+  agent.install(env)
+  let app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', agent.name)
+    await sayToTheAgent(page, agent, line)
+    await openInbox(page)
+    await before(page)
+  } finally {
+    await quitAndClose(app)
+  }
+
+  app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    await openInbox(page)
+    await after(page)
+  } finally {
+    await quitAndClose(app)
+  }
+}
+
+for (const agent of OTHER_AGENTS) {
+  test(`a question or command of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart, and then sends the owner to its tab`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    await acrossARestart(
+      env,
+      agent,
+      agent.askLine,
+      (page) =>
+        expect(
+          inboxCard(page, agent.askTitle).locator('.ibx-btn, .ibx-choice').first()
+        ).toBeVisible({ timeout: 30_000 }),
+      (page) => expectSentToItsTab(inboxCard(page, agent.askTitle))
+    )
+  })
+
+  test(`a finished turn of a session in ${agent.name} still waiting on the owner stays in Needs you across a Koloft restart`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    await acrossARestart(
+      env,
+      agent,
+      'Shall I merge PR #12?',
+      (page) => expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 30_000 }),
+      (page) => expect(cardQuoting(page, agent.said)).toBeVisible({ timeout: 15_000 })
+    )
+  })
+
+  test(`a finished turn of a session in ${agent.name} the Assist offers replies for shows them as picks on its card, and one click sends the pick to the session`, async ({
+    env
+  }) => {
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), ASSIST_OFFERS_REPLIES)
+    agent.install(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', agent.name)
+      const tabOf = async (): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === agent.backend
+        )?.tabId
+      if (agent.startsOnFirstLine) {
+        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
+      } else {
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await typeInto(page, (await tabOf()) as string, 'Shall I merge PR #12?')
+      }
+      await pickNotYet(page, agent.said)
+      const tabId = (await tabOf()) as string
+      await expect
+        .poll(() => agent.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .toContain('Merge PR #12? «Not yet»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}

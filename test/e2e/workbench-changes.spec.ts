@@ -64,6 +64,7 @@ const CV = {
   expand: '.cv-exp:not(.cv-cmt)',
   hunk: '.cv-hunk',
   diffRow: '.idiff-row',
+  undrawn: '.cv-undrawn',
   token: '.idiff-code > span',
   special: '.cv-special',
   total: '.wb-panel .cv-total',
@@ -976,7 +977,8 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       }
     })
 
-  test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
+  test('WB-C16: only the blocks that have been scrolled to draw their rows and get syntax-highlighted — an unscrolled block has ZERO rows and tokens, yet ⌘F still finds its text — and nothing is truncated or dropped to afford it', async ({
+    app,
     page,
     env
   }) => {
@@ -993,17 +995,59 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(first.locator(CV.diffRow).first()).toBeVisible()
     await expect.poll(() => first.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
 
-    expect(await far.locator(CV.diffRow).count()).toBeGreaterThan(0)
-    expect.soft(await far.locator(CV.token).count()).toBe(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(0)
+    expect(await far.locator(CV.token).count()).toBe(0)
+    await expect(far.locator(CV.undrawn)).toHaveCount(1)
+    const farRows = Number(await far.getAttribute('data-rows'))
+    expect(farRows).toBeGreaterThan(0)
     expect(await page.locator(CV.banner).count()).toBe(0)
     expect(await page.locator('.wb-panel .idiff-hint').count()).toBe(0)
+
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('part6rewritten_')
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/900$/)
+    await expect.poll(() => far.locator(CV.diffRow).count(), { timeout: 30_000 }).toBe(farRows)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
       el.scrollTop = y
     }, top)
     await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
-    expect(await first.locator(CV.token).count()).toBeGreaterThan(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(farRows)
+    await expect(bar.locator('.find-count')).toHaveText(/\/900$/)
+  })
+
+  test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
+    page,
+    env
+  }) => {
+    test.slow()
+    setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const r = await stream(page).evaluate(async (el) => {
+      const settle = (): Promise<void> => new Promise((res) => setTimeout(res, 500))
+      const blocks = [...el.querySelectorAll<HTMLElement>('.cv-blk')]
+      const drawn: number[] = []
+      for (const b of blocks) {
+        el.scrollTop = b.offsetTop
+        await settle()
+        drawn.push(b.querySelector('.idiff-row') ? b.offsetHeight : -1)
+      }
+      const forgotten = blocks.filter((b) => b.querySelector('.cv-undrawn')).length
+      const after = blocks.map((b) => {
+        b.style.contentVisibility = 'visible'
+        return b.offsetHeight
+      })
+      return { drawn, after, forgotten }
+    })
+    expect(r.drawn).not.toContain(-1)
+    expect(r.forgotten).toBeGreaterThan(0)
+    expect(r.after).toEqual(r.drawn)
   })
 
   test('WB-C17: one Changes refresh resolves the baseline exactly once — also when a file tab watches a changed file — and a no-op directory event reruns no aggregate diff', async ({

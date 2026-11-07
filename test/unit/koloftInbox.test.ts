@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AttentionEvent } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
+import { pickToPress } from '../../src/shared/inbox'
 import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
+  ASK_NO_LONGER_ON_SCREEN,
   KoloftInbox,
   replyFor,
   type KoloftAsk,
@@ -92,6 +94,27 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
   })
 
+  it('a question still waiting when its session stops (a Koloft restart, a tab restart) stays in Needs you, showing what it asked with its options and sending the owner to its tab, and closes once the session works again', async () => {
+    const w = world()
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    w.mark([{ ...asking, kind: 'turn-done' }])
+    expect(w.inbox.all()[0]).toMatchObject({
+      state: 'needs-you',
+      actions: [],
+      blocks: [
+        {
+          type: 'quote',
+          who: 'It asked',
+          text: 'Which colour?\n1. Red\n2. Blue\n\nWhich sizes?\n1. S\n2. M\n3. L'
+        },
+        { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }
+      ]
+    })
+    w.mark([])
+    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Handled in its tab' })
+  })
+
   const finished = (tabId: string): AttentionEvent => ({
     tabId,
     kind: 'turn-done',
@@ -104,7 +127,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     w.mark([finished('t1')])
     w.koloft.turnEnded('t1', 'Done. Shall I merge it?', false)
     expect(w.inbox.all()).toEqual([])
-    w.koloft.judged('t1', false)
+    w.koloft.judged('t1', { news: false })
     expect(w.inbox.all()[0]).toMatchObject({
       title: '“Fix login” finished and waits for you',
       blocks: [
@@ -114,17 +137,40 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     })
   })
 
+  it('replies the Assist offered for a turn are one pick-one question whose pick sends at once, and the owner may still write their own', () => {
+    const w = world()
+    w.mark([finished('t1')])
+    w.koloft.turnEnded('t1', 'PR #12 is green. Merge it?', false)
+    w.koloft.judged('t1', {
+      news: false,
+      choices: { question: 'Merge PR #12?', options: ['Merge it', 'Not yet'] }
+    })
+    const card = w.inbox.all()[0]
+    expect(card.blocks[1]).toMatchObject({
+      type: 'choice',
+      questions: [
+        {
+          text: 'Merge PR #12?',
+          multi: false,
+          ownAnswer: true,
+          options: [{ label: 'Merge it' }, { label: 'Not yet' }]
+        }
+      ]
+    })
+    expect(pickToPress(card)?.action.id).toBe('reply')
+  })
+
   it('a finished turn gets no card when it is only news, its reply went to another session, it is the butler’s, or the owner is watching it', () => {
     const w = world({ butlerSide: (tabId) => tabId === 't3', watching: () => 't4' })
     w.mark(['t1', 't2', 't3', 't4'].map(finished))
     w.koloft.turnEnded('t1', 'All done.', false)
-    w.koloft.judged('t1', true)
+    w.koloft.judged('t1', { news: true })
     w.koloft.turnEnded('t2', 'Here is what you asked for.', true)
-    w.koloft.judged('t2', false)
+    w.koloft.judged('t2', { news: false })
     w.koloft.turnEnded('t3', 'Hello from the butler.', false)
-    w.koloft.judged('t3', false)
+    w.koloft.judged('t3', { news: false })
     w.koloft.turnEnded('t4', 'Which one?', false)
-    w.koloft.judged('t4', false)
+    w.koloft.judged('t4', { news: false })
     expect(w.inbox.all()).toEqual([])
   })
 
@@ -138,7 +184,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     const w = world()
     w.mark([finished('t1')])
     w.koloft.turnEnded('t1', 'Which branch?', false)
-    w.koloft.judged('t1', false)
+    w.koloft.judged('t1', { news: false })
     w.mark([])
     expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'It went on' })
   })

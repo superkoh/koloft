@@ -10,6 +10,7 @@ const FIRST_OPTION = '1'
 const APPROVE = 'yes'
 const ASKED_CHARS_QUOTED = 200
 const MINUTE_MS = 60_000
+export const SENDING_THE_ANSWER_FAILED = 'sending the answer failed'
 
 export const THIS_MAC = ''
 
@@ -203,7 +204,12 @@ export class OwnerAsleep {
     if (!asked || asked.text === answeredText) return answeredText
     const entry: AnsweredForOwner = { title: this.d.titleOf(tabId), asked }
     for (const reply of repliesTo(asked)) {
-      entry.failed = await this.d.answer(tabId, reply)
+      try {
+        entry.failed = await this.d.answer(tabId, reply)
+      } catch {
+        entry.failed = SENDING_THE_ANSWER_FAILED
+        break
+      }
       if (entry.failed === ANSWER_NOT_TAKEN) break
       if (entry.failed === undefined) {
         entry.gave = reply

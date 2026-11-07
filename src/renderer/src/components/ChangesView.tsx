@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type JSX,
   type MouseEvent as ReactMouseEvent,
   type RefObject
@@ -25,6 +26,7 @@ import {
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
+  blocksPastBudget,
   buildEntries,
   canMarkViewed,
   commentBlocked,
@@ -152,7 +154,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     () => buildEntries({ git, numstat, root, written, sections }),
     [git, numstat, root, written, sections]
   )
-  const kept = useRef<ChangeEntry[]>([])
+  const kept = useRef<readonly ChangeEntry[]>([])
   const entries = useMemo(() => {
     const next = stableEntries(kept.current, fresh)
     kept.current = next
@@ -304,7 +306,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   }, [active, root, base, refreshNonce, retryNonce, git, numstat])
 
   const obs = useRef<IntersectionObserver | null>(null)
-  const watched = useRef(new Set<HTMLElement>())
+  const watched = useRef(new Map<string, HTMLElement>())
 
   const markVisible = useCallback((els: Iterable<HTMLElement>): void => {
     const stream = streamEl.current
@@ -319,17 +321,29 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       const box = el.getBoundingClientRect()
       if (box.height > 0 && nearViewport(box, view)) hit.push(p)
     }
-    if (!hit.length) return
+    const blocks = watched.current
+    const rowsOf = (p: string): number => Number(blocks.get(p)?.dataset.rows ?? 0)
+    const stays = (p: string): boolean => {
+      const el = blocks.get(p)
+      if (!el) return false
+      return (
+        nearViewport(el.getBoundingClientRect(), view) ||
+        !!document.getSelection()?.containsNode(el, true)
+      )
+    }
     setSeen((prev) => {
       const next = { ...prev }
-      let added = false
+      let changed = false
       for (const p of hit) {
-        if (!next[p]) {
-          next[p] = true
-          added = true
-        }
+        if (next[p]) continue
+        next[p] = true
+        changed = true
       }
-      return added ? next : prev
+      for (const p of blocksPastBudget(Object.keys(next), rowsOf, stays)) {
+        delete next[p]
+        changed = true
+      }
+      return changed ? next : prev
     })
   }, [])
 
@@ -346,10 +360,11 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   const observe = useCallback(
     (el: HTMLElement): (() => void) => {
-      watched.current.add(el)
+      const p = el.dataset.abs ?? ''
+      watched.current.set(p, el)
       ensureObs()?.observe(el)
       return () => {
-        watched.current.delete(el)
+        if (watched.current.get(p) === el) watched.current.delete(p)
         obs.current?.unobserve(el)
       }
     },
@@ -358,8 +373,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   useLayoutEffect(() => {
     const o = ensureObs()
-    if (o) for (const el of watched.current) o.observe(el)
-    markVisible(watched.current)
+    if (o) for (const el of watched.current.values()) o.observe(el)
+    markVisible(watched.current.values())
   }, [sections, shown, ensureObs, markVisible])
 
   useEffect(
@@ -646,10 +661,16 @@ const ChangeBlock = memo(function ChangeBlock({
   const special = entry.kind !== 'text'
   const parsable = !special || entry.kind === 'renamed'
   const folded = parsable && !opened && !isExpanded && isBigDiff(diffText)
+  const showsRows = view === 'diff' && (!special || opened)
   const hunks = useMemo(
-    () => (parsable && !folded && !viewed ? splitHunks(diffText) : []),
-    [parsable, folded, viewed, diffText]
+    () =>
+      parsable && !folded && !viewed && showsRows
+        ? splitHunks(diffText).map((h) => ({ ...h, parsed: parseUnifiedDiff(h.text) }))
+        : [],
+    [parsable, folded, viewed, showsRows, diffText]
   )
+  const rows = hunks.reduce((n, h) => n + Math.min(h.parsed.rows.length, MAX_INLINE_ROWS), 0)
+  const drawnSize = { '--rows': rows, '--hunks': hunks.length } as CSSProperties
 
   const body = ((): JSX.Element => {
     if (view === 'source') {
@@ -727,6 +748,8 @@ const ChangeBlock = memo(function ChangeBlock({
       data-status={entry.status}
       data-viewed={viewed ? '1' : undefined}
       data-ready={hasFinalHeight ? '1' : undefined}
+      data-rows={rows}
+      style={drawnSize}
       onContextMenu={(e) => onContextMenu(e, entry.path, false)}
     >
       <div className="cv-blk-hd">
@@ -809,7 +832,7 @@ function Hunks({
   onToggleExpand,
   onComment
 }: {
-  hunks: { header: string; text: string }[]
+  hunks: { header: string; text: string; parsed: ParsedDiff }[]
   entry: ChangeEntry
   seen: boolean
   expanded: boolean
@@ -862,7 +885,7 @@ function Hunks({
               }}
             />
           )}
-          <DiffRows text={h.text} path={entry.path} seen={seen} />
+          <DiffRows parsed={h.parsed} path={entry.path} seen={seen} />
         </Fragment>
       ))}
     </>
@@ -925,35 +948,58 @@ function CommentBox({
 }
 
 function DiffRows({
-  text,
+  parsed,
   path,
   seen
 }: {
-  text: string
+  parsed: ParsedDiff
   path: string
   seen: boolean
 }): JSX.Element {
-  const parsed = useMemo(() => parseUnifiedDiff(text), [text])
-  if (seen) return <InlineDiff src={path} parsed={parsed} />
-  return <PlainRows parsed={parsed} />
+  const box = useRef<HTMLDivElement>(null)
+  const drawn = useRef<{ parsed: ParsedDiff; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (seen && el) drawn.current = { parsed, height: el.offsetHeight }
+  }, [seen, parsed])
+  const drawnHeight = drawn.current?.parsed === parsed ? drawn.current.height : undefined
+  return (
+    <div ref={box}>
+      {seen ? (
+        <InlineDiff src={path} parsed={parsed} />
+      ) : (
+        <UndrawnRows parsed={parsed} height={drawnHeight} />
+      )}
+    </div>
+  )
 }
 
-function PlainRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
+function UndrawnRows({
+  parsed,
+  height
+}: {
+  parsed: ParsedDiff
+  height: number | undefined
+}): JSX.Element {
   const rows = parsed.rows
   const truncated = rows.length > MAX_INLINE_ROWS
-  const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
+  const shown = truncated ? MAX_INLINE_ROWS : rows.length
+  const code = useMemo(
+    () =>
+      rows
+        .slice(0, shown)
+        .map((r) => r.text || ' ')
+        .join(''),
+    [rows, shown]
+  )
   return (
-    <div className="idiff">
-      {shown.map((r, i) => (
-        <div key={i} className={'idiff-row idiff-' + r.kind} data-newno={r.newNo ?? undefined}>
-          <span className="idiff-num">{r.oldNo ?? ''}</span>
-          <span className="idiff-num">{r.newNo ?? ''}</span>
-          <span className="idiff-sign">
-            {r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ' '}
-          </span>
-          <span className="idiff-code">{r.text || ' '}</span>
+    <div className="idiff" style={height === undefined ? undefined : { height }}>
+      <div className="cv-undrawn" style={{ '--rows': shown } as CSSProperties}>
+        {/* PLATFORM§24 */}
+        <div className="cv-undrawn-code" hidden>
+          {code}
         </div>
-      ))}
+      </div>
       {truncated && (
         <div className="idiff-hint">
           Diff truncated — showing first {MAX_INLINE_ROWS} of {rows.length} lines.

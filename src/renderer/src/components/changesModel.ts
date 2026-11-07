@@ -230,12 +230,16 @@ function sameEntry(a: ChangeEntry, b: ChangeEntry): boolean {
   )
 }
 
-export function stableEntries(prev: readonly ChangeEntry[], next: ChangeEntry[]): ChangeEntry[] {
+export function stableEntries(
+  prev: readonly ChangeEntry[],
+  next: ChangeEntry[]
+): readonly ChangeEntry[] {
   const byPath = new Map(prev.map((e) => [e.path, e]))
-  return next.map((e) => {
+  const out = next.map((e) => {
     const old = byPath.get(e.path)
     return old && sameEntry(old, e) ? old : e
   })
+  return out.length === prev.length && out.every((e, i) => e === prev[i]) ? prev : out
 }
 
 export function passesFilters(e: ChangeEntry, f: ChangeFilters): boolean {
@@ -355,6 +359,26 @@ export interface Span {
 
 export function nearViewport(block: Span, viewport: Span, lead = HIGHLIGHT_LEAD_IN): boolean {
   return block.bottom >= viewport.top - lead && block.top <= viewport.bottom + lead
+}
+
+export const DRAWN_ROW_BUDGET = 5000
+
+export function blocksPastBudget(
+  drawnOldestFirst: readonly string[],
+  rowsOf: (path: string) => number,
+  stays: (path: string) => boolean,
+  budget = DRAWN_ROW_BUDGET
+): string[] {
+  let total = 0
+  for (const p of drawnOldestFirst) total += rowsOf(p)
+  const out: string[] = []
+  for (const p of drawnOldestFirst) {
+    if (total <= budget) break
+    if (stays(p)) continue
+    out.push(p)
+    total -= rowsOf(p)
+  }
+  return out
 }
 
 export const CHANGES_MSG = {
