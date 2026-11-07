@@ -89,7 +89,10 @@ test.describe('Workbench gutter drag over a large Changes stream stays smooth', 
     await expect(page.locator('.wb-panel .cv-blk:not([data-ready="1"])')).toHaveCount(0, {
       timeout: 60_000
     })
-    expect(await page.locator('.wb-panel .idiff-row').count()).toBeGreaterThan(5000)
+    const streamRows = await page
+      .locator('.wb-panel .cv-blk')
+      .evaluateAll((els) => els.reduce((n, el) => n + Number((el as HTMLElement).dataset.rows), 0))
+    expect(streamRows).toBeGreaterThan(5000)
   }
 
   async function layoutCost(page: Page): Promise<number> {

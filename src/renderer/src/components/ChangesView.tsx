@@ -31,7 +31,6 @@ import {
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
-  hunkRowCount,
   isBigDiff,
   mergeSections,
   nearViewport,
@@ -129,8 +128,6 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const [opened, setOpened] = useState<Record<string, boolean>>({})
   const [blockView, setBlockView] = useState<Record<string, 'diff' | 'source'>>({})
   const [seen, setSeen] = useState<Record<string, true>>({})
-  const seenRef = useRef(seen)
-  seenRef.current = seen
   const [load, setLoad] = useState<LoadState>(IDLE_LOAD)
   const [retryNonce, setRetryNonce] = useState(0)
   const [current, setCurrent] = useState<string | null>(null)
@@ -150,7 +147,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     () => buildEntries({ git, numstat, root, written, sections }),
     [git, numstat, root, written, sections]
   )
-  const kept = useRef<ChangeEntry[]>([])
+  const kept = useRef<readonly ChangeEntry[]>([])
   const entries = useMemo(() => {
     const next = stableEntries(kept.current, fresh)
     kept.current = next
@@ -289,7 +286,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   }, [active, root, base, refreshNonce, retryNonce, git, numstat])
 
   const obs = useRef<IntersectionObserver | null>(null)
-  const watched = useRef(new Set<HTMLElement>())
+  const watched = useRef(new Map<string, HTMLElement>())
 
   const markVisible = useCallback((els: Iterable<HTMLElement>): void => {
     const stream = streamEl.current
@@ -304,25 +301,30 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       const box = el.getBoundingClientRect()
       if (box.height > 0 && nearViewport(box, view)) hit.push(p)
     }
-    const prev = seenRef.current
-    if (hit.every((p) => prev[p])) return
-    const next = { ...prev }
-    for (const p of hit) next[p] = true
-    const blockOf = new Map<string, HTMLElement>()
-    for (const el of watched.current) if (el.dataset.abs) blockOf.set(el.dataset.abs, el)
-    const selection = document.getSelection()
-    const forget = blocksPastBudget(
-      Object.keys(next),
-      (p) => Number(blockOf.get(p)?.dataset.rows ?? 0),
-      (p) => {
-        const el = blockOf.get(p)
-        if (!el) return false
-        return nearViewport(el.getBoundingClientRect(), view) || !!selection?.containsNode(el, true)
+    const blocks = watched.current
+    const rowsOf = (p: string): number => Number(blocks.get(p)?.dataset.rows ?? 0)
+    const stays = (p: string): boolean => {
+      const el = blocks.get(p)
+      if (!el) return false
+      return (
+        nearViewport(el.getBoundingClientRect(), view) ||
+        !!document.getSelection()?.containsNode(el, true)
+      )
+    }
+    setSeen((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const p of hit) {
+        if (next[p]) continue
+        next[p] = true
+        changed = true
       }
-    )
-    for (const p of forget) delete next[p]
-    seenRef.current = next
-    setSeen(next)
+      for (const p of blocksPastBudget(Object.keys(next), rowsOf, stays)) {
+        delete next[p]
+        changed = true
+      }
+      return changed ? next : prev
+    })
   }, [])
 
   const ensureObs = useCallback((): IntersectionObserver | null => {
@@ -338,10 +340,11 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   const observe = useCallback(
     (el: HTMLElement): (() => void) => {
-      watched.current.add(el)
+      const p = el.dataset.abs ?? ''
+      watched.current.set(p, el)
       ensureObs()?.observe(el)
       return () => {
-        watched.current.delete(el)
+        if (watched.current.get(p) === el) watched.current.delete(p)
         obs.current?.unobserve(el)
       }
     },
@@ -350,8 +353,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   useLayoutEffect(() => {
     const o = ensureObs()
-    if (o) for (const el of watched.current) o.observe(el)
-    markVisible(watched.current)
+    if (o) for (const el of watched.current.values()) o.observe(el)
+    markVisible(watched.current.values())
   }, [sections, shown, ensureObs, markVisible])
 
   useEffect(
@@ -625,11 +628,15 @@ const ChangeBlock = memo(function ChangeBlock({
   const special = entry.kind !== 'text'
   const parsable = !special || entry.kind === 'renamed'
   const folded = parsable && !opened && !isExpanded && isBigDiff(diffText)
+  const showsRows = view === 'diff' && (!special || opened)
   const hunks = useMemo(
-    () => (parsable && !folded ? splitHunks(diffText) : []),
-    [parsable, folded, diffText]
+    () =>
+      parsable && !folded && showsRows
+        ? splitHunks(diffText).map((h) => ({ ...h, parsed: parseUnifiedDiff(h.text) }))
+        : [],
+    [parsable, folded, showsRows, diffText]
   )
-  const rows = useMemo(() => hunks.reduce((n, h) => n + hunkRowCount(h.text), 0), [hunks])
+  const rows = hunks.reduce((n, h) => n + Math.min(h.parsed.rows.length, MAX_INLINE_ROWS), 0)
   const drawnSize = { '--rows': rows, '--hunks': hunks.length } as CSSProperties
 
   const body = ((): JSX.Element => {
@@ -767,7 +774,7 @@ function Hunks({
   onToggleExpand,
   onComment
 }: {
-  hunks: { header: string; text: string }[]
+  hunks: { header: string; text: string; parsed: ParsedDiff }[]
   entry: ChangeEntry
   seen: boolean
   expanded: boolean
@@ -820,7 +827,7 @@ function Hunks({
               }}
             />
           )}
-          <DiffRows text={h.text} path={entry.path} seen={seen} />
+          <DiffRows parsed={h.parsed} path={entry.path} seen={seen} />
         </Fragment>
       ))}
     </>
@@ -883,20 +890,39 @@ function CommentBox({
 }
 
 function DiffRows({
-  text,
+  parsed,
   path,
   seen
 }: {
-  text: string
+  parsed: ParsedDiff
   path: string
   seen: boolean
 }): JSX.Element {
-  const parsed = useMemo(() => parseUnifiedDiff(text), [text])
-  if (seen) return <InlineDiff src={path} parsed={parsed} />
-  return <UndrawnRows parsed={parsed} />
+  const box = useRef<HTMLDivElement>(null)
+  const drawn = useRef<{ parsed: ParsedDiff; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (seen && el) drawn.current = { parsed, height: el.offsetHeight }
+  }, [seen, parsed])
+  const drawnHeight = drawn.current?.parsed === parsed ? drawn.current.height : undefined
+  return (
+    <div ref={box}>
+      {seen ? (
+        <InlineDiff src={path} parsed={parsed} />
+      ) : (
+        <UndrawnRows parsed={parsed} height={drawnHeight} />
+      )}
+    </div>
+  )
 }
 
-function UndrawnRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
+function UndrawnRows({
+  parsed,
+  height
+}: {
+  parsed: ParsedDiff
+  height: number | undefined
+}): JSX.Element {
   const rows = parsed.rows
   const truncated = rows.length > MAX_INLINE_ROWS
   const shown = truncated ? MAX_INLINE_ROWS : rows.length
@@ -905,11 +931,11 @@ function UndrawnRows({ parsed }: { parsed: ParsedDiff }): JSX.Element {
       rows
         .slice(0, shown)
         .map((r) => r.text || ' ')
-        .join('\n'),
+        .join(''),
     [rows, shown]
   )
   return (
-    <div className="idiff">
+    <div className="idiff" style={height === undefined ? undefined : { height }}>
       <div className="cv-undrawn" style={{ '--rows': shown } as CSSProperties}>
         <div className="cv-undrawn-code" hidden>
           {code}

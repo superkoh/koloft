@@ -60,11 +60,18 @@
   overflow: auto;
 }
 .cv-blk {
+  --cv-blk-head-h: 32px;
+  --cv-hunk-head-and-padding-h: 39px;
+  --cv-diff-row-h: 20px;
   content-visibility: auto;
-  contain-intrinsic-size: auto calc(32px + var(--hunks) * 39px + var(--rows) * 20px);
+  contain-intrinsic-size: auto
+    calc(
+      var(--cv-blk-head-h) + var(--hunks) * var(--cv-hunk-head-and-padding-h) + var(--rows) *
+        var(--cv-diff-row-h)
+    );
 }
 .cv-undrawn {
-  height: calc(var(--rows) * 1.6em);
+  height: calc(var(--rows) * var(--cv-diff-row-h));
 }
 .cv-blk + .cv-blk {
   border-top: 1px solid var(--line);

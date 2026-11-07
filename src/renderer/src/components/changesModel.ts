@@ -228,7 +228,10 @@ function sameEntry(a: ChangeEntry, b: ChangeEntry): boolean {
   )
 }
 
-export function stableEntries(prev: ChangeEntry[], next: ChangeEntry[]): ChangeEntry[] {
+export function stableEntries(
+  prev: readonly ChangeEntry[],
+  next: ChangeEntry[]
+): readonly ChangeEntry[] {
   const byPath = new Map(prev.map((e) => [e.path, e]))
   const out = next.map((e) => {
     const old = byPath.get(e.path)
@@ -303,15 +306,6 @@ export interface Span {
 
 export function nearViewport(block: Span, viewport: Span, lead = HIGHLIGHT_LEAD_IN): boolean {
   return block.bottom >= viewport.top - lead && block.top <= viewport.bottom + lead
-}
-
-export function hunkRowCount(hunk: string): number {
-  let n = 0
-  for (let i = hunk.indexOf('\n'); i !== -1; i = hunk.indexOf('\n', i + 1)) {
-    const c = hunk[i + 1]
-    if (c === ' ' || c === '+' || c === '-') n++
-  }
-  return n
 }
 
 export const DRAWN_ROW_BUDGET = 5000

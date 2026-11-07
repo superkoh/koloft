@@ -62,7 +62,7 @@ const CV = {
   expand: '.cv-exp:not(.cv-cmt)',
   hunk: '.cv-hunk',
   diffRow: '.idiff-row',
-  undrawn: '.cv-undrawn-code',
+  undrawn: '.cv-undrawn',
   token: '.idiff-code > span',
   special: '.cv-special',
   total: '.wb-panel .cv-total',
@@ -922,10 +922,9 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     expect(await far.locator(CV.diffRow).count()).toBe(0)
     expect(await far.locator(CV.token).count()).toBe(0)
-    const undrawnLines = await far
-      .locator(CV.undrawn)
-      .evaluate((el) => (el.textContent ?? '').split('\n').length)
-    expect(undrawnLines).toBeGreaterThan(0)
+    await expect(far.locator(CV.undrawn)).toHaveCount(1)
+    const farRows = Number(await far.getAttribute('data-rows'))
+    expect(farRows).toBeGreaterThan(0)
     expect(await page.locator(CV.banner).count()).toBe(0)
     expect(await page.locator('.wb-panel .idiff-hint').count()).toBe(0)
 
@@ -941,9 +940,38 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       el.scrollTop = y
     }, top)
     await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
-    expect(await far.locator(CV.diffRow).count()).toBe(undrawnLines)
+    expect(await far.locator(CV.diffRow).count()).toBe(farRows)
     await expect(bar.locator('.find-count')).toHaveText(/\/900$/)
-    expect(await first.locator(CV.token).count()).toBeGreaterThan(0)
+  })
+
+  test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
+    page,
+    env
+  }) => {
+    test.slow()
+    setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const r = await stream(page).evaluate(async (el) => {
+      const settle = (): Promise<void> => new Promise((res) => setTimeout(res, 500))
+      const blocks = [...el.querySelectorAll<HTMLElement>('.cv-blk')]
+      const drawn: number[] = []
+      for (const b of blocks) {
+        el.scrollTop = b.offsetTop
+        await settle()
+        drawn.push(b.querySelector('.idiff-row') ? b.offsetHeight : -1)
+      }
+      const forgotten = blocks.filter((b) => b.querySelector('.cv-undrawn')).length
+      const after = blocks.map((b) => {
+        b.style.contentVisibility = 'visible'
+        return b.offsetHeight
+      })
+      return { drawn, after, forgotten }
+    })
+    expect(r.drawn).not.toContain(-1)
+    expect(r.forgotten).toBeGreaterThan(0)
+    expect(r.after).toEqual(r.drawn)
   })
 
   test('WB-C17: one Changes refresh resolves the baseline exactly once — also when a file tab watches a changed file — and a no-op directory event reruns no aggregate diff', async ({

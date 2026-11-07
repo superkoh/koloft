@@ -17,7 +17,6 @@ import {
   emptyStreamMessage,
   groupByDir,
   hunkPrompt,
-  hunkRowCount,
   isBigDiff,
   mergeSections,
   nearViewport,
@@ -32,8 +31,6 @@ import {
   type DiffSection
 } from '../../src/renderer/src/components/changesModel'
 import { DEFAULT_FILTERS, type ChangeFilters } from '../../src/renderer/src/components/filesModel'
-import { parseUnifiedDiff } from '../../src/shared/unifiedDiff'
-
 const NUL_BYTES_GIT_CALLS_BINARY = Buffer.from([0x00, 0x01, 0x02, 0x00, 0x41])
 const LINES_FOR_TWO_SEPARATE_HUNKS = 20
 
@@ -510,14 +507,6 @@ describe('stableEntries', () => {
     const snap = { '/w/a.ts': 'modified', '/w/b.ts': 'modified' } as const
     const first = entries(snap, {})
     expect(stableEntries(first, entries(snap, {}))).toBe(first)
-  })
-})
-
-describe('hunkRowCount — what an undrawn block is sized by', () => {
-  it('counts exactly the rows the drawn diff shows, hunk by hunk, over a real `git diff`', () => {
-    const hunks = splitAggregateDiff(aggregate).flatMap((s) => splitHunks(s.text))
-    expect(hunks.length).toBeGreaterThan(3)
-    for (const h of hunks) expect(hunkRowCount(h.text)).toBe(parseUnifiedDiff(h.text).rows.length)
   })
 })
 
