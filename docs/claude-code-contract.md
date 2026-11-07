@@ -149,7 +149,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   printed the bare form with the same flags. That the linux-arm64 build repeats the
   same flags is read from its `strings` (the same skip list, value pattern and env
   name), not run: inferred, not checked. 2.1.318, darwin-arm64 and linux-arm64, holds
-  the same skip list, value pattern and env name (`strings`, 2026-11-04, not run).
+  the same skip list, value pattern and env name (`strings`, 2026-11-04, not run), and
+  so does 2.1.319 (`strings`, 2026-11-07, not run: the whole module the same once short
+  names are evened out).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -225,7 +227,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   reasons `clear`, `resume`, `logout`, `prompt_input_exit`, `other` and SessionStart
   sources `startup`, `resume`, `clear`, `compact`, `fork`), and on 2.1.318, darwin-arm64
   and linux-arm64 (`strings`, 2026-11-04: the same 33 names in the same order, the same
-  reasons and sources).
+  reasons and sources), and on 2.1.319, darwin-arm64 and linux-arm64 (`strings`,
+  2026-11-07: the same again).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -319,6 +322,18 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   recording `main` — so the field does not say which checkout the file belongs to.
   (V1, CC 2.1.225.) A sweep on 2026-09-24 of all 210 transcripts then on disk (CC up to
   2.1.281) found 0 with a `summary` record and 78 with an `ai-title`.
+- **2.1.319 knows one more record type, `resume-head-vouch`**
+  (`{"type":"resume-head-vouch","sessionId":…,"sum":…}`), appended when a resume loads
+  the transcript through a new side file `<slug>/<id>/resume-head.jsonl`. That load runs
+  only with `CLAUDE_CODE_TRANSCRIPT_TAIL_LOAD` set, which Koloft never sets; the loader
+  skips the record. Were it set, a vouch landing after a `continued-in` (§5) would hide
+  it from `continuedInOf` in `src/main/hookRouting.ts`, which reads only the last line.
+  (`strings`, darwin-arm64 and linux-arm64, 2026-11-07, not run: inferred, not
+  checked.) `custom-title` is still written as
+  `{"type":"custom-title","customTitle":…,"sessionId":…}`: `/rename probe-title-xyz`
+  typed in a pty on 2.1.318 and 2.1.319 wrote the same record on both (2026-11-07). On a
+  failed save 2.1.319 adds "The new name may not last: the session transcript could not
+  be updated" (`strings`, not triggered).
 - **The slug is built from the PHYSICAL directory, with every symlink resolved.**
   Started through a symlinked path, CC files the transcript under the real path's slug
   and records the real path as `cwd`; the typed path's slug is never created. Measured
@@ -1287,6 +1302,23 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   (`ENABLE_CONFIG_MISSING_READ_GUARD`), none of which `src/` sets; `tengu_*` gains 84
   and loses 10, none of the names this ledger mentions among them; the same 14 names
   `src/` spells out are in both builds.
+  Between 2.1.318 and 2.1.319 (`strings -n 6`, 2026-11-07, darwin-arm64 and
+  linux-arm64): `ANTHROPIC_*` and `*_MODEL` identical at 71 and 14; `anthropic-*`
+  header names 88 → 90 (`anthropic-ratelimit-unified-overage-daily-cap-paused`,
+  `anthropic-use-case-id`); dated beta names 57 → 58 (`request-tags-2026-08-21`);
+  `CLAUDE_CODE_*` gains 14 (among them `DISABLE_FEATURE_FLAGS`, `TRANSCRIPT_TAIL_LOAD`,
+  `DROP_UNAVAILABLE_DEFERRED_TOOL`) and loses none, none of which `src/` sets;
+  `DISABLE_MCP_TASKS`, `DISABLE_MCP_TASK_BACKGROUND` and `LOOP_KEEPALIVE`, which the
+  2.1.319 changelog calls new, are already in 2.1.318's strings; `tengu_*` gains 88
+  and loses 31, among them `tengu_mossy_anchor` (§14); the same 14 names `src/` spells
+  out are in both builds. 2.1.319 also adds a server-sent model mix (`modelMix`,
+  `tengu_zesty_horizon`, absent from 2.1.318) that sets `CLAUDE_CODE_SUBAGENT_MODEL` and
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` itself; it steps aside when either name is already
+  in the env, so the pins the shim passes for a custom endpoint with a model set stay
+  (`strings`, not run: inferred, not checked). A custom-endpoint account with no model
+  gets no pins from the shim (`src/main/shim.ts`), so there the mix could pick a
+  subagent model the endpoint does not serve; whether the server sends the mix to such
+  an endpoint is not probed yet.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
   a cloud or self-hosted runner session uses that session's id again) is read only when
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
@@ -1570,9 +1602,11 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   all, on both builds. So the 2.1.311 changelog's "background agents in auto mode that
   wait on their own shells starting a new main conversation turn on every wake" did not
   change this shape; the exact case it fixed is not probed yet (a subagent blocked in a
-  foreground `until ! pgrep …` loop was never woken on either build). Koloft launches no
-  auto-mode session itself; a person can switch a tab into it, and each such turn ends
-  with a Stop like any other.
+  foreground `until ! pgrep …` loop was never woken on either build). Koloft never passes
+  `--permission-mode auto`, but a tab launched with no permission flag starts in auto
+  mode wherever it is Claude Code's default (§14, 2026-11-05; a scratch config folder on
+  2.1.318 and 2.1.319 did the same, 2026-11-07), and a person can switch a tab into it;
+  each such turn ends with a Stop like any other.
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop. 2.1.311 changed the keep-alive wait around
@@ -1635,7 +1669,10 @@ inferred, not checked.
   - `backgroundTaskId` — a background shell. A shell the model was waiting on also
     carries `timedOutAfterMs` (moved to the background at its tool timeout; the text
     reads "Command timed out and was moved to the background (ID: …)") or
-    `backgroundedByUser` (Ctrl+B).
+    `backgroundedByUser` (Ctrl+B) or `backgroundedToDeliverMessage` (Ctrl+X Ctrl+S "send
+    now" on a queued message; 2026-11-07, 2.1.318 and 2.1.319: PostToolUse fired at once
+    with `stdout: ""`, `backgroundTaskId` and this key, and the Stop that followed listed
+    the shell as `running`).
   - `{taskId, timeoutMs}` — a Monitor.
   - `{status: 'forked', background: true, agentId}` — a skill forked into a background
     agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
@@ -1671,6 +1708,21 @@ inferred, not checked.
   acks across 41 recent transcripts, zero named by one). It reports through an
   `Another Claude session sent a message: <teammate-message …>` record, which carries
   no tool-use-id.
+- **`/clear` keeps a background agent's running command since 2.1.319, and everything
+  that agent reports after it carries the NEW session id.** Measured 2026-11-07 (python
+  pty, haiku, bypass mode, hooks on every event, 1 run per build): a background Agent
+  running `perl -e "sleep 40"`, then `/clear`. On 2.1.318 the command was killed at
+  once — a PostToolUseFailure (`"Exit code 137"`, new session id) landed 0.14 s after
+  `SessionEnd reason=clear` and before the `clear` SessionStart — and ~4 s later came
+  SubagentStop, a `<task-notification>` UserPromptSubmit and a Stop, all with the new
+  id. On 2.1.319 the command finished (PostToolUse 37 s after `/clear`, `agent_id` set,
+  new session id), then the same SubagentStop → wake turn → Stop. In the 2.1.319 run a
+  second agent id with no transcript and no `agent_type` ran the same command 27 s after
+  `/clear`; seen once, not explained. On 2.1.319 every such report came after the
+  `clear` SessionStart, so `ownsHookReport` in `src/main/hookRouting.ts` takes it, as
+  the tab is already bound to the new id. 2.1.318's early PostToolUseFailure came while
+  the tab was still bound to the old id, so Koloft dropped that one `shell-after`
+  report.
 
 Evidence: 2026-09-05, CC 2.1.261 — binary reading of the Stop-hook module, 251 real
 Stop records in Koloft's run-state logs cross-checked
@@ -1695,7 +1747,7 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
 (2026-10-22), 2.1.309 (2026-10-23), 2.1.310 (2026-10-25), 2.1.311 (2026-10-27),
 2.1.312 (2026-10-28), 2.1.314 (2026-10-30), 2.1.316 (2026-10-31), 2.1.317
-(2026-11-03) and 2.1.318 (2026-11-04).
+(2026-11-03), 2.1.318 (2026-11-04) and 2.1.319 (2026-11-07).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1798,7 +1850,13 @@ other bullets of §9 were not re-measured on this build.
   in 5 days (linux-arm64 2.1.318 in an offline Docker container, same day) `auth
   status` gave its date, the JSON result the same `credential_expires_at`, and text
   output printed `Warning: this sign-in ends between <date> and <date> …` on stderr
-  only; JSON output printed no warning.
+  only; JSON output printed no warning. On 2.1.319 Assist's exact argv, prompt on stdin,
+  token in `CLAUDE_CODE_OAUTH_TOKEN`, in a fresh and in a reused scratch config folder,
+  again printed only the answer on stdout and nothing on stderr (2026-11-07). Its new
+  "Warning: the claude.ai login on this machine has ended. This run uses the sign-in
+  from ant auth login …" line (`strings`) needs an ended claude.ai login plus an
+  `ant auth login` profile under `~/.config/anthropic/`; that case, and whether the line
+  goes to stdout (which Assist reads as the answer) or stderr, are not probed yet.
 - **Assist's one-shot deletes no old transcript.** With `cleanupPeriodDays: 365` in
   the user settings and transcripts 45 and 400 days old under `~/.claude/projects/`,
   Assist's exact argv (`--setting-sources ''` among it), signed in and not, left every
@@ -2098,6 +2156,28 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   login, the warm-up now fails at every launch (it runs while `cachedGrowthBookFeatures` is missing, and its output is
   thrown away) and the tab opens on the "Configuration error" dialog; on 2.1.317 the
   first warm-up reset the file to defaults.
+- **A home can hold two config files, and the legacy one wins; since 2.1.319 claude says
+  so on stderr.** The legacy file is `.config.json` in the config folder
+  (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`); the current one is `.claude.json` in
+  `$CLAUDE_CONFIG_DIR`, else `~`. Both 2.1.318 and 2.1.319 use the legacy file whenever
+  it is a non-empty file. When the current one is also a non-empty file, 2.1.319 prints
+  once per run, on stderr, `Two Claude Code config files exist: this run uses
+  <…/.config.json>, not <…/.claude.json>. … To end this: …` — at once under `-p` text
+  output, at exit for an interactive session, never in a `bg` session, and for JSON
+  output or a short command only when stdout and stderr are different files.
+  (`strings`, darwin-arm64 and linux-arm64, 2026-11-07, not run: inferred, not checked;
+  whether `claude --version` reaches the check is not read.) Koloft writes only
+  `~/.claude.json` (`src/main/claudeTrust.ts` locally, `src/main/remote/launch.ts`
+  remotely), never `.config.json`, and never looks at `CLAUDE_CONFIG_DIR`. The local
+  writer creates `~/.claude.json` when it is missing; the remote one does so only when
+  Koloft supplied the login (the tab's `.env` file exists). So on a home whose claude
+  runs from a non-empty `~/.claude/.config.json` alone, Koloft's first launch makes the
+  second file: on both builds the onboarding flag and folder trust it writes go unread,
+  on 2.1.319 every run prints the notice, and on a remote machine the warm-up, which
+  looks for `cachedGrowthBookFeatures` in `~/.claude.json`, runs at every launch. A user
+  who exports `CLAUDE_CONFIG_DIR` has claude read `$CLAUDE_CONFIG_DIR/.claude.json`, so
+  Koloft's writes go unread there too. Neither case has been seen on a user's machine,
+  and how many homes still hold `.config.json` is not probed.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
@@ -2129,7 +2209,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   keys is read from `strings` of the code that writes `<pid>.json` (2026-10-31 and
   2026-11-03, the 2.1.317 code identical to 2.1.316's once short names are renamed;
   2026-11-04, the 2.1.318 code, darwin-arm64 and linux-arm64, identical to 2.1.317's the
-  same way, 23 keys), not from a run: inferred, not checked. A daemon-hosted
+  same way, 23 keys; 2026-11-07, the 2.1.319 code, darwin-arm64 and linux-arm64, writes
+  the same keys and differs only in no longer touching a `.fleetview-heartbeat` file in
+  the same folder, which Koloft's reader skips as it lists only `<digits>.json`), not
+  from a run: inferred, not checked. A daemon-hosted
   session adds `kind: 'bg'` and a `jobId` key (bullet below and §5).
 - **On Linux `procStart` is a number and a session in tmux adds a `tmux` key.** 2026-10-29,
   CC 2.1.312 (linux-arm64) in tmux on a Debian bookworm machine: `"procStart":"54022809"`
@@ -2221,7 +2304,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
 - **Typing while claude is in the middle of a turn queues the message**: the screen
   shows "Press up to edit queued messages", and claude takes it once the running tool
   call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
-  same probe notes (CC 2.1.288); not re-run here.
+  same probe notes (CC 2.1.288). Re-run 2026-11-07 on 2.1.318 and 2.1.319 (python pty,
+  haiku, a foreground `perl -e "sleep 8"` Bash, text then CR 0.6 s later): **its
+  `UserPromptSubmit` hook fires at once, while the tool still runs** — before that
+  tool's PostToolUse and the turn's only Stop; the transcript holds a `queue-operation`
+  enqueue/dequeue pair, then the message as a plain `user` record after the tool result.
+  Ctrl+X Ctrl+S ("send now") moves the running Bash to the background instead (§8,
+  `backgroundedToDeliverMessage`); with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` it
+  interrupts the Bash ("Interrupted"), which then fires no PostToolUse and no
+  PostToolUseFailure.
 - **A slash command typed into the box runs as the command; the same text sent between
   sessions does not** (2026-10-04/05, CC 2.1.289 and 2.1.290, real claude in a pty in a
   scratch `HOME`, text then Enter 0.3 s later; the Linux build over `ssh -tt` into tmux
@@ -2716,10 +2807,13 @@ below was one run.
   before E-SSH-10/11/12/15/17, all green (2026-10-21), and on linux-arm64 2.1.308 before
   E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22),
   and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
-  is a different gate), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
+  is a different gate, about files in the uploads folder), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
   green (2026-10-25), and on linux-arm64 2.1.311 the same (2026-10-27), and on
   linux-arm64 2.1.312 the same (2026-10-28), and on linux-arm64 2.1.314 the same
-  (2026-10-30). A user's own `claude -p` in a Koloft terminal is the measured case.
+  (2026-10-30), and on linux-arm64 2.1.319 before E-SSH-10/11/12/15/17/C2, all green
+  (2026-11-07; `tengu_mossy_anchor` is gone again from 2.1.319, and the
+  `tengu_moss_anchor` fallback is still `k("tengu_moss_anchor",!1)` in `strings`). A
+  user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
@@ -2958,6 +3052,22 @@ below was one run.
   highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
   unchanged (6 of 6).
+- **2.1.319 adds a settings key, `permissions.denyInsteadOfPrompting` (boolean): a call
+  that would wait on a permission dialog is refused at once and the turn goes on — but
+  PermissionRequest fires first, and the hook's answer wins.** Measured 2026-11-07
+  (python pty, haiku, `--permission-mode default`, the setting in a `--settings` file, a
+  Bash `curl` that asks): with a logging hook that answered nothing, PreToolUse →
+  PermissionRequest, then an immediate deny (no Notification, no PermissionDenied hook),
+  the tool result "…this session has no approval surface … do not retry it …"; with a
+  hook that answered `allow` after 4 s, CC waited and ran the command. So the setting
+  only replaces the on-screen dialog — a tab whose hook answers nothing would be refused
+  instead of asked: every remote tab (`dialogs: 'record-only'`), and a local tab whose
+  `ask` hook turns into the logging-only `asked` (no `.answerable` file, or a `.typed`
+  one, in `src/main/hooks.ts`). From `strings` (darwin-arm64 and linux-arm64,
+  not run: inferred, not checked): it is read from user settings, `--settings` and
+  managed settings, not project or local settings; it also stops offering
+  `AskUserQuestion` and plan mode's tools to the model; and a run of refusals ends the
+  turn. Absent from 2.1.318; Koloft does not set it.
 
 ## §15 The PreToolUse hook stops a tool even when permission checks are skipped
 
@@ -3088,14 +3198,21 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.318 (`2.1.318 (Claude Code)`, 2026-11-04; its `--help`, the same nine subcommand
   helps and `auth status --help` byte-identical to 2.1.317's; `self-hosted-runner
   --help` rewords `--release-idle-session-min`, `--hold-idle-file` and `--max-hold-min`,
-  no flag added or gone).
+  no flag added or gone) and 2.1.319 (`2.1.319 (Claude Code)`, 2026-11-07; its
+  `--help`, the same subcommand helps and `auth status --help` byte-identical to
+  2.1.318's; `self-hosted-runner --help` adds "Refuses to start unless --capacity is 1,
+  git is 2.32 or newer, …" under `--use-anthropic-git-proxy` and "Refuses to start if
+  git cannot be run or reports a version older than 2.34" under `--configure-git`, no
+  flag added or gone).
   The 2.1.317 changelog's fix for `claude auth status` "exiting before a slow token
   refresh was saved" does not show through the names above: `waitForOAuthRefresh` and
   `drainAll` appear 11 and 3 times in both 2.1.316's and 2.1.317's `strings`
   (2026-11-03); what changed is not read. 2.1.318 holds them 13 and 3 times
   (darwin-arm64 and linux-arm64, 2026-11-04): it adds a mode that waits for the refresh
   up to a deadline (`exitWaitsForOAuthRefreshUntilDeadline`), off by default, and with it
-  off the exit reads as before (`strings`, not run: inferred, not checked). That the
+  off the exit reads as before (`strings`, not run: inferred, not checked); 2.1.319
+  holds them 13 and 3 times and the deadline mode twice, as 2.1.318 does (darwin-arm64
+  and linux-arm64, 2026-11-07). That the
   `--version` the shim runs
   before each launch exits the same way is inferred, not checked.
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
@@ -3136,7 +3253,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `locks/<version>@<pid>.lock`, and the 2 newest by mtime; it never reaches `~/.koloft`.
   Since 2.1.318 a lock whose pid answers `EPERM` (another user's process) counts as
   live, where 2.1.317 called it dead. (`strings`, darwin-arm64 and linux-arm64,
-  2026-11-04, not run: inferred, not checked.)
+  2026-11-04, not run: inferred, not checked; 2.1.319 the same, its cleanup code
+  identical to 2.1.318's once short names are evened out, 2026-11-07.)
 - **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
   reverting each other's `~/.claude.json` writes from then on (§2), which the folder
   trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
@@ -3172,7 +3290,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   on 2026-11-03 npm `latest` and `next` and the download host's `latest` offered
   2.1.317, and npm's and the download host's `stable` had moved to 2.1.311; on
   2026-11-04 npm `latest` and `next` and the download host's `latest` offered 2.1.318,
-  and npm's and the download host's `stable` were still 2.1.311.
+  and npm's and the download host's `stable` were still 2.1.311; on 2026-11-07 npm
+  `latest` and `next` and the download host's `latest` offered 2.1.319, and npm's and
+  the download host's `stable` were still 2.1.311.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -3199,7 +3319,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   strings stamp `2.1.316`), and on 2026-11-03 `2.1.317/linux-arm64/claude` with
   331,212,056 bytes (ETag the file's MD5, strings stamp `2.1.317`), and on 2026-11-04
   `2.1.318/linux-arm64/claude` with 337,438,136 bytes (ETag the file's MD5, strings
-  stamp `2.1.318` only) — each ran as
+  stamp `2.1.318` only), and on 2026-11-07 `2.1.319/linux-arm64/claude` with
+  339,797,432 bytes (ETag the file's MD5, strings stamp `2.1.319` only) — each ran as
   the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
@@ -3354,6 +3475,19 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `agent-tools-real-smoke.spec.ts`), a Chinese note then `ls` (75 ms) or `sleep 2`: the
   hook still read the previous turn's English reply both times, and saw the Chinese note
   at the next tool call.
+- **A PostToolUse that runs while a new message ends the turn is kept for up to 10 s —
+  behind a server flag.** 2.1.319 (`strings`, 2026-11-07): the hold applies only when
+  the turn's abort reason is `interrupt` or `permission-stop`, lasts `1e4` ms, and is
+  off unless the server serves `tengu_agile_sunbeam` (new in 2.1.319; not served to the
+  test account that day). Not reproduced live on 2026-11-07 (python pty, haiku, scratch
+  `CLAUDE_CONFIG_DIR`, logging hooks on every event, the flag seeded into `.claude.json`
+  and kept with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`): a send-now that interrupts
+  a foreground Bash kills it with no result, so no PostToolUse fires on 2.1.318 or
+  2.1.319; a send-now during a running PostToolUse hook queues and waits for the hook
+  (12 s) on 2.1.319. None of Koloft's PostToolUse hooks (`tool`, `shell-after`,
+  `posttool` in `src/main/hooks.ts`) writes a running or done state, so a late one
+  cannot mark a tab running or done; a late `shell-after` still appends a `shell-wrote`
+  record, which reaches the changed-files list only through `ownsHookReport`.
 
 ## §20 `/code-review <level>` run under `claude -p`
 
