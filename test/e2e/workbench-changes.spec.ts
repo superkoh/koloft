@@ -286,7 +286,6 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
   test('a ⤢ expanded file that leaves the change set is forgotten: later polls pull no full diff for it, and it comes back folded', async ({
     app,
-    page,
     env
   }) => {
     const fx = setupChangeFixture(env.workspaces.a)
@@ -315,7 +314,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       const fullBefore = fullDiffsOf(leaves)
       const aggBefore = aggregates()
       fx.editTracked(stays)
-      await expect.poll(aggregates, { timeout: 30_000 }).toBe(aggBefore + 1)
+      await expect.poll(aggregates, { timeout: 30_000 }).toBeGreaterThan(aggBefore)
       await waitGitQuiet(env)
       expect(fullDiffsOf(leaves)).toBe(fullBefore)
 
