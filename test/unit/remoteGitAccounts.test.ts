@@ -462,6 +462,52 @@ describe('the gh wrapper on a machine', () => {
   })
 })
 
+describe("Koloft's own gh run on a machine", () => {
+  function setUp(loginShell: string): { repo: string; shell: string } {
+    const repo = path.join(home, 'repo')
+    sh(`git init -q '${repo}'`)
+    const helper = path.join(home, 'helper.sh')
+    fs.writeFileSync(helper, `#!/bin/sh\n[ "$2" = get ] && printf 'password=GH-TOKEN\\n'\n`)
+    sh(
+      `git -C '${repo}' config koloft.account github.com/bob && git -C '${repo}' config koloft.platform github && git -C '${repo}' config koloft.helper '${helper}'`
+    )
+    const brew = path.join(home, 'brew', 'bin')
+    fs.mkdirSync(brew, { recursive: true })
+    fs.writeFileSync(path.join(brew, 'gh'), '#!/bin/sh\necho "brew gh $GH_TOKEN $*"\n', {
+      mode: 0o755
+    })
+    fs.writeFileSync(path.join(repo, 'gh'), '#!/bin/sh\necho "the folder\'s own gh"\n', {
+      mode: 0o755
+    })
+    const shell = path.join(home, 'login-shell')
+    fs.writeFileSync(shell, loginShell, { mode: 0o755 })
+    return { repo, shell }
+  }
+
+  function ghOnMachine(repo: string, shell: string): ReturnType<GitMachineAccounts['gh']> {
+    return new GitMachineAccounts(async (_m, script, args = []) => {
+      const r = sh(script, { args, env: { SHELL: shell } })
+      return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+    }).gh('box', repo, ['api', 'user'])
+  }
+
+  it("finds a gh only the user's login shell puts on PATH, whatever that shell prints first", async () => {
+    const { repo, shell } = setUp(
+      `#!/bin/sh\n[ "$1" = -lic ] || exit 2\necho "Welcome to the box"\nPATH="$HOME/brew/bin:$PATH" exec /bin/sh -c "$2"\n`
+    )
+    const r = await ghOnMachine(repo, shell)
+    expect(r.stdout).toBe('brew gh GH-TOKEN api user\n')
+    expect(r.missing).toBe(false)
+  })
+
+  it("reads as no gh when the login shell gives no PATH, and never runs a gh from the repository's folder", async () => {
+    const { repo, shell } = setUp(`#!/bin/sh\necho "Unknown option: -lic" >&2\nexit 1\n`)
+    const r = await ghOnMachine(repo, shell)
+    expect(r.missing).toBe(true)
+    expect(r.stdout).toBe('')
+  })
+})
+
 describe('the Mac-side folder a machine sign-in passes through', () => {
   it('is private while in use and gone after success and after a failed copy', async () => {
     const root = path.join(home, 'machine-sign-in')
