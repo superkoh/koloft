@@ -185,7 +185,7 @@ function CodeSource({
       <div className="code-body" ref={bodyRef} dangerouslySetInnerHTML={codeHtml} />
       {waitingToBeAsked && (
         <div className="fp-stale" role="status">
-          <span className="fp-stale-msg">Large file — shown without colors.</span>
+          <span className="fp-stale-msg">Large file, no colors</span>
           <button className="fp-stale-btn" onClick={() => setColorAskedFor(text)}>
             Show colors
           </button>
