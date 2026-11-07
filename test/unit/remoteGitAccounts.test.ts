@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -493,7 +493,7 @@ describe("Koloft's own gh run on a machine", () => {
     const shell = path.join(home, 'login-shell')
     fs.writeFileSync(
       shell,
-      `#!/bin/sh\n[ "$1" = -lic ] || exit 2\necho run >> "$HOME/login-shell-runs"\necho "Welcome to the box"\nsleep 30 &\nPATH="${loginPath}" exec /bin/sh -c "$2"\n`,
+      `#!/bin/sh\n[ "$1" = -lic ] || exit 2\necho run >> "$HOME/login-shell-runs"\necho "Welcome to the box"\nsleep 6 &\nPATH="${loginPath}" exec /bin/sh -c "$2"\n`,
       { mode: 0o755 }
     )
     const machine = new GitMachineAccounts(async (_m, script, args = []) => {
@@ -514,14 +514,22 @@ describe("Koloft's own gh run on a machine", () => {
     expect(LOGIN_SHELL_RUNS()).toBe(1)
   })
 
-  it("takes only the absolute folders of the login shell's PATH, so a gh in the repository's folder never runs, and a machine with no gh asks its login shell once", async () => {
-    const machine = machineWhoseLoginShellSets(`:.:bin:/usr/bin::/bin:`)
-    for (let i = 0; i < 2; i++) {
-      const r = await machine.gh()
-      expect(r.missing).toBe(true)
-      expect(r.stdout).toBe('')
+  it("takes only the absolute folders of the login shell's PATH, so a gh in the repository's folder never runs, and a machine with no gh asks its login shell once, then again only an hour later", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const machine = machineWhoseLoginShellSets(`:.:bin:/usr/bin::/bin:`)
+      for (let i = 0; i < 2; i++) {
+        const r = await machine.gh()
+        expect(r.missing).toBe(true)
+        expect(r.stdout).toBe('')
+      }
+      expect(LOGIN_SHELL_RUNS()).toBe(1)
+      vi.setSystemTime(Date.now() + 60 * 60_000)
+      await machine.gh()
+      expect(LOGIN_SHELL_RUNS()).toBe(2)
+    } finally {
+      vi.useRealTimers()
     }
-    expect(LOGIN_SHELL_RUNS()).toBe(1)
   })
 })
 

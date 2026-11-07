@@ -42,6 +42,7 @@ import type { SuggestDeps } from './gitAccountSuggest'
 
 const GCM_INSTALL_TIMEOUT_MS = 5 * 60_000
 const MACHINE_STEP_TIMEOUT_MS = 30_000
+const LOGIN_PATH_KEPT_MS = 30 * 60_000
 
 export type MachineRun = (
   machine: string,
@@ -77,7 +78,7 @@ function filesUnder(dir: string): Map<string, Buffer> {
 
 export class GitMachineAccounts {
   private facts = new Map<string, MachineFacts>()
-  private loginPaths = new Map<string, Promise<string>>()
+  private loginPaths = new Map<string, { asked: number; path: Promise<string> }>()
 
   constructor(private run: MachineRun) {}
 
@@ -211,19 +212,18 @@ export class GitMachineAccounts {
     return r.code === 0 && lines.length === repos.length ? lines : null
   }
 
+  private knownLoginPath(machine: string): Promise<string> | undefined {
+    const known = this.loginPaths.get(machine)
+    return known && Date.now() - known.asked < LOGIN_PATH_KEPT_MS ? known.path : undefined
+  }
+
   // PLATFORM§33
-  private loginPathOn(machine: string): Promise<string> {
-    let asked = this.loginPaths.get(machine)
-    if (!asked) {
-      asked = this.run(machine, MACHINE_LOGIN_PATH, [], {
-        timeoutMs: MACHINE_STEP_TIMEOUT_MS
-      }).then((r) => {
-        if (r.code !== 0) this.loginPaths.delete(machine)
-        return r.code === 0 ? absoluteLoginPath(r.stdout) : ''
-      })
-      this.loginPaths.set(machine, asked)
-    }
-    return asked
+  private askLoginPath(machine: string): Promise<string> {
+    const found = this.run(machine, MACHINE_LOGIN_PATH, [], {
+      timeoutMs: MACHINE_STEP_TIMEOUT_MS
+    }).then((r) => (r.code === 0 ? absoluteLoginPath(r.stdout) : ''))
+    this.loginPaths.set(machine, { asked: Date.now(), path: found })
+    return found
   }
 
   async gh(machine: string, repoDir: string, args: string[]): Promise<GhResult> {
@@ -231,10 +231,12 @@ export class GitMachineAccounts {
       this.run(machine, MACHINE_GH, [repoDir, loginPath, ...args], {
         timeoutMs: MACHINE_STEP_TIMEOUT_MS
       })
-    const asked = this.loginPaths.get(machine)
-    let r = await ghWith(asked ? await asked : '')
-    if (!asked && machineGhMissing(r.code)) r = await ghWith(await this.loginPathOn(machine))
-    return { ...r, missing: machineGhMissing(r.code) }
+    const done = (r: RunResult): GhResult => ({ ...r, missing: machineGhMissing(r.code) })
+    const known = this.knownLoginPath(machine)
+    const r = await ghWith(known ? await known : '')
+    if (known || !machineGhMissing(r.code)) return done(r)
+    const loginPath = await (this.knownLoginPath(machine) ?? this.askLoginPath(machine))
+    return done(loginPath ? await ghWith(loginPath) : r)
   }
 
   async clueGit(
