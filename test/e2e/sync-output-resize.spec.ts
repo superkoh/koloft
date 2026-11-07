@@ -80,13 +80,21 @@ function writeTo(page: Page, id: string, data: string): Promise<void> {
 function screenOf(
   page: Page,
   id: string
-): Promise<{ syncOpen: boolean; atBottom: boolean; text: string; cols: number; rows: number }> {
+): Promise<{
+  onScreen: boolean
+  syncOpen: boolean
+  atBottom: boolean
+  text: string
+  cols: number
+  rows: number
+}> {
   return page.evaluate((tabId) => {
     const t = (window as unknown as { __koloftTerms: Record<string, Term> }).__koloftTerms[tabId]
     const b = t.buffer.active
     const lines: string[] = []
     for (let i = 0; i < b.length; i++) lines.push(b.getLine(i)?.translateToString(true) ?? '')
     return {
+      onScreen: (t.element?.clientHeight ?? 0) > 0,
       syncOpen: t._core?.coreService?.decPrivateModes?.synchronizedOutput === true,
       atBottom: b.viewportY === b.baseY,
       text: lines.join('\n'),
@@ -177,6 +185,7 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
 
     const expectFrameHeld = async (resizes: number, renders: number): Promise<void> => {
       const now = await screenOf(page, s1)
+      expect(now.onScreen).toBe(true)
       expect(now.syncOpen, 'the sync frame is still open').toBe(true)
       expect({ cols: now.cols, rows: now.rows }).toEqual({ cols: size.cols, rows: size.rows })
       expect(await ptyResizesOf(app, s1), 'no resize reached the pty').toBe(resizes)
@@ -224,9 +233,10 @@ test("a fit or a re-show that keeps the terminal's size tells the pty nothing an
     await switchToRow(page, rowTitled(page, 'S2'))
     await writeTo(page, s1, `\x1b[?2026h半帧-乙\r\n`)
     renders = await rendersOf(page, s1)
-    await switchToRow(page, rowTitled(page, 'S1'))
+    await rowTitled(page, 'S1').click()
     await page.waitForTimeout(FIT_DONE_WELL_INSIDE_XTERMS_1S_SYNC_TIMEOUT_MS)
     await expectFrameHeld(resizes, renders)
+    await expect(rowTitled(page, 'S1')).toHaveClass(/\bactive\b/)
     await writeTo(page, s1, '\x1b[?2026l')
     await expectWholeFramePainted(renders, '半帧-乙')
 
