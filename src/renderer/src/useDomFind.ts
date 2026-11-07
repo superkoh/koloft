@@ -100,8 +100,16 @@ function nearestVerticalScroller(range: Range, root: HTMLElement): HTMLElement |
   return null
 }
 
-function scrollRangeIntoView(range: Range, container: HTMLElement): void {
+function shownBoxOf(range: Range): DOMRect {
   const r = range.getBoundingClientRect()
+  if (r.height !== 0 || r.width !== 0) return r
+  let el = range.startContainer.parentElement
+  while (el && el.getClientRects().length === 0) el = el.parentElement
+  return el ? el.getBoundingClientRect() : r
+}
+
+function scrollRangeIntoView(range: Range, container: HTMLElement): void {
+  const r = shownBoxOf(range)
   if (r.height === 0 && r.width === 0) return
   const c = container.getBoundingClientRect()
   if (r.top < c.top || r.bottom > c.bottom) {
