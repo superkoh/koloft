@@ -2406,6 +2406,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   2026-11-06, linux-arm64 CC 2.1.319 inside tmux 3.3a with Koloft's tmux.conf, keys
   written to the tmux client 300 ms apart: Koloft's dialog key runs answered 6 of 6 as
   on this Mac (§14, last bullet).
+- **Inside tmux claude asks the terminal whether it takes synchronized output, and only
+  its answer counts.** With `TMUX` set, `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is never read
+  (the `TMUX` check comes first). claude asks XTVERSION, which tmux answers itself
+  (`tmux 3.3a`), then sends one DECRQM `ESC[?2026$p` at start; answered `ESC[?2026;2$y`
+  it wraps every frame in `?2026h` … `?2026l` (84–116 windows over 72 wheel notches),
+  unanswered it wraps none. 2026-11-07, linux-arm64 CC 2.1.319, fullscreen, a 300-turn
+  resumed transcript, inside tmux 3.3a, 3.4, 3.5a and 3.8 with Koloft's tmux.conf in
+  Docker, claude's own bytes logged by a pty between it and tmux; the `TMUX` order read
+  from the binary's `strings`. What tmux does with those frames: platform ledger §35.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
