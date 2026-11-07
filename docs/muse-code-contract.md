@@ -434,6 +434,19 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   "hook:stop", …}`; the next turn's request no longer holds `<text>`. A `Stop` hook printing
   `hookSpecificOutput.additionalContext` is marked failed (`unsupported
   \`additionalContext\` in hookSpecificOutput of Stop hook output`) and nothing happens.
+- **A turn whose last message has no words ends with a `Stop` whose
+  `last_assistant_message` is `null`.** 2026-11-07, muse 1.4.11 (`koloft-muse-probe-1411`,
+  `--network none`, `MUSE_NO_AUTO_UPDATE=1`), Docker, fake model server, `muse exec
+  --approval-mode never --disable-sandbox --trust-workspace`, hooks through
+  `TBH_MANAGED_HOOKS_PATH`, one run each: the model ran `bash` once and then answered a
+  message whose only `output_text` was `""`; `Stop` fired twice with the same `turn_id`,
+  both times `"last_assistant_message": null`, the session log held no
+  `assistant_message_committed` for that run, and it ended `terminal: "completed"`. A
+  reply with no output item at all is not taken: muse retried the request (up to 10
+  tries, 1 s doubling to 60 s apart). A model server answering 500 every time ended the
+  turn after the 10th try with `StopFailure` carrying the turn's `turn_id`,
+  `error: "server_error"` and `last_assistant_message: "API error 500: boom
+  (server_error)"`, and a log record `terminal: "failed"` with that reason.
 
 ## §10 Workspace trust
 
