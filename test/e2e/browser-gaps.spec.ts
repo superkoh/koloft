@@ -1018,9 +1018,14 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     throw new Error('no proceed affordance to click')
   }
 
-  async function submitBasicAuth(page: Page): Promise<void> {
-    const modal = page.locator(BROWSER.modal)
+  async function shownAuthPrompt(page: Page): Promise<Locator> {
+    const modal = page.locator(BROWSER.modal).filter({ hasText: /username and password/ })
     await expect(modal).toBeVisible({ timeout: 40_000 })
+    return modal
+  }
+
+  async function submitBasicAuth(page: Page): Promise<void> {
+    const modal = await shownAuthPrompt(page)
     const fields = modal.locator('input')
     await fields.nth(0).click()
     await fields.nth(0).fill(BASIC_CREDENTIALS.user)
@@ -1116,10 +1121,12 @@ test.describe('Workbench browser cases between the other browser specs: agent op
         await expect
           .poll(() => server.count('/auth'), { timeout: 40_000 })
           .toBeGreaterThan(authRequestsBefore)
-        expect(lastAuthHeader(server)).toBe('')
-
-        const askAgain = page.locator(BROWSER.modal)
-        await expect(askAgain).toBeVisible({ timeout: 40_000 })
+        const askAgain = await shownAuthPrompt(page)
+        const authHeadersAfterClear = server
+          .requestsFor('/auth')
+          .slice(authRequestsBefore)
+          .map((r) => r.headers['authorization'] ?? '')
+        expect(authHeadersAfterClear.every((h) => h === '')).toBe(true)
         await page.keyboard.press('Escape')
         await expect(askAgain).toHaveCount(0, { timeout: 20_000 })
         await typeInAddressBar(page, tls.aliasUrl('koloft-a.test', '/b'))
