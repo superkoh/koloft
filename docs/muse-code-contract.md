@@ -740,10 +740,12 @@ server of the opening note and with `--provider echo`; October 2026.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
   scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the
-  outer terminal unframed), so there is nothing for a relay to carry past tmux. Given
-  `TERM_PROGRAM=WezTerm` in the pane it wrote 314 frames, and tmux 3.3a passed none of
-  them on (PLATFORM§35). It wrote 160 OSC 8 links in every run; none reached the outer
-  terminal. 2026-11-08, muse 1.4.11 (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Debian
+  outer terminal unframed), so under that name there is nothing for a relay to carry
+  past tmux. Given `TERM_PROGRAM=WezTerm` in the pane it wrote 314 frames, and tmux
+  3.3a passed none of them on (PLATFORM§35); a relay built like `STATUS_RELAY_PY`
+  would not carry them either, since it takes over the frames only after the program's
+  own DECRQM 2026, which muse never sends. It wrote 160 OSC 8 links in all 5 runs; none
+  reached the outer terminal. 2026-11-08, muse 1.4.11 (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Debian
   12, Koloft's tmux.conf, no network), a fake `/responses` model streaming the answer
   in 4-line pieces 60 ms apart, then 60 wheel notches and 8 PageUp/PageDown; a python
   pty answering like xterm.js as the outer terminal, muse's own bytes logged by a pty

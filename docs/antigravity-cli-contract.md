@@ -1342,7 +1342,8 @@ only downloaded the public release.
 
 - At start agy asks `CSI >q` (XTVERSION), DA1, DECRQM 2026/2027 and `OSC 11;?`. It
   turns on `?2004h` (bracketed paste), `>4;2m` (modifyOtherKeys), a kitty keyboard
-  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame,
+  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame (only
+  when DECRQM 2026 is answered yes; unanswered, as in tmux, none: §29),
   `?2027h`, and `0 q`; on exit `>4m`, `<1u`, `?2004l`, `0 q`, `?2027l`. No mouse modes
   (1000/1002/1003/1006) and no focus events (1004) in the default inline mode.
 - With XTVERSION unanswered there is a brief `?1049h … ?1049l` alternate-screen flash
@@ -1380,7 +1381,9 @@ only downloaded the public release.
 
 ## §29 tmux and SSH
 
-- Inside tmux 3.3a no 7501 reaches the outer terminal, also with
+- Inside tmux 3.3a, with nothing between tmux and agy that answers its `7501;?` query
+  (a relay that does passes the frames on: next bullet), no 7501 reaches the outer
+  terminal, also with
   `AGY_CLI_OSC7501=on` and `allow-passthrough on`. With `=on` agy still writes the
   frames into the pane, where `tmux pipe-pane` captures them; without it the pane gets
   none.
@@ -1388,13 +1391,14 @@ only downloaded the public release.
   agy asks `ESC[?2026$p` (and 2027) in the pane as outside it, gets no answer, and then
   writes no `?2026h` at all: 0 frames, and all 57 redraws of a scroll drawn outside
   one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
-  runs). Behind
-  Koloft's status relay (`STATUS_RELAY_PY`, which answers yes when tmux does not and
-  carries each frame past tmux, PLATFORM§35) agy got `?2026;2$y`, wrote 63–64 frames,
+  runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
+  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
+  a remote agy tab does not start agy through it) agy got `?2026;2$y`, wrote 63–64 frames,
   and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
   frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
   `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0
-  OSC 8 links inside tmux with or without the relay (813 outside it). 2026-11-08, agy
+  OSC 8 links inside tmux with or without the relay (813 outside it); what turns them
+  off there was not probed. 2026-11-08, agy
   1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a, Koloft's
   tmux.conf, no network), `altScreenMode: always`, a fake Gemini server streaming a
   160-line answer with links, then 60 wheel notches; a python pty answering like
