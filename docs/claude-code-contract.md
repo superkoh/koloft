@@ -3095,7 +3095,7 @@ below was one run.
   highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
   unchanged (6 of 6).
-- **A plan dialog can draw more than three rows; Koloft's run covers five.** 2026-11-08,
+- **A plan dialog can draw four rows (measured) or five (from strings).** 2026-11-08,
   CC 2.1.319, the setup of the plan bullet above (python pty through `pyte`, scratch
   `HOME` and `CLAUDE_CONFIG_DIR`, the fake Messages API, logging hooks); one run per line.
   - The user setting `showClearContextOnPlanAccept: true` (in `settings.json`; strings:
