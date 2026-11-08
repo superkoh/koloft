@@ -2540,6 +2540,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   resumed transcript, inside tmux 3.3a, 3.4, 3.5a and 3.8 with Koloft's tmux.conf in
   Docker, claude's own bytes logged by a pty between it and tmux; the `TMUX` order read
   from the binary's `strings`. What tmux does with those frames: platform ledger §35.
+- **claude does not hang when its terminal goes away early in its start**, unlike the
+  Node fake of PLATFORM§29. 2026-11-08, CC 2.1.319 (the native binary), a python
+  `pty.fork`, scratch `HOME` and `CLAUDE_CONFIG_DIR`, an `apiKeyHelper` key, an API
+  address nothing listens on; the pty master closed 0, 10, 30, 60, 100, 200, 300, 500,
+  1000 and 2000 ms after the fork, 3 runs each, once with the close alone and once with
+  SIGHUP first (as node-pty's `kill()` sends): 60 of 60 runs ended within 1 s of the close
+  (58 within 0.4 s) — killed by SIGHUP, or exit 129, or exit 0 — and no process was
+  left: none with the run's marker argument (`ps`), and none of the children seen at the
+  close (`security` keychain lookups) still alive after it.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 
