@@ -284,14 +284,15 @@ function questionKeys(q: Question, line: string, emptyItFirst: boolean): string[
   return [...intoTheField, ...typedPieces(line), ...moveOn, '\r']
 }
 
-const ROWS_OF_A_PLAN_DIALOG = 3
+// CC§14
+const MOST_ROWS_A_PLAN_DIALOG_DRAWS = 5
 
 // CC§14
 function emptyThePlanFeedbackRowFromAnyRow(): string[] {
   const nextRow = [...presses('Down', 1), CLEAR_TO_LINE_START]
   return [
     CLEAR_TO_LINE_START,
-    ...Array<string[]>(ROWS_OF_A_PLAN_DIALOG - 1)
+    ...Array<string[]>(MOST_ROWS_A_PLAN_DIALOG_DRAWS - 1)
       .fill(nextRow)
       .flat()
   ]

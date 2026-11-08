@@ -3095,6 +3095,38 @@ below was one run.
   highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
   unchanged (6 of 6).
+- **A plan dialog can draw more than three rows; Koloft's run covers five.** 2026-11-08,
+  CC 2.1.319, the setup of the plan bullet above (python pty through `pyte`, scratch
+  `HOME` and `CLAUDE_CONFIG_DIR`, the fake Messages API, logging hooks); one run per line.
+  - The user setting `showClearContextOnPlanAccept: true` (in `settings.json`; strings:
+    "When true, the plan-approval dialog offers a "clear context" option. Defaults to
+    false.") adds a first row: `1. Yes, clear context (0% used) and use auto mode`, then
+    `2. Yes, and use auto mode`, `3. Yes, manually approve edits`, `4. Tell Claude what to
+    change`. In a bypass session row 1 reads `… and bypass permissions` and row 2 `Yes, and
+    switch to BYPASS PERMISSIONS …`; a manual session (`--permission-mode default`, two
+    Shift+Tabs into plan mode) drew the same rows as the auto one. Down from row 4 wraps
+    to row 1.
+  - With it on, Shift+Tab picks row 1, from row 1 (auto, bypass and manual sessions) and
+    from row 4 holding `hello`, and so does `1`: CC ends the session (`SessionEnd`
+    reason `clear`), starts a new one in the same terminal (`SessionStart` source
+    `clear`, a new session id), and sends the plan as that one's first prompt,
+    "Implement the following plan: …", ending "User feedback on this plan: hello" when
+    row 4 held text. The old transcript records the `ExitPlanMode` call as turned down
+    ("The user doesn't want to proceed with this tool use…", `is_error: true`), so a
+    plan approved this way never shows as approved there. OSC 7501 went from
+    `blocked:kind=permission` to `idle` 20 ms after Shift+Tab. Esc rejected the plan and
+    kept plan mode.
+  - The three-row run (Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab) sent `hello` along
+    from row 1 with `hello` left in row 4 (1 run). Ctrl+U and Down five and four times,
+    then Shift+Tab, sent no text on four rows (from row 1 and row 2 with `hello` left in
+    row 4, from row 4 holding it, untouched: 4 runs) and on three rows (from row 1 with
+    `hello` left in row 3, untouched: 2 runs, each the usual approval).
+  - From strings, not drawn (inferred, not checked): a row `No, refine with Ultraplan in
+    a cloud session` sits just above the text row when the server flag
+    `tengu_ultraplan_config` is on and remote sessions are allowed, so with both a plan
+    dialog has five rows; Shift+Tab is handled by the whole dialog, not by a row, so it
+    should approve from that row too. A row for "Yes, manually approve edits" is left out
+    when the model needs auto or plan mode, so three rows can also be two.
 - **2.1.319 adds a settings key, `permissions.denyInsteadOfPrompting` (boolean): a call
   that would wait on a permission dialog is refused at once and the turn goes on — but
   PermissionRequest fires first, and the hook's answer wins.** Measured 2026-11-07
