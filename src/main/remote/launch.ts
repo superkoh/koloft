@@ -291,6 +291,7 @@ interface MachineTarget {
   tabId: string
 }
 
+// PLATFORM§37
 function pushMachine(s: MachineTarget): string {
   const m = s.machine.name
   const tmp = `m.tmp.${s.tabId}`
@@ -309,20 +310,19 @@ function machineReady(s: MachineTarget): string {
 const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
 
 const TAB_IN = 'koloft-tab-in'
-const MACHINE_THERE = 'koloft-machine-there'
 
-function tabPushedTellingIfMachineThere(s: MachineTarget & { tabDir: string }): string {
+function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string {
   return (
-    `h=$(COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
-    `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN} ` +
-    `&& test -d "$HOME/.koloft/${s.machine.name}" && echo ${MACHINE_THERE}'); ` +
-    `case "$h" in *${MACHINE_THERE}) ;; *${TAB_IN}) ${pushMachine(s)} ;; *) false ;; esac`
+    `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
+    `'umask 077; test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
+    `&& tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
   )
 }
 
 export function tabPushed(s: MachineTarget & { tabDir: string }): string {
+  const pushTab = pushTabDirBesideMachine(s)
   return (
-    `${tabPushedTellingIfMachineThere(s)} ` +
+    `h=$(${pushTab}); case "$h" in *${TAB_IN}*) ;; *) ${pushMachine(s)} && ${pushTab} >/dev/null ;; esac ` +
     `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; rm -rf ${shq(s.tabDir)}; `
   )
 }
