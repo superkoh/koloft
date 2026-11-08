@@ -272,10 +272,12 @@ for f in "$@"; do
 done
 exit 0`
 
+export const MACHINE_CONFIG_HOME = '${XDG_CONFIG_HOME:-$HOME/.config}'
+
 // MUSE§10
 export const MUSE_TRUSTED_SH = `cd "$1" 2>/dev/null || exit 1
 d="$(pwd -P)"
-for f in "\${XDG_CONFIG_HOME:-$HOME/.config}/muse/trust.json" "$HOME"/.koloft/muse-homes/*/muse/trust.json; do
+for f in "${MACHINE_CONFIG_HOME}/muse/trust.json" "$HOME"/.koloft/muse-homes/*/muse/trust.json; do
   [ -f "$f" ] && python3 -c 'import json, sys; p = json.load(open(sys.argv[1])).get("projects") or {}; sys.exit(0 if (p.get(sys.argv[2]) or {}).get("decision") == "trusted" else 1)' "$f" "$d" 2>/dev/null && exit 0
 done
 exit 1`
@@ -316,7 +318,7 @@ export function museRunLines(s: MuseRunSpec): string {
     ...(s.trustIf ? ['--trust-if', s.trustIf] : [])
   ]
   // PLATFORM§35
-  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}${s.sandboxed ? SANDBOX_CHECK : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
+  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}${s.sandboxed ? SANDBOX_CHECK : ''}  O="${MACHINE_CONFIG_HOME}/muse"
   A="$HOME/.koloft/muse-homes/"${shq(s.account)}
   mkdir -p "$A/muse" "$O" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"

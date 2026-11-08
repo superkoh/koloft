@@ -107,8 +107,10 @@ const WHEN_DONE_HINT =
   'worktree go, so the next run is not skipped. A run that stops to ask you something, still has ' +
   'work running, or would lose a change or a commit stays open.'
 
-const taskHint = (label: string, prefix: string): string =>
-  `Type the skill's ${prefix}name, the same as in ${label} — or any message. It cannot start with a dash.`
+const taskHint = (label: string, prefix: string | null): string =>
+  prefix === null
+    ? `Type any message for ${label}. It cannot start with a dash.`
+    : `Type the skill's ${prefix}name, the same as in ${label} — or any message. It cannot start with a dash.`
 const MODEL_HINT = 'Default = whatever a new session in this workspace would use.'
 const effortHint = (label: string): string =>
   `How hard ${label} thinks before it answers. Same as usual = what your other sessions use.`

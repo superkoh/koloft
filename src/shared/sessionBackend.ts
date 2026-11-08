@@ -26,11 +26,11 @@ export const BACKEND_PRODUCT: Record<BackendId, string> = {
 export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
 // CC§9 CODEX§17 MUSE§16 AGY§31
-export const SKILL_PREFIX: Record<BackendId, string> = {
+export const SKILL_PREFIX: Record<BackendId, string | null> = {
   claude: '/',
   codex: '$',
   muse: '/',
-  agy: '/'
+  agy: null
 }
 
 export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'

@@ -170,9 +170,9 @@ export function validate(f: JobFields, now = new Date(), saved?: Schedule): Vali
 export function suggest(
   text: string,
   skills: SkillSuggestion[],
-  prefix: string
+  prefix: string | null
 ): SkillSuggestion[] {
-  if (!text.startsWith(prefix)) return []
+  if (prefix === null || !text.startsWith(prefix)) return []
   const q = text.toLowerCase()
   const out: SkillSuggestion[] = []
   for (const s of skills) {

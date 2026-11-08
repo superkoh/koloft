@@ -49,16 +49,18 @@ function unquote(s: string): string {
   return t
 }
 
-function frontMatter(text: string): { name?: string; description?: string } {
+type FrontMatterKey = 'name' | 'description' | 'user-invocable'
+
+function frontMatter(text: string): Partial<Record<FrontMatterKey, string>> {
   const lines = text.split(/\r?\n/)
   if (lines[0]?.trim() !== '---') return {}
-  const out: { name?: string; description?: string } = {}
+  const out: Partial<Record<FrontMatterKey, string>> = {}
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
     if (line.trim() === '---') break
-    const m = /^(name|description)\s*:(.*)$/.exec(line)
+    const m = /^(name|description|user-invocable)\s*:(.*)$/.exec(line)
     if (!m) continue
-    const key = m[1] as 'name' | 'description'
+    const key = m[1] as FrontMatterKey
     if (out[key] !== undefined) continue
     let value = unquote(m[2])
     if (value === '>' || value === '|' || value === '>-' || value === '|-') {
@@ -91,10 +93,8 @@ export interface SkillPlaces {
 
 export interface SkillFolders {
   skills: string[]
-  commands: string[]
+  commands?: string[]
 }
-
-const NO_FOLDERS: SkillFolders = { skills: [], commands: [] }
 
 // CC§9 CODEX§17 MUSE§16 AGY§31
 export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolders> {
@@ -108,36 +108,28 @@ export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source,
       }
     case 'codex':
       return {
-        project: { skills: [ws('.agents', 'skills'), ws('.codex', 'skills')], commands: [] },
+        project: { skills: [ws('.agents', 'skills'), ws('.codex', 'skills')] },
         home: {
           skills: [
             ...(p.codexHome ? [path.join(p.codexHome, 'skills')] : []),
             home('.agents', 'skills')
-          ],
-          commands: []
+          ]
         }
       }
     case 'muse':
       return {
-        project: { skills: [ws('.agents', 'skills'), ws('.claude', 'skills')], commands: [] },
+        project: { skills: [ws('.agents', 'skills'), ws('.claude', 'skills')] },
         home: {
           skills: [
             path.join(p.configHome, 'muse', 'skills'),
             home('.agents', 'skills'),
             home('.claude', 'skills'),
             home('.codex', 'skills')
-          ],
-          commands: []
+          ]
         }
       }
     case 'agy':
-      return {
-        project: {
-          skills: [ws('.agents', 'skills'), ws('_agents', 'skills'), ws('.agent', 'skills')],
-          commands: []
-        },
-        home: NO_FOLDERS
-      }
+      return { project: { skills: [] }, home: { skills: [] } }
   }
 }
 
@@ -155,6 +147,7 @@ function skillsIn(fs: SkillFs, roots: string[], prefix: string, source: Source):
       if (!isFileSafe(fs, file)) continue
       const text = readFileSafe(fs, file)
       const fm = text === null ? {} : frontMatter(text)
+      if (fm['user-invocable'] === 'false') continue
       out.push({
         name: prefix + (fm.name ?? dir),
         ...(fm.description ? { description: cut120(fm.description) } : {}),
@@ -187,12 +180,13 @@ export function listSkills(
   backend: BackendId,
   places: SkillPlaces
 ): SkillSuggestion[] {
-  const folders = skillFolders(backend, places)
   const prefix = SKILL_PREFIX[backend]
+  if (prefix === null) return []
+  const folders = skillFolders(backend, places)
   const out: SkillSuggestion[] = []
   const seen = new Set<string>()
   for (const source of ['project', 'home'] as const) {
-    const { skills, commands } = folders[source]
+    const { skills, commands = [] } = folders[source]
     for (const s of [
       ...skillsIn(fs, skills, prefix, source),
       ...commandsIn(fs, commands, prefix, source)

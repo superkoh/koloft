@@ -69,7 +69,7 @@ import {
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
-import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { MACHINE_CONFIG_HOME, MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import {
   discordSaidLine,
@@ -505,9 +505,9 @@ const ON_THE_MACHINE: SkillPlaces = { workspace: '$1', home: '$HOME', configHome
 function skillFilesScript(backend: BackendId): string {
   const folders = Object.values(skillFolders(backend, ON_THE_MACHINE))
   const skills = folders.flatMap((f) => f.skills)
-  const commands = folders.flatMap((f) => f.commands)
+  const commands = folders.flatMap((f) => f.commands ?? [])
   return [
-    'X="${XDG_CONFIG_HOME:-$HOME/.config}"',
+    `X="${MACHINE_CONFIG_HOME}"`,
     `printf '%s\\0%s\\0' "$HOME" "$X"`,
     ...skills.map(
       (d) =>
@@ -1184,7 +1184,8 @@ export class SshHost implements Host {
     if (r.code !== 0) return []
     const [home, configHome, ...rest] = r.stdout.toString('utf8').split('\0')
     const files = new Map<string, string>()
-    for (let i = 0; i + 1 < rest.length; i += 2) files.set(rest[i], rest[i + 1])
+    for (let i = 0; i + 1 < rest.length; i += 2)
+      files.set(path.posix.normalize(rest[i]), rest[i + 1])
     return listSkills(skillFsOf(files), backend, { workspace, home, configHome })
   }
 

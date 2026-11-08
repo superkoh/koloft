@@ -125,8 +125,8 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
       ])
     })
 
-    it('Antigravity: the three project folders agy reads, and nothing from the home', () => {
-      expect(names('agy')).toEqual(['/agent-project', '/agents-project', '/underscore-project'])
+    it('Antigravity: nothing, as agy started with -i sends a /name as plain text (#1618)', () => {
+      expect(names('agy')).toEqual([])
     })
   })
 
@@ -167,6 +167,15 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
     it('cuts a long description at 120 characters', () => {
       const long = 'x'.repeat(200)
       expect(only(`---\ndescription: ${long}\n---`).description).toBe('x'.repeat(120))
+    })
+
+    it('leaves out a skill marked user-invocable: false, which a typed /name does not run', () => {
+      const fs = fakeFs({
+        [`${WS}/.claude/skills`]: ['hidden', 'shown'],
+        ...skill('hidden', '---\nname: hidden\nuser-invocable: false\n---'),
+        ...skill('shown', '---\nname: shown\nuser-invocable: true\n---')
+      })
+      expect(listSkills(fs, 'claude', AT).map((s) => s.name)).toEqual(['/shown'])
     })
   })
 

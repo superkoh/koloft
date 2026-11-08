@@ -385,6 +385,17 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
     })
 
+    it("finds a Muse task's skills under the machine's XDG_CONFIG_HOME even when it ends in a slash", async () => {
+      const config = path.join(home, 'cfg')
+      fs.mkdirSync(path.join(config, 'muse', 'skills', 'mine'), { recursive: true })
+      fs.writeFileSync(path.join(config, 'muse', 'skills', 'mine', 'SKILL.md'), '---\n---')
+      const withConfigHome = (cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> =>
+        runOnMachine(`env XDG_CONFIG_HOME='${config}/' ${cmd}`, opts)
+
+      const skills = await machine(withConfigHome).listSkills(keyed(repo), 'muse')
+      expect(skills.map((s) => s.name)).toEqual(['/mine'])
+    })
+
     it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {
       const hookDir = path.join(home, '.koloft', 'hook-sessions')
       fs.mkdirSync(hookDir, { recursive: true })
