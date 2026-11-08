@@ -42,6 +42,7 @@ import {
   remoteDir,
   seedRemoteWorkspace
 } from './helpers/remote'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -281,6 +282,31 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await runIn(page, centerTerm(page), 'still here')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'still here' })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      expect(machineAgyCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('with no Antigravity account usable, restarting a remote Antigravity session says why, keeps agy running in its tmux session on the machine, and starts no other there', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'one turn')
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'one turn' })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { id } = await boundRemoteSession(page, 'agy')
+
+      await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, 'agy')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(liveTmuxSessions(env)).toContain(`k-${id}`)
       expect(machineAgyCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)

@@ -439,6 +439,22 @@ function tui() {
       fire('PostToolUse', { ...call, tool_response: ran.stdout })
       return later(() => say(turnId, `Ran: ${cmd}`, text))
     }
+    // MUSE§9
+    if (text === '/silent') {
+      const turnId = turn(text)
+      return later(() => {
+        logRecord(session.id, 'runtime.session', {
+          kind: 'run',
+          run_id: turnId,
+          event: { kind: 'terminal', terminal: 'completed' }
+        })
+        inputBox()
+        const stop = { turn_id: turnId, last_assistant_message: null, stop_hook_active: false }
+        fire('Stop', stop)
+        fire('Stop', stop)
+        status('state=done:app=muse')
+      })
+    }
     if (text.startsWith('/koloft ')) {
       const cmd = `koloft ${text.slice('/koloft '.length).trim()}`
       execFile('/bin/sh', ['-c', cmd], { cwd: process.cwd() }, (e, out, err) => {

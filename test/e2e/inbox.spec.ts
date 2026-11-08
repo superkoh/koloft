@@ -27,6 +27,8 @@ import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   installFakeRemote,
+  installMuseOnMachine,
+  killFakeRemote,
   machineHome
 } from './helpers/remote'
 import { ANSWER_NOT_TAKEN_ON_A_CARD, ASK_NO_LONGER_ON_SCREEN } from '../../src/main/koloftInbox'
@@ -503,6 +505,51 @@ test('a session that ends its turn waiting on the owner is a card with its last 
     timeout: 15_000
   })
 })
+
+const A_MUSE_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS = '5000'
+
+for (const remote of [false, true]) {
+  test(`a turn of a ${remote ? 'remote ' : ''}Muse session that ends without a word is still a card that finished and waits for you, with no quote, and a reply typed on it reaches the session`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    installMuse(env)
+    if (remote) {
+      installFakeRemote(env)
+      installMuseOnMachine(env)
+    } else trustInMuse(env, env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+      await newSessionInWith(page, ws, 'Muse')
+      const row = wsRows(page, ws).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) as string
+      if (remote)
+        fs.writeFileSync(
+          path.join(machineHome(env), 'fake-muse-delay'),
+          A_MUSE_TURN_LONGER_THAN_ONE_MIRROR_PULL_MS
+        )
+      await typeInto(page, tabId, '/silent')
+      await openInbox(page)
+      const card = inboxCard(page, 'finished and waits for you')
+      await expect(card).toBeVisible({ timeout: 30_000 })
+      await expect(card.locator('.ibx-quote')).toHaveCount(0)
+      await card.locator('.ibx-input').fill('carry on please')
+      await card.locator('.ibx-btn', { hasText: 'Send' }).click()
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
+        .toContain('«carry on please»')
+      await expect(await doneStatus(page, 'finished and waits for you')).toContainText('Replied')
+    } finally {
+      await quitAndClose(app)
+      if (remote) killFakeRemote(env)
+    }
+  })
+}
 
 const ASSIST_OFFERS_REPLIES = 'ACT\nQ: Merge PR #12?\n- Merge it\n- Not yet\n'
 

@@ -4,13 +4,16 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   agyCalls,
+  agySessionCalls,
   installAgy,
   installCodex,
   installFakeGh,
   installMuse,
+  museCalls,
   setGithubFixture,
   type E2EEnv
 } from './helpers/env'
+import { codexCalls, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 import {
   butlerHelperRows,
   butlerRow,
@@ -28,14 +31,21 @@ import {
 } from './helpers/p1'
 import { answerFileDialog } from './helpers/workbench'
 import { setupGitFixture } from './helpers/gitFixture'
-import { messagingOf } from '../../src/shared/sessionBackend'
+import { BACKEND_LABEL, messagingOf } from '../../src/shared/sessionBackend'
+import type { BackendId } from '../../src/shared/types'
 import {
   installFakeRemote,
   killFakeRemote,
+  machineAgyCalls,
+  machineCodexLog,
   machineHome,
+  machineMuseCalls,
+  OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_HOST,
+  REMOTE_WS_NAME,
   remoteDir,
-  seedRemoteWorkspace
+  seedRemoteWorkspace,
+  type OtherAgentName
 } from './helpers/remote'
 
 test.afterEach(({ env }) => killFakeRemote(env))
@@ -108,14 +118,110 @@ function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse'): str
     .join('\n')
 }
 
-function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+function agyTitlesSet(env: E2EEnv): unknown[] {
+  const file = path.join(env.home, 'fake-agy-api.jsonl')
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line))
+    .map(
+      (line) => JSON.parse(line) as { method: string; body: { annotations?: { title?: string } } }
+    )
+    .filter((c) => c.method === 'UpdateConversationAnnotations')
+    .map((c) => c.body.annotations?.title)
+}
+
+function codexNamesSet(wire: CodexWireLine[]): unknown[] {
+  return wire.flatMap(({ direction, frame }) =>
+    direction === 'client' && frame.method === 'thread/name/set'
+      ? [(frame.params as { name?: string }).name]
+      : []
+  )
+}
+
+const codexFreshLaunches = (env: E2EEnv): Launch[] =>
+  codexCalls(env)
+    .filter((c) => c.method === 'thread/start')
+    .map((c) => ({ argv: c.argv, cwd: c.effectiveCwd }))
+
+async function makeDefaultAgent(page: Page, backend: BackendId): Promise<void> {
+  await page.evaluate(
+    (b) =>
+      window.api.settings.set({
+        sessionMethods: {
+          defaultBackend: b,
+          enabled: { claude: true, codex: true, muse: true, agy: true }
+        }
+      }),
+    backend
+  )
+}
+
+function titledRow(page: Page, ws: string, title: string): Locator {
+  const exactly = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  return wsRows(page, ws).filter({ has: page.locator('.ws-tab-title', { hasText: exactly }) })
+}
+
+interface Launch {
+  argv: string[]
+  cwd: string
+}
+
+const firstPromptAfter =
+  (flag: string) =>
+  (argv: string[]): string | undefined => {
+    const at = argv.indexOf(flag)
+    return at < 0 ? undefined : argv[at + 1]
+  }
+const lastArgument = (argv: string[]): string | undefined => argv[argv.length - 1]
+
+interface AgentStart {
+  launches: (env: E2EEnv) => Launch[]
+  firstPrompt: (argv: string[]) => string | undefined
+  titleSentToTheAgent?: (env: E2EEnv) => unknown[]
+}
+
+const OTHER_AGENTS_HERE: ({
+  backend: 'codex' | 'muse' | 'agy'
+  install: (env: E2EEnv) => void
+} & AgentStart)[] = [
+  {
+    backend: 'codex',
+    install: (env) => installCodex(env),
+    launches: codexFreshLaunches,
+    firstPrompt: lastArgument,
+    titleSentToTheAgent: (env) =>
+      codexNamesSet(fakeCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+  },
+  { backend: 'muse', install: installMuse, launches: museCalls, firstPrompt: lastArgument },
+  {
+    backend: 'agy',
+    install: installAgy,
+    launches: agySessionCalls,
+    firstPrompt: firstPromptAfter('-i'),
+    titleSentToTheAgent: agyTitlesSet
+  }
+]
+
+const ON_THE_MACHINE: Record<OtherAgentName, { backend: BackendId } & AgentStart> = {
+  Codex: {
+    backend: 'codex',
+    launches: codexFreshLaunches,
+    firstPrompt: lastArgument,
+    titleSentToTheAgent: (env) =>
+      codexNamesSet(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+  },
+  Muse: {
+    backend: 'muse',
+    launches: (env) => machineMuseCalls(env).filter((c) => !c.argv.includes('resume')),
+    firstPrompt: lastArgument
+  },
+  Antigravity: {
+    backend: 'agy',
+    launches: machineAgyCalls,
+    firstPrompt: firstPromptAfter('-i')
+  }
 }
 
 test.describe('starting work from ⌘P: Koloft Assist picks the workspace, worktree and title, and ⏎ or ⌘⏎ starts the session straight away', () => {
@@ -178,6 +284,55 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await quitAndClose(app)
     }
   })
+
+  for (const {
+    backend,
+    install,
+    launches,
+    firstPrompt,
+    titleSentToTheAgent
+  } of OTHER_AGENTS_HERE) {
+    test(`local ${BACKEND_LABEL[backend]}: ⏎ on a request starts it at once in the new worktree Assist names, past its trust question, with the first prompt and the title on its row, no dialog in between`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      install(env)
+      gitInit(env.workspaces.a)
+      assistAnswers(env, {
+        workspace: 1,
+        worktree: { new: 'palette-search' },
+        title: 'Palette search',
+        sure: true,
+        why: 'The palette lives in ws-a.'
+      })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await makeDefaultAgent(page, backend)
+        await ask(app, page, PROMPT)
+        await page.keyboard.press('Enter')
+
+        await expect.poll(() => launches(env).length, { timeout: 40_000 }).toBe(1)
+        await expect(page.locator('.modal')).toHaveCount(0)
+        const [call] = launches(env)
+        expect(fs.realpathSync(call.cwd)).toBe(
+          fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'palette-search'))
+        )
+        expect(firstPrompt(call.argv)).toBe(PROMPT)
+        await expect(titledRow(page, 'ws-a', 'Palette search')).toHaveClass(/\bst-waiting\b/, {
+          timeout: 60_000
+        })
+        if (titleSentToTheAgent)
+          await expect
+            .poll(() => titleSentToTheAgent(env), { timeout: 30_000 })
+            .toContain('Palette search')
+        expect(readAllCalls(env)).toHaveLength(0)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on without asking it; once one workspace is named a second @ offers none, two workspaces keep Start off, and one named twice does not', async ({
     env
@@ -743,5 +898,45 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         await quitAndClose(app)
       }
     })
+
+    for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+      const { backend, launches, firstPrompt, titleSentToTheAgent } = ON_THE_MACHINE[agent.label]
+      const named = backend !== 'agy'
+      test(`remote ${agent.label}: a request starts ${agent.label} at once in the ssh workspace with its first prompt, ${named ? 'and the title Assist gave on its row' : 'its row titled by agy from the request, since agy on another machine takes no name from Koloft'}`, async ({
+        env
+      }) => {
+        test.setTimeout(300_000)
+        installFakeRemote(env)
+        agent.install(env)
+        seedRemoteWorkspace(env)
+        assistAnswers(env, { workspace: 3, worktree: 'main', title: 'Deploy check', why: 'proj' })
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await makeDefaultAgent(page, backend)
+          await ask(app, page, 'check the deploy script')
+          await page.keyboard.press('Enter')
+
+          await expect.poll(() => launches(env).length, { timeout: 90_000 }).toBe(1)
+          await expect(page.locator('.modal')).toHaveCount(0)
+          const [call] = launches(env)
+          expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(remoteDir(env)))
+          expect(firstPrompt(call.argv)).toBe('check the deploy script')
+          // AGY§8 AGY§16
+          const title = named ? 'Deploy check' : 'check the deploy script'
+          await expect(titledRow(page, REMOTE_WS_NAME, title)).toHaveClass(/\bst-waiting\b/, {
+            timeout: 60_000
+          })
+          if (titleSentToTheAgent)
+            await expect
+              .poll(() => titleSentToTheAgent(env), { timeout: 30_000 })
+              .toContain('Deploy check')
+          expect(readAllCalls(env)).toHaveLength(0)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
   })
 })
