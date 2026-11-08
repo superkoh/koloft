@@ -1561,8 +1561,7 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   agent's `a…` id, which no Stop list names. The subagent's transcript never wrote that
   id, during the call or in its tool result after. So the process table cannot
   tie such a call to the agent that made it; it only shows that some foreground call
-  is in flight, and `judgeReported` holds every reported agent as working while one is,
-  past `BG_SILENCE_MAX_MS` (issue #76).
+  is in flight. Other foreground tools and other builds are not probed yet.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at

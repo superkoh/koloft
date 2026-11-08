@@ -1445,13 +1445,18 @@ describe('run-state from the typed task list: each task judged by what it is, an
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabL18a', cwd, initialLines(cwd))
+    writeSubagentJsonl(cwd, SID, 'agent-a1.jsonl', [subagentRec(Date.now())])
     stageProcs(tracker, { bfg: { ageMs: 0 } })
     tracker.setStatus('tabL18a', 'working')
     await tracker.reportTurnEnd('tabL18a', [{ id: 'a1', type: 'subagent' }])
     await sleep(SILENCE_MS + SCAN_MS + 200)
     expect(status(tracker, 'tabL18a')).toBe('working')
+    expect(parked(tracker, 'tabL18a')).toEqual([
+      { id: 'a1', kind: 'agent', label: 'subagent', state: 'working' }
+    ])
     stageProcs(tracker, {})
     await waitFor(tracker, (s) => s.tabId === 'tabL18a' && s.status === 'waiting', 6000)
+    expect(parked(tracker, 'tabL18a')).toBeUndefined()
   }, 12_000)
 
   it('a fresh teammate spawn counts as activity before its transcript exists', async () => {
