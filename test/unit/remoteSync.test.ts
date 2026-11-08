@@ -401,6 +401,12 @@ it('while a session on the machine works or was just typed into, a hook landing 
   target = { ...target, agentTabs: false }
   await tick(2000)
   expect(liveBells()).toHaveLength(0)
+  const roundsBefore = runs.length
+  while (runs.length === roundsBefore) await tick(10)
+  const afterSilenced = runs.length
+  bells[bells.length - 1].ring()
+  await tick(500)
+  expect(runs.length).toBe(afterSilenced)
 })
 
 it('pulls a folder only when the heartbeat shows its files changed, and again after a failed pull or a poke', async () => {

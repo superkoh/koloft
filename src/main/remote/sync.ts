@@ -242,7 +242,7 @@ export class RemoteSync {
     const stop = this.deps.listen(
       host,
       hookBellCmd(),
-      (line) => line === HOOKS_CHANGED && this.rung(host, st),
+      (line) => line === HOOKS_CHANGED && st.stopBell === stop && this.rung(host, st),
       () => {
         if (st.stopBell !== stop) return
         st.stopBell = undefined
