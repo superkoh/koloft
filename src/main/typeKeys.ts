@@ -1,4 +1,5 @@
-import type { TabKind } from '../shared/types'
+import type { TabKind } from '@shared/types'
+import { backendIdOf, pasteKeepsItsLastLineFeeds } from '@shared/sessionBackend'
 import { sleep } from './codexTransport'
 
 // CC§12 CC§18 MUSE§17
@@ -25,14 +26,14 @@ export function bracketedPaste(text: string): string {
   return `\x1b[200~${text.replace(CONTROLS_THAT_COULD_END_A_PASTE, '')}\x1b[201~`
 }
 
-// AGY§15
-const DROP_A_PASTES_LAST_LINE_FEEDS: ReadonlySet<TabKind> = new Set(['agy'])
 const LAST_LINE_FEEDS = /\n+$/
 
-export function pasteKeys(text: string, kind: TabKind | undefined): string[] {
-  const kept = kind && DROP_A_PASTES_LAST_LINE_FEEDS.has(kind) ? LAST_LINE_FEEDS.exec(text) : null
-  if (!kept) return [bracketedPaste(text)]
-  return [bracketedPaste(text.slice(0, kept.index)), kept[0]]
+export function pasteFor(text: string, kind: TabKind | undefined): string {
+  const backend = backendIdOf(kind)
+  const typed =
+    backend && !pasteKeepsItsLastLineFeeds(backend) ? LAST_LINE_FEEDS.exec(text)?.[0] : undefined
+  if (!typed) return bracketedPaste(text)
+  return bracketedPaste(text.slice(0, -typed.length)) + typed
 }
 
 // CC§18

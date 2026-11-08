@@ -12,7 +12,7 @@ import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
   onlyTheTerminalsOwnAnswers,
-  pasteKeys,
+  pasteFor,
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
@@ -388,7 +388,7 @@ export class PtyManager extends EventEmitter {
   }
 
   async paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    await this.type(id, [...pasteKeys(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
+    await this.type(id, [pasteFor(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

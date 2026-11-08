@@ -521,7 +521,7 @@ import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecyc
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import {
   clicksTheMouse,
-  pasteKeys,
+  pasteFor,
   pressesAKey,
   typedPieces,
   typeKeys,
@@ -6414,7 +6414,7 @@ function registerIpc(): void {
     ownerTouched(id)
     ownerTouchedTheScreen(id)
     if (typedWhileAsleep.has(id))
-      return writeToTab(id, pasteKeys(text, sleepers.get(id)?.kind).join('') + (typedAfter ?? ''))
+      return writeToTab(id, pasteFor(text, sleepers.get(id)?.kind) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {

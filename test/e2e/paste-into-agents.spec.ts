@@ -16,6 +16,7 @@ import {
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
   addRemoteWorkspace,
+  agyReady,
   launchWithRemote,
   machineCodexLog,
   machineHome,
@@ -25,12 +26,10 @@ import {
 } from './helpers/remote'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
-  agySessionCalls,
   agyTranscriptOf,
   installAgy,
   installFakeGh,
   installMuse,
-  museCalls,
   museSaid,
   ownersGemini,
   seedSettings,
@@ -42,19 +41,20 @@ import {
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
-  WORKBENCH,
   commentOnFirstHunk,
   expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
   sendFailingChecks,
-  showBrowse
+  showChanges
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   gitCommitAll,
   gitInit,
   newSessionInWith,
+  runIn,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -62,23 +62,10 @@ import {
 test.setTimeout(120_000)
 
 interface Agent {
-  name: 'Muse' | 'Antigravity'
+  label: 'Muse' | 'Antigravity'
   install: (env: E2EEnv) => void
-  launches: (env: E2EEnv) => number
   prompts: (env: E2EEnv) => string[]
-  workbenchReady: (page: Page) => Promise<void>
-}
-
-const activeRow = (page: Page): ReturnType<typeof wsRows> =>
-  wsRows(page, 'ws-a').and(page.locator('.active'))
-
-// AGY§8
-async function agyBindsOnItsFirstPrompt(page: Page): Promise<void> {
-  await expect(centerTerm(page)).toContainText('Antigravity CLI', { timeout: 30_000 })
-  await centerTerm(page).click()
-  await page.keyboard.type('a first prompt so the conversation exists')
-  await page.keyboard.press('Enter')
-  await expect(activeRow(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+  bound: (page: Page) => Promise<unknown>
 }
 
 const MUSE_ECHO = 'echo: '
@@ -114,37 +101,41 @@ function agyPrompts(env: E2EEnv, gemini = ownersGemini(env)): string[] {
 
 const AGENTS: Agent[] = [
   {
-    name: 'Muse',
+    label: 'Muse',
     install: (env) => {
       installMuse(env)
       trustInMuse(env, env.workspaces.a)
     },
-    launches: (env) => museCalls(env).length,
     prompts: (env) => musePrompts(env),
-    workbenchReady: (page) => expect(activeRow(page)).toHaveClass(/st-waiting/)
+    bound: (page) =>
+      expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
   },
   {
-    name: 'Antigravity',
+    label: 'Antigravity',
     install: (env) => {
       installAgy(env)
       trustInAgy(env, env.workspaces.a)
     },
-    launches: (env) => agySessionCalls(env).length,
     prompts: (env) => agyPrompts(env),
-    workbenchReady: agyBindsOnItsFirstPrompt
+    // AGY§8
+    bound: async (page) => {
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      return agyConversationOnceFirstTurnEnded(page)
+    }
   }
 ]
 
-async function startAgent(page: Page, env: E2EEnv, agent: Agent): Promise<void> {
-  const before = agent.launches(env)
-  await newSessionInWith(page, 'ws-a', agent.name)
-  await expect.poll(() => agent.launches(env)).toBe(before + 1)
-  await agent.workbenchReady(page)
+async function startAgent(page: Page, agent: Agent): Promise<void> {
+  await newSessionInWith(page, 'ws-a', agent.label)
+  await agent.bound(page)
 }
 
 for (const agent of AGENTS) {
-  test.describe(`pasting from the Workbench into a ${agent.name} tab on this Mac`, () => {
-    test(`✎ comment on a Changes hunk lands in the ${agent.name} input box as a paste with the note typed after it, unsent until the person presses Enter`, async ({
+  test.describe(`pasting from the Workbench into a ${agent.label} tab on this Mac`, () => {
+    test(`✎ comment on a Changes hunk lands in the ${agent.label} input box as a paste with the note typed after it, unsent until the person presses Enter`, async ({
       env
     }) => {
       setupChangeFixture(env.workspaces.a).modifyTracked(1)
@@ -154,14 +145,10 @@ for (const agent of AGENTS) {
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startAgent(page, env, agent)
-        await showBrowse(page)
-        await page
-          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-          .filter({ hasText: 'Changes' })
-          .click()
+        await startAgent(page, agent)
+        await showChanges(page)
 
-        const note = `${agent.name} keep the old name`
+        const note = `${agent.label} keep the old name`
         const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
         await expectOnePromptFromTheComment(() => agent.prompts(env), head, note)
       } finally {
@@ -169,7 +156,7 @@ for (const agent of AGENTS) {
       }
     })
 
-    test(`an element picked in a Workbench web tab lands in the ${agent.name} input box as one paste with its picture on this Mac, unsent until the person presses Enter`, async ({
+    test(`an element picked in a Workbench web tab lands in the ${agent.label} input box as one paste with its picture on this Mac, unsent until the person presses Enter`, async ({
       env
     }) => {
       agent.install(env)
@@ -179,10 +166,10 @@ for (const agent of AGENTS) {
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startAgent(page, env, agent)
+        await startAgent(page, agent)
         const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
 
-        const marker = ` picked for ${agent.name}`
+        const marker = ` picked for ${agent.label}`
         await pickIntoSession(page, guest, '#buy', marker)
         const fromPick = (): string[] => agent.prompts(env).filter((p) => p.includes(marker))
         await expect.poll(fromPick, { timeout: 30_000 }).toHaveLength(1)
@@ -199,7 +186,7 @@ for (const agent of AGENTS) {
       }
     })
 
-    test(`GitHub button ▸ Send failing checks lands in the ${agent.name} input box as one paste, unsent until the person presses Enter`, async ({
+    test(`GitHub button ▸ Send failing checks lands in the ${agent.label} input box as one paste, unsent until the person presses Enter`, async ({
       env
     }) => {
       agent.install(env)
@@ -212,7 +199,7 @@ for (const agent of AGENTS) {
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startAgent(page, env, agent)
+        await startAgent(page, agent)
         await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
         await sendFailingChecks(page)
         await expectOnePromptFromTheChecks(() => agent.prompts(env))
@@ -264,11 +251,7 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
 
         await addRemoteWorkspace(page, env)
         await startOnTheMachine(page, agent)
-        await showBrowse(page)
-        await page
-          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
-          .filter({ hasText: 'Changes' })
-          .click()
+        await showChanges(page)
 
         const note = `${agent.label} on the machine say why two`
         const head = await commentOnFirstHunk(page, 'tracked.txt', note)
