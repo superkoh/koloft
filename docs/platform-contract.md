@@ -1474,7 +1474,7 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
 - **A commit writes nothing inside the checkout's own folder, only under its git dir**
-  (`git rev-parse --absolute-git-dir`): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
   there, plus the branch ref, its log and new objects in the common `.git`. For a
   linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
   worktree's folder, so a folder watch on the worktree sees no commit at all.

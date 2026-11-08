@@ -138,7 +138,13 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import {
+  barePath,
+  formatRemoteKey,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -7268,8 +7274,8 @@ function registerIpc(): void {
   ipcMain.handle(CH.fs.gitHeadLog, async (_e, root: string) => {
     if (typeof root !== 'string' || !root) return null
     const host = hosts.of(root)
-    const gitDir = (await host.gitOut(root, ['rev-parse', '--absolute-git-dir']))?.trim()
-    return gitDir ? host.keyed(path.posix.join(gitDir, 'logs', 'HEAD')) : null
+    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
+    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
   })
   ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root

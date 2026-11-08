@@ -61,6 +61,7 @@ export function useGitChangeSet(
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
+  const [headLog, setHeadLog] = useState<string | null>(null)
   const fetchNow = useRef<(() => void) | null>(null)
   const reread = useCallback(() => {
     setReadFailed(false)
@@ -74,6 +75,7 @@ export function useGitChangeSet(
     setRootMissing(false)
     setWatchDead(false)
     setReadFailed(false)
+    setHeadLog(null)
   }, [root])
 
   useEffect(() => {
@@ -128,23 +130,30 @@ export function useGitChangeSet(
 
   // PLATFORM§30
   useEffect(() => {
-    if (!active || !root) return
-    let headLog: string | null = null
+    if (!active || !root || headLog) return
     let live = true
-    window.api.fs.gitHeadLog(root).then((p) => {
-      if (!live || !p) return
-      headLog = p
-      window.api.fs.watchFile(p)
-    })
+    window.api.fs.gitHeadLog(root).then(
+      (p) => {
+        if (live && p) setHeadLog(p)
+      },
+      () => {}
+    )
+    return () => {
+      live = false
+    }
+  }, [active, root, headLog, refreshNonce])
+
+  useEffect(() => {
+    if (!active || !headLog) return
+    window.api.fs.watchFile(headLog)
     const off = window.api.fs.onFileChange((p) => {
       if (p === headLog) fetchNow.current?.()
     })
     return () => {
-      live = false
       off()
-      if (headLog) window.api.fs.unwatchFile(headLog)
+      window.api.fs.unwatchFile(headLog)
     }
-  }, [active, root])
+  }, [active, headLog])
 
   const firstReadFailed = readFailed && base === undefined
   return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }

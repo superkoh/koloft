@@ -1551,7 +1551,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         timeout: 30_000
       })
 
-      await untilTheMachineHasStamped(env, path.join(fs.realpathSync(dir), '.git', 'logs', 'HEAD'))
+      await untilTheMachineHasStamped(env, path.join(dir, '.git', 'logs', 'HEAD'))
       gitCommitAll(dir)
       await expect(page.locator('.wb-panel .cv-empty')).toHaveText('No changes against the base.', {
         timeout: 60_000

@@ -1479,6 +1479,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     const wtDir = fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'wt270'))
     const rel = fx.rel(fx.paths.changeable[0])
     fs.appendFileSync(path.join(wtDir, rel), '// made in the worktree\n')
+    await baseBtn(page).click()
     await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
     await expect(baseBtn(page)).toHaveText(/^vs HEAD ▾$/)
     await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([rel])
