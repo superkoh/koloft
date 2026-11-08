@@ -61,7 +61,7 @@ export function useGitChangeSet(
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
-  const [headLog, setHeadLog] = useState<string | null>(null)
+  const [headLog, setHeadLog] = useState<{ root: string; path: string } | null>(null)
   const fetchNow = useRef<(() => void) | null>(null)
   const reread = useCallback(() => {
     setReadFailed(false)
@@ -75,7 +75,6 @@ export function useGitChangeSet(
     setRootMissing(false)
     setWatchDead(false)
     setReadFailed(false)
-    setHeadLog(null)
   }, [root])
 
   useEffect(() => {
@@ -128,32 +127,34 @@ export function useGitChangeSet(
     }
   }, [active, root, baseChoice, refreshNonce])
 
+  const headLogOfRoot = headLog && headLog.root === root ? headLog.path : null
+
   // PLATFORM§30
   useEffect(() => {
-    if (!active || !root || headLog) return
+    if (!active || !root || headLogOfRoot) return
     let live = true
     window.api.fs.gitHeadLog(root).then(
-      (p) => {
-        if (live && p) setHeadLog(p)
+      (path) => {
+        if (live && path) setHeadLog({ root, path })
       },
       () => {}
     )
     return () => {
       live = false
     }
-  }, [active, root, headLog, refreshNonce])
+  }, [active, root, headLogOfRoot, base, refreshNonce])
 
   useEffect(() => {
-    if (!active || !headLog) return
-    window.api.fs.watchFile(headLog)
+    if (!active || !headLogOfRoot) return
+    window.api.fs.watchFile(headLogOfRoot)
     const off = window.api.fs.onFileChange((p) => {
-      if (p === headLog) fetchNow.current?.()
+      if (p === headLogOfRoot) fetchNow.current?.()
     })
     return () => {
       off()
-      window.api.fs.unwatchFile(headLog)
+      window.api.fs.unwatchFile(headLogOfRoot)
     }
-  }, [active, headLog])
+  }, [active, headLogOfRoot])
 
   const firstReadFailed = readFailed && base === undefined
   return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
