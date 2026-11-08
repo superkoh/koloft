@@ -313,6 +313,7 @@ export class RemoteSync {
           st.gitAt = Date.now()
         }
       } else {
+        this.deps.onToolShells?.(host, [])
         st.connected = false
         st.failures++
         st.problem = problemOf(hb)

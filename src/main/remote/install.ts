@@ -335,7 +335,9 @@ const EXTRA_LINE = 'extra '
 const SHELL_LINE = 'shell '
 const TOOL_SHELL_LINE = 'toolshell '
 // CC§8
-const TOOL_SHELLS_IN_FLIGHT = `[ -d /proc ] && find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '${TOOL_SHELL_LINE}%l\\n' 2>/dev/null`
+const TOOL_SHELLS_IN_FLIGHT =
+  `[ -d /proc ] && find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%h %l\\n' 2>/dev/null | ` +
+  `while read -r td tl; do grep -qs shell-snapshots "\${td%/fd}/cmdline" && echo "${TOOL_SHELL_LINE}$tl"; done`
 // PLATFORM§37
 const EACH_SHELLS_FOREGROUND_AND_FOLDER =
   `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +

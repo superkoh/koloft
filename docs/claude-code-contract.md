@@ -1572,7 +1572,9 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%l\n'` listed
   exactly those two in 2 ms with about 20 processes in the container, and took 6–24 ms
   over three runs with 1015 processes; Koloft's whole machine heartbeat with it took
-  10 ms. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
+  10–22 ms. A process left holding such a file that is not a tool shell (a stray
+  `perl … > …/tasks/b….output &`) differs from the tool shell only by its command line,
+  which lacks `shell-snapshots`. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
   so a probe needs another long command. A macOS machine (no `/proc`) is not probed.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran

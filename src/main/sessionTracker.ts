@@ -751,7 +751,7 @@ export class SessionTracker extends SessionRuntime {
     let observed = false
     let trusted = false
     const reportedIds = new Set(t.reported.map((x) => x.id))
-    const toolShells = procs ? [...procs.shells.keys()] : (t.toolShellsOnMachine ?? [])
+    const toolShells = t.remote ? (t.toolShellsOnMachine ?? []) : [...(procs?.shells.keys() ?? [])]
     const toolCallInFlight = toolShells.some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
@@ -962,10 +962,10 @@ export class SessionTracker extends SessionRuntime {
   // CC§8
   toolShellsOnMachineSaid(host: string, outputs: string[]): void {
     for (const t of this.tracked.values()) {
-      if (t.remote?.host !== host || !t.info.sessionId) continue
+      if (t.remote?.host !== host) continue
       const folder = `/${t.info.sessionId}/tasks/`
       t.toolShellsOnMachine = outputs
-        .filter((o) => o.includes(folder))
+        .filter((o) => t.info.sessionId && o.includes(folder))
         .map((o) => path.posix.basename(o, '.output'))
     }
   }
