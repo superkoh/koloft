@@ -9,8 +9,10 @@ import {
   ensureControlDir,
   problemOf,
   runSsh,
+  runSshBytes,
   sshOptions
 } from '../../src/main/remote/ssh'
+import { remoteAnswerCommand, remoteShCommand } from '../../src/main/remote/install'
 
 const UNIX_SOCKET_PATH_MAX_BYTES = 104
 
@@ -176,5 +178,26 @@ describe("U-SSH-2: remote command result code is null on a local timeout, 127 fo
     const r = await runSsh('host', 'true', { controlDir: tmp })
     expect(r.code).toBe(127)
     expect(r.stderr).toContain('ENOENT')
+  })
+})
+
+describe('a machine whose shell prints a greeting and a title escape as it starts, before the command ssh hands it', () => {
+  const ANSWER = 'PATH=/from/the/script\nkoloft-answer-starts-here\n'
+  beforeEach(() => {
+    process.env.PATH = `${bin}:/usr/bin:/bin`
+    fakeSsh(
+      `printf 'Welcome to the box\\n\\033]0;box\\007'\nshift $(($# - 1))\nexec /bin/sh -c "$1"`
+    )
+  })
+
+  it('an answer Koloft reads comes back exactly as the script printed it, byte for byte', async () => {
+    const script = "printf 'PATH=/from/the/script\\nkoloft-answer-starts-here\\n\\000\\377'"
+    const r = await runSshBytes('host', remoteAnswerCommand(script), { controlDir: tmp })
+    expect(r.stdout).toEqual(Buffer.concat([Buffer.from(ANSWER), Buffer.from([0, 0xff])]))
+  })
+
+  it('a command Koloft did not mark keeps all it printed, even a line that reads like the mark', async () => {
+    const r = await runSsh('host', remoteShCommand(`printf '${ANSWER}'`), { controlDir: tmp })
+    expect(r.stdout).toBe(`Welcome to the box\n\x1b]0;box\x07${ANSWER}`)
   })
 })

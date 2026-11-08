@@ -190,7 +190,12 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerAfterLoginChatter(r.stdout) }))
+  }).then((r) =>
+    noteMasterRoom(
+      host,
+      remoteCmd.includes(ANSWER_STARTS) ? { ...r, stdout: answerAfterLoginChatter(r.stdout) } : r
+    )
+  )
 }
 
 // PLATFORM§33 CC§13

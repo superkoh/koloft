@@ -68,14 +68,14 @@ fi`
 }
 
 // PLATFORM§33 PLATFORM§37
-export function remoteShCommand(script: string, args: string[] = []): string {
+export function remoteShCommand(script: string, args: string[] = [], first = ''): string {
   const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`
-  return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
+  return `sh -c '${first}eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
 // PLATFORM§33
 export function remoteAnswerCommand(script: string, args: string[] = []): string {
-  return remoteShCommand(`echo ${ANSWER_STARTS}\n${script}`, args)
+  return remoteShCommand(script, args, `echo ${ANSWER_STARTS}; `)
 }
 
 const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
