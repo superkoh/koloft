@@ -39,6 +39,7 @@ interface Remote {
   dir: string
   machineHome: string
   fail(call: number, code: number): void
+  greet(text: string): void
   argv(call: number): string[]
   calls(): number
   bin: string
@@ -76,6 +77,7 @@ last=""
 for a in "$@"; do last="$a"; done
 printf '%s\\n' "$@" > "$D/log.$n"
 [ -f "$D/exit.$n" ] && exit "$(cat "$D/exit.$n")"
+[ -f "$D/greeting" ] && cat "$D/greeting"
 [ "$1" = -tt ] && exec "$D/bin/fish" -n -c "$last"
 exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
 `,
@@ -86,6 +88,7 @@ exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
     bin,
     machineHome: path.join(dir, 'machine'),
     fail: (call, code) => fs.writeFileSync(path.join(dir, `exit.${call}`), String(code)),
+    greet: (text) => fs.writeFileSync(path.join(dir, 'greeting'), `${text}\n`),
     argv: (call) =>
       fs
         .readFileSync(path.join(dir, `log.${call}`), 'utf8')
@@ -165,30 +168,45 @@ function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
 }
 
 describe('U-LINE-*: the launch line', () => {
-  it('pushes the machine package once, the tab package always, then runs the tab script, never letting ssh eat the terminal keystrokes', () => {
+  it('pushes the tab package and learns whether the machine package is there in one ssh, pushes the machine package only when it is not, then runs the tab script, every ssh before it reading a pipe and never the terminal keystrokes', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec())
     const first = typeLine(r, st.line())
 
     expect(first.status).toBe(0)
-    expect(r.calls()).toBe(4)
-    expect(r.argv(1)).toContain('-n')
+    expect(r.calls()).toBe(3)
+    expect(r.argv(1).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
     expect(r.argv(1).at(-1)).toContain('test -d')
+    expect(r.argv(2).at(-1)).toContain(st.pkg.name)
     expect(fs.readFileSync(koloft(r, st.pkg.name, 'run.sh'), 'utf8')).toBe('echo hi\n')
     expect(fs.readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')).toContain('new-session')
-    expect(r.argv(4)).toContain('-tt')
-    expect(r.argv(4).at(-1)).toContain(`T.sh" start`)
+    expect(r.argv(3)).toContain('-tt')
+    expect(r.argv(3).at(-1)).toContain(`T.sh" start`)
     const credentialTabPackageLeftOnThisDisk = fs.existsSync(st.tabDir)
     expect(credentialTabPackageLeftOnThisDisk).toBe(false)
+    expect(
+      st.line().match(/\| ssh /g)?.length,
+      'every ssh before the tab script takes a tar on its input'
+    ).toBe(2)
 
     const st2 = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec({ tabId: 'T2' }))
     const again = typeLine(r, st2.line())
     expect(again.status).toBe(0)
-    expect(r.calls()).toBe(7)
-    expect(r.argv(5).at(-1)).toContain('test -d')
-    expect(r.argv(6).at(-1)).toContain('tar xf')
-    expect(r.argv(6).at(-1)).toContain('tabs')
-    expect(r.argv(7)).toContain('-tt')
+    expect(r.calls()).toBe(5)
+    expect(r.argv(4).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
+    expect(fs.existsSync(koloft(r, 'tabs', 'T2.sh'))).toBe(true)
+    expect(r.argv(5)).toContain('-tt')
+  })
+
+  it('on a machine whose login shell prints a greeting, the tab still starts and the machine package goes over only once', () => {
+    const r = remote()
+    r.greet('Welcome to the box')
+    const st = stage(r, { 'run.sh': 'x' }, spec())
+    expect(typeLine(r, st.line()).status).toBe(0)
+    expect(r.calls()).toBe(3)
+    const st2 = stage(r, { 'run.sh': 'x' }, spec({ tabId: 'T2' }))
+    expect(typeLine(r, st2.line()).status).toBe(0)
+    expect(r.calls()).toBe(5)
   })
 
   // PLATFORM§3
@@ -199,7 +217,7 @@ describe('U-LINE-*: the launch line', () => {
       spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
     }
     const line = st.line()
-    expect(line.match(/COPYFILE_DISABLE=1 tar cf -/g)?.length).toBe(2)
+    expect(line.match(/COPYFILE_DISABLE=1 tar cz?f -/g)?.length).toBe(2)
 
     expect(typeLine(r, line).status).toBe(0)
     expect(fs.readdirSync(koloft(r, st.pkg.name)).filter((n) => n.startsWith('._'))).toEqual([])
@@ -207,24 +225,26 @@ describe('U-LINE-*: the launch line', () => {
   })
 
   it('stops when a push fails — never a bare login shell dressed up as Claude', () => {
-    const r = remote()
-    const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(3, 1)
-    const res = typeLine(r, st.line())
-    expect(res.status).toBe(4)
-    expect(res.stdout).toContain('[Koloft]')
-    expect(r.calls()).toBe(3)
-    expect(fs.existsSync(st.tabDir)).toBe(false)
+    for (const failing of [1, 2]) {
+      const r = remote()
+      const st = stage(r, { 'run.sh': 'x' }, spec())
+      r.fail(failing, 1)
+      const res = typeLine(r, st.line())
+      expect(res.status).toBe(4)
+      expect(res.stdout).toContain('[Koloft]')
+      expect(r.calls()).toBe(failing)
+      expect(fs.existsSync(st.tabDir)).toBe(false)
+    }
   })
 
   it("reconnects only on ssh’s own link-broke code, turning claude's mouse and paste modes off before the notice, and reconnecting attaches", () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(4, SSH_LINK_BROKE_EXIT)
+    r.fail(3, SSH_LINK_BROKE_EXIT)
     const res = typeLine(r, st.line())
     expect(res.status).toBe(0)
-    expect(r.calls()).toBe(5)
-    expect(r.argv(5).at(-1)).toContain(`T.sh" attach`)
+    expect(r.calls()).toBe(4)
+    expect(r.argv(4).at(-1)).toContain(`T.sh" attach`)
     expect(res.stdout).toContain('\u001b[?1000l')
     expect(res.stdout).toContain('\u001b[?2004l')
     expect(res.stdout.indexOf('\u001b[?1000l')).toBeLessThan(
@@ -235,16 +255,16 @@ describe('U-LINE-*: the launch line', () => {
   it('a Claude that exits on its own ends the line with Claude’s code', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(4, 7)
+    r.fail(3, 7)
     const res = typeLine(r, st.line())
     expect(res.status).toBe(7)
-    expect(r.calls()).toBe(4)
+    expect(r.calls()).toBe(3)
   })
 
   it('a session that failed to start or ended with an error says its exit code and ends at once, waiting for no key, since Koloft keeps the tab and its screen', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(4, 7)
+    r.fail(3, 7)
     const live = typeLineWithStdinOpen(r, st.line())
     expect(await live.done).toBe(7)
     expect(live.out()).toContain('stopped with exit code 7')
@@ -916,7 +936,7 @@ describe('remote commands under a fish login shell', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
     expect(typeLine(r, st.line()).status).toBe(0)
-    expect(r.calls()).toBe(4)
+    expect(r.calls()).toBe(3)
 
     const machineHome = mkroot('fishhome')
     const machineBin = path.join(machineHome, '.local', 'bin')
