@@ -1496,3 +1496,20 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+- **A first prompt given with `-i` is plain text: a leading `/<name>` does not send the
+  skill.** 2026-11-08, agy 1.5.3 (build `6604829099950080`, `linux_arm64.json`), the same
+  Docker, fake Gemini server and `--gemini_dir` method, the TUI in tmux; a skill in
+  `<gd>/config/skills/<folder>/` whose frontmatter `name` differs from its folder, and one
+  in `<workspace>/.agents/skills/`, each body holding a codeword. Typed in the TUI, and as
+  `-p "/<name> say hi"` (or `-p "/<name>"`), the user turn carried `/<name> is a [Slash
+  Command]: <SKILL>The user has explicitly invoked the (<name>) skill … Here are its
+  contents: <body></SKILL>`. As `-i "/<name> say hi"` (3 runs) the turn held only
+  `<USER_REQUEST>/<name> say hi</USER_REQUEST>`, and `-i "/skills"` went to the model as
+  text too; typing `/<name> …` in that same TUI afterwards sent the body. `/<folder>`,
+  `$<name>`, `@<name>` and a `/<name>` in mid-sentence sent no body on any path; the
+  slash popup lists the frontmatter `name`. Workflow and command files —
+  `<workspace>/{.agents,.agent,_agents}/workflows/*.md`,
+  `<gd>/config/{global_workflows,workflows}/*.md`, `.gemini/commands/*.toml` in the
+  workspace, `<gd>` and the home — were not listed by `-p /skills` or `/help`, and
+  `/<name>` of each sent nothing (agy's own `migrate-workflows` skill calls them
+  deprecated).
