@@ -12,6 +12,7 @@ import {
   sendShortcut,
   startSessionIn,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
@@ -73,7 +74,7 @@ async function theResumedStartupTurnIsOver(
       { timeout: 60_000 }
     )
     .toBe(true)
-  await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }
 
 test.describe('File edit · unsaved work is never lost, and the ✎ that stays off', () => {
@@ -563,6 +564,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
     const [first] = await waitForCalls(env, 1)
+    await waitStartupTurnOver(page, 'ws-a')
 
     const mine = await dirtyEditor(page, fx.root, ed)
 
