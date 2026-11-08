@@ -126,6 +126,26 @@ export function useGitChangeSet(
     }
   }, [active, root, baseChoice, refreshNonce])
 
+  // PLATFORM§30
+  useEffect(() => {
+    if (!active || !root) return
+    let headLog: string | null = null
+    let live = true
+    window.api.fs.gitHeadLog(root).then((p) => {
+      if (!live || !p) return
+      headLog = p
+      window.api.fs.watchFile(p)
+    })
+    const off = window.api.fs.onFileChange((p) => {
+      if (p === headLog) fetchNow.current?.()
+    })
+    return () => {
+      live = false
+      off()
+      if (headLog) window.api.fs.unwatchFile(headLog)
+    }
+  }, [active, root])
+
   const firstReadFailed = readFailed && base === undefined
   return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
 }

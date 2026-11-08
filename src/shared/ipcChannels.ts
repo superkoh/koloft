@@ -188,6 +188,7 @@ export const CH = {
     dirExists: 'fs:dirExists',
     search: 'fs:search',
     gitChanges: 'fs:gitChanges',
+    gitHeadLog: 'fs:gitHeadLog',
     watchDir: 'fs:watchDir',
     unwatchDir: 'fs:unwatchDir',
     dirChanged: 'fs:dir-changed',
