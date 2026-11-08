@@ -303,6 +303,12 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
     })
 
     // CC§9
+    it('on a machine with no node to read .claude.json, a folder is not reported as never opened with Claude', async () => {
+      fs.writeFileSync(path.join(home, '.claude.json'), '{}\n')
+      expect(await machine().trustsFolder(keyed(repo))).toBe(true)
+    })
+
+    // CC§9
     it("stops looking up at the top of the machine's git repo: a repo in a trusted folder is not trusted, a worktree of a trusted repo is", async () => {
       putNodeOnMachine()
       fs.mkdirSync(path.join(home, 'plain'))

@@ -146,6 +146,7 @@ const RUN_FOLDERS = 'proj/.claude/worktrees'
 const REMOVAL_STILL_RUNNING_ON_THE_MACHINE_MS = 20_000
 const A_ROW_LEAVING_ITS_WORKTREE_GOES_WITHIN_MS = 8000
 const A_TAB_EXIT_AND_A_SYNC_ROUND_SETTLE_MS = 6000
+const A_FIRST_NODE_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS = 240_000
 const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
 const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
   'set -e',
@@ -209,9 +210,10 @@ test.beforeAll(() =>
 async function withLab(
   env: E2EEnv,
   body: (ctx: { app: ElectronApplication; page: Page; lab: SshLab }) => Promise<void>,
-  beforeLaunch?: (lab: SshLab) => void
+  beforeLaunch?: (lab: SshLab) => void,
+  machines: { noNode?: boolean } = {}
 ): Promise<void> {
-  const lab = await startSshLab(env)
+  const lab = await startSshLab(env, machines)
   let app: ElectronApplication | null = null
   try {
     installLabSsh(env, lab)
@@ -1473,6 +1475,42 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await page.waitForTimeout(250)
       }
     })
+  })
+
+  // CC§9 ADR-0026
+  test('E-SSH-48: the first Claude Code worktree session on a machine that has no node (and no python3) starts, with the repo trusted in its .claude.json, instead of Claude Code refusing the worktree (downloads node)', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        const there = (what: string): string => runOnTarget(lab, 'kuser', what, lab.noNode)
+        there(COMMIT_THE_PROJECT)
+        expect(there('command -v node python3 jq; true').trim()).toBe('')
+        await addMachine(page, 'kt-nonode', 'kuser')
+        await expect(dot(page, 'kt-nonode')).toHaveClass(/\bon\b/, {
+          timeout: BACKGROUND_CONNECT_MS
+        })
+        await expect
+          .poll(async () => (await wsMenuTexts(page, 'kt-nonode')).join(' | '), {
+            timeout: 60_000
+          })
+          .toContain('New worktree session')
+        await openWorktreeSession(page, 'kt-nonode')
+        await worktreeDialog(page).locator('input').fill('first')
+        await page.keyboard.press('Enter')
+        await expect(rowsWithSub(page, 'kt-nonode', 'first')).toHaveClass(/\bst-waiting\b/, {
+          timeout: A_FIRST_NODE_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS
+        })
+        expect(there('test -d proj/.claude/worktrees/first && echo yes').trim()).toBe('yes')
+        expect(JSON.parse(there('cat .claude.json')).projects['/home/kuser/proj']).toMatchObject({
+          hasTrustDialogAccepted: true
+        })
+      },
+      undefined,
+      { noNode: true }
+    )
   })
 
   test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys (opt-in, spends real money)', async ({
