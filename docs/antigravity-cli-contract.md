@@ -1449,6 +1449,17 @@ only downloaded the public release.
   title line already carries the id. Two tabs in one account folder hold their own
   `presence/<id>.lock` (FLOCK WRITE in `/proc/locks`); `flock -n <lock> true` exits 1
   while a conversation is open and 0 once it is free.
+- **Started again with `--conversation=<id>` in tmux, agy tells the title script it is
+  idle once, and then nothing until someone types.** Its title script got one
+  `authenticating` input with `conversation_id` `""` at about 0.09 s, then one input with
+  the id and `agent_state` `idle` (and the conversation's title) at about 0.4 s, then
+  nothing for 20–22 s of no typing; no hook fired and agy sent the model nothing. That one
+  line is the only sign that the conversation is open and waiting. A first launch, for
+  comparison, sent `authenticating` twice and `idle` three times with no id, then
+  SessionStart, PreInvocation, PostInvocation and Stop, and only then the id with `idle`.
+  2026-11-08, agy 1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a
+  default config, no network, plain user), API-key route on a fake Gemini server, a
+  title script appending its stdin to a file; 2 of 2 runs.
 - `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
   dropped ssh client leaves tmux detached with agy running and the lock held;
   `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
