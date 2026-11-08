@@ -105,7 +105,7 @@ const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
 const CTRL_C = '\x03'
-// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 MUSE§11
+// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 MUSE§11 AGY§27
 const BRACKETED_PASTE_SWITCH = /\x1b\[\?2004([hl])/g
 // CC§12 CC§18
 const A_KEY_SENT_ON_ITS_OWN = /(\x1b\[200~[\s\S]*?\x1b\[201~|(?<!\x1b)\r)/
@@ -124,13 +124,15 @@ function typeOnceTheShellReads(write: (text: string) => void, text: string): Lin
   let early: string | undefined = ''
   let linesTheShellHasNotTaken: number | undefined
   let giving = false
+  let ctrlCs = 0
   const programReads = async (): Promise<void> => {
     if (linesTheShellHasNotTaken === undefined || giving) return
     giving = true
     while (early) {
-      const keys = early
+      const keys = early.split(A_KEY_SENT_ON_ITS_OWN).filter(Boolean)
+      const ctrlCsBefore = ctrlCs
       early = ''
-      await typeKeys(write, keys.split(A_KEY_SENT_ON_ITS_OWN).filter(Boolean))
+      await typeKeys(write, keys, () => ctrlCs === ctrlCsBefore)
     }
     early = undefined
   }
@@ -160,6 +162,7 @@ function typeOnceTheShellReads(write: (text: string) => void, text: string): Lin
       if (early === undefined || onlyTheTerminalsOwnAnswers(data)) return false
       if (data.includes(CTRL_C)) {
         early = ''
+        ctrlCs++
         return false
       }
       early += withoutMouseAndFocusReports(data)

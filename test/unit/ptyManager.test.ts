@@ -530,6 +530,17 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed()).toEqual([...BOTH, 'hello', '\r', ' world'])
   })
 
+  it('stops giving the held keys at a Ctrl+C, so a line the person cancelled is never sent', async () => {
+    const type = launch()
+    type('a\rb\r')
+    mocks.state.data?.(ZSH_PROMPT)
+    shellTakesBothLinesAndTheAgentStarts()
+    expect(typed()).toEqual([...BOTH, 'a'])
+    type('\x03')
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(typed()).toEqual([...BOTH, 'a', '\x03'])
+  })
+
   it('keeps an Option+Enter and a bracketed paste whole, splitting the held keys only at a lone Enter', async () => {
     const type = launch()
     const paste = '\x1b[200~a\rb\x1b[201~'
