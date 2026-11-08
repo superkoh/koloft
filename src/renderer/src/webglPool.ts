@@ -4,52 +4,54 @@ const MAX_CONTEXTS_BELOW_CHROMIUM_CAP = 12
 type Member = {
   attach: () => void
   detach: () => void
-  holding: boolean
   shown: boolean
 }
 
 const members = new Map<string, Member>()
-const holdersLeastRecentFirst: string[] = []
+const holdersLeastRecentFirst = new Set<string>()
 
 function bump(id: string): void {
-  const i = holdersLeastRecentFirst.indexOf(id)
-  if (i !== -1) holdersLeastRecentFirst.splice(i, 1)
-  holdersLeastRecentFirst.push(id)
+  holdersLeastRecentFirst.delete(id)
+  holdersLeastRecentFirst.add(id)
 }
 
 function evictOne(): void {
-  const hidden = holdersLeastRecentFirst.findIndex((h) => !members.get(h)?.shown)
-  const [victim] = holdersLeastRecentFirst.splice(Math.max(hidden, 0), 1)
-  const vm = members.get(victim)
-  if (vm && vm.holding) {
-    vm.holding = false
-    vm.detach()
+  let victim = holdersLeastRecentFirst.values().next().value as string
+  for (const h of holdersLeastRecentFirst) {
+    if (!members.get(h)?.shown) {
+      victim = h
+      break
+    }
   }
+  holdersLeastRecentFirst.delete(victim)
+  members.get(victim)?.detach()
 }
 
 export function enrollWebgl(id: string, attach: () => void, detach: () => void): void {
-  members.set(id, { attach, detach, holding: false, shown: false })
+  members.set(id, { attach, detach, shown: false })
 }
 
 export function showWebgl(id: string): void {
   const m = members.get(id)
   if (!m) return
   m.shown = true
-  if (!m.holding) {
-    while (holdersLeastRecentFirst.length >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) evictOne()
-    m.holding = true
-    m.attach()
+  if (holdersLeastRecentFirst.has(id)) {
+    bump(id)
+    return
   }
-  bump(id)
+  while (holdersLeastRecentFirst.size >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) evictOne()
+  holdersLeastRecentFirst.add(id)
+  m.attach()
 }
 
 export function hideWebgl(id: string): void {
   const m = members.get(id)
-  if (m) m.shown = false
+  if (!m) return
+  m.shown = false
+  if (holdersLeastRecentFirst.has(id)) bump(id)
 }
 
 export function releaseWebgl(id: string): void {
   members.delete(id)
-  const i = holdersLeastRecentFirst.indexOf(id)
-  if (i !== -1) holdersLeastRecentFirst.splice(i, 1)
+  holdersLeastRecentFirst.delete(id)
 }
