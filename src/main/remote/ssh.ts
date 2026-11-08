@@ -185,6 +185,32 @@ export function runSshBytes(
   }).then((r) => noteMasterRoom(host, r))
 }
 
+export function listenOverSsh(
+  host: string,
+  remoteCmd: string,
+  opts: { controlDir: string },
+  onLine: (line: string) => void,
+  onEnd: () => void
+): () => void {
+  const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, remoteCmd], {
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  let rest = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    const lines = (rest + chunk).split('\n')
+    rest = lines.pop() ?? ''
+    for (const line of lines) onLine(line)
+  })
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+  child.on('error', () => {})
+  child.on('close', (code) => {
+    noteMasterRoom(host, { code, stderr })
+    onEnd()
+  })
+  return () => child.kill()
+}
+
 // PLATFORM§33 CC§13
 export async function writeToMachineSocket(
   host: string,

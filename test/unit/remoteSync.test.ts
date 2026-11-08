@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { launchMode, RemoteSync, type RemoteTarget } from '../../src/main/remote/sync'
+import { HOOKS_CHANGED } from '../../src/main/remote/install'
 import type { RunResult } from '../../src/main/remote/ssh'
 
 let runs: string[]
@@ -17,6 +18,14 @@ let answerWhenQueueEmpty: (() => Promise<RunResult>) | undefined
 let rsyncAnswer: RunResult
 let target: RemoteTarget
 let sync: RemoteSync
+interface Bell {
+  host: string
+  ring: () => void
+  end: () => void
+  stopped: boolean
+}
+let bells: Bell[]
+const liveBells = (): Bell[] => bells.filter((b) => !b.stopped)
 
 const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: '' })
 
@@ -35,6 +44,21 @@ function make(): RemoteSync {
       rsyncs.push(`${host} ${remoteDir}`)
       rsyncFlags.push(extra)
       return Promise.resolve(rsyncAnswer)
+    },
+    listen: (host, _cmd, onLine, onEnd) => {
+      const bell: Bell = {
+        host,
+        ring: () => onLine(HOOKS_CHANGED),
+        end: () => {
+          bell.stopped = true
+          onEnd()
+        },
+        stopped: false
+      }
+      bells.push(bell)
+      return () => {
+        bell.stopped = true
+      }
     },
     targets: () => [target],
     onChange: (host) => changes.push(host),
@@ -57,6 +81,7 @@ beforeEach(() => {
   rsyncAnswer = ok('')
   changes = []
   lefts = []
+  bells = []
   target = {
     host: 'devbox',
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
@@ -330,6 +355,39 @@ it('asks an idle machine at once when the person types into one of its tabs, the
   const after = runs.length
   await tick(5000)
   expect(runs.length - after).toBe(1)
+})
+
+it('a hook landing on the machine starts a round at once, through one bell per machine kept while it answers and has a tab open, so a remote row does not wait for the next 2s round', async () => {
+  target = { ...target, busy: false }
+  answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
+  sync.start()
+  await tick(1)
+  expect(liveBells()).toHaveLength(1)
+  await tick(40_000)
+  expect(liveBells()).toHaveLength(1)
+
+  const idle = runs.length
+  liveBells()[0].ring()
+  await tick(1)
+  expect(runs.length).toBe(idle + 1)
+  expect(rsyncs.slice(-2)).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
+
+  liveBells()[0].end()
+  await tick(2000)
+  expect(liveBells()).toHaveLength(1)
+  expect(bells).toHaveLength(2)
+
+  answerWhenQueueEmpty = () => Promise.resolve({ code: 255, stdout: '', stderr: 'down' })
+  await tick(2000)
+  expect(liveBells()).toHaveLength(0)
+
+  answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
+  sync.pokeNow('devbox')
+  await tick(1)
+  expect(liveBells()).toHaveLength(1)
+  target = { ...target, hasTabs: false }
+  await tick(5000)
+  expect(liveBells()).toHaveLength(0)
 })
 
 it('pulls a folder only when the heartbeat shows its files changed, and again after a failed pull or a poke', async () => {

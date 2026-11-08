@@ -2,6 +2,8 @@ import { encodeCwd } from '@shared/cwdKey'
 import { problemOf, type RunResult } from './ssh'
 import {
   heartbeatCmd,
+  hookBellCmd,
+  HOOKS_CHANGED,
   parseHeartbeat,
   type MachineTmp,
   NO_FILES_THERE,
@@ -61,6 +63,7 @@ export interface RemoteTarget {
 export interface RemoteSyncDeps {
   run(host: string, cmd: string): Promise<RunResult>
   rsync(host: string, remoteDir: string, localDir: string, extra: string[]): Promise<RunResult>
+  listen?(host: string, cmd: string, onLine: (line: string) => void, onEnd: () => void): () => void
   targets(): RemoteTarget[]
   onChange(host: string): void
   onLeft?(host: string, sessionIds: string[]): void
@@ -87,6 +90,7 @@ interface HostState {
   waitingForNextPull: (() => void)[]
   roundEnded: boolean
   waitingForFirstRound: (() => void)[]
+  stopBell?: () => void
 }
 
 interface Watch {
@@ -116,6 +120,7 @@ export class RemoteSync {
     this.stopped = true
     for (const st of this.hosts.values()) {
       if (st.timer) clearTimeout(st.timer)
+      this.silenceBell(st)
       this.roundOver(st)
     }
     this.hosts.clear()
@@ -209,6 +214,33 @@ export class RemoteSync {
     this.next(host, st, 0)
   }
 
+  private rung(host: string, st: HostState): void {
+    if (this.stopped || this.hosts.get(host) !== st) return
+    st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
+    if (st.running) st.again = true
+    else this.next(host, st, 0)
+  }
+
+  private followBell(host: string, st: HostState, wanted: boolean): void {
+    if (!wanted) return this.silenceBell(st)
+    if (st.stopBell || !this.deps.listen) return
+    const stop = this.deps.listen(
+      host,
+      hookBellCmd(),
+      (line) => line === HOOKS_CHANGED && this.rung(host, st),
+      () => {
+        if (st.stopBell === stop) st.stopBell = undefined
+      }
+    )
+    st.stopBell = stop
+  }
+
+  private silenceBell(st: HostState): void {
+    const stop = st.stopBell
+    st.stopBell = undefined
+    stop?.()
+  }
+
   private next(host: string, st: HostState, delay: number): void {
     if (st.timer) clearTimeout(st.timer)
     st.dueAt = Date.now() + delay
@@ -248,6 +280,7 @@ export class RemoteSync {
       for (const [host, st] of this.hosts) {
         if (hosts.has(host)) continue
         if (st.timer) clearTimeout(st.timer)
+        this.silenceBell(st)
         this.roundOver(st)
         this.hosts.delete(host)
       }
@@ -374,6 +407,7 @@ export class RemoteSync {
       for (const done of waiting) done()
       this.roundOver(st)
       if (this.stopped) return
+      this.followBell(host, st, st.connected && target.hasTabs)
       const again = st.again
       st.again = false
       if (target.busy) st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS

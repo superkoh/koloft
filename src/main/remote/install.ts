@@ -385,6 +385,21 @@ export function heartbeatCmd(
   )
 }
 
+export const HOOKS_CHANGED = 'hooks changed'
+const STILL_HERE = 'still here'
+const HOOK_DIR_LOOKED_AT_EVERY_S = 0.2
+const SAYS_STILL_HERE_EVERY_N_LOOKS = 25
+
+export function hookBellCmd(): string {
+  return remoteShCommand(
+    `${EVERY_FILE_STAMPED}; mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; ` +
+      `was="$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; n=0; ` +
+      `while sleep ${HOOK_DIR_LOOKED_AT_EVERY_S}; do now="$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
+      `if [ "$now" != "$was" ]; then was="$now"; n=0; echo "${HOOKS_CHANGED}"; ` +
+      `else n=$((n + 1)); [ "$n" -ge ${SAYS_STILL_HERE_EVERY_N_LOOKS} ] && n=0 && echo "${STILL_HERE}"; fi; done`
+  )
+}
+
 export const NO_FILES_THERE = ''
 
 export interface MirrorStamps {

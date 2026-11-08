@@ -143,6 +143,7 @@ import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  listenOverSsh,
   backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
@@ -4027,6 +4028,8 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
+    listen: (host, cmd, onLine, onEnd) =>
+      listenOverSsh(host, cmd, { controlDir: remoteControlDir }, onLine, onEnd),
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set(codexMachines)
