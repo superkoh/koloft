@@ -16,6 +16,7 @@ import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/main/sessionClose'
+import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 
 const MACHINE = 'devbox'
 let home: string
@@ -66,6 +67,17 @@ const keyed = (p: string): string => `ssh://${MACHINE}${p}`
 
 const git = (...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+
+const onAMachineWithNoNodeOnItsPath = (
+  cmd: string,
+  opts?: { input?: Buffer }
+): Promise<BytesResult> => {
+  const at = cmd.lastIndexOf(' ') + 1
+  const body = Buffer.from(cmd.slice(at), 'base64').toString('utf8')
+  expect(body).toContain(REMOTE_ENV_LINES)
+  const noNode = body.replace(REMOTE_ENV_LINES, `${REMOTE_ENV_LINES}\nexport PATH=/usr/bin:/bin`)
+  return runOnMachine(cmd.slice(0, at) + Buffer.from(noNode).toString('base64'), opts)
+}
 
 const putNodeOnMachine = (): void => {
   const node = path.join(home, '.koloft', 'node', 'bin')
@@ -306,7 +318,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
         path.join(home, '.claude.json'),
         JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
       )
-      expect(await machine().trustsFolder(keyed(repo))).toBe(false)
+      expect(await machine(onAMachineWithNoNodeOnItsPath).trustsFolder(keyed(repo))).toBe(false)
     })
 
     // CC§9
