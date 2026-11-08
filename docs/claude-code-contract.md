@@ -2278,7 +2278,7 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   terminal on its "may support" list (iTerm.app, WezTerm, ghostty, vscode, kitty and
   more; not Apple_Terminal), or `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is set and `TMUX` is
   not. It skips the probe when XTVERSION goes unanswered or `TERM_PROGRAM=Apple_Terminal`
-  (the next bullet), so in a Koloft tab without the switch no frame was wrapped:
+  (the XTVERSION bullet below), so in a Koloft tab without the switch no frame was wrapped:
   fullscreen claude repainted every changed row with cursor moves, about 3.1–3.4 KB per
   wheel report, in one write the pty hands over in 1024-byte reads. Replayed into
   Koloft's WebGL terminal with its timing kept, 28–35% of paints landed in the middle of
@@ -2298,14 +2298,6 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   bytes instead of 3.1–3.4 KB, and 60 trackpad-speed reports 48.6–88 KB instead of
   314–342 KB. Same strings and run as above; whether the network reached the flag
   service is inferred, not checked.
-- **Inside tmux neither switch does anything, and tmux itself wraps only some of its
-  redraws.** 2026-11-06, linux-arm64 CC 2.1.319 in Docker (`--network none`), started
-  in `tmux -u` with Koloft's tmux.conf, the same 300-turn transcript, an outer python
-  pty logging every byte: claude sent tmux no `?2026h`, no scroll region and no DECRQM
-  2026 probe, with or without the two switches. With `:sync` added to tmux's
-  `terminal-features`, tmux 3.3a wrapped 0 of 72 scroll redraws and tmux 3.5a 15–16 of
-  72; without it both wrapped none. Each redraw reached the outer pty as about 3.7 KB of
-  whole rows.
 - **With `TERM_PROGRAM=Apple_Terminal`, fullscreen claude asks for the cursor position
   (`ESC[?6n`) about every 200 ms, idle or not, as long as something answers it; with
   `TERM_PROGRAM` unset it never asks, and still draws in true colour (`38;2;`).** Same
