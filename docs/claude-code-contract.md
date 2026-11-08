@@ -2352,8 +2352,11 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   CR, once for LF; 2.1.318 once). Sent at once (`❯ hello`, the fake model's answer, a
   `user` record `"hello"`): `hello` in that write and a lone CR 0.3 s or 3 s later;
   `hello` CR written 0.3 s after the launch line; `hello` written when claude turned on
-  bracketed paste (its `?2004h`, 0.24 s after zsh's) and CR 0.3 s after that. claude
-  writes that `?2004h` before it draws the folder-trust question. Measured 2026-11-08,
+  bracketed paste (its `?2004h`, 0.24 s after zsh's) and CR 0.3 s after that. Its
+  SessionStart hook ran 0.09 s after that `?2004h`. claude writes the `?2004h` before it
+  draws the folder-trust question, and runs no SessionStart hook until the folder is
+  trusted; `hello` CR typed either way (with the launch line, or at the `?2004h`) left
+  the question on screen, `No, exit` still picked, and the text gone. Measured 2026-11-08,
   a python `pty` running `zsh -i` (scratch `HOME`, `.zshrc` of `sleep 1`), the binary
   started directly with `apiKeyHelper` and a fake Messages API on localhost, the screen
   read through `pyte`.

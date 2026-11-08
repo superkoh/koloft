@@ -720,6 +720,7 @@ const sessionBackends = new SessionBackends({
     startedSessions.bound(tabId, key)
     koloftInbox.rebound(tabId, key)
     slash.bound(tabId, key)
+    ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, subject),

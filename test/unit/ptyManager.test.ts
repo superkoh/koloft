@@ -436,7 +436,7 @@ describe('PtyManager types the PATH line and the launch line once the login shel
       launchCommand: () => launchCommand
     })
     return Object.assign((data: string): void => mgr.write(tab.id, data), {
-      sessionReportsIn: () => mgr.wakeReady(tab.id)
+      sessionBinds: () => mgr.agentBound(tab.id)
     })
   }
   const SHELL_TAKES_A_LINE = '\x1b[?2004l\r\r\n'
@@ -519,13 +519,45 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed().at(-1)).toBe('?')
   })
 
-  it('gives the agent the held keys as soon as its session reports in, for an agent that never turns bracketed paste on', () => {
+  it('keeps what a person types while the held keys go out behind them, so it never lands between a held line and its Enter', async () => {
+    const type = launch()
+    type('hello\r')
+    mocks.state.data?.(ZSH_PROMPT)
+    shellTakesBothLinesAndTheAgentStarts()
+    type(' world')
+    expect(typed()).toEqual([...BOTH, 'hello'])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(typed()).toEqual([...BOTH, 'hello', '\r', ' world'])
+  })
+
+  it('keeps an Option+Enter and a bracketed paste whole, splitting the held keys only at a lone Enter', async () => {
+    const type = launch()
+    const paste = '\x1b[200~a\rb\x1b[201~'
+    type('one\x1b\rtwo')
+    type(paste)
+    type('\r')
+    mocks.state.data?.(ZSH_PROMPT)
+    shellTakesBothLinesAndTheAgentStarts()
+    await vi.advanceTimersByTimeAsync(600)
+    expect(typed()).toEqual([...BOTH, 'one\x1b\rtwo', paste, '\r'])
+  })
+
+  it("takes the agent's first bracketed-paste switch as its signal behind macOS bash 3.2, whose readline never switches it", () => {
+    const type = launch()
+    type('hi')
+    mocks.state.data?.('\x1b[?1034hMac:~ me$ ')
+    expect(typed()).toEqual(BOTH)
+    mocks.state.data?.(BRACKETED_PASTE_ON)
+    expect(typed()).toEqual([...BOTH, 'hi'])
+  })
+
+  it('gives the agent the held keys as soon as its session binds, for an agent that never turns bracketed paste on', () => {
     const type = launch()
     type('hi')
     mocks.state.data?.(ZSH_PROMPT)
     type('!')
     expect(typed()).toEqual(BOTH)
-    type.sessionReportsIn()
+    type.sessionBinds()
     expect(typed()).toEqual([...BOTH, 'hi!'])
   })
 
@@ -563,12 +595,15 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed()).toEqual(['\x03', BOTH[0], 'hi'])
   })
 
-  it('holds keys in a plain terminal Koloft types a line into too, so the PATH line and the ssh line reach the shell whole', () => {
+  it('holds keys in a plain terminal Koloft types a line into too, so the PATH line and the ssh line reach the shell whole, until the shell they reach reads again', async () => {
     const type = launch(LAUNCH, 'shell')
     type('ls\r')
     expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed()).toEqual([BOTH[0] + 'ls\r'])
+    expect(typed()).toEqual(BOTH)
+    shellTakesBothLinesAndTheAgentStarts()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(typed()).toEqual([...BOTH, 'ls', '\r'])
   })
 
   it('types nothing into a pty Koloft did not start a shell in, and holds none of its keys', () => {

@@ -124,14 +124,12 @@ method. A recheck adds its date, version and command to the bullet.
   the program as a byte. (2026-11-01, Python `pty` probe,
   macOS 27.0 `/bin/zsh` 5.9 with an empty `.zshrc`; raw mode set with `TCSAFLUSH`
   instead threw the queued keys away.)
-- **zsh turns bracketed paste off as it takes each typed line, and tmux passes on only
-  the pane's own switch.** Two lines written together at zsh's signal (`export …; clear`
-  CR, `exec <agent>` CR) came back as `?2004l`, zsh's next prompt with `?2004h`,
-  `?2004l`, and then the agent's own `?2004h` (2026-11-08, macOS 27.0 `/bin/zsh` 5.9, a
-  python `pty`, Claude Code 2.1.319 and Codex 0.166.0 as the agent). tmux 3.3a, started
-  in a pty as `new-session` whose pane wrote `?2004h` 2 s in, wrote only `?2004l` (twice)
-  and `?1049h` at attach and passed the pane's `?2004h` on at 2.02 s (2026-11-08,
-  Debian in Docker, the e2e lab image).
+- **zsh and bash turn bracketed paste off as they take each typed line.** Two lines
+  written together at the signal (`export …; clear` CR, `exec <agent>` CR) came back as
+  `?2004l`, the shell's next prompt with `?2004h`, `?2004l`, and then the agent's own
+  `?2004h` (2026-11-08, a python `pty`: macOS 27.0 `/bin/zsh` 5.9 with Claude Code
+  2.1.319 and Codex 0.166.0 as the agent; Debian's bash 5 in Docker with Muse Code
+  1.4.11).
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -1981,6 +1979,10 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   the `hyperlinks` feature that the conf's `terminal-features ',xterm*:RGB:hyperlinks'`
   names was not checked (`set -asq` hides an unknown one); later tmux versions were not
   run.
+- **tmux 3.3a passes on only the pane's own bracketed-paste switch.** Started in a pty
+  as `new-session` whose pane wrote `?2004h` 2 s in, it wrote only `?2004l` (twice) and
+  `?1049h` at attach, and passed the pane's `?2004h` on at 2.02 s (2026-11-08, Debian's
+  tmux 3.3a in the e2e lab image in Docker, `-f /dev/null`, 1 run).
 
 ## §36 ccstatusline
 
