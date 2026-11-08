@@ -1,3 +1,4 @@
+import type { TabKind } from '../shared/types'
 import { sleep } from './codexTransport'
 
 // CC§12 CC§18 MUSE§17
@@ -22,6 +23,16 @@ const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g
 // CC§18 CODEX§23
 export function bracketedPaste(text: string): string {
   return `\x1b[200~${text.replace(CONTROLS_THAT_COULD_END_A_PASTE, '')}\x1b[201~`
+}
+
+// AGY§15
+const DROP_A_PASTES_LAST_LINE_FEEDS: ReadonlySet<TabKind> = new Set(['agy'])
+const LAST_LINE_FEEDS = /\n+$/
+
+export function pasteKeys(text: string, kind: TabKind | undefined): string[] {
+  const kept = kind && DROP_A_PASTES_LAST_LINE_FEEDS.has(kind) ? LAST_LINE_FEEDS.exec(text) : null
+  if (!kept) return [bracketedPaste(text)]
+  return [bracketedPaste(text.slice(0, kept.index)), kept[0]]
 }
 
 // CC§18

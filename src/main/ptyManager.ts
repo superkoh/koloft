@@ -11,8 +11,8 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
-  bracketedPaste,
   onlyTheTerminalsOwnAnswers,
+  pasteKeys,
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
@@ -388,7 +388,7 @@ export class PtyManager extends EventEmitter {
   }
 
   async paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    await this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+    await this.type(id, [...pasteKeys(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

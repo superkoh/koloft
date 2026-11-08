@@ -935,6 +935,20 @@ only downloaded the public release.
 
 - A bracketed paste lands in the input box unsent; Enter sends it. Plain text then CR
   sends too.
+- A bracketed paste loses its trailing line feeds as it lands in the box, before any
+  send: `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s
+  later and CR 0.3 s after that sent `…```keep the old name`, and the box showed the
+  typed text on the ``` line. Line feeds typed as plain keys right after the paste, in
+  the paste's own write or 0.3 s later, stay: the same paste without its `\n\n`, then
+  `\n\n`, then the text and CR sent `…```\n\nkeep the old name`, also inside tmux 3.3a
+  with Koloft's `TMUX_CONF`. At the send agy drops the whole prompt's leading
+  whitespace and its trailing line feeds, so line feeds with nothing typed after them
+  are lost either way. `\r\n` or a lone `\r` inside a paste becomes `\n` and sends
+  nothing early; a 60-line paste shows as `[Pasted text #1 +60 lines]` and is sent
+  whole; a paste with no Enter after it sent nothing in 3 s. (agy 1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
+  API-key route against a fake Gemini server, a python pty answering the TUI's queries,
+  2026-11-08; 1 run each.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
