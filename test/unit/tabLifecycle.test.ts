@@ -16,7 +16,11 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
   const lifecycle = new TabLifecycle()
   subscribeTabSubsystems(lifecycle, {
     slash: { closed: say('slash.closed') },
-    attention: { clear: say('attention.clear') },
+    attention: {
+      clear: say('attention.clear'),
+      clearKeepingExit: say('attention.clearKeepingExit')
+    },
+    cdpTabClosed: say('cdpTabClosed'),
     claude: { onPtyExit: say('claude.onPtyExit') },
     tracker: { setAlive: say('tracker.setAlive') },
     storedOwnerOf: () => ({
