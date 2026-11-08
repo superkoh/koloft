@@ -63,20 +63,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   1.4.13 in the `koloft-muse-probe` Docker image, `--provider echo`, a python pty
   answering the terminal's queries, output replayed into `@xterm/headless`; inside a
   tmux pane too, PLATFORM§35).
-- **`TERM_PROGRAM=Apple_Terminal` changes nothing in what muse draws; only a terminal
-  it knows by name gets synchronized output.** muse asks no DECRQM 2026. With no
-  `TERM_PROGRAM` and with `Apple_Terminal` (the name Koloft gives every pty,
-  PLATFORM§2) it wrote no `?2026h` and 160 OSC 8 links for a 160-line answer with
-  links, 3 of 3 runs each, and 171–174 of its 220–230 redraws after the answer reached
-  the terminal unframed either way. With `TERM_PROGRAM` set to `iTerm.app`, `WezTerm` or
-  `ghostty` (1 run each) it wrapped its redraws in 379–386 `?2026h … ?2026l` windows,
-  0 redraws unframed, and sent the same 160 links. The binary's strings hold those
-  names next to `xterm-ghostty`, `wezterm` and `alacritty` (as `TERM`, inferred, not
-  checked) and no variable that forces frames. 2026-11-08, muse 1.4.11
+- **On Linux muse 1.4.11, `TERM_PROGRAM=Apple_Terminal` changes nothing in what muse
+  draws; only a terminal it knows by name gets synchronized output.** muse asks no
+  DECRQM 2026. With no `TERM_PROGRAM` and with `Apple_Terminal` (the name in a local
+  Koloft tab's environment) it wrote no `?2026h` at all, so none of its redraws was
+  framed, and it wrote 160 OSC 8 links for a 160-line answer with links, 3 of 3 runs
+  each. With `TERM_PROGRAM` set to `iTerm.app`, `WezTerm` or `ghostty` (1 run each) it
+  wrapped its redraws in 379–386 `?2026h … ?2026l` windows, no redraw drew outside
+  one, and it sent the same 160 links. Read from the binary's strings, not run: those
+  names sit next to `xterm-ghostty`, `wezterm` and `alacritty` (likely `TERM` values),
+  and no variable that forces frames shows up. 2026-11-08, muse 1.4.11
   (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Linux arm64, no network), a python pty
   answering like xterm.js (DA1, DA2, CPR, DSR, XTVERSION, DECRQM, OSC 10/11), a fake
   `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
-  notches and 8 PageUp/PageDown. macOS muse: not run.
+  notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
+  sees `TERM_PROGRAM=tmux` instead (§17).
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
