@@ -8,8 +8,10 @@ import {
   ENSURE_SH,
   NO_FILES_THERE,
   NODE_VERSION,
+  answerAfterLoginChatter,
   heartbeatCmd,
-  parseHeartbeat
+  parseHeartbeat,
+  remoteAnswerCommand
 } from '../../src/main/remote/install'
 import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
@@ -665,5 +667,21 @@ describe('the heartbeat question', () => {
     expect(parsed.stamps).toEqual(['1.5 3', ''])
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
     expect(parsed.git.get('/home/koh/api')?.worktrees).toEqual([{ dir: '/home/koh/api' }])
+  })
+})
+
+describe('a script whose answer Koloft reads, on a machine whose shell prints at login', () => {
+  it("drops the greeting and the title escape the machine's shell printed before the script, and keeps every byte the script printed", () => {
+    const cmd = remoteAnswerCommand(
+      "printf 'PATH=/from/the/script\\nkoloft-answer-starts-here\\n\\000\\377'"
+    )
+    const res = spawnSync('sh', ['-c', `printf 'Welcome to the box\\n\\033]0;box\\007'; ${cmd}`])
+    expect(res.status).toBe(0)
+    expect(answerAfterLoginChatter(res.stdout)).toEqual(
+      Buffer.concat([
+        Buffer.from('PATH=/from/the/script\nkoloft-answer-starts-here\n'),
+        Buffer.from([0, 0xff])
+      ])
+    )
   })
 })

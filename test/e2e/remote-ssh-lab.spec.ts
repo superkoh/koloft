@@ -2210,4 +2210,16 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       })
     })
   })
+
+  test("E-SSH-49: a machine whose shell prints a greeting at login: the folder's files are listed and read without the greeting in front of them", async ({
+    env
+  }) => {
+    await withLab(env, async ({ page }) => {
+      await addMachine(page, 'kt-noisy', 'nuser')
+      expect(await listed(page, 'kt-noisy', 'nuser')).toEqual(['README.md'])
+      expect(await readme(page, 'kt-noisy', 'nuser')).toBe(
+        '# Lab project\n\nkoloft-ssh-lab marker for nuser.\n'
+      )
+    })
+  })
 })

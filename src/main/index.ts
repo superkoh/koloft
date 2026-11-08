@@ -162,6 +162,8 @@ import {
   UTIL_BASH_LOGIN,
   UTIL_BASH_LOGIN_FILE,
   UTIL_SH,
+  answerAfterLoginChatter,
+  remoteAnswerCommand,
   remoteShCommand
 } from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
@@ -3272,11 +3274,12 @@ app.whenReady().then(() => {
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
       await loginEnvReady()
-      return runSsh(machine, remoteShCommand(script, args), {
+      const r = await runSshBytes(machine, remoteAnswerCommand(script, args), {
         controlDir: remoteControlDir,
         timeoutMs: opts.timeoutMs,
         ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
       })
+      return { ...r, stdout: answerAfterLoginChatter(r.stdout).toString('utf8') }
     }
   })
   // ADR-0033

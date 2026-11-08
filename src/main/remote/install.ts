@@ -72,6 +72,18 @@ export function remoteShCommand(script: string, args: string[] = []): string {
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
+const ANSWER_STARTS = 'koloft-answer-starts-here'
+
+// PLATFORM§33
+export function remoteAnswerCommand(script: string, args: string[] = []): string {
+  return remoteShCommand(`echo ${ANSWER_STARTS}\n${script}`, args)
+}
+
+export function answerAfterLoginChatter(stdout: Buffer): Buffer {
+  const at = stdout.indexOf(`${ANSWER_STARTS}\n`)
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
+}
+
 const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 ${FETCH_FN}
