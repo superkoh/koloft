@@ -5,6 +5,7 @@ type Member = {
   attach: () => void
   detach: () => void
   holding: boolean
+  shown: boolean
 }
 
 const members = new Map<string, Member>()
@@ -16,38 +17,35 @@ function bump(id: string): void {
   holdersLeastRecentFirst.push(id)
 }
 
-function promote(id: string): void {
+function evictOne(): void {
+  const hidden = holdersLeastRecentFirst.findIndex((h) => !members.get(h)?.shown)
+  const [victim] = holdersLeastRecentFirst.splice(Math.max(hidden, 0), 1)
+  const vm = members.get(victim)
+  if (vm && vm.holding) {
+    vm.holding = false
+    vm.detach()
+  }
+}
+
+export function enrollWebgl(id: string, attach: () => void, detach: () => void): void {
+  members.set(id, { attach, detach, holding: false, shown: false })
+}
+
+export function showWebgl(id: string): void {
   const m = members.get(id)
   if (!m) return
+  m.shown = true
   if (!m.holding) {
-    while (holdersLeastRecentFirst.length >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) {
-      const victim = holdersLeastRecentFirst.shift()
-      if (victim === undefined) break
-      const vm = members.get(victim)
-      if (vm && vm.holding) {
-        vm.holding = false
-        vm.detach()
-      }
-    }
+    while (holdersLeastRecentFirst.length >= MAX_CONTEXTS_BELOW_CHROMIUM_CAP) evictOne()
     m.holding = true
     m.attach()
   }
   bump(id)
 }
 
-export function acquireWebgl(id: string, attach: () => void, detach: () => void): void {
-  const existing = members.get(id)
-  if (existing) {
-    existing.attach = attach
-    existing.detach = detach
-  } else {
-    members.set(id, { attach, detach, holding: false })
-  }
-  promote(id)
-}
-
-export function touchWebgl(id: string): void {
-  promote(id)
+export function hideWebgl(id: string): void {
+  const m = members.get(id)
+  if (m) m.shown = false
 }
 
 export function releaseWebgl(id: string): void {

@@ -10,7 +10,7 @@ import { suppressXtversionReply } from '../xtversionMask'
 import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
-import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
+import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
 
@@ -231,7 +231,7 @@ export function TerminalView({
         webglRef.current?.dispose()
         webglRef.current = null
       }
-      acquireWebgl(id, attachWebgl, detachWebgl)
+      enrollWebgl(id, attachWebgl, detachWebgl)
 
       // PLATFORM§20
       let dprMql: MediaQueryList | null = null
@@ -457,7 +457,7 @@ export function TerminalView({
   // PLATFORM§21
   useEffect(() => {
     if (active) {
-      touchWebgl(id)
+      showWebgl(id)
       let inner = 0
       const raf = requestAnimationFrame(() => {
         const term = termRef.current
@@ -471,6 +471,7 @@ export function TerminalView({
         })
       })
       return () => {
+        hideWebgl(id)
         cancelAnimationFrame(raf)
         cancelAnimationFrame(inner)
       }
