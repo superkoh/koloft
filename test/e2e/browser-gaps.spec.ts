@@ -1118,7 +1118,10 @@ test.describe('Workbench browser cases between the other browser specs: agent op
           .toBeGreaterThan(authRequestsBefore)
         expect(lastAuthHeader(server)).toBe('')
 
+        const askAgain = page.locator(BROWSER.modal)
+        await expect(askAgain).toBeVisible({ timeout: 40_000 })
         await page.keyboard.press('Escape')
+        await expect(askAgain).toHaveCount(0, { timeout: 20_000 })
         await typeInAddressBar(page, tls.aliasUrl('koloft-a.test', '/b'))
         await expect.poll(() => proceedCount(app, page), { timeout: 60_000 }).toBeGreaterThan(0)
         expect(tls.count('/b')).toBe(0)
