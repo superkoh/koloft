@@ -119,8 +119,16 @@ export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source,
       }
     case 'muse':
       return {
-        project: { skills: [ws('.agents', 'skills')], commands: [] },
-        home: { skills: [path.join(p.configHome, 'muse', 'skills')], commands: [] }
+        project: { skills: [ws('.agents', 'skills'), ws('.claude', 'skills')], commands: [] },
+        home: {
+          skills: [
+            path.join(p.configHome, 'muse', 'skills'),
+            home('.agents', 'skills'),
+            home('.claude', 'skills'),
+            home('.codex', 'skills')
+          ],
+          commands: []
+        }
       }
     case 'agy':
       return {

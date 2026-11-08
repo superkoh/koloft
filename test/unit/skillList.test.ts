@@ -114,8 +114,15 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
       ])
     })
 
-    it('Muse Code: .agents skills in the project, then the muse folder under the config home', () => {
-      expect(names('muse')).toEqual(['/agents-project', '/muse-home'])
+    it("Muse Code: .agents and .claude skills in the project, then its own, ~/.agents, ~/.claude and ~/.codex skills, as /name — never Claude's commands", () => {
+      expect(names('muse')).toEqual([
+        '/agents-project',
+        '/cc-project',
+        '/agents-home',
+        '/cc-home',
+        '/codex-home',
+        '/muse-home'
+      ])
     })
 
     it('Antigravity: the three project folders agy reads, and nothing from the home', () => {

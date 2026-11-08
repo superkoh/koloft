@@ -382,7 +382,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       const names = async (backend: 'codex' | 'muse'): Promise<string[]> =>
         (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
       expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
-      expect(await names('muse')).toEqual(['/shared', '/muse-mine'])
+      expect(await names('muse')).toEqual(['/claude-only', '/shared', '/mine', '/muse-mine'])
     })
 
     it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {
