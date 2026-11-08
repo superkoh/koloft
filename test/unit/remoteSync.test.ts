@@ -19,7 +19,6 @@ let rsyncAnswer: RunResult
 let target: RemoteTarget
 let sync: RemoteSync
 interface Bell {
-  host: string
   ring: () => void
   end: () => void
   stopped: boolean
@@ -45,9 +44,8 @@ function make(): RemoteSync {
       rsyncFlags.push(extra)
       return Promise.resolve(rsyncAnswer)
     },
-    listen: (host, _cmd, onLine, onEnd) => {
+    listen: (_host, _cmd, onLine, onEnd) => {
       const bell: Bell = {
-        host,
         ring: () => onLine(HOOKS_CHANGED),
         end: () => {
           bell.stopped = true
@@ -88,6 +86,7 @@ beforeEach(() => {
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
     hasTabs: true,
+    agentTabs: true,
     busy: true
   }
   sync = make()
@@ -255,6 +254,7 @@ it('a machine that answers but whose sessions fail to copy says so, with the dot
     rsync: () =>
       Promise.resolve({ code: 1, stdout: '', stderr: 'rsync(1): error: unexpected tag 103\n' }),
     targets: () => [target],
+    listen: () => () => {},
     onChange: (host) => changes.push(host)
   })
   sync.start()
@@ -357,36 +357,47 @@ it('asks an idle machine at once when the person types into one of its tabs, the
   expect(runs.length - after).toBe(1)
 })
 
-it('a hook landing on the machine starts a round at once, through one bell per machine kept while it answers and has a tab open, so a remote row does not wait for the next 2s round', async () => {
-  target = { ...target, busy: false }
+it('while a session on the machine works or was just typed into, a hook landing there starts a round at once (at most one every 0.5 s), through one bell per machine that goes once the machine falls quiet, drops off or has no agent tab', async () => {
   answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
   sync.start()
   await tick(1)
   expect(liveBells()).toHaveLength(1)
-  await tick(40_000)
-  expect(liveBells()).toHaveLength(1)
+  await tick(1000)
 
-  const idle = runs.length
+  const before = runs.length
   liveBells()[0].ring()
   await tick(1)
-  expect(runs.length).toBe(idle + 1)
+  expect(runs.length).toBe(before + 1)
   expect(rsyncs.slice(-2)).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
+  liveBells()[0].ring()
+  await tick(1)
+  expect(runs.length).toBe(before + 1)
+  await tick(500)
+  expect(runs.length).toBe(before + 2)
 
   liveBells()[0].end()
   await tick(2000)
+  expect(liveBells()).toHaveLength(0)
+  await tick(60_000)
   expect(liveBells()).toHaveLength(1)
-  expect(bells).toHaveLength(2)
 
   answerWhenQueueEmpty = () => Promise.resolve({ code: 255, stdout: '', stderr: 'down' })
   await tick(2000)
   expect(liveBells()).toHaveLength(0)
-
   answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
   sync.pokeNow('devbox')
   await tick(1)
   expect(liveBells()).toHaveLength(1)
-  target = { ...target, hasTabs: false }
+
+  target = { ...target, busy: false }
+  await tick(32_000)
+  expect(liveBells()).toHaveLength(0)
+  sync.typedInto('devbox')
   await tick(5000)
+  expect(liveBells()).toHaveLength(1)
+
+  target = { ...target, agentTabs: false }
+  await tick(2000)
   expect(liveBells()).toHaveLength(0)
 })
 
@@ -441,6 +452,7 @@ it('a quiet extra folder (usage history) that fails to copy, as a big first copy
       Promise.resolve(
         failing.has(remoteDir) ? { code: null, stdout: '', stderr: 'timed out' } : ok('')
       ),
+    listen: () => () => {},
     targets: () => [target],
     onChange: (host) => changes.push(host)
   })
@@ -504,6 +516,7 @@ it('stops polling a machine that is no longer pinned', async () => {
       return Promise.resolve(ok('k-aaa\n'))
     },
     rsync: () => Promise.resolve(ok('')),
+    listen: () => () => {},
     targets: () => pinned,
     onChange: () => {}
   })

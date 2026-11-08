@@ -2079,6 +2079,18 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **How long a hook line written on the machine takes to turn a remote tab's row in
+  Koloft.** With only the 2-second sync round: a turn's first hook line (the prompt) to
+  the row reading working took 1574, 1867, 2105 and 2055 ms, and the Stop line to the
+  row reading waiting 663, 707, 1004 and 911 ms (a turn kept the 2-second round going
+  the whole time). With a sh loop on the machine that looks at `~/.koloft/hook-sessions`
+  every 0.2 s (`find … -exec stat` piped into `cksum`) and says so over one long-lived
+  `ssh -n`, each line starting a round at once: 855, 607, 401 and 386 ms to working, and
+  566, 812, 460 and 318 ms to waiting. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
+  ran in dash on Debian and in macOS 27's sh. (2026-11-08: the e2e Docker ssh lab, the
+  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns per
+  case, the machine's log and the row each read every 0.1–0.3 s, so each figure is good
+  to about that much.)
 
 ## §38 ssh through a JumpServer bastion
 

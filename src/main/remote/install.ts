@@ -349,6 +349,7 @@ const CLAUDE_TMP_BASE =
 const EVERY_FILE_STAMPED =
   'if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; ' +
   'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }'
+const HOOK_DIR_SUM = `stamped "${REMOTE_HOOK_DIR}" | cksum`
 
 // CC§2
 export function heartbeatCmd(
@@ -365,7 +366,7 @@ export function heartbeatCmd(
       `${EVERY_FILE_STAMPED}; ` +
       `echo "${TRANSCRIPTS_LINE}$([ -d "$HOME/.claude/projects" ] && for s in $1; do ` +
       'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
-      `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
+      `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(${HOOK_DIR_SUM})"; ` +
       `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
       `${EACH_SHELLS_FOREGROUND_AND_FOLDER}; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
@@ -389,14 +390,17 @@ export const HOOKS_CHANGED = 'hooks changed'
 const STILL_HERE = 'still here'
 const HOOK_DIR_LOOKED_AT_EVERY_S = 0.2
 const SAYS_STILL_HERE_EVERY_N_LOOKS = 25
+const ENDS_AFTER_N_LOOKS_SO_A_LOST_LINK_LEAVES_NO_LOOP_FOR_LONG = 3000
 
+// PLATFORM§37
 export function hookBellCmd(): string {
   return remoteShCommand(
-    `${EVERY_FILE_STAMPED}; mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; ` +
-      `was="$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; n=0; ` +
-      `while sleep ${HOOK_DIR_LOOKED_AT_EVERY_S}; do now="$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
+    `${EVERY_FILE_STAMPED}; mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; was=; n=0; i=0; ` +
+      `while [ "$i" -lt ${ENDS_AFTER_N_LOOKS_SO_A_LOST_LINK_LEAVES_NO_LOOP_FOR_LONG} ]; do i=$((i + 1)); ` +
+      `now="$(${HOOK_DIR_SUM})"; ` +
       `if [ "$now" != "$was" ]; then was="$now"; n=0; echo "${HOOKS_CHANGED}"; ` +
-      `else n=$((n + 1)); [ "$n" -ge ${SAYS_STILL_HERE_EVERY_N_LOOKS} ] && n=0 && echo "${STILL_HERE}"; fi; done`
+      `else n=$((n + 1)); [ "$n" -ge ${SAYS_STILL_HERE_EVERY_N_LOOKS} ] && n=0 && echo "${STILL_HERE}"; fi; ` +
+      `sleep ${HOOK_DIR_LOOKED_AT_EVERY_S} || exit 1; done`
   )
 }
 

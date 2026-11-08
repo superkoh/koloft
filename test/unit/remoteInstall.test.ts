@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import readline from 'readline'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 
 import {
@@ -461,14 +462,16 @@ describe('the hook bell on the machine', () => {
     fs.rmSync(home, { recursive: true, force: true })
   })
 
-  it('says the hook folder changed soon after a hook appends a line there, and says nothing of the kind while it stays as it was', async () => {
+  it('rings once as it starts, so a hook that landed before it looked is not missed, then soon after a hook appends a line, and never while the folder stays as it was', async () => {
     const hookDir = path.join(home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hookDir, { recursive: true })
     const log = path.join(hookDir, 't1.status.jsonl')
     fs.writeFileSync(log, '{"event":"prompt"}\n')
     const lines: string[] = []
     bell = spawn('sh', ['-c', hookBellCmd()], { env: { ...process.env, HOME: home } })
-    bell.stdout!.setEncoding('utf8').on('data', (s: string) => lines.push(...s.split('\n')))
+    readline.createInterface({ input: bell.stdout! }).on('line', (line) => lines.push(line))
+    await expect.poll(() => lines.includes(HOOKS_CHANGED), { timeout: 5000 }).toBe(true)
+    lines.length = 0
     await new Promise((r) => setTimeout(r, SEVERAL_LOOKS_AT_THE_FOLDER_MS))
     expect(lines).not.toContain(HOOKS_CHANGED)
 

@@ -4033,10 +4033,14 @@ app.whenReady().then(() => {
     targets: () => {
       const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set(codexMachines)
+      const agentTabsOn = new Set<string>()
       const shellTabsOn = new Map<string, string[]>()
       for (const h of ptyMgr.list()) {
         if (!h.alive) continue
-        if (h.remoteHost) live.add(h.remoteHost)
+        if (h.remoteHost) {
+          live.add(h.remoteHost)
+          agentTabsOn.add(h.remoteHost)
+        }
         if (h.utilMachine) {
           live.add(h.utilMachine)
           shellTabsOn.set(h.utilMachine, [...(shellTabsOn.get(h.utilMachine) ?? []), h.id])
@@ -4070,6 +4074,7 @@ app.whenReady().then(() => {
         ],
         paths: t.paths,
         hasTabs: live.has(t.host),
+        agentTabs: agentTabsOn.has(t.host),
         busy: busy.has(t.host),
         shellTabs: shellTabsOn.get(t.host)
       }))

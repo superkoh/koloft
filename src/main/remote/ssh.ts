@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'child_process'
 import fs from 'fs'
+import readline from 'readline'
 
 // PLATFORM§3
 export function defaultControlDir(): string {
@@ -185,6 +186,8 @@ export function runSshBytes(
   }).then((r) => noteMasterRoom(host, r))
 }
 
+const STDERR_TAIL_KEPT = 4096
+
 export function listenOverSsh(
   host: string,
   remoteCmd: string,
@@ -195,14 +198,11 @@ export function listenOverSsh(
   const child = spawn('ssh', ['-n', ...backgroundOptions(host, opts.controlDir), host, remoteCmd], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
-  let rest = ''
   let stderr = ''
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-    const lines = (rest + chunk).split('\n')
-    rest = lines.pop() ?? ''
-    for (const line of lines) onLine(line)
-  })
-  child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+  readline.createInterface({ input: child.stdout }).on('line', onLine)
+  child.stderr
+    .setEncoding('utf8')
+    .on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-STDERR_TAIL_KEPT)))
   child.on('error', () => {})
   child.on('close', (code) => {
     noteMasterRoom(host, { code, stderr })
