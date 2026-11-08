@@ -1500,9 +1500,21 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await openWorktreeSession(page, 'kt-nonode')
         await worktreeDialog(page).locator('input').fill('first')
         await page.keyboard.press('Enter')
-        await expect(rowsWithSub(page, 'kt-nonode', 'first')).toHaveClass(/\bst-waiting\b/, {
-          timeout: A_FIRST_NODE_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS
-        })
+        const row = rowsWithSub(page, 'kt-nonode', 'first')
+        await expect(row).toHaveCount(1, { timeout: 30_000 })
+        const tabId = (await row.getAttribute('data-tab-id'))!
+        const tab = page.locator(`.ws-tab[data-tab-id="${tabId}"]`)
+        await expect
+          .poll(
+            async () =>
+              /\bst-waiting\b/.test(
+                ((await tab.count()) && (await tab.getAttribute('class'))) || ''
+              )
+                ? 'started'
+                : `${await terminalText(page, tabId)}\n${there('cat .koloft/tabs/*.screen 2>/dev/null; true')}`,
+            { timeout: A_FIRST_NODE_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS }
+          )
+          .toBe('started')
         expect(there('test -d proj/.claude/worktrees/first && echo yes').trim()).toBe('yes')
         expect(JSON.parse(there('cat .claude.json')).projects['/home/kuser/proj']).toMatchObject({
           hasTrustDialogAccepted: true
