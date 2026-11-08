@@ -115,7 +115,7 @@ interface LinesToType {
   agentReads(): void
 }
 
-// PLATFORM§2 CC§12 CODEX§25
+// PLATFORM§2 CC§12 CODEX§25 MUSE§11
 function typeOnceTheShellReads(
   write: (text: string) => void,
   text: string,

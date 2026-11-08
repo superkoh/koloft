@@ -483,6 +483,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 
 ## §11 Approvals and questions in the terminal
 
+- **A line typed before the TUI starts is lost.** At bash's `ESC[?2004h`, one write of
+  `exec muse --provider echo --trust-workspace` CR and `hello` CR left an empty input box
+  and no echo turn in 16 s. `hello` written when muse turned on bracketed paste (its
+  `?2004h`, 0.33 s after bash's, the PATH-style line and the launch line typed together
+  before it) and CR 0.3 s after that drew `❯ hello` and `◆ echo: hello`; so did `hello`
+  then CR 0.6 s apart 8 s in. Measured 2026-11-08 on `Muse Code 1.4.11`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, bash 5 in
+  a python3 pty (120×40) answering the cursor, colour and 7501 queries, the screen read
+  through `pyte`; 1 run each.
 - (fake model) `blocked:kind=permission` shows "1. Yes, proceed (y)  2. No … (esc)";
   a network target adds "2. Yes, don't ask again this session (p)". `y`, `1` or Enter
   approve, Esc rejects. `blocked:kind=question` shows the options; Enter picks the
