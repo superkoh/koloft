@@ -435,7 +435,17 @@ describe('PtyManager types the PATH line and the launch line once the login shel
       setupCommand: SETUP,
       launchCommand: () => launchCommand
     })
-    return (data: string): void => mgr.write(tab.id, data)
+    return Object.assign((data: string): void => mgr.write(tab.id, data), {
+      sessionReportsIn: () => mgr.wakeReady(tab.id)
+    })
+  }
+  const SHELL_TAKES_A_LINE = '\x1b[?2004l\r\r\n'
+  const BRACKETED_PASTE_ON = '\x1b[?2004h'
+  const shellTakesBothLinesAndTheAgentStarts = (): void => {
+    mocks.state.data?.(SHELL_TAKES_A_LINE)
+    mocks.state.data?.(ZSH_PROMPT)
+    mocks.state.data?.(SHELL_TAKES_A_LINE)
+    mocks.state.data?.(BRACKETED_PASTE_ON)
   }
 
   it('types nothing while the rc files still run, then both lines in order the moment the line editor turns on bracketed paste, and nothing again', () => {
@@ -486,23 +496,48 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false))
   })
 
-  it('holds what a person types before the two lines and sends it right after them, in order, so it reaches the agent and not the PATH line', () => {
+  it('holds what a person types before the two lines until the agent itself turns bracketed paste on, then types the text and its Enter apart, so the agent sends it instead of keeping it in its input box', async () => {
     const type = launch()
     type('h')
     type('\x1b[I')
     type('ello\r')
     expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed()).toEqual([BOTH[0] + 'hello\r'])
     type('!')
-    expect(typed()).toEqual([BOTH[0] + 'hello\r', '!'])
+    expect(typed()).toEqual(BOTH)
+    mocks.state.data?.(SHELL_TAKES_A_LINE)
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(BOTH)
+    mocks.state.data?.(SHELL_TAKES_A_LINE)
+    mocks.state.data?.(BRACKETED_PASTE_ON)
+    expect(typed()).toEqual([...BOTH, 'hello'])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(typed()).toEqual([...BOTH, 'hello', '\r'])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(typed()).toEqual([...BOTH, 'hello', '\r', '!'])
+    type('?')
+    expect(typed().at(-1)).toBe('?')
   })
 
-  it('sends the held keys after the two lines on the late fallback too', () => {
+  it('gives the agent the held keys as soon as its session reports in, for an agent that never turns bracketed paste on', () => {
+    const type = launch()
+    type('hi')
+    mocks.state.data?.(ZSH_PROMPT)
+    type('!')
+    expect(typed()).toEqual(BOTH)
+    type.sessionReportsIn()
+    expect(typed()).toEqual([...BOTH, 'hi!'])
+  })
+
+  it('gives the agent the held keys anyway once it has had five seconds to start, when nothing says it reads', () => {
     const type = launch()
     type('hi')
     vi.advanceTimersByTime(1600)
-    expect(typed()).toEqual([BOTH[0] + 'hi'])
+    expect(typed()).toEqual(BOTH)
+    vi.advanceTimersByTime(4999)
+    expect(typed()).toEqual(BOTH)
+    vi.advanceTimersByTime(1)
+    expect(typed()).toEqual([...BOTH, 'hi'])
   })
 
   it("lets the terminal's own answers to the shell's questions through at once, so an rc file waiting on one never stalls", () => {
@@ -513,7 +548,8 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     type('x')
     expect(typed()).toEqual(['\x1b[12;1R', '\x1b[?1;2c', '\x1b]11;rgb:0000/0000/0000\x1b\\'])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed().at(-1)).toBe(BOTH[0] + 'x')
+    shellTakesBothLinesAndTheAgentStarts()
+    expect(typed().slice(-2)).toEqual([BOTH[0], 'x'])
   })
 
   it('lets Ctrl+C through at once and drops what it cancels, since one queued behind the launch line would throw that line away', () => {
@@ -523,7 +559,8 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     type('hi')
     expect(typed()).toEqual(['\x03'])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed()).toEqual(['\x03', BOTH[0] + 'hi'])
+    shellTakesBothLinesAndTheAgentStarts()
+    expect(typed()).toEqual(['\x03', BOTH[0], 'hi'])
   })
 
   it('holds keys in a plain terminal Koloft types a line into too, so the PATH line and the ssh line reach the shell whole', () => {

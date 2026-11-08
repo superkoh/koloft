@@ -2346,6 +2346,17 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
   300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
   2.1.286); the setup was not re-run here.
+- **A line typed before claude starts lands in the input box unsent.** At zsh's
+  `ESC[?2004h`, one write of the launch line (`exec claude …` CR) and `hello` CR — or
+  `hello` LF — showed `❯ hello` in the box and sent nothing in 14 s (2.1.319 twice for
+  CR, once for LF; 2.1.318 once). Sent at once (`❯ hello`, the fake model's answer, a
+  `user` record `"hello"`): `hello` in that write and a lone CR 0.3 s or 3 s later;
+  `hello` CR written 0.3 s after the launch line; `hello` written when claude turned on
+  bracketed paste (its `?2004h`, 0.24 s after zsh's) and CR 0.3 s after that. claude
+  writes that `?2004h` before it draws the folder-trust question. Measured 2026-11-08,
+  a python `pty` running `zsh -i` (scratch `HOME`, `.zshrc` of `sleep 1`), the binary
+  started directly with `apiKeyHelper` and a fake Messages API on localhost, the screen
+  read through `pyte`.
 - **Typing while claude is in the middle of a turn queues the message**: the screen
   shows "Press up to edit queued messages", and claude takes it once the running tool
   call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the

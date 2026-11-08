@@ -105,29 +105,58 @@ const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
 const CTRL_C = '\x03'
+// PLATFORM§2 CC§18 CODEX§23
+const BRACKETED_PASTE_SWITCH = /\x1b\[\?2004([hl])/g
+const GIVE_THE_AGENT_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 5000
 
 interface LinesToType {
   shellSaid(output: string): void
   held(data: string): boolean
+  agentReads(): void
 }
 
-// PLATFORM§2
-function typeOnceTheShellReads(write: (text: string) => void, text: string): LinesToType {
-  if (text === '') return { shellSaid: () => {}, held: () => false }
+// PLATFORM§2 CC§12 CODEX§25
+function typeOnceTheShellReads(
+  write: (text: string) => void,
+  text: string,
+  anAgentTakesTheKeys: boolean
+): LinesToType {
+  if (text === '') return { shellSaid: () => {}, held: () => false, agentReads: () => {} }
   let tail = ''
   let early: string | undefined = ''
-  const type = (): void => {
-    if (early === undefined) return
-    write(text + early)
+  let linesTheShellHasNotTaken: number | undefined
+  const agentReads = (): void => {
+    if (early === undefined || linesTheShellHasNotTaken === undefined) return
+    const keys = early
     early = undefined
+    void typeKeys(write, keys.split(/(\r)/).filter(Boolean))
+  }
+  const type = (): void => {
+    if (early === undefined || linesTheShellHasNotTaken !== undefined) return
+    if (!anAgentTakesTheKeys) {
+      write(text + early)
+      early = undefined
+      return
+    }
+    write(text)
+    linesTheShellHasNotTaken = text.split('\r').length - 1
+    setTimeout(agentReads, GIVE_THE_AGENT_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   }
   setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   return {
+    agentReads,
     shellSaid: (output) => {
       if (early === undefined) return
       const seen = tail + output
       tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
-      if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+      if (linesTheShellHasNotTaken === undefined) {
+        if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+        return
+      }
+      for (const [, onOrOff] of seen.matchAll(BRACKETED_PASTE_SWITCH)) {
+        if (onOrOff === 'l') linesTheShellHasNotTaken--
+        else if (linesTheShellHasNotTaken <= 0) return agentReads()
+      }
     },
     held: (data) => {
       if (early === undefined || onlyTheTerminalsOwnAnswers(data)) return false
@@ -305,7 +334,8 @@ export class PtyManager extends EventEmitter {
       [args.setupCommand, launchCommand]
         .filter((command): command is string => !!command)
         .map((command) => shortEnoughToType(command) + '\r')
-        .join('')
+        .join(''),
+      args.kind !== 'shell'
     )
     this.linesToType.set(handle, lines)
 
@@ -413,6 +443,8 @@ export class PtyManager extends EventEmitter {
   }
 
   wakeReady(id: string): void {
+    const handle = this.ptys.get(id)
+    if (handle) this.linesToType.get(handle)?.agentReads()
     for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
   }
 
