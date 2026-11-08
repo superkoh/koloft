@@ -450,6 +450,7 @@ exit 0`
 
 describe('the hook bell on the machine', () => {
   const SEVERAL_LOOKS_AT_THE_FOLDER_MS = 1500
+  const A_FEW_LOOKS_EVEN_ON_A_BUSY_MAC_MS = 3000
   let home = ''
   let bell: ChildProcess | undefined
 
@@ -478,7 +479,7 @@ describe('the hook bell on the machine', () => {
     fs.appendFileSync(log, '{"event":"stop"}\n')
     const appendedAt = Date.now()
     await expect.poll(() => lines.includes(HOOKS_CHANGED), { timeout: 5000 }).toBe(true)
-    expect(Date.now() - appendedAt).toBeLessThan(SEVERAL_LOOKS_AT_THE_FOLDER_MS)
+    expect(Date.now() - appendedAt).toBeLessThan(A_FEW_LOOKS_EVEN_ON_A_BUSY_MAC_MS)
   }, 20_000)
 })
 

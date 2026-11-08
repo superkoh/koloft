@@ -357,7 +357,7 @@ it('asks an idle machine at once when the person types into one of its tabs, the
   expect(runs.length - after).toBe(1)
 })
 
-it('while a session on the machine works or was just typed into, a hook landing there starts a round at once (at most one every 0.5 s), through one bell per machine that goes once the machine falls quiet, drops off or has no agent tab', async () => {
+it('while a session on the machine works or was just typed into, a hook landing there starts a round at once (rounds kept 0.3 s apart), through one bell per machine that goes once the machine falls quiet, drops off or has no agent tab; a ring alone never keeps it going', async () => {
   answerWhenQueueEmpty = () => Promise.resolve(ok('k-aaa\n'))
   sync.start()
   await tick(1)
@@ -390,7 +390,9 @@ it('while a session on the machine works or was just typed into, a hook landing 
   expect(liveBells()).toHaveLength(1)
 
   target = { ...target, busy: false }
-  await tick(32_000)
+  await tick(20_000)
+  liveBells()[0].ring()
+  await tick(12_000)
   expect(liveBells()).toHaveLength(0)
   sync.typedInto('devbox')
   await tick(5000)

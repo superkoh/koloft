@@ -41,7 +41,7 @@ const IDLE_INTERVAL_MS = 20_000
 const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
 const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
-const ROUNDS_FROM_THE_BELL_AT_MOST_EVERY_MS = 500
+const ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS = 300
 const A_WORKING_BELL_LIVES_AT_LEAST_MS = 10_000
 const BELL_TRIED_AGAIN_AFTER_A_QUICK_END_MS = 60_000
 
@@ -97,7 +97,7 @@ interface HostState {
   stopBell?: () => void
   bellAfter: number
   rang: boolean
-  startedAt: number
+  endedAt: number
 }
 
 interface Watch {
@@ -205,6 +205,7 @@ export class RemoteSync {
     st.gitAt = 0
     st.failures = 0
     st.pulled = {}
+    st.bellAfter = 0
     st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
     if (st.running) {
       st.again = true
@@ -223,7 +224,6 @@ export class RemoteSync {
 
   private rung(host: string, st: HostState): void {
     if (this.stopped || this.hosts.get(host) !== st || st.failures) return
-    st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
     if (st.running) {
       st.rang = true
       return
@@ -233,7 +233,7 @@ export class RemoteSync {
   }
 
   private nextBellRoundIn(st: HostState): number {
-    return Math.max(0, st.startedAt + ROUNDS_FROM_THE_BELL_AT_MOST_EVERY_MS - Date.now())
+    return Math.max(0, st.endedAt + ROUNDS_FROM_THE_BELL_AT_LEAST_APART_MS - Date.now())
   }
 
   private startBell(host: string, st: HostState): void {
@@ -287,7 +287,7 @@ export class RemoteSync {
           waitingForFirstRound: [],
           bellAfter: 0,
           rang: false,
-          startedAt: 0
+          endedAt: 0
         })
       )
     return st
@@ -321,7 +321,6 @@ export class RemoteSync {
     const target = this.deps.targets().find((t) => t.host === host)
     if (!target) return this.roundOver(st)
     st.running = true
-    st.startedAt = Date.now()
     const waiting = st.waitingForNextPull.splice(0)
     try {
       const before = {
@@ -426,6 +425,7 @@ export class RemoteSync {
       if (st.connected) this.deps.onConnectedRound?.(host)
     } finally {
       st.running = false
+      st.endedAt = Date.now()
       for (const done of waiting) done()
       this.roundOver(st)
       if (this.stopped) return
