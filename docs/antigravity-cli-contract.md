@@ -892,6 +892,18 @@ only downloaded the public release.
   was not taken (6 runs): no frame for 60 s, and the digit was left unsent in the input
   box under the ask. On 1.5.1 the opening `blocked:kind=auth` frame of §10 did not come;
   the first frame was `idle`. Not probed: the file-deny key `2`; macOS.
+- **The same question asked again right after an answer comes as a new `blocked`, unless
+  the model asks again within milliseconds.** agy 1.5.3 (build `1.5.3-6604829099950080`,
+  Linux arm64 from the manifest, sha512 checked) and 1.3.6 (the image's), the setup of the
+  bullet above, 2026-11-08: the fake answered the first question's result with the very
+  same `ask_question` (1.3.6 needs `toolSummary` and `toolAction` in it), and `2` answered
+  each question 2.5 s after its frame. With the fake answering after 100 ms (3 runs) or
+  1.5 s (2 runs) on 1.5.3, and at once on 1.3.6 (2 runs): `working` 11–23 ms after the
+  key, then `blocked:kind=question` again when the second question came (17 ms – 1.5 s
+  later), then `working`, `done`. With the fake answering at once on 1.5.3 (the result
+  reached it 7–9 ms after the key; 3 runs) no frame came at all: the screen drew the
+  second question under the first one's `blocked`, so a watcher of the frames cannot
+  tell it from the first.
 
 - **A question the person already pressed keys in.** agy 1.5.1 (the binary of the bullet
   above, sha256 `d2b02615…9565`, copied into `agy-a-img`), the same setup, a fresh
