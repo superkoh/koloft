@@ -870,16 +870,6 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
   })
 
-  // CC§9
-  it('a tab told to trust its folder on a machine still without node says so in the tab and starts claude anyway', () => {
-    const b = box(spec({ cwd: mkroot('nonode'), trustFolder: true }))
-    const res = b.run()
-    expect(res.status).toBe(0)
-    expect(res.stdout).toContain('this machine has no node')
-    expect(fs.existsSync(path.join(b.home, '.claude.json'))).toBe(false)
-    expect(b.claudeCalls()).toHaveLength(1)
-  })
-
   // CC§10
   it("warms claude's server-side settings once, with the account, on a machine that has never run it", () => {
     const b = box(spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-warm') }))

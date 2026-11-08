@@ -1075,7 +1075,7 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
 
     expect(h.jobs[0].history[0]).toMatchObject({
       state: 'failed',
-      note: 'Claude did not start — this folder was never opened in Claude; start one session here first'
+      note: 'Claude did not start — Koloft cannot see that Claude trusts this folder; start one session here first'
     })
     expect(h.toasts.at(-1)).toBe('⏰ Nightly report could not start: Claude did not start')
     expect(h.notify.mock.calls.at(-1)).toEqual([
@@ -1102,7 +1102,7 @@ describe('CronRunner — a Codex job', () => {
     expect(trusted).toHaveBeenCalledWith('/ws/a', 'codex')
     expect(h.jobs[0].history[0]).toMatchObject({
       state: 'failed',
-      note: 'Codex did not start — this folder was never opened in Codex; start one session here first'
+      note: 'Codex did not start — Koloft cannot see that Codex trusts this folder; start one session here first'
     })
   })
 

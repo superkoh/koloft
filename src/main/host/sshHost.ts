@@ -190,14 +190,9 @@ export function machineClaudeArgs(
 
 const NOT_TRUSTED = 1
 
-const CLAUDE_TRUSTS_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
-if command -v node >/dev/null 2>&1; then node -e "$2" "$HOME/.claude.json" "$(pwd -P)"; exit; fi
-d=$(pwd -P)
-while :; do
-  grep -qF "\\"$d\\":" "$HOME/.claude.json" 2>/dev/null && exit 0
-  [ "$d" = / ] && exit ${NOT_TRUSTED}
-  d=$(dirname "$d")
-done`
+const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
+command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
+node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
@@ -1013,9 +1008,7 @@ export class SshHost implements Host {
 
   // CC§9
   async trustsFolder(dir: string): Promise<boolean> {
-    return (
-      (await this.sh(CLAUDE_TRUSTS_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
-    )
+    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
   // MUSE§17

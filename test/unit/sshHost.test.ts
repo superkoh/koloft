@@ -301,18 +301,12 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
     })
 
     // CC§9
-    it('on a machine with no node, a folder no entry of .claude.json names, itself or a folder above it, reads as never trusted, and one an entry names reads as trusted', async () => {
-      const claudeJson = path.join(home, '.claude.json')
+    it('on a machine with no node, where Koloft cannot read the trust, a folder reads as not trusted, so a scheduled run is never let through on a guess', async () => {
       fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ projects: { [path.join(home, 'other')]: { allowedTools: [] } } }, null, 2)
+        path.join(home, '.claude.json'),
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
       )
-      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
-      fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }, null, 2)
-      )
-      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+      expect(await machine().trustsFolder(keyed(repo))).toBe(false)
     })
 
     // CC§9
