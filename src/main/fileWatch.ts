@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
+import type { DirChangeListener, DirChanges } from '@shared/types'
 import { passesHeavy } from './fileTree'
 
 // PLATFORM§28
@@ -47,9 +48,11 @@ interface DirWatch {
   watcher: fs.FSWatcher
   count: number
   timer: ReturnType<typeof setTimeout> | null
+  changed: Set<string> | null
 }
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
+const CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS = 500
 
 function watchIgnored(filename: string | Buffer | null): boolean {
   if (!filename) return false
@@ -65,16 +68,37 @@ function closeWatcher(entry: DirWatch): void {
   } catch {}
 }
 
-function attachWatcher(root: string, entry: DirWatch, onChange: (root: string) => void): void {
+// PLATFORM§28
+function noteChange(root: string, entry: DirWatch, filename: string | Buffer | null): void {
+  if (!entry.changed) return
+  const rel = filename?.toString()
+  if (!rel || entry.changed.size >= CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS) {
+    entry.changed = null
+    return
+  }
+  const full = path.join(root, rel)
+  entry.changed.add(path.basename(rel) === '.gitignore' ? path.dirname(full) : full)
+}
+
+function changesOf(changedPaths: Set<string>): DirChanges {
+  const paths = [...changedPaths]
+  return { listsChanged: [...new Set(paths.map((p) => path.dirname(p)))], replacedTrees: paths }
+}
+
+function attachWatcher(root: string, entry: DirWatch, onChange: DirChangeListener): void {
   entry.watcher.on('change', (_event, filename) => {
     if (watchIgnored(filename)) return
+    noteChange(root, entry, filename)
     if (entry.timer) return
     entry.timer = setTimeout(() => {
       entry.timer = null
-      onChange(root)
+      const changed = entry.changed
+      entry.changed = new Set()
+      onChange(root, changed ? changesOf(changed) : undefined)
     }, DIR_CHANGE_DEBOUNCE_MS)
   })
   entry.watcher.on('error', () => {
+    entry.changed = null
     try {
       entry.watcher.close()
     } catch {}
@@ -88,7 +112,7 @@ function attachWatcher(root: string, entry: DirWatch, onChange: (root: string) =
   })
 }
 
-export function watchDir(root: string, onChange: (root: string) => void): boolean {
+export function watchDir(root: string, onChange: DirChangeListener): boolean {
   const existing = dirWatchers.get(root)
   if (existing) {
     existing.count++
@@ -100,7 +124,7 @@ export function watchDir(root: string, onChange: (root: string) => void): boolea
   } catch {
     return false
   }
-  const entry: DirWatch = { watcher, count: 1, timer: null }
+  const entry: DirWatch = { watcher, count: 1, timer: null, changed: new Set() }
   attachWatcher(root, entry, onChange)
   dirWatchers.set(root, entry)
   return true

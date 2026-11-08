@@ -1380,6 +1380,12 @@ inferred, not checked.
   throwaway probe that stat'ed each drop after the round.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **On macOS a recursive folder watch names a changed file in the same Unicode form
+  `readdir` gives it**, so a folder path built from the event matches the one built from
+  a listing: a folder named `データ` made in decomposed form (NFD) and one in composed
+  form (NFC) were both reported for a file written inside them exactly as `readdir`
+  spelled them. Measured 2026-11-07 (Node 24.13.0, macOS 27.0, APFS in the temp folder)
+  with a throwaway probe.
 - **A session's two start notes can go unreported.** With the launch line typed about
   0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
   never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
