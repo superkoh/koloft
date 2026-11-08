@@ -50,6 +50,11 @@ describe('renderMarkdown', () => {
     expect(doc.html).toContain('<h2 id="设计">')
   })
 
+  it('names an outline entry by the heading’s words, leaving its inline HTML tags out', async () => {
+    const doc = await render('# Press <kbd>Ctrl</kbd> twice\n')
+    expect(doc.headings.map((h) => h.text)).toEqual(['Press Ctrl twice'])
+  })
+
   it('has no outline for a document without headings', async () => {
     const doc = await render('just a paragraph\n')
     expect(doc.headings).toEqual([])
@@ -253,7 +258,8 @@ describe('renderMarkdown', () => {
     ['closes every tag', '<p align="center"><img src="logo.png"></p>'],
     ['leaves out an end tag HTML lets go unwritten', '<p align="center"><img src="logo.png">'],
     ['has a stray inline tag', 'Made with <b>care'],
-    ['has a self-closing svg', '<svg width="8" height="8"><circle r="4"/></svg>']
+    ['has a self-closing svg', '<svg width="8" height="8"><circle r="4"/></svg>'],
+    ['has a tag only inside a comment', '<!-- <div> -->']
   ])('still splits a README whose raw HTML at the top %s', async (_case, top) => {
     const body = Array.from({ length: 50 }, (_, i) => `para ${i}`).join('\n\n')
     const doc = await render(`${top}\n\n${body}\n\n<!-- footer -->\n<br>\n`)

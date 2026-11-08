@@ -147,8 +147,8 @@ function headingText(inline: Token | undefined): string {
   if (!inline) return ''
   if (!inline.children) return inline.content
   return inline.children
-    .filter((c) => c.type === 'text' || c.type === 'code_inline' || c.type === 'html_inline')
-    .map((c) => (c.type === 'html_inline' ? c.content.replace(/<[^>]*>/g, '') : c.content))
+    .filter((c) => c.type === 'text' || c.type === 'code_inline')
+    .map((c) => c.content)
     .join('')
     .trim()
 }
@@ -219,12 +219,12 @@ function unescapeAttr(s: string): string {
     .replace(/&amp;/g, '&')
 }
 
-const RAW_TAG_RE = /<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g
+const RAW_TAG_OR_COMMENT_RE = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g
 
 function tagsLeftOpen(html: string, countOpeners: boolean): number {
   let open = 0
-  for (const m of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(RAW_TAG_RE)) {
-    if (m[3] || TAGS_THAT_NEED_NO_CLOSE.has(m[2].toLowerCase())) continue
+  for (const m of html.matchAll(RAW_TAG_OR_COMMENT_RE)) {
+    if (!m[2] || m[3] || TAGS_THAT_NEED_NO_CLOSE.has(m[2].toLowerCase())) continue
     if (m[1]) open--
     else if (countOpeners) open++
   }
