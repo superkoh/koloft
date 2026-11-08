@@ -2085,12 +2085,14 @@ command by hand:
   row reading waiting 663, 707, 1004 and 911 ms (a turn kept the 2-second round going
   the whole time). With a sh loop on the machine that looks at `~/.koloft/hook-sessions`
   every 0.2 s (`find … -exec stat` piped into `cksum`) and says so over one long-lived
-  `ssh -n`, each line starting a round at once: 855, 607, 401 and 386 ms to working, and
-  566, 812, 460 and 318 ms to waiting. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
+  `ssh -n`, each line starting a round (at least 0.3 s after the last one ended): 393,
+  814, 804, 423, 373, 437, 529 and 414 ms to working, and 380, 357, 403, 763, 275, 309,
+  378 and 613 ms to waiting; over those runs 20 short turns (a Read, then Stop) each
+  ended on waiting and stayed there. The loop's `sleep 0.2`, `find`, `stat` and `cksum`
   ran in dash on Debian and in macOS 27's sh. (2026-11-08: the e2e Docker ssh lab, the
-  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns per
-  case, the machine's log and the row each read every 0.1–0.3 s, so each figure is good
-  to about that much.)
+  `kt-key` machine behind the jump host, fake claude's `/busy` turn, four turns without
+  the loop and eight with it, the machine's log and the row each read every 0.1–0.3 s,
+  so each figure is good to about that much.)
 
 ## §38 ssh through a JumpServer bastion
 
