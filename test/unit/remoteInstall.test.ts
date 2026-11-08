@@ -11,7 +11,7 @@ import {
   heartbeatCmd,
   parseHeartbeat
 } from '../../src/main/remote/install'
-import { answerAfterLoginChatter } from '../../src/main/remote/ssh'
+import { answerOf } from '../../src/main/remote/ssh'
 import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
@@ -613,13 +613,10 @@ describe('the heartbeat question', () => {
     fs.writeFileSync(path.join(brain, 'transcript.jsonl'), 'a\n')
     fs.writeFileSync(path.join(other, 'x'), 'a\n')
     const beat = (): ReturnType<typeof parseHeartbeat> => {
-      const res = spawnSync(
-        'sh',
-        ['-c', heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])],
-        { env: { ...process.env, HOME: home } }
-      )
+      const cmd = heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])
+      const res = spawnSync('sh', ['-c', cmd], { env: { ...process.env, HOME: home } })
       expect(res.status).toBe(0)
-      return parseHeartbeat(answerAfterLoginChatter(res.stdout).toString('utf8'))
+      return parseHeartbeat(answerOf(cmd, res.stdout).toString('utf8'))
     }
     const first = beat()
     expect(first.mirrors.extras).toHaveLength(3)

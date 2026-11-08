@@ -5816,8 +5816,7 @@ async function openSignInEndOn(host: string | undefined, url: string): Promise<s
   const r = await runSsh(
     host,
     remoteAnswerCommand(
-      `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} "$1"`,
-      [url]
+      `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`
     ),
     { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
   )

@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile, execFileSync } from 'child_process'
-import { answerAfterLoginChatter, type BytesResult } from '../../src/main/remote/ssh'
+import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
 
 const GIT_TIMEOUT = 1_000
 const SLOW_WALK_S = '0.6'
@@ -28,7 +28,7 @@ function runOnSlowMachine(cmd: string, opts?: { timeoutMs?: number }): Promise<B
       (err, stdout, stderr) =>
         resolve({
           code: err ? (typeof err.code === 'number' ? err.code : null) : 0,
-          stdout: answerAfterLoginChatter(stdout),
+          stdout: answerOf(cmd, stdout),
           stderr: String(stderr)
         })
     )
