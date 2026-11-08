@@ -1,13 +1,15 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
-import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 import { test, expect, quitAndClose } from './helpers/app'
 import { agyTranscriptOf, museSaid, seedSettings, type E2EEnv } from './helpers/env'
+import type { CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { WORKBENCH } from './helpers/workbench'
 import {
+  encodeCwd,
   newSessionInWith,
   notesOnDisk,
   notesPath,
@@ -26,6 +28,7 @@ import {
   killFakeRemote,
   launchWithRemote,
   machineAgyCalls,
+  machineCodexLog,
   machineHome,
   machineMuseCalls,
   remoteDir,
@@ -34,10 +37,8 @@ import {
 
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
-const AGENT_NAME = { claude: 'Claude', codex: 'Codex', muse: 'Muse', agy: 'Antigravity' } as const
-
 function onTheMachine(backend: Exclude<BackendId, 'claude'>) {
-  return OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === AGENT_NAME[backend])!
+  return OTHER_AGENTS_ON_THE_MACHINE.find((a) => a.label === BACKEND_LABEL[backend])!
 }
 
 function installOnTheMachine(env: E2EEnv, backend: BackendId): void {
@@ -50,8 +51,9 @@ async function startRemoteTab(page: Page, env: E2EEnv, backend: BackendId): Prom
   const row = wsRows(page, REMOTE_WS_NAME).first()
   if (backend === 'claude') await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
   else {
-    await newSessionInWith(page, REMOTE_WS_NAME, AGENT_NAME[backend])
-    await onTheMachine(backend).bound?.(page)
+    const agent = onTheMachine(backend)
+    await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+    await agent.bound?.(page)
   }
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
   return (await row.getAttribute('data-tab-id'))!
@@ -90,13 +92,28 @@ function machineProcessOf(env: E2EEnv, backend: BackendId, id: string): number |
   return undefined
 }
 
+function codexFramesTo(env: E2EEnv, method: string, threadId: string): string[] {
+  return machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
+    .filter(
+      ({ direction, frame }) =>
+        direction === 'client' &&
+        frame.method === method &&
+        (frame.params as { threadId?: string } | undefined)?.threadId === threadId
+    )
+    .map(({ frame }) => JSON.stringify(frame.params))
+}
+
 function reportReachedOnTheMachine(env: E2EEnv, backend: BackendId, parentId: string): string {
-  const file = (name: string): string => {
-    const p = path.join(machineHome(env), name)
-    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+  if (backend === 'claude') {
+    const projects = path.join(machineHome(env), '.claude', 'projects')
+    const transcript = path.join(
+      projects,
+      encodeCwd(fs.realpathSync(remoteDir(env))),
+      `${parentId}.jsonl`
+    )
+    return fs.existsSync(transcript) ? fs.readFileSync(transcript, 'utf8') : ''
   }
-  if (backend === 'claude') return file('fake-claude-peer.jsonl')
-  if (backend === 'codex') return file('fake-codex-wire.jsonl')
+  if (backend === 'codex') return codexFramesTo(env, 'thread/queue/add', parentId).join('\n')
   if (backend === 'muse') return JSON.stringify(museSaid(env, parentId, machineHome(env)))
   return agyTranscriptOf(env, parentId, path.join(machineHome(env), '.gemini'))
 }
@@ -116,7 +133,7 @@ function parentStartedAgainOnTheMachine(
     return machineMuseCalls(env).filter((c) => c.sessionId === parentId).length > 1
   if (backend === 'agy')
     return machineAgyCalls(env).some((c) => c.argv.includes(`--conversation=${parentId}`))
-  return true
+  return codexFramesTo(env, 'thread/resume', parentId).length > 0
 }
 
 test.describe('`koloft` inside a tab on a remote workspace: the agent on the machine runs the koloft Koloft put there, and it acts for that session on this Mac', () => {
