@@ -1551,6 +1551,17 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   background shell `<id>` alive" has an exact OS answer, and a tool shell holding an
   output file the Stop list does not name is a FOREGROUND call in flight. One
   `bun listen.ts` was found 11.5 h into its run holding no listening socket.
+- **A background subagent's FOREGROUND Bash call is a tool shell of the MAIN claude, in
+  the main session's `tasks/` folder, under an id of its own.** Measured 2026-11-08 on
+  CC 2.1.319, interactive, in a Koloft tab, 1 run: a background Agent ran
+  `perl -e 'sleep 150'` in the foreground. While it ran, `ps` showed its
+  `zsh -c source …/shell-snapshots/… && eval …` shell as a direct child of the main
+  `claude`, and `lsof` put fd 1 of the shell and of `perl` on
+  `<scratch>/<main session id>/tasks/b<…>.output`: a shell-style `b…` id, not the
+  agent's `a…` id, which no Stop list names. The subagent's transcript never wrote that
+  id, during the call or in its tool result after. So the process table cannot
+  tie such a call to the agent that made it; it only shows that some foreground call
+  is in flight. Other foreground tools and other builds are not probed yet.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
