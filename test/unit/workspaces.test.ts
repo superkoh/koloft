@@ -417,6 +417,47 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
   })
 
+  it("a line appended to a stopped session's transcript re-reads that file alone and lists no other project folder, and deleting the transcript still drops the session", async () => {
+    writeJsonl(repo, 'cold')
+    own('cold')
+    const elsewhere = path.join(root, 'elsewhere')
+    writeJsonl(elsewhere, 'other')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['cold']))
+    const coldFile = path.join(projectsRoot, encodeCwd(repo), 'cold.jsonl')
+    fs.utimesSync(coldFile, 1_000_000, 1_000_000)
+    await settle()
+    const mtimeBefore = latest(repo).rows[0].mtime
+    const listed = vi.spyOn(fs.promises, 'readdir')
+    const statted = vi.spyOn(fs.promises, 'stat')
+
+    fs.appendFileSync(coldFile, JSON.stringify({ type: 'assistant' }) + '\n')
+    await vi.waitFor(() => expect(latest(repo).rows[0].mtime).toBeGreaterThan(mtimeBefore))
+    expect(listed.mock.calls.map((c) => String(c[0]))).not.toContain(
+      path.join(projectsRoot, encodeCwd(elsewhere))
+    )
+    expect(statted.mock.calls.map((c) => String(c[0])).filter((p) => p.endsWith('.jsonl'))).toEqual(
+      [coldFile]
+    )
+
+    fs.rmSync(coldFile)
+    await vi.waitFor(() => expect(dropped).toEqual(['cold: no transcript found and not running']))
+  })
+
+  it("removing a stopped session's title sidecar brings back the transcript's own title", async () => {
+    writeJsonl(repo, 'cold')
+    own('cold')
+    const bucket = path.join(projectsRoot, encodeCwd(repo))
+    const sidecar = path.join(bucket, 'cold.title')
+    fs.writeFileSync(sidecar, 'Sidecar name\n')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Sidecar name']))
+    await settle()
+
+    fs.rmSync(sidecar)
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['a session']))
+  })
+
   it("a mirror pull that grows a running remote session's transcript rescans nothing; one that grows a stopped session's, or brings the running one in under its worktree's folder, still does", async () => {
     const worktree = `${RPATH}/.claude/worktrees/feature`
     writeMirrorJsonl('live')
@@ -1283,6 +1324,31 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
     )
     expect(jsonlOpened()).toEqual(['grows-1.jsonl'])
     expect(titleOf('settled-1')).toBe('Settled name')
+  })
+
+  it('a restart opens no transcript whose head it already read, even when the last run quit at once, unless that reading was saved by another Koloft version', async () => {
+    const file = path.join(root, 'transcript-heads.json')
+    writeJsonl(repo, 'kept-1')
+    own('kept-1')
+    const opened = vi.spyOn(fs.promises, 'open')
+    const jsonlOpened = (): number =>
+      opened.mock.calls.filter((c) => String(c[0]).endsWith('.jsonl')).length
+    const launch = async (version: string): Promise<void> => {
+      mgr = remoteMgr({ headCache: { file, version } })
+      mgr.start()
+      await mgr.firstScan
+      expect(latest(repo).rows.map((r) => r.title)).toEqual(['a session'])
+    }
+
+    await launch('1.0.0')
+    expect(jsonlOpened()).toBe(1)
+
+    opened.mockClear()
+    await launch('1.0.0')
+    expect(jsonlOpened()).toBe(0)
+
+    await launch('1.1.0')
+    expect(jsonlOpened()).toBe(1)
   })
 
   it('does not remember a head it could not open, so the next rescan reads it (else an unreadable, never-growing file keeps its age title for good)', async () => {
