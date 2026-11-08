@@ -507,6 +507,7 @@ describe('CodexObservation', () => {
     f.server('turn/completed', { threadId: B, turn: { id: 'child', status: 'completed' } })
     f.server('item/completed', activity('completed'))
     expect(f.status()).toBe('waiting')
+    expect(f.background()).toEqual([])
     expect(f.turnDone()).toBe(1)
     expect(f.bound()).toHaveLength(1)
   })

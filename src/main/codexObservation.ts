@@ -659,6 +659,25 @@ export class CodexObservation {
     }
   }
 
+  private trackChild(id: string, root: string, state: Activity['state']): void {
+    const key = `agent:${id}`
+    this.activities.set(key, {
+      id: key,
+      kind: 'agent',
+      label: `Agent ${id.slice(0, 8)}`,
+      state,
+      owner: id,
+      root,
+      visible: true
+    })
+  }
+
+  private forgetChild(id: string): boolean {
+    this.childRoots.delete(id)
+    this.childTurns.delete(id)
+    return this.activities.delete(`agent:${id}`)
+  }
+
   private observeActivity(method: string | undefined, params: Record<string, unknown>): void {
     const owner = typeof params.threadId === 'string' ? params.threadId : undefined
     if (!owner) return
@@ -677,28 +696,17 @@ export class CodexObservation {
         if (item.tool === 'spawnAgent' && item.status === 'completed') this.childRoots.set(id, root)
         if (this.childRoots.get(id) !== root) continue
         const status = record(record(item.agentsStates)[id]).status
-        const key = `agent:${id}`
-        if (status === 'shutdown' || status === 'notFound') {
-          this.activities.delete(key)
-          this.childRoots.delete(id)
-          this.childTurns.delete(id)
-        } else {
-          const state =
+        if (status === 'shutdown' || status === 'notFound') this.forgetChild(id)
+        else
+          this.trackChild(
+            id,
+            root,
             status === 'running' || status === 'pendingInit'
               ? 'working'
               : status === 'completed' || status === 'interrupted' || status === 'errored'
                 ? 'waiting'
                 : 'unknown'
-          this.activities.set(key, {
-            id: key,
-            kind: 'agent',
-            label: `Agent ${id.slice(0, 8)}`,
-            state,
-            owner: id,
-            root,
-            visible: true
-          })
-        }
+          )
         changed = true
       }
     } else if (
@@ -708,24 +716,12 @@ export class CodexObservation {
       item.agentThreadId !== root
     ) {
       // CODEX§4
-      const id = item.agentThreadId
-      const key = `agent:${id}`
-      const child = this.activities.get(key)
-      if (item.kind === 'started' && !child) {
-        this.childRoots.set(id, root)
-        this.activities.set(key, {
-          id: key,
-          kind: 'agent',
-          label: `Agent ${id.slice(0, 8)}`,
-          state: 'working',
-          owner: id,
-          root,
-          visible: true
-        })
+      if (item.kind === 'started') {
+        this.childRoots.set(item.agentThreadId, root)
+        this.trackChild(item.agentThreadId, root, 'working')
         changed = true
-      } else if ((item.kind === 'completed' || item.kind === 'interrupted') && child) {
-        child.state = 'waiting'
-        changed = true
+      } else if (item.kind === 'completed' || item.kind === 'interrupted') {
+        changed = this.forgetChild(item.agentThreadId)
       }
     } else if (
       (method === 'item/started' || method === 'item/completed') &&

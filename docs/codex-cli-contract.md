@@ -241,8 +241,9 @@ final response without waiting. The relay saw:
    `idle` and emitted `turn/completed`.
 
 The completed **spawn tool call** is not completion of the **spawned child**.
-The parent-child relationship comes from the collab item, not from treating every
-other thread on the wire as a child. Temporary title threads share that wire too.
+The parent-child relationship comes from the collab item (or, on 0.166.0, the
+sub-agent activity item below), not from treating every other thread on the wire as a
+child. Temporary title threads share that wire too.
 
 ### Child agent announced as sub-agent activity
 
