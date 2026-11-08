@@ -244,6 +244,27 @@ The completed **spawn tool call** is not completion of the **spawned child**.
 The parent-child relationship comes from the collab item, not from treating every
 other thread on the wire as a child. Temporary title threads share that wire too.
 
+### Child agent announced as sub-agent activity
+
+**Measured 2026-11-08, codex-cli 0.166.0, `codex app-server` driven by a Node script in a
+throwaway `CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), the
+same prompt also run once in a real Koloft Codex tab; 2 runs.** `codex features list` in
+an empty home still reads `multi_agent_v2 stable false`, yet the model's tool was
+`spawn_agent {task_name, fork_turns, message}` and the child's path `/root/<task_name>`.
+No `collabAgentToolCall` item came at all. The wire, in order:
+
+1. On the parent thread, `item/started` then `item/completed`, both
+   `{type: "subAgentActivity", kind: "started", agentThreadId, agentPath}`.
+2. The child thread's own `thread/status/changed` (`idle` first, then `active`) and
+   `turn/started`; its `commandExecution` items.
+3. The parent's `idle` and `turn/completed` while the child still ran (`sleep 30`).
+4. When the child ended: on the parent thread `item/started` of the same item with
+   `kind: "completed"`, then the child's `idle` and `turn/completed`, then the parent's
+   `item/completed` (`kind: "completed"`). The parent started no new turn within 80 s.
+
+The 0.166.0 schema's `SubAgentActivityKind` is `started`, `interacted`, `interrupted`,
+`completed`.
+
 ### No Monitor; a server left in a background terminal
 
 **Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
