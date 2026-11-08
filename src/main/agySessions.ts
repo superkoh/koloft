@@ -256,9 +256,9 @@ const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
 
-// AGY§27 PLATFORM§2
-function withoutTheAppleTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return env.TERM_PROGRAM === 'Apple_Terminal' ? { ...env, TERM_PROGRAM: undefined } : env
+// AGY§27
+function withoutTheTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, TERM_PROGRAM: undefined }
 }
 
 // AGY§26
@@ -670,7 +670,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         id: tabId,
         kind: 'agy',
         koloftShim: false,
-        finishEnv: withoutTheAppleTerminalName,
+        finishEnv: withoutTheTerminalName,
         cwd,
         cols: opts.cols,
         rows: opts.rows,

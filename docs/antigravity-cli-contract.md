@@ -1371,7 +1371,10 @@ only downloaded the public release.
   (`"altScreenMode": "always"`), 30 wheel notches up and 30 down over a 160-line reply
   gave 49 redraws: 0 of 49 framed under `Apple_Terminal`, 49 of 49 unset (54–55 frames
   in the whole run); in the default inline mode the run had 5–6 frames. Links in the
-  run: 0 against 426 (fullscreen) and 480–537 (inline). (macOS arm64 1.5.2 at
+  run: 0 against 426 (fullscreen) and 480–537 (inline). `TERM_PROGRAM=tmux` acts
+  like unset (asks, 49 of 49 framed, 426 links), so only `Apple_Terminal` turns them
+  off; inside a real tmux what reaches the outer terminal also depends on tmux
+  answering DECRQM 2026 (§29). (macOS arm64 1.5.2 at
   `~/.local/bin/agy`, 2026-11-08: a python pty answering DA1, DA2, DECRQM, cursor
   position and OSC 10–12 as Koloft's xterm does, a temp `HOME`, a made-up
   `GEMINI_API_KEY`, the fake Gemini server, `WSL_INTEROP` set; 3 runs each, every run
