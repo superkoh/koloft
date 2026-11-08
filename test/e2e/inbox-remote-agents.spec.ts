@@ -242,7 +242,9 @@ for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
           .poll(() => asks.answered(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
           .toBe(true)
         await showDone(page)
-        await expect(card.locator('.ibx-dstat')).toContainText('Answered')
+        await expect(
+          card.filter({ has: page.locator('.ibx-dstat', { hasText: 'Answered' }) })
+        ).toHaveCount(1)
       } finally {
         await quitAndClose(app)
       }
