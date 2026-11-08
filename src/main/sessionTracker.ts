@@ -463,6 +463,7 @@ interface Tracked {
   >
   procsAt: number
   procsPromise?: Promise<void>
+  toolShellsOnMachine?: string[]
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
   turns: TurnLog
@@ -750,7 +751,8 @@ export class SessionTracker extends SessionRuntime {
     let observed = false
     let trusted = false
     const reportedIds = new Set(t.reported.map((x) => x.id))
-    const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
+    const toolShells = procs ? [...procs.shells.keys()] : (t.toolShellsOnMachine ?? [])
+    const toolCallInFlight = toolShells.some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
@@ -955,6 +957,17 @@ export class SessionTracker extends SessionRuntime {
     if (t) this.cleanup(t)
     this.tracked.delete(tabId)
     this.emitUpdate()
+  }
+
+  // CC§8
+  toolShellsOnMachineSaid(host: string, outputs: string[]): void {
+    for (const t of this.tracked.values()) {
+      if (t.remote?.host !== host || !t.info.sessionId) continue
+      const folder = `/${t.info.sessionId}/tasks/`
+      t.toolShellsOnMachine = outputs
+        .filter((o) => o.includes(folder))
+        .map((o) => path.posix.basename(o, '.output'))
+    }
   }
 
   remoteOf(tabId: string): RemoteTab | undefined {

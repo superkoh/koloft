@@ -333,6 +333,9 @@ const TRANSCRIPTS_LINE = 'transcripts '
 const HOOKS_LINE = 'hooks '
 const EXTRA_LINE = 'extra '
 const SHELL_LINE = 'shell '
+const TOOL_SHELL_LINE = 'toolshell '
+// CC§8
+const TOOL_SHELLS_IN_FLIGHT = `[ -d /proc ] && find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '${TOOL_SHELL_LINE}%l\\n' 2>/dev/null`
 // PLATFORM§37
 const EACH_SHELLS_FOREGROUND_AND_FOLDER =
   `k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "${remoteShellPidFile('$1')}"; ` +
@@ -367,7 +370,7 @@ export function heartbeatCmd(
       'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
       `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
       `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
-      `${EACH_SHELLS_FOREGROUND_AND_FOLDER}; ` +
+      `${EACH_SHELLS_FOREGROUND_AND_FOLDER}; ${TOOL_SHELLS_IN_FLIGHT}; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
@@ -412,10 +415,12 @@ export function parseHeartbeat(stdout: string): {
   stamps: string[]
   mirrors: MirrorStamps
   shells: ShellReport[]
+  toolShells: string[]
 } {
   const alive: string[] = []
   const stamps: string[] = []
   const shells: ShellReport[] = []
+  const toolShells: string[] = []
   const mirrors: MirrorStamps = { extras: [] }
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
@@ -455,6 +460,8 @@ export function parseHeartbeat(stdout: string): {
         name: name ?? '',
         cwd: cwd.endsWith(A_REMOVED_FOLDER_ON_LINUX) ? '' : cwd
       })
+    } else if (!current && line.startsWith(TOOL_SHELL_LINE)) {
+      toolShells.push(line.slice(TOOL_SHELL_LINE.length))
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -472,7 +479,8 @@ export function parseHeartbeat(stdout: string): {
     tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined,
     stamps,
     mirrors,
-    shells
+    shells,
+    toolShells
   }
 }
 

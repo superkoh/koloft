@@ -4086,6 +4086,7 @@ app.whenReady().then(() => {
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
+    onToolShells: (host, outputs) => tracker.toolShellsOnMachineSaid(host, outputs),
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) => {
       void pageForwards.checkMaster(host)
