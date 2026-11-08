@@ -1998,6 +1998,47 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test("BB-M16 in Codex: a Codex task suggests Codex's own skills after $, and switching back to Claude Code brings back the / list", async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    const put = (dir: string, name: string): void => {
+      fs.mkdirSync(path.join(dir, name), { recursive: true })
+      fs.writeFileSync(path.join(dir, name, 'SKILL.md'), `---\nname: ${name}\n---\n`)
+    }
+    put(path.join(env.workspaces.a, '.claude', 'skills'), 'zeta')
+    put(path.join(env.workspaces.a, '.agents', 'skills'), 'ship')
+    put(path.join(env.home, '.codex', 'skills'), 'tidy')
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      const task = dlg.locator('[aria-label="What to run"]')
+      const listed = dlg.locator('.wt-list .cb-row .wt-name')
+
+      await task.fill('$')
+      await expect(listed).toHaveText(['$ship', '$tidy'])
+      await task.fill('$ti')
+      await page.keyboard.press('Enter')
+      await expect(task).toHaveValue('$tidy ')
+
+      await task.fill('/')
+      await expect(dlg.locator('p.field-hint', { hasText: "skill's $name" })).toBeVisible()
+      await expect(dlg.locator('.wt-list')).toHaveCount(0)
+
+      await dlg.locator('.chip', { hasText: /^Claude$/ }).click()
+      await expect(listed).toHaveText(['/zeta'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('BB-N04: a run is an ordinary session to everything else in Koloft', async ({ env }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)

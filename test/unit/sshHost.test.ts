@@ -361,11 +361,28 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       put(path.join(home, '.claude', 'skills', 'tidy', 'SKILL.md'), '---\nname: tidy-up\n---')
       put(path.join(home, '.claude', 'skills', 'ship', 'SKILL.md'), '---\nname: ship\n---')
 
-      expect(await machine().listSkills(keyed(repo))).toEqual([
+      expect(await machine().listSkills(keyed(repo), 'claude')).toEqual([
         { name: '/ship', description: 'Ship it', source: 'project' },
         { name: '/build', source: 'project' },
         { name: '/tidy-up', source: 'home' }
       ])
+    })
+
+    it("offers a Codex or Muse task the machine's own folders for that agent, read on the machine (#675)", async () => {
+      const put = (file: string): void => {
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, '---\ndescription: d\n---')
+      }
+      put(path.join(repo, '.agents', 'skills', 'shared', 'SKILL.md'))
+      put(path.join(repo, '.codex', 'skills', 'codex-only', 'SKILL.md'))
+      put(path.join(repo, '.claude', 'skills', 'claude-only', 'SKILL.md'))
+      put(path.join(home, '.agents', 'skills', 'mine', 'SKILL.md'))
+      put(path.join(home, '.config', 'muse', 'skills', 'muse-mine', 'SKILL.md'))
+
+      const names = async (backend: 'codex' | 'muse'): Promise<string[]> =>
+        (await machine().listSkills(keyed(repo), backend)).map((s) => s.name)
+      expect(await names('codex')).toEqual(['$codex-only', '$shared', '$mine'])
+      expect(await names('muse')).toEqual(['/shared', '/muse-mine'])
     })
 
     it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply, and one that wants no answer just goes', async () => {

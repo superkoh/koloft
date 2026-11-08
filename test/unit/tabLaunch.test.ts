@@ -122,7 +122,8 @@ async function claudeTab(
         hookRegDir: () => regDir,
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',
-        assistOf: () => undefined
+        assistOf: () => undefined,
+        agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' })
       }),
       (machine) =>
         new SshHost(machine, {

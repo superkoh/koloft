@@ -1,5 +1,6 @@
 import path from 'path'
-import type { SkillSuggestion } from '@shared/types'
+import type { BackendId, SkillSuggestion } from '@shared/types'
+import { SKILL_PREFIX } from '@shared/sessionBackend'
 
 export interface SkillFs {
   readdir(p: string): string[]
@@ -79,47 +80,119 @@ function cut120(s: string): string {
   return s.length > 120 ? s.slice(0, 120) : s
 }
 
-function skillsIn(fs: SkillFs, base: string, source: 'project' | 'home'): SkillSuggestion[] {
-  const root = path.join(base, '.claude', 'skills')
-  const out: SkillSuggestion[] = []
-  for (const dir of readdirSafe(fs, root).sort()) {
-    const folder = path.join(root, dir)
-    if (!isDirSafe(fs, folder)) continue
-    const file = path.join(folder, 'SKILL.md')
-    if (!isFileSafe(fs, file)) continue
-    const text = readFileSafe(fs, file)
-    const fm = text === null ? {} : frontMatter(text)
-    const name = fm.name ?? dir
-    out.push({
-      name: `/${name}`,
-      ...(fm.description ? { description: cut120(fm.description) } : {}),
-      source
-    })
-  }
-  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+type Source = SkillSuggestion['source']
+
+export interface SkillPlaces {
+  workspace: string
+  home: string
+  configHome: string
+  codexHome?: string
 }
 
-function commandsIn(fs: SkillFs, base: string, source: 'project' | 'home'): SkillSuggestion[] {
-  const root = path.join(base, '.claude', 'commands')
-  const out: SkillSuggestion[] = []
-  for (const entry of readdirSafe(fs, root).sort()) {
-    if (!entry.endsWith('.md')) continue
-    if (!isFileSafe(fs, path.join(root, entry))) continue
-    out.push({ name: `/${entry.slice(0, -3)}`, source })
-  }
-  return out
+export interface SkillFolders {
+  skills: string[]
+  commands: string[]
 }
 
-export function listSkills(fs: SkillFs, workspaceRoot: string, home: string): SkillSuggestion[] {
-  const out = [
-    ...skillsIn(fs, workspaceRoot, 'project'),
-    ...commandsIn(fs, workspaceRoot, 'project')
-  ]
-  const seen = new Set(out.map((s) => s.name))
-  for (const s of [...skillsIn(fs, home, 'home'), ...commandsIn(fs, home, 'home')]) {
-    if (seen.has(s.name)) continue
-    seen.add(s.name)
-    out.push(s)
+const NO_FOLDERS: SkillFolders = { skills: [], commands: [] }
+
+// CC§9 CODEX§17 MUSE§16 AGY§31
+export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolders> {
+  const ws = (...rel: string[]): string => path.join(p.workspace, ...rel)
+  const home = (...rel: string[]): string => path.join(p.home, ...rel)
+  switch (backend) {
+    case 'claude':
+      return {
+        project: { skills: [ws('.claude', 'skills')], commands: [ws('.claude', 'commands')] },
+        home: { skills: [home('.claude', 'skills')], commands: [home('.claude', 'commands')] }
+      }
+    case 'codex':
+      return {
+        project: { skills: [ws('.agents', 'skills'), ws('.codex', 'skills')], commands: [] },
+        home: {
+          skills: [
+            ...(p.codexHome ? [path.join(p.codexHome, 'skills')] : []),
+            home('.agents', 'skills')
+          ],
+          commands: []
+        }
+      }
+    case 'muse':
+      return {
+        project: { skills: [ws('.agents', 'skills')], commands: [] },
+        home: { skills: [path.join(p.configHome, 'muse', 'skills')], commands: [] }
+      }
+    case 'agy':
+      return {
+        project: {
+          skills: [ws('.agents', 'skills'), ws('_agents', 'skills'), ws('.agent', 'skills')],
+          commands: []
+        },
+        home: NO_FOLDERS
+      }
+  }
+}
+
+function byName(a: SkillSuggestion, b: SkillSuggestion): number {
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+}
+
+function skillsIn(fs: SkillFs, roots: string[], prefix: string, source: Source): SkillSuggestion[] {
+  const out: SkillSuggestion[] = []
+  for (const root of roots) {
+    for (const dir of readdirSafe(fs, root)) {
+      const folder = path.join(root, dir)
+      if (!isDirSafe(fs, folder)) continue
+      const file = path.join(folder, 'SKILL.md')
+      if (!isFileSafe(fs, file)) continue
+      const text = readFileSafe(fs, file)
+      const fm = text === null ? {} : frontMatter(text)
+      out.push({
+        name: prefix + (fm.name ?? dir),
+        ...(fm.description ? { description: cut120(fm.description) } : {}),
+        source
+      })
+    }
+  }
+  return out.sort(byName)
+}
+
+function commandsIn(
+  fs: SkillFs,
+  roots: string[],
+  prefix: string,
+  source: Source
+): SkillSuggestion[] {
+  const out: SkillSuggestion[] = []
+  for (const root of roots) {
+    for (const entry of readdirSafe(fs, root)) {
+      if (!entry.endsWith('.md')) continue
+      if (!isFileSafe(fs, path.join(root, entry))) continue
+      out.push({ name: prefix + entry.slice(0, -3), source })
+    }
+  }
+  return out.sort(byName)
+}
+
+export function listSkills(
+  fs: SkillFs,
+  backend: BackendId,
+  places: SkillPlaces
+): SkillSuggestion[] {
+  const folders = skillFolders(backend, places)
+  const prefix = SKILL_PREFIX[backend]
+  const out: SkillSuggestion[] = []
+  const seen = new Set<string>()
+  for (const source of ['project', 'home'] as const) {
+    const { skills, commands } = folders[source]
+    for (const s of [
+      ...skillsIn(fs, skills, prefix, source),
+      ...commandsIn(fs, commands, prefix, source)
+    ]) {
+      if (seen.has(s.name)) continue
+      seen.add(s.name)
+      out.push(s)
+    }
   }
   return out
 }

@@ -1442,7 +1442,7 @@ export interface KoloftApi {
     delete(jobId: string): Promise<void>
     setEnabled(jobId: string, on: boolean): Promise<void>
     runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string): Promise<SkillSuggestion[]>
+    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
     // CC§9
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void

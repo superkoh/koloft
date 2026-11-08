@@ -1830,6 +1830,23 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
   `skills/list`.
+- **Where Codex finds skills, and how a prompt names one.** 2026-11-08, Codex CLI
+  0.166.0, no real model: a throwaway `HOME` and `CODEX_HOME` whose `config.toml` pointed
+  the model provider at a local fake Responses server that saved each request body, and a
+  made-up API key. Six skills, each folder named differently from its frontmatter `name`,
+  each body holding its own codeword. `skills/list {cwds: [<repo>]}` listed
+  `<repo>/.agents/skills/<d>/SKILL.md` and `<repo>/.codex/skills/<d>/SKILL.md` with scope
+  `repo`, `$CODEX_HOME/skills/<d>/SKILL.md` and `$HOME/.agents/skills/<d>/SKILL.md` with
+  scope `user`, and the four `skills/.system/*` with scope `system`; it did not list
+  `<repo>/.claude/skills`. Then one `turn/start` per text on a new thread, and the same
+  texts as the last argument of a real TUI (`codex --no-daemon -C <repo> "<text>"` in a
+  python pty), as Koloft starts a scheduled run (section 14):
+  - `$<name>` (the frontmatter name) sent, after the user's text, one more user message
+    `<skill>\n<name>…</name>\n<path>…/SKILL.md</path>\n<the whole file>\n</skill>`; the
+    same for a repo skill. Both paths.
+  - `/<name>`, `use the <name> skill …`, and `$<folder>` sent the text alone.
+  - `/prompts:<n>` with `$CODEX_HOME/prompts/<n>.md` sent the text alone, both paths.
+  - What a `SKILL.md` without a `name` line is called is inferred, not checked.
 - **`skills/extraRoots/set {extraRoots: [<folder>]}` adds a skills folder for that one
   app-server, and the model gets it.** 2026-10-27, Codex CLI 0.162.0 (model turns, a
   throwaway `CODEX_HOME` holding a copy of this Mac's login, deleted afterwards) and

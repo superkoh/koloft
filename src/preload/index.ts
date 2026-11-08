@@ -179,7 +179,7 @@ const api: KoloftApi = {
     delete: (jobId) => ipcRenderer.invoke(CH.cron.delete, jobId),
     setEnabled: (jobId, on) => ipcRenderer.invoke(CH.cron.setEnabled, { jobId, on }),
     runNow: (jobId) => ipcRenderer.invoke(CH.cron.runNow, jobId),
-    skills: (workspacePath) => ipcRenderer.invoke(CH.cron.skills, workspacePath),
+    skills: (workspacePath, backend) => ipcRenderer.invoke(CH.cron.skills, workspacePath, backend),
     trusted: (workspacePath, backend) =>
       ipcRenderer.invoke(CH.cron.trusted, workspacePath, backend),
     onState: (cb) => {
