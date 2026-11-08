@@ -3327,6 +3327,7 @@ app.whenReady().then(() => {
   subscribeTabSubsystems(tabLifecycle, {
     slash,
     attention,
+    cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
@@ -5364,8 +5365,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clearKeepingExit(tabId)
-  relayTabClosed(tabId)
+  tabLifecycle.emit('stopping', tabId)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,

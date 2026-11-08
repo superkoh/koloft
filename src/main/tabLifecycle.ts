@@ -20,6 +20,7 @@ export interface TabExit extends AgentExit {
 }
 
 export class TabLifecycle extends EventEmitter<{
+  stopping: [string]
   exit: [TabExit]
   teardown: [TabExit]
   slept: []
@@ -31,7 +32,8 @@ type MadeLater<T> = () => T | null
 
 export interface TabSubsystems {
   slash: Pick<SlashCommands, 'closed'>
-  attention: Pick<AttentionTracker, 'clear'>
+  attention: Pick<AttentionTracker, 'clear' | 'clearKeepingExit'>
+  cdpTabClosed: (tabId: string) => void
   claude: Pick<ClaudeBackend, 'onPtyExit'>
   tracker: Pick<SessionTracker, 'setAlive'>
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
@@ -46,6 +48,9 @@ export interface TabSubsystems {
 }
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
+  lifecycle.on('stopping', (tabId) => s.attention.clearKeepingExit(tabId))
+  lifecycle.on('stopping', (tabId) => s.cdpTabClosed(tabId))
+
   lifecycle.on('exit', ({ tabId }) => s.slash.closed(tabId))
   lifecycle.on('exit', ({ tabId }) => s.typing()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.relay()?.forget(tabId))
