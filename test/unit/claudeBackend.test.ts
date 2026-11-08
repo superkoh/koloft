@@ -378,3 +378,33 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     })
   })
 })
+
+describe('ClaudeBackend: the resume check before a restart', () => {
+  it('takes a transcript the session list already found without listing every project folder, and asks the tracker once that file is gone', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-listed-'))
+    const listed = path.join(dir, `${sessionId}.jsonl`)
+    fs.writeFileSync(listed, '{}\n')
+    const swept: string[] = []
+    const backend = new ClaudeBackend({
+      tracker: {
+        transcriptExists: (key: string) => {
+          swept.push(key)
+          return true
+        }
+      },
+      workspaces: () => ({
+        transcriptFileOf: (key: string) => (key === sessionId ? listed : undefined)
+      })
+    } as unknown as ClaudeBackendDeps)
+    const listedFolders = vi.spyOn(fs, 'readdirSync')
+
+    expect(backend.transcriptExists(sessionId)).toBe(true)
+    expect(swept).toEqual([])
+    expect(listedFolders).not.toHaveBeenCalled()
+
+    fs.rmSync(listed)
+    expect(backend.transcriptExists(sessionId)).toBe(true)
+    expect(swept).toEqual([sessionId])
+    listedFolders.mockRestore()
+  })
+})
