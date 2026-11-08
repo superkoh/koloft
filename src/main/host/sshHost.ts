@@ -36,12 +36,7 @@ import {
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
-import {
-  answerAfterLoginChatter,
-  FINGERPRINT,
-  remoteAnswerCommand,
-  remoteShCommand
-} from '../remote/install'
+import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
 import {
   claudeTabSpec,
   killSessionCmd,
@@ -746,9 +741,8 @@ export class SshHost implements Host {
     return out
   }
 
-  private async sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
-    const r = await this.deps.run(remoteAnswerCommand(script, args), opts)
-    return { ...r, stdout: answerAfterLoginChatter(r.stdout) }
+  private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
+    return this.deps.run(remoteAnswerCommand(script, args), opts)
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {

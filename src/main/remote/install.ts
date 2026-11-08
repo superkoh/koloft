@@ -1,6 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
+import { ANSWER_STARTS } from './ssh'
 import {
   ENSURE_AGY_MINIMUM_FN,
   ENSURE_CLAUDE_MINIMUM_FN,
@@ -72,16 +73,9 @@ export function remoteShCommand(script: string, args: string[] = []): string {
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
-const ANSWER_STARTS = 'koloft-answer-starts-here'
-
 // PLATFORM§33
 export function remoteAnswerCommand(script: string, args: string[] = []): string {
   return remoteShCommand(`echo ${ANSWER_STARTS}\n${script}`, args)
-}
-
-export function answerAfterLoginChatter(stdout: Buffer): Buffer {
-  const at = stdout.indexOf(`${ANSWER_STARTS}\n`)
-  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
 }
 
 const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
@@ -370,7 +364,7 @@ export function heartbeatCmd(
   extraDirs: string[] = [],
   shellTabs: string[] = []
 ): string {
-  return remoteShCommand(
+  return remoteAnswerCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +

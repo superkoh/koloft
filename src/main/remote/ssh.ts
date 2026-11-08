@@ -87,6 +87,14 @@ export function problemOf(r: { code: number | null; stderr: string }): string {
     : said
 }
 
+export const ANSWER_STARTS = 'koloft-answer-starts-here'
+
+// PLATFORM§33
+export function answerAfterLoginChatter(stdout: Buffer): Buffer {
+  const at = stdout.indexOf(`${ANSWER_STARTS}\n`)
+  return at < 0 ? stdout : stdout.subarray(at + ANSWER_STARTS.length + 1)
+}
+
 export interface RunResult {
   // PLATFORM§33
   code: number | null
@@ -182,7 +190,7 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => noteMasterRoom(host, r))
+  }).then((r) => noteMasterRoom(host, { ...r, stdout: answerAfterLoginChatter(r.stdout) }))
 }
 
 // PLATFORM§33 CC§13

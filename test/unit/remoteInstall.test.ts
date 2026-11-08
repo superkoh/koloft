@@ -8,11 +8,11 @@ import {
   ENSURE_SH,
   NO_FILES_THERE,
   NODE_VERSION,
-  answerAfterLoginChatter,
   heartbeatCmd,
   parseHeartbeat,
   remoteAnswerCommand
 } from '../../src/main/remote/install'
+import { answerAfterLoginChatter } from '../../src/main/remote/ssh'
 import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
@@ -617,10 +617,10 @@ describe('the heartbeat question', () => {
       const res = spawnSync(
         'sh',
         ['-c', heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])],
-        { encoding: 'utf8', env: { ...process.env, HOME: home } }
+        { env: { ...process.env, HOME: home } }
       )
       expect(res.status).toBe(0)
-      return parseHeartbeat(res.stdout)
+      return parseHeartbeat(answerAfterLoginChatter(res.stdout).toString('utf8'))
     }
     const first = beat()
     expect(first.mirrors.extras).toHaveLength(3)

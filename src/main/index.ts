@@ -162,7 +162,6 @@ import {
   UTIL_BASH_LOGIN,
   UTIL_BASH_LOGIN_FILE,
   UTIL_SH,
-  answerAfterLoginChatter,
   remoteAnswerCommand,
   remoteShCommand
 } from './remote/install'
@@ -1800,7 +1799,7 @@ const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
   await loginEnvReady()
-  const r = await runSsh(host, remoteShCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
+  const r = await runSsh(host, remoteAnswerCommand(LIVE_REGISTRY_ON_A_MACHINE_SH), {
     controlDir: remoteControlDir
   })
   if (r.code !== 0) throw new Error(problemOf(r))
@@ -3274,12 +3273,11 @@ app.whenReady().then(() => {
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
       await loginEnvReady()
-      const r = await runSshBytes(machine, remoteAnswerCommand(script, args), {
+      return runSsh(machine, remoteAnswerCommand(script, args), {
         controlDir: remoteControlDir,
         timeoutMs: opts.timeoutMs,
         ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
       })
-      return { ...r, stdout: answerAfterLoginChatter(r.stdout).toString('utf8') }
     }
   })
   // ADR-0033

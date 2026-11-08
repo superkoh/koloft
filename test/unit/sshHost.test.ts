@@ -10,7 +10,7 @@ import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubLookup } from '../../src/main/github'
 import { utilTerminalGuard } from '../../src/main/shim'
-import type { BytesResult } from '../../src/main/remote/ssh'
+import { answerAfterLoginChatter, type BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
@@ -33,7 +33,9 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
     let err = ''
     c.stdout.on('data', (d: Buffer) => out.push(d))
     c.stderr.on('data', (d: Buffer) => (err += String(d)))
-    c.on('close', (code) => resolve({ code, stdout: Buffer.concat(out), stderr: err }))
+    c.on('close', (code) =>
+      resolve({ code, stdout: answerAfterLoginChatter(Buffer.concat(out)), stderr: err })
+    )
     c.stdin.on('error', () => {})
     c.stdin.end(opts?.input)
   })
