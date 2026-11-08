@@ -737,6 +737,17 @@ server of the opening note and with `--provider echo`; October 2026.
   (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
   terminal outside tmux when tmux has `set -g allow-passthrough on`.
 - Attaching to the tmux session again replays no 7501 frame.
+- **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
+  (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
+  scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the
+  outer terminal unframed), so there is nothing for a relay to carry past tmux. Given
+  `TERM_PROGRAM=WezTerm` in the pane it wrote 314 frames, and tmux 3.3a passed none of
+  them on (PLATFORM§35). It wrote 160 OSC 8 links in every run; none reached the outer
+  terminal. 2026-11-08, muse 1.4.11 (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Debian
+  12, Koloft's tmux.conf, no network), a fake `/responses` model streaming the answer
+  in 4-line pieces 60 ms apart, then 60 wheel notches and 8 PageUp/PageDown; a python
+  pty answering like xterm.js as the outer terminal, muse's own bytes logged by a pty
+  between it and tmux.
 - `TBH_TMUX_RUN_STATUS_PATH` writes nothing Koloft can use.
 - `ssh <machine> muse serve --provider echo` speaks §5 over the ssh pipe: `initialize`
   answers in about 0.3 s, `session/list`, `session/read` and `approval/listPending` are

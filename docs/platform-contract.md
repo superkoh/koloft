@@ -1966,6 +1966,10 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
     105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
+- **tmux 3.3a drops a pane's OSC 8 links**, also with `terminal-features …:hyperlinks`
+  in Koloft's tmux.conf: muse wrote 160 `ESC ] 8 ; ; <url>` links into a pane and 0
+  reached the outer terminal (5 of 5 runs; 2026-11-08, Debian 12's tmux 3.3a in Docker,
+  a python pty as the outer terminal). Later tmux versions were not run.
 
 ## §36 ccstatusline
 
