@@ -366,6 +366,7 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
+  if (agentState === 'idle' && run.shown === undefined) return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
     return {
       state: 'blocked',
