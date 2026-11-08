@@ -563,6 +563,9 @@ if [ "$skip" = "1" ]; then
   exec "$real" "\${inj[@]}" "$@"
 fi
 
+# CC§12
+[ "$TERM_PROGRAM" = "Apple_Terminal" ] && unset TERM_PROGRAM
+
 if [ -n "$sid" ]; then
   register "$(newid)" "$sid" "exact"
   exec "$real" "\${pre[@]}" "\${inj[@]}" "$@"

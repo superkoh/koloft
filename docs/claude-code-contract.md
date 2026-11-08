@@ -2272,9 +2272,43 @@ sessions once at launch and does not retry one found still registered.
 
 Unless a bullet names a version or a measurement, it is inferred, not checked.
 
-- **Every TUI frame is wrapped in DEC mode 2026** (`?2026h` … `?2026l`, synchronized
-  output), so while claude streams, a sync window is open much of the time and a
-  terminal resize very often lands inside one (verified in the 2.1.232 binary).
+- **Since at least 2.1.319 claude wraps a frame in DEC mode 2026** (`?2026h` …
+  `?2026l`, synchronized output) **only when it believes the terminal can show one:**
+  its DECRQM 2026 probe was answered "set" or "reset", or `TERM_PROGRAM` names a
+  terminal on its "may support" list (iTerm.app, WezTerm, ghostty, vscode, kitty and
+  more; not Apple_Terminal), or `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is set and `TMUX` is
+  not. It skips the probe when XTVERSION goes unanswered or `TERM_PROGRAM=Apple_Terminal`
+  (the XTVERSION bullet below), so in a Koloft tab without the switch no frame was wrapped:
+  fullscreen claude repainted every changed row with cursor moves, about 3.1–3.4 KB per
+  wheel report, in one write the pty hands over in 1024-byte reads. Replayed into
+  Koloft's WebGL terminal with its timing kept, 28–35% of paints landed in the middle of
+  such a frame (the tear); with `CLAUDE_CODE_FORCE_SYNC_OUTPUT=1` every frame came
+  wrapped, nothing was written outside a window, and 0 paints landed mid-frame. Read
+  from the 2.1.319 binary's `strings` and run 2026-11-06: a python pty answering DA1,
+  DECRQM, OSC 10/11 and (per case) XTVERSION, a scratch `HOME` and `CLAUDE_CONFIG_DIR`,
+  a fake API key, `"tui": "fullscreen"`, a synthetic 300- and 1000-turn transcript
+  resumed and scrolled by SGR wheel reports; 3 replay runs per case. 2.1.232's binary
+  wrapped every frame; the versions between were not read. While a window is open, a
+  terminal resize can land inside it (PLATFORM§21).
+- **The cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and `ESC[<n>S`/`T`, then
+  only the rows that came into view) needs synchronized output on, no tmux, zellij or
+  JetBrains terminal, an XTVERSION reply that does not start `xterm.js`, and
+  `CLAUDE_CODE_DECSTBM` set or the remote flag `tengu_marlin_porch` on** (off by
+  default; it was on during the run). With both switches, a wheel report cost 134–511
+  bytes instead of 3.1–3.4 KB, and 60 trackpad-speed reports 48.6–88 KB instead of
+  314–342 KB. Same strings and run as above; whether the network reached the flag
+  service is inferred, not checked.
+- **With `TERM_PROGRAM=Apple_Terminal`, fullscreen claude asks for the cursor position
+  (`ESC[?6n`) about every 200 ms, idle or not, as long as something answers it; with
+  `TERM_PROGRAM` unset it never asks, and still draws in true colour (`38;2;`).** Same
+  2.1.319 pty setup; in Koloft's hidden window (3 runs per case, alternated) 3 s idle drew
+  14 asks under Apple_Terminal and 0 unset, and 12 wheel reports 22 against 0, with the
+  same count of `38;2;` and `?2026h` and the same input-to-draw median (19.75 / 19.70 ms).
+  The rest of what the 2.1.319 strings key on `Apple_Terminal` (read 2026-11-07, not
+  run): the newline hint says Option+Enter instead of Shift+Enter; the `/terminal-setup`
+  tips and command offer to change Terminal.app's own settings; a notification falls
+  back to the terminal bell; strikethrough is turned off; one of its colour helpers is held to 256 colours;
+  the welcome screen and a few key bindings take a Terminal.app branch.
 - **The XTVERSION reply picks the wheel-scroll engine.** A reply naming
   `xterm.js(<version>)` (which xterm ≥ 6.1.0-beta sends) switches fullscreen wheel
   scrolling to a paced drain of 2–3 lines per frame; no reply keeps the native profile,
