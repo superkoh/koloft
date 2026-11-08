@@ -1061,7 +1061,6 @@ export class ClaudeBackend implements SessionBackend {
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
-    if (spec.trustFolder) await host.trustFolder(spec.cwd ?? spec.root)
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,

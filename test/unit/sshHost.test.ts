@@ -287,25 +287,32 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       )
     })
 
-    // CC§9 ADR-0026
-    it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
+    // CC§9
+    it("reads a folder in the machine's .claude.json, and one under it, as trusted", async () => {
       putNodeOnMachine()
-      fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
+      const claudeJson = path.join(home, '.claude.json')
+      fs.writeFileSync(claudeJson, '{"numStartups":3}\n')
       expect(await machine().trustsFolder(keyed(repo))).toBe(false)
-
-      await machine().trustFolder(keyed(repo))
-
-      expect(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))).toEqual({
-        numStartups: 3,
-        projects: { [repo]: { hasTrustDialogAccepted: true } }
-      })
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }, null, 2)
+      )
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
     })
 
     // CC§9
-    it('on a machine with no node to read .claude.json, a folder is not reported as never opened with Claude', async () => {
-      fs.writeFileSync(path.join(home, '.claude.json'), '{}\n')
-      expect(await machine().trustsFolder(keyed(repo))).toBe(true)
+    it('on a machine with no node, a folder no entry of .claude.json names, itself or a folder above it, reads as never trusted, and one an entry names reads as trusted', async () => {
+      const claudeJson = path.join(home, '.claude.json')
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [path.join(home, 'other')]: { allowedTools: [] } } }, null, 2)
+      )
+      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }, null, 2)
+      )
+      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
     })
 
     // CC§9
@@ -320,10 +327,6 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
       expect(await machine().trustsFolder(keyed(path.join(home, 'plain')))).toBe(true)
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
-      await machine().trustFolder(keyed(repo))
-      expect(JSON.parse(fs.readFileSync(claudeJson, 'utf8')).projects[repo]).toEqual({
-        hasTrustDialogAccepted: true
-      })
 
       fs.writeFileSync(
         claudeJson,

@@ -160,7 +160,7 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: `${c.trustFolder ? trustOnceEnsureBroughtNode(tab.cwd) : ''}${claudeFirstRun(tab)}`,
+    beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName
@@ -196,9 +196,13 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   exec "$@"\n`
 }
 
+const NO_NODE_FOR_TRUST =
+  '[Koloft] this machine has no node, so Koloft could not mark this folder as trusted for Claude Code; if Claude Code refuses it, run claude here once and answer its trust question'
+
 // CC§9 ADR-0026
-const trustOnceEnsureBroughtNode = (cwd: string): string =>
-  `( cd ${shq(cwd)} 2>/dev/null && command -v node >/dev/null 2>&1 && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" )\n`
+const trustTheLaunchFolder = (cwd: string): string =>
+  `if ! command -v node >/dev/null 2>&1; then echo ${shq(NO_NODE_FOR_TRUST)}
+else ( cd ${shq(cwd)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1; fi\n`
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)

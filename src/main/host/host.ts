@@ -119,7 +119,6 @@ export interface Host {
   unwatchFile(file: string): void
   shell(cwd: string): ShellLaunch
   launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
-  trustFolder(dir: string): Promise<void>
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string

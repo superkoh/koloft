@@ -842,22 +842,42 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§9 ADR-0026
-  it('a tab told to trust its folder writes the trust under the real path once ensure.sh has brought node, on a machine that had no node when Koloft tried before the launch, keeping what .claude.json had; a tab not told to leaves it alone', () => {
-    const repo = mkroot('trust')
+  it('a tab told to trust its folder writes the trust under the real path with the node ensure.sh brought, keeping what .claude.json had, even for a repo inside a trusted folder, since trust stops at the repo top; a tab not told to leaves it alone', () => {
+    const parent = mkroot('trust')
+    const repo = path.join(parent, 'repo')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const real = fs.realpathSync(repo)
+    const seeded = JSON.stringify({
+      numStartups: 3,
+      projects: { [path.dirname(real)]: { hasTrustDialogAccepted: true } }
+    })
     const cj = (b: Box): string => path.join(b.home, '.claude.json')
     const trusting = box(spec({ cwd: repo, trustFolder: true }), { ensureBringsNode: true })
-    fs.writeFileSync(cj(trusting), '{"numStartups":3}\n')
+    fs.writeFileSync(cj(trusting), seeded)
     expect(trusting.run().status).toBe(0)
     expect(JSON.parse(fs.readFileSync(cj(trusting), 'utf8'))).toEqual({
       numStartups: 3,
-      projects: { [fs.realpathSync(repo)]: { hasTrustDialogAccepted: true } }
+      projects: {
+        [path.dirname(real)]: { hasTrustDialogAccepted: true },
+        [real]: { hasTrustDialogAccepted: true }
+      }
     })
     expect(trusting.claudeCalls()).toHaveLength(1)
 
     const plain = box(spec({ cwd: repo }), { ensureBringsNode: true })
-    fs.writeFileSync(cj(plain), '{"numStartups":3}\n')
+    fs.writeFileSync(cj(plain), seeded)
     expect(plain.run().status).toBe(0)
-    expect(fs.readFileSync(cj(plain), 'utf8')).toBe('{"numStartups":3}\n')
+    expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
+  })
+
+  // CC§9
+  it('a tab told to trust its folder on a machine still without node says so in the tab and starts claude anyway', () => {
+    const b = box(spec({ cwd: mkroot('nonode'), trustFolder: true }))
+    const res = b.run()
+    expect(res.status).toBe(0)
+    expect(res.stdout).toContain('this machine has no node')
+    expect(fs.existsSync(path.join(b.home, '.claude.json'))).toBe(false)
+    expect(b.claudeCalls()).toHaveLength(1)
   })
 
   // CC§10

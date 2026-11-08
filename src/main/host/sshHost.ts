@@ -37,7 +37,7 @@ import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteShCommand } from '../remote/install'
-import { TRUST_CWD_JS, TRUSTED_JS } from '../remote/claudeTrustJs'
+import { TRUSTED_JS } from '../remote/claudeTrustJs'
 import {
   claudeTabSpec,
   killSessionCmd,
@@ -189,11 +189,15 @@ export function machineClaudeArgs(
 }
 
 const NOT_TRUSTED = 1
-const NO_NODE_TO_TELL = 0
 
-const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
-command -v node >/dev/null 2>&1 || exit ${NO_NODE_TO_TELL}
-node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
+const CLAUDE_TRUSTS_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
+if command -v node >/dev/null 2>&1; then node -e "$2" "$HOME/.claude.json" "$(pwd -P)"; exit; fi
+d=$(pwd -P)
+while :; do
+  grep -qF "\\"$d\\":" "$HOME/.claude.json" 2>/dev/null && exit 0
+  [ "$d" = / ] && exit ${NOT_TRUSTED}
+  d=$(dirname "$d")
+done`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
@@ -1007,14 +1011,11 @@ export class SshHost implements Host {
     }
   }
 
-  // CC§9 ADR-0026
-  async trustFolder(dir: string): Promise<void> {
-    await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUST_CWD_JS])
-  }
-
   // CC§9
   async trustsFolder(dir: string): Promise<boolean> {
-    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
+    return (
+      (await this.sh(CLAUDE_TRUSTS_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
+    )
   }
 
   // MUSE§17
