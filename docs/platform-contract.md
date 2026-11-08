@@ -1380,6 +1380,12 @@ inferred, not checked.
   throwaway probe that stat'ed each drop after the round.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **On macOS a recursive folder watch names a changed file in the same Unicode form
+  `readdir` gives it**, so a folder path built from the event matches the one built from
+  a listing: a folder named `データ` made in decomposed form (NFD) and one in composed
+  form (NFC) were both reported for a file written inside them exactly as `readdir`
+  spelled them. Measured 2026-11-07 (Node 24.13.0, macOS 27.0, APFS in the temp folder)
+  with a throwaway probe.
 - **A session's two start notes can go unreported.** With the launch line typed about
   0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
   never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
@@ -1939,6 +1945,27 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   (2026-10-29, tmux 3.3a in the `koloft-e2e-sshd` Docker image (Debian bookworm),
   reached from macOS 27's `/usr/bin/ssh` with `-tt`; a probe script started a session
   printing those characters and attached to it, its bytes read back on the Mac.)
+- **Synchronized output (DEC 2026) through tmux.** Measured 2026-11-07 in Docker with
+  Koloft's tmux.conf: tmux 3.3a (Debian 12), 3.4 (Ubuntu 24.04), 3.5a (Debian 13) and
+  3.8 (built from its release tarball), a python pty as the outer terminal answering
+  DECRQM 2026 as xterm.js does; read in each version's source the same day.
+  - **Before 3.7 tmux neither answers a pane's DECRQM `ESC[?2026$p` nor keeps a pane's
+    `?2026h` … `?2026l`**: a program writing 394 such frames got 0 `?2026h` out to the
+    outer terminal on 3.3a, 3.4 and 3.5a. 3.7 and later answer it (`;1$y`/`;2$y`), hold
+    the pane until `?2026l`, and wrap the redraw in the outer terminal's own 2026 after
+    asking that terminal — no `terminal-features` line needed (3.8: 124 windows for the
+    394 frames, fullscreen claude 0 bytes drawn outside one).
+  - **`terminal-features … :sync` does not make tmux frame a pane that sends no 2026.**
+    tmux 3.5a opens a window only when the first thing a read writes out moves the
+    cursor (a scroll, insert or delete line, an erase of the screen); a row rewrite starts
+    with text, so 3.5a wrapped 12 of claude's 83 redraws. 3.3a's `Sync` is the older
+    `DCS = 1 s` form, which xterm.js does not take.
+  - **A passthrough `ESC P tmux; … ESC \` goes out as soon as tmux reads it; text waits
+    until the end of that read.** A `?2026l` passthrough in the same read as the frame's
+    rows reaches the outer terminal before the rows. Sent once tmux has answered a DSR
+    (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
+    105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
+  - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
 
 ## §36 ccstatusline
 

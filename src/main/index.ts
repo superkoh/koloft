@@ -3653,6 +3653,7 @@ app.whenReady().then(() => {
         )
       ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
     loadLayout,
     saveLayout,
     projectInfo: projectInfoFor,
@@ -7287,7 +7288,7 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
+      ? hosts.of(root).watchDir(root, (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes))
       : false
   )
   ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {

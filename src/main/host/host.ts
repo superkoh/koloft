@@ -2,6 +2,7 @@ import type {
   BaseChoice,
   ContentHit,
   CronEffort,
+  DirChangeListener,
   DirEntry,
   EditCreateResult,
   EditOpenResult,
@@ -73,6 +74,8 @@ export type ClaudeLaunchPlan =
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
         KOLOFT_DOCS_PLUGIN?: string
+        CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
+        CLAUDE_CODE_DECSTBM?: string
       }
       machine?: MachineTab
     }
@@ -106,7 +109,7 @@ export interface Host {
     opts?: { force?: unknown; eol?: unknown }
   ): Promise<EditWriteResult>
   createFile(dir: string, name: string): Promise<EditCreateResult>
-  watchDir(root: string, onChange: (root: string) => void): boolean
+  watchDir(root: string, onChange: DirChangeListener): boolean
   unwatchDir(root: string): void
   watchFile(
     file: string,

@@ -231,14 +231,16 @@
             Looking at the session does not clear the dot. It goes when the session works again: you
             send it something, answer its question or give your OK, or another session or your
             butler does. It also goes when you close the tab or archive the session. It is still
-            there after you quit and reopen Koloft (after a restart it always reads "turn done").
+            there after you quit and reopen Koloft.
           </li>
           <li>
-            One kind of dot goes once you look at it: a turn that only reports. That is a turn that
-            ends while the session waits on other work Koloft can see (a session it started or wrote
-            to that is still busy, or a background job it left running), or, with Assist on, a turn
-            whose reply Assist reads as asking you for nothing. Hover the dot: it says "just letting
-            you know".
+            One kind of dot goes once you look at it: a turn that only reports. A turn only reports
+            when it ends while the session waits on other work Koloft can see (a session it started
+            or wrote to that is still busy, or a background job it left running), or when its last
+            line is a set phrase saying nothing is left for you, such as
+            <code>Next for you: nothing.</code> That works with Assist off too. With Assist on, it
+            also counts when Assist reads the reply as asking you for nothing. Hover the dot: it
+            says "just letting you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -297,7 +299,10 @@
                 <td>ends its turn and needs you</td>
                 <td>
                   <code>“…” finished and waits for you</code>, with the end of what it said and a
-                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it.
+                  <code>Reply to it…</code> box. <code>Send</code> sends your words to it. With
+                  Assist on, when one pick could answer it, Assist writes a short question and 2 to
+                  4 replies in place of the box. Pick one to send it along with the question, or
+                  type your own in the <code>Type your own answer… (Enter sends it)</code> box.
                 </td>
               </tr>
               <tr>
@@ -321,8 +326,8 @@
             there. Every card Koloft puts there has that link.
           </li>
           <li>
-            After you press a button, you have 5 seconds to press <code>Undo</code>. Then Koloft
-            sends it. Koloft's own cards move to <code>Done</code>. A
+            After you press a button or pick an answer that sends, you have 5 seconds to press
+            <code>Undo</code>. Then Koloft sends it. Koloft's own cards move to <code>Done</code>. A
             <code>Close it for good</code> card waits in <code>In progress</code> while the session
             wraps up. A card an agent made moves where that agent said. If a session did not take
             your answer to a question or an OK, the card stays and says
@@ -336,6 +341,21 @@
             <code>Handled in its tab</code>. A finished-turn card closes as
             <code>It went on</code> once its <a href="#red-dots">red dot</a> goes, as when the
             session works again or you close its tab.
+          </li>
+          <li>A card that waits on you stays after you quit and reopen Koloft.</li>
+          <li>
+            When Koloft or a session's tab restarts while the session asks, the question or the OK
+            goes away with the stopped session. Its card still shows what it asked (a question under
+            <code>It asked</code>, a command under <code>Command</code>, a plan under
+            <code>Plan</code>), but has no answer buttons, only <code>Dismiss</code> and
+            <code>Open session</code>. It says
+            <code
+              >Its session stopped after asking, so this no longer shows there and cannot be
+              answered here. Open the session and reply to it.</code
+            >
+            A Claude session on a <a href="../remote/">remote folder</a> keeps running while Koloft
+            is closed: once its tab is back, a new card you can answer takes the old one's place,
+            and the old one moves to <code>Done</code>.
           </li>
           <li>
             No card for: a turn that only reports (its dot says "just letting you know"), a turn in

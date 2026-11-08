@@ -871,6 +871,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
   }
 
+  // MUSE§9
   private endTurn(run: MuseRun, turnId: string, reply: string): void {
     if (!turnId || run.endedTurns.has(turnId)) return
     run.endedTurns.add(turnId)
@@ -882,7 +883,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       at
     }
     this.deps.events(run.tabId, { type: 'stop' })
-    if (reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+    this.deps.events(run.tabId, { type: 'turn-ended', turn })
     void this.markServers(run)
   }
 
@@ -1010,8 +1011,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const prompt = run.prompt
     const reply = replyIn(r)
     if (prompt && reply?.turnId === prompt.turnId) prompt.reply = reply.text
-    if (prompt && turnEndedIn(r) === prompt.turnId)
-      this.endTurn(run, prompt.turnId, prompt.reply ?? '')
+    if (prompt?.reply && turnEndedIn(r) === prompt.turnId)
+      this.endTurn(run, prompt.turnId, prompt.reply)
     const job = firedJob(r)
     if (job && run.jobs.get(job) === false) {
       run.jobs.delete(job)

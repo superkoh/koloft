@@ -1,5 +1,6 @@
 import type {
   BackendId,
+  DirChanges,
   DirEntry,
   GitNumstatMap,
   GitStatusMap,
@@ -227,6 +228,54 @@ export function hitDir(rel: string): string {
 
 export function persistableExpansion(expanded: Iterable<string>, root: string): string[] {
   return [...expanded].filter((d) => inRoot(d, root))
+}
+
+export function sameEntries(a: readonly DirEntry[] | undefined, b: readonly DirEntry[]): boolean {
+  if (!a || a.length !== b.length) return false
+  return a.every(
+    (e, i) => e.path === b[i].path && e.isDir === b[i].isDir && !!e.ignored === !!b[i].ignored
+  )
+}
+
+export const DIR_PAGE_ROWS = 500
+
+export function pathsWithTheirFolders(paths: Iterable<string | null | undefined>): Set<string> {
+  const out = new Set<string>()
+  for (let p of paths) {
+    while (p && !out.has(p)) {
+      out.add(p)
+      const cut = p.lastIndexOf('/')
+      p = cut > 0 ? p.slice(0, cut) : ''
+    }
+  }
+  return out
+}
+
+export function pageOfEntries(
+  entries: readonly DirEntry[],
+  pages: number,
+  keep: ReadonlySet<string>
+): { rows: readonly DirEntry[]; notShown: number; firstHidden?: string } {
+  const limit = pages * DIR_PAGE_ROWS
+  if (entries.length <= limit) return { rows: entries, notShown: 0 }
+  const rows: DirEntry[] = []
+  let paged = 0
+  let firstHidden: string | undefined
+  for (const e of entries) {
+    if (keep.has(e.path)) rows.push(e)
+    else if (paged < limit) {
+      rows.push(e)
+      paged++
+    } else firstHidden ??= e.path
+  }
+  return { rows, notShown: entries.length - rows.length, firstHidden }
+}
+
+export function foldersToRelist(open: Iterable<string>, changes: DirChanges | undefined): string[] {
+  const folders = [...open]
+  if (!changes) return folders
+  const lists = new Set(changes.listsChanged)
+  return folders.filter((d) => lists.has(d) || changes.replacedTrees.some((t) => inRoot(d, t)))
 }
 
 export function initialExpansion(saved: readonly string[] | null, root: string): Set<string> {

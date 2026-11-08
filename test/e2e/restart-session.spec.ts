@@ -2,13 +2,25 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, runInTerminal } from './helpers/app'
-import { E2E_CLAUDE_ACCOUNT, writeClaudeWrapper, type E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose, runInTerminal } from './helpers/app'
+import {
+  agySessionCalls,
+  E2E_CLAUDE_ACCOUNT,
+  installAgy,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  writeClaudeWrapper,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
   ENDED_ROW_NOTE,
   gitCommitAll,
   gitInit,
+  newSessionInWith,
   openMenu,
   openWorktreeSession,
   processAlive,
@@ -19,8 +31,11 @@ import {
   startSessionIn,
   waitBooted,
   waitForCalls,
+  wsRows,
   type ClaudeCall
 } from './helpers/p1'
+import { agyReady } from './helpers/remote'
+import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
 const SESSION_TITLE = 'Fake session: project notes'
@@ -736,5 +751,56 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await app.close().catch(() => {})
       }
     })
+
+    const OTHER_LOCAL_AGENTS = [
+      {
+        backend: 'muse',
+        label: 'Muse',
+        install: (env: E2EEnv) => {
+          installMuse(env)
+          trustInMuse(env, env.workspaces.a)
+        },
+        ready: (page: Page) => expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/),
+        launches: museCalls
+      },
+      {
+        backend: 'agy',
+        label: 'Antigravity',
+        install: (env: E2EEnv) => {
+          installAgy(env)
+          trustInAgy(env, env.workspaces.a)
+        },
+        ready: agyReady,
+        launches: agySessionCalls
+      }
+    ] as const
+
+    for (const agent of OTHER_LOCAL_AGENTS)
+      test(`with no ${agent.label} account usable, restarting a local ${agent.label} session says why, keeps the running ${agent.label}, and starts no other`, async ({
+        env
+      }) => {
+        test.setTimeout(180_000)
+        agent.install(env)
+        seedSettings(env, { hintsOff: true })
+        const { app, page } = await launch(env)
+        try {
+          await waitBooted(page)
+          await newSessionInWith(page, 'ws-a', agent.label)
+          await expect.poll(() => agent.launches(env).length).toBe(1)
+          const [first] = agent.launches(env)
+          await agent.ready(page)
+          await runIn(page, centerTerm(page), 'one turn')
+          const row = wsRows(page, 'ws-a').filter({ hasText: 'one turn' })
+          await expect(row).toHaveClass(/\bst-waiting\b/)
+
+          await turnOffItsOnlyAccountRestartAndSeeWhy(app, page, agent.backend)
+          await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+          await expect(row).not.toHaveClass(/\bcold\b/)
+          expect(processAlive(first.pid)).toBe(true)
+          expect(agent.launches(env)).toHaveLength(1)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
   })
 })
