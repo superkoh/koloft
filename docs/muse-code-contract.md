@@ -508,6 +508,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   53–70 ms later. A `y` at 0.4 s, 0.5 s, 0.7 s, 1.0 s (2) and 2.0 s (2) gave `working`
   32–77 ms later. So the frame leaving `blocked` says an answer was taken, and one muse
   missed leaves it at `blocked`.
+- **The same question asked again right after an answer comes after a `working` frame.**
+  Measured 2026-11-08 on `Muse Code 1.4.11` (`koloft-muse-probe-1411`,
+  `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, a python3 pty (160×50) answering the
+  cursor, colour and 7501 queries, `--approval-judge off --trust-workspace`, a fake
+  `/responses` model that answered the first question's result with the very same
+  one-question `request_user_input` at once; `2` then Enter 300 ms apart, 2.5 s after each
+  frame; 2 runs: `blocked:kind=question`, `working` 21–25 ms after the Enter, the second
+  `blocked:kind=question` 106–114 ms after that, `working`, `done`.
 - **A question takes the owner's own words, and several questions are answered in turn,
   then on a review page.** Measured 2026-10-29 on the Muse the TUI drew as `Muse Code
   1.4.11` (the `koloft-muse-probe-1411` image, launcher 1.4.14, `MUSE_NO_AUTO_UPDATE=1`),
