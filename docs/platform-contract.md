@@ -1858,6 +1858,16 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
+  ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
+  (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
+  allow-passthrough on` is dropped without a word and no pane is left in a mode; a remote
+  Muse tab's wrapped 7501 frames (idle, working, done) still came out to the outer
+  terminal unwrapped, none left as `ESC P tmux;`. On both, the rest of Koloft's tmux.conf
+  loaded with no error screen, `rename-session -t $TMUX_PANE`, `attach -d` to the renamed
+  session and `set-titles` with `#{pane_title}` worked as on 3.3a (2026-11-09, Docker,
+  Koloft's own tab script, tmux.conf and Muse wrapper, muse 1.4.11 on `--provider echo`,
+  the client run in a python pty with `TERM=xterm-256color`).
 - **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
   `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
   as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the

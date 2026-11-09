@@ -758,7 +758,11 @@ server of the opening note and with `--provider echo`; October 2026.
   and answers the 7501 query itself with the reply of §3 makes every state flow.
   The wrapper must not pass the query on. Re-sent to tmux as a DCS passthrough
   (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
-  terminal outside tmux when tmux has `set -g allow-passthrough on`.
+  terminal outside tmux when tmux has `set -g allow-passthrough on`, and on tmux before
+  3.3 with no setting at all (PLATFORM§35). Measured on tmux 3.2a and 2.6 (Ubuntu 22.04
+  and 18.04 in Docker, python 3.10 and 3.6 running the wrapper, muse 1.4.11 on
+  `--provider echo`, 2026-11-09): the states reached the outer terminal, the wrapper's
+  mirror file got the same ones, and the session was renamed for the bound session id.
 - Attaching to the tmux session again replays no 7501 frame.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
