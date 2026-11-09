@@ -34,6 +34,7 @@ import {
   sessionInRow,
   startSessionIn,
   switchToRow,
+  terminalText,
   transcriptFile,
   waitBooted,
   waitForCalls,
@@ -47,6 +48,9 @@ const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
 const IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS = 60_000
 const TMUX_ATTACH_SETTLE_MS = 2000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const TWO_SLEEP_WINDOWS_AND_A_MIRROR_PULL_MS = 10_000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -172,6 +176,40 @@ async function untilItCameBackOnTheMachine(
       .poll(() => there.launches(env), { timeout: 60_000 })
       .toBe(launchesBeforeQuit + there.launchesARestartAdds)
   else await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+}
+
+const remoteTabIds = (page: Page): Promise<string[]> =>
+  wsRows(page, REMOTE_WS_NAME).evaluateAll((rows) =>
+    rows.map((r) => r.getAttribute('data-tab-id') ?? '')
+  )
+
+async function startAnotherOnTheMachine(
+  page: Page,
+  agent: (typeof EVERY_AGENT_ON_THE_MACHINE)[number]
+): Promise<string> {
+  const before = await remoteTabIds(page)
+  if (agent.label === 'Claude') await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  else await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+  let tabId = ''
+  await expect
+    .poll(
+      async () => (tabId = (await remoteTabIds(page)).find((id) => !before.includes(id)) ?? ''),
+      {
+        timeout: 60_000
+      }
+    )
+    .not.toBe('')
+  if (agent.label === 'Antigravity') {
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: 90_000 })
+      .toContain('Antigravity CLI')
+    await runIn(page, centerTerm(page), 'first words')
+  }
+  await expect(page.locator(`.ws .ws-tab[data-tab-id="${tabId}"]`)).toHaveClass(
+    /\bst-(waiting|idle)\b/,
+    { timeout: 60_000 }
+  )
+  return tabId
 }
 
 test.describe('losing and regaining the machine: Koloft never invents an ending for a remote session', () => {
@@ -434,6 +472,44 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         expect(there.runningThere(env)).toHaveLength(1)
       } finally {
         await quitAndClose(app2)
+      }
+    })
+
+    test(`a remote ${agent.label} session marked Keep running never goes to sleep for being idle — it keeps running on the machine and its row never turns cold — while an ordinary one beside it does`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await startOnTheMachine(page, agent)
+        const [residentTab] = await remoteTabIds(page)
+        const resident = page.locator(`.ws .ws-tab[data-tab-id="${residentTab}"]`)
+        await resident.click({ button: 'right' })
+        await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+        await expect(resident.locator('.ws-tab-resident')).toBeVisible()
+        await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(1)
+        const kept = there.runningThere(env)
+
+        const ordinaryTab = await startAnotherOnTheMachine(page, agent)
+        const ordinary = page.locator(`.ws .ws-tab[data-tab-id="${ordinaryTab}"]`)
+        await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(2)
+
+        await startSessionIn(page, 'ws-a', agent.install ? { method: 'Claude' } : {})
+        await wsRows(page, 'ws-a').first().click()
+
+        await expect.poll(() => there.runningThere(env), { timeout: 60_000 }).toEqual(kept)
+        await expect(ordinary).toHaveClass(/\bst-idle\b/)
+        await page.waitForTimeout(TWO_SLEEP_WINDOWS_AND_A_MIRROR_PULL_MS)
+        expect(there.runningThere(env)).toEqual(kept)
+        await expect(resident).not.toHaveClass(/\bcold\b/)
+        await expect(resident.locator('.ws-tab-resident')).toBeVisible()
+      } finally {
+        await quitAndClose(app)
       }
     })
   }
