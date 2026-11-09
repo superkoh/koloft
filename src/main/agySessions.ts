@@ -1055,6 +1055,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.background = undefined
     run.waiting = undefined
     run.shown = undefined
+    run.lastTitleState = undefined
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
