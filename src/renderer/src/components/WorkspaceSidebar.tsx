@@ -1472,6 +1472,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   return (
     <>
       <div className="island flat isl-sessions">
+        <InboxRow />
         <div
           ref={listRef}
           className="ws-list"
@@ -1479,7 +1480,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
-          <InboxRow />
           <ButlerRow>
             {butlerWorkspace && [
               ...queuedIn(butlerWorkspace.workspace.path).map(queuedRow),

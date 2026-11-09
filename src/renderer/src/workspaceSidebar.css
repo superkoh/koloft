@@ -1,7 +1,10 @@
 .ws-list {
+  --ws-list-pad: 8px;
+  --ws-head-h: 38px;
   overflow-y: auto;
   flex: 1;
-  padding: 8px 6px;
+  padding: var(--ws-list-pad) 6px;
+  scroll-padding-top: var(--ws-head-h);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -24,12 +27,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: var(--ws-head-h);
   padding: 5px 9px;
   border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--fg);
-  position: relative;
+  position: sticky;
+  top: calc(-1 * var(--ws-list-pad));
+  z-index: 2;
+  background: var(--bg-side);
   transition:
     background 0.15s var(--ease),
     color 0.15s var(--ease);
@@ -38,9 +44,9 @@
   background: var(--bg-3);
 }
 .ws-head.active {
-  background: var(--accent-soft);
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-side);
 }
-.ws-head.missing {
+.ws-head.missing > * {
   opacity: 0.35;
 }
 .fico {

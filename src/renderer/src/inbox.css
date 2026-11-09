@@ -931,8 +931,8 @@
 }
 
 .ibx-entry-wrap {
-  margin: 1px 0 15px;
-  padding: 2px 0 6px;
+  flex: none;
+  padding: 11px 6px 15px;
 }
 
 @property --ibx-edge {
