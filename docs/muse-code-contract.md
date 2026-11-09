@@ -78,6 +78,17 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
   notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
   sees `TERM_PROGRAM=tmux` instead (§17).
+- **Those unframed redraws are small, and none was shown half drawn in a Koloft
+  terminal.** The same scroll recorded again (2026-11-09, same image and fake model,
+  `TERM_PROGRAM=Apple_Terminal`): run straight in the pty (3 runs) muse sent 228–231
+  redraws of 48.6–49.3 KB in all, 256–262 bytes for the middle one and 808 for the
+  largest; inside a tmux 3.3a pane (2 runs) the outer terminal got 170–171 of 40.4 KB,
+  246 and 645 bytes. Each recording was replayed 3 times, at its own pace, into a shell
+  tab of a built Koloft (xterm.js `6.1.0-beta.302`, WebGL), with a marker before and
+  after every redraw, once with nothing else running and once beside 6 shell tabs each
+  printing `seq 1 4000` every 30 ms (load 4.5–11): 0 of 703–1392 screen paints per
+  recording came between a redraw's start and end, and 0 redraws were split across two
+  writes to xterm, in all 10 replays.
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
