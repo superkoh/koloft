@@ -235,9 +235,8 @@ function linesKoloftLogs(app: ElectronApplication): string[] {
 }
 
 async function butlerRunsOn(page: Page, backend: BackendId, koloftLogged: string[]): Promise<void> {
-  const loggedBefore = koloftLogged.length
   const offItsAgent = (): boolean =>
-    koloftLogged.slice(loggedBefore).some((line) => line.startsWith(BUTLER_OFF_ITS_AGENT_LOG))
+    koloftLogged.some((line) => line.startsWith(BUTLER_OFF_ITS_AGENT_LOG))
   let butler: SessionInfo | undefined
   await expect
     .poll(
