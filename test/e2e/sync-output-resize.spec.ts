@@ -34,17 +34,17 @@ async function countRenders(page: Page, id: string): Promise<void> {
     const w = window as unknown as {
       __koloftTerms: Record<string, Term>
       __renders?: Record<string, number>
-      __rendersAtResize?: Record<string, number>
+      __repaintedSinceResize?: Record<string, boolean>
     }
     w.__renders ??= {}
-    w.__rendersAtResize ??= {}
+    w.__repaintedSinceResize ??= {}
     w.__renders[tabId] = 0
-    w.__rendersAtResize[tabId] = 0
     w.__koloftTerms[tabId].onRender(() => {
       w.__renders![tabId] += 1
+      w.__repaintedSinceResize![tabId] = true
     })
     w.__koloftTerms[tabId].onResize(() => {
-      w.__rendersAtResize![tabId] = w.__renders![tabId]
+      w.__repaintedSinceResize![tabId] = false
     })
   }, id)
 }
@@ -56,18 +56,18 @@ function rendersOf(page: Page, id: string): Promise<number> {
   )
 }
 
-function repaintedAfterRowsLeft(page: Page, id: string, rowsBefore: number): Promise<boolean> {
+function repaintedAfterRowCountChanged(
+  page: Page,
+  id: string,
+  rowsBefore: number
+): Promise<boolean> {
   return page.evaluate(
     ({ tabId, rowsBefore }) => {
       const w = window as unknown as {
         __koloftTerms: Record<string, Term>
-        __renders: Record<string, number>
-        __rendersAtResize: Record<string, number>
+        __repaintedSinceResize: Record<string, boolean>
       }
-      return (
-        w.__koloftTerms[tabId].rows !== rowsBefore &&
-        w.__renders[tabId] > w.__rendersAtResize[tabId]
-      )
+      return w.__koloftTerms[tabId].rows !== rowsBefore && w.__repaintedSinceResize[tabId] === true
     },
     { tabId: id, rowsBefore }
   )
@@ -120,7 +120,11 @@ test("a Claude Code tab's claude starts told to wrap every frame in sync output 
       await growWindowHeightBy(app, dh)
       const t0 = Date.now()
       await expect
-        .poll(() => repaintedAfterRowsLeft(page, tab, rows), { timeout: 3000, intervals: [20] })
+        .poll(() => repaintedAfterRowCountChanged(page, tab, rows), {
+          message: `the window resize changed the terminal's ${rows} rows and a repaint followed`,
+          timeout: 3000,
+          intervals: [20]
+        })
         .toBe(true)
       return Date.now() - t0
     }
