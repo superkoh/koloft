@@ -256,6 +256,11 @@ const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
 
+// AGY§27
+function withoutTheTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, TERM_PROGRAM: undefined }
+}
+
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
   if (permission === 'bypass') return ['--dangerously-skip-permissions']
@@ -666,6 +671,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         id: tabId,
         kind: 'agy',
         koloftShim: false,
+        finishEnv: withoutTheTerminalName,
         cwd,
         cols: opts.cols,
         rows: opts.rows,

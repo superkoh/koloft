@@ -1375,6 +1375,28 @@ only downloaded the public release.
   picker, by contrast, opened on the alternate screen (seen on 1.3.6). (Linux 1.4.7 from the manifest,
   sha512 checked, Docker, API-key route, a python pty answering the queries, output
   replayed into `@xterm/headless`, 2026-10-25).
+- `TERM_PROGRAM=Apple_Terminal` turns off both synchronized output and OSC 8 links.
+  With it agy never asks DECRQM 2026 and sends no `?2026h` and no `ESC]8;;<uri>` link;
+  a markdown link `[doc 7](http://…/link-7)` shows as `doc 7 http://…/link-7` and only
+  the address is plain text a terminal may linkify. With the variable unset it asks,
+  wraps redraws in `?2026h … ?2026l` and sends every link as OSC 8: the same
+  `doc 7 http://…/link-7` on screen, with `doc 7` and each address carrying the link. In fullscreen
+  (`"altScreenMode": "always"`), 30 wheel notches up and 30 down over a 160-line reply
+  gave 49 redraws: 0 of 49 framed under `Apple_Terminal`, 49 of 49 unset (54–55 frames
+  in the whole run); in the default inline mode the run had 5–6 frames. Links in the
+  run: 0 against 426 (fullscreen) and 480–537 (inline). `TERM_PROGRAM=tmux` acts
+  like unset (asks, 49 of 49 framed, 426 links), so only `Apple_Terminal` turns them
+  off; inside a real tmux what reaches the outer terminal also depends on tmux
+  answering DECRQM 2026 (§29). (macOS arm64 1.5.2 at
+  `~/.local/bin/agy`, 2026-11-08: a python pty answering DA1, DA2, DECRQM, cursor
+  position and OSC 10–12 as Koloft's xterm does, a temp `HOME`, a made-up
+  `GEMINI_API_KEY`, the fake Gemini server, `WSL_INTEROP` set; 3 runs each, every run
+  the same.) The same binary in a Koloft tab (a built Koloft, e2e home, WebGL
+  renderer, counted in xterm's parser, 3 runs each, every run the same): with
+  `Apple_Terminal` 0 frames and 0 links while the wheel scrolled, and a click on
+  `doc 152` opened nothing; without it 49 of 49 redraws framed, 370 OSC 8 links, and the
+  click opened `/link-152` in the Workbench. The links about double what the scroll
+  sends (20.5 KB to 44.3 KB for the 60 notches); the 49 paints stayed 49.
 
 ## §28 Telemetry
 

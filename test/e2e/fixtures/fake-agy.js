@@ -301,7 +301,8 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
             'AGY_CLI_OSC7501',
             'AGY_CLI_OSC7501_MESSAGES',
             'AGY_CLI_DISABLE_AUTO_UPDATE',
-            'GOOGLE_GEMINI_BASE_URL'
+            'GOOGLE_GEMINI_BASE_URL',
+            'TERM_PROGRAM'
           ].includes(k)
       )
     ),
