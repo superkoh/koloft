@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect } from './helpers/app'
+import { test, expect, pendingAttention } from './helpers/app'
 import { sendShortcut, startSessionIn, waitBooted } from './helpers/p1'
 
 type Box = { top: number; bottom: number }
@@ -9,15 +9,17 @@ type Layout = {
   heads: Record<string, Box>
   blocks: Record<string, Box>
   active: Box | null
+  activeTab: string | null
   activeHead: Box | null
   ownerOfTopEdge: string | null
 }
 
 const SHORT_LIST = '.ws-list { max-height: 120px !important; }'
+const INTO_WS_A_ROWS = 30
 
 function layout(page: Page): Promise<Layout> {
   return page.evaluate(() => {
-    const box = (el: Element): { top: number; bottom: number } => {
+    const box = (el: Element): Box => {
       const r = el.getBoundingClientRect()
       return { top: r.top, bottom: r.bottom }
     }
@@ -38,6 +40,7 @@ function layout(page: Page): Promise<Layout> {
       heads,
       blocks,
       active: active && box(active),
+      activeTab: active?.getAttribute('data-tab-id') ?? null,
       activeHead: active && box(active.closest('.ws')!.querySelector('.ws-head')!),
       ownerOfTopEdge: top?.closest('.ws')?.querySelector('.ws-name')?.textContent ?? null
     }
@@ -49,8 +52,14 @@ const scrollTo = (page: Page, at: number | 'end'): Promise<void> =>
     .locator('.ws-list')
     .evaluate((el, to) => void (el.scrollTop = to === 'end' ? el.scrollHeight : to), at)
 
+async function scrollIntoWsARows(page: Page): Promise<void> {
+  await scrollTo(page, 0)
+  const l = await layout(page)
+  await scrollTo(page, l.heads['ws-a'].bottom - l.list.top + INTO_WS_A_ROWS)
+}
+
 test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays at the top of the list until its last row has gone', () => {
-  test('the Inbox never moves while the list scrolls, a workspace head sticks at the top while its rows pass under it and leaves with its last row, and a row the app jumps to lands below its stuck head', async ({
+  test('the Inbox never moves while the list scrolls, a workspace head sticks at the top while its rows pass under it and leaves with its last row, a row the app jumps to lands below its stuck head, and a workspace dragged onto a stuck head goes before it', async ({
     app,
     page
   }) => {
@@ -62,13 +71,14 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
       .getByRole('button', { name: 'Got it', exact: true })
       .click()
     await startSessionIn(page, 'ws-b')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
     await page.addStyleTag({ content: SHORT_LIST })
 
     await scrollTo(page, 0)
     const start = await layout(page)
     expect(start.inbox.bottom).toBeLessThanOrEqual(start.list.top)
 
-    await scrollTo(page, start.heads['ws-a'].bottom - start.list.top + 30)
+    await scrollIntoWsARows(page)
     const midA = await layout(page)
     expect(midA.inbox).toEqual(start.inbox)
     expect(midA.blocks['ws-a'].top).toBeLessThan(midA.list.top)
@@ -84,9 +94,9 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
 
     for (let press = 0; press < 3; press++) {
       await scrollTo(page, 'end')
-      const before = (await layout(page)).active
+      const before = (await layout(page)).activeTab
       await sendShortcut(app, 'shortcut:next-waiting-session')
-      await expect.poll(async () => (await layout(page)).active?.top).not.toBe(before?.top)
+      await expect.poll(async () => (await layout(page)).activeTab).not.toBe(before)
       await expect
         .poll(async () => {
           const l = await layout(page)
@@ -99,5 +109,14 @@ test.describe('C2 sidebar scroll: Inbox stays on screen, a workspace head stays 
         })
         .toBe(true)
     }
+
+    await scrollIntoWsARows(page)
+    expect((await layout(page)).heads['ws-a'].top).toBeCloseTo(midA.list.top, 0)
+    await page
+      .locator('.ws-head', { hasText: 'ws-b' })
+      .dragTo(page.locator('.ws-head', { hasText: 'ws-a' }), {
+        targetPosition: { x: 40, y: 4 }
+      })
+    await expect(page.locator('.ws-head .ws-name')).toHaveText(['ws-b', 'ws-a'])
   })
 })

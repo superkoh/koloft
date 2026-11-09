@@ -1313,7 +1313,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     let over: number | null = null
     if (block) {
       const box = block.getBoundingClientRect()
-      const below = e.clientY >= box.top + box.height / 2
+      const view = e.currentTarget.getBoundingClientRect()
+      const shownTop = Math.max(box.top, view.top)
+      const shownBottom = Math.min(box.bottom, view.bottom)
+      const below = e.clientY >= (shownTop + shownBottom) / 2
       const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
       const from = wsPaths.indexOf(drag.path)
       if (slot !== from && slot !== from + 1) over = slot
