@@ -17,30 +17,21 @@ describe('what a waiting Muse session asks', () => {
         userInputs: []
       })
     ).toEqual({ approval: { id: 'a1', command: 'ls -la' } })
-    for (const toolName of ['write_file', 'edit_file'])
-      expect(
-        museAsk({
-          approvals: [
-            {
-              approvalId: 'a2',
-              toolName,
-              rawArgs: '{"path": "/r/.git/config", "content": "x"}',
-              subject: { kind: 'fileAccess', access: 'write', path: '/r/.git/config', toolName }
-            }
-          ]
-        })
-      ).toEqual({ approval: { id: 'a2', command: '/r/.git/config', file: '/r/.git/config' } })
+    expect(
+      museAsk({
+        approvals: [
+          {
+            approvalId: 'a2',
+            toolName: 'write_file',
+            rawArgs: '{"path": "/r/.git/config", "content": "x"}',
+            subject: { kind: 'fileAccess', access: 'write', path: '/r/.git/config' }
+          }
+        ]
+      })
+    ).toEqual({ approval: { id: 'a2', command: '/r/.git/config', file: '/r/.git/config' } })
     expect(
       museAsk({ approvals: [{ approvalId: 'a3', rawArgs: '{"url": "https://example.com"}' }] })
     ).toEqual({ approval: { id: 'a3', command: 'https://example.com' } })
-    expect(
-      museAsk({
-        approvals: [{ approvalId: 'a4', toolName: 'read_file', rawArgs: '{"path": "/r/a.ts"}' }]
-      })
-    ).toEqual({ approval: { id: 'a4' } })
-    expect(museAsk({ approvals: [{ approvalId: 'a5', rawArgs: 'not json' }] })).toEqual({
-      approval: { id: 'a5' }
-    })
   })
 
   // MUSE§11

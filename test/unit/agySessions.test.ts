@@ -19,8 +19,6 @@ import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
-import { storedAskLine } from '../../src/main/rowActivity'
-
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 
@@ -1158,23 +1156,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(await sessions.answer(id, 'yes')).toBe(false)
   })
 
-  // AGY§13 AGY§26
-  it("names the file in an approval for agy 1.4.7's write_file, edit_file and read_file, from their Path, and the row says a read wants to read it", async () => {
+  // AGY§13
+  it("names the file in an approval for agy 1.4.7's write_file and edit_file, from their Path", async () => {
     const id = await boundTab()
-    const lines: Record<string, string> = {
-      write_file: 'Wants to edit: write_file.md',
-      edit_file: 'Wants to edit: edit_file.md',
-      read_file: 'Wants to read: read_file.md'
-    }
-    for (const [name, line] of Object.entries(lines)) {
+    for (const name of ['write_file', 'edit_file']) {
       const file = path.join(repo, `${name}.md`)
       hook(id, 'PreToolUse', { toolCall: { name, args: { Path: file } } })
       await hooksTaken(id)
-      say(id, state('blocked', `:kind=permission:msg=${b64(`Approve a file: ${file}`)}`))
-      expect(sessions.openApproval(id)).toMatchObject({ command: file })
-      expect(storedAskLine(sessions.openApproval(id)!)).toBe(line)
+      say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
+      expect(sessions.openApproval(id)).toMatchObject({ command: file, file })
+      expect(sessions.openApproval(id)?.read).toBeUndefined()
       expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     }
+  })
+
+  // AGY§26
+  it('marks an approval for read_file, from its Path, as a read', async () => {
+    const id = await boundTab()
+    const file = '/elsewhere/outside.txt'
+    hook(id, 'PreToolUse', { toolCall: { name: 'read_file', args: { Path: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
   })
 
   it("answers an approval through agy's API when it answers, and presses no key", async () => {

@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import os from 'os'
 import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
-import { record } from './codexObservation'
+import { jsonRecord, record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
 import { labelsOf, type Question } from './discord/dialog'
 import { pipeSecretTo } from './secretOnStdin'
@@ -178,19 +178,9 @@ export interface MuseAsk {
 const commandOf = (args: Record<string, unknown>): string | undefined =>
   [args.command, args.url].find((v): v is string => typeof v === 'string')
 
-function parsedRawArgs(raw: unknown): Record<string, unknown> {
-  try {
-    return typeof raw === 'string' ? record(JSON.parse(raw)) : {}
-  } catch {
-    return {}
-  }
-}
-
 // MUSE§5
 function writtenFile(subject: Record<string, unknown>): string | undefined {
-  return subject.kind === 'fileAccess' &&
-    subject.access === 'write' &&
-    typeof subject.path === 'string'
+  return subject.kind === 'fileAccess' && typeof subject.path === 'string'
     ? subject.path
     : undefined
 }
@@ -201,7 +191,7 @@ export function museAsk(reply: unknown): MuseAsk {
   const approval = record(Array.isArray(r.approvals) ? r.approvals[0] : undefined)
   if (typeof approval.approvalId === 'string') {
     const file = writtenFile(record(approval.subject))
-    const command = file ?? commandOf(parsedRawArgs(approval.rawArgs))
+    const command = file ?? commandOf(jsonRecord(approval.rawArgs))
     return { approval: { id: approval.approvalId, command, ...(file ? { file } : {}) } }
   }
   const input = record(Array.isArray(r.userInputs) ? r.userInputs[0] : undefined)
