@@ -202,6 +202,16 @@ method. A recheck adds its date, version and command to the bullet.
   belong to another process.
 - **On a network share or exFAT, mtime is only precise to 1–2 s.** An edit that keeps
   the same size inside one clock tick changes neither mtime nor size.
+- **Without the Command Line Tools, `/usr/bin/python3` is still there, as a stub.** Run
+  over ssh it prints `xcode-select: note: No developer tools were found, requesting
+  install.` and two more lines, and exits 1 at once; it does not wait. Whether it also
+  puts an install dialog on that Mac's screen was not seen (the VM ran with no display),
+  so each run may do so. With them, it is
+  python 3.9.6, which has `pty` and `termios`. **`/bin/sh` (bash 3.2) remembers where it
+  found `python3`**, stub included, so a `python3` that `brew install` puts earlier on
+  `PATH` is not run by that same shell until `hash -r`: in one script the stub exited 1,
+  then 1 again after Homebrew's `python3` was in place, then 0 after `hash -r`
+  (2026-11-09, a macOS 26.6 VM over ssh, the Command Line Tools moved aside).
 
 ## §4 Electron: app identity, packaging and opening things
 
@@ -1858,6 +1868,16 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
+  ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
+  (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
+  allow-passthrough on` is dropped without a word and no pane is left in a mode; a remote
+  Muse tab's wrapped 7501 frames (idle, working, done) still came out to the outer
+  terminal unwrapped, none left as `ESC P tmux;`. On both, the rest of Koloft's tmux.conf
+  loaded with no error screen, `rename-session -t $TMUX_PANE`, `attach -d` to the renamed
+  session and `set-titles` with `#{pane_title}` worked as on 3.3a (2026-11-09, Docker,
+  Koloft's own tab script, tmux.conf and Muse wrapper, muse 1.4.11 on `--provider echo`,
+  the client run in a python pty with `TERM=xterm-256color`).
 - **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
   `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
   as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the
