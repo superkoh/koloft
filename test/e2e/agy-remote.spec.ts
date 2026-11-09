@@ -1,5 +1,7 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
@@ -11,6 +13,8 @@ import {
 import {
   centerTerm,
   chooseBackend,
+  gitCommitAll,
+  gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   killSession,
@@ -40,7 +44,8 @@ import {
   machineAgyCalls,
   machineHome,
   remoteDir,
-  seedRemoteWorkspace
+  seedRemoteWorkspace,
+  sshCommands
 } from './helpers/remote'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -59,6 +64,74 @@ function setUp(env: E2EEnv): void {
   installRemoteAgy(env)
   seedRemoteWorkspace(env)
   seedSettings(env, { hintsOff: true })
+}
+
+const worktreeAddsOnTheMachine = (env: E2EEnv): number =>
+  sshCommands(env).filter((c) => c.includes("'worktree' 'add'")).length
+
+const machineTranscriptOf = (env: E2EEnv, id: string): string =>
+  agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))
+
+function accountForgetsTrustIn(env: E2EEnv, tree: string): void {
+  const file = path.join(accountFolder(env), 'antigravity-cli', 'settings.json')
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { trustedWorkspaces: string[] }
+  const before = settings.trustedWorkspaces.length
+  settings.trustedWorkspaces = settings.trustedWorkspaces.filter(
+    (dir) => !fs.existsSync(dir) || fs.realpathSync(dir) !== fs.realpathSync(tree)
+  )
+  expect(settings.trustedWorkspaces.length).toBeLessThan(before)
+  fs.writeFileSync(file, JSON.stringify(settings))
+}
+
+async function coldRemoteAgyWorktreeRow(
+  app: ElectronApplication,
+  page: Page,
+  env: E2EEnv,
+  name: string
+): Promise<{ id: string; tree: string; row: ReturnType<typeof wsRows> }> {
+  await expect
+    .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+      timeout: 60_000
+    })
+    .toContain('New worktree session')
+  await openWorktreeSession(page, REMOTE_WS_NAME)
+  await worktreeDialog(page).locator('input').fill(name)
+  await chooseBackend(page, 'Antigravity')
+  await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+  const tree = machineAgyCalls(env)[0].cwd
+  await agyReady(page)
+  await runIn(page, centerTerm(page), `first words in ${name}`)
+  const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: `first words in ${name}` })
+  await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+  const { id } = await boundRemoteSession(page, 'agy')
+  fs.writeFileSync(path.join(tree, 'kept.txt'), 'committed on the branch')
+  gitCommitAll(tree)
+  await sendShortcut(app, 'shortcut:close-tab')
+  await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+  expect(fs.existsSync(tree)).toBe(true)
+  accountForgetsTrustIn(env, tree)
+  return { id, tree, row }
+}
+
+async function resumedInTreeTakingFirstLineAsPrompt(
+  page: Page,
+  env: E2EEnv,
+  id: string,
+  tree: string
+): Promise<void> {
+  await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
+  const resume = machineAgyCalls(env)[1]
+  expect(resume.argv).toContain(`--conversation=${id}`)
+  expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(tree))
+  expect((await boundRemoteSession(page, 'agy')).id).toBe(id)
+  await expect(page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })).toHaveCount(0)
+  await runIn(page, centerTerm(page), 'words after resuming')
+  await expect
+    .poll(() => machineTranscriptOf(env, id), { timeout: 60_000 })
+    .toContain('Answer to: words after resuming')
+  expect(await terminalText(page, (await boundRemoteSession(page, 'agy')).tabId)).not.toContain(
+    'Do you trust the contents of this project?'
+  )
 }
 
 test.describe('Antigravity sessions in a remote workspace, over the fake ssh with tmux and only the CLI faked', () => {
@@ -158,6 +231,47 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'agy-tree')
       expect(fs.realpathSync(machineAgyCalls(env)[0].cwd)).toBe(fs.realpathSync(tree))
       expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a cold Antigravity worktree row in a remote workspace agy trusts resumes in its worktree on the machine, trusted there for it even on an account that never trusted that folder, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    setUp(env)
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { id, tree, row } = await coldRemoteAgyWorktreeRow(app, page, env, 'agy-cold')
+      await row.click()
+      await resumedInTreeTakingFirstLineAsPrompt(page, env, id, tree)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a cold Antigravity worktree row whose worktree is gone from the machine rebuilds it there with git and resumes the same conversation in it, trusted there for it, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    setUp(env)
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { id, tree, row } = await coldRemoteAgyWorktreeRow(app, page, env, 'agy-gone')
+      execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', '--force', tree])
+      expect(fs.existsSync(tree)).toBe(false)
+      const addsBefore = worktreeAddsOnTheMachine(env)
+      await row.click()
+      await resumedInTreeTakingFirstLineAsPrompt(page, env, id, tree)
+      expect(worktreeAddsOnTheMachine(env)).toBe(addsBefore + 1)
+      expect(fs.readFileSync(path.join(tree, 'kept.txt'), 'utf8')).toBe('committed on the branch')
     } finally {
       await quitAndClose(app)
     }
