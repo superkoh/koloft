@@ -10,7 +10,6 @@ import {
   installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
-  machineAgyApiCalls,
   machineAgyCalls,
   machineCodexLog,
   machineHome,
@@ -1541,8 +1540,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel: (dlg: Locator) => Promise<void>
     launched: (env: E2EEnv) => { argv: string[]; cwd: string } | undefined
     flags: string[]
-    taskOnTheMachine: (env: E2EEnv) => unknown[]
-    nameOnTheMachine: { read: (env: E2EEnv) => unknown[]; is: unknown[] } | null
+    onTheMachine?: { read: (env: E2EEnv) => unknown; is: unknown }
+    named: string
     rowTitle: string
   }[] = [
     {
@@ -1555,15 +1554,17 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         return start && { argv: start.argv, cwd: start.effectiveCwd }
       },
       flags: ['-a', 'never', '-s', 'danger-full-access', '-m', 'gpt-6-luna', REMOTE_TASK],
-      taskOnTheMachine: (env) => codexPromptsSent(machineWire(env)),
       // CODEX§17
-      nameOnTheMachine: {
-        read: (env) =>
-          machineWire(env).flatMap(({ direction, frame }) =>
+      onTheMachine: {
+        read: (env) => ({
+          task: codexPromptsSent(machineWire(env)),
+          name: machineWire(env).flatMap(({ direction, frame }) =>
             direction === 'client' && frame.method === 'thread/name/set' ? [frame.params?.name] : []
-          ),
-        is: ['Remote report']
+          )
+        }),
+        is: { task: [REMOTE_TASK], name: ['Remote report'] }
       },
+      named: 'its name',
       rowTitle: 'Remote report'
     },
     {
@@ -1586,8 +1587,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         ':unrestricted',
         REMOTE_TASK
       ],
-      taskOnTheMachine: (env) => machineMuseCalls(env).map((c) => c.argv[c.argv.length - 1]),
-      nameOnTheMachine: null,
+      // MUSE§2
+      named: 'its name on its row, as Muse takes no name',
       rowTitle: 'Remote report'
     },
     {
@@ -1600,13 +1601,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
       launched: (env) => machineAgyCalls(env)[0],
       flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions', '-i', REMOTE_TASK],
-      taskOnTheMachine: (env) => machineAgyCalls(env).map((c) => c.argv[c.argv.length - 1]),
       // AGY§8 AGY§16
-      nameOnTheMachine: {
-        read: (env) =>
-          machineAgyApiCalls(env).filter((c) => c.method === 'UpdateConversationAnnotations'),
-        is: []
-      },
+      named: 'no name, its row taking agy’s own title',
       rowTitle: REMOTE_TASK
     }
   ]
@@ -1617,11 +1613,11 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     pickModel,
     launched,
     flags,
-    taskOnTheMachine,
-    nameOnTheMachine,
+    onTheMachine,
+    named,
     rowTitle
   } of REMOTE_FIELDS_AGENTS) {
-    test(`BB-M17 in ${agent}: a job in a remote workspace starts ${agent} on the machine with its task untouched, ${rowTitle === REMOTE_TASK ? 'no name (its row takes the agent’s own title)' : 'its name'}, model and permission, waits for you when its turn ends, and once you close it ${repo ? 'its worktree on the machine goes' : 'the folder it ran in stays'}`, async ({
+    test(`BB-M17 in ${agent}: a job in a remote workspace starts ${agent} on the machine with its task untouched, ${named}, its model and permission, waits for you when its turn ends, and once you close it ${repo ? 'its worktree on the machine goes' : 'the folder it ran in stays'}`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -1636,24 +1632,35 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         })
         const dlg = await openCron(page, REMOTE_WS_NAME)
         await dlg.locator('button.mini', { hasText: 'New job' }).click()
-        await fillForm(dlg, { agent, name: 'Remote report', task: REMOTE_TASK })
+        await fillForm(dlg, {
+          agent,
+          name: 'Remote report',
+          task: REMOTE_TASK,
+          permission: 'Never ask'
+        })
         await pickModel(dlg)
-        await dlg.locator('.chip', { hasText: 'Never ask' }).click()
         await dlg.locator('.modal-foot .btn-primary').click()
+        await expect(dlg.locator('.fgrid')).toHaveCount(0)
         await clickRunNow(page, 'Remote report')
 
         await expect.poll(() => launched(env), { timeout: 120_000 }).toBeTruthy()
         const { argv, cwd } = launched(env)!
         expect(readCalls(env)).toEqual([])
         expect(argv.slice(-flags.length)).toEqual(flags)
-        await expect.poll(() => taskOnTheMachine(env), { timeout: 60_000 }).toEqual([REMOTE_TASK])
-        const tree = runTree(remoteDir(env), path.basename(cwd))
-        if (repo) expect(cwd).toBe(tree)
-        else expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(remoteDir(env)))
+        for (const flag of flags.filter((f) => f.startsWith('-')))
+          expect(argv.filter((a) => a === flag)).toHaveLength(1)
+        if (onTheMachine)
+          await expect
+            .poll(() => onTheMachine.read(env), { timeout: 60_000 })
+            .toEqual(onTheMachine.is)
+        const tree = repo ? runTree(remoteDir(env), path.basename(cwd)) : ''
+        if (repo) {
+          expect(cwd).toBe(tree)
+          expect(fs.existsSync(tree)).toBe(true)
+        } else expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(remoteDir(env)))
 
         const row = wsRows(page, REMOTE_WS_NAME)
         await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Remote report', row)
-        if (nameOnTheMachine) expect(nameOnTheMachine.read(env)).toEqual(nameOnTheMachine.is)
         await expect(row.locator('.ws-tab-title')).toHaveText(rowTitle)
         await closeCron(page)
         await row.click()
@@ -1664,7 +1671,11 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         await expect
           .poll(async () => (await histLines(page))[0], { timeout: 30_000 })
           .toMatchObject({ state: 'Closed by you', folder: repo ? ' · folder removed' : '' })
-        expect(fs.existsSync(remoteDir(env))).toBe(true)
+        if (!repo) {
+          await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+          expect(fs.existsSync(remoteDir(env))).toBe(true)
+          expect((await histLines(page))[0].folder).toBe('')
+        }
       } finally {
         await quitAndClose(app)
         killFakeRemote(env)
