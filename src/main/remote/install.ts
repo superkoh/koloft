@@ -231,6 +231,7 @@ official_install() {
 }
 case "$program" in
 muse)
+  # PLATFORM§3
   python_has_pty || { install_pkg python3; hash -r; }
   python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
   MUSE_NO_MODIFY_PATH=1; export MUSE_NO_MODIFY_PATH
