@@ -94,6 +94,9 @@ async function startRemoteMuse(page: Page, env: E2EEnv): Promise<MachineMuseCall
   return call
 }
 
+const worktreeAddsOnTheMachine = (env: E2EEnv): number =>
+  sshCommands(env).filter((c) => c.includes("'worktree' 'add'")).length
+
 function museForgetsTrustIn(env: E2EEnv, tree: string): void {
   const file = path.join(machineHome(env), '.config', 'muse', 'trust.json')
   const trust = JSON.parse(fs.readFileSync(file, 'utf8')) as { projects: Record<string, unknown> }
@@ -127,7 +130,11 @@ async function coldRemoteMuseWorktreeRow(
   })
   await runIn(page, centerTerm(page), `first words in ${name}`)
   const row = remoteRows(page).filter({ hasText: `first words in ${name}` })
-  await expect(row).toHaveCount(1, { timeout: ON_THE_MACHINE_WITHIN_MS })
+  await expect
+    .poll(() => museSaid(env, sessionId, machineHome(env)), {
+      timeout: ON_THE_MACHINE_WITHIN_MS
+    })
+    .toContain(`echo: first words in ${name}`)
   fs.writeFileSync(path.join(tree, 'kept.txt'), 'committed on the branch')
   gitCommitAll(tree)
   await closeActiveTab(app, page)
@@ -148,6 +155,7 @@ async function resumedInTreeTakingFirstLineAsPrompt(
     .toBe(2)
   const resume = machineMuseCalls(env)[1]
   expect(resume.argv.slice(-2)).toEqual(['resume', sessionId])
+  expect(resume.argv).toContain('--trust-workspace')
   expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(tree))
   await runIn(page, centerTerm(page), 'words after resuming')
   await expect
@@ -520,7 +528,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
-  // MUSE§17
+  // MUSE§10 MUSE§17
   test('a cold Muse worktree row in a remote workspace Muse trusts resumes in its worktree on the machine, trusted for that run even where Muse never trusted that folder, so the first line typed is a prompt Muse answers, not a reply to its trust question', async ({
     env
   }) => {
@@ -529,14 +537,14 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     const { app, page } = await launchWithMuseThere(env)
     try {
       const { sessionId, tree, row } = await coldRemoteMuseWorktreeRow(app, page, env, 'muse-cold')
-      await row.click()
+      await switchToRow(page, row)
       await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  // MUSE§17
+  // MUSE§10 MUSE§17
   test('a cold Muse worktree row whose worktree is gone from the machine rebuilds it there with git and resumes the same session in it, trusted for that run, so the first line typed is a prompt Muse answers, not a reply to its trust question', async ({
     env
   }) => {
@@ -547,9 +555,10 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       const { sessionId, tree, row } = await coldRemoteMuseWorktreeRow(app, page, env, 'muse-gone')
       execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', '--force', tree])
       expect(fs.existsSync(tree)).toBe(false)
-      await row.click()
+      const addsBefore = worktreeAddsOnTheMachine(env)
+      await switchToRow(page, row)
       await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree)
-      expect(sshCommands(env).some((c) => c.includes("'worktree' 'add'"))).toBe(true)
+      expect(worktreeAddsOnTheMachine(env)).toBe(addsBefore + 1)
       expect(fs.readFileSync(path.join(tree, 'kept.txt'), 'utf8')).toBe('committed on the branch')
     } finally {
       await quitAndClose(app)

@@ -66,6 +66,9 @@ function setUp(env: E2EEnv): void {
   seedSettings(env, { hintsOff: true })
 }
 
+const worktreeAddsOnTheMachine = (env: E2EEnv): number =>
+  sshCommands(env).filter((c) => c.includes("'worktree' 'add'")).length
+
 const machineTranscriptOf = (env: E2EEnv, id: string): string =>
   agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))
 
@@ -74,7 +77,7 @@ function accountForgetsTrustIn(env: E2EEnv, tree: string): void {
   const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { trustedWorkspaces: string[] }
   const before = settings.trustedWorkspaces.length
   settings.trustedWorkspaces = settings.trustedWorkspaces.filter(
-    (dir) => fs.realpathSync(dir) !== fs.realpathSync(tree)
+    (dir) => !fs.existsSync(dir) || fs.realpathSync(dir) !== fs.realpathSync(tree)
   )
   expect(settings.trustedWorkspaces.length).toBeLessThan(before)
   fs.writeFileSync(file, JSON.stringify(settings))
@@ -264,9 +267,10 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const { id, tree, row } = await coldRemoteAgyWorktreeRow(app, page, env, 'agy-gone')
       execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', '--force', tree])
       expect(fs.existsSync(tree)).toBe(false)
+      const addsBefore = worktreeAddsOnTheMachine(env)
       await row.click()
       await resumedInTreeTakingFirstLineAsPrompt(page, env, id, tree)
-      expect(sshCommands(env).some((c) => c.includes("'worktree' 'add'"))).toBe(true)
+      expect(worktreeAddsOnTheMachine(env)).toBe(addsBefore + 1)
       expect(fs.readFileSync(path.join(tree, 'kept.txt'), 'utf8')).toBe('committed on the branch')
     } finally {
       await quitAndClose(app)
