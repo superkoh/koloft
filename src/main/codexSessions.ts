@@ -125,6 +125,7 @@ const MACHINE_HISTORY_FRESH_MS = 15_000
 const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 const MESSAGE_SHOWN_IN_A_NOTICE_CHARS = 120
 
+// CODEX§35
 export const CODEX_TAB_ENV = {
   koloftShim: false,
   finishEnv: (env: NodeJS.ProcessEnv) => codexEnvironment(env)

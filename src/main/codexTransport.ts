@@ -60,7 +60,7 @@ export const TUI_STALLED_AFTER_MS = 30_000
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
-// CODEX§10 CODEX§35
+// CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...process.env, ...overrides }
   const runtime = new Set([
