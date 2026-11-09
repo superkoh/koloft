@@ -175,7 +175,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the session sockets `ms-*.sock` (real Meta account, macOS, 2026-10: `lsof` on the
   running TUI). Without it Koloft binds a resumed tab only at its first prompt. macOS
   1.4.14 started over ssh wrote it under `museHome` as on Linux, and nothing under
-  `/tmp/tbh-*` (§17).
+  `/tmp/tbh-*` (§17). Whether the newer version or the ssh start made that difference
+  was not separated: a 1.4.14 TUI started at the Mac's own desktop was not tried, so
+  Koloft keeps looking in both folders.
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
 - A fresh TUI writes its file at launch, before any prompt, so its session exists from
@@ -622,7 +624,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   login with `TBH_CREDENTIAL_BACKEND=file` writes that same `auth.json`
   (`providers.meta` with an access token, the user's name and email) and nothing to
   the Keychain (1.4.10, a real Meta account, macOS, 2026-10). macOS 1.4.14 over ssh read
-  an `auth.json` already in the folder with or without the variable (§17).
+  an `auth.json` holding an API key already in the folder with or without the variable
+  (§17); one from a Meta-account login was not tried that way.
 - A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
   to the user's own files works: muse keeps each symlink and rewrites the file it
   points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
@@ -851,10 +854,11 @@ server of the opening note and with `--provider echo`; October 2026.
   machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
   `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
   back; 2026-11-05).
-- **A Mac as the other machine works as Linux does.** muse 1.4.14 (`1.4.14-R7309.1`,
-  official installer) in a macOS 26.6 VM reached over ssh, Homebrew's tmux 3.8, Koloft's
-  own tab script, `ensure.sh`, tmux.conf, wrapper and hook script, `--provider echo`
-  (2026-11-09). `ensure.sh muse` exited 0. Run once by the Command Line Tools' python
+- **A Mac as the other machine runs a remote Muse tab.** muse 1.4.14 (`1.4.14-R7309.1`,
+  official installer) in a macOS 26.6 VM reached over ssh, Homebrew's tmux 3.8 (`tmux
+  -V`), Koloft's own tab script, `ensure.sh`, tmux.conf, wrapper and hook script,
+  `--provider echo --trust-workspace` with muse's own approval and sandbox defaults, not
+  Koloft's flags (2026-11-09). `ensure.sh muse` exited 0. Run once by the Command Line Tools' python
   3.9.6 and once by Homebrew's 3.15 (the tab's `PATH` puts `/opt/homebrew/bin` first),
   the wrapper sent idle, working and done out through tmux and into its mirror, bound
   the session from the registry under `museHome` (§4), and tmux renamed the session;
@@ -876,8 +880,10 @@ server of the opening note and with `--provider echo`; October 2026.
   you like to run the following command?" (`blocked:kind=permission`, "Stage 1/2", the
   `touch` argv), while a script on `PATH` that writes there (Koloft's `koloft`) ran with
   no question and its write failed. A `bash` call marked `require_escalated` asked once
-  and, after `y`, ran outside the sandbox and the write went through. `--workspace <PATH>` takes one folder only (given twice, muse refuses: "cannot
-  be used multiple times"), so it adds no writable folder.
+  and, after `y`, ran outside the sandbox and the write went through.
+- **`--workspace <PATH>` adds no writable folder**: it takes one folder only, and given
+  twice muse refuses ("the argument '--workspace <WORKSPACE>' cannot be used multiple
+  times"; 1.4.14, Linux, 2026-11-09).
 
 ## §18 MCP servers and a project's instruction files
 
