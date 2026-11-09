@@ -16,6 +16,7 @@ import {
 import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
+import { BUTLER_OFF_ITS_AGENT_LOG } from '../../src/shared/butlerStart'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
@@ -234,6 +235,9 @@ function linesKoloftLogs(app: ElectronApplication): string[] {
 }
 
 async function butlerRunsOn(page: Page, backend: BackendId, koloftLogged: string[]): Promise<void> {
+  const loggedBefore = koloftLogged.length
+  const offItsAgent = (): boolean =>
+    koloftLogged.slice(loggedBefore).some((line) => line.startsWith(BUTLER_OFF_ITS_AGENT_LOG))
   let butler: SessionInfo | undefined
   await expect
     .poll(
@@ -241,14 +245,14 @@ async function butlerRunsOn(page: Page, backend: BackendId, koloftLogged: string
         butler = (await page.evaluate(() => window.api.sessions.list())).find(
           (s) => s.butler && s.alive
         )
-        return !!butler
+        return !!butler || offItsAgent()
       },
       { timeout: 3 * A_REAL_MODEL_TURN_MS }
     )
     .toBe(true)
   expect(
-    butler!.backendId,
-    `the butler started on ${butler!.backendId}, not ${backend}; Koloft logged:\n${koloftLogged.join('\n') || '(nothing)'}`
+    butler?.backendId,
+    `the butler is ${butler ? `on ${butler.backendId}` : 'not open'}, not on ${backend}; Koloft logged:\n${koloftLogged.join('\n') || '(nothing)'}`
   ).toBe(backend)
 }
 
@@ -261,11 +265,11 @@ async function withConductor(
     butlerRunsOnItsBackend: () => Promise<void>
   ) => Promise<void>
 ): Promise<void> {
+  const seeded = seededButlerBackend(env)
   const app = await launchApp(env)
   const koloftLogged = linesKoloftLogs(app)
   const page = await app.firstWindow()
-  const butlerRunsOnItsBackend = (): Promise<void> =>
-    butlerRunsOn(page, seededButlerBackend(env), koloftLogged)
+  const butlerRunsOnItsBackend = (): Promise<void> => butlerRunsOn(page, seeded, koloftLogged)
   try {
     await waitBooted(page)
     await expect.poll(() => fake.identifies).toBe(1)

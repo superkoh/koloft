@@ -95,7 +95,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { butlerStart } from '@shared/butlerStart'
+import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -1796,15 +1796,16 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
 
 function logWhyButlerIsNotOn(
   preferred: BackendId,
-  inputs: { installed: BackendAvailability[]; accounts: readonly AccountMeta[] },
+  inputs: Parameters<typeof butlerStart>[1],
   said: string
 ): void {
-  const installed = inputs.installed.find((b) => b.id === preferred)
+  const probe = inputs.installed.find((b) => b.id === preferred)
+  const found = probe?.available ? 'found' : `not found (${probe?.reason ?? 'no answer'})`
   const accounts = inputs.accounts
     .filter((a) => ACCOUNT_KINDS_OF[preferred].includes(a.kind))
-    .map((a) => `${a.name} ${a.enabled ? a.status : 'turned off'}`)
+    .map((a) => (a.enabled ? a.status : 'turned off'))
   console.error(
-    `[koloft] ${said} (${BACKEND_LABEL[preferred]}: ${installed?.available ? 'installed' : `not installed, ${installed?.reason}`}; accounts: ${accounts.join(', ') || 'none'})`
+    `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
