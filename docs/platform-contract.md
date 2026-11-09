@@ -1164,6 +1164,23 @@ inferred, not checked.
   73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
   Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
   the same guard is still on xterm.js master that day.
+- **Session terminals share one atlas; Workbench shells use another.** The two draw on
+  different backgrounds (`#070708` and `#0c0c0d`), and the background is part of the
+  atlas key, so output in a Workbench shell never adds, merges or clears a page of the
+  atlas a Claude Code screen draws from. Measured 2026-11-09, addon 0.20.0-beta.298.
+- **With every Koloft atlas repair switched off, a shown window kept its glyphs.** In a
+  shown (not hidden) window on a real Mac display, 16 terminals, one Claude Code screen
+  of 952 coloured CJK glyphs was grabbed after: opening a session, opening and closing a
+  Workbench shell, 38k distinct coloured CJK glyph keys painted screen by screen into
+  another session tab sharing its atlas (100 page merges), closing a tab, the Workbench
+  opening, going full width, back and closing, and a sleeping tab waking. With join,
+  leave and full repairs all made no-ops, every glyph matched the first grab
+  (per-glyph correlation ≥ 0.88; 3 runs, and the same with the repairs on). The same
+  check flagged 81 of 84 glyphs when three rows were shifted by one glyph, and all 968
+  when the atlas was cleared without the terminal rebuilding its texture coordinates
+  (what addons before `pageLayoutVersion` did) or the glyph textures were wiped.
+  Measured 2026-11-09, Electron 43, addon 0.20.0-beta.298, which makes every renderer
+  sharing an atlas rebuild its model on a clear, merge or eviction.
 
 ## §24 DOM, CSS and form controls in Chromium
 
