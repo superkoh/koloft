@@ -1505,6 +1505,30 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     }
   })
 
+  it('a turn stopped with Esc there, which sends the title script idle and no Stop, ends once the title has said working, but not on the idle line every prompt sends just before or just after its PreInvocation', async () => {
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const working = { conversation_id: A, agent_state: 'working' }
+    const preInvocation = { event: 'PreInvocation', input: { conversationId: A } }
+    const idleFirst = [idle, preInvocation]
+    const idleAfter = [preInvocation, idle]
+    for (const prompt of [idleFirst, idleAfter]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        preInvocation,
+        { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+        idle,
+        ...prompt
+      ])
+      const firstTurnAndPrompt = [{ type: 'prompt' }, { type: 'stop' }, { type: 'prompt' }]
+      expect(shown()).toEqual(firstTurnAndPrompt)
+      mirrored(id, [working, idle, idle])
+      expect(shown()).toEqual([...firstTurnAndPrompt, { type: 'stop' }])
+      await sessions.stop(id)
+    }
+  })
+
   it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {
     const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
