@@ -210,8 +210,15 @@ describe('U-LINE-*: the launch line', () => {
   })
 
   // PLATFORM§3
-  it('pushes no macOS AppleDouble twins along with the packages', () => {
+  it('pushes no macOS AppleDouble twins along with the packages, and no extended-attribute headers that GNU tar on the machine would warn about for each file', () => {
     const r = remote()
+    const pushed = path.join(r.dir, 'pushed')
+    fs.mkdirSync(pushed)
+    fs.writeFileSync(
+      path.join(r.bin, 'tar'),
+      `#!/bin/sh\ncase "$1" in x*) tee "${pushed}/$$" | /usr/bin/tar "$@";; *) exec /usr/bin/tar "$@";; esac\n`,
+      { mode: 0o755 }
+    )
     const st = stage(r, { 'run.sh': 'echo hi\n' }, spec())
     for (const f of [path.join(st.pkg.dir, 'run.sh'), path.join(st.tabDir, 'T.json')]) {
       spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
@@ -224,6 +231,15 @@ describe('U-LINE-*: the launch line', () => {
     expect(typeLine(r, line).status).toBe(0)
     expect(fs.readdirSync(koloft(r, st.pkg.name)).filter((n) => n.startsWith('._'))).toEqual([])
     expect(fs.readdirSync(koloft(r, 'tabs')).filter((n) => n.startsWith('._'))).toEqual([])
+    const streams = fs
+      .readdirSync(pushed)
+      .map(
+        (f) =>
+          spawnSync('/usr/bin/gzip', ['-dcf'], { input: fs.readFileSync(path.join(pushed, f)) })
+            .stdout
+      )
+    expect(streams).toHaveLength(2)
+    for (const s of streams) expect(s.includes('LIBARCHIVE.xattr')).toBe(false)
   })
 
   it('stops when a push fails — never a bare login shell dressed up as Claude, and never leaving the tab package with its credentials on a machine whose package did not arrive', () => {
