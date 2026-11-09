@@ -1475,6 +1475,14 @@ only downloaded the public release.
   title script and every hook appending their stdin to a file, keys by `tmux send-keys`
   2.5 s after the ask; 2 of 2 runs for each key. Not run over ssh; the title script and
   hooks run inside agy, so ssh should not change what they get (inferred, not checked).
+- **Esc in the middle of a turn ends it the same way.** Same setup, the fake server
+  holding its answer 15 s, Esc 3 s after the prompt while the title said `working`: the
+  title script got `idle` 58–59 ms later and again 0.3 s after that; no hook in the next
+  20 s (no PostInvocation, no Stop); the 7501 frames read `working` then `idle`, no
+  `done`; the screen said "Interrupted · What should Antigravity CLI do instead?". On a
+  prompt the title script also gets an `idle` line 55–60 ms before the PreInvocation
+  hook runs; both are separate processes, so in a log both append to, the two may land
+  in either order (inferred, not checked). 2 of 2 runs.
 - Keys typed into the Mac side of `ssh -tt` answer a command ask (`1`) and a question
   (`2` picked option 2); so does `tmux send-keys`.
 - `node --no-warnings --experimental-sqlite` (22.12.0) run over ssh reads the shared
