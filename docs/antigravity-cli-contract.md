@@ -66,7 +66,11 @@ only downloaded the public release.
   at the prompt (the first press shows "press ctrl+c again to exit"; Ctrl+C was pressed
   0.3 s and 0.8 s apart, Ctrl+D 0.3 s apart). Measured 2026-10-29, agy 1.3.6 on Linux in Docker, a python pty
   answering the terminal's queries, the API-key route with the folder trusted (§5).
-  macOS: not probed.
+  The same on macOS: all five exited 0, 3 of 3 runs each (2026-11-09, the manifest's
+  1.5.3 darwin arm64 build, sha512 checked, in a throwaway macOS 26.6.2 tart VM with no
+  screen, the API-key route against a fake Gemini server with `--gemini_dir`, the folder
+  trusted and onboarding seeded, a python pty answering the terminal's queries, each quit
+  sent 10 s after launch at the prompt, the code read by `waitpid`).
 - `AGY_CLI_NONINTERACTIVE_HEADLESS=1` or `AGY_CLI_INTERACTIVE_HEADLESS=1` without a
   terminal exits at once with `could not open TTY`.
 - `agy changelog` downloads the list from
