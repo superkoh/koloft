@@ -1008,12 +1008,23 @@ async function startTui() {
         resume >= 0 ? { threadId: argv[resume + 1], cwd } : { cwd }
       )
       process.stdin.resume()
+      // CODEX§3 CODEX§20 CODEX§25
+      const pressEsc = () => {
+        if (approval) {
+          ws.send(JSON.stringify({ id: approval, result: { decision: 'cancel' } }))
+          approval = undefined
+        } else if (question?.note !== undefined) question.note = undefined
+        else if (working) {
+          question = undefined
+          send('turn/interrupt', { threadId: thread.id, turnId }).catch(() => {})
+        }
+      }
       const typeIn = (part) => {
+        if (part === '\u001b') return pressEsc()
         for (const ch of part) {
           // CODEX§3
-          if (approval && ['y', '1', '\u001b'].includes(ch)) {
-            const decision = ch === '\u001b' ? 'cancel' : 'accept'
-            ws.send(JSON.stringify({ id: approval, result: { decision } }))
+          if (approval && ['y', '1'].includes(ch)) {
+            ws.send(JSON.stringify({ id: approval, result: { decision: 'accept' } }))
             approval = undefined
             continue
           }
@@ -1044,12 +1055,6 @@ async function startTui() {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()
             return 'stop'
-          }
-          // CODEX§20 CODEX§25
-          if (ch === '\u001b' && working) {
-            question = undefined
-            void send('turn/interrupt', { threadId: thread.id, turnId })
-            continue
           }
           // CODEX§2
           if (ch === '\r') {

@@ -43,6 +43,7 @@ import {
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
   switchToRow,
+  terminalText,
   TWO_LINE_PROMPT,
   waitBooted,
   wsRows
@@ -163,8 +164,9 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await runIn(page, centerTerm(page), '/approve')
       await expect(row).toHaveClass(/\bst-approval\b/)
+      const tabId = (await row.getAttribute('data-tab-id'))!
       await page.keyboard.press('Escape')
-      await expect(page.locator('.term-wrap:visible')).toContainText('Denied: ls -la')
+      await expect.poll(() => terminalText(page, tabId)).toContain('Denied: ls -la')
       await expect(row).toHaveClass(/\bst-waiting\b/)
     } finally {
       await quitAndClose(app)

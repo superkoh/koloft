@@ -110,8 +110,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
     leaves the dialog on screen: it fires a permission Notification and takes one key, a
     digit picks that option and `1` runs the command; a command starting `slow ` runs on
-    only once `<home>/go-run` exists; a lone Esc on it, or on an `/ask` dialog, ends the
-    turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
+    only once `<home>/go-run` exists; a lone Esc on it ends the turn as CC's Esc does: an `is_error` tool_result and `[Request interrupted by user for
     tool use]`, no Stop, CC§2), `/busy` (a turn held open ~30 s), `/hold` (a turn held
     open until a lone Esc, which ends it with `[Request interrupted by user]` and no
     Stop), `/need-approval`,

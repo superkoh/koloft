@@ -17,6 +17,7 @@ import {
   terminalText,
   transcriptFile,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
@@ -68,8 +69,9 @@ for (const remote of [false, true]) {
       if (remote) await addRemoteWorkspace(page, env)
       const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
       await startSessionIn(page, workspace, { remote })
+      await waitStartupTurnOver(page, workspace)
       const row = wsRows(page, workspace).first()
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const timeout = remote ? 60_000 : 15_000
       const tabId = (await row.getAttribute('data-tab-id'))!
       const type = (keys: string): Promise<void> =>
         page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
@@ -77,16 +79,16 @@ for (const remote of [false, true]) {
         (await terminalText(page, tabId)).split('Interrupted · What should Claude do').length - 1
 
       await type('/bash rm -rf build\r')
-      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout })
       await type('\x1b')
-      await expect.poll(interruptions, { timeout: 30_000 }).toBe(1)
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await expect.poll(interruptions, { timeout }).toBe(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout })
 
       await type('/hold\r')
-      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout })
       await type('\x1b')
-      await expect.poll(interruptions, { timeout: 30_000 }).toBe(2)
-      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await expect.poll(interruptions, { timeout }).toBe(2)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout })
     } finally {
       await quitAndClose(app)
     }

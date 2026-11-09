@@ -802,41 +802,39 @@ process.stdin.on('data', (chunk) => {
 })
 process.stdin.on('end', () => typedLines.end())
 const ESC_ALONE = '\x1b'
+const INTERRUPTED = Symbol('interrupted')
 // CC§2 CC§13 CC§14
 function interruptTheTurn(rejectedToolUseId) {
   const at = new Date().toISOString()
-  const rejected = {
+  const said = (content) => ({
     type: 'user',
     timestamp: at,
-    message: {
-      role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: rejectedToolUseId,
-          is_error: true,
-          content: "The user doesn't want to proceed with this tool use. The tool use was rejected."
-        }
-      ]
-    },
+    message: { role: 'user', content },
     cwd
-  }
-  const text = rejectedToolUseId
-    ? '[Request interrupted by user for tool use]'
-    : '[Request interrupted by user]'
-  append([
-    ...(rejectedToolUseId ? [rejected] : []),
-    {
-      type: 'user',
-      timestamp: at,
-      message: { role: 'user', content: [{ type: 'text', text }] },
-      cwd
-    }
-  ])
+  })
+  append(
+    rejectedToolUseId
+      ? [
+          said([
+            {
+              type: 'tool_result',
+              tool_use_id: rejectedToolUseId,
+              is_error: true,
+              content:
+                "The user doesn't want to proceed with this tool use. The tool use was rejected."
+            }
+          ]),
+          said([{ type: 'text', text: '[Request interrupted by user for tool use]' }])
+        ]
+      : [said([{ type: 'text', text: '[Request interrupted by user]' }])]
+  )
   process.stdout.write('[fake-claude] Interrupted · What should Claude do instead?\r\n> ')
 }
-// CC§14
-function keysOnTheDialog(answerOnceDone, shownState = 'state=blocked:kind=permission') {
+// CC§13 CC§14
+function keysOnTheDialog(
+  answerOnceDone,
+  { shownState = 'state=blocked:kind=permission', escEndsTheTurn = false } = {}
+) {
   const paneRaw = process.env.KOLOFT_FAKE_TMUX_RAW_MARK
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
@@ -846,12 +844,12 @@ function keysOnTheDialog(answerOnceDone, shownState = 'state=blocked:kind=permis
     const dropKey = path.join(home, 'fake-claude-drop-key')
     dialogKey = (key) => {
       if (fs.existsSync(dropKey)) return void fs.rmSync(dropKey, { force: true })
-      const answer = answerOnceDone(key)
+      const answer = escEndsTheTurn && key === ESC_ALONE ? INTERRUPTED : answerOnceDone(key)
       if (answer === undefined) return
       dialogKey = null
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
       if (paneRaw) fs.rmSync(paneRaw, { force: true })
-      reportState(answer === ESC_ALONE ? 'state=idle' : 'state=working')
+      reportState(answer === INTERRUPTED ? 'state=idle' : 'state=working')
       resolve(answer)
     }
   })
@@ -1680,10 +1678,10 @@ function handleLine(line) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
     process.stdout.write('[fake-claude] holding the turn until Esc\r\n')
-    return void keysOnTheDialog(
-      (key) => (key === ESC_ALONE ? key : undefined),
-      'state=working'
-    ).then(() => interruptTheTurn())
+    return void keysOnTheDialog(() => undefined, {
+      shownState: 'state=working',
+      escEndsTheTurn: true
+    }).then(() => interruptTheTurn())
   }
   if (text.startsWith('/answer ')) {
     const question = text.slice('/answer '.length)
@@ -1748,18 +1746,19 @@ function handleLine(line) {
     if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
     else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
     else {
-      const key = keysOnTheDialog((k) => (k === ESC_ALONE ? k : dialogKeys(k)))
+      const key = keysOnTheDialog(dialogKeys, { escEndsTheTurn: name === 'Bash' })
+      const thisDialog = dialogKey
       process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
       // CC§14
       setTimeout(() => {
-        if (dialogKey)
+        if (dialogKey === thisDialog)
           fireHook('notify', {
             hook_event_name: 'Notification',
             message: `Claude needs your permission to use ${name}`
           })
       }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
       const pressed = await key
-      if (pressed === ESC_ALONE) return interruptTheTurn(toolUseId)
+      if (pressed === INTERRUPTED) return interruptTheTurn(toolUseId)
       picked = await keyed(pressed)
     }
     append([
