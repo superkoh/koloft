@@ -192,6 +192,32 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§29
+  test('a command ask declined with 4 in a remote Antigravity tab takes its row off waiting for approval at once, before any next turn', async ({
+    env
+  }) => {
+    setUp(env)
+    seedSettings(env, { skipPermissions: false })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.evaluate((t) => window.api.terminal.write(t, '/bash echo declined\r'), tabId)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+      await page.evaluate((t) => window.api.terminal.write(t, '4'), tabId)
+      await expect.poll(() => terminalText(page, tabId)).toContain('User declined the tool call')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§9
   test("closing the remote tab ends agy's tmux session there; its row stays, cold, and clicking it resumes the same conversation on the machine, whose resuming mask lifts once the tab binds to it", async ({
     env
