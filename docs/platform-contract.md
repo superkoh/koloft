@@ -131,6 +131,10 @@ method. A recheck adds its date, version and command to the bullet.
   running.
 - **A non-interactive bash gives a background job `/dev/null` as stdin.** `<&0` is
   needed to pass the real stdin through.
+- **Ctrl+A and Ctrl+E go to the line's start and end in both shells; Ctrl+U differs.**
+  zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
+  caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
+  `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
 
 ## §3 macOS system tools and limits
 
@@ -339,6 +343,10 @@ method. A recheck adds its date, version and command to the bullet.
   guest's render process, or typed inside an extension's action popup, never passes it;
   only `input-event` sees an injected one. A key that `before-input-event` does not
   `preventDefault` still reaches `input-event`.
+- **xterm.js turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
+  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
+  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
+  (2026-11-09).
 
 ## §8 `<webview>`: attach, load and lifecycle
 

@@ -13,6 +13,7 @@ import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
+import { commandKeyLineEdit } from '@shared/lineEditKeys'
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -338,6 +339,14 @@ export function TerminalView({
       // CC§12 CODEX§2 MUSE§7 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
+        return false
+      }
+      const lineEdit = commandKeyLineEdit(e)
+      if (lineEdit !== undefined) {
+        if (e.type === 'keydown') {
+          e.preventDefault()
+          window.api.terminal.write(id, lineEdit)
+        }
         return false
       }
       if (e.type === 'keydown') pendingPunct = false

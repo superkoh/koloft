@@ -2560,6 +2560,17 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   (58 within 0.4 s) — killed by SIGHUP, or exit 129, or exit 0 — and no process was
   left: none with the run's marker argument (`ps`), and none of the children seen at the
   close (`security` keychain lookups) still alive after it.
+- **Ctrl+A, Ctrl+E and Ctrl+U edit the input box one line at a time.** In `hello world`,
+  Ctrl+A (0x01) put the caret before `h` and Ctrl+E (0x05) after the last letter; Ctrl+U
+  (0x15) with the caret after the third letter deleted those three and kept the rest
+  ("Ctrl+Y to paste deleted text" showed), and at the end of the line emptied it. In a
+  two-line box (`one`, `\n`, `two`), Ctrl+A went to the start of the second line, not
+  of the box; Ctrl+E then Ctrl+U emptied only that line, and a second Ctrl+U deleted the
+  line break, leaving `one`. Home (`ESC[H`) and End (`ESC[F`) moved like Ctrl+A and
+  Ctrl+E; Option+← as xterm sends it (`ESC[1;3D`) moved one word left and Option+⌫
+  (`ESC DEL`) deleted one word. 2026-11-09, CC 2.1.319, a python pty read back through
+  `pyte`, scratch `CLAUDE_CONFIG_DIR`, an `apiKeyHelper` key, one key per write 0.4 s
+  apart.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

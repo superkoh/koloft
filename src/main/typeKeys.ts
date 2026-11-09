@@ -59,8 +59,6 @@ export function clicksTheMouse(data: string): boolean {
   return A_MOUSE_BUTTON_PRESS.test(data)
 }
 
-export const CLEAR_TO_LINE_START = '\x15'
-
 // CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],

@@ -898,6 +898,14 @@ server of the opening note and with `--provider echo`; October 2026.
 - **`--workspace <PATH>` adds no writable folder**: it takes one folder only, and given
   twice muse refuses ("the argument '--workspace <WORKSPACE>' cannot be used multiple
   times"; 1.4.14, Linux, 2026-11-09).
+- **Ctrl+A, Ctrl+E and Ctrl+U typed through tmux edit the input box one line at a
+  time.** In `hello world` Ctrl+A went before `h`, Ctrl+E after the last letter, Ctrl+U
+  with the caret after the third letter deleted those three, and at the line's end
+  emptied it. In a two-line box (`one`, `\n`, `two`) Ctrl+A went to the start of the
+  second line; Ctrl+E then Ctrl+U emptied that line, and a second Ctrl+U on the empty
+  line did nothing (Claude Code's deletes the line break there, CC§12). 2026-11-09,
+  muse 1.4.11 `--provider echo --trust-workspace`, Linux arm64 in Docker
+  `--network none`, inside tmux 3.3a, keys sent with `send-keys -H`.
 
 ## §18 MCP servers and a project's instruction files
 
