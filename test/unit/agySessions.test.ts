@@ -1473,6 +1473,26 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     ])
   })
 
+  it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    expect(shown()).toEqual([{ type: 'stop' }])
+    mirrored(id, [
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+      { conversation_id: A, agent_state: 'idle' },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(shown()).toEqual([
+      { type: 'stop' },
+      { type: 'prompt' },
+      { type: 'stop' },
+      { type: 'stop' }
+    ])
+  })
+
   // AGY§12
   it("a tab on that machine learns where agy keeps its conversations there from the first hook, and its Scratchpad follows it to the next conversation after /clear, even when that one's first hook comes before the switch", async () => {
     const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })

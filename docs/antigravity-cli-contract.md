@@ -892,6 +892,18 @@ only downloaded the public release.
   was not taken (6 runs): no frame for 60 s, and the digit was left unsent in the input
   box under the ask. On 1.5.1 the opening `blocked:kind=auth` frame of §10 did not come;
   the first frame was `idle`. Not probed: the file-deny key `2`; macOS.
+- **The same question asked again right after an answer comes as a new `blocked`, unless
+  the model asks again within milliseconds.** agy 1.5.3 (build `1.5.3-6604829099950080`,
+  Linux arm64 from the manifest, sha512 checked) and 1.3.6 (the image's), the setup of the
+  bullet above, 2026-11-08: the fake answered the first question's result with the very
+  same `ask_question` (1.3.6 needs `toolSummary` and `toolAction` in it), and `2` answered
+  each question 2.5 s after its frame. With the fake answering after 100 ms (3 runs) or
+  1.5 s (2 runs) on 1.5.3, and at once on 1.3.6 (2 runs): `working` 11–23 ms after the
+  key, then `blocked:kind=question` again when the second question came (17 ms – 1.5 s
+  later), then `working`, `done`. With the fake answering at once on 1.5.3 (the result
+  reached it 7–9 ms after the key; 3 runs) no frame came at all: the screen drew the
+  second question under the first one's `blocked`, so a watcher of the frames cannot
+  tell it from the first.
 
 - **A question the person already pressed keys in.** agy 1.5.1 (the binary of the bullet
   above, sha256 `d2b02615…9565`, copied into `agy-a-img`), the same setup, a fresh
@@ -1342,7 +1354,8 @@ only downloaded the public release.
 
 - At start agy asks `CSI >q` (XTVERSION), DA1, DECRQM 2026/2027 and `OSC 11;?`. It
   turns on `?2004h` (bracketed paste), `>4;2m` (modifyOtherKeys), a kitty keyboard
-  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame,
+  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame (only
+  when DECRQM 2026 is answered yes; unanswered, as in tmux, none: §29),
   `?2027h`, and `0 q`; on exit `>4m`, `<1u`, `?2004l`, `0 q`, `?2027l`. No mouse modes
   (1000/1002/1003/1006) and no focus events (1004) in the default inline mode.
 - With XTVERSION unanswered there is a brief `?1049h … ?1049l` alternate-screen flash
@@ -1402,10 +1415,29 @@ only downloaded the public release.
 
 ## §29 tmux and SSH
 
-- Inside tmux 3.3a no 7501 reaches the outer terminal, also with
+- Inside tmux 3.3a, with nothing between tmux and agy that answers its `7501;?` query
+  (a relay that does passes the frames on: next bullet), no 7501 reaches the outer
+  terminal, also with
   `AGY_CLI_OSC7501=on` and `allow-passthrough on`. With `=on` agy still writes the
   frames into the pane, where `tmux pipe-pane` captures them; without it the pane gets
   none.
+- **Inside tmux 3.3a agy frames nothing, because tmux never answers its DECRQM 2026.**
+  agy asks `ESC[?2026$p` (and 2027) in the pane as outside it, gets no answer, and then
+  writes no `?2026h` at all: 0 frames, and all 57 redraws of a scroll drawn outside
+  one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
+  runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
+  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
+  a remote agy tab does not start agy through it) agy got `?2026;2$y`, wrote 63–64 frames,
+  and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
+  frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
+  `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0
+  OSC 8 links inside tmux with or without the relay (813 outside it); what turns them
+  off there was not probed. 2026-11-08, agy
+  1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a, Koloft's
+  tmux.conf, no network), `altScreenMode: always`, a fake Gemini server streaming a
+  160-line answer with links, then 60 wheel notches; a python pty answering like
+  xterm.js as the outer terminal, agy's own bytes logged by a pty between it and tmux.
+  The pane's `TERM_PROGRAM` read `tmux`. tmux 3.4 and 3.5a were not run.
 - In tmux the TUI works (sign-in, onboarding, prompts), the status-line script
   renders, hooks run, and the title reaches `#{pane_title}` (with `set-titles on`
   tmux sends OSC 0 out).
@@ -1439,6 +1471,17 @@ only downloaded the public release.
   title line already carries the id. Two tabs in one account folder hold their own
   `presence/<id>.lock` (FLOCK WRITE in `/proc/locks`); `flock -n <lock> true` exits 1
   while a conversation is open and 0 once it is free.
+- **Started again with `--conversation=<id>` in tmux, agy tells the title script it is
+  idle once, and then nothing until someone types.** Its title script got one
+  `authenticating` input with `conversation_id` `""` at about 0.09 s, then one input with
+  the id and `agent_state` `idle` (and the conversation's title) at about 0.4 s, then
+  nothing for 20–22 s of no typing; no hook fired and agy sent the model nothing. That one
+  line is the only sign that the conversation is open and waiting. A first launch, for
+  comparison, sent `authenticating` twice and `idle` three times with no id, then
+  SessionStart, PreInvocation, PostInvocation and Stop, and only then the id with `idle`.
+  2026-11-08, agy 1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a
+  default config, no network, plain user), API-key route on a fake Gemini server, a
+  title script appending its stdin to a file; 2 of 2 runs.
 - `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
   dropped ssh client leaves tmux detached with agy running and the lock held;
   `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.

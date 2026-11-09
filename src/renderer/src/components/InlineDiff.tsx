@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ParsedDiff } from '@shared/unifiedDiff'
-import { highlightLines, langForPath } from '../highlight'
+import { langForPath } from '../highlight'
+import { dropQueuedColoring, highlightLinesOffThread } from '../offThread'
 import '../inlineDiff.css'
 
 export const MAX_INLINE_ROWS = 5000
@@ -10,7 +11,7 @@ interface Hl {
   oldHtml: string[]
 }
 
-export function InlineDiff({
+export const InlineDiff = memo(function InlineDiff({
   src,
   parsed,
   line
@@ -25,22 +26,22 @@ export function InlineDiff({
   const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
   const hasDel = useMemo(() => rows.some((r) => r.kind === 'del'), [rows])
   const [hl, setHl] = useState<Hl | null>(null)
+  const colorQueue = useRef({})
 
   const lang = langForPath(src)
   useEffect(() => {
     setHl(null)
     if (truncated) return
+    const owner = colorQueue.current
     let cancelled = false
-    Promise.all([
-      highlightLines(newText, lang),
-      hasDel ? highlightLines(oldText, lang) : Promise.resolve<string[]>([])
-    ])
-      .then(([newHtml, oldHtml]) => {
+    highlightLinesOffThread(owner, hasDel ? [newText, oldText] : [newText], lang)
+      .then(([newHtml, oldHtml = []]) => {
         if (!cancelled) setHl({ newHtml, oldHtml })
       })
       .catch(() => {})
     return () => {
       cancelled = true
+      dropQueuedColoring(owner)
     }
   }, [newText, oldText, lang, truncated, hasDel])
 
@@ -95,4 +96,4 @@ export function InlineDiff({
       )}
     </div>
   )
-}
+})

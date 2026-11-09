@@ -2307,6 +2307,10 @@ function startApi() {
 }
 
 async function startTui() {
+  if (fs.existsSync(sentinel('fake-agy-exit'))) {
+    process.stderr.write('Antigravity fixture startup failure\n')
+    process.exit(Number(readSentinel('fake-agy-exit', '')) || 1)
+  }
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
   // PLATFORM§35
   if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)

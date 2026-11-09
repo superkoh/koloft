@@ -38,6 +38,7 @@ import '../editPane.css'
 import '../artifactPane.css'
 
 const CARET_READOUT_THROTTLE_MS = 100
+const DIFF_FOLLOWS_TYPING_AFTER_MS = 300
 
 function reasonSentence(readOnly: string | null, failure: string): string {
   if (failure.includes('KOLOFT_TOO_LARGE'))
@@ -273,9 +274,17 @@ export function EditPane({
     }
   }, [path, ownerTab, tabId])
 
+  const [diffMine, setDiffMine] = useState('')
+  useEffect(() => {
+    if (!showConflict) return
+    const t = setTimeout(() => setDiffMine(text), DIFF_FOLLOWS_TYPING_AFTER_MS)
+    return () => clearTimeout(t)
+  }, [showConflict, text])
+
   const openDiff = useCallback((): void => {
     setShowConflict(true)
     const e = getEntry(ownerTab, tabId)
+    setDiffMine(e?.text ?? '')
     if (!e?.conflict || e.conflict.text !== null) return
     window.api.edit
       .open(e.path)
@@ -323,8 +332,8 @@ export function EditPane({
   const conflict = entry?.conflict ?? null
   const diskText = conflict?.text
   const parsed = useMemo(
-    () => (showConflict && typeof diskText === 'string' ? diffLines(diskText, text) : null),
-    [showConflict, diskText, text]
+    () => (showConflict && typeof diskText === 'string' ? diffLines(diskText, diffMine) : null),
+    [showConflict, diskText, diffMine]
   )
 
   const saved = entry?.savedAt

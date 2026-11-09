@@ -274,6 +274,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   transcriptExists(key: string): boolean {
+    const listed = this.d.workspaces()?.transcriptFileOf(key)
+    if (listed && fs.existsSync(listed)) return true
     return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
 

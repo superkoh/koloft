@@ -63,6 +63,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   1.4.13 in the `koloft-muse-probe` Docker image, `--provider echo`, a python pty
   answering the terminal's queries, output replayed into `@xterm/headless`; inside a
   tmux pane too, PLATFORM§35).
+- **On Linux muse 1.4.11, `TERM_PROGRAM=Apple_Terminal` changes nothing in what muse
+  draws; only a terminal it knows by name gets synchronized output.** muse asks no
+  DECRQM 2026. With no `TERM_PROGRAM` and with `Apple_Terminal` (the name in a local
+  Koloft tab's environment) it wrote no `?2026h` at all, so none of its redraws was
+  framed, and it wrote 160 OSC 8 links for a 160-line answer with links, 3 of 3 runs
+  each. With `TERM_PROGRAM` set to `iTerm.app`, `WezTerm` or `ghostty` (1 run each) it
+  wrapped its redraws in 379–386 `?2026h … ?2026l` windows, no redraw drew outside
+  one, and it sent the same 160 links. Read from the binary's strings, not run: those
+  names sit next to `xterm-ghostty`, `wezterm` and `alacritty` (likely `TERM` values),
+  and no variable that forces frames shows up. 2026-11-08, muse 1.4.11
+  (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Linux arm64, no network), a python pty
+  answering like xterm.js (DA1, DA2, CPR, DSR, XTVERSION, DECRQM, OSC 10/11), a fake
+  `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
+  notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
+  sees `TERM_PROGRAM=tmux` instead (§17).
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
@@ -493,6 +508,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   53–70 ms later. A `y` at 0.4 s, 0.5 s, 0.7 s, 1.0 s (2) and 2.0 s (2) gave `working`
   32–77 ms later. So the frame leaving `blocked` says an answer was taken, and one muse
   missed leaves it at `blocked`.
+- **The same question asked again right after an answer comes after a `working` frame.**
+  Measured 2026-11-08 on `Muse Code 1.4.11` (`koloft-muse-probe-1411`,
+  `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, a python3 pty (160×50) answering the
+  cursor, colour and 7501 queries, `--approval-judge off --trust-workspace`, a fake
+  `/responses` model that answered the first question's result with the very same
+  one-question `request_user_input` at once; `2` then Enter 300 ms apart, 2.5 s after each
+  frame; 2 runs: `blocked:kind=question`, `working` 21–25 ms after the Enter, the second
+  `blocked:kind=question` 106–114 ms after that, `working`, `done`.
 - **A question takes the owner's own words, and several questions are answered in turn,
   then on a review page.** Measured 2026-10-29 on the Muse the TUI drew as `Muse Code
   1.4.11` (the `koloft-muse-probe-1411` image, launcher 1.4.14, `MUSE_NO_AUTO_UPDATE=1`),
@@ -737,6 +760,19 @@ server of the opening note and with `--provider echo`; October 2026.
   (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
   terminal outside tmux when tmux has `set -g allow-passthrough on`.
 - Attaching to the tmux session again replays no 7501 frame.
+- **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
+  (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
+  scrolled (4 of 4 runs; every one of its 171–174 redraws after the answer reached the
+  outer terminal unframed), so under that name there is nothing for a relay to carry
+  past tmux. Given `TERM_PROGRAM=WezTerm` in the pane it wrote 314 frames, and tmux
+  3.3a passed none of them on (PLATFORM§35); a relay built like `STATUS_RELAY_PY`
+  would not carry them either, since it takes over the frames only after the program's
+  own DECRQM 2026, which muse never sends. It wrote 160 OSC 8 links in all 5 runs; none
+  reached the outer terminal. 2026-11-08, muse 1.4.11 (`1.4.11-R6667.1`, `koloft-muse-probe-1411`, Debian
+  12, Koloft's tmux.conf, no network), a fake `/responses` model streaming the answer
+  in 4-line pieces 60 ms apart, then 60 wheel notches and 8 PageUp/PageDown; a python
+  pty answering like xterm.js as the outer terminal, muse's own bytes logged by a pty
+  between it and tmux.
 - `TBH_TMUX_RUN_STATUS_PATH` writes nothing Koloft can use.
 - `ssh <machine> muse serve --provider echo` speaks §5 over the ssh pipe: `initialize`
   answers in about 0.3 s, `session/list`, `session/read` and `approval/listPending` are

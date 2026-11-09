@@ -193,6 +193,10 @@ function serve() {
 }
 
 function tui() {
+  if (fs.existsSync(file('fake-muse-exit'))) {
+    console.error('Muse fixture startup failure')
+    process.exit(Number(read('fake-muse-exit')) || 1)
+  }
   const flags = {}
   const rest = []
   for (let i = 0; i < argv.length; i++) {

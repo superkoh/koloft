@@ -3327,6 +3327,7 @@ app.whenReady().then(() => {
   subscribeTabSubsystems(tabLifecycle, {
     slash,
     attention,
+    cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
@@ -3653,6 +3654,7 @@ app.whenReady().then(() => {
         )
       ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
     loadLayout,
     saveLayout,
     projectInfo: projectInfoFor,
@@ -5363,8 +5365,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clearKeepingExit(tabId)
-  relayTabClosed(tabId)
+  tabLifecycle.emit('stopping', tabId)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,
