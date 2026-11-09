@@ -148,7 +148,8 @@ async function resumedInTreeTakingFirstLineAsPrompt(
   env: E2EEnv,
   page: Page,
   sessionId: string,
-  tree: string
+  tree: string,
+  row: Locator
 ): Promise<void> {
   await expect
     .poll(() => machineMuseCalls(env).length, { timeout: ON_THE_MACHINE_WITHIN_MS })
@@ -157,6 +158,10 @@ async function resumedInTreeTakingFirstLineAsPrompt(
   expect(resume.argv.slice(-2)).toEqual(['resume', sessionId])
   expect(resume.argv).toContain('--trust-workspace')
   expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(tree))
+  await expect
+    .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
+    .toContain(`k-${resume.sessionId}`)
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
   await runIn(page, centerTerm(page), 'words after resuming')
   await expect
     .poll(() => museSaid(env, sessionId, machineHome(env)), {
@@ -538,7 +543,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     try {
       const { sessionId, tree, row } = await coldRemoteMuseWorktreeRow(app, page, env, 'muse-cold')
       await switchToRow(page, row)
-      await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree)
+      await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree, row)
     } finally {
       await quitAndClose(app)
     }
@@ -557,7 +562,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       expect(fs.existsSync(tree)).toBe(false)
       const addsBefore = worktreeAddsOnTheMachine(env)
       await switchToRow(page, row)
-      await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree)
+      await resumedInTreeTakingFirstLineAsPrompt(env, page, sessionId, tree, row)
       expect(worktreeAddsOnTheMachine(env)).toBe(addsBefore + 1)
       expect(fs.readFileSync(path.join(tree, 'kept.txt'), 'utf8')).toBe('committed on the branch')
     } finally {
