@@ -82,8 +82,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
   2026-10-29, 1.4.11 in the `koloft-muse-probe-1411` Docker image, `--provider echo`,
-  inside a tmux pane, the exit code read from the shell that started it. macOS: not
-  probed.
+  inside a tmux pane, the exit code read from the shell that started it. The same on
+  macOS: all five exited 0, 3 of 3 runs each (2026-11-09, 1.4.14 in a throwaway macOS
+  26.6.2 tart VM with no screen, `--provider echo --trust-workspace`, a python pty
+  answering the terminal's queries, each quit sent 10 s after launch with the input box
+  drawn, the code read by `waitpid`).
 
 ## §2 Where Muse keeps its data
 
