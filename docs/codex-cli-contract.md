@@ -2585,6 +2585,15 @@ the one before, the screen read back through `pyte`.
   empty composer quits at once (both versions). What Ctrl+X followed by another key does
   was not run; Koloft itself never sends 0x18 (a conductor's `koloft session keys` would
   have to name it).
+- **Ctrl+A, Ctrl+E and Ctrl+U edit the composer one line at a time**, as in Claude Code
+  (CC§12): in `hello world` Ctrl+A went before `h`, Ctrl+E after the last letter,
+  Ctrl+U with the caret after the third letter deleted those three, and at the line's
+  end emptied it. In a two-line composer (`one`, `\n`, `two`) Ctrl+A went to the start
+  of the second line; Ctrl+E then Ctrl+U emptied that line, and a second Ctrl+U deleted
+  the line break. Home and End (`ESC[H`, `ESC[F`) moved like Ctrl+A and Ctrl+E;
+  `ESC[1;3D` moved one word left and `ESC DEL` deleted one word. 2026-11-09, Codex CLI
+  0.166.0, `codex --no-daemon` in a python pty read through `pyte`, a scratch
+  `CODEX_HOME` with an API-key `auth.json`.
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
 

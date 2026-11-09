@@ -3,7 +3,8 @@ import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
-import { CLEAR_TO_LINE_START, keysFor, typedPieces } from '../typeKeys'
+import { keysFor, typedPieces } from '../typeKeys'
+import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
 import type { CardButton } from './cards'
 
 interface Option {

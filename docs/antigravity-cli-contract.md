@@ -950,6 +950,13 @@ only downloaded the public release.
   instead?" and an empty prompt, and the answer that came 25 s later drew nothing.
   Both measured 2026-10-31, agy 1.4.12, Linux arm64, Docker `--network none`, tmux 3.3a,
   the API-key route against a fake Gemini server. macOS: not probed.
+- Ctrl+A, Ctrl+E and Ctrl+U edit the input box one line at a time: in `hello world`
+  Ctrl+A went before `h`, Ctrl+E after the last letter, Ctrl+U with the caret after the
+  third letter deleted those three, and at the line's end emptied it. In a two-line box
+  (`one`, LF, `two`) Ctrl+A went to the start of the second line; Ctrl+E then Ctrl+U
+  emptied that line, and a second Ctrl+U deleted the line break. 2026-11-09, agy 1.3.6,
+  Linux arm64, Docker `--network none`, tmux 3.3a, keys sent with `send-keys -H`, the
+  API-key route with the folder trusted. macOS: not probed.
 
 ## §16 The local Connect API
 

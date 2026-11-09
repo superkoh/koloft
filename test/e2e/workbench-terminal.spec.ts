@@ -500,6 +500,28 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(workbenchPanel(page)).toBeVisible()
       await expect(termBodies(page)).toHaveCount(1)
     })
+
+    test('T-WT-06b: ⌘←, ⌘→ and ⌘⌫ reach a terminal as Ctrl-A, Ctrl-E and Ctrl-U — line start, line end, delete the line — while a plain ⌫ stays DEL', async ({
+      app,
+      page
+    }) => {
+      test.setTimeout(240_000)
+      await sessionWithShell(app, page, 'ws-a')
+
+      await runIn(
+        page,
+        panelTerm(page),
+        `echo WT06B_READY; read -sk4 k; printf 'GOT_%d_%d_%d_%d\\n' "'$k[1]" "'$k[2]" "'$k[3]" "'$k[4]"`
+      )
+      await expect(panelTerm(page)).toContainText('WT06B_READY', { timeout: 25_000 })
+      await panelTerm(page).click()
+      await page.keyboard.press('Meta+ArrowLeft')
+      await page.keyboard.press('Meta+ArrowRight')
+      await page.keyboard.press('Meta+Backspace')
+      await page.keyboard.press('Backspace')
+
+      await expect(panelTerm(page)).toContainText('GOT_1_5_21_127', { timeout: 25_000 })
+    })
   })
 
   test.describe('the New Terminal Tab gate: one gate for ⌃`, the menu item and the strip’s ＋', () => {

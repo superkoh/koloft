@@ -53,6 +53,35 @@ for (const remote of [false, true]) {
       await quitAndClose(app)
     }
   })
+
+  test(`⌘⌫ in a ${remote ? 'remote ' : ''}Claude Code tab reaches the agent as Ctrl-U, so what was typed on the line before it never reaches the prompt`, async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, workspace, { remote })
+      const tabId = (await wsRows(page, workspace).first().getAttribute('data-tab-id'))!
+
+      await centerTerm(page).click()
+      await page.keyboard.type('dropped words')
+      await page.keyboard.press('Meta+Backspace')
+      await page.keyboard.type('/answer kept words')
+      await page.keyboard.press('Enter')
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('[fake-claude] answered: kept words')
+      expect(await terminalText(page, tabId)).not.toContain('answered: dropped')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 }
 
 test('with no Codex and a slow Codex check, the first ⌘N picker after launch never offers another agent, before or after the check answers', async ({
