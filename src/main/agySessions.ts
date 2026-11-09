@@ -200,6 +200,7 @@ interface AgyRun extends StoredRun {
   remote?: { host: string; tmuxName: string }
   shown?: string
   statesBeforeBind?: ProgramStatus[]
+  firstLine?: string
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -268,7 +269,12 @@ function permissionFlags(permission: LaunchPermission): string[] {
   return []
 }
 
-// AGY§1 AGY§21 AGY§26
+// AGY§31
+function firstLineToType(opts: CreateTabOptions, resumeId: string | undefined): string | undefined {
+  return !resumeId && opts.firstPrompt?.startsWith('/') ? opts.firstPrompt : undefined
+}
+
+// AGY§1 AGY§21 AGY§26 AGY§31
 function agyArgs(
   opts: CreateTabOptions,
   resumeId: string | undefined,
@@ -280,7 +286,7 @@ function agyArgs(
     ...permissionFlags(permission),
     ...(resumeId
       ? [`--conversation=${resumeId}`]
-      : opts.firstPrompt
+      : opts.firstPrompt && !firstLineToType(opts, resumeId)
         ? ['-i', opts.firstPrompt]
         : [])
   ]
@@ -709,6 +715,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         givenTitle: opts.name,
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
+        firstLine: firstLineToType(opts, resumeId),
         account: pick.account,
         brain: agyBrain(pick.home),
         pid,
@@ -839,6 +846,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resumeKey: opts.resumeSessionId,
       permission: opts.permission ?? 'default',
       bypassing: permission === 'bypass',
+      firstLine: firstLineToType(opts, resumeId),
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
@@ -1022,6 +1030,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§9 AGY§11
   private onTitle(run: AgyRun, state: AgyTitleState): void {
     if (run.explicitStop || run.stopping) return
+    // AGY§31
+    if (run.firstLine && state.agentState === 'idle') {
+      this.deps.pty.write(run.tabId, bracketedPaste(run.firstLine) + '\r')
+      run.firstLine = undefined
+    }
     const before = run.title
     run.title = state
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
