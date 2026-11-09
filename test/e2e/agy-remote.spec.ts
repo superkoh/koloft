@@ -48,6 +48,7 @@ test.afterEach(({ env }) => killFakeRemote(env))
 
 const TURN_LONGER_THAN_A_MIRROR_PULL_MS = '5000'
 const BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S = 15
+const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 
 const accountFolder = (env: E2EEnv): string =>
   path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
@@ -212,6 +213,33 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
       await page.evaluate((t) => window.api.terminal.write(t, '4'), tabId)
       await expect.poll(() => terminalText(page, tabId)).toContain('User declined the tool call')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§29
+  test('Esc in the middle of a turn in a remote Antigravity tab, which ends the turn with no Stop, takes its row off working at once, before any next turn', async ({
+    env
+  }) => {
+    setUp(env)
+    fs.writeFileSync(
+      path.join(machineHome(env), 'fake-agy-delay'),
+      MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'a long turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.evaluate((t) => window.api.terminal.write(t, '\x1b'), tabId)
+      await expect.poll(() => terminalText(page, tabId)).toContain('Interrupted')
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)

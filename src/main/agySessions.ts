@@ -199,6 +199,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
+  lastTitleState?: string
   statesBeforeBind?: ProgramStatus[]
   log: LineTail
   title?: AgyTitleState
@@ -371,7 +372,12 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
-  if (agentState === 'idle' && (run.shown === undefined || run.shown === 'blocked'))
+  const interruptedMidTurn = run.shown === 'working' && run.lastTitleState === 'working'
+  run.lastTitleState = agentState
+  if (
+    agentState === 'idle' &&
+    (run.shown === undefined || run.shown === 'blocked' || interruptedMidTurn)
+  )
     return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
     return {
