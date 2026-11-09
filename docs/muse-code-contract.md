@@ -173,7 +173,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   macOS 1.4.10 the folder is `/tmp/tbh-<uid>-rt/muse/sessions` instead, the same file
   in the same shape, whatever `HOME`, `XDG_CONFIG_HOME` or `XDG_RUNTIME_DIR` say, beside
   the session sockets `ms-*.sock` (real Meta account, macOS, 2026-10: `lsof` on the
-  running TUI). Without it Koloft binds a resumed tab only at its first prompt.
+  running TUI). Without it Koloft binds a resumed tab only at its first prompt. macOS
+  1.4.14 started over ssh wrote it under `museHome` as on Linux, and nothing under
+  `/tmp/tbh-*` (§17).
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
 - A fresh TUI writes its file at launch, before any prompt, so its session exists from
@@ -848,6 +850,20 @@ server of the opening note and with `--provider echo`; October 2026.
   machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
   `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
   back; 2026-11-05).
+- **A Mac as the other machine works as Linux does.** muse 1.4.14 (`1.4.14-R7309.1`,
+  official installer) in a macOS 26.6 VM reached over ssh, Homebrew's tmux 3.8, Koloft's
+  own tab script, `ensure.sh`, tmux.conf, wrapper and hook script, `--provider echo`
+  (2026-11-09). `ensure.sh muse` exited 0. Run once by the Command Line Tools' python
+  3.9.6 and once by Homebrew's 3.15 (the tab's `PATH` puts `/opt/homebrew/bin` first),
+  the wrapper sent idle, working and done out through tmux and into its mirror, bound
+  the session from the registry under `museHome` (§4), and tmux renamed the session;
+  the hooks (`SessionStart`, `UserPromptSubmit`, `Stop`, `SubagentStart`/`Stop`) reached
+  the mirror through `bash "$HOME/…"`, and attaching again showed the screen. An
+  `auth.json` holding an API key, carried as `$T.auth.json` and moved into the
+  account's config folder by the tab script, signed `muse serve` in: `account/read`
+  answered `apiKey` / `stored key` in 0.6 s with `TBH_CREDENTIAL_BACKEND=file`, with no
+  Keychain prompt. Without the variable it answered the same, and no Keychain item
+  `ai.meta.dev.credentials` appeared. A real Meta account was not tried there.
 
 ## §18 MCP servers and a project's instruction files
 

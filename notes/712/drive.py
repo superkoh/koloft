@@ -7,18 +7,24 @@ MIRROR = H + '/.koloft/hook-sessions/tab1.muse.jsonl'
 PROMPT_AT = float(os.environ.get('PROMPT_AT', '10'))
 END_AT = float(os.environ.get('END_AT', '25'))
 
+KIT = os.environ.get('KIT', '/kit')
 os.makedirs(M + '/docs-plugin/skills/koloft-docs', exist_ok=True)
 os.makedirs(H + '/.koloft/tabs', exist_ok=True)
 os.makedirs(H + '/w', exist_ok=True)
-for name in ('muse-wrap.py', 'tmux.conf'):
-    shutil.copy('/kit/' + name, M + '/' + name)
+for name in ('muse-wrap.py', 'tmux.conf', 'muse-hook.sh'):
+    shutil.copy(KIT + '/' + name, M + '/' + name)
+shutil.copy(KIT + '/tab1.hooks.json', H + '/.koloft/tabs/tab1.hooks.json')
+if os.path.exists(KIT + '/carry-auth.json'):
+    shutil.copy(KIT + '/carry-auth.json', H + '/.koloft/tabs/tab1.auth.json')
+if os.path.exists(MIRROR):
+    os.remove(MIRROR)
 with open(M + '/ensure.sh', 'w') as f:
     f.write('exit 0\n')
 with open(M + '/docs-plugin/skills/koloft-docs/SKILL.md', 'w') as f:
     f.write('---\nname: koloft-docs\ndescription: probe\n---\nprobe\n')
-shutil.copy('/kit/tab1.sh', TAB)
+shutil.copy(KIT + '/tab1.sh', TAB)
 
-env = dict(os.environ, TERM='xterm-256color', LANG='C.UTF-8')
+env = dict(os.environ, TERM='xterm-256color', LANG=os.environ.get('DRIVE_LANG', 'C.UTF-8'))
 env.pop('TMUX', None)
 
 
@@ -72,7 +78,7 @@ for name in ('exit', 'screen'):
         pass
 try:
     with open(MIRROR) as f:
-        result['mirror'] = [line.strip() for line in f][:40]
+        result['mirror'] = [line.strip()[:200] for line in f][:40]
 except OSError as e:
     result['mirror'] = str(e)
 with open('/tmp/outer-start.bin', 'wb') as f:

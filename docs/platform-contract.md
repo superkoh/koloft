@@ -202,6 +202,14 @@ method. A recheck adds its date, version and command to the bullet.
   belong to another process.
 - **On a network share or exFAT, mtime is only precise to 1–2 s.** An edit that keeps
   the same size inside one clock tick changes neither mtime nor size.
+- **Without the Command Line Tools, `/usr/bin/python3` is still there, as a stub.** Run
+  over ssh it prints `xcode-select: note: No developer tools were found, requesting
+  install.` and two more lines, and exits 1 at once; it does not wait. With them, it is
+  python 3.9.6, which has `pty` and `termios`. **`/bin/sh` (bash 3.2) remembers where it
+  found `python3`**, stub included, so a `python3` that `brew install` puts earlier on
+  `PATH` is not run by that same shell until `hash -r`: in one script the stub exited 1,
+  then 1 again after Homebrew's `python3` was in place, then 0 after `hash -r`
+  (2026-11-09, a macOS 26.6 VM over ssh, the Command Line Tools moved aside).
 
 ## §4 Electron: app identity, packaging and opening things
 
