@@ -3217,3 +3217,28 @@ trusted. One run of each.
   server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
   reconnect recovery" was not told apart from 0.165.0 by this.
 
+## 35. Links in a reply
+
+**The TUI sends every link as OSC 8 whatever `TERM_PROGRAM` says, so Koloft keeps
+`Apple_Terminal` for Codex tabs.** Unlike Antigravity (AGY§27), `Apple_Terminal` turns
+nothing off. Measured 2026-11-09 on codex-cli 0.166.0
+(`~/.codex/packages/standalone/current/bin/codex`): `codex --no-daemon` in a python pty
+at 120×40, a throwaway `HOME` and `CODEX_HOME` whose `config.toml` points
+`model_provider` at a fake Responses server on localhost (`wire_api = "responses"`,
+`env_key` a made-up key, no login), the pty answering DA1, DA2, cursor position, `?u`
+and OSC 10/11 as Koloft's xterm does, `TERM=xterm-256color`, `COLORTERM=truecolor`. One
+typed prompt; the fake answered with three markdown links (`- [doc N](http://…/link-N)
+is number N`) and one bare address. Three env shapes — `TERM_PROGRAM=Apple_Terminal`
+(Koloft's, PLATFORM§2), unset, and `tmux` — each in fullscreen (the default) and inline
+(`--no-alt-screen`), 3 runs each, every run the same:
+
+- On screen each link reads `doc 1 (http://…/link-1)`, and the bare address as written.
+- 7 OSC 8 links per reply: `doc 1` and its address in brackets each carry
+  `ESC]8;;http://…/link-1 BEL`, and the bare address carries its own. The TUI never asks
+  DECRQM 2026 and wraps its redraws in `?2026h … ?2026l` under every shape.
+
+So a click on a link's words opens it in a Codex tab, local or remote: a remote tab's
+TUI runs on the Mac with this same env (§16, ADR-0039), not behind tmux on the machine.
+That click in a built Koloft was not driven for Codex; it goes through the one terminal
+link handler every tab shares, which AGY§27 drove.
+
