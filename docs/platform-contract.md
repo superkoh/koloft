@@ -1986,13 +1986,26 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
     105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
-- **tmux 3.3a drops a pane's OSC 8 links** under Koloft's tmux.conf: muse wrote 160
-  `ESC ] 8 ; ; <url>` links into a pane and 0 reached the outer terminal (5 of 5 runs;
-  2026-11-08, Debian 12's tmux 3.3a in Docker, the client started with
-  `TERM=xterm-256color` from a python pty as the outer terminal). Whether 3.3a knows
-  the `hyperlinks` feature that the conf's `terminal-features ',xterm*:RGB:hyperlinks'`
-  names was not checked (`set -asq` hides an unknown one); later tmux versions were not
-  run.
+- **OSC 8 links from a pane reach the outer terminal from tmux 3.4 on, and only with the
+  `hyperlinks` terminal feature.** Under Koloft's tmux.conf a pane that wrote 160
+  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out, each around its
+  own words, on 3.4, 3.5a and 3.8, 5 of 5 runs each; tmux adds its own `id=` to each one
+  (`ESC ] 8 ; id=tmux1 ; <url>`). Without the conf's `terminal-features
+  ',xterm*:RGB:hyperlinks'` line, 3.4 got 0 out (3 of 3), and `#{client_termfeatures}`
+  lacked `hyperlinks`.
+  - **tmux 3.3a drops them all**: 0 of 160, from a printing script as from muse 1.4.11
+    (5 of 5 runs each). 3.3a keeps the `hyperlinks` line in `terminal-features` but
+    does not know the feature: `#{client_termfeatures}` has no `hyperlinks`.
+  - **Wrapped for passthrough (`ESC P tmux; ESC ESC ] 8 ; ; <url> BEL ESC \`), 3.3a lets
+    each link's start and end through but not around its words**: 160 starts and 160
+    ends arrived, 0 of them around their text, because a passthrough goes out as soon as
+    tmux reads it and the text only at the end of that read (see the DEC 2026 bullet
+    above).
+
+  (2026-11-08 for muse on 3.3a; 2026-11-09 for the rest: Docker, Debian 12's 3.3a,
+  Ubuntu 24.04's 3.4, Debian 13's 3.5a, 3.8 built from its release tarball; the client
+  started with `TERM=xterm-256color` from a python pty answering like xterm.js; the
+  same script printed the links outside tmux and all 160 arrived on each.)
 
 ## §36 ccstatusline
 
