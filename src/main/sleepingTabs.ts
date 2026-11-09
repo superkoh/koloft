@@ -1,5 +1,6 @@
+import type { SessionInfo } from '@shared/types'
 import type { OpenTab } from './openTabs'
-import { typedPieces, withoutMouseAndFocusReports } from './typeKeys'
+import { bracketedPaste, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
 
 export interface SleepingTabsDeps {
   write(tabId: string, data: string): void
@@ -7,11 +8,7 @@ export interface SleepingTabsDeps {
   type(tabId: string, keys: string[]): void
 }
 
-export interface LiveTab {
-  tabId: string
-  sessionId: string
-  alive: boolean
-}
+export type LiveTab = Pick<SessionInfo, 'tabId' | 'sessionId' | 'alive'>
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
 
@@ -76,8 +73,10 @@ export class SleepingTabs {
     return woken
   }
 
-  holdsTyping(tabId: string): boolean {
-    return this.typedWhileAsleep.has(tabId)
+  heldPaste(tabId: string, text: string, typedAfter = ''): boolean {
+    if (!this.typedWhileAsleep.has(tabId)) return false
+    this.write(tabId, bracketedPaste(text) + typedAfter)
+    return true
   }
 
   write(tabId: string, data: string): void {

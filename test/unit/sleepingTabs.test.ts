@@ -79,12 +79,27 @@ describe('SleepingTabs — typing into a tab that is asleep', () => {
     expect(typed).toEqual([])
   })
 
+  it('a paste into a sleeping tab waits with the typing as one bracketed paste, followed by what was typed after it', async () => {
+    const { sleepers, typed, becomeReady } = makeSleepers()
+    sleepers.add('old', tab('s1'))
+    expect(sleepers.heldPaste('old', 'pasted\rtext', '\r')).toBe(true)
+    sleepers.settle([live('new', 's1')])
+    await becomeReady('new')
+    expect(typed).toEqual([{ tabId: 'new', keys: [PASTE, '\r'] }])
+  })
+
+  it('a paste into a tab that is not asleep is left for the tab itself', () => {
+    const { sleepers, writes } = makeSleepers()
+    expect(sleepers.heldPaste('t', 'text')).toBe(false)
+    expect(writes).toEqual([])
+  })
+
   it('a tab forgotten while asleep keeps nothing of what was typed into it', () => {
     const { sleepers, writes } = makeSleepers()
     sleepers.add('old', tab('s1'))
     sleepers.write('old', 'x')
     sleepers.forget('old')
-    expect(sleepers.holdsTyping('old')).toBe(false)
+    expect(sleepers.heldPaste('old', 'p')).toBe(false)
     sleepers.write('old', 'y')
     expect(writes).toEqual([{ tabId: 'old', data: 'y' }])
   })
@@ -135,12 +150,13 @@ describe('SleepingTabs — after the wake', () => {
 })
 
 describe('SleepingTabs — tabs restored asleep at launch', () => {
-  it('each gets its own tab id, found again by its session', () => {
-    const { sleepers } = makeSleepers()
+  it('each gets its own tab id, found again by its session, and holds what is typed into it', () => {
+    const { sleepers, writes } = makeSleepers()
     const a = sleepers.addRestored(tab('s1'))
     const b = sleepers.addRestored(tab('s2'))
     expect(a).not.toBe(b)
     expect(sleepers.tabOf('s2')).toBe(b)
-    expect(sleepers.holdsTyping(a)).toBe(true)
+    sleepers.write(a, 'held')
+    expect(writes).toEqual([])
   })
 })

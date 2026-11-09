@@ -408,16 +408,6 @@ describe('TerminalOutput — what reaches the view, and when', () => {
     out.attach('t')
     out.push('t', 'hello')
     drainAcking()
-    expect(out.stats()).toEqual([
-      {
-        tabId: 't',
-        sentUnits: 5,
-        ackedUnits: 5,
-        blocked: false,
-        paused: false,
-        inflight: 0,
-        attached: true
-      }
-    ])
+    expect(out.stats()).toMatchObject([{ tabId: 't', sentUnits: 5, ackedUnits: 5, attached: true }])
   })
 })

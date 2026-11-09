@@ -520,7 +520,7 @@ import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
+import { clicksTheMouse, pressesAKey, typeKeys } from './typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
   claudeDialog,
@@ -6345,8 +6345,7 @@ function registerIpc(): void {
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
     ownerTouchedTheScreen(id)
-    if (sleepers.holdsTyping(id))
-      return sleepers.write(id, bracketedPaste(text) + (typedAfter ?? ''))
+    if (sleepers.heldPaste(id, text, typedAfter)) return
     return ptyMgr.paste(id, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
