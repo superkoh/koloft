@@ -57,8 +57,8 @@ import {
 } from './helpers/remote'
 import { codexAnswers, type CodexWireLine } from './helpers/codex'
 import { openSettings } from './helpers/extensions'
-import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
-import { identityOf } from '../../src/shared/sessionBackend'
+import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
+import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
@@ -85,7 +85,7 @@ const DEADLINE_FIRED_SETTLE_MS = 1_500
 
 function seedConductor(
   env: E2EEnv,
-  backend: 'claude' | 'codex',
+  backend: BackendId,
   extra: Partial<DiscordSettings> = {}
 ): void {
   seedSettings(env, {
@@ -98,6 +98,43 @@ function seedConductor(
       ...extra
     }
   })
+}
+
+function installLocalAgents(env: E2EEnv, backends: BackendId[]): void {
+  if (backends.includes('codex')) installCodex(env)
+  if (backends.includes('muse')) {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+  }
+  if (backends.includes('agy')) {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+  }
+}
+
+function museTyped(env: E2EEnv, sessionId: string): string[] {
+  const file = path.join(
+    env.home,
+    '.local',
+    'share',
+    'muse',
+    'sessions',
+    'fake',
+    `${sessionId}.json`
+  )
+  const s = JSON.parse(fileText(file) || '{"items":[]}') as {
+    items: { kind: string; text: string }[]
+  }
+  return s.items.filter((i) => i.kind === 'userMessage').map((i) => i.text)
+}
+
+async function bindAgyButler(env: E2EEnv, fake: FakeDiscord): Promise<void> {
+  fake.say(OWNER, 'hello there')
+  await expect
+    .poll(() => butlerSessionOnDisk(env)?.sessionIds.length ?? 0, {
+      timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+    })
+    .toBe(1)
 }
 
 function said(fake: FakeDiscord): string[] {
@@ -1471,85 +1508,104 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  for (const conductor of ['claude', 'codex'] as const)
-    for (const child of ['claude', 'codex'] as const)
-      test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor’s tab was closed: its first message names the conductor’s id for koloft session send, which opens the conductor again and delivers the report marked with who sent it`, async ({
-        env
-      }) => {
-        installCodex(env)
-        seedConductor(env, conductor)
-        const fake = await startFakeDiscord(env)
-        const { app, page } = await connected(env, fake)
-        try {
-          fake.say(
-            OWNER,
-            `/koloft session new --backend ${child} --workspace ws-a -- report back when done`
-          )
-          const childRow = wsRows(page, 'ws-a').first()
-          await expect(childRow).toHaveClass(/st-(waiting|idle)/, {
-            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-          })
-          await childRow.click()
-          const conductorId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
-          const handover = `koloft session send ${conductorId} "<your result>"`
-          if (child === 'claude')
-            expect(readAllCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()
-          else
-            expect(
-              codexServerArgs(env).some(
-                (a) =>
-                  a.startsWith('developer_instructions=') &&
-                  a.includes(JSON.stringify(handover).slice(1, -1))
-              )
-            ).toBe(true)
-
-          const conductorPid = (): number | undefined =>
-            (conductor === 'claude' ? readAllCalls(env) : codexCalls(env))
-              .filter((c) => c.sessionId === conductorId)
-              .at(-1)?.pid
-          const closedPid = conductorPid()!
-          const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.butler
-          )!.tabId
-          await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
-          await expect
-            .poll(() => processAlive(closedPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-            .toBe(false)
-          await expect
-            .poll(async () =>
-              (await page.evaluate(() => window.api.sessions.list())).some(
-                (s) => s.butler && s.alive
-              )
+  for (const [conductor, child] of [
+    ['claude', 'claude'],
+    ['claude', 'codex'],
+    ['codex', 'claude'],
+    ['codex', 'codex'],
+    ['muse', 'muse'],
+    ['agy', 'agy'],
+    ['claude', 'agy'],
+    ['codex', 'muse']
+  ] as const)
+    test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor’s tab was closed: its first message names the conductor’s id for koloft session send, which opens the conductor again and delivers the report marked with who sent it`, async ({
+      env
+    }) => {
+      installLocalAgents(env, [conductor, child])
+      seedConductor(env, conductor)
+      const fake = await startFakeDiscord(env)
+      const { app, page } = await connected(env, fake, 1, conductor !== 'agy')
+      try {
+        if (conductor === 'agy') await bindAgyButler(env, fake)
+        fake.say(
+          OWNER,
+          `/koloft session new --backend ${child} --workspace ws-a -- report back when done`
+        )
+        const childRow = wsRows(page, 'ws-a').first()
+        await expect(childRow).toHaveClass(/st-(waiting|idle)/, {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        await childRow.click()
+        const conductorId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+        const handover = `koloft session send ${conductorId} "<your result>"`
+        if (child === 'claude')
+          expect(readAllCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()
+        else if (child === 'codex')
+          expect(
+            codexServerArgs(env).some(
+              (a) =>
+                a.startsWith('developer_instructions=') &&
+                a.includes(JSON.stringify(handover).slice(1, -1))
             )
-            .toBe(false)
+          ).toBe(true)
+        else
+          expect(
+            (child === 'muse' ? museCalls(env) : agySessionCalls(env)).some((c) =>
+              c.argv.some((a) => a.includes(handover))
+            )
+          ).toBe(true)
 
-          const liveChildTab = async (): Promise<string | undefined> =>
-            (await page.evaluate(() => window.api.sessions.list())).find(
-              (s) => s.alive && !s.butler
-            )?.tabId
-          await expect.poll(liveChildTab).toBeTruthy()
-          const childTab = (await liveChildTab())!
-          await expect.poll(() => terminalText(page, childTab)).not.toBe('')
-          await page.evaluate(
-            ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-            [childTab, `/koloft session send ${conductorId} all done`]
-          )
-          await expect
-            .poll(() => terminalText(page, childTab))
-            .toContain('Will deliver when Alfred is ready.')
-          const conductorGot = (): string[] =>
-            conductor === 'claude'
-              ? peerMessages(env)
-              : codexQueued(env).map(([, text]) => text ?? '')
-          await expect
-            .poll(() => conductorGot().join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-            .toMatch(/\(From the session ".+", id \S+:\) all done/)
-          expect(conductorPid()).not.toBe(closedPid)
-        } finally {
-          await quitAndClose(app)
-          await fake.close()
+        const conductorLaunches = (): { pid: number }[] => {
+          if (conductor === 'agy') {
+            const all = agySessionCalls(env)
+            return [all[0], ...all.filter((c) => c.argv.includes(`--conversation=${conductorId}`))]
+          }
+          const calls = { claude: readAllCalls, codex: codexCalls, muse: museCalls }[conductor](env)
+          return calls.filter((c) => c.sessionId === conductorId)
         }
-      })
+        const conductorPid = (): number | undefined => conductorLaunches().at(-1)?.pid
+        const closedPid = conductorPid()!
+        const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.butler
+        )!.tabId
+        await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
+        await expect
+          .poll(() => processAlive(closedPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe(false)
+        await expect
+          .poll(async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some((s) => s.butler && s.alive)
+          )
+          .toBe(false)
+
+        const liveChildTab = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)
+            ?.tabId
+        await expect.poll(liveChildTab).toBeTruthy()
+        const childTab = (await liveChildTab())!
+        await expect.poll(() => terminalText(page, childTab)).not.toBe('')
+        await page.evaluate(
+          ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+          [childTab, `/koloft session send ${conductorId} all done`]
+        )
+        await expect
+          .poll(() => terminalText(page, childTab))
+          .toContain('Will deliver when Alfred is ready.')
+        const conductorGot = (): string[] => {
+          if (conductor === 'claude') return peerMessages(env)
+          if (conductor === 'codex') return codexQueued(env).map(([, text]) => text ?? '')
+          if (conductor === 'muse') return museTyped(env, conductorId)
+          return [agyPrompts(env, conductorId)]
+        }
+        await expect
+          .poll(() => conductorGot().join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toMatch(/\(From the session ".+", id \S+:\) all done/)
+        expect(conductorPid()).not.toBe(closedPid)
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+      }
+    })
 
   test('a conductor never goes to sleep, while a session left idle just as long does', async ({
     env
@@ -1576,30 +1632,43 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  for (const backend of ['claude', 'codex'] as const) {
+  for (const backend of SESSION_BACKENDS) {
     test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running, a plain gh in its own folder too`, async ({
       env
     }) => {
-      if (backend === 'codex') installCodex(env)
+      installLocalAgents(env, [backend])
       seedConductor(env, backend)
       const ghLog = installGhForWorkspaceA(env, '{"state":"MERGED"}')
       const fake = await startFakeDiscord(env)
-      const { app, page } = await connected(env, fake)
+      const { app, page } = await connected(env, fake, 1, backend !== 'agy')
       try {
+        if (backend === 'agy') await bindAgyButler(env, fake)
         fake.say(OWNER, '/koloft gh auth token')
-        fake.say(OWNER, '/sh gh auth token')
+        fake.say(OWNER, backend === 'agy' ? '/bash gh auth token' : '/sh gh auth token')
         fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {
             timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
           })
           .toBe('pr merge 389 --squash --repo acme/app\n')
-        if (backend === 'claude') {
-          const conductorTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
+        const butlerKey = butlerSessionOnDisk(env)!.sessionIds[0]
+        const conductorTab = await tabOf(page, butlerKey)
+        if (backend === 'claude')
           await expect
             .poll(() => terminalText(page, conductorTab))
             .toMatch(/runs gh's own[\s\S]*sh exit=[1-9][\s\S]*\{"state":"MERGED"\}/)
+        if (backend === 'muse') {
+          await expect
+            .poll(() => terminalText(page, conductorTab))
+            .toMatch(/runs gh's own[\s\S]*\{"state":"MERGED"\}/)
+          expect(museSaid(env, identityOf(butlerKey).nativeSessionId)).toContain(
+            'Ran: gh auth token'
+          )
         }
+        if (backend === 'agy')
+          await expect
+            .poll(async () => (await terminalText(page, conductorTab)).match(/runs gh's own/g))
+            .toHaveLength(2)
       } finally {
         await quitAndClose(app)
         await fake.close()
