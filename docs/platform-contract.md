@@ -343,10 +343,6 @@ method. A recheck adds its date, version and command to the bullet.
   guest's render process, or typed inside an extension's action popup, never passes it;
   only `input-event` sees an injected one. A key that `before-input-event` does not
   `preventDefault` still reaches `input-event`.
-- **xterm.js turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
-  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
-  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
-  (2026-11-09).
 
 ## §8 `<webview>`: attach, load and lifecycle
 
@@ -1096,6 +1092,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
   `background:#000`, a black box over a themed terminal while typing through an IME.
+- **xterm turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
+  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
+  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
+  (2026-11-09).
 
 ## §22 xterm.js input method (IME) defects
 

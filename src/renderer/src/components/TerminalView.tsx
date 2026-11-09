@@ -13,7 +13,7 @@ import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
-import { commandKeyLineEdit } from '@shared/lineEditKeys'
+import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -22,6 +22,18 @@ const ACK_FLUSH_AT_UTF16_UNITS = 64 * 1024
 const ACK_FLUSH_AFTER_MS = 100
 const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
 export const NO_FOCUS_SIGNAL = 0
+
+// CC§12 CODEX§25 MUSE§17 AGY§15 PLATFORM§2 PLATFORM§21
+const COMMAND_KEY_LINE_EDITS = new Map([
+  ['ArrowLeft', TO_LINE_START],
+  ['ArrowRight', TO_LINE_END],
+  ['Backspace', CLEAR_TO_LINE_START]
+])
+
+function commandKeyLineEdit(e: KeyboardEvent): string | undefined {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return undefined
+  return COMMAND_KEY_LINE_EDITS.get(e.key)
+}
 
 export function TerminalView({
   id,
@@ -341,15 +353,15 @@ export function TerminalView({
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
         return false
       }
-      const lineEdit = commandKeyLineEdit(e)
+      if (e.type === 'keydown') pendingPunct = false
+      const lineEdit = composing ? undefined : commandKeyLineEdit(e)
       if (lineEdit !== undefined) {
         if (e.type === 'keydown') {
           e.preventDefault()
-          window.api.terminal.write(id, lineEdit)
+          term.input(lineEdit, true)
         }
         return false
       }
-      if (e.type === 'keydown') pendingPunct = false
       // PLATFORM§22
       if (ta && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
         const cc = e.key.charCodeAt(0)

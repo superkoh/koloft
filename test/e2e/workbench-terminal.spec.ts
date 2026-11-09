@@ -501,7 +501,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(termBodies(page)).toHaveCount(1)
     })
 
-    test('T-WT-06b: ⌘←, ⌘→ and ⌘⌫ reach a terminal as Ctrl-A, Ctrl-E and Ctrl-U — line start, line end, delete to line start — while a plain ⌫ stays DEL', async ({
+    test('T-WT-06b: ⌘←, ⌘→ and ⌘⌫ reach a terminal as Ctrl-A, Ctrl-E and Ctrl-U — line start, line end, delete the line — while a plain ⌫ stays DEL', async ({
       app,
       page
     }) => {
