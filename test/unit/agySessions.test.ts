@@ -1498,6 +1498,38 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     ])
   })
 
+  it('an ask declined with Esc or 4 there, which sends the title script idle and no Stop, leaves waiting for approval at once', async () => {
+    const asking = { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const afterEsc = [idle, idle]
+    const afterFour = [asking, idle]
+    for (const declined of [afterEsc, afterFour]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        asking
+      ])
+      await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+      mirrored(id, declined)
+      expect(shown()).toEqual([
+        { type: 'prompt' },
+        { type: 'notify', need: 'approval' },
+        { type: 'stop' }
+      ])
+      expect(sessions.openApproval(id)).toBeUndefined()
+      await sessions.stop(id)
+    }
+  })
+
   it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {
     const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
