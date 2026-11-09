@@ -12,14 +12,11 @@ interface Hl {
   html: string[][]
 }
 
-function htmlByLineText(hl: Hl): Map<string, string> {
+function htmlByLineText(code: string, html: string[] = []): Map<string, string> {
   const byText = new Map<string, string>()
-  hl.codes.forEach((code, k) =>
-    code.split('\n').forEach((text, j) => {
-      const html = hl.html[k]?.[j]
-      if (html != null) byText.set(text, html)
-    })
-  )
+  code.split('\n').forEach((text, j) => {
+    if (html[j] != null && !byText.has(text)) byText.set(text, html[j])
+  })
   return byText
 }
 
@@ -43,14 +40,19 @@ export const InlineDiff = memo(function InlineDiff({
   const lang = langForPath(src)
   const codes = useMemo(() => (hasDel ? [newText, oldText] : [newText]), [newText, oldText, hasDel])
   useEffect(() => {
-    if (truncated) return
+    if (truncated) {
+      setHl(null)
+      return
+    }
     const owner = colorQueue.current
     let cancelled = false
     highlightLinesOffThread(owner, codes, lang)
       .then((html) => {
         if (!cancelled) setHl({ lang, codes, html })
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setHl(null)
+      })
     return () => {
       cancelled = true
       dropQueuedColoring(owner)
@@ -58,10 +60,11 @@ export const InlineDiff = memo(function InlineDiff({
   }, [codes, lang, truncated])
 
   const rowsHtml = useMemo<(string | null)[]>(() => {
-    if (!hl || hl.lang !== lang || truncated) return shown.map(() => null)
-    if (hl.codes.length !== codes.length || hl.codes.some((c, k) => c !== codes[k])) {
-      const byText = htmlByLineText(hl)
-      return shown.map((r) => byText.get(r.text) ?? null)
+    if (!hl || hl.lang !== lang) return shown.map(() => null)
+    if (hl.codes !== codes) {
+      const newByText = htmlByLineText(hl.codes[0], hl.html[0])
+      const oldByText = htmlByLineText(hl.codes[1] ?? '', hl.html[1])
+      return shown.map((r) => (r.kind === 'del' ? oldByText : newByText).get(r.text) ?? null)
     }
     const [newHtml, oldHtml = []] = hl.html
     let ni = 0
@@ -72,7 +75,7 @@ export const InlineDiff = memo(function InlineDiff({
       oi++
       return newHtml[ni++] ?? ''
     })
-  }, [shown, hl, lang, codes, truncated])
+  }, [shown, hl, lang, codes])
 
   // PLATFORM§25
   const rowHtmlObjs = useMemo<({ __html: string } | null)[]>(
