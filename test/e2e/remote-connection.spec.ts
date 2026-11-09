@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
@@ -50,7 +50,7 @@ const TMUX_ATTACH_SETTLE_MS = 2000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
-const TWO_SLEEP_WINDOWS_AND_A_MIRROR_PULL_MS = 10_000
+const ONE_SLEEP_WINDOW_AND_A_STOP_THERE_MS = 5000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -183,32 +183,26 @@ const remoteTabIds = (page: Page): Promise<string[]> =>
     rows.map((r) => r.getAttribute('data-tab-id') ?? '')
   )
 
-async function startAnotherOnTheMachine(
+const tabRow = (page: Page, tabId: string): Locator =>
+  page.locator(`.ws .ws-tab[data-tab-id="${tabId}"]`)
+
+async function startOneMoreOnTheMachine(
   page: Page,
   agent: (typeof EVERY_AGENT_ON_THE_MACHINE)[number]
 ): Promise<string> {
   const before = await remoteTabIds(page)
   if (agent.label === 'Claude') await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
   else await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
-  let tabId = ''
-  await expect
-    .poll(
-      async () => (tabId = (await remoteTabIds(page)).find((id) => !before.includes(id)) ?? ''),
-      {
-        timeout: 60_000
-      }
-    )
-    .not.toBe('')
+  await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(before.length + 1, { timeout: 60_000 })
+  const tabId = (await remoteTabIds(page)).find((id) => !before.includes(id))!
   if (agent.label === 'Antigravity') {
     await expect
       .poll(() => terminalText(page, tabId), { timeout: 90_000 })
       .toContain('Antigravity CLI')
+    await switchToRow(page, tabRow(page, tabId))
     await runIn(page, centerTerm(page), 'first words')
   }
-  await expect(page.locator(`.ws .ws-tab[data-tab-id="${tabId}"]`)).toHaveClass(
-    /\bst-(waiting|idle)\b/,
-    { timeout: 60_000 }
-  )
+  await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
   return tabId
 }
 
@@ -475,7 +469,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       }
     })
 
-    test(`a remote ${agent.label} session marked Keep running never goes to sleep for being idle — it keeps running on the machine and its row never turns cold — while an ordinary one beside it does`, async ({
+    test(`a remote ${agent.label} session marked Keep running never goes to sleep for being idle — it keeps running on the machine, never stopped and started again — while an ordinary one beside it does`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -486,28 +480,24 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       const { app, page } = await launchWithRemote(env)
       try {
         await addRemoteWorkspace(page, env)
-        await startOnTheMachine(page, agent)
-        const [residentTab] = await remoteTabIds(page)
-        const resident = page.locator(`.ws .ws-tab[data-tab-id="${residentTab}"]`)
+        const resident = tabRow(page, await startOneMoreOnTheMachine(page, agent))
         await resident.click({ button: 'right' })
         await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
         await expect(resident.locator('.ws-tab-resident')).toBeVisible()
         await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(1)
         const kept = there.runningThere(env)
 
-        const ordinaryTab = await startAnotherOnTheMachine(page, agent)
-        const ordinary = page.locator(`.ws .ws-tab[data-tab-id="${ordinaryTab}"]`)
+        const ordinary = tabRow(page, await startOneMoreOnTheMachine(page, agent))
         await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(2)
 
         await startSessionIn(page, 'ws-a', agent.install ? { method: 'Claude' } : {})
-        await wsRows(page, 'ws-a').first().click()
+        const launches = there.launches(env)
 
         await expect.poll(() => there.runningThere(env), { timeout: 60_000 }).toEqual(kept)
         await expect(ordinary).toHaveClass(/\bst-idle\b/)
-        await page.waitForTimeout(TWO_SLEEP_WINDOWS_AND_A_MIRROR_PULL_MS)
+        await page.waitForTimeout(ONE_SLEEP_WINDOW_AND_A_STOP_THERE_MS)
         expect(there.runningThere(env)).toEqual(kept)
-        await expect(resident).not.toHaveClass(/\bcold\b/)
-        await expect(resident.locator('.ws-tab-resident')).toBeVisible()
+        expect(there.launches(env)).toBe(launches)
       } finally {
         await quitAndClose(app)
       }
