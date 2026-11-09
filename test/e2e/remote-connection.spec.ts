@@ -203,6 +203,7 @@ async function startOneMoreOnTheMachine(
     await runIn(page, centerTerm(page), 'first words')
   }
   await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+  await expect(tabRow(page, tabId)).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
   return tabId
 }
 
