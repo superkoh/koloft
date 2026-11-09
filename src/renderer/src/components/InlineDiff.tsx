@@ -12,7 +12,7 @@ interface Hl {
   html: string[][]
 }
 
-function htmlByLineText(code: string, html: string[] = []): Map<string, string> {
+function htmlByLineText(code: string, html: string[]): Map<string, string> {
   const byText = new Map<string, string>()
   code.split('\n').forEach((text, j) => {
     if (html[j] != null && !byText.has(text)) byText.set(text, html[j])
@@ -62,9 +62,8 @@ export const InlineDiff = memo(function InlineDiff({
   const rowsHtml = useMemo<(string | null)[]>(() => {
     if (!hl || hl.lang !== lang) return shown.map(() => null)
     if (hl.codes !== codes) {
-      const newByText = htmlByLineText(hl.codes[0], hl.html[0])
-      const oldByText = htmlByLineText(hl.codes[1] ?? '', hl.html[1])
-      return shown.map((r) => (r.kind === 'del' ? oldByText : newByText).get(r.text) ?? null)
+      const [newByText, oldByText] = hl.codes.map((code, k) => htmlByLineText(code, hl.html[k]))
+      return shown.map((r) => (r.kind === 'del' ? oldByText : newByText)?.get(r.text) ?? null)
     }
     const [newHtml, oldHtml = []] = hl.html
     let ni = 0
