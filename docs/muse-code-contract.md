@@ -173,7 +173,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   macOS 1.4.10 the folder is `/tmp/tbh-<uid>-rt/muse/sessions` instead, the same file
   in the same shape, whatever `HOME`, `XDG_CONFIG_HOME` or `XDG_RUNTIME_DIR` say, beside
   the session sockets `ms-*.sock` (real Meta account, macOS, 2026-10: `lsof` on the
-  running TUI). Without it Koloft binds a resumed tab only at its first prompt.
+  running TUI). Without it Koloft binds a resumed tab only at its first prompt. macOS
+  1.4.14 started over ssh wrote it under `museHome` as on Linux, and nothing under
+  `/tmp/tbh-*` (§17). Whether the newer version or the ssh start made that difference
+  was not separated: a 1.4.14 TUI started at the Mac's own desktop was not tried, so
+  Koloft keeps looking in both folders.
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
 - A fresh TUI writes its file at launch, before any prompt, so its session exists from
@@ -619,7 +623,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   folder (mode 0600), and two folders hold two credentials. A finished device-code
   login with `TBH_CREDENTIAL_BACKEND=file` writes that same `auth.json`
   (`providers.meta` with an access token, the user's name and email) and nothing to
-  the Keychain (1.4.10, a real Meta account, macOS, 2026-10).
+  the Keychain (1.4.10, a real Meta account, macOS, 2026-10). macOS 1.4.14 over ssh read
+  an `auth.json` holding an API key already in the folder with or without the variable
+  (§17); one from a Meta-account login was not tried that way.
 - A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
   to the user's own files works: muse keeps each symlink and rewrites the file it
   points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
@@ -758,7 +764,11 @@ server of the opening note and with `--provider echo`; October 2026.
   and answers the 7501 query itself with the reply of §3 makes every state flow.
   The wrapper must not pass the query on. Re-sent to tmux as a DCS passthrough
   (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
-  terminal outside tmux when tmux has `set -g allow-passthrough on`.
+  terminal outside tmux when tmux has `set -g allow-passthrough on`, and on tmux before
+  3.3 with no setting at all (PLATFORM§35). Measured on tmux 3.2a and 2.6 (Ubuntu 22.04
+  and 18.04 in Docker, python 3.10 and 3.6 running the wrapper, muse 1.4.11 on
+  `--provider echo`, 2026-11-09): the states reached the outer terminal, the wrapper's
+  mirror file got the same ones, and the session was renamed for the bound session id.
 - Attaching to the tmux session again replays no 7501 frame.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
@@ -844,6 +854,36 @@ server of the opening note and with `--provider echo`; October 2026.
   machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
   `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
   back; 2026-11-05).
+- **A Mac as the other machine runs a remote Muse tab.** muse 1.4.14 (`1.4.14-R7309.1`,
+  official installer) in a macOS 26.6 VM reached over ssh, Homebrew's tmux 3.8 (`tmux
+  -V`), Koloft's own tab script, `ensure.sh`, tmux.conf, wrapper and hook script,
+  `--provider echo --trust-workspace` with muse's own approval and sandbox defaults, not
+  Koloft's flags (2026-11-09). `ensure.sh muse` exited 0. Run once by the Command Line Tools' python
+  3.9.6 and once by Homebrew's 3.15 (the tab's `PATH` puts `/opt/homebrew/bin` first),
+  the wrapper sent idle, working and done out through tmux and into its mirror, bound
+  the session from the registry under `museHome` (§4), and tmux renamed the session;
+  the hooks (`SessionStart`, `UserPromptSubmit`, `Stop`, `SubagentStart`/`Stop`) reached
+  the mirror through `bash "$HOME/…"`, and attaching again showed the screen. An
+  `auth.json` holding an API key, carried as `$T.auth.json` and moved into the
+  account's config folder by the tab script, signed `muse serve` in: `account/read`
+  answered `apiKey` / `stored key` in 0.6 s with `TBH_CREDENTIAL_BACKEND=file`, with no
+  Keychain prompt. Without the variable it answered the same, and no Keychain item
+  `ai.meta.dev.credentials` appeared. A real Meta account was not tried there.
+- **Where Muse's sandbox works, a command in it cannot write `~/.koloft`.** muse 1.4.14
+  under `--approval-judge off --sandbox-network enabled`, the TUI in tmux over ssh
+  (2026-11-09). On an Ubuntu 24.04 VM with `kernel.apparmor_restrict_unprivileged_userns`
+  at 0, `!touch ~/.koloft/hook-sessions/x` got `Read-only file system`, while the
+  workspace and `/tmp` took writes (the real `/tmp`, seen from outside). On the macOS VM
+  the same `!touch` got `Operation not permitted`, with `/tmp` and `$TMPDIR` writable.
+  The model's own `bash` tool (the fake model, Linux) is asked first only when the path is
+  in the command's own text: `touch $HOME/.koloft/hook-sessions/x; echo …` showed "Would
+  you like to run the following command?" (`blocked:kind=permission`, "Stage 1/2", the
+  `touch` argv), while a script on `PATH` that writes there (Koloft's `koloft`) ran with
+  no question and its write failed. A `bash` call marked `require_escalated` asked once
+  and, after `y`, ran outside the sandbox and the write went through.
+- **`--workspace <PATH>` adds no writable folder**: it takes one folder only, and given
+  twice muse refuses ("the argument '--workspace <WORKSPACE>' cannot be used multiple
+  times"; 1.4.14, Linux, 2026-11-09).
 
 ## §18 MCP servers and a project's instruction files
 
