@@ -864,6 +864,17 @@ server of the opening note and with `--provider echo`; October 2026.
   answered `apiKey` / `stored key` in 0.6 s with `TBH_CREDENTIAL_BACKEND=file`, with no
   Keychain prompt. Without the variable it answered the same, and no Keychain item
   `ai.meta.dev.credentials` appeared. A real Meta account was not tried there.
+- **Where Muse's sandbox works, a command in it cannot write `~/.koloft`.** muse 1.4.14
+  under `--approval-judge off --sandbox-network enabled`, the TUI in tmux over ssh
+  (2026-11-09). On an Ubuntu 24.04 VM with `kernel.apparmor_restrict_unprivileged_userns`
+  at 0, a `!` command and the model's own `bash` tool (the fake model) both got
+  `Read-only file system` for a file under `~/.koloft/hook-sessions`, while the workspace
+  and `/tmp` took writes (the real `/tmp`, seen from outside). On the macOS VM it was
+  `Operation not permitted`, with `/tmp` and `$TMPDIR` writable. Neither asked first: the
+  command just failed. A `bash` call marked `require_escalated` asked once
+  (`blocked:kind=permission`) and, after `y`, ran outside the sandbox and the write went
+  through. `--workspace <PATH>` takes one folder only (given twice, muse refuses: "cannot
+  be used multiple times"), so it adds no writable folder.
 
 ## §18 MCP servers and a project's instruction files
 

@@ -1,0 +1,8 @@
+[
+  [10, "!koloft session list; echo koloft-rc=$?"],
+  [11.5, "\r"],
+  [20, "!touch /tmp/koloft-probe-in-tmp; echo tmp-rc=$?"],
+  [21.5, "\r"],
+  [27, "!touch $HOME/.koloft/hook-sessions/touched-by-muse; echo touch-rc=$?"],
+  [28.5, "\r"]
+]

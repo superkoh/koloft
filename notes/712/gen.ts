@@ -6,6 +6,7 @@ import { ENSURE_SH, TMUX_CONF } from '../../src/main/remote/install'
 import { STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import { tabScript, machineToolProgram } from '../../src/main/remote/launch'
 import { remoteMachineDir } from '../../src/main/remote/paths'
+import { REMOTE_AGENT_SHIM } from '../../src/main/agentShim'
 
 const out = process.argv[2]
 const cwd = process.argv[3] ?? '/home/u/w'
@@ -15,6 +16,7 @@ writeFileSync(join(out, 'muse-wrap.py'), MUSE_WRAP_PY)
 writeFileSync(join(out, MUSE_HOOK_FILE), REMOTE_MUSE_HOOK_SH)
 writeFileSync(join(out, 'tmux.conf'), TMUX_CONF)
 writeFileSync(join(out, 'ensure.sh'), ENSURE_SH)
+writeFileSync(join(out, 'koloft'), REMOTE_AGENT_SHIM, { mode: 0o755 })
 writeFileSync(join(out, 'status-relay.py'), STATUS_RELAY_PY)
 writeFileSync(join(out, 'tab1.hooks.json'), remoteMuseHooks(`${remoteMachineDir('mac1')}/${MUSE_HOOK_FILE}`, 'tab1'))
 const run = museRunLines({

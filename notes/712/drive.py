@@ -14,6 +14,8 @@ os.makedirs(H + '/w', exist_ok=True)
 for name in ('muse-wrap.py', 'tmux.conf', 'muse-hook.sh'):
     shutil.copy(KIT + '/' + name, M + '/' + name)
 shutil.copy(KIT + '/tab1.hooks.json', H + '/.koloft/tabs/tab1.hooks.json')
+if os.path.exists(KIT + '/tab1.env'):
+    shutil.copy(KIT + '/tab1.env', H + '/.koloft/tabs/tab1.env')
 if os.path.exists(KIT + '/carry-auth.json'):
     shutil.copy(KIT + '/carry-auth.json', H + '/.koloft/tabs/tab1.auth.json')
 if os.path.exists(MIRROR):
@@ -23,6 +25,26 @@ with open(M + '/ensure.sh', 'w') as f:
 with open(M + '/docs-plugin/skills/koloft-docs/SKILL.md', 'w') as f:
     f.write('---\nname: koloft-docs\ndescription: probe\n---\nprobe\n')
 shutil.copy(KIT + '/tab1.sh', TAB)
+if os.path.exists(KIT + '/koloft'):
+    os.makedirs(M + '/bin', exist_ok=True)
+    shutil.copy(KIT + '/koloft', M + '/bin/koloft')
+    os.chmod(M + '/bin/koloft', 0o755)
+HOOKS = H + '/.koloft/hook-sessions'
+answered = []
+
+
+def answer_requests():
+    try:
+        names = os.listdir(HOOKS)
+    except OSError:
+        return
+    for name in names:
+        if name.startswith('req-') and name.endswith('.json') and name not in answered:
+            answered.append(name)
+            with open(os.path.join(HOOKS, name)) as f:
+                answered.append(f.read().strip())
+            with open(os.path.join(HOOKS, 'res-' + name[4:]), 'w') as f:
+                f.write('{"exit":0,"text":"pong from the stand-in for Koloft"}')
 
 env = dict(os.environ, TERM='xterm-256color', LANG=os.environ.get('DRIVE_LANG', 'C.UTF-8'))
 env.pop('TMUX', None)
@@ -42,6 +64,7 @@ def client(mode, seconds, keys=()):
     t0 = time.time()
     keys = list(keys)
     while time.time() - t0 < seconds:
+        answer_requests()
         while keys and time.time() - t0 >= keys[0][0]:
             os.write(fd, keys.pop(0)[1])
         r, _, _ = select.select([fd], [], [], 0.05)
@@ -57,7 +80,11 @@ def client(mode, seconds, keys=()):
 
 
 version = subprocess.run(['tmux', '-V'], stdout=subprocess.PIPE).stdout.decode().strip()
-pid, fd, out, took = client('start', END_AT, [(PROMPT_AT, b'hello probe'), (PROMPT_AT + 1.5, b'\r')])
+KEYS = [(PROMPT_AT, b'hello probe'), (PROMPT_AT + 1.5, b'\r')]
+if os.environ.get('KEYS_FILE'):
+    with open(os.environ['KEYS_FILE']) as f:
+        KEYS = [(t, k.encode()) for t, k in json.load(f)]
+pid, fd, out, took = client('start', END_AT, KEYS)
 time.sleep(1.5)
 result = {'tmux': version, 'python': sys.version.split()[0]}
 result['sessions'] = tmux('list-sessions', '-F', '#{session_name}')
@@ -69,6 +96,11 @@ result['outer_7501'] = [m.decode('latin1') for m in re.findall(rb'\x1b\]7501;[^\
 result['outer_dcs_tmux'] = out.count(b'\x1bPtmux;')
 result['outer_titles'] = [m.decode('latin1') for m in re.findall(rb'\x1b\][02];[^\x07\x1b]*', out)][:6]
 result['outer_bytes'] = len(out)
+result['answered'] = answered
+try:
+    result['hook_dir'] = sorted(os.listdir(HOOKS))
+except OSError as e:
+    result['hook_dir'] = str(e)
 result['outer_text'] = re.sub(rb'\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|P[^\x1b]*\x1b\\|[()][0-9A-Za-z]|[=>78DEHM])', b'', out).decode('utf-8', 'replace')[-2500:]
 for name in ('exit', 'screen'):
     try:
