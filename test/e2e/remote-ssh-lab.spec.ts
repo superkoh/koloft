@@ -444,7 +444,8 @@ async function typeAndSubmit(page: Page, session: RealSession, text: string): Pr
 }
 
 test.describe('remote workspaces against real sshd machines behind a company jump host (Docker)', () => {
-  test('E-SSH-01: with a key, through the jump host: connects before any session, lists and reads files, and a session starts and shows up', async ({
+  // PLATFORM§3
+  test("E-SSH-01: with a key, through the jump host: connects before any session, lists and reads files, and a session starts and shows up, its tab free of GNU tar's warnings about the files Koloft sent", async ({
     env
   }) => {
     await withLab(env, async ({ page }) => {
@@ -452,6 +453,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await connectsListsAndReads(page, 'kt-key', 'kuser')
       await startSessionIn(page, 'kt-key', { remote: true })
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/)
+      const { tabId } = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive
+      )!
+      const beforeTmux = await page.evaluate((id) => {
+        const b = (
+          window as unknown as {
+            __koloftTerms: Record<
+              string,
+              {
+                buffer: {
+                  normal: { length: number; getLine(i: number): { translateToString(): string } }
+                }
+              }
+            >
+          }
+        ).__koloftTerms[id].buffer.normal
+        return Array.from({ length: b.length }, (_, i) => b.getLine(i)!.translateToString()).join(
+          '\n'
+        )
+      }, tabId)
+      expect(beforeTmux).toContain('koloft:')
+      expect(beforeTmux).not.toContain('tar: ')
     })
   })
 

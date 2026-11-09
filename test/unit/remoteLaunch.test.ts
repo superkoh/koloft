@@ -221,7 +221,7 @@ describe('U-LINE-*: the launch line', () => {
     )
     const st = stage(r, { 'run.sh': 'echo hi\n' }, spec())
     for (const f of [path.join(st.pkg.dir, 'run.sh'), path.join(st.tabDir, 'T.json')]) {
-      spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
+      expect(spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f]).status).toBe(0)
     }
     const line = st.line()
     expect(line.match(/COPYFILE_DISABLE=1 tar cz?f -/g)?.length).toBe(
@@ -238,7 +238,10 @@ describe('U-LINE-*: the launch line', () => {
           spawnSync('/usr/bin/gzip', ['-dcf'], { input: fs.readFileSync(path.join(pushed, f)) })
             .stdout
       )
-    expect(streams).toHaveLength(2)
+    expect(streams.map((s) => ['run.sh', 'T.json'].filter((n) => s.includes(n))).sort()).toEqual([
+      ['T.json'],
+      ['run.sh']
+    ])
     for (const s of streams) expect(s.includes('LIBARCHIVE.xattr')).toBe(false)
   })
 
