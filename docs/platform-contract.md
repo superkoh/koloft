@@ -1988,8 +1988,9 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
 - **OSC 8 links from a pane reach the outer terminal from tmux 3.4 on, and only with the
   `hyperlinks` terminal feature.** Under Koloft's tmux.conf a pane that wrote 160
-  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out, each around its
-  own words, on 3.4, 3.5a and 3.8, 5 of 5 runs each; tmux adds its own `id=` to each one
+  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out on 3.4, 3.5a and
+  3.8, 5 of 5 runs each, and on 3.4 each around its own words (counted there only, 3 of 3
+  runs); tmux adds its own `id=` to each one
   (`ESC ] 8 ; id=tmux1 ; <url>`). Without the conf's `terminal-features
   ',xterm*:RGB:hyperlinks'` line, 3.4 got 0 out (3 of 3), and `#{client_termfeatures}`
   lacked `hyperlinks`.
