@@ -184,37 +184,37 @@ describe('flow watermarks — requirements, not implementation echoes', () => {
   })
 })
 
-function makeOutput(opts: { rendererUp?: boolean; sendHigh?: number } = {}): {
+function makeOutput(opts: { rendererUp?: boolean } = {}): {
   out: TerminalOutput
   sent: { id: string; data: string }[]
-  gate(id: string): FlowGate
   calls: string[]
+  drainAcking(): void
 } {
   vi.useFakeTimers()
   const sent: { id: string; data: string }[] = []
   const calls: string[] = []
-  const gates = new Map<string, FlowGate>()
-  const gate = (id: string): FlowGate => {
-    let g = gates.get(id)
-    if (!g) {
-      g = new FlowGate(
-        { onPause: () => calls.push(`pause ${id}`), onResume: () => calls.push(`resume ${id}`) },
-        opts.sendHigh
-      )
-      gates.set(id, g)
-    }
-    return g
-  }
+  let unacked: { id: string; data: string }[] = []
   const out = new TerminalOutput({
-    gate,
+    pause: (id) => calls.push(`pause ${id}`),
+    resume: (id) => calls.push(`resume ${id}`),
     send: (id, data) => {
       sent.push({ id, data })
+      unacked.push({ id, data })
       return true
     },
     rendererUp: () => opts.rendererUp ?? true,
     now: () => Date.now()
   })
-  return { out, sent, gate, calls }
+  const drainAcking = (): void => {
+    for (;;) {
+      vi.runAllTimers()
+      if (!unacked.length) return
+      const acks = unacked
+      unacked = []
+      for (const { id, data } of acks) out.ack(id, data.length)
+    }
+  }
+  return { out, sent, calls, drainAcking }
 }
 
 describe('TerminalOutput — what reaches the view, and when', () => {
@@ -223,8 +223,8 @@ describe('TerminalOutput — what reaches the view, and when', () => {
   })
 
   it('a key echo on an idle tab goes out at once; output right behind it goes as one, one frame after the echo', () => {
-    const { out, sent, gate } = makeOutput()
-    gate('t').attach()
+    const { out, sent } = makeOutput()
+    out.attach('t')
     out.push('t', 'a')
     expect(sent).toEqual([{ id: 't', data: 'a' }])
     vi.advanceTimersByTime(2)
@@ -239,16 +239,14 @@ describe('TerminalOutput — what reaches the view, and when', () => {
   })
 
   it('a backlog of many small reads leaves in full slices, one per tab per turn, in order and whole', () => {
-    const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
+    const { out, sent } = makeOutput()
     const read = 'y'.repeat(4000)
     for (let i = 0; i < 70; i++) {
       out.push('a', read)
       out.push('b', read)
     }
-    gate('a').attach()
-    gate('b').attach()
-    out.wake('a')
-    out.wake('b')
+    out.attach('a')
+    out.attach('b')
     vi.advanceTimersToNextTimer()
     expect(sent.map((s) => s.id)).toEqual(['a', 'b'])
     vi.advanceTimersToNextTimer()
@@ -272,9 +270,9 @@ describe('TerminalOutput — what reaches the view, and when', () => {
   })
 
   it("one tab draining a backlog does not hurry another tab's one-frame wait", () => {
-    const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
-    gate('a').attach()
-    gate('b').attach()
+    const { out, sent } = makeOutput()
+    out.attach('a')
+    out.attach('b')
     out.push('a', 'x'.repeat(FLOW_SLICE_UTF16_UNITS * 4))
     out.push('b', 'echo')
     vi.advanceTimersByTime(1)
@@ -293,46 +291,67 @@ describe('TerminalOutput — what reaches the view, and when', () => {
   })
 
   it('output from before the view attaches is held, then arrives in order once it attaches', () => {
-    const { out, sent, gate } = makeOutput()
+    const { out, sent } = makeOutput()
     out.push('t', 'prompt$ ')
     vi.advanceTimersByTime(100)
     out.push('t', 'more')
     vi.runAllTimers()
     expect(sent).toEqual([])
-    gate('t').attach()
-    out.wake('t')
+    out.attach('t')
     vi.runAllTimers()
     expect(sent).toEqual([{ id: 't', data: 'prompt$ more' }])
   })
 
+  it('a view that stops acking holds the rest back past the send window, and its acks let the rest out', () => {
+    const { out, sent, drainAcking } = makeOutput()
+    out.attach('t')
+    const flood = 'x'.repeat(FLOW_SEND_HIGH * 2)
+    out.push('t', flood)
+    vi.runAllTimers()
+    const before = sent.map((s) => s.data).join('').length
+    expect(before).toBeGreaterThan(FLOW_SEND_HIGH)
+    expect(before).toBeLessThan(flood.length)
+    drainAcking()
+    expect(sent.map((s) => s.data).join('')).toBe(flood)
+  })
+
+  it('an ack that is not a positive count is ignored', () => {
+    const { out, sent } = makeOutput()
+    out.attach('t')
+    out.push('t', 'x'.repeat(FLOW_SEND_HIGH * 2))
+    vi.runAllTimers()
+    const held = sent.length
+    for (const bad of [0, -FLOW_SEND_HIGH, NaN, Infinity, String(FLOW_SEND_HIGH)]) out.ack('t', bad)
+    vi.runAllTimers()
+    expect(sent).toHaveLength(held)
+  })
+
   it('an attached tab whose backlog passes the pause watermark pauses its pty, and resumes once it drains', () => {
-    const { out, gate, calls } = makeOutput({ sendHigh: Infinity })
-    gate('t').attach()
+    const { out, calls, drainAcking } = makeOutput()
+    out.attach('t')
     out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
     expect(calls).toEqual(['pause t'])
-    vi.runAllTimers()
+    drainAcking()
     expect(calls).toEqual(['pause t', 'resume t'])
   })
 
   it('a tab no view shows yet never pauses its pty: past its cap the oldest output goes and the newest stays', () => {
-    const { out, sent, gate, calls } = makeOutput()
+    const { out, sent, calls } = makeOutput()
     const half = HELD_FOR_AN_UNSEEN_TAB_MAX / 2
     out.push('t', 'a'.repeat(half))
     out.push('t', 'b'.repeat(half))
     out.push('t', 'newest')
     vi.runAllTimers()
     expect(calls).toEqual([])
-    gate('t').attach()
-    out.wake('t')
+    out.attach('t')
     vi.runAllTimers()
     expect(sent.map((s) => s.data).join('')).toBe('b'.repeat(half) + 'newest')
   })
 
   it('with no window to show it, output is dropped and never pauses the pty', () => {
-    const { out, sent, gate, calls } = makeOutput({ rendererUp: false })
+    const { out, sent, calls } = makeOutput({ rendererUp: false })
     out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 1))
-    gate('t').attach()
-    out.wake('t')
+    out.attach('t')
     vi.runAllTimers()
     expect(calls).toEqual([])
     expect(sent).toEqual([])
@@ -349,5 +368,56 @@ describe('TerminalOutput — what reaches the view, and when', () => {
       1
     ])
     expect(sent.map((s) => s.data).join('')).toBe(tail)
+  })
+
+  it('a tab that ends unpauses its pty, and a new pty on the same tab id waits for its view to attach again', () => {
+    const { out, sent, calls } = makeOutput()
+    out.attach('t')
+    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
+    out.end('t', false)
+    expect(calls).toEqual(['pause t', 'resume t'])
+    const before = sent.length
+    out.push('t', 'restarted$ ')
+    vi.runAllTimers()
+    expect(sent).toHaveLength(before)
+    out.attach('t')
+    vi.runAllTimers()
+    expect(sent.at(-1)).toEqual({ id: 't', data: 'restarted$ ' })
+  })
+
+  it('when the window goes, every paused pty resumes and held output is dropped; the new window starts each tab detached', () => {
+    const { out, sent, calls } = makeOutput()
+    out.attach('a')
+    out.push('a', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
+    out.push('b', 'unseen')
+    out.clear()
+    expect(calls).toEqual(['pause a', 'resume a'])
+    const before = sent.length
+    vi.runAllTimers()
+    out.push('a', 'after reload')
+    vi.runAllTimers()
+    expect(sent).toHaveLength(before)
+    out.attach('a')
+    out.attach('b')
+    vi.runAllTimers()
+    expect(sent.slice(before)).toEqual([{ id: 'a', data: 'after reload' }])
+  })
+
+  it('flow stats report each tab the view attached, with what was sent and acked', () => {
+    const { out, drainAcking } = makeOutput()
+    out.attach('t')
+    out.push('t', 'hello')
+    drainAcking()
+    expect(out.stats()).toEqual([
+      {
+        tabId: 't',
+        sentUnits: 5,
+        ackedUnits: 5,
+        blocked: false,
+        paused: false,
+        inflight: 0,
+        attached: true
+      }
+    ])
   })
 })
