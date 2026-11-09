@@ -16,7 +16,11 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
   const lifecycle = new TabLifecycle()
   subscribeTabSubsystems(lifecycle, {
     slash: { closed: say('slash.closed') },
-    attention: { clear: say('attention.clear') },
+    attention: {
+      clear: say('attention.clear'),
+      clearKeepingExit: say('attention.clearKeepingExit')
+    },
+    cdpTabClosed: say('cdpTabClosed'),
     claude: { onPtyExit: say('claude.onPtyExit') },
     tracker: { setAlive: say('tracker.setAlive') },
     storedOwnerOf: () => ({
@@ -47,6 +51,12 @@ const exitOf = (over: Partial<TabExit> = {}): TabExit => ({
 })
 
 describe('TabLifecycle', () => {
+  it('a tab whose process is being stopped, to close, restart or sleep, drops its attention mark but keeps its exit, and its CDP endpoint goes', () => {
+    const { lifecycle, calls } = wired()
+    lifecycle.emit('stopping', 't1')
+    expect(calls).toEqual(['attention.clearKeepingExit t1', 'cdpTabClosed t1'])
+  })
+
   it('an exit, asleep or not, makes each Discord part forget the tab', () => {
     for (const asleep of [false, true]) {
       const { lifecycle, calls } = wired()

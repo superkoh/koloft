@@ -24,6 +24,7 @@ type Term = {
   element?: HTMLElement
   dimensions?: { css: { cell: { height: number } } }
   onRender(cb: () => void): void
+  onResize(cb: () => void): void
   buffer: { active: { viewportY: number; baseY: number } }
   _core?: { coreService?: { decPrivateModes?: { synchronizedOutput?: boolean } } }
 }
@@ -33,11 +34,17 @@ async function countRenders(page: Page, id: string): Promise<void> {
     const w = window as unknown as {
       __koloftTerms: Record<string, Term>
       __renders?: Record<string, number>
+      __repaintedSinceResize?: Record<string, boolean>
     }
     w.__renders ??= {}
+    w.__repaintedSinceResize ??= {}
     w.__renders[tabId] = 0
     w.__koloftTerms[tabId].onRender(() => {
       w.__renders![tabId] += 1
+      w.__repaintedSinceResize![tabId] = true
+    })
+    w.__koloftTerms[tabId].onResize(() => {
+      w.__repaintedSinceResize![tabId] = false
     })
   }, id)
 }
@@ -46,6 +53,23 @@ function rendersOf(page: Page, id: string): Promise<number> {
   return page.evaluate(
     (tabId) => (window as unknown as { __renders: Record<string, number> }).__renders[tabId],
     id
+  )
+}
+
+function repaintedAfterRowCountChanged(
+  page: Page,
+  id: string,
+  rowsBefore: number
+): Promise<boolean> {
+  return page.evaluate(
+    ({ tabId, rowsBefore }) => {
+      const w = window as unknown as {
+        __koloftTerms: Record<string, Term>
+        __repaintedSinceResize: Record<string, boolean>
+      }
+      return w.__koloftTerms[tabId].rows !== rowsBefore && w.__repaintedSinceResize[tabId] === true
+    },
+    { tabId: id, rowsBefore }
   )
 }
 
@@ -92,12 +116,16 @@ test("a Claude Code tab's claude starts told to wrap every frame in sync output 
     await writeTo(page, tab, `\r\n${WIDE_LINE}\r\n`)
 
     const fitRenderDelay = async (dh: number): Promise<number> => {
-      const mark = await rendersOf(page, tab)
+      const { rows } = await screenOf(page, tab)
       await growWindowHeightBy(app, dh)
       const t0 = Date.now()
       await expect
-        .poll(() => rendersOf(page, tab), { timeout: 3000, intervals: [20] })
-        .toBeGreaterThan(mark)
+        .poll(() => repaintedAfterRowCountChanged(page, tab, rows), {
+          message: `the window resize changed the terminal's ${rows} rows and a repaint followed`,
+          timeout: 3000,
+          intervals: [20]
+        })
+        .toBe(true)
       return Date.now() - t0
     }
 

@@ -256,6 +256,11 @@ const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
 
+// AGY§27
+function withoutTheTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, TERM_PROGRAM: undefined }
+}
+
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
   if (permission === 'bypass') return ['--dangerously-skip-permissions']
@@ -357,7 +362,7 @@ function commandsOf(run: AgyRun, conversationId: string): [string, AgyCommand][]
   return [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
-// AGY§11 AGY§12
+// AGY§11 AGY§12 AGY§29
 function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined {
   if ('hook' in read) {
     if (read.hook.conversationId !== run.info?.nativeSessionId) return undefined
@@ -366,6 +371,7 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
+  if (agentState === 'idle' && run.shown === undefined) return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
     return {
       state: 'blocked',
@@ -665,6 +671,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         id: tabId,
         kind: 'agy',
         koloftShim: false,
+        finishEnv: withoutTheTerminalName,
         cwd,
         cols: opts.cols,
         rows: opts.rows,
@@ -1040,6 +1047,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.liveWrites = 0
     run.background = undefined
     run.waiting = undefined
+    run.shown = undefined
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)

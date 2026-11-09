@@ -18,7 +18,8 @@ import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
 import { parseUnifiedDiff } from '@shared/unifiedDiff'
-import { highlightCode, langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
+import { langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
 import '../artifactPane.css'
 
 interface Sym {
@@ -150,7 +151,7 @@ function CodeSource({
     if (!colored) return
     let cancelled = false
     const color = (): void => {
-      highlightCode(text, lang)
+      highlightCodeOffThread(text, lang)
         .then((html) => {
           if (!cancelled) setColors({ text, html })
         })
