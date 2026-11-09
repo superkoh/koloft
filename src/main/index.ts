@@ -1782,14 +1782,29 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  return butlerStart(
-    preferredAssistBackend(settings),
-    {
-      enabled: settings.sessionMethods.enabled,
-      installed: await installedBackends(),
-      accounts: listAccounts()
-    },
-    butlerNameNow()
+  const preferred = preferredAssistBackend(settings)
+  const inputs = {
+    enabled: settings.sessionMethods.enabled,
+    installed: await installedBackends(),
+    accounts: listAccounts()
+  }
+  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
+  if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
+  return choice
+}
+
+function logWhyButlerIsNotOn(
+  preferred: BackendId,
+  inputs: { installed: BackendAvailability[]; accounts: readonly AccountMeta[] },
+  said: string
+): void {
+  const installed = inputs.installed.find((b) => b.id === preferred)
+  const accounts = inputs.accounts
+    .filter((a) => ACCOUNT_KINDS_OF[preferred].includes(a.kind))
+    .map((a) => `${a.name} ${a.enabled ? a.status : 'turned off'}`)
+  console.error(
+    `[koloft] ${said} (${BACKEND_LABEL[preferred]}: ${installed?.available ? 'installed' : `not installed, ${installed?.reason}`}; accounts: ${accounts.join(', ') || 'none'})`
   )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
