@@ -1,1 +1,1 @@
-ESCALATE koloft session list
+touch $HOME/.koloft/hook-sessions/by-model; echo rc=$?

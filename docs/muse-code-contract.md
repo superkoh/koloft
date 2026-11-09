@@ -621,7 +621,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   folder (mode 0600), and two folders hold two credentials. A finished device-code
   login with `TBH_CREDENTIAL_BACKEND=file` writes that same `auth.json`
   (`providers.meta` with an access token, the user's name and email) and nothing to
-  the Keychain (1.4.10, a real Meta account, macOS, 2026-10).
+  the Keychain (1.4.10, a real Meta account, macOS, 2026-10). macOS 1.4.14 over ssh read
+  an `auth.json` already in the folder with or without the variable (§17).
 - A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
   to the user's own files works: muse keeps each symlink and rewrites the file it
   points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
@@ -867,13 +868,15 @@ server of the opening note and with `--provider echo`; October 2026.
 - **Where Muse's sandbox works, a command in it cannot write `~/.koloft`.** muse 1.4.14
   under `--approval-judge off --sandbox-network enabled`, the TUI in tmux over ssh
   (2026-11-09). On an Ubuntu 24.04 VM with `kernel.apparmor_restrict_unprivileged_userns`
-  at 0, a `!` command and the model's own `bash` tool (the fake model) both got
-  `Read-only file system` for a file under `~/.koloft/hook-sessions`, while the workspace
-  and `/tmp` took writes (the real `/tmp`, seen from outside). On the macOS VM it was
-  `Operation not permitted`, with `/tmp` and `$TMPDIR` writable. Neither asked first: the
-  command just failed. A `bash` call marked `require_escalated` asked once
-  (`blocked:kind=permission`) and, after `y`, ran outside the sandbox and the write went
-  through. `--workspace <PATH>` takes one folder only (given twice, muse refuses: "cannot
+  at 0, `!touch ~/.koloft/hook-sessions/x` got `Read-only file system`, while the
+  workspace and `/tmp` took writes (the real `/tmp`, seen from outside). On the macOS VM
+  the same `!touch` got `Operation not permitted`, with `/tmp` and `$TMPDIR` writable.
+  The model's own `bash` tool (the fake model, Linux) is asked first only when the path is
+  in the command's own text: `touch $HOME/.koloft/hook-sessions/x; echo …` showed "Would
+  you like to run the following command?" (`blocked:kind=permission`, "Stage 1/2", the
+  `touch` argv), while a script on `PATH` that writes there (Koloft's `koloft`) ran with
+  no question and its write failed. A `bash` call marked `require_escalated` asked once
+  and, after `y`, ran outside the sandbox and the write went through. `--workspace <PATH>` takes one folder only (given twice, muse refuses: "cannot
   be used multiple times"), so it adds no writable folder.
 
 ## §18 MCP servers and a project's instruction files
