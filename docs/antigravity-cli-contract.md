@@ -1462,6 +1462,27 @@ only downloaded the public release.
   one does. An ask: PreToolUse (the whole `toolCall`), then title `tool_use` with
   `tool_confirmation_pending:true`; after `1`: title `working`, PostToolUse,
   PreInvocation, Stop, `idle`.
+- **A declined ask tells the title script `idle` and fires no hook.** Esc or `4` on a
+  command ask ("Interrupted · What should Antigravity CLI do instead?", and with `4`
+  also "User declined the tool call"): the title script got `agent_state` `idle` with
+  the conversation id and no `tool_confirmation_pending`, 55–64 ms after Esc; after `4`
+  it first got the same `tool_use` line again (6–7 ms) and `idle` about 0.3 s after the
+  key. A second `idle` followed 0.3 s later after Esc. In the next 8 s no hook fired (no
+  PostToolUse, PostInvocation or Stop) and agy made no model call. The 7501 frames read
+  `blocked` then `idle`, no `done`, as in §10. 2026-11-09, agy 1.5.3 linux-arm64 from
+  the manifest (sha512 checked), Docker (`agy-a-img`: Debian 12, tmux 3.3a, no network,
+  plain user), API-key route on a fake Gemini server answering with a `run_command`, a
+  title script and every hook appending their stdin to a file, keys by `tmux send-keys`
+  2.5 s after the ask; 2 of 2 runs for each key. Not run over ssh; the title script and
+  hooks run inside agy, so ssh should not change what they get (inferred, not checked).
+- **Esc in the middle of a turn ends it the same way.** Same setup, the fake server
+  holding its answer 15 s, Esc 3 s after the prompt while the title said `working`: the
+  title script got `idle` 58–59 ms later and again 0.3 s after that; no hook in the next
+  20 s (no PostInvocation, no Stop); the 7501 frames read `working` then `idle`, no
+  `done`; the screen said "Interrupted · What should Antigravity CLI do instead?". On a
+  prompt the title script also gets an `idle` line 55–60 ms before the PreInvocation
+  hook runs; both are separate processes, so in a log both append to, the two may land
+  in either order (inferred, not checked). 2 of 2 runs.
 - Keys typed into the Mac side of `ssh -tt` answer a command ask (`1`) and a question
   (`2` picked option 2); so does `tmux send-keys`.
 - `node --no-warnings --experimental-sqlite` (22.12.0) run over ssh reads the shared
