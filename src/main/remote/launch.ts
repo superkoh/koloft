@@ -349,9 +349,11 @@ const NO_MACHINE_PACKAGE_EXIT = 97
 export function utilShellLine(s: UtilShellLineSpec): string {
   const m = `"$HOME/.koloft/${s.machine.name}"`
   const run = `test -d ${m} || exit ${NO_MACHINE_PACKAGE_EXIT}; sh ${m}/util.sh ${shq(s.dir)} ${s.tabId}`
-  const shell = `ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}" $COLUMNS $LINES"`
+  const ssh = `${s.sshOptions.join(' ')} ${shq(s.host)}`
+  const shell = `ssh -t ${ssh} ${shq(run)}" $COLUMNS $LINES"`
+  const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
-    `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ` +
+    `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
     `${pushMachine(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; clear; ${shell}; exit`
   )
 }
