@@ -413,6 +413,27 @@ printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin
     expect(m.calls('curl')).toEqual([])
   })
 
+  it('runs the python3 brew just installed, not the stub the shell already found, as on a Mac without the Command Line Tools', () => {
+    const m = machine()
+    forMuse(m, 'runs')
+    const bin = path.join(m.home, '.local', 'bin')
+    fs.rmSync(path.join(bin, 'python3'))
+    fs.rmSync(path.join(bin, 'apt-get'))
+    const stubLaterOnPath = path.join(m.home, '.koloft', 'node', 'bin')
+    fs.mkdirSync(stubLaterOnPath, { recursive: true })
+    fs.writeFileSync(path.join(stubLaterOnPath, 'python3'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    m.give(
+      'brew',
+      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'brew.log'))}
+printf '#!/bin/sh\\nexit 0\\n' > ${JSON.stringify(path.join(bin, 'python3'))}
+chmod +x ${JSON.stringify(path.join(bin, 'python3'))}`
+    )
+    const res = m.run('muse')
+    expect(m.calls('brew')).toEqual(['install python3'])
+    expect(res.stdout).not.toContain('Muse sessions need python3')
+    expect(res.status).toBe(0)
+  })
+
   it.skipIf(HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE.length > 0)(
     'on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs',
     () => {
