@@ -55,6 +55,44 @@ for (const remote of [false, true]) {
   })
 }
 
+for (const remote of [false, true]) {
+  // CC§2
+  test(`Esc on a ${remote ? 'remote ' : ''}Claude Code permission ask takes its row off waiting for approval at once, and Esc in the middle of a turn takes it off working at once, though Claude fires no Stop for either`, async ({
+    env
+  }) => {
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, workspace, { remote })
+      const row = wsRows(page, workspace).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const type = (keys: string): Promise<void> =>
+        page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId)).split('Interrupted · What should Claude do').length - 1
+
+      await type('/bash rm -rf build\r')
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+      await type('\x1b')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+      await type('/hold\r')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      await type('\x1b')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(2)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
 test('with no Codex and a slow Codex check, the first ⌘N picker after launch never offers another agent, before or after the check answers', async ({
   env
 }) => {

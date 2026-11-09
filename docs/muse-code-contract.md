@@ -298,6 +298,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   unsent; text typed next was added after it, and Enter sent both as a new turn
   (2026-10-31, muse 1.4.11, `koloft-muse-probe-1411` Docker image `--network none`,
   tmux 3.3a, the fake model server of the preamble). macOS: not probed.
+- **That Esc sends one `state=idle` frame, and no `done`, no `error` and no Stop.**
+  2026-11-09, `Muse Code 1.4.11 (1.4.11-R6667.1)`, the same image, `--network none`, muse in
+  a python3 pty (160×50) that answered the 7501 query with §3's reply and timestamped every
+  frame, `--trust-workspace --approval-judge off`, a fresh `XDG_CONFIG_HOME` and
+  `XDG_DATA_HOME` per run, hooks through `TBH_MANAGED_HOOKS_PATH`; the fake model server
+  sent only the SSE headers for the turn's request and then held it. Esc written alone 3 s
+  after `state=working`: muse closed the request 22–35 ms later and sent `state=idle`
+  30–50 ms after the key, then no frame in the next 10 s; `UserPromptSubmit` had fired,
+  `Stop` and `StopFailure` did not (4 of 4 runs). A held request that had already sent
+  `response.created` was not run.
 
 ## §8 Shell commands inside Muse (macOS)
 

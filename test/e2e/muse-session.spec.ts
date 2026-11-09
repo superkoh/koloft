@@ -147,6 +147,30 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§11
+  test('Esc on a command approval in a Muse tab declines it and takes its row off waiting for approval at once', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      const row = museRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await runIn(page, centerTerm(page), '/approve')
+      await expect(row).toHaveClass(/\bst-approval\b/)
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.term-wrap:visible')).toContainText('Denied: ls -la')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§7
   test('⇧⏎ in a Muse tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt', async ({
     env

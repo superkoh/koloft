@@ -372,6 +372,27 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
     }
   })
 
+  // MUSE§11
+  test('E-RM-13: Esc on an approval Muse asks for on the machine declines it and takes the row off waiting for approval at once', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteMuse(page, env)
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await runIn(page, centerTerm(page), '/approve')
+      await expect(row).toHaveClass(/\bst-approval\b/)
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      await page.evaluate((id) => window.api.terminal.write(id, '\x1b'), tabId)
+      await expect.poll(() => terminalText(page, tabId)).toContain('Denied: ls -la')
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const { title, unshareExit, shown } of [
     {
       title:

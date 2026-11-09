@@ -271,6 +271,12 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       stop(true)
     }
+    const interrupt = (thread, turn) => {
+      turn.status = 'interrupted'
+      threadsWorkingHere.delete(thread.id)
+      status(thread, { type: 'idle' })
+      event('turn/completed', { threadId: thread.id, turn })
+    }
     const complete = (thread, turn) => {
       if (turn.status === 'interrupted') return
       turn.status = 'completed'
@@ -503,7 +509,9 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         const { thread, turn } = pendingApproval
         pendingApproval = undefined
         status(thread, { type: 'active', activeFlags: [] })
-        complete(thread, turn)
+        // CODEX§3
+        if (frame.result?.decision === 'cancel') interrupt(thread, turn)
+        else complete(thread, turn)
         return
       }
       if (method === 'thread/list') {
@@ -649,12 +657,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       if (method === 'turn/interrupt') {
         result(id, {})
         pendingApproval = undefined
-        if (active && activeTurn) {
-          activeTurn.status = 'interrupted'
-          threadsWorkingHere.delete(active.id)
-          status(active, { type: 'idle' })
-          event('turn/completed', { threadId: active.id, turn: activeTurn })
-        }
+        if (active && activeTurn) interrupt(active, activeTurn)
         return
       }
       if (method === 'config/read') {
@@ -947,6 +950,8 @@ async function startTui() {
       turnId = frame.params.turn.id
     } else if (frame.method === 'turn/completed') {
       working = false
+      if (frame.params.turn.status === 'interrupted')
+        process.stdout.write('\r\n■ Conversation interrupted')
       process.stdout.write('\r\nCodex done\r\n> ')
     } else if (!frame.method && pending.has(frame.id)) {
       const waiting = pending.get(frame.id)
@@ -1007,7 +1012,7 @@ async function startTui() {
         for (const ch of part) {
           // CODEX§3
           if (approval && ['y', '1', '\u001b'].includes(ch)) {
-            const decision = ch === '\u001b' ? 'decline' : 'accept'
+            const decision = ch === '\u001b' ? 'cancel' : 'accept'
             ws.send(JSON.stringify({ id: approval, result: { decision } }))
             approval = undefined
             continue
@@ -1039,6 +1044,12 @@ async function startTui() {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()
             return 'stop'
+          }
+          // CODEX§20 CODEX§25
+          if (ch === '\u001b' && working) {
+            question = undefined
+            void send('turn/interrupt', { threadId: thread.id, turnId })
+            continue
           }
           // CODEX§2
           if (ch === '\r') {
