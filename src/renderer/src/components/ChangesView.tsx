@@ -15,7 +15,8 @@ import {
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { langForPath } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
@@ -996,7 +997,7 @@ function BlockSource({
   useEffect(() => {
     if (!seen || !text) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
+    highlightCodeOffThread(text, langForPath(path))
       .then((h) => {
         if (!cancelled) setHtml(h)
       })

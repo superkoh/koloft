@@ -1,11 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
-import { renderMarkdown } from '../../src/renderer/src/markdown/index'
+import { describe, it, expect } from 'vitest'
+import { renderBlocks } from '../../src/renderer/src/markdown/render'
 
-vi.mock('dompurify', () => ({
-  default: { sanitize: (html: string) => html, addHook: () => {} }
-}))
-
-const render = (text: string) => renderMarkdown(text, { srcPath: '/ws/a.md' })
+const render = async (text: string) => {
+  const doc = await renderBlocks(text, { srcPath: '/ws/a.md', token: 'T' })
+  return { html: doc.blocks.join('') }
+}
 
 function payloads(html: string): string[] {
   return [...html.matchAll(/data-code="([^"]*)"/g)].map((m) => m[1])

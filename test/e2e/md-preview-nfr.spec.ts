@@ -602,6 +602,9 @@ test.describe('Markdown preview non-functional discipline: inert, self-contained
 
     await openPath(page, env, file)
     await expect(artifactBody(page).locator('.code-body')).toBeVisible({ timeout: 30_000 })
+    await expect(artifactBody(page).locator('.code-body span[style]').first()).toBeAttached({
+      timeout: 30_000
+    })
     const codeView = await paletteOf(page, `${WORKBENCH.artifact} .code-body`)
     expect(luminance(codeView.bg)).toBeLessThan(textLuminance(codeView))
     expect(codeView.colors.length).toBeGreaterThanOrEqual(2)
@@ -615,6 +618,9 @@ test.describe('Markdown preview non-functional discipline: inert, self-contained
     await diffBtn.click()
     const idiff = artifactBody(page).locator('.idiff')
     await expect(idiff).toBeVisible({ timeout: 30_000 })
+    await expect(idiff.locator('.idiff-code span[style]').first()).toBeAttached({
+      timeout: 30_000
+    })
     const diffView = await paletteOf(page, `${WORKBENCH.artifact} .idiff`)
     expect(luminance(diffView.bg)).toBeLessThan(textLuminance(diffView))
     expect(diffView.colors.length).toBeGreaterThanOrEqual(2)

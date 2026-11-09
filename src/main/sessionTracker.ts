@@ -785,6 +785,7 @@ export class SessionTracker extends SessionRuntime {
           }
         }
       } else if (AGENT_TYPES.has(task.type)) {
+        // CC§8
         if (agentsFresh || toolCallInFlight) {
           observed = true
           run(task, 'agent', t.ledger.labelOf(task.id) ?? task.type)

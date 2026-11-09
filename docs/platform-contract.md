@@ -1966,6 +1966,13 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
     105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
+- **tmux 3.3a drops a pane's OSC 8 links** under Koloft's tmux.conf: muse wrote 160
+  `ESC ] 8 ; ; <url>` links into a pane and 0 reached the outer terminal (5 of 5 runs;
+  2026-11-08, Debian 12's tmux 3.3a in Docker, the client started with
+  `TERM=xterm-256color` from a python pty as the outer terminal). Whether 3.3a knows
+  the `hyperlinks` feature that the conf's `terminal-features ',xterm*:RGB:hyperlinks'`
+  names was not checked (`set -asq` hides an unknown one); later tmux versions were not
+  run.
 
 ## §36 ccstatusline
 
@@ -2079,6 +2086,14 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
+  (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
+  `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing
+  installed on top (2026-11-08, `docker run --rm <image> gzip --version`). Koloft's
+  machine package (3.4 MB as a plain tar, 0.67 MB gzipped) therefore goes over gzipped:
+  on the e2e ssh lab with 150 ms added to each round trip (`tc … netem delay 150ms` on
+  the machine), its push took 1.25 s instead of 1.41 s (median of 3; round trips, not
+  bytes, set most of it).
 
 ## §38 ssh through a JumpServer bastion
 

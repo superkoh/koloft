@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { test, expect } from './helpers/app'
+import { test, expect, pendingAttention } from './helpers/app'
 import type { Locator, Page } from '@playwright/test'
 import {
   centerTerm,
@@ -12,6 +12,7 @@ import {
   sendShortcut,
   startSessionIn,
   waitForCalls,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
@@ -57,6 +58,23 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<s
   await page.keyboard.press('Enter')
   await expect(page.locator(EDIT.dirty)).toBeVisible()
   return ed.configBody + MARKER + '\n'
+}
+
+async function theResumedStartupTurnIsOver(
+  page: Page,
+  sessionId: string,
+  restartedAt: number
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        (await pendingAttention(page)).some(
+          (e) => e.kind === 'turn-done' && e.sessionId === sessionId && e.at > restartedAt
+        ),
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+  await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }
 
 test.describe('File edit · unsaved work is never lost, and the ✎ that stays off', () => {
@@ -546,13 +564,16 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
     const [first] = await waitForCalls(env, 1)
+    await waitStartupTurnOver(page, 'ws-a')
 
     const mine = await dirtyEditor(page, fx.root, ed)
 
+    const restartedAt = Date.now()
     await sendShortcut(app, 'shortcut:restart-session')
     const calls = await waitForCalls(env, 2)
     const i = calls[1].argv.indexOf('--resume')
     expect(calls[1].argv[i + 1]).toBe(first.sessionId)
+    await theResumedStartupTurnIsOver(page, first.sessionId, restartedAt)
 
     await expect(fileTab(page)).toHaveCount(1, { timeout: 20_000 })
     await expect(page.locator('.wb-tab.on .dirty')).toHaveCount(1, { timeout: 20_000 })
