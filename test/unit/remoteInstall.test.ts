@@ -432,6 +432,7 @@ chmod +x ${JSON.stringify(path.join(bin, 'python3'))}`
     expect(m.calls('brew')).toEqual(['install python3'])
     expect(res.stdout).not.toContain('Muse sessions need python3')
     expect(res.status).toBe(0)
+    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
   })
 
   it.skipIf(HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE.length > 0)(
