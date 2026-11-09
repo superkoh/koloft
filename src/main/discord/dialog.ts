@@ -23,6 +23,7 @@ export interface CodexApproval {
   command?: string
   reason?: string
   file?: string
+  read?: true
   plan?: true
 }
 

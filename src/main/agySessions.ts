@@ -252,6 +252,8 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_file', 'edit_file'])
+// AGY§26
+const READING_TOOL = 'read_file'
 const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
@@ -1347,7 +1349,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.changedSoon()
   }
 
-  // AGY§12 AGY§13
+  // AGY§12 AGY§13 AGY§26
   private askFromHook(run: AgyRun, status: ProgramStatus): AgyAsk {
     const id = `hook:${Date.now()}`
     const tool = run.lastTool
@@ -1369,8 +1371,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       tool && !commandLine
         ? (argOf(tool.args, 'TargetFile') ?? argOf(tool.args, 'Path'))
         : undefined
+    const read = tool?.name === READING_TOOL ? ({ read: true } as const) : {}
     return {
-      approval: { id, command: commandLine ?? file ?? status.msg, ...(file ? { file } : {}) }
+      approval: {
+        id,
+        command: commandLine ?? file ?? status.msg,
+        ...(file ? { file, ...read } : {})
+      }
     }
   }
 
