@@ -1579,4 +1579,8 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   yet trusted agy showed its trust question, sent the 7501 frame
   `blocked:kind=permission` ("Trust this folder?") and the title `initializing`, and no
   `idle` while the question was up; Enter there picks "Yes, I trust this folder". A line
-  written before agy started was echoed by the tty and lost.
+  written before agy started was echoed by the tty and lost. Pasted with `\r` the same way
+  (1 run each): `/tmp/notes.txt summarize this` and `/nosuch do X` went to the model as
+  plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
+  installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
+  first line was `/zebra-skill do X` sent all three lines and the body.

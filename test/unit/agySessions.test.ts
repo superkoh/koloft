@@ -333,16 +333,18 @@ describe('AgySessions launch', () => {
     ])
   })
 
-  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names', async () => {
+  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names; until then nobody else is told the tab takes typing', async () => {
     const { id } = await launch({ firstPrompt: '/review do X' })
     expect(created[0].argv).not.toContain('-i')
     title(id, { conversation_id: '', agent_state: 'initializing' })
-    await hooksTaken(id)
+    say(id, state('idle'))
     expect(pty.write).not.toHaveBeenCalled()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
     title(id, { conversation_id: '', agent_state: 'idle' })
     title(id, { conversation_id: '', agent_state: 'idle' })
     await hooksTaken(id)
     expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review do X${ESC}[201~\r`]])
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
   })
 
   it('asks before every action by default, "edit without asking" starts accept-edits mode, and a resume opens the stored conversation with the permission it had', async () => {
