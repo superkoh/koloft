@@ -7,8 +7,20 @@ import '../inlineDiff.css'
 export const MAX_INLINE_ROWS = 5000
 
 interface Hl {
-  newHtml: string[]
-  oldHtml: string[]
+  lang: string
+  codes: string[]
+  html: string[][]
+}
+
+function htmlByLineText(hl: Hl): Map<string, string> {
+  const byText = new Map<string, string>()
+  hl.codes.forEach((code, k) =>
+    code.split('\n').forEach((text, j) => {
+      const html = hl.html[k]?.[j]
+      if (html != null) byText.set(text, html)
+    })
+  )
+  return byText
 }
 
 export const InlineDiff = memo(function InlineDiff({
@@ -29,33 +41,38 @@ export const InlineDiff = memo(function InlineDiff({
   const colorQueue = useRef({})
 
   const lang = langForPath(src)
+  const codes = useMemo(() => (hasDel ? [newText, oldText] : [newText]), [newText, oldText, hasDel])
   useEffect(() => {
-    setHl(null)
     if (truncated) return
     const owner = colorQueue.current
     let cancelled = false
-    highlightLinesOffThread(owner, hasDel ? [newText, oldText] : [newText], lang)
-      .then(([newHtml, oldHtml = []]) => {
-        if (!cancelled) setHl({ newHtml, oldHtml })
+    highlightLinesOffThread(owner, codes, lang)
+      .then((html) => {
+        if (!cancelled) setHl({ lang, codes, html })
       })
       .catch(() => {})
     return () => {
       cancelled = true
       dropQueuedColoring(owner)
     }
-  }, [newText, oldText, lang, truncated, hasDel])
+  }, [codes, lang, truncated])
 
   const rowsHtml = useMemo<(string | null)[]>(() => {
-    if (!hl) return shown.map(() => null)
+    if (!hl || hl.lang !== lang || truncated) return shown.map(() => null)
+    if (hl.codes.length !== codes.length || hl.codes.some((c, k) => c !== codes[k])) {
+      const byText = htmlByLineText(hl)
+      return shown.map((r) => byText.get(r.text) ?? null)
+    }
+    const [newHtml, oldHtml = []] = hl.html
     let ni = 0
     let oi = 0
     return shown.map((r) => {
-      if (r.kind === 'del') return hl.oldHtml[oi++] ?? ''
-      if (r.kind === 'add') return hl.newHtml[ni++] ?? ''
+      if (r.kind === 'del') return oldHtml[oi++] ?? ''
+      if (r.kind === 'add') return newHtml[ni++] ?? ''
       oi++
-      return hl.newHtml[ni++] ?? ''
+      return newHtml[ni++] ?? ''
     })
-  }, [shown, hl])
+  }, [shown, hl, lang, codes, truncated])
 
   // PLATFORM§25
   const rowHtmlObjs = useMemo<({ __html: string } | null)[]>(
