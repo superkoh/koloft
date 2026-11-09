@@ -2086,6 +2086,14 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
+  (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
+  `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing
+  installed on top (2026-11-08, `docker run --rm <image> gzip --version`). Koloft's
+  machine package (3.4 MB as a plain tar, 0.67 MB gzipped) therefore goes over gzipped:
+  on the e2e ssh lab with 150 ms added to each round trip (`tc … netem delay 150ms` on
+  the machine), its push took 1.25 s instead of 1.41 s (median of 3; round trips, not
+  bytes, set most of it).
 
 ## §38 ssh through a JumpServer bastion
 
