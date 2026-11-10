@@ -137,12 +137,20 @@ function withLoad(score: Score, liveSessions: number): Score {
   return { ...score, s1: score.s1 + liveSessions * SCORE_PER_LIVE_SESSION }
 }
 
+export interface UsageCache {
+  get(key: string): UsageSnapshot | undefined
+  set(key: string, usage: UsageSnapshot): unknown
+  delete(key: string): unknown
+}
+
 export class AccountPicker {
-  private cache = new Map<string, UsageSnapshot>()
   private inFlight: Promise<void> | null = null
   private rrCursor = 0
 
-  constructor(private deps: PickDeps) {}
+  constructor(
+    private deps: PickDeps,
+    private cache: UsageCache = new Map()
+  ) {}
 
   private key(a: AccountMeta): string {
     return `${a.kind}:${a.name.toLowerCase()}`
@@ -161,7 +169,7 @@ export class AccountPicker {
           if (!secret) return
           const result = await this.deps.probe(a, secret)
           this.deps.onProbeOutcome(a.name, a.kind, result)
-          if (result.ok && result.usage) this.cache.set(this.key(a), result.usage)
+          this.probed(a.kind, a.name, result)
         })
       )
     })().catch(() => {})
@@ -174,6 +182,11 @@ export class AccountPicker {
 
   cacheUsage(kind: AccountKind, name: string, usage: UsageSnapshot): void {
     this.cache.set(`${kind}:${name.toLowerCase()}`, usage)
+  }
+
+  probed(kind: AccountKind, name: string, result: ProbeResult): void {
+    if (result.ok && result.usage) this.cacheUsage(kind, name, result.usage)
+    else if (!result.ok && result.error === 'expired') this.forget(kind, name)
   }
 
   forget(kind: AccountKind, name: string): void {

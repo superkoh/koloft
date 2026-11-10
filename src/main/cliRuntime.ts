@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { LoginShellError, readLoginShell } from './loginShell'
+import { agentsInLoginShell, LoginShellError, type AgentCommand } from './loginShell'
 import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
@@ -15,7 +15,7 @@ export interface CliRuntime {
 }
 
 export interface CliSpec {
-  command: string
+  command: Exclude<AgentCommand, 'claude'>
   testCommandEnv: string
   name: string
   cliName: string
@@ -35,6 +35,14 @@ function executable(file: string): boolean {
   }
 }
 
+function fileOnPath(command: string, pathVar: string | undefined): string | undefined {
+  return (pathVar ?? '')
+    .split(':')
+    .filter(Boolean)
+    .map((dir) => path.join(dir, command))
+    .find(executable)
+}
+
 export async function resolveCliRuntime(
   spec: CliSpec,
   options: {
@@ -43,19 +51,16 @@ export async function resolveCliRuntime(
     timeoutMs?: number
   } = {}
 ): Promise<CliRuntime> {
-  const inherited = { ...(options.env ?? process.env) }
+  const given = options.env ?? process.env
+  const inherited = { ...given }
   const timeout = options.timeoutMs ?? 8000
   let binary = inherited.KOLOFT_TEST_BACKGROUND === '1' ? inherited[spec.testCommandEnv] : undefined
   let resolved = inherited
   if (!binary) {
     try {
-      const login = await readLoginShell({
-        shell: options.shell,
-        env: inherited,
-        timeoutMs: timeout,
-        probe: `command -v ${spec.command}`
-      })
-      binary = login.probed
+      const login = await agentsInLoginShell(given, options.shell)
+      const printed = login.commandV[spec.command]
+      binary = path.isAbsolute(printed) ? printed : fileOnPath(spec.command, login.env.PATH)
       resolved = login.env
       const offPath = spec.installedOffPath?.(resolved)
       if (!binary && offPath && executable(offPath)) binary = offPath
