@@ -281,12 +281,25 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
   })
 
   // CC§14
-  it('an approval takes 1 for yes; a plan takes Ctrl+U on each of its three rows in turn, then Shift+Tab, which approves it from any row without sending text left in its feedback row; both take Esc for no, and nothing else', () => {
+  it('an approval takes 1 for yes; a plan takes Ctrl+U on every row of a dialog of two to five rows, whichever row holds the highlight, before the Shift+Tab that approves it, so text left in its feedback row (the last, where Down wraps to the first) is never sent; both take Esc for no, and nothing else', () => {
     expect(claudeKeysFor(bash, 'yes')).toEqual({ ok: true, value: ['1'] })
-    expect(claudeKeysFor(plan, 'yes')).toEqual({
-      ok: true,
-      value: [CTRL_U, DOWN, CTRL_U, DOWN, CTRL_U, SHIFT_TAB]
-    })
+    const keys = claudeKeysFor(plan, 'yes')
+    if (!keys.ok) throw new Error(keys.error)
+    expect(keys.value.at(-1)).toBe(SHIFT_TAB)
+    for (const rows of [2, 3, 4, 5])
+      for (let start = 0; start < rows; start++) {
+        let row = start
+        let feedbackLeft = true
+        for (const key of keys.value.slice(0, -1)) {
+          if (key === DOWN) {
+            row = (row + 1) % rows
+            continue
+          }
+          expect(key).toBe(CTRL_U)
+          if (row === rows - 1) feedbackLeft = false
+        }
+        expect({ rows, start, feedbackLeft }).toEqual({ rows, start, feedbackLeft: false })
+      }
     for (const p of [bash, plan]) {
       expect(claudeKeysFor(p, 'no')).toEqual({ ok: true, value: ['\x1b'] })
       expect(claudeKeysFor(p, 'Add a test first.').ok).toBe(false)
