@@ -1495,7 +1495,7 @@ only downloaded the public release.
   one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
   runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
   which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
-  a remote agy tab starts agy through it) agy got `?2026;2$y`, wrote 63–64 frames,
+  a remote agy tab starts agy through it, with `AGY_CLI_OSC7501=off`) agy got `?2026;2$y`, wrote 63–64 frames,
   and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
   frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
   `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0
@@ -1576,6 +1576,19 @@ only downloaded the public release.
   `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
 - With nothing between tmux and agy, no OSC 7501 and no OSC 0/2 reach the Mac side
   through tmux (`set-titles` off); the title script's output lands in `#{pane_title}`.
+  Behind the status relay 7501 frames do reach it (above), unless agy runs with
+  `AGY_CLI_OSC7501=off` (§10).
+- **With `AGY_CLI_OSC7501=off` agy still frames its redraws behind the relay, and sends
+  no 7501.** Koloft's own remote tab script for agy (relay, `=off`) in tmux 3.3a: 69–70
+  `?2026h` frames reached the outer terminal, 1 of 59–60 scroll redraws drew anything
+  outside a frame, and 0 7501 frames came out (3 of 3 runs); with python3 made to fail,
+  so agy ran without the relay, 0 frames and 59 of 59 redraws outside one. With the
+  relay its process (whose command line carries agy's `--csrf_token` too) sat between
+  the pane and agy; in all 4 runs Koloft's send script, with the real `ps`, found agy and
+  `SendUserCascadeMessage` reached the model (§16). 2026-11-10, agy 1.5.4 linux-arm64
+  from the manifest (sha512 checked), Docker (`agy-a-img`: Debian 12, tmux 3.3a, no
+  network, plain user), API-key route on the fake Gemini server above, the same outer
+  python pty, 160-line answer and 60 wheel notches.
 - `rsync -a -m --inplace --delete` with includes `/*/`, `/*/.system_generated/`,
   `/*/.system_generated/logs/` and `/*/.system_generated/logs/transcript.jsonl` pulls
   just the per-conversation transcripts out of `brain/`.

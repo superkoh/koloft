@@ -16,6 +16,7 @@ import { REMOTE_COMPILE_CACHE, REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } 
 import { STATUS_RELAY_FILE } from './statusRelay'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
+const AGY_STATUS_FRAMES_ENV = 'AGY_CLI_OSC7501'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
 
 // AGY§8 AGY§19
@@ -101,7 +102,12 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `[ "$(readlink "$A/${rel}")" = "$G/${rel}" ] || { rm -rf "$A/${rel}"; ln -s "$G/${rel}" "$A/${rel}"; }`
   const seed = (file: string, target: string): string =>
     `[ -f "$T.${file}" ] && { [ -f "${target}" ] || mv "$T.${file}" "${target}"; rm -f "$T.${file}"; }`
-  const exported = [AGY_LOG_ENV, NOTICE_ENV, ...(s.start ? [AGY_START_ENV] : [])]
+  const exported = [
+    AGY_LOG_ENV,
+    NOTICE_ENV,
+    AGY_STATUS_FRAMES_ENV,
+    ...(s.start ? [AGY_START_ENV] : [])
+  ]
   const run = [
     // PLATFORM§35
     ...(s.banner ? [`printf '%s\\n' ${shq(s.banner)}`] : []),
@@ -116,6 +122,8 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
+    // AGY§10 AGY§29
+    `${AGY_STATUS_FRAMES_ENV}=off`,
     ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
     `export ${exported.join(' ')}`,
     `set -- agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`,
@@ -217,9 +225,8 @@ for (let size = 0; size !== tree.size; ) {
   size = tree.size
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
-const agy = procs.find(
-  (p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !p.args.includes('${STATUS_RELAY_FILE}')
-)
+const isTheRelay = (args) => (args.split(' ')[1] ?? '').endsWith('/${STATUS_RELAY_FILE}')
+const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !isTheRelay(p.args))
 if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
 function ports() {
