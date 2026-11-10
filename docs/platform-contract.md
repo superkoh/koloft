@@ -183,6 +183,13 @@ method. A recheck adds its date, version and command to the bullet.
   attribute (a quarantine flag is enough); `COPYFILE_DISABLE=1` turns this off. Pushed
   to another machine, claude reads `._settings.json` as a second, broken settings file.
   (Reproduced in a unit test with `xattr -w` and real macOS tar.)
+- **macOS `tar` also writes each extended attribute as a `LIBARCHIVE.xattr.<name>` pax
+  header, and GNU tar prints `Ignoring unknown extended header keyword` for each one**
+  as it unpacks. Every file a process here creates gets `com.apple.provenance`, so a
+  package of 5 files and its folder gave 6 such lines; `--no-xattrs` (after `cf -`)
+  leaves the headers out, and the same package then unpacked whole with no output on
+  `debian:bookworm-slim` (GNU tar 1.34) and `alpine:3` (BusyBox). (2026-11-09, bsdtar
+  3.5.3 on macOS 27, piped into `docker run -i <image> tar xzf -`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
