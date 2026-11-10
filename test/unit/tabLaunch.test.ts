@@ -52,6 +52,7 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import { trustCodexFolder } from '../../src/main/backends/codex'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { GithubLookup } from '../../src/main/github'
@@ -160,8 +161,11 @@ async function claudeTab(
   } as unknown as ClaudeBackendDeps)
   const r = await backend.create({ kind: 'claude', cwd, ...spec })
   if (!r.ok) throw new Error(`launch refused: ${r.code}`)
-  return [handed, filesUnder(regDir), filesUnder(userData)].join('\n')
+  return [handed, filesUnder(regDir), filesUnder(userData), ownFile('.claude.json')].join('\n')
 }
+
+const ownFile = (rel: string): string =>
+  fs.existsSync(path.join(home, rel)) ? fs.readFileSync(path.join(home, rel), 'utf8') : ''
 
 const machineTreeIo: TreeIo = {
   git: async (dir, args) =>
@@ -206,7 +210,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     events: () => {},
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
-    trustFolder: () => {},
+    trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     homeOf: () => undefined,
     assistOf: () => undefined,
@@ -229,7 +233,8 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     return [
       JSON.stringify({ argv, options }),
       said && fs.existsSync(said) ? fs.readFileSync(said, 'utf8') : '',
-      filesUnder(tabDirs)
+      filesUnder(tabDirs),
+      ownFile('codex-home/config.toml')
     ].join('\n')
   } finally {
     await sessions.stopAll()
@@ -361,6 +366,16 @@ const FEATURES: Record<
         dropped: ['HELPERS']
       },
       'Codex over SSH': CONDUCTORS_RUN_ON_THIS_MAC
+    }
+  },
+  trustFolder: {
+    spec: { trustFolder: true },
+    marker: 'trust',
+    on: {
+      'Claude Code on this Mac': { handed: ['"hasTrustDialogAccepted": true'] },
+      'Claude Code over SSH': { handed: ['hasTrustDialogAccepted:true'] },
+      'Codex on this Mac': { handed: ['trust_level = "trusted"'] },
+      'Codex over SSH': { handed: ['trust_level = "trusted"'] }
     }
   }
 }
