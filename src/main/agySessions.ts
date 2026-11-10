@@ -91,6 +91,7 @@ import {
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
 import { keepSkillsIn } from './agentPlugin'
+import { seedAssistMemory } from './assistMemory'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
@@ -199,6 +200,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
+  lastTitleState?: string
   statesBeforeBind?: ProgramStatus[]
   log: LineTail
   title?: AgyTitleState
@@ -255,6 +257,11 @@ const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_f
 const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = ['"schedule"', '"manage_task"', '"run_command"', '"PreInvocation"']
+
+// AGY§27
+function withoutTheTerminalName(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, TERM_PROGRAM: undefined }
+}
 
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
@@ -357,7 +364,7 @@ function commandsOf(run: AgyRun, conversationId: string): [string, AgyCommand][]
   return [...(run.commands ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
-// AGY§11 AGY§12
+// AGY§11 AGY§12 AGY§29
 function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined {
   if ('hook' in read) {
     if (read.hook.conversationId !== run.info?.nativeSessionId) return undefined
@@ -366,6 +373,13 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
     return undefined
   }
   const { agentState, confirmationPending } = read.title
+  const interruptedMidTurn = run.shown === 'working' && run.lastTitleState === 'working'
+  run.lastTitleState = agentState
+  if (
+    agentState === 'idle' &&
+    (run.shown === undefined || run.shown === 'blocked' || interruptedMidTurn)
+  )
+    return { state: 'idle' }
   if (agentState === 'tool_use' && confirmationPending)
     return {
       state: 'blocked',
@@ -600,6 +614,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const permission = this.permissionOf(opts)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
@@ -665,6 +680,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         id: tabId,
         kind: 'agy',
         koloftShim: false,
+        finishEnv: withoutTheTerminalName,
         cwd,
         cols: opts.cols,
         rows: opts.rows,
@@ -1040,6 +1056,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.liveWrites = 0
     run.background = undefined
     run.waiting = undefined
+    run.shown = undefined
+    run.lastTitleState = undefined
     run.stream?.close()
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
@@ -1377,14 +1395,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     } catch {}
     const waiting = names
       .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))
-      .filter((x) => x.meta.requestFeedback === true)
-      .map((x) => x.n.replace(/\.metadata\.json$/, ''))
-    const plan = waiting[0]
-    if (!plan) return
-    const askId = `plan:${id}:${plan}`
+      .find((x) => x.meta.requestFeedback === true)
+    if (!waiting) return
+    const plan = waiting.n.replace(/\.metadata\.json$/, '')
+    const askId = `plan:${id}:${plan}:${String(waiting.meta.updatedAt ?? '')}`
+    const text = readText(path.join(brain, plan))?.trim()
     run.waiting = {
       plan,
-      approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
+      approval: { id: askId, command: plan, ...(text && { reason: text }), plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
     this.changedSoon()

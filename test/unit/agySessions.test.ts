@@ -410,6 +410,18 @@ describe('AgySessions launch', () => {
     expect(sessions.trustsFolder(repo)).toBe(true)
   })
 
+  // AGY§32
+  it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
+    const memory = path.join(repo, 'AGENTS.md')
+    await launch()
+    expect(fs.existsSync(memory)).toBe(false)
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toMatch(/memory/)
+    fs.writeFileSync(memory, 'Favourite fruit: lychee.\n')
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
+  })
+
   // AGY§5
   it('trusts a worktree Koloft made in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders, but never a git worktree the person made', async () => {
     const recover = async (workspace: string, name: string, managed = true): Promise<string> => {
@@ -1309,11 +1321,12 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('approves a plan waiting for review by sending agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
+  it('a plan waiting for review carries its own text, and approving it sends agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
     apiAnswers = true
     trajectory = waitingStep({})
     const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
     fs.mkdirSync(brain, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'implementation_plan.md'), '# Plan\n\n1. Do the thing.\n')
     fs.writeFileSync(
       path.join(brain, 'implementation_plan.md.metadata.json'),
       JSON.stringify({ summary: 'x', requestFeedback: true })
@@ -1324,7 +1337,11 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     )
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
-    expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
+    expect(sessions.openApproval(id)).toMatchObject({
+      command: 'implementation_plan.md',
+      reason: '# Plan\n\n1. Do the thing.',
+      plan: true
+    })
     expect(await sessions.answer(id, 'yes')).toEqual({})
     expect(sent('SendUserCascadeMessage')).toEqual([
       {
@@ -1336,20 +1353,24 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('rejects a plan by pasting "[Rejected] <plan>" into agy when its API does not answer', async () => {
+  it('rejects a plan by pasting "[Rejected] <plan>" into agy when its API does not answer; the plan agy writes again after that is a new ask, so a card already shown for the old one does not hide it', async () => {
     const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
     fs.mkdirSync(brain, { recursive: true })
-    fs.writeFileSync(
-      path.join(brain, 'implementation_plan.md.metadata.json'),
-      JSON.stringify({ requestFeedback: true })
-    )
+    const sidecar = path.join(brain, 'implementation_plan.md.metadata.json')
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T1' }))
     const id = await boundTab()
     say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
-    expect(sessions.openApproval(id)).toMatchObject({ command: 'implementation_plan.md' })
+    const first = sessions.openApproval(id)
+    expect(first).toMatchObject({ command: 'implementation_plan.md' })
     await sessions.answer(id, 'no')
     expect(pty.write.mock.calls).toEqual([
       [id, '\x1b[200~[Rejected] implementation_plan.md\x1b[201~\r']
     ])
+
+    say(id, state('working'))
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T2' }))
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    expect(sessions.openApproval(id)?.id).not.toBe(first?.id)
   })
 
   it("delivers a message Koloft sends to the tab through agy's API, and says so when it could not", async () => {
@@ -1469,6 +1490,82 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       { type: 'prompt' },
       { type: 'notify', need: 'approval' },
       { type: 'prompt' },
+      { type: 'stop' }
+    ])
+  })
+
+  it('an ask declined with Esc or 4 there, which sends the title script idle and no Stop, leaves waiting for approval at once', async () => {
+    const asking = { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const afterEsc = [idle, idle]
+    const afterFour = [asking, idle]
+    for (const declined of [afterEsc, afterFour]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        asking
+      ])
+      await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+      mirrored(id, declined)
+      expect(shown()).toEqual([
+        { type: 'prompt' },
+        { type: 'notify', need: 'approval' },
+        { type: 'stop' }
+      ])
+      expect(sessions.openApproval(id)).toBeUndefined()
+      await sessions.stop(id)
+    }
+  })
+
+  it('a turn stopped with Esc there, which sends the title script idle and no Stop, ends once the title has said working, but not on the idle line every prompt sends just before or just after its PreInvocation', async () => {
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const working = { conversation_id: A, agent_state: 'working' }
+    const preInvocation = { event: 'PreInvocation', input: { conversationId: A } }
+    const idleFirst = [idle, preInvocation]
+    const idleAfter = [preInvocation, idle]
+    for (const prompt of [idleFirst, idleAfter]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        preInvocation,
+        { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+        idle,
+        ...prompt
+      ])
+      const firstTurnAndPrompt = [{ type: 'prompt' }, { type: 'stop' }, { type: 'prompt' }]
+      expect(shown()).toEqual(firstTurnAndPrompt)
+      mirrored(id, [working, idle, idle])
+      expect(shown()).toEqual([...firstTurnAndPrompt, { type: 'stop' }])
+      await sessions.stop(id)
+    }
+  })
+
+  it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    expect(shown()).toEqual([{ type: 'stop' }])
+    mirrored(id, [
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+      { conversation_id: A, agent_state: 'idle' },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(shown()).toEqual([
+      { type: 'stop' },
+      { type: 'prompt' },
+      { type: 'stop' },
       { type: 'stop' }
     ])
   })

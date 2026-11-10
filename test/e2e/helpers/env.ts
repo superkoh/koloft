@@ -322,6 +322,22 @@ export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
     .map((line) => JSON.parse(line) as AgyCall)
 }
 
+export interface AgyApiCall {
+  method: string
+  body: unknown
+  authorized: boolean
+}
+
+export function agyApiCalls(env: E2EEnv, home = env.home): AgyApiCall[] {
+  const file = path.join(home, 'fake-agy-api.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as AgyApiCall)
+}
+
 export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
   agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 
@@ -376,16 +392,24 @@ export function museCalls(env: E2EEnv): MuseCall[] {
     .map((line) => JSON.parse(line) as MuseCall)
 }
 
-export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
+function museItems(sessionId: string, home: string, kind: string): string[] {
   const file = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake', `${sessionId}.json`)
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       items: { kind: string; text: string }[]
     }
-    return s.items.filter((i) => i.kind === 'agentMessage').map((i) => i.text)
+    return s.items.filter((i) => i.kind === kind).map((i) => i.text)
   } catch {
     return []
   }
+}
+
+export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
+  return museItems(sessionId, home, 'agentMessage')
+}
+
+export function museTyped(env: E2EEnv, sessionId: string): string[] {
+  return museItems(sessionId, env.home, 'userMessage')
 }
 
 // MUSE§10

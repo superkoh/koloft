@@ -15,6 +15,7 @@ import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
+import { TRUST_CWD_JS } from './claudeTrustJs'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -143,6 +144,7 @@ export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
   claudeArgs: string[]
+  trustFolder?: boolean
 }
 
 // PLATFORM§35 MUSE§17
@@ -158,7 +160,7 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: claudeFirstRun(tab),
+    beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName
@@ -193,6 +195,10 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   ${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
   exec "$@"\n`
 }
+
+// CC§9 ADR-0026
+const trustTheLaunchFolder = (cwd: string): string =>
+  `( cd ${shq(cwd)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)
@@ -284,42 +290,45 @@ export function assertSafeNames(...names: string[]): void {
   if (!names.every((n) => NEEDS_NO_QUOTING_RE.test(n))) throw new Error('unsafe tab/session name')
 }
 
-function machineReady(s: {
+interface MachineTarget {
   host: string
   sshOptions: string[]
   machine: MachinePackage
   tabId: string
-}): string {
-  const opts = s.sshOptions.join(' ')
-  const host = shq(s.host)
+}
+
+// PLATFORM§37
+function pushMachine(s: MachineTarget): string {
   const m = s.machine.name
   const tmp = `m.tmp.${s.tabId}`
-  const probe = `ssh -n ${opts} ${host} 'test -d "$HOME/.koloft/${m}" && echo ok'`
-  const pushMachine =
-    `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.machine.dir)} . | ssh ${opts} ${host} ` +
+  return (
+    `COPYFILE_DISABLE=1 tar czf - -C ${shq(s.machine.dir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
     `'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf ${tmp} && mkdir ${tmp} ` +
-    `&& tar xf - -C ${tmp} && sh -c "test -d ${m} || mv ${tmp} ${m}; rm -rf ${tmp}"'`
-  return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; }`
+    `&& tar xzf - -C ${tmp} && sh -c "test -d ${m} || mv ${tmp} ${m}; rm -rf ${tmp}"'`
+  )
+}
+
+function machineReady(s: MachineTarget): string {
+  const probe = `ssh -n ${s.sshOptions.join(' ')} ${shq(s.host)} 'test -d "$HOME/.koloft/${s.machine.name}" && echo ok'`
+  return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine(s)}; }`
 }
 
 const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
 
-function pushTabDir(s: { host: string; sshOptions: string[]; tabDir: string }): string {
+const TAB_IN = 'koloft-tab-in'
+
+function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string {
   return (
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
-    `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
+    `'umask 077; test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
+    `&& tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
   )
 }
 
-export function tabPushed(s: {
-  host: string
-  sshOptions: string[]
-  machine: MachinePackage
-  tabId: string
-  tabDir: string
-}): string {
+export function tabPushed(s: MachineTarget & { tabDir: string }): string {
+  const pushTab = pushTabDirBesideMachine(s)
   return (
-    `${machineReady(s)} && ${pushTabDir(s)} ` +
+    `h=$(${pushTab}); case "$h" in *${TAB_IN}*) ;; *) ${pushMachine(s)} && ${pushTab} >/dev/null ;; esac ` +
     `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; rm -rf ${shq(s.tabDir)}; `
   )
 }

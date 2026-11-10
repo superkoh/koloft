@@ -703,6 +703,32 @@ export class CodexObservation {
       }
     } else if (
       (method === 'item/started' || method === 'item/completed') &&
+      item.type === 'subAgentActivity' &&
+      typeof item.agentThreadId === 'string' &&
+      item.agentThreadId !== root
+    ) {
+      // CODEX§4
+      const id = item.agentThreadId
+      const key = `agent:${id}`
+      if (item.kind === 'started') {
+        this.childRoots.set(id, root)
+        this.activities.set(key, {
+          id: key,
+          kind: 'agent',
+          label: `Agent ${id.slice(0, 8)}`,
+          state: 'working',
+          owner: id,
+          root,
+          visible: true
+        })
+        changed = true
+      } else if (item.kind === 'completed' || item.kind === 'interrupted') {
+        this.childRoots.delete(id)
+        this.childTurns.delete(id)
+        changed = this.activities.delete(key)
+      }
+    } else if (
+      (method === 'item/started' || method === 'item/completed') &&
       item.type === 'commandExecution' &&
       typeof item.id === 'string'
     ) {

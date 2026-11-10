@@ -68,7 +68,7 @@ export function registerWebglRepair(id: string, addon: WebglAddon, refresh: () =
   } catch {}
   live.get(id)?.offMerge()
   live.set(id, { addon, refresh, offMerge })
-  scheduleWebglRepair()
+  armRepair(false)
 }
 
 // PLATFORM§23

@@ -78,12 +78,26 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
   notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
   sees `TERM_PROGRAM=tmux` instead (§17).
+- **Those unframed redraws are small, and none was shown half drawn in a Koloft
+  terminal.** The same scroll recorded again (2026-11-09, same image and fake model,
+  `TERM_PROGRAM=Apple_Terminal`): run straight in the pty (3 runs) muse sent 228–231
+  redraws of 48.6–49.3 KB in all, 256–262 bytes for the middle one and 808 for the
+  largest; inside a tmux 3.3a pane (2 runs) the outer terminal got 170–171 of 40.4 KB,
+  246 and 645 bytes. Each recording was replayed 3 times, at its own pace, into a shell
+  tab of a built Koloft (xterm.js `6.1.0-beta.302`, WebGL), with a marker before and
+  after every redraw, once with nothing else running and once beside 6 shell tabs each
+  printing `seq 1 4000` every 30 ms (load 4.5–11): 0 of 703–1392 screen paints per
+  recording came between a redraw's start and end, and 0 redraws were split across two
+  writes to xterm, in all 10 replays.
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
   2026-10-29, 1.4.11 in the `koloft-muse-probe-1411` Docker image, `--provider echo`,
-  inside a tmux pane, the exit code read from the shell that started it. macOS: not
-  probed.
+  inside a tmux pane, the exit code read from the shell that started it. The same on
+  macOS: all five exited 0, 3 of 3 runs each (2026-11-09, 1.4.14 in a throwaway macOS
+  26.6.2 tart VM with no screen, `--provider echo --trust-workspace`, a python pty
+  answering the terminal's queries, each quit sent 10 s after launch with the input box
+  drawn, the code read by `waitpid`).
 
 ## §2 Where Muse keeps its data
 
@@ -173,7 +187,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   macOS 1.4.10 the folder is `/tmp/tbh-<uid>-rt/muse/sessions` instead, the same file
   in the same shape, whatever `HOME`, `XDG_CONFIG_HOME` or `XDG_RUNTIME_DIR` say, beside
   the session sockets `ms-*.sock` (real Meta account, macOS, 2026-10: `lsof` on the
-  running TUI). Without it Koloft binds a resumed tab only at its first prompt.
+  running TUI). Without it Koloft binds a resumed tab only at its first prompt. macOS
+  1.4.14 started over ssh wrote it under `museHome` as on Linux, and nothing under
+  `/tmp/tbh-*` (§17). Whether the newer version or the ssh start made that difference
+  was not separated: a 1.4.14 TUI started at the Mac's own desktop was not tried, so
+  Koloft keeps looking in both folders.
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
 - A fresh TUI writes its file at launch, before any prompt, so its session exists from
@@ -508,6 +526,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   53–70 ms later. A `y` at 0.4 s, 0.5 s, 0.7 s, 1.0 s (2) and 2.0 s (2) gave `working`
   32–77 ms later. So the frame leaving `blocked` says an answer was taken, and one muse
   missed leaves it at `blocked`.
+- **The same question asked again right after an answer comes after a `working` frame.**
+  Measured 2026-11-08 on `Muse Code 1.4.11` (`koloft-muse-probe-1411`,
+  `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, a python3 pty (160×50) answering the
+  cursor, colour and 7501 queries, `--approval-judge off --trust-workspace`, a fake
+  `/responses` model that answered the first question's result with the very same
+  one-question `request_user_input` at once; `2` then Enter 300 ms apart, 2.5 s after each
+  frame; 2 runs: `blocked:kind=question`, `working` 21–25 ms after the Enter, the second
+  `blocked:kind=question` 106–114 ms after that, `working`, `done`.
 - **A question takes the owner's own words, and several questions are answered in turn,
   then on a review page.** Measured 2026-10-29 on the Muse the TUI drew as `Muse Code
   1.4.11` (the `koloft-muse-probe-1411` image, launcher 1.4.14, `MUSE_NO_AUTO_UPDATE=1`),
@@ -611,7 +637,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   folder (mode 0600), and two folders hold two credentials. A finished device-code
   login with `TBH_CREDENTIAL_BACKEND=file` writes that same `auth.json`
   (`providers.meta` with an access token, the user's name and email) and nothing to
-  the Keychain (1.4.10, a real Meta account, macOS, 2026-10).
+  the Keychain (1.4.10, a real Meta account, macOS, 2026-10). macOS 1.4.14 over ssh read
+  an `auth.json` holding an API key already in the folder with or without the variable
+  (§17); one from a Meta-account login was not tried that way.
 - A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
   to the user's own files works: muse keeps each symlink and rewrites the file it
   points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
@@ -750,7 +778,11 @@ server of the opening note and with `--provider echo`; October 2026.
   and answers the 7501 query itself with the reply of §3 makes every state flow.
   The wrapper must not pass the query on. Re-sent to tmux as a DCS passthrough
   (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
-  terminal outside tmux when tmux has `set -g allow-passthrough on`.
+  terminal outside tmux when tmux has `set -g allow-passthrough on`, and on tmux before
+  3.3 with no setting at all (PLATFORM§35). Measured on tmux 3.2a and 2.6 (Ubuntu 22.04
+  and 18.04 in Docker, python 3.10 and 3.6 running the wrapper, muse 1.4.11 on
+  `--provider echo`, 2026-11-09): the states reached the outer terminal, the wrapper's
+  mirror file got the same ones, and the session was renamed for the bound session id.
 - Attaching to the tmux session again replays no 7501 frame.
 - **Inside tmux muse frames nothing.** muse asks no DECRQM 2026 and, in a tmux 3.3a pane
   (`TERM_PROGRAM=tmux`), wrote no `?2026h` while it streamed a 160-line answer and
@@ -836,6 +868,44 @@ server of the opening note and with `--provider echo`; October 2026.
   machine through real ssh and Koloft's tmux, answered a prompt, and `/copy` then put
   `echo: <prompt>` on the Mac clipboard (main's `clipboard.writeText` stubbed and read
   back; 2026-11-05).
+- **A Mac as the other machine runs a remote Muse tab.** muse 1.4.14 (`1.4.14-R7309.1`,
+  official installer) in a macOS 26.6 VM reached over ssh, Homebrew's tmux 3.8 (`tmux
+  -V`), Koloft's own tab script, `ensure.sh`, tmux.conf, wrapper and hook script,
+  `--provider echo --trust-workspace` with muse's own approval and sandbox defaults, not
+  Koloft's flags (2026-11-09). `ensure.sh muse` exited 0. Run once by the Command Line Tools' python
+  3.9.6 and once by Homebrew's 3.15 (the tab's `PATH` puts `/opt/homebrew/bin` first),
+  the wrapper sent idle, working and done out through tmux and into its mirror, bound
+  the session from the registry under `museHome` (§4), and tmux renamed the session;
+  the hooks (`SessionStart`, `UserPromptSubmit`, `Stop`, `SubagentStart`/`Stop`) reached
+  the mirror through `bash "$HOME/…"`, and attaching again showed the screen. An
+  `auth.json` holding an API key, carried as `$T.auth.json` and moved into the
+  account's config folder by the tab script, signed `muse serve` in: `account/read`
+  answered `apiKey` / `stored key` in 0.6 s with `TBH_CREDENTIAL_BACKEND=file`, with no
+  Keychain prompt. Without the variable it answered the same, and no Keychain item
+  `ai.meta.dev.credentials` appeared. A real Meta account was not tried there.
+- **Where Muse's sandbox works, a command in it cannot write `~/.koloft`.** muse 1.4.14
+  under `--approval-judge off --sandbox-network enabled`, the TUI in tmux over ssh
+  (2026-11-09). On an Ubuntu 24.04 VM with `kernel.apparmor_restrict_unprivileged_userns`
+  at 0, `!touch ~/.koloft/hook-sessions/x` got `Read-only file system`, while the
+  workspace and `/tmp` took writes (the real `/tmp`, seen from outside). On the macOS VM
+  the same `!touch` got `Operation not permitted`, with `/tmp` and `$TMPDIR` writable.
+  The model's own `bash` tool (the fake model, Linux) is asked first only when the path is
+  in the command's own text: `touch $HOME/.koloft/hook-sessions/x; echo …` showed "Would
+  you like to run the following command?" (`blocked:kind=permission`, "Stage 1/2", the
+  `touch` argv), while a script on `PATH` that writes there (Koloft's `koloft`) ran with
+  no question and its write failed. A `bash` call marked `require_escalated` asked once
+  and, after `y`, ran outside the sandbox and the write went through.
+- **`--workspace <PATH>` adds no writable folder**: it takes one folder only, and given
+  twice muse refuses ("the argument '--workspace <WORKSPACE>' cannot be used multiple
+  times"; 1.4.14, Linux, 2026-11-09).
+- **Ctrl+A, Ctrl+E and Ctrl+U typed through tmux edit the input box one line at a
+  time.** In `hello world` Ctrl+A went before `h`, Ctrl+E after the last letter, Ctrl+U
+  with the caret after the third letter deleted those three, and at the line's end
+  emptied it. In a two-line box (`one`, `\n`, `two`) Ctrl+A went to the start of the
+  second line; Ctrl+E then Ctrl+U emptied that line, and a second Ctrl+U on the empty
+  line did nothing (Claude Code's deletes the line break there, CC§12). 2026-11-09,
+  muse 1.4.11 `--provider echo --trust-workspace`, Linux arm64 in Docker
+  `--network none`, inside tmux 3.3a, keys sent with `send-keys -H`.
 
 ## §18 MCP servers and a project's instruction files
 
@@ -994,3 +1064,34 @@ Koloft dependents: the account folder's `settings.json` and `approval-policy.jso
 (`src/main/museAccounts.ts`); the Playwright variables, empty without the Workbench
 browser, in every muse Koloft starts on that folder (`museAccountEnv`) and in the shim's
 `muse exec` (`src/main/shim.ts`).
+
+## §22 Muse's own memory
+
+2026-11-07, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker `--network none`, the fake model
+server of the opening note, a new `muse exec --approval-mode never` process per step in a
+trusted plain folder (not a repository), every request saved and every file under HOME
+and `/tmp` compared before and after.
+
+- **The model gets three tools**, in a namespace `muse`: `read_memory {path, scope?,
+  offset?, limit?}`, `add_memory {path, content, scope?, description?, type?}` (creates
+  the file or appends to it), `edit_memory {path, old_str, new_str, scope?}`. `scope` is
+  `personal`, `personal_project` (the default) or `project`. The first developer message
+  says "Use persistent memory when the user asks you to remember something".
+- **Where it lands**: `personal_project` →
+  `~/.local/share/muse/memory/projects/<folder slug>-<hash>/MEMORY.md`, one per folder;
+  `personal` → `~/.local/share/muse/memory/personal/MEMORY.md`, every folder; `project`
+  → `<cwd>/.agents/memory/MEMORY.md`. Nothing under `XDG_CONFIG_HOME`.
+- **A new session gets it without asking**: a new process in the same folder carried each
+  scope's `MEMORY.md` text in its first developer message (`<system-reminder
+  source="memory-snapshot">`, `## Memory scope: personal_project\nMEMORY.md:\n- …`).
+  Another file in a scope shows only by name, under "Other Markdown files:".
+- **Another `XDG_CONFIG_HOME` keeps it**: the same folder with a different config home,
+  as when Koloft switches the Muse account (§2, §13), still got every scope's memory.
+- Not probed: whether `/clear` or `/new` in the TUI takes a fresh snapshot, a large
+  `MEMORY.md`, macOS (§2 puts the data folder in the same place), and a real model
+  choosing `add_memory` when told to remember.
+
+Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
+or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
+butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.

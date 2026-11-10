@@ -301,7 +301,8 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
             'AGY_CLI_OSC7501',
             'AGY_CLI_OSC7501_MESSAGES',
             'AGY_CLI_DISABLE_AUTO_UPDATE',
-            'GOOGLE_GEMINI_BASE_URL'
+            'GOOGLE_GEMINI_BASE_URL',
+            'TERM_PROGRAM'
           ].includes(k)
       )
     ),
@@ -2306,6 +2307,10 @@ function startApi() {
 }
 
 async function startTui() {
+  if (fs.existsSync(sentinel('fake-agy-exit'))) {
+    process.stderr.write('Antigravity fixture startup failure\n')
+    process.exit(Number(readSentinel('fake-agy-exit', '')) || 1)
+  }
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
   // PLATFORM§35
   if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)

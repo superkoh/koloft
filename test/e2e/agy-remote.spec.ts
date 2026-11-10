@@ -1,5 +1,7 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
@@ -11,6 +13,8 @@ import {
 import {
   centerTerm,
   chooseBackend,
+  gitCommitAll,
+  gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
   killSession,
@@ -40,7 +44,8 @@ import {
   machineAgyCalls,
   machineHome,
   remoteDir,
-  seedRemoteWorkspace
+  seedRemoteWorkspace,
+  sshCommands
 } from './helpers/remote'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -48,6 +53,7 @@ test.afterEach(({ env }) => killFakeRemote(env))
 
 const TURN_LONGER_THAN_A_MIRROR_PULL_MS = '5000'
 const BACKGROUND_COMMAND_OUTLASTING_MIRROR_PULLS_S = 15
+const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 
 const accountFolder = (env: E2EEnv): string =>
   path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
@@ -58,6 +64,74 @@ function setUp(env: E2EEnv): void {
   installRemoteAgy(env)
   seedRemoteWorkspace(env)
   seedSettings(env, { hintsOff: true })
+}
+
+const worktreeAddsOnTheMachine = (env: E2EEnv): number =>
+  sshCommands(env).filter((c) => c.includes("'worktree' 'add'")).length
+
+const machineTranscriptOf = (env: E2EEnv, id: string): string =>
+  agyTranscriptOf(env, id, path.join(machineHome(env), '.gemini'))
+
+function accountForgetsTrustIn(env: E2EEnv, tree: string): void {
+  const file = path.join(accountFolder(env), 'antigravity-cli', 'settings.json')
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { trustedWorkspaces: string[] }
+  const before = settings.trustedWorkspaces.length
+  settings.trustedWorkspaces = settings.trustedWorkspaces.filter(
+    (dir) => !fs.existsSync(dir) || fs.realpathSync(dir) !== fs.realpathSync(tree)
+  )
+  expect(settings.trustedWorkspaces.length).toBeLessThan(before)
+  fs.writeFileSync(file, JSON.stringify(settings))
+}
+
+async function coldRemoteAgyWorktreeRow(
+  app: ElectronApplication,
+  page: Page,
+  env: E2EEnv,
+  name: string
+): Promise<{ id: string; tree: string; row: ReturnType<typeof wsRows> }> {
+  await expect
+    .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+      timeout: 60_000
+    })
+    .toContain('New worktree session')
+  await openWorktreeSession(page, REMOTE_WS_NAME)
+  await worktreeDialog(page).locator('input').fill(name)
+  await chooseBackend(page, 'Antigravity')
+  await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+  const tree = machineAgyCalls(env)[0].cwd
+  await agyReady(page)
+  await runIn(page, centerTerm(page), `first words in ${name}`)
+  const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: `first words in ${name}` })
+  await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+  const { id } = await boundRemoteSession(page, 'agy')
+  fs.writeFileSync(path.join(tree, 'kept.txt'), 'committed on the branch')
+  gitCommitAll(tree)
+  await sendShortcut(app, 'shortcut:close-tab')
+  await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+  expect(fs.existsSync(tree)).toBe(true)
+  accountForgetsTrustIn(env, tree)
+  return { id, tree, row }
+}
+
+async function resumedInTreeTakingFirstLineAsPrompt(
+  page: Page,
+  env: E2EEnv,
+  id: string,
+  tree: string
+): Promise<void> {
+  await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
+  const resume = machineAgyCalls(env)[1]
+  expect(resume.argv).toContain(`--conversation=${id}`)
+  expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(tree))
+  expect((await boundRemoteSession(page, 'agy')).id).toBe(id)
+  await expect(page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })).toHaveCount(0)
+  await runIn(page, centerTerm(page), 'words after resuming')
+  await expect
+    .poll(() => machineTranscriptOf(env, id), { timeout: 60_000 })
+    .toContain('Answer to: words after resuming')
+  expect(await terminalText(page, (await boundRemoteSession(page, 'agy')).tabId)).not.toContain(
+    'Do you trust the contents of this project?'
+  )
 }
 
 test.describe('Antigravity sessions in a remote workspace, over the fake ssh with tmux and only the CLI faked', () => {
@@ -162,6 +236,47 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§5
+  test('a cold Antigravity worktree row in a remote workspace agy trusts resumes in its worktree on the machine, trusted there for it even on an account that never trusted that folder, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    setUp(env)
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { id, tree, row } = await coldRemoteAgyWorktreeRow(app, page, env, 'agy-cold')
+      await row.click()
+      await resumedInTreeTakingFirstLineAsPrompt(page, env, id, tree)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§5
+  test('a cold Antigravity worktree row whose worktree is gone from the machine rebuilds it there with git and resumes the same conversation in it, trusted there for it, so the first line typed is a prompt agy answers, not a reply to its trust question', async ({
+    env
+  }) => {
+    setUp(env)
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { id, tree, row } = await coldRemoteAgyWorktreeRow(app, page, env, 'agy-gone')
+      execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', '--force', tree])
+      expect(fs.existsSync(tree)).toBe(false)
+      const addsBefore = worktreeAddsOnTheMachine(env)
+      await row.click()
+      await resumedInTreeTakingFirstLineAsPrompt(page, env, id, tree)
+      expect(worktreeAddsOnTheMachine(env)).toBe(addsBefore + 1)
+      expect(fs.readFileSync(path.join(tree, 'kept.txt'), 'utf8')).toBe('committed on the branch')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§11 AGY§13
   test('a command agy leaves running in the background on the machine shows on its row breathing green with ↻, named by its command line, until it ends', async ({
     env
@@ -187,6 +302,59 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await page.keyboard.press('Escape')
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§29
+  test('a command ask declined with 4 in a remote Antigravity tab takes its row off waiting for approval at once, before any next turn', async ({
+    env
+  }) => {
+    setUp(env)
+    seedSettings(env, { skipPermissions: false })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.evaluate((t) => window.api.terminal.write(t, '/bash echo declined\r'), tabId)
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
+      await page.evaluate((t) => window.api.terminal.write(t, '4'), tabId)
+      await expect.poll(() => terminalText(page, tabId)).toContain('User declined the tool call')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§29
+  test('Esc in the middle of a turn in a remote Antigravity tab, which ends the turn with no Stop, takes its row off working at once, before any next turn', async ({
+    env
+  }) => {
+    setUp(env)
+    fs.writeFileSync(
+      path.join(machineHome(env), 'fake-agy-delay'),
+      MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'a long turn')
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      const { tabId } = await boundRemoteSession(page, 'agy')
+      await page.evaluate((t) => window.api.terminal.write(t, '\x1b'), tabId)
+      await expect.poll(() => terminalText(page, tabId)).toContain('Interrupted')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
@@ -402,6 +570,42 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       )
       expect(typedIntoAgy).toContain('first turn')
       expect(typedIntoAgy).not.toContain('hello from the mac')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§19
+  test('a plan a remote Antigravity session waits on is an Inbox card quoting the whole plan from the machine; Approve there tells agy on the machine the plan is approved', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), '/plan')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-approval\b/, {
+        timeout: 60_000
+      })
+      await page.locator('.ibx-entry').click()
+      const card = page.locator('.inbox-page .ibx-item', {
+        has: page.locator('.ibx-what', { hasText: 'asks you to approve a plan' })
+      })
+      await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
+      await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+      await expect
+        .poll(
+          () =>
+            machineAgyApiCalls(env)
+              .filter((c) => c.method === 'SendUserCascadeMessage')
+              .map((c) => JSON.stringify(c.body))
+              .join('\n'),
+          { timeout: 60_000 }
+        )
+        .toContain('[Approved] implementation_plan.md')
     } finally {
       await quitAndClose(app)
     }

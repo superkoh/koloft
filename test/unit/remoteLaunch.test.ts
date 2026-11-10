@@ -39,6 +39,7 @@ interface Remote {
   dir: string
   machineHome: string
   fail(call: number, code: number): void
+  greet(text: string): void
   argv(call: number): string[]
   calls(): number
   bin: string
@@ -76,6 +77,7 @@ last=""
 for a in "$@"; do last="$a"; done
 printf '%s\\n' "$@" > "$D/log.$n"
 [ -f "$D/exit.$n" ] && exit "$(cat "$D/exit.$n")"
+[ -f "$D/greeting" ] && cat "$D/greeting"
 [ "$1" = -tt ] && exec "$D/bin/fish" -n -c "$last"
 exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
 `,
@@ -86,6 +88,7 @@ exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
     bin,
     machineHome: path.join(dir, 'machine'),
     fail: (call, code) => fs.writeFileSync(path.join(dir, `exit.${call}`), String(code)),
+    greet: (text) => fs.writeFileSync(path.join(dir, 'greeting'), `${text}\n`),
     argv: (call) =>
       fs
         .readFileSync(path.join(dir, `log.${call}`), 'utf8')
@@ -131,6 +134,7 @@ const spec = ({
   settings = { hooks: {} },
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
+  trustFolder,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -142,7 +146,9 @@ const spec = ({
     banner: 'koloft: bravo',
     ...over
   }
-  return program ? { ...tab, program } : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin })
+  return program
+    ? { ...tab, program }
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -165,30 +171,45 @@ function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
 }
 
 describe('U-LINE-*: the launch line', () => {
-  it('pushes the machine package once, the tab package always, then runs the tab script, never letting ssh eat the terminal keystrokes', () => {
+  it('once the machine package is on the machine, a tab takes one ssh to push its package and one to run; before that the machine package goes first and the tab package after it, every ssh before the run reading a pipe and never the terminal keystrokes', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec())
     const first = typeLine(r, st.line())
 
     expect(first.status).toBe(0)
     expect(r.calls()).toBe(4)
-    expect(r.argv(1)).toContain('-n')
-    expect(r.argv(1).at(-1)).toContain('test -d')
+    expect(r.argv(2).at(-1)).toContain(st.pkg.name)
     expect(fs.readFileSync(koloft(r, st.pkg.name, 'run.sh'), 'utf8')).toBe('echo hi\n')
+    expect(r.argv(3).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
     expect(fs.readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')).toContain('new-session')
     expect(r.argv(4)).toContain('-tt')
     expect(r.argv(4).at(-1)).toContain(`T.sh" start`)
+    expect(first.stdout).not.toContain('koloft-tab-in')
     const credentialTabPackageLeftOnThisDisk = fs.existsSync(st.tabDir)
     expect(credentialTabPackageLeftOnThisDisk).toBe(false)
+    expect(
+      st.line().match(/\| ssh /g)?.length,
+      'every ssh before the tab script takes a tar on its input'
+    ).toBe(3)
 
     const st2 = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec({ tabId: 'T2' }))
     const again = typeLine(r, st2.line())
     expect(again.status).toBe(0)
-    expect(r.calls()).toBe(7)
-    expect(r.argv(5).at(-1)).toContain('test -d')
-    expect(r.argv(6).at(-1)).toContain('tar xf')
-    expect(r.argv(6).at(-1)).toContain('tabs')
-    expect(r.argv(7)).toContain('-tt')
+    expect(r.calls()).toBe(6)
+    expect(r.argv(5).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
+    expect(fs.existsSync(koloft(r, 'tabs', 'T2.sh'))).toBe(true)
+    expect(r.argv(6)).toContain('-tt')
+  })
+
+  it('on a machine whose login shell prints a greeting, the tab still starts and the machine package goes over only once', () => {
+    const r = remote()
+    r.greet('Welcome to the box')
+    const st = stage(r, { 'run.sh': 'x' }, spec())
+    expect(typeLine(r, st.line()).status).toBe(0)
+    expect(r.calls()).toBe(4)
+    const st2 = stage(r, { 'run.sh': 'x' }, spec({ tabId: 'T2' }))
+    expect(typeLine(r, st2.line()).status).toBe(0)
+    expect(r.calls()).toBe(6)
   })
 
   // PLATFORM§3
@@ -199,22 +220,27 @@ describe('U-LINE-*: the launch line', () => {
       spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
     }
     const line = st.line()
-    expect(line.match(/COPYFILE_DISABLE=1 tar cf -/g)?.length).toBe(2)
+    expect(line.match(/COPYFILE_DISABLE=1 tar cz?f -/g)?.length).toBe(
+      line.match(/tar cz?f -/g)?.length
+    )
 
     expect(typeLine(r, line).status).toBe(0)
     expect(fs.readdirSync(koloft(r, st.pkg.name)).filter((n) => n.startsWith('._'))).toEqual([])
     expect(fs.readdirSync(koloft(r, 'tabs')).filter((n) => n.startsWith('._'))).toEqual([])
   })
 
-  it('stops when a push fails — never a bare login shell dressed up as Claude', () => {
-    const r = remote()
-    const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(3, 1)
-    const res = typeLine(r, st.line())
-    expect(res.status).toBe(4)
-    expect(res.stdout).toContain('[Koloft]')
-    expect(r.calls()).toBe(3)
-    expect(fs.existsSync(st.tabDir)).toBe(false)
+  it('stops when a push fails — never a bare login shell dressed up as Claude, and never leaving the tab package with its credentials on a machine whose package did not arrive', () => {
+    for (const failing of [2, 3]) {
+      const r = remote()
+      const st = stage(r, { 'run.sh': 'x' }, spec({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'tok' } }))
+      r.fail(failing, 1)
+      const res = typeLine(r, st.line())
+      expect(res.status).toBe(4)
+      expect(res.stdout).toContain('[Koloft]')
+      expect(r.calls()).toBe(failing)
+      expect(fs.existsSync(st.tabDir)).toBe(false)
+      expect(fs.existsSync(koloft(r, 'tabs', 'T.env'))).toBe(false)
+    }
   })
 
   it("reconnects only on ssh’s own link-broke code, turning claude's mouse and paste modes off before the notice, and reconnecting attaches", () => {
@@ -308,7 +334,10 @@ interface Box {
   run(...args: string[]): { status: number | null; stdout: string }
 }
 
-function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}): Box {
+function box(
+  s: TabSpec,
+  opts: { ensureExit?: number; claudeExit?: number; ensureBringsNode?: boolean } = {}
+): Box {
   const home = mkroot('tabhome')
   const bin = path.join(home, '.local', 'bin')
   const logs = path.join(home, 'logs')
@@ -320,7 +349,11 @@ function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}
   fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
-    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nexit ${opts.ensureExit ?? 0}\n`,
+    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
+      opts.ensureBringsNode
+        ? `mkdir -p "$HOME/.koloft/node/bin" && ln -s ${JSON.stringify(process.execPath)} "$HOME/.koloft/node/bin/node"\n`
+        : ''
+    }exit ${opts.ensureExit ?? 0}\n`,
     { mode: 0o755 }
   )
 
@@ -829,6 +862,35 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const own = box(spec())
     expect(own.run().status).toBe(0)
     expect(fs.existsSync(cj(own))).toBe(false)
+  })
+
+  // CC§9 ADR-0026
+  it('a tab told to trust its folder writes the trust under the real path with the node ensure.sh brought, keeping what .claude.json had, even for a repo inside a trusted folder, since trust stops at the repo top; a tab not told to leaves it alone', () => {
+    const parent = mkroot('trust')
+    const repo = path.join(parent, 'repo')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const real = fs.realpathSync(repo)
+    const seeded = JSON.stringify({
+      numStartups: 3,
+      projects: { [path.dirname(real)]: { hasTrustDialogAccepted: true } }
+    })
+    const cj = (b: Box): string => path.join(b.home, '.claude.json')
+    const trusting = box(spec({ cwd: repo, trustFolder: true }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(trusting), seeded)
+    expect(trusting.run().status).toBe(0)
+    expect(JSON.parse(fs.readFileSync(cj(trusting), 'utf8'))).toEqual({
+      numStartups: 3,
+      projects: {
+        [path.dirname(real)]: { hasTrustDialogAccepted: true },
+        [real]: { hasTrustDialogAccepted: true }
+      }
+    })
+    expect(trusting.claudeCalls()).toHaveLength(1)
+
+    const plain = box(spec({ cwd: repo }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(plain), seeded)
+    expect(plain.run().status).toBe(0)
+    expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
   })
 
   // CC§10

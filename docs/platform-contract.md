@@ -131,6 +131,10 @@ method. A recheck adds its date, version and command to the bullet.
   running.
 - **A non-interactive bash gives a background job `/dev/null` as stdin.** `<&0` is
   needed to pass the real stdin through.
+- **Ctrl+A and Ctrl+E go to the line's start and end in both shells; Ctrl+U differs.**
+  zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
+  caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
+  `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
 
 ## §3 macOS system tools and limits
 
@@ -202,6 +206,16 @@ method. A recheck adds its date, version and command to the bullet.
   belong to another process.
 - **On a network share or exFAT, mtime is only precise to 1–2 s.** An edit that keeps
   the same size inside one clock tick changes neither mtime nor size.
+- **Without the Command Line Tools, `/usr/bin/python3` is still there, as a stub.** Run
+  over ssh it prints `xcode-select: note: No developer tools were found, requesting
+  install.` and two more lines, and exits 1 at once; it does not wait. Whether it also
+  puts an install dialog on that Mac's screen was not seen (the VM ran with no display),
+  so each run may do so. With them, it is
+  python 3.9.6, which has `pty` and `termios`. **`/bin/sh` (bash 3.2) remembers where it
+  found `python3`**, stub included, so a `python3` that `brew install` puts earlier on
+  `PATH` is not run by that same shell until `hash -r`: in one script the stub exited 1,
+  then 1 again after Homebrew's `python3` was in place, then 0 after `hash -r`
+  (2026-11-09, a macOS 26.6 VM over ssh, the Command Line Tools moved aside).
 
 ## §4 Electron: app identity, packaging and opening things
 
@@ -1078,6 +1092,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   read the buffer through the xterm instance.
 - **xterm's CSS hard-codes the IME composition box** (`.xterm .composition-view`) to
   `background:#000`, a black box over a themed terminal while typing through an IME.
+- **xterm turns no ⌘ key into a line edit.** With ⌘ held, ←, →, ↑ and ↓ send nothing
+  to the program, and ⌘⌫ sends DEL (0x7f), the same as a plain ⌫, so it deletes one
+  character. Read from xterm 6.1.0-beta.302's `src/common/input/Keyboard.ts`
+  (2026-11-09).
 
 ## §22 xterm.js input method (IME) defects
 
@@ -1164,6 +1182,23 @@ inferred, not checked.
   73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
   Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
   the same guard is still on xterm.js master that day.
+- **Session terminals share one atlas; Workbench shells use another.** The two draw on
+  different backgrounds (`#070708` and `#0c0c0d`), and the background is part of the
+  atlas key, so output in a Workbench shell never adds, merges or clears a page of the
+  atlas a Claude Code screen draws from. Measured 2026-11-09, addon 0.20.0-beta.298.
+- **With every Koloft atlas repair switched off, a shown window kept its glyphs.** In a
+  shown (not hidden) window on a real Mac display, 16 terminals, one Claude Code screen
+  of 952 coloured CJK glyphs was grabbed after: opening a session, opening and closing a
+  Workbench shell, 38k distinct coloured CJK glyph keys painted screen by screen into
+  another session tab sharing its atlas (100 page merges), closing a tab, the Workbench
+  opening, going full width, back and closing, and a sleeping tab waking. With join,
+  leave and full repairs all made no-ops, every glyph matched the first grab
+  (per-glyph correlation ≥ 0.88; 3 runs, and the same with the repairs on). The same
+  check flagged 81 of 84 glyphs when three rows were shifted by one glyph, and all 968
+  when the atlas was cleared without the terminal rebuilding its texture coordinates
+  (what addons before `pageLayoutVersion` did) or the glyph textures were wiped.
+  Measured 2026-11-09, Electron 43, addon 0.20.0-beta.298, which makes every renderer
+  sharing an atlas rebuild its model on a clear, merge or eviction.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -1473,6 +1508,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
@@ -1700,6 +1749,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   program**, which can be fish. `~/.local/bin`, `~/.koloft/node/bin` and, on a macOS
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
+- **A program the user's rc files put on PATH is missing from `ssh host cmd`, and the
+  user's own `"$SHELL" -lic` is what finds it.** A fake `gh` only in
+  `/home/linuxbrew/.linuxbrew/bin`, looked for with `command -v gh` inside Koloft's own
+  `sh -c` wrapper (PATH plus `~/.local/bin`, `~/.koloft/node/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`), and again after adding the PATH a login shell printed:
+
+  | login shell, where its PATH line is | plain | `bash -lc` | `"$SHELL" -lic` |
+  |---|---|---|---|
+  | bash, `~/.profile` | missing | found | found |
+  | bash, end of `~/.bashrc` (below Debian's "not interactive: return") | missing | missing | found |
+  | zsh, `~/.zshrc` | missing | missing | found |
+  | fish, `config.fish` | found | found | found |
+  | tcsh, `~/.login` | missing | missing | missing: `Unknown option: -lic`, nothing on stdout |
+  | `/snap/bin` in `/etc/environment`, no rc line | found | found | found |
+
+  `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
+  `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
+  `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);
@@ -1867,6 +1941,16 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
+  ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
+  (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
+  allow-passthrough on` is dropped without a word and no pane is left in a mode; a remote
+  Muse tab's wrapped 7501 frames (idle, working, done) still came out to the outer
+  terminal unwrapped, none left as `ESC P tmux;`. On both, the rest of Koloft's tmux.conf
+  loaded with no error screen, `rename-session -t $TMUX_PANE`, `attach -d` to the renamed
+  session and `set-titles` with `#{pane_title}` worked as on 3.3a (2026-11-09, Docker,
+  Koloft's own tab script, tmux.conf and Muse wrapper, muse 1.4.11 on `--provider echo`,
+  the client run in a python pty with `TERM=xterm-256color`).
 - **A pane's window title (`ESC ] 0 ; … BEL`) reaches the terminal outside tmux only with
   `set-titles on` and `set-titles-string '#{pane_title}'`**, and an empty one then arrives
   as `ESC ] 0 ; BEL`. Off (the default) nothing arrives; `set-titles on` alone sends the
@@ -1975,13 +2059,27 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
     (`ESC[5n` → `ESC[0n`) written right after the frame, it comes after them: 0 of
     105–115 redraws drew outside the window on 3.3a, 3.4 and 3.5a.
   - **tmux answers XTVERSION itself from 3.3a** (`ESC P > | tmux 3.3a ESC \`).
-- **tmux 3.3a drops a pane's OSC 8 links** under Koloft's tmux.conf: muse wrote 160
-  `ESC ] 8 ; ; <url>` links into a pane and 0 reached the outer terminal (5 of 5 runs;
-  2026-11-08, Debian 12's tmux 3.3a in Docker, the client started with
-  `TERM=xterm-256color` from a python pty as the outer terminal). Whether 3.3a knows
-  the `hyperlinks` feature that the conf's `terminal-features ',xterm*:RGB:hyperlinks'`
-  names was not checked (`set -asq` hides an unknown one); later tmux versions were not
-  run.
+- **OSC 8 links from a pane reach the outer terminal from tmux 3.4 on, and only with the
+  `hyperlinks` terminal feature.** Under Koloft's tmux.conf a pane that wrote 160
+  `ESC ] 8 ; ; <url>` links (BEL- and ST-ended alike) got all 160 out on 3.4, 3.5a and
+  3.8, 5 of 5 runs each, and on 3.4 each around its own words (counted there only, 3 of 3
+  runs); tmux adds its own `id=` to each one
+  (`ESC ] 8 ; id=tmux1 ; <url>`). Without the conf's `terminal-features
+  ',xterm*:RGB:hyperlinks'` line, 3.4 got 0 out (3 of 3), and `#{client_termfeatures}`
+  lacked `hyperlinks`.
+  - **tmux 3.3a drops them all**: 0 of 160, from a printing script as from muse 1.4.11
+    (5 of 5 runs each). 3.3a keeps the `hyperlinks` line in `terminal-features` but
+    does not know the feature: `#{client_termfeatures}` has no `hyperlinks`.
+  - **Wrapped for passthrough (`ESC P tmux; ESC ESC ] 8 ; ; <url> BEL ESC \`), 3.3a lets
+    each link's start and end through but not around its words**: 160 starts and 160
+    ends arrived, 0 of them around their text, because a passthrough goes out as soon as
+    tmux reads it and the text only at the end of that read (see the DEC 2026 bullet
+    above).
+
+  (2026-11-08 for muse on 3.3a; 2026-11-09 for the rest: Docker, Debian 12's 3.3a,
+  Ubuntu 24.04's 3.4, Debian 13's 3.5a, 3.8 built from its release tarball; the client
+  started with `TERM=xterm-256color` from a python pty answering like xterm.js; the
+  same script printed the links outside tmux and all 160 arrived on each.)
 
 ## §36 ccstatusline
 
@@ -2095,6 +2193,14 @@ command by hand:
   `LC_ALL` and `LC_CTYPE` are unset and `locale charmap` says ASCII, and only with a
   locale `locale -a` lists (`C.UTF-8`, then `en_US.UTF-8`, then any UTF-8 one): as
   `LC_CTYPE` when `LANG` is unset, `C` or `POSIX`, in place of `LANG` otherwise.
+- **`tar xzf -` works even on bare container images.** `gzip` is there in `alpine:3`
+  (BusyBox v1.37.0, whose `tar` lists `-z`), `debian:bookworm-slim` (gzip 1.12),
+  `ubuntu:24.04` (1.12), `fedora:42` (1.13) and `rockylinux:9` (1.12), with nothing
+  installed on top (2026-11-08, `docker run --rm <image> gzip --version`). Koloft's
+  machine package (3.4 MB as a plain tar, 0.67 MB gzipped) therefore goes over gzipped:
+  on the e2e ssh lab with 150 ms added to each round trip (`tc … netem delay 150ms` on
+  the machine), its push took 1.25 s instead of 1.41 s (median of 3; round trips, not
+  bytes, set most of it).
 
 ## §38 ssh through a JumpServer bastion
 

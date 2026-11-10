@@ -3,7 +3,16 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp } from './app'
-import { agyCalls, installAgy, installCodex, installMuse, type AgyCall, type E2EEnv } from './env'
+import {
+  agyApiCalls,
+  agyCalls,
+  installAgy,
+  installCodex,
+  installMuse,
+  type AgyApiCall,
+  type AgyCall,
+  type E2EEnv
+} from './env'
 import {
   type AgentName,
   centerTerm,
@@ -266,16 +275,8 @@ export function machineAgyCalls(env: E2EEnv): AgyCall[] {
   )
 }
 
-export function machineAgyApiCalls(
-  env: E2EEnv
-): { method: string; body: unknown; authorized: boolean }[] {
-  const file = path.join(machineHome(env), 'fake-agy-api.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { method: string; body: unknown; authorized: boolean })
+export function machineAgyApiCalls(env: E2EEnv): AgyApiCall[] {
+  return agyApiCalls(env, machineHome(env))
 }
 
 export async function agyReady(page: Page): Promise<void> {
