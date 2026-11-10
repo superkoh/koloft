@@ -19,6 +19,7 @@ import {
   centerTerm,
   chooseBackend,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   openWorktreeSession,
   startSessionIn,
@@ -1053,6 +1054,36 @@ const A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS = 60_000
 // CODEX§21
 const CODEX_TAKES_ESC_AND_ENTER_AS_SEPARATE_KEYS_MS = 500
 
+async function codexTabACallerCanCommand(
+  page: Page,
+  env: E2EEnv
+): Promise<{ row: Locator; tabId: string; runInCodex: (command: string) => Promise<string> }> {
+  await waitBooted(page)
+  await startSessionIn(page, 'ws-b', { method: 'Claude' })
+  await waitStartupTurnOver(page, 'ws-b')
+  const caller = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
+  await newSessionInWith(page, 'ws-a', 'Codex')
+  const row = wsRows(page, 'ws-a')
+  await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
+  const tabId = (await row.getAttribute('data-tab-id'))!
+  await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+  const thread = (await boundSessionId(page, tabId))!
+  const runInCodex = async (command: string): Promise<string> => {
+    const before = handedToTheCaller(env).length
+    await page.evaluate(
+      ([id, line]) => window.api.terminal.write(id, line),
+      [caller, `/koloft session command ${thread} ${command}\r`]
+    )
+    await expect
+      .poll(() => handedToTheCaller(env).length, {
+        timeout: A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS
+      })
+      .toBeGreaterThan(before)
+    return handedToTheCaller(env)[before]
+  }
+  return { row, tabId, runInCodex }
+}
+
 // CODEX§21
 test.describe('koloft session command in a REAL Codex tab: an opt-in case; it runs no model turn', () => {
   test('a command is not typed into a picker the owner left open; /model run by Koloft opens one, which Koloft closes with Esc and says so; the next command, /status, is typed into the composer and its answer comes back on the screen', async ({
@@ -1068,29 +1099,7 @@ test.describe('koloft session command in a REAL Codex tab: an opt-in case; it ru
     const app = await launchApp(env)
     const page = await app.firstWindow()
     try {
-      await waitBooted(page)
-      await startSessionIn(page, 'ws-b', { method: 'Claude' })
-      await waitStartupTurnOver(page, 'ws-b')
-      const caller = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      const row = wsRows(page, 'ws-a')
-      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
-      const tabId = (await row.getAttribute('data-tab-id'))!
-      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
-      const thread = (await boundSessionId(page, tabId))!
-      const runInCodex = async (command: string): Promise<string> => {
-        const before = handedToTheCaller(env).length
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line),
-          [caller, `/koloft session command ${thread} ${command}\r`]
-        )
-        await expect
-          .poll(() => handedToTheCaller(env).length, {
-            timeout: A_SLASH_COMMAND_RESULT_IS_HANDED_BACK_WITHIN_MS
-          })
-          .toBeGreaterThan(before)
-        return handedToTheCaller(env)[before]
-      }
+      const { tabId, runInCodex } = await codexTabACallerCanCommand(page, env)
 
       const press = (keys: string): Promise<void> =>
         page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
@@ -1111,6 +1120,50 @@ test.describe('koloft session command in a REAL Codex tab: an opt-in case; it ru
       const status = await runInCodex('/status')
       expect(status).toMatch(/ran \/status:[\s\S]*Model:/)
       expect(status).not.toContain('esc back')
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
+const CHILD_OUTLASTS_THE_SLASH_COMMAND_S = 180
+const START_A_CHILD_AND_END_THE_TURN = `Spawn exactly one sub-agent whose only task is to run the shell command "sleep ${CHILD_OUTLASTS_THE_SLASH_COMMAND_S}" in the foreground and wait for it to end. Do not wait for that sub-agent or check on it. Then reply with only BG-STARTED and end your turn.`
+const A_CHILD_REPORTS_ITS_END_WITHIN_MS = (CHILD_OUTLASTS_THE_SLASH_COMMAND_S + 60) * 1000
+
+// CODEX§4
+test.describe('koloft session command in a REAL Codex tab whose child agent still runs: an opt-in case; it spends real money', () => {
+  test('the turn is over but the child agent it spawned still runs, so the row shows ↻; /status from koloft session command is typed at once and its answer comes back while the child still runs; once the child ends the ↻ goes', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + A_CHILD_REPORTS_ITS_END_WITHIN_MS + 240_000)
+    useRealCodex(env, [env.workspaces.a])
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      const { row, tabId, runInCodex } = await codexTabACallerCanCommand(page, env)
+
+      await ask(page, row, START_A_CHILD_AND_END_THE_TURN)
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContain('BG-STARTED')
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
+      await expect(oneStillRunning(row)).toBeVisible()
+
+      expect(await runInCodex('/status')).toMatch(/ran \/status:[\s\S]*Model:/)
+      await expect(oneStillRunning(row)).toBeVisible()
+
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, {
+        timeout: A_CHILD_REPORTS_ITS_END_WITHIN_MS
+      })
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
       throw e

@@ -19,6 +19,7 @@ export const AGY_BRAIN_FLAGS = [
   '--delete',
   '--include=/*/',
   '--include=/*/*.md.metadata.json',
+  '--include=/*/*.md',
   '--include=/*/.system_generated/',
   '--include=/*/.system_generated/logs/',
   '--include=/*/.system_generated/logs/transcript.jsonl',

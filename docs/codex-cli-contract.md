@@ -241,8 +241,30 @@ final response without waiting. The relay saw:
    `idle` and emitted `turn/completed`.
 
 The completed **spawn tool call** is not completion of the **spawned child**.
-The parent-child relationship comes from the collab item, not from treating every
-other thread on the wire as a child. Temporary title threads share that wire too.
+The parent-child relationship comes from the collab item (or, on 0.166.0, the
+sub-agent activity item below), not from treating every other thread on the wire as a
+child. Temporary title threads share that wire too.
+
+### Child agent announced as sub-agent activity
+
+**Measured 2026-11-08, codex-cli 0.166.0, `codex app-server` driven by a Node script in a
+throwaway `CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), the
+same prompt also run once in a real Koloft Codex tab; 2 runs.** `codex features list` in
+an empty home still reads `multi_agent_v2 stable false`, yet the model's tool was
+`spawn_agent {task_name, fork_turns, message}` and the child's path `/root/<task_name>`.
+No `collabAgentToolCall` item came at all. The wire, in order:
+
+1. On the parent thread, `item/started` then `item/completed`, both
+   `{type: "subAgentActivity", kind: "started", agentThreadId, agentPath}`.
+2. The child thread's own `thread/status/changed` (`idle` first, then `active`) and
+   `turn/started`; its `commandExecution` items.
+3. The parent's `idle` and `turn/completed` while the child still ran (`sleep 30`).
+4. When the child ended: on the parent thread `item/started` of the same item with
+   `kind: "completed"`, then the child's `idle` and `turn/completed`, then the parent's
+   `item/completed` (`kind: "completed"`). The parent started no new turn within 80 s.
+
+The 0.166.0 schema's `SubAgentActivityKind` is `started`, `interacted`, `interrupted`,
+`completed`.
 
 ### No Monitor; a server left in a background terminal
 
@@ -1377,6 +1399,34 @@ resumed from the default home (issue #486). Not probed: 0.159.3 (the
 §19 read was from the home that made the session), and whether
 `codex migrate-rollouts --apply` fills the index. A `codex exec` rollout (`source: "exec"`) is not in the
 default listing, which asks for interactive sources only.
+
+**The same on 0.166.0, and what a `thread/resume` from the default home leaves behind.**
+Checked 2026-11-06 with codex-cli 0.166.0, no login: a Node client on `codex app-server`
+in throwaway `HOME` and `CODEX_HOME`s laid out as above, the model provider in the shared
+`config.toml` pointed at a closed local port (`base_url = "http://127.0.0.1:9/v1"`), so
+B's one turn failed but was recorded (an 80 KB rollout). D, already running, listed the
+thread (`notLoaded`) and read 0 turns (`thread/read`, `thread/turns/list`); B read 1.
+`thread/resume` from D answered in 17–23 ms with the turn, and left `updatedAt` in
+`thread/list` and the rollout's bytes unchanged; D gained
+`thread-writer-locks/<id>.lock`, `shell_snapshots/<id>.<ns>.sh` and `.sandbox_migration`,
+and no child process outlived it by 3 s. With an `[mcp_servers.<name>]` table in the shared
+`config.toml` (a Node stub that logs each start), the resume started that MCP server once
+more, and it was gone 1.5 s after the resuming app-server closed. **The resuming app-server keeps the thread's
+writer for as long as it lives, even after `thread/unsubscribe` (`unsubscribed`)**: a
+second app-server on D then got `-32600` "thread … already has an active writer" on
+`thread/resume` and "thread not found" on `turn/start`, while one on B resumed and took
+a turn. Once the resuming process exited, a new app-server on D resumed the thread and
+took a turn. A `thread/read` from B took no writer: D and B both resumed after it. After
+the resuming app-server closed, an app-server on D that had been running all along read
+the turn too, and a home that has the thread loaded also reads the turns other homes
+add later (1, 2, then 3 as D and B took turns). So Koloft reads a closed session's turns
+from the account home Koloft last ran it in, and only when that gives none (no record, or
+a session from before Koloft kept them) resumes it in the default home, at most once per
+thread a run, on an app-server of its own that it closes at once — never on the long-lived one, which would keep
+`codex resume <id>` in the default home from writing to it. A rollout from 0.165.0
+copied with its old mtime into a running 0.166.0 home's `sessions/` was not listed at
+all, even after a resume — unlike the copies on 0.162.0 and 0.164.0 above, which were
+listed; why was not looked into (Koloft links `sessions/`, it never copies a rollout).
 
 **A session started on one login takes a model turn on another.** Checked 2026-10-09
 with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different

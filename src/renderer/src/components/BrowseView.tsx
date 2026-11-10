@@ -643,10 +643,25 @@ export function BrowseView({
     if (grew) applyExpansion(next)
   }, [current])
 
+  const revealed = useRef<string | null>(null)
   useEffect(() => {
-    if (!current) return
-    bodyRef.current?.querySelector('.ft-node.active')?.scrollIntoView({ block: 'nearest' })
-  }, [current, expanded])
+    const body = bodyRef.current
+    if (!current) revealed.current = null
+    if (!current || !body || revealed.current === current) return
+    const ownRow = body.querySelector(
+      ['tree', 'scratchpad', 'outside']
+        .map((s) => `[data-section="${s}"] .ft-node.active`)
+        .join(', ')
+    )
+    const treeRowStillComing =
+      !ownRow &&
+      activeRef.current &&
+      inRoot(current, root) &&
+      !ancestorDirs(current, root).every((d) => expanded.has(d) && children[d])
+    if (treeRowStillComing) return
+    revealed.current = current
+    ;(ownRow ?? body.querySelector('.ft-node.active'))?.scrollIntoView({ block: 'nearest' })
+  }, [current, expanded, children, searchActive, root])
 
   const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')
   useEffect(() => {

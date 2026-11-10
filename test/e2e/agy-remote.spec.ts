@@ -574,4 +574,40 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await quitAndClose(app)
     }
   })
+
+  // AGY§19
+  test('a plan a remote Antigravity session waits on is an Inbox card quoting the whole plan from the machine; Approve there tells agy on the machine the plan is approved', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), '/plan')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-approval\b/, {
+        timeout: 60_000
+      })
+      await page.locator('.ibx-entry').click()
+      const card = page.locator('.inbox-page .ibx-item', {
+        has: page.locator('.ibx-what', { hasText: 'asks you to approve a plan' })
+      })
+      await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
+      await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+      await expect
+        .poll(
+          () =>
+            machineAgyApiCalls(env)
+              .filter((c) => c.method === 'SendUserCascadeMessage')
+              .map((c) => JSON.stringify(c.body))
+              .join('\n'),
+          { timeout: 60_000 }
+        )
+        .toContain('[Approved] implementation_plan.md')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })

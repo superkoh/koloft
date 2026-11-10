@@ -1508,6 +1508,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
@@ -1735,6 +1749,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   program**, which can be fish. `~/.local/bin`, `~/.koloft/node/bin` and, on a macOS
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
+- **A program the user's rc files put on PATH is missing from `ssh host cmd`, and the
+  user's own `"$SHELL" -lic` is what finds it.** A fake `gh` only in
+  `/home/linuxbrew/.linuxbrew/bin`, looked for with `command -v gh` inside Koloft's own
+  `sh -c` wrapper (PATH plus `~/.local/bin`, `~/.koloft/node/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`), and again after adding the PATH a login shell printed:
+
+  | login shell, where its PATH line is | plain | `bash -lc` | `"$SHELL" -lic` |
+  |---|---|---|---|
+  | bash, `~/.profile` | missing | found | found |
+  | bash, end of `~/.bashrc` (below Debian's "not interactive: return") | missing | missing | found |
+  | zsh, `~/.zshrc` | missing | missing | found |
+  | fish, `config.fish` | found | found | found |
+  | tcsh, `~/.login` | missing | missing | missing: `Unknown option: -lic`, nothing on stdout |
+  | `/snap/bin` in `/etc/environment`, no rc line | found | found | found |
+
+  `/etc/environment` reaches `ssh host cmd` through sshd's `pam_env`, while Debian's
+  `/etc/profile` sets PATH afresh, so a login shell's PATH there no longer held
+  `/snap/bin` and only the appended PATH kept it. A `.bashrc` that echoes a line puts
+  it on stdout, even for `ssh host cmd`. A `.bashrc` that leaves a job running in the
+  background (`(sleep 20 &)`, `sleep 25 &`) holds a `$(… -lic … | sed …)` open until that
+  job ends: 25.1 s; with the shell's own stdout and stderr sent to `/dev/null` and the
+  PATH written to a file it names instead, the same lookup came back in 109 ms. Each
+  other check took 100–135 ms in all, ssh included. (2026-11-07, OpenSSH_10.3p1 on
+  macOS 27 to OpenSSH_9.2p1 on Debian bookworm, the e2e Docker ssh lab image plus zsh
+  5.9, reached directly, a scratch node script.)
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
 - **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
   fail** with `Cannot execute command-line and remote command.` (exit 255);

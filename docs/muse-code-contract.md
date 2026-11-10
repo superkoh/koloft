@@ -1064,3 +1064,34 @@ Koloft dependents: the account folder's `settings.json` and `approval-policy.jso
 (`src/main/museAccounts.ts`); the Playwright variables, empty without the Workbench
 browser, in every muse Koloft starts on that folder (`museAccountEnv`) and in the shim's
 `muse exec` (`src/main/shim.ts`).
+
+## §22 Muse's own memory
+
+2026-11-07, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker `--network none`, the fake model
+server of the opening note, a new `muse exec --approval-mode never` process per step in a
+trusted plain folder (not a repository), every request saved and every file under HOME
+and `/tmp` compared before and after.
+
+- **The model gets three tools**, in a namespace `muse`: `read_memory {path, scope?,
+  offset?, limit?}`, `add_memory {path, content, scope?, description?, type?}` (creates
+  the file or appends to it), `edit_memory {path, old_str, new_str, scope?}`. `scope` is
+  `personal`, `personal_project` (the default) or `project`. The first developer message
+  says "Use persistent memory when the user asks you to remember something".
+- **Where it lands**: `personal_project` →
+  `~/.local/share/muse/memory/projects/<folder slug>-<hash>/MEMORY.md`, one per folder;
+  `personal` → `~/.local/share/muse/memory/personal/MEMORY.md`, every folder; `project`
+  → `<cwd>/.agents/memory/MEMORY.md`. Nothing under `XDG_CONFIG_HOME`.
+- **A new session gets it without asking**: a new process in the same folder carried each
+  scope's `MEMORY.md` text in its first developer message (`<system-reminder
+  source="memory-snapshot">`, `## Memory scope: personal_project\nMEMORY.md:\n- …`).
+  Another file in a scope shows only by name, under "Other Markdown files:".
+- **Another `XDG_CONFIG_HOME` keeps it**: the same folder with a different config home,
+  as when Koloft switches the Muse account (§2, §13), still got every scope's memory.
+- Not probed: whether `/clear` or `/new` in the TUI takes a fresh snapshot, a large
+  `MEMORY.md`, macOS (§2 puts the data folder in the same place), and a real model
+  choosing `add_memory` when told to remember.
+
+Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
+or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
+butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.

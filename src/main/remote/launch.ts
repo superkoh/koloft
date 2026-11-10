@@ -15,6 +15,7 @@ import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
+import { TRUST_CWD_JS } from './claudeTrustJs'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -143,6 +144,7 @@ export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
   claudeArgs: string[]
+  trustFolder?: boolean
 }
 
 // PLATFORM§35 MUSE§17
@@ -158,7 +160,7 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
   program: {
     run: claudeRun(tab.tabId, c),
     beforeEnsure: '',
-    beforeTmux: claudeFirstRun(tab),
+    beforeTmux: `${c.trustFolder ? trustTheLaunchFolder(tab.cwd) : ''}${claudeFirstRun(tab)}`,
     files: {
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName
@@ -193,6 +195,10 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   ${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"
   exec "$@"\n`
 }
+
+// CC§9 ADR-0026
+const trustTheLaunchFolder = (cwd: string): string =>
+  `( cd ${shq(cwd)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
 
 function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)
