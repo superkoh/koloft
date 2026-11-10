@@ -6,6 +6,7 @@ let screens: Screens
 
 function fakeTerminal(): { term: Terminal; written: string[] } {
   const written: string[] = []
+  const shownText = (): string => written.join('').replace(/\x1b\[[0-9;]*m/g, '')
   const term = {
     rows: 3,
     write: (data: string, done?: () => void) => {
@@ -16,10 +17,10 @@ function fakeTerminal(): { term: Terminal; written: string[] } {
       active: {
         baseY: 0,
         get length() {
-          return written.join('').split('\n').length
+          return shownText().split('\n').length
         },
         getLine: (y: number) => {
-          const line = written.join('').split('\n')[y]
+          const line = shownText().split('\n')[y]
           return line === undefined ? undefined : { translateToString: () => line }
         }
       }

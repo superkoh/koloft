@@ -60,9 +60,16 @@ function lastWrittenLines(term: Terminal, count: number): string[] {
   return lines
 }
 
+const ATTRIBUTE_RESET_THAT_MARKS_WHAT_IS_WRITTEN = '\x1b[0m'
+
+// PLATFORM§21
 export async function lastLinesOnceWritten(id: string, count: number): Promise<string[]> {
   const term = await screenOnceShown(id)
-  return new Promise((resolve) => term.write('', () => resolve(lastWrittenLines(term, count))))
+  return new Promise((resolve) =>
+    term.write(ATTRIBUTE_RESET_THAT_MARKS_WHAT_IS_WRITTEN, () =>
+      resolve(lastWrittenLines(term, count))
+    )
+  )
 }
 
 export function writeOnScreen(id: string, text: string): void {
