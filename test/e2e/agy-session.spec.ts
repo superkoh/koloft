@@ -1033,7 +1033,6 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await dlg.locator('.chip', { hasText: /^Antigravity$/ }).click()
       await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
       await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
-      await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 

@@ -1607,7 +1607,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     },
     {
       agent: 'Antigravity',
-      repo: true,
+      repo: false,
       setUp: (env) => {
         installAgy(env)
         installRemoteAgy(env)
