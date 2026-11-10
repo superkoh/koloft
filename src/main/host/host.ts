@@ -46,6 +46,7 @@ export interface ClaudeLaunch {
   name?: string
   role?: string
   conductor?: boolean
+  trustFolder?: boolean
 }
 
 export interface MachineTab {
@@ -119,7 +120,6 @@ export interface Host {
   unwatchFile(file: string): void
   shell(cwd: string): ShellLaunch
   launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
-  trustFolder(dir: string): Promise<void>
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string, backend: BackendId): Promise<SkillSuggestion[]>
   keyed(p: string): string

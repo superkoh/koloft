@@ -16,6 +16,7 @@ import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/main/sessionClose'
+import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 
 const MACHINE = 'devbox'
 let home: string
@@ -66,6 +67,17 @@ const keyed = (p: string): string => `ssh://${MACHINE}${p}`
 
 const git = (...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+
+const onAMachineWithNoNodeOnItsPath = (
+  cmd: string,
+  opts?: { input?: Buffer }
+): Promise<BytesResult> => {
+  const at = cmd.lastIndexOf(' ') + 1
+  const body = Buffer.from(cmd.slice(at), 'base64').toString('utf8')
+  expect(body).toContain(REMOTE_ENV_LINES)
+  const noNode = body.replace(REMOTE_ENV_LINES, `${REMOTE_ENV_LINES}\nexport PATH=/usr/bin:/bin`)
+  return runOnMachine(cmd.slice(0, at) + Buffer.from(noNode).toString('base64'), opts)
+}
 
 const putNodeOnMachine = (): void => {
   const node = path.join(home, '.koloft', 'node', 'bin')
@@ -287,19 +299,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       )
     })
 
-    // CC§9 ADR-0026
-    it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
+    // CC§9
+    it("reads a folder in the machine's .claude.json, and one under it, as trusted", async () => {
       putNodeOnMachine()
-      fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
+      const claudeJson = path.join(home, '.claude.json')
+      fs.writeFileSync(claudeJson, '{"numStartups":3}\n')
       expect(await machine().trustsFolder(keyed(repo))).toBe(false)
-
-      await machine().trustFolder(keyed(repo))
-
-      expect(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))).toEqual({
-        numStartups: 3,
-        projects: { [repo]: { hasTrustDialogAccepted: true } }
-      })
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }, null, 2)
+      )
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+    })
+
+    // CC§9
+    it('on a machine with no node, where Koloft cannot read the trust, a folder reads as not trusted, so a scheduled run is never let through on a guess', async () => {
+      fs.writeFileSync(
+        path.join(home, '.claude.json'),
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+      expect(await machine(onAMachineWithNoNodeOnItsPath).trustsFolder(keyed(repo))).toBe(false)
     })
 
     // CC§9
@@ -314,10 +333,6 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
       expect(await machine().trustsFolder(keyed(path.join(home, 'plain')))).toBe(true)
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
-      await machine().trustFolder(keyed(repo))
-      expect(JSON.parse(fs.readFileSync(claudeJson, 'utf8')).projects[repo]).toEqual({
-        hasTrustDialogAccepted: true
-      })
 
       fs.writeFileSync(
         claudeJson,

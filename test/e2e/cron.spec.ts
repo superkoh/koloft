@@ -11,6 +11,7 @@ import {
   killFakeRemote,
   launchWithRemote,
   machineAgyCalls,
+  machineCodexLog,
   machineHome,
   machineMuseCalls,
   REMOTE_WS_NAME,
@@ -28,7 +29,7 @@ import {
   trustInMuse,
   type E2EEnv
 } from './helpers/env'
-import { codexCalls } from './helpers/codex'
+import { codexCalls, codexPromptsSent, type CodexWireLine } from './helpers/codex'
 import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
@@ -1528,6 +1529,159 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       killFakeRemote(env)
     }
   })
+
+  const REMOTE_TASK = `/daily-report please "quote" it's $HOME`
+  const machineWire = (env: E2EEnv): CodexWireLine[] =>
+    machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
+  const REMOTE_FIELDS_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    repo: boolean
+    setUp: (env: E2EEnv) => void
+    pickModel: (dlg: Locator) => Promise<void>
+    launched: (env: E2EEnv) => { argv: string[]; cwd: string } | undefined
+    flags: string[]
+    onTheMachine?: { read: (env: E2EEnv) => unknown; is: unknown }
+    named: string
+    rowTitle: string
+  }[] = [
+    {
+      agent: 'Codex',
+      repo: true,
+      setUp: (env) => installCodexOnFakeRemote(env),
+      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click(),
+      launched: (env) => {
+        const start = codexCalls(env).find((c) => c.method === 'thread/start')
+        return start && { argv: start.argv, cwd: start.effectiveCwd }
+      },
+      flags: ['-a', 'never', '-s', 'danger-full-access', '-m', 'gpt-6-luna', REMOTE_TASK],
+      // CODEX§17
+      onTheMachine: {
+        read: (env) => ({
+          task: codexPromptsSent(machineWire(env)),
+          name: machineWire(env).flatMap(({ direction, frame }) =>
+            direction === 'client' && frame.method === 'thread/name/set' ? [frame.params?.name] : []
+          )
+        }),
+        is: { task: [REMOTE_TASK], name: ['Remote report'] }
+      },
+      named: 'its name',
+      rowTitle: 'Remote report'
+    },
+    {
+      agent: 'Muse',
+      repo: true,
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+      },
+      pickModel: async (dlg) => {
+        await dlg.locator('.chip', { hasText: 'Other…' }).click()
+        await dlg.locator('input[aria-label="Model name"]').fill('muse-large')
+      },
+      launched: (env) => machineMuseCalls(env).find((c) => !c.argv.includes('resume')),
+      flags: [
+        '--trust-workspace',
+        '--model',
+        'muse-large',
+        '--permission-profile',
+        ':unrestricted',
+        REMOTE_TASK
+      ],
+      // MUSE§2
+      named: 'its name on its row, as Muse takes no name',
+      rowTitle: 'Remote report'
+    },
+    {
+      agent: 'Antigravity',
+      repo: false,
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      pickModel: (dlg) => dlg.locator('.chip', { hasText: /^Gemini 4 Argon$/ }).click(),
+      launched: (env) => machineAgyCalls(env)[0],
+      flags: ['--model', 'gemini-4-argon', '--dangerously-skip-permissions', '-i', REMOTE_TASK],
+      // AGY§8 AGY§16
+      named: 'no name, its row taking agy’s own title',
+      rowTitle: REMOTE_TASK
+    }
+  ]
+  for (const {
+    agent,
+    repo,
+    setUp,
+    pickModel,
+    launched,
+    flags,
+    onTheMachine,
+    named,
+    rowTitle
+  } of REMOTE_FIELDS_AGENTS) {
+    test(`BB-M17 in ${agent}: a job in a remote workspace starts ${agent} on the machine with its task untouched, ${named}, its model and permission, waits for you when its turn ends, and once you close it ${repo ? 'its worktree on the machine goes' : 'the folder it ran in stays'}`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      if (repo) gitInit(remoteDir(env))
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+          timeout: 20_000
+        })
+        const dlg = await openCron(page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, {
+          agent,
+          name: 'Remote report',
+          task: REMOTE_TASK,
+          permission: 'Never ask'
+        })
+        await pickModel(dlg)
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await expect(dlg.locator('.fgrid')).toHaveCount(0)
+        await clickRunNow(page, 'Remote report')
+
+        await expect.poll(() => launched(env), { timeout: 120_000 }).toBeTruthy()
+        const { argv, cwd } = launched(env)!
+        expect(readCalls(env)).toEqual([])
+        expect(argv.slice(-flags.length)).toEqual(flags)
+        for (const flag of flags.filter((f) => f.startsWith('-')))
+          expect(argv.filter((a) => a === flag)).toHaveLength(1)
+        if (onTheMachine)
+          await expect
+            .poll(() => onTheMachine.read(env), { timeout: 60_000 })
+            .toEqual(onTheMachine.is)
+        const tree = repo ? runTree(remoteDir(env), path.basename(cwd)) : ''
+        if (repo) {
+          expect(cwd).toBe(tree)
+          expect(fs.existsSync(tree)).toBe(true)
+        } else expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(remoteDir(env)))
+
+        const row = wsRows(page, REMOTE_WS_NAME)
+        await waitTurnDoneThenTheRowCatchesUpBeforeClosingIt(page, 'Remote report', row)
+        await expect(row.locator('.ws-tab-title')).toHaveText(rowTitle)
+        await closeCron(page)
+        await row.click()
+        await expect(row).toHaveClass(/\bactive\b/)
+        await sendShortcut(app, 'shortcut:close-tab')
+        if (repo) await expect.poll(() => fs.existsSync(tree), { timeout: 90_000 }).toBe(false)
+        await openCron(page, REMOTE_WS_NAME)
+        await expect
+          .poll(async () => (await histLines(page))[0], { timeout: 30_000 })
+          .toMatchObject({ state: 'Closed by you', folder: repo ? ' · folder removed' : '' })
+        if (!repo) {
+          await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+          expect(fs.existsSync(remoteDir(env))).toBe(true)
+          expect((await histLines(page))[0].folder).toBe('')
+        }
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('BB-M34 on a remote workspace: a run whose agent dies on the machine keeps its tab reading the agent’s own exit code and its folder on the machine, until you close the tab', async ({
     env

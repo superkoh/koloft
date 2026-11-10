@@ -1,46 +1,69 @@
 .ws-list {
+  --ws-list-pad: 8px;
+  --ws-head-h: 38px;
   overflow-y: auto;
   flex: 1;
-  padding: 8px 6px;
+  padding: var(--ws-list-pad) 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 .ws {
+  position: relative;
   display: flex;
   flex-direction: column;
 }
 .ws.dragging {
   opacity: 0.55;
 }
-.ws.dropbefore {
-  box-shadow: inset 0 3px 0 var(--accent);
+.ws.dropbefore > .ws-head::after,
+.ws.dropafter::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent);
+  pointer-events: none;
 }
-.ws.dropafter {
-  box-shadow: inset 0 -3px 0 var(--accent);
+.ws.dropbefore > .ws-head::after {
+  top: 0;
+}
+.ws.dropafter::after {
+  bottom: 0;
+  z-index: 3;
 }
 .ws-head {
   -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: var(--ws-head-h);
   padding: 5px 9px;
-  border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--fg);
-  position: relative;
-  transition:
-    background 0.15s var(--ease),
-    color 0.15s var(--ease);
+  position: sticky;
+  top: calc(-1 * var(--ws-list-pad));
+  z-index: 2;
+  background: var(--bg-side);
+  transition: color 0.15s var(--ease);
 }
-.ws-head:hover {
+.ws-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--r-sm);
+  transition: background 0.15s var(--ease);
+}
+.ws-head:hover::before {
   background: var(--bg-3);
 }
-.ws-head.active {
+.ws-head.active::before {
   background: var(--accent-soft);
 }
-.ws-head.missing {
+.ws-head.missing > *,
+.ws-head.missing::before {
   opacity: 0.35;
 }
 .fico {
@@ -137,6 +160,9 @@
 }
 .hact:hover {
   color: var(--accent);
+}
+.ws .ws-tab {
+  scroll-margin-top: var(--ws-head-h);
 }
 .ws-tabs {
   display: flex;

@@ -397,6 +397,7 @@ const api: KoloftApi = {
     dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
     search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
     gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
+    gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
     watchDir: (root) => ipcRenderer.invoke(CH.fs.watchDir, root),
     unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
     onDirChange: (cb) => {

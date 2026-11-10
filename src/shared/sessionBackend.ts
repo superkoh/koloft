@@ -165,6 +165,19 @@ export function conversationAtFirstPrompt(backend: BackendId): boolean {
   return CONVERSATION_AT_FIRST_PROMPT[backend]
 }
 
+const PASTE_KEEPS_ITS_LAST_LINE_FEEDS: Record<BackendId, boolean> = {
+  claude: true,
+  codex: true,
+  // MUSE§7
+  muse: true,
+  // AGY§15
+  agy: false
+}
+
+export function pasteKeepsItsLastLineFeeds(backend: BackendId): boolean {
+  return PASTE_KEEPS_ITS_LAST_LINE_FEEDS[backend]
+}
+
 // AGY§16
 export function namedAtLaunch(backend: BackendId, remote: boolean): boolean {
   return !(backend === 'agy' && remote)

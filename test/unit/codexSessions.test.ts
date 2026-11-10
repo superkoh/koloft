@@ -216,6 +216,7 @@ beforeEach(() => {
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
+    homeOf: vi.fn(() => undefined),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
     builtInStatusLine: vi.fn(() => true),
@@ -592,6 +593,74 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
     expect(mocks.request.mock.calls.slice(asked).map(([method]) => method)).toEqual(['thread/read'])
     expect(mocks.rpcHomes).toEqual([undefined])
+  })
+
+  // CODEX§15
+  it('reads what a closed session said from the account home that ran it, and a session with no such home is resumed in the default home by an app-server closed at once, then read there, at most once a run', async () => {
+    const said = [
+      {
+        completedAt: 1,
+        items: [
+          { type: 'userMessage', content: [{ type: 'text', text: 'Hello' }] },
+          { type: 'agentMessage', text: 'Hi there' }
+        ]
+      }
+    ]
+    const indexed = new Set<string | undefined>(['/homes/work'])
+    mocks.request.mockImplementation(async (method, _params, home) => {
+      if (method === 'thread/resume') indexed.add(home)
+      if (method === 'thread/read' || method === 'thread/resume')
+        return { thread: { id: A, cwd: repo, turns: indexed.has(home) ? said : [] } }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockImplementation((key) =>
+      key === codexSessionKey(A) ? '/homes/work' : undefined
+    )
+    const texts = (turns: { reply: string }[]) => turns.map((t) => t.reply)
+
+    expect(texts(await sessions.readTurns(codexSessionKey(A), 5))).toEqual(['Hi there'])
+    expect(mocks.request.mock.calls.map(([m, , home]) => `${m} ${home}`)).toEqual([
+      'thread/read /homes/work'
+    ])
+
+    mocks.request.mockClear()
+    expect(texts(await sessions.readTurns(codexSessionKey(B), 5))).toEqual(['Hi there'])
+    expect(mocks.request.mock.calls.map(([m, , home]) => `${m} ${home}`)).toEqual([
+      'thread/read undefined',
+      'thread/resume undefined',
+      'thread/read undefined'
+    ])
+    const [, resumed, reread] = mocks.request.mock.invocationCallOrder
+    expect(mocks.close.mock.invocationCallOrder.some((at) => at > resumed && at < reread)).toBe(
+      true
+    )
+
+    indexed.delete(undefined)
+    mocks.request.mockClear()
+    expect(await sessions.readTurns(codexSessionKey(B), 5)).toEqual([])
+    expect(mocks.request.mock.calls.map(([m, , home]) => `${m} ${home}`)).toEqual([
+      'thread/read undefined',
+      'thread/read undefined'
+    ])
+  })
+
+  // CODEX§15
+  it('a closed session whose account home cannot be read is read from the default home instead', async () => {
+    mocks.request.mockImplementation(async (method, _params, home) => {
+      if (method === 'thread/read' && home === '/homes/gone') throw new Error('thread not found')
+      if (method === 'thread/read')
+        return {
+          thread: {
+            id: A,
+            cwd: repo,
+            turns: [{ completedAt: 1, items: [{ type: 'agentMessage', text: 'Still here' }] }]
+          }
+        }
+      return historyOrTrustedHooks(method)
+    })
+    vi.mocked(deps.homeOf).mockReturnValue('/homes/gone')
+    const turns = await sessions.readTurns(codexSessionKey(A), 5)
+    expect(turns.map((t) => t.reply)).toEqual(['Still here'])
   })
 
   // CODEX§15

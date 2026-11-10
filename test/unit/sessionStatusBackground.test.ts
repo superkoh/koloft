@@ -1441,6 +1441,47 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   }, 10_000)
 
+  it('a tool call in flight holds a quiet subagent as working past the silence cap, and the dot rests once that call ends', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabL18a', cwd, initialLines(cwd))
+    writeSubagentJsonl(cwd, SID, 'agent-a1.jsonl', [subagentRec(Date.now())])
+    stageProcs(tracker, { bfg: { ageMs: 0 } })
+    tracker.setStatus('tabL18a', 'working')
+    await tracker.reportTurnEnd('tabL18a', [{ id: 'a1', type: 'subagent' }])
+    await sleep(SILENCE_MS + SCAN_MS + 200)
+    expect(status(tracker, 'tabL18a')).toBe('working')
+    expect(parked(tracker, 'tabL18a')).toEqual([
+      { id: 'a1', kind: 'agent', label: 'subagent', state: 'working' }
+    ])
+    stageProcs(tracker, {})
+    await waitFor(tracker, (s) => s.tabId === 'tabL18a' && s.status === 'waiting', 6000)
+    expect(parked(tracker, 'tabL18a')).toBeUndefined()
+  }, 12_000)
+
+  it("on a remote tab, a tool call in flight the machine's heartbeat reports for this session holds a quiet subagent as working past the silence cap, and the dot rests once the machine no longer reports it", async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    tracker.track('tabL18r', cwd, { host: 'devbox', projectsRoot, tmuxName: 'k-' + SID })
+    const file = writeJsonl(cwd, SID, initialLines(cwd))
+    tracker.bindSession('tabL18r', file, SID, cwd)
+    await waitFor(tracker, (s) => s.tabId === 'tabL18r' && s.title === 'do some work')
+    writeSubagentJsonl(cwd, SID, 'agent-a1.jsonl', [subagentRec(Date.now())])
+    tracker.toolShellsOnMachineSaid('devbox', [
+      `/tmp/claude-1000/-home-u-proj/${SID}/tasks/bfg.output`,
+      '/tmp/claude-1000/-home-u-proj/another-session/tasks/bzz.output'
+    ])
+    tracker.setStatus('tabL18r', 'working')
+    await tracker.reportTurnEnd('tabL18r', [{ id: 'a1', type: 'subagent' }])
+    await sleep(SILENCE_MS + SCAN_MS + 200)
+    expect(status(tracker, 'tabL18r')).toBe('working')
+    tracker.toolShellsOnMachineSaid('devbox', [
+      '/tmp/claude-1000/-home-u-proj/another-session/tasks/bzz.output'
+    ])
+    await waitFor(tracker, (s) => s.tabId === 'tabL18r' && s.status === 'waiting', 6000)
+    expect(parked(tracker, 'tabL18r')).toBeUndefined()
+  }, 12_000)
+
   it('a fresh teammate spawn counts as activity before its transcript exists', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()

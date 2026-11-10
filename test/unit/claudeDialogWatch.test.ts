@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { ClaudeDialogWatch } from '../../src/main/claudeDialogWatch'
+import { describe, it, expect, vi } from 'vitest'
+import {
+  A_HOOK_LINE_FIRED_BEFORE_THE_ANSWER_LANDS_WITHIN_MS,
+  ClaudeDialogWatch
+} from '../../src/main/claudeDialogWatch'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 
 const QUERY = '\x1b]7501;?\x07'
@@ -11,12 +14,18 @@ function watch() {
   const processes = new Map<string, object>([['t1', {}]])
   const replies: [string, string][] = []
   const closed: string[] = []
+  const statesAfter: string[] = []
+  const shown: boolean[] = []
   const w = new ClaudeDialogWatch({
     watchedProcess: (tabId) => processes.get(tabId),
     reply: (tabId, text) => void replies.push([tabId, text]),
-    closed: (tabId) => void closed.push(tabId)
+    dialogShown: (_tabId, onScreen) => void shown.push(onScreen),
+    closed: (tabId, stateAfter) => {
+      closed.push(tabId)
+      statesAfter.push(stateAfter)
+    }
   })
-  return { w, processes, replies, closed }
+  return { w, processes, replies, closed, statesAfter, shown }
 }
 
 describe('ClaudeDialogWatch — a local Claude tab tells Koloft when its dialog closes', () => {
@@ -43,6 +52,53 @@ describe('ClaudeDialogWatch — a local Claude tab tells Koloft when its dialog 
     expect(closed).toEqual(['t1'])
     w.data('t1', frame('state=clear'))
     expect(closed).toEqual(['t1'])
+  })
+
+  it('tells when a permission or question dialog comes on screen and leaves it, and what claude went on to: working once answered, idle once turned down', () => {
+    const { w, shown, statesAfter } = watch()
+    w.data('t1', QUERY + frame('state=working'))
+    w.data('t1', blocked('approve Bash: ls') + blocked('approve Bash: ls'))
+    expect(shown).toEqual([true])
+    w.data('t1', frame('state=working'))
+    w.data('t1', blocked('approve Bash: make') + frame('state=idle'))
+    w.data('t1', frame('state=blocked:kind=question:msg=YW5zd2Vy'))
+    w.data('t1', frame('state=working'))
+    expect(shown).toEqual([true, false, true, false, true, false])
+    expect(statesAfter).toEqual(['working', 'idle', 'working'])
+    w.data('t1', frame('state=blocked:kind=auth') + frame('state=blocked:kind=permission'))
+    expect(shown).toEqual([true, false, true, false, true, false, true])
+    w.data('t1', frame('state=error'))
+    expect(shown.at(-1)).toBe(false)
+  })
+
+  it('a dialog left on screen by a claude that is gone is taken off: on exit, and when a new program starts in the tab', () => {
+    const { w, processes, shown } = watch()
+    w.data('t1', QUERY + blocked('approve Bash: ls'))
+    processes.set('t1', {})
+    w.data('t1', frame('state=idle'))
+    expect(shown).toEqual([true, false])
+    w.data('t1', QUERY + blocked('approve Bash: ls') + frame('state=clear'))
+    expect(shown).toEqual([true, false, true, false])
+    w.data('t1', blocked('approve Bash: ls'))
+    w.forget('t1')
+    expect(shown).toEqual([true, false, true, false, true, false])
+  })
+
+  it('a dialog counts as just closed only for as long as a hook line fired before the answer may still land, and a login block is no dialog', () => {
+    vi.useFakeTimers()
+    try {
+      const { w } = watch()
+      w.data('t1', QUERY + frame('state=blocked:kind=auth') + frame('state=working'))
+      expect(w.justClosedADialog('t1')).toBe(false)
+      w.data('t1', blocked('approve Bash: ls'))
+      expect(w.justClosedADialog('t1')).toBe(false)
+      w.data('t1', frame('state=working'))
+      expect(w.justClosedADialog('t1')).toBe(true)
+      vi.advanceTimersByTime(A_HOOK_LINE_FIRED_BEFORE_THE_ANSWER_LANDS_WITHIN_MS)
+      expect(w.justClosedADialog('t1')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a tab it does not watch — remote, or another agent — gets no reply and reports nothing', () => {

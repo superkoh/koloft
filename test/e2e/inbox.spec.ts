@@ -26,6 +26,7 @@ import {
 import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
+  agyReady,
   installFakeRemote,
   installMuseOnMachine,
   killFakeRemote,
@@ -380,6 +381,39 @@ test('a command a Muse session wants to run is a card in the Inbox; Allow there 
   }
 })
 
+// AGY§19
+test('a plan an Antigravity session waits on is a card quoting the whole plan; Approve there tells agy the plan is approved and moves the card to Done as Answered', async ({
+  env
+}) => {
+  installAgy(env)
+  trustInAgy(env, env.workspaces.a)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    await newSessionInWith(page, 'ws-a', 'Antigravity')
+    const agyTab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id')) as string
+    await expect
+      .poll(() => terminalText(page, agyTab), { timeout: 30_000 })
+      .toContain('Antigravity CLI')
+    await runIn(page, centerTerm(page), '/plan')
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+    await openInbox(page)
+    const card = inboxCard(page, 'asks you to approve a plan')
+    await expect(card.locator('.ibx-quote')).toContainText('1. Do the thing.')
+    await card.locator('.ibx-btn', { hasText: 'Approve' }).click()
+    const sentToAgy = path.join(env.home, 'fake-agy-api.jsonl')
+    await expect
+      .poll(() => (fs.existsSync(sentToAgy) ? fs.readFileSync(sentToAgy, 'utf8') : ''), {
+        timeout: ANSWER_WAITS_FOR_THE_UNDO_MS
+      })
+      .toContain('[Approved] implementation_plan.md')
+    await expect(await doneStatus(page, 'asks you to approve a plan')).toContainText('Answered')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
 test('the sidebar Inbox edge stays still while nothing new arrives, turns once when a card comes in, then rests again — and a reload with that card still waiting does not turn it', async ({
   app,
   page
@@ -719,17 +753,23 @@ async function expectSentToItsTab(card: Locator): Promise<void> {
   await expect(card.locator('.ibx-link')).toHaveText(['Open session ›'])
 }
 
+async function tabOf(page: Page, agent: (typeof OTHER_AGENTS)[number]): Promise<string> {
+  return (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.backendId === agent.backend
+  )?.tabId as string
+}
+
 async function sayToTheAgent(
   page: Page,
   agent: (typeof OTHER_AGENTS)[number],
   line: string
 ): Promise<void> {
-  if (agent.startsOnFirstLine) return runIn(page, centerTerm(page), line)
+  if (agent.startsOnFirstLine) {
+    await agyReady(page)
+    return runIn(page, centerTerm(page), line)
+  }
   await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-  const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-    (s) => s.backendId === agent.backend
-  )?.tabId as string
-  await typeInto(page, tabId, line)
+  await typeInto(page, await tabOf(page, agent), line)
 }
 
 async function acrossARestart(
@@ -804,18 +844,9 @@ for (const agent of OTHER_AGENTS) {
       const page = await app.firstWindow()
       await waitBooted(page)
       await newSessionInWith(page, 'ws-a', agent.name)
-      const tabOf = async (): Promise<string | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === agent.backend
-        )?.tabId
-      if (agent.startsOnFirstLine) {
-        await runIn(page, centerTerm(page), 'Shall I merge PR #12?')
-      } else {
-        await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-        await typeInto(page, (await tabOf()) as string, 'Shall I merge PR #12?')
-      }
+      await sayToTheAgent(page, agent, 'Shall I merge PR #12?')
       await pickNotYet(page, agent.said)
-      const tabId = (await tabOf()) as string
+      const tabId = await tabOf(page, agent)
       await expect
         .poll(() => agent.got(env, page, tabId), { timeout: ANSWER_WAITS_FOR_THE_UNDO_MS })
         .toContain('Merge PR #12? «Not yet»')

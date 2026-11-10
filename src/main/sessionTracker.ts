@@ -463,6 +463,7 @@ interface Tracked {
   >
   procsAt: number
   procsPromise?: Promise<void>
+  toolShellsOnMachine?: string[]
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
   turns: TurnLog
@@ -525,6 +526,7 @@ export class SessionTracker extends SessionRuntime {
       sessionId
     )
   leftBehind?: (sessionId: string) => boolean
+  dialogJustClosed?: (tabId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   realFilesOn?: RealFilesOnMachine
 
@@ -616,6 +618,8 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    // CC§14
+    if (event.type === 'notify' && this.dialogJustClosed?.(tabId)) return
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
       if (t) this.compaction(t, event)
@@ -656,6 +660,11 @@ export class SessionTracker extends SessionRuntime {
     if (!t?.idleCompaction) return false
     t.idleCompaction = false
     return true
+  }
+
+  // CC§14
+  dialogAnswered(tabId: string): void {
+    if (this.turnNow(tabId) !== 'working') this.recordHookTurn(tabId, 'working')
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -750,7 +759,8 @@ export class SessionTracker extends SessionRuntime {
     let observed = false
     let trusted = false
     const reportedIds = new Set(t.reported.map((x) => x.id))
-    const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
+    const toolShells = t.remote ? (t.toolShellsOnMachine ?? []) : [...(procs?.shells.keys() ?? [])]
+    const toolCallInFlight = toolShells.some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
@@ -785,6 +795,7 @@ export class SessionTracker extends SessionRuntime {
           }
         }
       } else if (AGENT_TYPES.has(task.type)) {
+        // CC§8
         if (agentsFresh || toolCallInFlight) {
           observed = true
           run(task, 'agent', t.ledger.labelOf(task.id) ?? task.type)
@@ -954,6 +965,17 @@ export class SessionTracker extends SessionRuntime {
     if (t) this.cleanup(t)
     this.tracked.delete(tabId)
     this.emitUpdate()
+  }
+
+  // CC§8
+  toolShellsOnMachineSaid(host: string, outputs: string[]): void {
+    for (const t of this.tracked.values()) {
+      if (t.remote?.host !== host) continue
+      const folder = `/${t.info.sessionId}/tasks/`
+      t.toolShellsOnMachine = outputs
+        .filter((o) => t.info.sessionId && o.includes(folder))
+        .map((o) => path.posix.basename(o, '.output'))
+    }
   }
 
   remoteOf(tabId: string): RemoteTab | undefined {

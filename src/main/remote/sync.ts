@@ -68,6 +68,7 @@ export interface RemoteSyncDeps {
   onConnected?(host: string): void
   onConnectedRound?(host: string): void
   onShells?(host: string, shells: ShellReport[]): void
+  onToolShells?(host: string, outputs: string[]): void
 }
 
 interface HostState {
@@ -300,6 +301,7 @@ export class RemoteSync {
         this.noticeStamps(host, watched, parsed.stamps)
         st.tmp = parsed.tmp
         this.deps.onShells?.(host, parsed.shells)
+        this.deps.onToolShells?.(host, parsed.toolShells)
         const prevAlive = st.alive
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)
@@ -311,6 +313,7 @@ export class RemoteSync {
           st.gitAt = Date.now()
         }
       } else {
+        this.deps.onToolShells?.(host, [])
         st.connected = false
         st.failures++
         st.problem = problemOf(hb)

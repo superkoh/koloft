@@ -44,11 +44,10 @@ test('one bar per session carries working, approval and waiting side by side, an
   await expect(page.locator('.toast-layer')).toHaveCount(0)
   await expect(page.locator('.toast')).toHaveCount(0)
 
-  const firstChild = await page
+  const islandChildren = await page
     .locator('.isl-sessions > *')
-    .first()
-    .evaluate((el) => el.className)
-  expect(firstChild).toContain('ws-list')
+    .evaluateAll((els) => els.map((el) => el.className))
+  expect(islandChildren).toEqual(['ibx-entry-wrap', 'ws-list'])
 
   const realBadge = await app.evaluate(({ app }) => app.dock?.getBadge?.() ?? '')
   expect(realBadge).toBe('')

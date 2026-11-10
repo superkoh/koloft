@@ -241,8 +241,30 @@ final response without waiting. The relay saw:
    `idle` and emitted `turn/completed`.
 
 The completed **spawn tool call** is not completion of the **spawned child**.
-The parent-child relationship comes from the collab item, not from treating every
-other thread on the wire as a child. Temporary title threads share that wire too.
+The parent-child relationship comes from the collab item (or, on 0.166.0, the
+sub-agent activity item below), not from treating every other thread on the wire as a
+child. Temporary title threads share that wire too.
+
+### Child agent announced as sub-agent activity
+
+**Measured 2026-11-08, codex-cli 0.166.0, `codex app-server` driven by a Node script in a
+throwaway `CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), the
+same prompt also run once in a real Koloft Codex tab; 2 runs.** `codex features list` in
+an empty home still reads `multi_agent_v2 stable false`, yet the model's tool was
+`spawn_agent {task_name, fork_turns, message}` and the child's path `/root/<task_name>`.
+No `collabAgentToolCall` item came at all. The wire, in order:
+
+1. On the parent thread, `item/started` then `item/completed`, both
+   `{type: "subAgentActivity", kind: "started", agentThreadId, agentPath}`.
+2. The child thread's own `thread/status/changed` (`idle` first, then `active`) and
+   `turn/started`; its `commandExecution` items.
+3. The parent's `idle` and `turn/completed` while the child still ran (`sleep 30`).
+4. When the child ended: on the parent thread `item/started` of the same item with
+   `kind: "completed"`, then the child's `idle` and `turn/completed`, then the parent's
+   `item/completed` (`kind: "completed"`). The parent started no new turn within 80 s.
+
+The 0.166.0 schema's `SubAgentActivityKind` is `started`, `interacted`, `interrupted`,
+`completed`.
 
 ### No Monitor; a server left in a background terminal
 
@@ -1377,6 +1399,34 @@ resumed from the default home (issue #486). Not probed: 0.159.3 (the
 §19 read was from the home that made the session), and whether
 `codex migrate-rollouts --apply` fills the index. A `codex exec` rollout (`source: "exec"`) is not in the
 default listing, which asks for interactive sources only.
+
+**The same on 0.166.0, and what a `thread/resume` from the default home leaves behind.**
+Checked 2026-11-06 with codex-cli 0.166.0, no login: a Node client on `codex app-server`
+in throwaway `HOME` and `CODEX_HOME`s laid out as above, the model provider in the shared
+`config.toml` pointed at a closed local port (`base_url = "http://127.0.0.1:9/v1"`), so
+B's one turn failed but was recorded (an 80 KB rollout). D, already running, listed the
+thread (`notLoaded`) and read 0 turns (`thread/read`, `thread/turns/list`); B read 1.
+`thread/resume` from D answered in 17–23 ms with the turn, and left `updatedAt` in
+`thread/list` and the rollout's bytes unchanged; D gained
+`thread-writer-locks/<id>.lock`, `shell_snapshots/<id>.<ns>.sh` and `.sandbox_migration`,
+and no child process outlived it by 3 s. With an `[mcp_servers.<name>]` table in the shared
+`config.toml` (a Node stub that logs each start), the resume started that MCP server once
+more, and it was gone 1.5 s after the resuming app-server closed. **The resuming app-server keeps the thread's
+writer for as long as it lives, even after `thread/unsubscribe` (`unsubscribed`)**: a
+second app-server on D then got `-32600` "thread … already has an active writer" on
+`thread/resume` and "thread not found" on `turn/start`, while one on B resumed and took
+a turn. Once the resuming process exited, a new app-server on D resumed the thread and
+took a turn. A `thread/read` from B took no writer: D and B both resumed after it. After
+the resuming app-server closed, an app-server on D that had been running all along read
+the turn too, and a home that has the thread loaded also reads the turns other homes
+add later (1, 2, then 3 as D and B took turns). So Koloft reads a closed session's turns
+from the account home Koloft last ran it in, and only when that gives none (no record, or
+a session from before Koloft kept them) resumes it in the default home, at most once per
+thread a run, on an app-server of its own that it closes at once — never on the long-lived one, which would keep
+`codex resume <id>` in the default home from writing to it. A rollout from 0.165.0
+copied with its old mtime into a running 0.166.0 home's `sessions/` was not listed at
+all, even after a resume — unlike the copies on 0.162.0 and 0.164.0 above, which were
+listed; why was not looked into (Koloft links `sessions/`, it never copies a rollout).
 
 **A session started on one login takes a model turn on another.** Checked 2026-10-09
 with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
@@ -2597,11 +2647,29 @@ the one before, the screen read back through `pyte`.
   `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
   `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
   with `TERM_PROGRAM` set.
+- **A line typed before the TUI starts lands in the composer unsent** (2026-11-08,
+  0.166.0, `codex --no-daemon` started from `zsh -i` in a python pty at 120×40, a scratch
+  `HOME` and `CODEX_HOME` with an API-key `auth.json` and a fake Responses server on
+  localhost, the screen read through `pyte`, 1 run each): the launch line and `hello` CR
+  in one write at zsh's `ESC[?2004h`, or `hello` CR written 0.3 s after the launch line,
+  left `› hello` in the composer and no request reached the server in 15 s. `hello` in
+  the launch line's write and a lone CR 3 s later sent it; so did `hello` written when
+  the TUI turned on bracketed paste (its `?2004h`, 0.08 s after zsh's) and CR 0.3 s
+  after that (2 runs).
 - **Ctrl+X (0x18), the leader key 0.163.0 adds, shows nothing at the idle composer in
   3 s**; a following Esc shows "esc again to edit previous message". One Ctrl+C at an
   empty composer quits at once (both versions). What Ctrl+X followed by another key does
   was not run; Koloft itself never sends 0x18 (a conductor's `koloft session keys` would
   have to name it).
+- **Ctrl+A, Ctrl+E and Ctrl+U edit the composer one line at a time**, as in Claude Code
+  (CC§12): in `hello world` Ctrl+A went before `h`, Ctrl+E after the last letter,
+  Ctrl+U with the caret after the third letter deleted those three, and at the line's
+  end emptied it. In a two-line composer (`one`, `\n`, `two`) Ctrl+A went to the start
+  of the second line; Ctrl+E then Ctrl+U emptied that line, and a second Ctrl+U deleted
+  the line break. Home and End (`ESC[H`, `ESC[F`) moved like Ctrl+A and Ctrl+E;
+  `ESC[1;3D` moved one word left and `ESC DEL` deleted one word. 2026-11-09, Codex CLI
+  0.166.0, `codex --no-daemon` in a python pty read through `pyte`, a scratch
+  `CODEX_HOME` with an API-key `auth.json`.
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
 
@@ -3233,4 +3301,34 @@ trusted. One run of each.
   (no relay in between), the app-server sent SIGKILL: both drew "Reconnecting to
   server… ⌃c quit" and were still running 45 s later. The 0.166.0 notes' "Improve TUI
   reconnect recovery" was not told apart from 0.165.0 by this.
+
+## 35. Links in a reply
+
+**The TUI sends every link as OSC 8 whatever `TERM_PROGRAM` says.** Unlike Antigravity
+(AGY§27), `TERM_PROGRAM=Apple_Terminal` turns nothing off. Measured 2026-11-09 on
+codex-cli 0.166.0 (`~/.codex/packages/standalone/current/bin/codex`) in a python pty at
+120×40, a throwaway `HOME` and `CODEX_HOME` whose `config.toml` points `model_provider`
+at a fake Responses server on localhost (`wire_api = "responses"`, `env_key` a made-up
+key, no login), `TERM=xterm-256color`, `COLORTERM=truecolor`, the pty answering DA1, DA2,
+cursor position, `?u` (with `?0u`) and OSC 10/11. One typed prompt; the fake answered
+with three markdown links (`- [doc N](http://…/link-N) is number N`) and one bare
+address. Two launch shapes:
+
+- `codex --no-daemon`, with `TERM_PROGRAM=Apple_Terminal` (Koloft's, PLATFORM§2), unset,
+  and `tmux`, each in fullscreen (the default) and inline (`--no-alt-screen`): 3 runs each.
+- The launch Koloft's tabs use, `codex --remote unix://<sock> -C <dir>` on an
+  `app-server --listen unix://<sock>` of its own (no relay between), fullscreen, with
+  `Apple_Terminal` and unset: 3 runs each.
+
+Every run the same:
+
+- On screen each link reads `doc 1 (http://…/link-1)`, and the bare address as written.
+- 7 OSC 8 links per reply: `doc 1` and its address in brackets each carry
+  `ESC]8;;http://…/link-1 BEL`, and the bare address carries its own. The TUI never asks
+  DECRQM 2026 and wraps its redraws in `?2026h … ?2026l` under every shape.
+
+A remote tab's TUI runs on the Mac with the same env (§16, ADR-0039), not behind tmux on
+the machine. That a click on `doc 1` then opens the link in a Koloft Codex tab is
+inferred, not checked: the click in a built Koloft was not driven for Codex; it goes
+through the one terminal link handler every tab shares, which AGY§27 drove.
 
