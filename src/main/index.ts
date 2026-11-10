@@ -1545,7 +1545,6 @@ function foldProbeResult(
     usageViews.set(key, { ...usageViews.get(key), probeError: result.error })
     if (status === 'expired' && prevStatus !== 'expired') notifyExpired(name)
   }
-  picker.probed(kind, name, result)
   pushAccounts()
 }
 
@@ -2478,6 +2477,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
           model: a.model
         })
         foldProbeResult(a.name, a.kind, result)
+        picker.probed(a.kind, a.name, result)
       })
     ])
     pushAccounts()

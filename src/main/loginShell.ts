@@ -93,7 +93,7 @@ export function agentsInLoginShell(
     round: readLoginShell({
       env,
       shell,
-      probes: AGENT_COMMANDS.map((name) => `command -v ${name}`)
+      probes: AGENT_COMMANDS.map((name) => `command -v ${name} || true`)
     }).then(({ probed, env: login }) => ({
       env: login,
       commandV: Object.fromEntries(AGENT_COMMANDS.map((name, i) => [name, probed[i]])) as Record<
@@ -102,10 +102,14 @@ export function agentsInLoginShell(
       >
     }))
   }
-  const settled = (): void => {
-    entry.settledAt = Date.now()
-  }
-  entry.round.then(settled, settled)
+  entry.round.then(
+    () => {
+      entry.settledAt = Date.now()
+    },
+    () => {
+      if (shared === entry) shared = undefined
+    }
+  )
   shared = entry
   return entry.round
 }

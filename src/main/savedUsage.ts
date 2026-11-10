@@ -1,13 +1,18 @@
 import fs from 'fs'
 import type { UsageSnapshot } from '@shared/types'
+import { FIVE_HOUR_MINUTES } from '@shared/accountUsage'
 import { BackgroundFile } from './backgroundFile'
 
-function readSnapshots(file: string): [string, UsageSnapshot][] {
+export const SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS = FIVE_HOUR_MINUTES * 60_000
+
+function readSnapshots(file: string, nowMs: number): [string, UsageSnapshot][] {
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
     return Object.entries(raw).filter(
       (e): e is [string, UsageSnapshot] =>
-        !!e[1] && typeof e[1] === 'object' && typeof (e[1] as UsageSnapshot).at === 'number'
+        !!e[1] &&
+        typeof e[1] === 'object' &&
+        nowMs - (e[1] as UsageSnapshot).at < SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS
     )
   } catch {
     return []
@@ -18,8 +23,8 @@ export class SavedUsage {
   private readonly byKey: Map<string, UsageSnapshot>
   private readonly disk: BackgroundFile
 
-  constructor(file: string) {
-    this.byKey = new Map(readSnapshots(file))
+  constructor(file: string, nowMs = Date.now()) {
+    this.byKey = new Map(readSnapshots(file, nowMs))
     this.disk = new BackgroundFile(() => file)
   }
 

@@ -6,6 +6,7 @@ import { agentsInLoginShell, LoginShellError, type AgentCommand } from './loginS
 import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
+const VERSION_TIMEOUT_MS = 8000
 
 export interface CliRuntime {
   binary: string
@@ -48,19 +49,18 @@ export async function resolveCliRuntime(
   options: {
     env?: NodeJS.ProcessEnv
     shell?: string
-    timeoutMs?: number
   } = {}
 ): Promise<CliRuntime> {
   const given = options.env ?? process.env
   const inherited = { ...given }
-  const timeout = options.timeoutMs ?? 8000
   let binary = inherited.KOLOFT_TEST_BACKGROUND === '1' ? inherited[spec.testCommandEnv] : undefined
   let resolved = inherited
   if (!binary) {
     try {
       const login = await agentsInLoginShell(given, options.shell)
       const printed = login.commandV[spec.command]
-      binary = path.isAbsolute(printed) ? printed : fileOnPath(spec.command, login.env.PATH)
+      binary =
+        !printed || path.isAbsolute(printed) ? printed : fileOnPath(spec.command, login.env.PATH)
       resolved = login.env
       const offPath = spec.installedOffPath?.(resolved)
       if (!binary && offPath && executable(offPath)) binary = offPath
@@ -77,7 +77,12 @@ export async function resolveCliRuntime(
   let stdout: string
   try {
     stdout = (
-      await exec(binary, ['--version'], { env, timeout, maxBuffer: 64 * 1024, encoding: 'utf8' })
+      await exec(binary, ['--version'], {
+        env,
+        timeout: VERSION_TIMEOUT_MS,
+        maxBuffer: 64 * 1024,
+        encoding: 'utf8'
+      })
     ).stdout
   } catch {
     throw new Error(`Could not run ${spec.cliName} from your shell environment.`)

@@ -45,10 +45,10 @@ describe("background ssh gets what the user's own terminal has", () => {
 })
 
 describe('one login shell answers every agent lookup at startup', () => {
-  function countingZsh(): { shell: string; runs: () => number } {
+  function countingZsh(then = 'exec /bin/zsh "$@"'): { shell: string; runs: () => number } {
     const log = path.join(zdotdir, 'runs')
     const shell = path.join(zdotdir, 'zsh')
-    fs.writeFileSync(shell, `#!/bin/sh\necho run >> '${log}'\nexec /bin/zsh "$@"\n`, {
+    fs.writeFileSync(shell, `#!/bin/sh\necho run >> '${log}'\n${then}\n`, {
       mode: 0o700
     })
     return {
@@ -85,6 +85,22 @@ describe('one login shell answers every agent lookup at startup', () => {
       muse: '',
       agy: ''
     })
+  })
+
+  it('answers every name even when the profile stops the shell at the first failing command', async () => {
+    fs.writeFileSync(path.join(zdotdir, '.zshrc'), 'setopt ERR_EXIT\n')
+    const { shell } = countingZsh()
+    const round = await agentsInLoginShell({ PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }, shell)
+    expect(round.commandV.muse).toBe('')
+    expect(round.env.PATH).toBeTruthy()
+  })
+
+  it('never hands a shell that failed to the next caller', async () => {
+    const { shell, runs } = countingZsh('exit 3')
+    const env = { PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }
+    await expect(agentsInLoginShell(env, shell)).rejects.toThrow()
+    await expect(agentsInLoginShell(env, shell)).rejects.toThrow()
+    expect(runs()).toBe(2)
   })
 
   it('asks a fresh shell for the 60 s re-ask of a missing agent, and right after a recheck', async () => {

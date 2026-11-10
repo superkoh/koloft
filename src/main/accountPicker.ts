@@ -137,7 +137,7 @@ function withLoad(score: Score, liveSessions: number): Score {
   return { ...score, s1: score.s1 + liveSessions * SCORE_PER_LIVE_SESSION }
 }
 
-export interface UsageCache {
+export interface UsageSnapshots {
   get(key: string): UsageSnapshot | undefined
   set(key: string, usage: UsageSnapshot): unknown
   delete(key: string): unknown
@@ -149,7 +149,7 @@ export class AccountPicker {
 
   constructor(
     private deps: PickDeps,
-    private cache: UsageCache = new Map()
+    private cache: UsageSnapshots = new Map()
   ) {}
 
   private key(a: AccountMeta): string {
