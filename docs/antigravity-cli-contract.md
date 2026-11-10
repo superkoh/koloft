@@ -1650,6 +1650,29 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+- **A `/<name>` line sends the skill's body when it is typed after agy is ready, and
+  only as plain text when it is given with `-i`.** 2026-11-09, agy 1.5.3 linux-arm64,
+  Docker (`--network none`), agy in tmux 3.3a, a fake Gemini server logging each
+  request, a skill `zebra-skill` in `<gd>/config/skills/` whose body holds a codeword.
+  Typed into the input box as `/zebra-skill do X` and Enter, the request's user turn held
+  `/zebra-skill is a [Slash Command]: <SKILL>The user has explicitly invoked the
+  (zebra-skill) skill … Here are its contents: <body></SKILL>` in each way it was sent:
+  key by key then Enter (1 run), one bracketed paste with `\r` 2 s after the first
+  `idle` (1 run), the same text and `\r` with no paste markers (1 run), the paste with
+  `\r` at once on the first OSC 7501 `idle` frame (3 runs) and at once on the first
+  title-script input with `agent_state` `idle` (2 runs). Started with
+  `-i "/zebra-skill do X"` (2 runs) the turn held only
+  `<USER_REQUEST>/zebra-skill do X</USER_REQUEST>`, no body. At start the title script
+  got `authenticating` twice, then `idle` with `conversation_id` `""` about 0.3 s later,
+  before anything was typed; with `-i` it got no `idle` before the turn. In a folder not
+  yet trusted agy showed its trust question, sent the 7501 frame
+  `blocked:kind=permission` ("Trust this folder?") and the title `initializing`, and no
+  `idle` while the question was up; Enter there picks "Yes, I trust this folder". A line
+  written before agy started was echoed by the tty and lost. Pasted with `\r` the same way
+  (1 run each): `/tmp/notes.txt summarize this` and `/nosuch do X` went to the model as
+  plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
+  installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
+  first line was `/zebra-skill do X` sent all three lines and the body.
 
 ## §32 The folder's AGENTS.md as a memory
 
