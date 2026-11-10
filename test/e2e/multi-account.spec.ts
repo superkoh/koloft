@@ -18,7 +18,15 @@ import {
   seedSettings,
   type E2EEnv
 } from './helpers/env'
-import { centerTerm, clickAppMenuItem, openMenu, startSessionIn, waitBooted } from './helpers/p1'
+import {
+  centerTerm,
+  clickAppMenuItem,
+  openMenu,
+  startSessionIn,
+  termIds,
+  terminalText,
+  waitBooted
+} from './helpers/p1'
 import { noAccountLine, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
@@ -1036,18 +1044,19 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
 
     await app.evaluate(({ BrowserWindow }) => {
       const sent: string[] = []
-      ;(globalThis as unknown as { __terminalDataSent: string[] }).__terminalDataSent = sent
+      ;(globalThis as unknown as { __terminalSent: string[] }).__terminalSent = sent
       for (const win of BrowserWindow.getAllWindows()) {
         const send = win.webContents.send.bind(win.webContents)
         win.webContents.send = (channel: string, ...args: unknown[]) => {
-          if (channel === 'terminal:data') sent.push(JSON.stringify(args))
+          if (channel === 'terminal:data' || channel === 'terminal:exit')
+            sent.push(JSON.stringify([channel, ...args]))
           return send(channel, ...args)
         }
       }
     })
-    const terminalDataSent = (): Promise<string> =>
+    const terminalSent = (): Promise<string> =>
       app.evaluate(() =>
-        (globalThis as unknown as { __terminalDataSent: string[] }).__terminalDataSent.join('')
+        (globalThis as unknown as { __terminalSent: string[] }).__terminalSent.join('')
       )
     const tabsBefore = await page.locator('.ws .ws-tab').count()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
@@ -1072,7 +1081,8 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
 
     await expect(page.locator('.acct-login-state.ok')).toContainText('Saved bravo')
     expect(await page.locator('.ws .ws-tab').count()).toBe(tabsBefore)
-    expect(await terminalDataSent()).not.toContain('guided0login0fixture')
+    await expect.poll(terminalSent).toContain('terminal:exit')
+    expect(await terminalSent()).not.toContain('guided0login0fixture')
 
     await expect
       .poll(() =>
@@ -1086,7 +1096,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   }
 })
 
-test('guided login: a captured token the probe rejects as expired reports failure and is written to neither the Keychain nor the pool', async ({
+test('guided login: a captured token the probe rejects as expired reports failure and is written to neither the Keychain nor the pool, and Show terminal opens the sign-in terminal with what it printed', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -1111,6 +1121,17 @@ test('guided login: a captured token the probe rejects as expired reports failur
     expect(mock.requests).toContain(REJECTED_TOKEN)
     expect(await claudeAccountList(page)).toEqual([])
     expect(fs.readFileSync(env.keychainFile, 'utf8')).not.toContain(REJECTED_TOKEN)
+
+    await page
+      .locator('.acct-login-state.bad')
+      .getByRole('button', { name: 'Show terminal' })
+      .click()
+    await expect
+      .poll(async () => {
+        const [tab] = await termIds(page)
+        return tab ? terminalText(page, tab) : ''
+      })
+      .toContain('Paste this token into your environment')
   } finally {
     await app.close().catch(() => {})
     await mock.close()

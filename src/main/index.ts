@@ -3343,7 +3343,7 @@ app.whenReady().then(() => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
-    if (!loginPtys.has(d.id)) terminalOutput.push(d.id, d.data)
+    terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
     sendToRenderer(CH.terminal.processTitle, t)
@@ -3405,7 +3405,7 @@ app.whenReady().then(() => {
     awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     if (exited?.utilMachine) forgetShellOnMachine(exited.utilMachine, e.id)
-    loginPtys.delete(e.id)
+    const signInNobodyOpened = loginPtys.delete(e.id) && !flowGates.get(e.id)?.isAttached()
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
@@ -3438,7 +3438,7 @@ app.whenReady().then(() => {
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
     // PLATFORM§21
-    terminalOutput.end(e.id, !sleepers.has(e.id))
+    terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
