@@ -1287,26 +1287,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
   })
 
   // AGY§14
-  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+  it('holds a question that takes several picks open as one, from the tool call or the API; through the API its picks go as the ids of every option picked', async () => {
     const id = await boundTab()
-    const asked = async (multi: boolean): Promise<void> => {
-      hook(id, 'PreToolUse', {
-        toolCall: {
-          name: 'ask_question',
-          args: {
-            questions: [
-              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
-            ]
-          }
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: {
+          questions: [
+            { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: true }
+          ]
         }
-      })
-      await hooksTaken(id)
-      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }],
+      ownWords: true,
+      multiSelect: true
     }
-    await asked(true)
-    expect(sessions.openQuestion(id)).toBeUndefined()
-    expect(sessions.openApproval(id)).toBeUndefined()
-    expect(await sessions.answer(id, '1')).toBe(false)
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, '1, 2')).toBe(false)
 
     say(id, state('working'))
     apiAnswers = true
@@ -1316,18 +1318,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
           {
             question: 'Which fruits?',
             options: [
-              { id: '1', text: 'Apple' },
-              { id: '2', text: 'Banana' }
+              { id: 'a', text: 'Apple' },
+              { id: 'b', text: 'Banana' }
             ],
             isMultiSelect: true
           }
         ]
       }
     })
-    await asked(false)
-    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
-    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
-    expect(sessions.openApproval(id)).toBeUndefined()
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, 'banana, 1')).toEqual({})
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: {
+          trajectoryId: 't9',
+          stepIndex: 2,
+          askQuestion: { responses: [{ question: 'Which fruits?', selectedOptionIds: ['a', 'b'] }] }
+        }
+      }
+    ])
     expect(pty.write).not.toHaveBeenCalled()
   })
 

@@ -637,6 +637,33 @@ so; the model's own shell tool was checked against those on macOS with the fake 
     highlight when unanswered); the last Enter landed in the empty input box.
   - So once the person pressed a key in a question since it was asked, Koloft leaves it
     to them and presses nothing.
+- **A question that takes several picks: a digit moves, Space ticks, its Submit row
+  sends, always through the review page.** Measured 2026-11-06 on `Muse Code 1.4.11
+  (1.4.11-R6667.1)` (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker
+  `--network none`, a python3 pty 160×50 answering the cursor, colour and 7501 queries,
+  the screen read through `pyte`, the fake `/responses` model above, `--approval-judge
+  off --trust-workspace`, a fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, keys
+  ~300 ms apart from 2.5 s after `blocked`; 50 runs, two per line unless marked. The
+  tool's schema gives `selection` as `{"mode":"single"}` or `{"mode":"multiple",
+  "min_selections", "max_selections"}` (each `1`–`3` or `null`), with 2–3 options and 1–3
+  questions. `approval/listPending` (§5) lists such a question with `"selection":
+  {"mode":"multiple"}` (a number set by the model shows as `minSelections` /
+  `maxSelections`). The box draws `1. [ ] Apple` … `N+1. [ ] None of the above` and
+  `N+2. Submit answer (0 checked)`, with "Enter to toggle · Submit row to continue · ↑/↓
+  to move · Tab for an optional note · Esc to interrupt". A digit only moves the highlight
+  (nothing sent in 15 s); Space or Enter ticks or unticks the highlighted row; the digit
+  of the Submit row, then Enter, puts up "Review answers before submit" even for one
+  question, and Enter there sends `{"id":"fruits","selected_labels":["Apple","Cherry"]}`
+  (option order) for `1` Space `3` Space `5` Enter Enter. "None of the above" unticks the
+  rest and is unticked by them; `N+1`, Tab, the words, Enter put up the review page and
+  its Enter sends `{"free_text":"None of the above","note":"Mango"}`. Submitting nothing
+  ticked shows "⚠ Nothing is checked …" and stays `blocked` (1 run); fewer ticks than
+  `minSelections` makes the Submit row do nothing, and a tick past `maxSelections` is
+  refused, both silently. With two questions, the Submit row's Enter, or a note's Enter,
+  on question 1 moves to question 2 with no review page, and the last question's answer
+  puts it up: `1` Space `3` Space `5` Enter, `2` Enter, Enter sent `selected_labels`
+  then `selected_label: "Blue"`, the same for the reverse order and for a note on either
+  question. Keys in one write (`"1 3 5\r\r"`) were all taken (2 runs).
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting

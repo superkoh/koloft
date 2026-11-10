@@ -204,9 +204,22 @@ export function museAsk(reply: unknown): MuseAsk {
 
 // MUSE§11
 function museQuestion(q: Record<string, unknown>): Question[] {
-  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return []
+  const selection = record(q.selection)
+  const mode = selection.mode
+  if (typeof q.question !== 'string' || (mode !== 'single' && mode !== 'multiple')) return []
   const options = labelsOf(q.options)
-  return options.length ? [{ question: q.question, options, ownWords: true }] : []
+  if (!options.length) return []
+  const asked: Question = { question: q.question, options, ownWords: true }
+  if (mode === 'single') return [asked]
+  const { minSelections: fewest, maxSelections: most } = selection
+  return [
+    {
+      ...asked,
+      multiSelect: true,
+      ...(typeof fewest === 'number' && { fewest }),
+      ...(typeof most === 'number' && { most })
+    }
+  ]
 }
 
 // MUSE§5

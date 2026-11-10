@@ -289,9 +289,14 @@ function agyArgs(
 }
 
 // AGY§14
-function agyQuestion(question: string, raw: unknown): Question {
+function agyQuestion(question: string, raw: unknown, multiSelect: boolean): Question {
   const options = labelsOf(raw)
-  return { question, options, ...(options.length > 0 && { ownWords: true as const }) }
+  return {
+    question,
+    options,
+    ...(options.length > 0 && { ownWords: true as const }),
+    ...(multiSelect && { multiSelect: true as const })
+  }
 }
 
 // AGY§8
@@ -1339,14 +1344,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
               ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {})
             }
           }
-        : questions.length && !questions.some((q) => q.multiSelect)
+        : questions.length
           ? {
               question: {
                 id: askId,
                 questions: questions.map((q) =>
                   agyQuestion(
                     q.question,
-                    q.options.map((o) => o.text)
+                    q.options.map((o) => o.text),
+                    !!q.multiSelect
                   )
                 )
               }
@@ -1363,12 +1369,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (status.kind === 'question' && tool?.name === 'ask_question') {
       const raw = record(tool.args).questions
       const asked = (Array.isArray(raw) && raw.length ? raw : [undefined]).map(record)
-      if (asked.some((q) => q.is_multi_select === true)) return {}
       return {
         question: {
           id,
           questions: asked.map((q) =>
-            agyQuestion(typeof q.question === 'string' ? q.question : (status.msg ?? ''), q.options)
+            agyQuestion(
+              typeof q.question === 'string' ? q.question : (status.msg ?? ''),
+              q.options,
+              q.is_multi_select === true
+            )
           )
         }
       }
