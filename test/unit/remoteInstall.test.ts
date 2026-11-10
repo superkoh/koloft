@@ -666,4 +666,12 @@ describe('the heartbeat question', () => {
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
     expect(parsed.git.get('/home/koh/api')?.worktrees).toEqual([{ dir: '/home/koh/api' }])
   })
+
+  // CC§8
+  it('reads a toolshell line as the output file of a claude tool call in flight, never a tmux session name', () => {
+    const output = '/tmp/claude-1000/-home-node-proj/5110b36f/tasks/b356kj9de.output'
+    const parsed = parseHeartbeat(`k-aaa\ntoolshell ${output}\n`)
+    expect(parsed.toolShells).toEqual([output])
+    expect(parsed.alive).toEqual(['k-aaa'])
+  })
 })

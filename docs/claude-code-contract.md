@@ -1562,6 +1562,20 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   id, during the call or in its tool result after. So the process table cannot
   tie such a call to the agent that made it; it only shows that some foreground call
   is in flight. Other foreground tools and other builds are not probed yet.
+- **On Linux the same tool shell shows in `/proc`, with no `lsof`.** Measured 2026-11-08 on
+  CC 2.1.319 (linux-arm64), interactive in tmux inside the e2e SSH lab image (Debian
+  bookworm slim, no `lsof` installed), as a normal user, the model a fake Messages API
+  answering one Bash call; 1 run. A FOREGROUND `perl -e 'sleep 40'` ran as
+  `/bin/bash -c source ~/.claude/shell-snapshots/… && … eval …`, a direct child of
+  `claude`, and `readlink /proc/<pid>/fd/1` of that shell and of `perl` both gave
+  `/tmp/claude-<uid>/<cwd slug>/<session id>/tasks/b<…>.output`.
+  `find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%l\n'` listed
+  exactly those two in 2 ms with about 20 processes in the container, and took 6–24 ms
+  over three runs with 1015 processes; Koloft's whole machine heartbeat with it took
+  10–22 ms. A process left holding such a file that is not a tool shell (a stray
+  `perl … > …/tasks/b….output &`) differs from the tool shell only by its command line,
+  which lacks `shell-snapshots`. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
+  so a probe needs another long command. A macOS machine (no `/proc`) is not probed.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
