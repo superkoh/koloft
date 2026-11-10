@@ -1328,6 +1328,20 @@ only downloaded the public release.
   and a second option "Yes, and always allow non-workspace access" (which writes
   `"allowNonWorkspaceAccess": true`); an outside read asks "Allow access to this
   file?". `/tmp` counts as inside: writing and reading there asked nothing.
+- **`read_file` outside the workspace asks, and the ask names the read** (1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, sha512 checked, Docker
+  `--network none`, default mode, `--gemini_dir` with `modelProvider` and the folder
+  trusted, the TUI in a python3 pty answering the terminal and 7501 queries, a fake
+  Gemini server calling `read_file {Path: "<home>/outside.txt"}`, 2026-11-09, 2 runs).
+  7501 `blocked:kind=permission` with msg "Approve ReadFile: Read: <path>"; the screen
+  "File access … Read: <path> / Reason: outside workspace / Allow access to this file?
+  > 1. Yes, allow access / 2. Yes, and always allow non-workspace access / 3. No, deny
+  access". `GetCascadeTrajectory`'s waiting step: `requestedInteraction: {permission:
+  {resource: {action: "read_file", target: "<path>"}, actionDescription: "Analyzing
+  outside.txt", triggerSource: {type: "TYPE_DEFAULT_FALLBACK"}}}`. Esc left it (`idle`);
+  `4` changed nothing in the 3 s watched, the box still up. The tool list was §13's
+  1.4.7 one; `read_file {Path, StartLine?, EndLine?, ByteOffset?}` refuses any other
+  property ("additional properties 'toolSummary' not allowed").
 - (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
   the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
   (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /

@@ -474,7 +474,14 @@ function tui() {
       return block(
         'permission',
         {
-          approvals: [{ approvalId: 'approval-1', rawArgs: { command: 'ls -la' } }],
+          approvals: [
+            {
+              approvalId: 'approval-1',
+              toolName: 'bash',
+              rawArgs: JSON.stringify({ command: 'ls -la' }),
+              subject: { kind: 'shell', command: 'ls -la' }
+            }
+          ],
           userInputs: []
         },
         (key) => {
