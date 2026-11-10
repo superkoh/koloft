@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
 import { record } from './codexObservation'
+import { readAppendedLines, type AppendCursor } from './appendedLines'
 import type { HistoryEntry } from './storedSessions'
 
 export const AGY_APP_DIR = 'antigravity-cli'
@@ -208,17 +209,19 @@ const saidOf = (step: TranscriptStep): SaidLine | undefined =>
 // AGY§8
 export async function readAgyTurns(file: string, n: number): Promise<Turn[]> {
   const turns: Turn[] = []
-  await eachTranscriptStep(file, (step) => {
-    const said = saidOf(step)
-    if (!said) return
-    const open = turns[turns.length - 1]
-    if (said.who === 'owner' || !open) turns.push({ said: [], reply: '', at: said.at })
-    const turn = turns[turns.length - 1]
-    if (said.who === 'owner') turn.said.push(said)
-    else turn.reply = turn.reply ? `${turn.reply}\n\n${said.text}` : said.text
-    turn.at = said.at
-  })
+  await eachTranscriptStep(file, (step) => addToTurns(turns, step))
   return turns.slice(-n)
+}
+
+function addToTurns(turns: Turn[], step: TranscriptStep): void {
+  const said = saidOf(step)
+  if (!said) return
+  const open = turns[turns.length - 1]
+  if (said.who === 'owner' || !open) turns.push({ said: [], reply: '', at: said.at })
+  const turn = turns[turns.length - 1]
+  if (said.who === 'owner') turn.said.push(said)
+  else turn.reply = turn.reply ? `${turn.reply}\n\n${said.text}` : said.text
+  turn.at = said.at
 }
 
 // AGY§8
@@ -265,14 +268,49 @@ export interface TokenTotals {
   cacheRead: number
 }
 
+export interface LastTurnAndTokens {
+  turn?: Turn
+  tokens: TokenTotals
+}
+
 // AGY§8
-export async function tokenTotals(file: string): Promise<TokenTotals> {
-  const totals: TokenTotals = { input: 0, output: 0, cacheRead: 0 }
-  await eachTranscriptStep(file, (step) => {
-    if (step.type !== 'PLANNER_RESPONSE') return
-    totals.input += step.inputTokens
-    totals.output += step.outputTokens
-    totals.cacheRead += step.cacheReadTokens
-  })
-  return totals
+export class TranscriptFollower {
+  private cursor: AppendCursor = { offset: 0, tail: [] }
+  private turns: Turn[] = []
+  private tokens: TokenTotals = { input: 0, output: 0, cacheRead: 0 }
+  private reading: Promise<unknown> = Promise.resolve()
+
+  constructor(readonly file: string) {}
+
+  catchUp(): Promise<LastTurnAndTokens> {
+    const read = this.reading.then(() => this.readWhatWasAdded())
+    this.reading = read.catch(() => undefined)
+    return read
+  }
+
+  private async readWhatWasAdded(): Promise<LastTurnAndTokens> {
+    const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size ?? 0
+    if (size < this.cursor.offset) {
+      this.cursor = { offset: 0, tail: [] }
+      this.turns = []
+      this.tokens = { input: 0, output: 0, cacheRead: 0 }
+    }
+    while (this.cursor.offset < size) {
+      const from = this.cursor.offset
+      const lines = await readAppendedLines(this.file, size, this.cursor)
+      if (lines === null || this.cursor.offset === from) break
+      for (const line of lines) {
+        const step = line && stepOf(line)
+        if (!step) continue
+        addToTurns(this.turns, step)
+        if (this.turns.length > 1) this.turns.shift()
+        if (step.type !== 'PLANNER_RESPONSE') continue
+        this.tokens.input += step.inputTokens
+        this.tokens.output += step.outputTokens
+        this.tokens.cacheRead += step.cacheReadTokens
+      }
+    }
+    const turn = this.turns[0]
+    return { turn: turn && { ...turn, said: [...turn.said] }, tokens: { ...this.tokens } }
+  }
 }

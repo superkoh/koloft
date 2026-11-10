@@ -11,6 +11,7 @@ import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
+import { readAppendedLines, type AppendCursor } from './appendedLines'
 import { capTouched, shellWrittenFiles, touchedItem } from './touchedFiles'
 import {
   MACHINE_ASKS_AT_MOST_EVERY_MS,
@@ -224,9 +225,7 @@ export function scratchpadDirFor(
   return dir && path.join(dir, 'scratchpad')
 }
 
-interface SubagentFile {
-  offset: number
-  tail: Buffer
+interface SubagentFile extends AppendCursor {
   activeMs: number
   teammate?: boolean
 }
@@ -426,7 +425,7 @@ interface Tracked {
   idleCompaction?: boolean
   launchCwd: string
   readOffset: number
-  tailBuf: Buffer
+  tailBuf: Buffer[]
   titles: TitleSources
   touched: ClaudeTouchedFiles
   real: RealFiles
@@ -475,37 +474,6 @@ interface Tracked {
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
-}
-
-const APPEND_READ_CHUNK_BYTES = envMs('KOLOFT_APPEND_READ_CHUNK_BYTES', 256 * 1024)
-
-export async function readAppendedLines(
-  file: string,
-  size: number,
-  cur: { offset: number; tail: Buffer }
-): Promise<string[] | null> {
-  let newBytes: Buffer
-  let fh: fs.promises.FileHandle | undefined
-  try {
-    fh = await fs.promises.open(file, 'r')
-    const len = Math.min(size - cur.offset, APPEND_READ_CHUNK_BYTES)
-    newBytes = Buffer.allocUnsafe(len)
-    const { bytesRead } = await fh.read(newBytes, 0, len, cur.offset)
-    if (bytesRead < len) newBytes = newBytes.subarray(0, bytesRead)
-  } catch {
-    return null
-  } finally {
-    await fh?.close()
-  }
-  cur.offset += newBytes.length
-  const buf = cur.tail.length ? Buffer.concat([cur.tail, newBytes]) : newBytes
-  const lastNl = buf.lastIndexOf(0x0a)
-  if (lastNl === -1) {
-    cur.tail = buf
-    return []
-  }
-  cur.tail = Buffer.from(buf.subarray(lastNl + 1))
-  return buf.toString('utf8', 0, lastNl).split('\n')
 }
 
 export class SessionTracker extends SessionRuntime {
@@ -569,7 +537,7 @@ export class SessionTracker extends SessionRuntime {
       info,
       launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
-      tailBuf: Buffer.alloc(0),
+      tailBuf: [],
       titles: new TitleSources(),
       touched: new ClaudeTouchedFiles(),
       real: this.realFilesOf(tabId, remote),
@@ -1086,7 +1054,7 @@ export class SessionTracker extends SessionRuntime {
 
   private resetParseState(t: Tracked, keepBindMs = false): void {
     t.readOffset = 0
-    t.tailBuf = Buffer.alloc(0)
+    t.tailBuf = []
     t.titles = new TitleSources()
     t.touched = new ClaudeTouchedFiles()
     t.real = this.realFilesOf(t.info.tabId, t.remote)
@@ -1387,7 +1355,7 @@ export class SessionTracker extends SessionRuntime {
       )
       if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles !== files) return false
       for (const f of found) {
-        if (!files.has(f)) files.set(f, { offset: 0, tail: Buffer.alloc(0), activeMs: now })
+        if (!files.has(f)) files.set(f, { offset: 0, tail: [], activeMs: now })
       }
     }
     const due = [...t.subagentFiles].filter(
@@ -1408,7 +1376,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (st.size < sst.offset) {
       sst.offset = 0
-      sst.tail = Buffer.alloc(0)
+      sst.tail = []
     }
     if (st.size === sst.offset) return false
     sst.activeMs = Date.now()

@@ -11,7 +11,7 @@ import {
   ownersWords,
   readAgyTurns,
   saidInTranscript,
-  tokenTotals
+  TranscriptFollower
 } from '../../src/main/agyStore'
 import { appendTranscript, ownerTyped, writeSummaries } from './helpers/agyStore'
 
@@ -213,6 +213,48 @@ describe('the transcript (AGY§8)', () => {
       { type: 'PLANNER_RESPONSE', input_tokens: 10, output_tokens: 2, cache_read_tokens: 5 }
     ])
     fs.appendFileSync(transcript, 'not json\n')
-    expect(await tokenTotals(transcript)).toEqual({ input: 110, output: 22, cacheRead: 55 })
+    expect((await new TranscriptFollower(transcript).catchUp()).tokens).toEqual({
+      input: 110,
+      output: 22,
+      cacheRead: 55
+    })
+  })
+
+  it('reading only what each turn added gives the same last turn and tokens as reading the whole transcript once', async () => {
+    const steps = [
+      { type: 'USER_INPUT', content: ownerTyped('first') },
+      { type: 'PLANNER_RESPONSE', content: 'one', input_tokens: 100, output_tokens: 20 },
+      { type: 'USER_INPUT', content: ownerTyped('second') },
+      { type: 'GENERIC', content: 'tool output' },
+      { type: 'PLANNER_RESPONSE', content: 'part a', input_tokens: 10, cache_read_tokens: 5 },
+      { type: 'PLANNER_RESPONSE', content: 'part b', input_tokens: 1, output_tokens: 2 }
+    ]
+    const whole = steps.map((s) => JSON.stringify(s) + '\n').join('')
+    const full = path.join(gemini, 'whole.jsonl')
+    fs.writeFileSync(full, whole)
+    const once = await new TranscriptFollower(full).catchUp()
+    fs.mkdirSync(path.dirname(transcript), { recursive: true })
+    const follower = new TranscriptFollower(transcript)
+    let last = await follower.catchUp()
+    for (const cut of [37, 120, 121, 260, whole.length]) {
+      fs.writeFileSync(transcript, whole.slice(0, cut))
+      last = await follower.catchUp()
+    }
+    expect(last).toEqual(once)
+    expect(last.turn?.reply).toBe('part a\n\npart b')
+    expect(last.tokens).toEqual({ input: 111, output: 22, cacheRead: 5 })
+  })
+
+  it('reads a transcript again from the start once it got shorter', async () => {
+    const follower = new TranscriptFollower(transcript)
+    appendTranscript(transcript, [
+      { type: 'USER_INPUT', content: ownerTyped('long gone') },
+      { type: 'PLANNER_RESPONSE', content: 'old reply', input_tokens: 500 }
+    ])
+    await follower.catchUp()
+    fs.writeFileSync(transcript, '')
+    appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'new', input_tokens: 7 }])
+    const read = await follower.catchUp()
+    expect([read.turn?.reply, read.tokens.input]).toEqual(['new', 7])
   })
 })

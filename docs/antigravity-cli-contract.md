@@ -455,6 +455,11 @@ only downloaded the public release.
     transcript_full}/00000000.jsonl`.
   - `!cmd` (a shell command the user types) and slash commands other than `/compact`
     are not recorded.
+  - Lines are only ever appended, each written once (2026-11-10, agy 1.5.0, 46 real
+    transcripts up to 3.47 MB read with a script): `step_index` rises on every line,
+    no index appears twice, and the 47 steps left `"status":"RUNNING"` are never
+    followed by a later copy. So a reader may keep its byte offset between turns and
+    read only what was added.
 - Other files under `brain/<id>/`: `.system_generated/steps/<stepIndex>/output.txt`
   (each command's output), `.system_generated/tasks/task-N.log` (background
   commands), empty `.user_uploaded/` and `scratch/`, and artifacts (§19).
