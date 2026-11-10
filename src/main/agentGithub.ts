@@ -76,13 +76,30 @@ export function repoFlagOf(args: string[]): string | undefined {
   return flagValuesOf(args, '--repo', '-R')[0]
 }
 
-const OPENS_AN_ISSUE_OR_PULL_REQUEST = /^(issue|pr) create$/
+const ISSUE_OR_PULL_REQUEST = new Set(['issue', 'pr'])
+// PLATFORM§32
+const CREATE = new Set(['create', 'new'])
+
+// PLATFORM§32
+function subcommandOf(args: string[]): string | undefined {
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--repo' || args[i] === '-R') i++
+    else if (!args[i].startsWith('-')) return args[i]
+  }
+  return undefined
+}
+
+function opensAnIssueOrPullRequest(args: string[]): boolean {
+  return ISSUE_OR_PULL_REQUEST.has(args[0]) && CREATE.has(subcommandOf(args) ?? '')
+}
+
 const CHINESE_JAPANESE_OR_KOREAN =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
 
 export const GH_WRITE_IT_IN_ENGLISH =
   'koloft: the butler opens a GitHub issue or pull request in English: write its title and body in English and run it again.'
 
+// PLATFORM§32
 async function textItOpensWith(args: string[], cwd: string): Promise<string[]> {
   const bodyFiles = flagValuesOf(args, '--body-file', '-F').filter((f) => f !== '-')
   const files = await Promise.all(
@@ -115,7 +132,7 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
     // ADR-0050
     if (
       d.writesInEnglishOnly(caller.tabId) &&
-      OPENS_AN_ISSUE_OR_PULL_REQUEST.test(args.slice(0, 2).join(' ')) &&
+      opensAnIssueOrPullRequest(args) &&
       (await textItOpensWith(args, caller.cwd)).some((t) => CHINESE_JAPANESE_OR_KOREAN.test(t))
     )
       return refused(GH_WRITE_IT_IN_ENGLISH)

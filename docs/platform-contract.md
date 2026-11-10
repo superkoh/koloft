@@ -1722,6 +1722,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
   `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
   takes `--`.
+- **`gh issue create` and `gh pr create` are also `gh issue new` and `gh pr new`** (ALIASES
+  in their `--help`), and `-R`/`--repo` may come before the subcommand:
+  `gh issue -R acme/app new --help` prints the create help. Their title and body come from
+  `-t`/`--title`, `-b`/`--body` and `-F`/`--body-file` (`-` is standard input).
+  (2026-11-09, gh 2.89.0, by hand.)
 
 ## §33 ssh
 

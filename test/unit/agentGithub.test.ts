@@ -115,17 +115,29 @@ describe('koloft gh', () => {
     ],
     ['a Japanese body', ['issue', 'create', '-R', 'a/b', '-t', 'Search', '-b', '検索できません']],
     ['a Korean title given with =', ['pr', 'create', '--title=검색 버그', '--body=x']],
-    ['a body file in Chinese', ['issue', 'create', '--title', 'Search', '--body-file', 'body.md']]
+    ['gh’s other name, new', ['pr', 'new', '--title', '修复搜索框', '--body', 'x']],
+    ['--repo before new', ['issue', '-R', 'a/b', 'new', '--title', '搜索框失去焦点', '-b', 'x']]
   ])(
     'refuses the butler an issue or pull request with %s, asking for English',
     async (_n, args) => {
-      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-gh-'))
-      fs.writeFileSync(path.join(cwd, 'body.md'), '输入第一个字以后就失去焦点')
-      const { call, ran } = verb({ butler: true, cwd })
+      const { call, ran } = verb({ butler: true })
       expect(await call(args)).toEqual({ text: GH_WRITE_IT_IN_ENGLISH, exit: 1 })
       expect(ran).toEqual([])
     }
   )
+
+  it('refuses the butler an issue whose body file is in Chinese, read where the butler runs', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-gh-'))
+    try {
+      fs.writeFileSync(path.join(cwd, 'body.md'), '输入第一个字以后就失去焦点')
+      const { call, ran } = verb({ butler: true, cwd })
+      const args = ['issue', 'create', '--title', 'Search', '--body-file', 'body.md']
+      expect(await call(args)).toEqual({ text: GH_WRITE_IT_IN_ENGLISH, exit: 1 })
+      expect(ran).toEqual([])
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
+  })
 
   it('lets the butler open an issue in English, and comment in any language', async () => {
     const { call, ran } = verb({ butler: true })
