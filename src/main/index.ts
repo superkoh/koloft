@@ -2439,7 +2439,7 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
   const key = viewKey(name, 'oauth')
   if (result.ok) {
     usageViews.set(key, { usage: result.usage })
-    if (result.usage) picker.cacheUsage('oauth', name, result.usage)
+    picker.probed('oauth', name, result)
   } else {
     usageViews.set(key, { probeError: result.error })
   }
