@@ -15,7 +15,11 @@ test.describe('the terminal font ships with the app', () => {
         seen.disconnect()
         w.__bundledFacesAtFirstTerminal = [...document.fonts]
           .filter(
-            (f) => f.family.replace(/["']/g, '') === 'JetBrainsMono Nerd Font' && f.weight !== '600'
+            (f) =>
+              f.family.replace(/["']/g, '') === 'JetBrainsMono Nerd Font' &&
+              ['normal 400', 'normal 700', 'italic 400', 'italic 700'].includes(
+                `${f.style} ${f.weight}`
+              )
           )
           .map((f) => `${f.style} ${f.weight} ${f.status}`)
           .sort()

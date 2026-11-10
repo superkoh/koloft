@@ -49,13 +49,13 @@ type TerminalViewProps = {
   copiesToClipboard?: boolean
 }
 
+// PLATFORM§66
 export function TerminalView(props: TerminalViewProps): JSX.Element {
   const fontFamily = useStore((s) => s.settings.fontFamily)
   const [loadedFamily, setLoadedFamily] = useState(() =>
     monoFontsLoaded(fontFamily) ? fontFamily : null
   )
   useEffect(() => {
-    if (loadedFamily !== null) return undefined
     let live = true
     void loadMonoFonts(fontFamily).then(() => {
       if (live) setLoadedFamily(fontFamily)
@@ -63,16 +63,16 @@ export function TerminalView(props: TerminalViewProps): JSX.Element {
     return () => {
       live = false
     }
-  }, [loadedFamily, fontFamily])
+  }, [fontFamily])
   return loadedFamily === null ? (
     <div className="term" />
   ) : (
-    <LiveTerminal {...props} loadedFamily={loadedFamily} />
+    <LiveTerminal {...props} fontFamily={loadedFamily} />
   )
 }
 
 function LiveTerminal({
-  loadedFamily,
+  fontFamily,
   id,
   active,
   onUserInput,
@@ -83,7 +83,7 @@ function LiveTerminal({
   onOutput,
   maxCols,
   copiesToClipboard = false
-}: TerminalViewProps & { loadedFamily: string }): JSX.Element {
+}: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -99,7 +99,8 @@ function LiveTerminal({
     deadline: ReturnType<typeof setTimeout>
     closed: IDisposable
   } | null>(null)
-  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const fontFamilyRef = useRef(fontFamily)
+  fontFamilyRef.current = fontFamily
   const fontSize = useStore((s) => s.settings.fontSize)
 
   const stopWaitingForSyncFrame = useCallback((): void => {
@@ -189,7 +190,7 @@ function LiveTerminal({
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
       fontSize: useStore.getState().settings.fontSize,
-      fontFamily: loadedFamily,
+      fontFamily: fontFamilyRef.current,
       cursorBlink: true,
       allowProposedApi: true,
       scrollbar: { showScrollbar: scrollbar },
@@ -491,22 +492,14 @@ function LiveTerminal({
       webglRef.current = null
       term.dispose()
     }
-  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard, loadedFamily])
+  }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 
   useEffect(() => {
-    let live = true
-    const apply = (): void => {
-      const term = termRef.current
-      if (!live || !term) return
-      term.options.fontFamily = fontFamily
-      term.options.fontSize = fontSize
-      safeFit()
-    }
-    if (monoFontsLoaded(fontFamily)) apply()
-    else void loadMonoFonts(fontFamily).then(apply)
-    return () => {
-      live = false
-    }
+    const term = termRef.current
+    if (!term) return
+    term.options.fontFamily = fontFamily
+    term.options.fontSize = fontSize
+    safeFit()
   }, [fontFamily, fontSize, id, safeFit])
 
   // PLATFORM§21
