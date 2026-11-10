@@ -134,6 +134,7 @@ const spec = ({
   settings = { hooks: {} },
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
+  trustFolder,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -145,7 +146,9 @@ const spec = ({
     banner: 'koloft: bravo',
     ...over
   }
-  return program ? { ...tab, program } : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin })
+  return program
+    ? { ...tab, program }
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -331,7 +334,10 @@ interface Box {
   run(...args: string[]): { status: number | null; stdout: string }
 }
 
-function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}): Box {
+function box(
+  s: TabSpec,
+  opts: { ensureExit?: number; claudeExit?: number; ensureBringsNode?: boolean } = {}
+): Box {
   const home = mkroot('tabhome')
   const bin = path.join(home, '.local', 'bin')
   const logs = path.join(home, 'logs')
@@ -343,7 +349,11 @@ function box(s: TabSpec, opts: { ensureExit?: number; claudeExit?: number } = {}
   fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
-    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nexit ${opts.ensureExit ?? 0}\n`,
+    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
+      opts.ensureBringsNode
+        ? `mkdir -p "$HOME/.koloft/node/bin" && ln -s ${JSON.stringify(process.execPath)} "$HOME/.koloft/node/bin/node"\n`
+        : ''
+    }exit ${opts.ensureExit ?? 0}\n`,
     { mode: 0o755 }
   )
 
@@ -852,6 +862,35 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const own = box(spec())
     expect(own.run().status).toBe(0)
     expect(fs.existsSync(cj(own))).toBe(false)
+  })
+
+  // CC§9 ADR-0026
+  it('a tab told to trust its folder writes the trust under the real path with the node ensure.sh brought, keeping what .claude.json had, even for a repo inside a trusted folder, since trust stops at the repo top; a tab not told to leaves it alone', () => {
+    const parent = mkroot('trust')
+    const repo = path.join(parent, 'repo')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const real = fs.realpathSync(repo)
+    const seeded = JSON.stringify({
+      numStartups: 3,
+      projects: { [path.dirname(real)]: { hasTrustDialogAccepted: true } }
+    })
+    const cj = (b: Box): string => path.join(b.home, '.claude.json')
+    const trusting = box(spec({ cwd: repo, trustFolder: true }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(trusting), seeded)
+    expect(trusting.run().status).toBe(0)
+    expect(JSON.parse(fs.readFileSync(cj(trusting), 'utf8'))).toEqual({
+      numStartups: 3,
+      projects: {
+        [path.dirname(real)]: { hasTrustDialogAccepted: true },
+        [real]: { hasTrustDialogAccepted: true }
+      }
+    })
+    expect(trusting.claudeCalls()).toHaveLength(1)
+
+    const plain = box(spec({ cwd: repo }), { ensureBringsNode: true })
+    fs.writeFileSync(cj(plain), seeded)
+    expect(plain.run().status).toBe(0)
+    expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
   })
 
   // CC§10

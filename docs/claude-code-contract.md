@@ -2105,8 +2105,9 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 `src/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
-`src/main/remote/launch.ts`, and the remote launch and trust in
-`src/main/host/sshHost.ts`.
+`src/main/remote/launch.ts`, the remote launch and trust check in
+`src/main/host/sshHost.ts`, and the remote trust write, which the tab script in
+`src/main/remote/launch.ts` runs with node once `ensure.sh` has put node there.
 
 ## §10 The official install script (`https://claude.ai/install.sh`)
 

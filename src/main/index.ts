@@ -138,7 +138,13 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import {
+  barePath,
+  formatRemoteKey,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -7271,6 +7277,13 @@ function registerIpc(): void {
       ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
+  // PLATFORM§30
+  ipcMain.handle(CH.fs.gitHeadLog, async (_e, root: string) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = hosts.of(root)
+    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
+    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
+  })
   ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))

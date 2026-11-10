@@ -1508,6 +1508,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `gitdir: <repo>/.git/worktrees/<name>` (a submodule: `.git/modules/<name>`); the
   gitdir can be relative, and the common repo root is three levels above a worktree's
   gitdir.
+- **A commit writes nothing inside the checkout's own folder, only under its git dir**
+  (`git rev-parse --git-dir`, read against the folder it ran in): `index`, `logs/HEAD` and `COMMIT_EDITMSG`
+  there, plus the branch ref, its log and new objects in the common `.git`. For a
+  linked worktree that git dir is `<repo>/.git/worktrees/<name>`, outside the
+  worktree's folder, so a folder watch on the worktree sees no commit at all.
+  **`logs/HEAD` moves on every move of HEAD and only then**: `fs.watchFile` (500 ms
+  poll) on it fired about 260 ms after a commit in a plain checkout and in a linked
+  worktree, and also on `commit --amend` and `reset --hard`; `git status` and
+  `git add` left it alone. **A plain `git status` rewrites `index`** whenever a
+  tracked file's time changed since the index was written (it did so on two runs in
+  a row), while `status` and `diff` run with `GIT_OPTIONAL_LOCKS=0` touched nothing in
+  the git dir — so a watch on `index` would fire on every status line refresh, and one
+  on `logs/HEAD` does not. (Measured 2026-11-08, git 2.54.0, macOS APFS, on a
+  throwaway repo with one linked worktree.)
 - **A worktree made inside the repo (under `.claude/worktrees/`) is not ignored by
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
