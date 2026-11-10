@@ -135,9 +135,9 @@ Working principles:
   agent has checked it against the code and you have fixed what it found; the
   hand-back says it was checked. An agent that cannot launch agents says its report
   is unreviewed.
-- Finish the code, then review, then test. While code is still being written, only
-  the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
-  CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
+- Finish the code, then review, then test. While writing code, only the fast checks
+  run (`format`, typecheck, `check:comments`, `test:unit:changed`; there is no lint) —
+  CI's first gate is `format:check`, and no hook runs Prettier. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
   in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s

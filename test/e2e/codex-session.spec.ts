@@ -87,6 +87,7 @@ import {
   staysOnTheFolderPageNotTheButler,
   switchToRow,
   termIds,
+  terminalText,
   TWO_LINE_PROMPT,
   waitBooted,
   worktreeDialog,
@@ -1326,6 +1327,37 @@ test.describe('Codex sessions through the real method chooser, process transport
       await confirm.getByRole('button', { name: 'Close', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/cold/)
       expect(codexCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§3 CODEX§25
+  test('Esc on a Codex approval takes its row off waiting for approval at once, and Esc in the middle of a turn takes it off working at once', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const row = codexRows(page)
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId)).split('Conversation interrupted').length - 1
+
+      await runIn(page, centerTerm(page), 'approve')
+      await expect(row).toHaveClass(/st-approval/)
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions).toBe(1)
+      await expect(row).toHaveClass(/st-waiting/)
+
+      await runIn(page, centerTerm(page), 'hold')
+      await expect(row).toHaveClass(/st-working/)
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions).toBe(2)
+      await expect(row).toHaveClass(/st-waiting/)
     } finally {
       await quitAndClose(app)
     }

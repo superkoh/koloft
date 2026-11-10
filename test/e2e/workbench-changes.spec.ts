@@ -18,6 +18,7 @@ import {
   centerTerm,
   clickAppMenuItem,
   newSessionInWith,
+  openWorktreeSession,
   runIn,
   sendShortcut,
   sessionInRow,
@@ -282,6 +283,50 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect.poll(() => x.locator(CV.diffRow).count(), { timeout: 20_000 }).toBe(compactX)
     await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
     expect(await y.locator(CV.diffRow).count()).toBe(compactY)
+  })
+
+  test('a ⤢ expanded file that leaves the change set is forgotten: later polls pull no full diff for it, and it comes back folded', async ({
+    app,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const [leaves, stays] = fx.paths.changeable
+    const relaunched = await relaunchWithGitLog(app, env)
+    const p = relaunched.page
+    const fullDiffsOf = (abs: string): number =>
+      countGitSpawns(env, {
+        subcommand: 'diff',
+        argv: (argv) => argv.includes(abs) && argv.some((a) => a.startsWith('-U'))
+      })
+    const aggregates = (): number => countGitSpawns(env, { argv: isAggregateDiff })
+    try {
+      await openChanges(p)
+      await waitStream(p, 2)
+      const x = blockOf(p, 'src/change-1.ts')
+      await x.locator(CV.expand).click()
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'true')
+      await expect.poll(() => fullDiffsOf(leaves), { timeout: 20_000 }).toBeGreaterThan(0)
+
+      fx.git('checkout', '--', leaves)
+      await expect(rows(p)).toHaveCount(1, { timeout: 30_000 })
+      await waitGitQuiet(env)
+
+      const fullBefore = fullDiffsOf(leaves)
+      const aggBefore = aggregates()
+      fx.editTracked(stays)
+      await expect.poll(aggregates, { timeout: 30_000 }).toBeGreaterThan(aggBefore)
+      await waitGitQuiet(env)
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+
+      fx.editTracked(leaves)
+      await waitStream(p, 2)
+      await waitGitQuiet(env)
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+    } finally {
+      await relaunched.app.close().catch(() => {})
+    }
   })
 
   test('WB-C19: ✎ comment pastes the path and the hunk in a diff fence into the session’s input box and types the note after it, unsent, with the caret in the session; it is greyed while an approval is up', async ({
@@ -1458,5 +1503,54 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     } finally {
       await p1app.close().catch(() => {})
     }
+  })
+
+  const COMMIT_EVERYTHING = 'git -c user.email=e2e@koloft.test -c user.name=e2e commit -qam done'
+
+  test('WB-C21: a commit the session makes in its worktree clears vs HEAD by itself, with no Reload, though the commit writes nothing inside the worktree', async ({
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('wt270')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      await showChanges(page)
+      const wtDir = fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'wt270'))
+      const rel = fx.rel(fx.paths.changeable[0])
+      fs.appendFileSync(path.join(wtDir, rel), '// made in the worktree\n')
+      await baseBtn(page).click()
+      await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
+      await expect(baseBtn(page)).toHaveText(/^vs HEAD ▾$/)
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([rel])
+
+      await runIn(page, centerTerm(page), `/sh ${COMMIT_EVERYTHING}`)
+      await expect(page.locator(CV.empty)).toHaveText('No changes against the base.', {
+        timeout: 15_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-C22: a commit the session makes in a plain checkout clears the change set by itself, with no Reload', async ({
+    page,
+    env
+  }) => {
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    await openChanges(page)
+    await waitStream(page, 1)
+
+    await runIn(page, centerTerm(page), `/sh ${COMMIT_EVERYTHING}`)
+    await expect(page.locator(CV.empty)).toHaveText('No changes against the base.', {
+      timeout: 15_000
+    })
   })
 })

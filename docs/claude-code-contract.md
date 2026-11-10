@@ -1445,7 +1445,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   full-scope login token. Long-lived tokens (from claude setup-token or
   CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
   does not work for a Koloft session.
-- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
+- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.2
+  $8/$40, 1M (cache read $0.20) — the default `fable` since CC 2.1.321 (changelog: "Added
+  Claude Fable 5.2 (`claude-fable-5-2`), now the default Fable model — 1M context, $8/$40
+  per Mtok with $0.20/Mtok cache reads"; the 2.1.322 binary names its tier
+  `tier_8_40_cache_read_0_20` and `latest_per_family` `fable: "claude-fable-5-2"`,
+  `strings`, 2026-11-10; its fast-mode price object, shared with `claude-mythos-5-2`, is
+  $16/$80 with cache writes $20 (5m) and $32 (1h) and reads $0.40 — twice each standard
+  figure, so the standard writes are the usual 1.25× and 2× input, $10 and $16); Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
@@ -1455,8 +1462,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   account, three requests: every cache write was `ephemeral_1h_input_tokens`, none 5m;
   CC's own `total_cost_usd` matched 2× input on them to the cent, and the transcript's
   `message.usage.cache_creation` carries the same split). A cache read costs 0.10×
-  input, as ccusage applies it — except the 5.5-generation rows, whose cache read is their own
-  figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
+  input, as ccusage applies it — except the rows whose cache read is their own
+  figure: Fable 5.2 $0.20 (above), Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
   fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing
   page for older Opus/Sonnet, and the Sonnet 5 change noted against CC 2.1.243. The Opus
@@ -1562,6 +1569,20 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   id, during the call or in its tool result after. So the process table cannot
   tie such a call to the agent that made it; it only shows that some foreground call
   is in flight. Other foreground tools and other builds are not probed yet.
+- **On Linux the same tool shell shows in `/proc`, with no `lsof`.** Measured 2026-11-08 on
+  CC 2.1.319 (linux-arm64), interactive in tmux inside the e2e SSH lab image (Debian
+  bookworm slim, no `lsof` installed), as a normal user, the model a fake Messages API
+  answering one Bash call; 1 run. A FOREGROUND `perl -e 'sleep 40'` ran as
+  `/bin/bash -c source ~/.claude/shell-snapshots/… && … eval …`, a direct child of
+  `claude`, and `readlink /proc/<pid>/fd/1` of that shell and of `perl` both gave
+  `/tmp/claude-<uid>/<cwd slug>/<session id>/tasks/b<…>.output`.
+  `find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%l\n'` listed
+  exactly those two in 2 ms with about 20 processes in the container, and took 6–24 ms
+  over three runs with 1015 processes; Koloft's whole machine heartbeat with it took
+  10–22 ms. A process left holding such a file that is not a tool shell (a stray
+  `perl … > …/tasks/b….output &`) differs from the tool shell only by its command line,
+  which lacks `shell-snapshots`. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
+  so a probe needs another long command. A macOS machine (no `/proc`) is not probed.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
@@ -2088,8 +2109,9 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 `src/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
-`src/main/remote/launch.ts`, and the remote launch and trust in
-`src/main/host/sshHost.ts`.
+`src/main/remote/launch.ts`, the remote launch and trust check in
+`src/main/host/sshHost.ts`, and the remote trust write, which the tab script in
+`src/main/remote/launch.ts` runs with node once `ensure.sh` has put node there.
 
 ## §10 The official install script (`https://claude.ai/install.sh`)
 
@@ -3126,6 +3148,38 @@ below was one run.
   highlight there or moved back to row 1: Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab
   approved it with no text sent. So Down, Up, Shift+Tab (`ESC[Z`) and Ctrl+U cross tmux
   unchanged (6 of 6).
+- **A plan dialog can draw four rows (measured) or five (from strings).** 2026-11-08,
+  CC 2.1.319, the setup of the plan bullet above (python pty through `pyte`, scratch
+  `HOME` and `CLAUDE_CONFIG_DIR`, the fake Messages API, logging hooks); one run per line.
+  - The user setting `showClearContextOnPlanAccept: true` (in `settings.json`; strings:
+    "When true, the plan-approval dialog offers a "clear context" option. Defaults to
+    false.") adds a first row: `1. Yes, clear context (0% used) and use auto mode`, then
+    `2. Yes, and use auto mode`, `3. Yes, manually approve edits`, `4. Tell Claude what to
+    change`. In a bypass session row 1 reads `… and bypass permissions` and row 2 `Yes, and
+    switch to BYPASS PERMISSIONS …`; a manual session (`--permission-mode default`, two
+    Shift+Tabs into plan mode) drew the same rows as the auto one. Down from row 4 wraps
+    to row 1.
+  - With it on, Shift+Tab picks row 1, from row 1 (auto, bypass and manual sessions) and
+    from row 4 holding `hello`, and so does `1`: CC ends the session (`SessionEnd`
+    reason `clear`), starts a new one in the same terminal (`SessionStart` source
+    `clear`, a new session id), and sends the plan as that one's first prompt,
+    "Implement the following plan: …", ending "User feedback on this plan: hello" when
+    row 4 held text. The old transcript records the `ExitPlanMode` call as turned down
+    ("The user doesn't want to proceed with this tool use…", `is_error: true`), so a
+    plan approved this way never shows as approved there. OSC 7501 went from
+    `blocked:kind=permission` to `idle` 20 ms after Shift+Tab. Esc rejected the plan and
+    kept plan mode.
+  - The three-row run (Ctrl+U, Down, Ctrl+U, Down, Ctrl+U, Shift+Tab) sent `hello` along
+    from row 1 with `hello` left in row 4 (1 run). Ctrl+U and Down five and four times,
+    then Shift+Tab, sent no text on four rows (from row 1 and row 2 with `hello` left in
+    row 4, from row 4 holding it, untouched: 4 runs) and on three rows (from row 1 with
+    `hello` left in row 3, untouched: 2 runs, each the usual approval).
+  - From strings, not drawn (inferred, not checked): a row `No, refine with Ultraplan in
+    a cloud session` sits just above the text row when the server flag
+    `tengu_ultraplan_config` is on and remote sessions are allowed, so with both a plan
+    dialog has five rows; Shift+Tab is handled by the whole dialog, not by a row, so it
+    should approve from that row too. A row for "Yes, manually approve edits" is left out
+    when the model needs auto or plan mode, so three rows can also be two.
 - **2.1.319 adds a settings key, `permissions.denyInsteadOfPrompting` (boolean): a call
   that would wait on a permission dialog is refused at once and the turn goes on — but
   PermissionRequest fires first, and the hook's answer wins.** Measured 2026-11-07

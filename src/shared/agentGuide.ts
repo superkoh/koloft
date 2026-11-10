@@ -135,7 +135,7 @@ function fromThePhone(backend: BackendId): string {
   return `A message that starts with ${DISCORD_PREFIX} is the owner writing to you from Discord on their phone${HOW_DISCORD_WORDS_ARRIVE[backend]}. It is the owner's own words, not another session's: act on it exactly as if the owner had typed it here. The owner reads your reply on the phone, so keep it short, and ask anything the owner must choose or answer with ${WAITING_QUESTION_TOOL[backend]}.`
 }
 
-// CC§3 CODEX§12
+// CC§3 CODEX§12 MUSE§8 AGY§25
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
@@ -319,7 +319,7 @@ PASSWORDS, CODES AND SIGN-INS
 When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's tab in Koloft (a web page or sign-in in this session's Workbench), and also on a card in Discord when the owner is away from the Mac or talks to you from Discord. Koloft passes it on itself: you never see it. Never ask the owner to write a password or code in a message.
 
 sudo
-    In a command with no terminal, Koloft's sudo asks the owner for the password. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
+    In a command with no terminal, Koloft's sudo asks the owner for the password. In a Codex, Muse or Antigravity session, and in any session on another machine, it asks also when the command has a terminal of its own. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all. In a Muse session, sudo failing with "Operation not permitted" means the Muse sandbox stopped it: run the command again with sandbox_permissions "require_escalated"; the owner allows that first, then Koloft asks for the password.
     Example: sudo brew services restart nginx && sudo launchctl kickstart -k system/com.example
 
 koloft secret page <css selector>

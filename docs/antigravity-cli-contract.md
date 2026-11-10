@@ -863,8 +863,31 @@ only downloaded the public release.
   "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
   `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
-  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
-  not tried.
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true` (a single-pick
+  question has no such key).
+- **A question that takes several picks: digits tick, Enter sends.** agy 1.5.1 (sha256
+  `d2b02615…9565`, the binary of the bullets below), Docker `--network none`
+  (`agy-a-img`, tmux 3.3a, 160×50), a fake Gemini server answering with `ask_question`
+  (`is_multi_select: true`, options Apple / Banana / Cherry), keys by `tmux send-keys`
+  300 ms apart from 1.2 s after `blocked`, the tool result read from the model's next
+  request, 2026-11-06; two runs per line unless marked. The box reads `1. [ ] Apple` …
+  `4. Write-in...` and "↑/↓ Navigate · space Toggle · enter Submit · esc Skip"; a ticked
+  row shows `[x]`. A digit moves to that row and toggles it, and sends nothing (the step
+  stayed waiting 8 s); Enter sends. `1`, `3`, Enter and `3`, `1`, Enter both sent `A1:
+  Apple, Cherry` (option order); Space, Down, Down, Space, Enter the same; `1`, `1`, Enter
+  or Enter alone sent `A1: ` (empty); a digit above the options did nothing. Write-in:
+  `4` (or Enter on its row) opens "Your answer:" under the list with the ticks kept, and
+  Enter there sends at once on the last question (on question 1 of 2 it moves to question
+  2): `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks first, then the write-in,
+  `A1: Apple, A ripe mango`. With two questions and the
+  several-pick one first, its footer says "enter Submit" but Enter goes to "Question
+  2/2", whose digit then sends both: `1`, `3`, Enter, `2` sent `A1: Apple, Cherry\nA2:
+  Medium`; with it second, `2`, then its ticks and Enter, sent `A1: Medium\nA2: Apple,
+  Cherry`. Keys in one `send-keys` burst (`1 3 Enter`) were all taken. Through the
+  Connect API (§16), `responses: [{question, selectedOptionIds: ["1","3"]}]` sent `A1:
+  Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
+  time. An option whose own text holds a comma runs into the next one (`Red, dark` and
+  `Blue` sent `A1: Red, dark, Blue`).
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
@@ -939,6 +962,20 @@ only downloaded the public release.
 
 - A bracketed paste lands in the input box unsent; Enter sends it. Plain text then CR
   sends too.
+- A bracketed paste loses its trailing line feeds as it lands in the box, before any
+  send: `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s
+  later and CR 0.3 s after that sent `…```keep the old name`, and the box showed the
+  typed text on the ``` line. Line feeds typed as plain keys right after the paste, in
+  the paste's own write or 0.3 s later, stay: the same paste without its `\n\n`, then
+  `\n\n`, then the text and CR sent `…```\n\nkeep the old name`, also inside tmux 3.3a
+  with Koloft's `TMUX_CONF`. At the send agy drops the whole prompt's leading
+  whitespace and its trailing line feeds, so line feeds with nothing typed after them
+  are lost either way. `\r\n` or a lone `\r` inside a paste becomes `\n` and sends
+  nothing early; a 60-line paste shows as `[Pasted text #1 +60 lines]` and is sent
+  whole; a paste with no Enter after it sent nothing in 3 s. (agy 1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
+  API-key route against a fake Gemini server, a python pty answering the TUI's queries,
+  2026-11-08; 1 run each.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -1098,6 +1135,12 @@ only downloaded the public release.
   shift+a approve all, `p` preview, Esc; `y` sends a new user turn "[Approved]
   implementation_plan.md", `n` "[Rejected] …". Any new message, also one sent with
   `SendUserCascadeMessage`, clears the review state.
+- When the "Approve plan" frame arrives, the plan is already on disk: `brain/<id>/`
+  holds `<name>.md` with the whole plan and `<name>.md.metadata.json` with
+  `requestFeedback: true`, so the plan's name is the sidecar's name less
+  `.metadata.json` (2026-11-06, 1.3.6 Linux arm64 in Docker, fake Gemini server; the
+  directory listed at the frame). 1.3.6's `write_to_file` refuses `ArtifactType` in
+  `ArtifactMetadata` and needs `UserFacing` and `toolAction`.
 - `/plan` goes to the model as text. Plan mode is a separate switch (`--mode plan`,
   Agent Mode in `/config`).
 
@@ -1308,6 +1351,20 @@ only downloaded the public release.
   and a second option "Yes, and always allow non-workspace access" (which writes
   `"allowNonWorkspaceAccess": true`); an outside read asks "Allow access to this
   file?". `/tmp` counts as inside: writing and reading there asked nothing.
+- **`read_file` outside the workspace asks, and the ask names the read** (1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, sha512 checked, Docker
+  `--network none`, default mode, `--gemini_dir` with `modelProvider` and the folder
+  trusted, the TUI in a python3 pty answering the terminal and 7501 queries, a fake
+  Gemini server calling `read_file {Path: "<home>/outside.txt"}`, 2026-11-09, 2 runs).
+  7501 `blocked:kind=permission` with msg "Approve ReadFile: Read: <path>"; the screen
+  "File access … Read: <path> / Reason: outside workspace / Allow access to this file?
+  > 1. Yes, allow access / 2. Yes, and always allow non-workspace access / 3. No, deny
+  access". `GetCascadeTrajectory`'s waiting step: `requestedInteraction: {permission:
+  {resource: {action: "read_file", target: "<path>"}, actionDescription: "Analyzing
+  outside.txt", triggerSource: {type: "TYPE_DEFAULT_FALLBACK"}}}`. Esc left it (`idle`);
+  `4` changed nothing in the 3 s watched, the box still up. The tool list was §13's
+  1.4.7 one; `read_file {Path, StartLine?, EndLine?, ByteOffset?}` refuses any other
+  property ("additional properties 'toolSummary' not allowed").
 - (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
   the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
   (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /
@@ -1593,3 +1650,40 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+
+## §32 The folder's AGENTS.md as a memory
+
+2026-11-07, agy 1.5.3 (the manifest's `linux_arm64.json`, sha512 matched), Docker
+`--network none`, user `u`, fake Gemini server on the API-key route,
+`WSL_INTEROP=koloft`, launched as Koloft does (`--gemini_dir=<gd>`, the cwd in
+`trustedWorkspaces`, onboarding seeded); the TUI in tmux and `-p --output-format json`;
+every request saved and searched for codewords. The cwd was a plain folder, not a
+repository, like the butler's.
+
+- **agy has no memory of its own.** The 12 tools are those of §13 for 1.4.7; none keeps
+  anything past one conversation. The system instruction lists the plain folder under
+  `Active Workspaces`. Its only "persisted" place is `brain/<conversation-id>/scratch/`,
+  which belongs to that one conversation; `/learn` is something the model may suggest to
+  the user, not use. `-p` and the TUI sent the same system instruction and tools.
+- **The cwd's `AGENTS.md` reaches the model whole, as a rule**: inside `<user_rules>`
+  ("rules that you MUST ALWAYS FOLLOW WITHOUT ANY EXCEPTION…"), as
+  `<RULE[<absolute path>/AGENTS.md]>…</RULE[…]>`, so the model sees where the file is.
+  An untrusted folder's reached it too in `-p`; the TUI in an untrusted folder sent no
+  request before its trust question was answered. `GEMINI.md` beside it is read too,
+  after it. A parent folder's `AGENTS.md` was not read.
+- **A line the model adds is there from the next turn on.** With a seeded `AGENTS.md`
+  ("This file is your memory folder. When the owner asks you to remember something, add
+  it here as one short line…"), the fake model answered with `write_file {Path:
+  <absolute path>, Content: "- …\n", Append: true}`. In the default approval mode the
+  TUI asked first ("Create file … Allow creation of this file? 1. Yes, allow creation 2.
+  No, deny creation", although the file existed) and wrote nothing before `1`; with
+  `--dangerously-skip-permissions` it wrote without asking; `-p` in the default mode
+  auto-denied it (`denied_actions`). The line was appended, the rest kept. The request
+  right after the write, in the same turn, did not hold it; the next turn of that
+  conversation did, and so did a new conversation after `/clear`, a `-c` resume after
+  the process was killed, and a fresh `-p`.
+- Not probed: the macOS build, `--mode accept-edits`, the Google sign-in route, and the
+  owner's own `~/.gemini/GEMINI.md` beside it.
+
+Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
+starts, as a Codex one does (`src/main/assistMemory.ts`).
