@@ -756,6 +756,35 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
+  // CODEX§3 CODEX§25
+  test('E-RC-20: Esc on an approval the app-server on the machine asks for takes the remote Codex row off waiting for approval at once, and Esc in the middle of a turn there takes it off working at once', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const { tabId } = await startRemoteCodex(page, env)
+      const row = wsRows(page, REMOTE_WS_NAME)
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId!)).split('Conversation interrupted').length - 1
+
+      await runIn(page, centerTerm(page), 'approve')
+      await expect(row).toHaveClass(/st-approval/, { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(1)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+
+      await runIn(page, centerTerm(page), 'hold')
+      await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(2)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§11 CODEX§16
   test('E-RC-04: with skip permission prompts off, a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
     env

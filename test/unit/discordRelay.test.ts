@@ -9,6 +9,7 @@ import type { DiscordMessage } from '../../src/main/discord/link'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN,
+  codexDialog,
   NO_OWN_WORDS,
   ONE_LINE_PER_QUESTION,
   PICK_OR_OWN_WORDS,
@@ -917,6 +918,66 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     question = { id: 'u2', questions: [one, one] }
     expect(await pressed('2\n1')).toEqual(['2', '\r', '1', '\r', '\r'])
   })
+
+  // MUSE§11 AGY§14
+  it('a Muse or Antigravity question that takes several picks takes their numbers or names split by commas, gets no buttons, and is pressed as each agent ticks: Muse a digit and Space for each, then its Submit row and review page; Antigravity each digit, then Enter; own words go in as for one pick; a whole line naming one option counts though the name holds a comma, and more or fewer picks than the question takes are refused with its limits', async () => {
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+      ownWords: true as const,
+      multiSelect: true as const
+    }
+    const colour = {
+      question: 'Which colour?',
+      options: [{ label: 'Red' }, { label: 'Blue' }],
+      ownWords: true as const
+    }
+    let backend: 'muse' | 'agy' = 'muse'
+    let question: CodexQuestion = { id: 'u1', questions: [fruits] }
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => backend,
+      pendingQuestion: () => question
+    })
+    const pressed = async (reply: string): Promise<string[]> => {
+      writes.length = 0
+      expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
+      return writes.map((w) => w.data)
+    }
+    expect(codexDialog(question).choices).toEqual([])
+    expect(await pressed('cherry, 1')).toEqual(['1', ' ', '3', ' ', '5', '\r', '\r'])
+    expect(await pressed('A ripe mango')).toEqual([
+      '\x1b[B',
+      '\x1b[B',
+      '\x1b[B',
+      '\t',
+      'A ripe mango',
+      '\r',
+      '\r'
+    ])
+    question = { id: 'u2', questions: [fruits, colour] }
+    expect(await relay.answerSession(MANAGED, '1, 3')).toBe(
+      'Reply with one line per question: a number (or several, split by commas, where it takes more than one) or your own answer.'
+    )
+    expect(await pressed('1, 3\n2')).toEqual(['1', ' ', '3', ' ', '5', '\r', '2', '\r', '\r'])
+
+    question = { id: 'u3', questions: [{ ...fruits, fewest: 2, most: 2 }] }
+    expect(await relay.answerSession(MANAGED, '1')).toBe(
+      'Reply with the numbers of the options you pick, split by commas, or your own answer. “Which fruits?” takes 2 to 2 picks.'
+    )
+    expect(await relay.answerSession(MANAGED, '1, 2, 3')).toContain('takes 2 to 2 picks')
+    question = {
+      id: 'u4',
+      questions: [{ ...fruits, options: [{ label: 'Red, dark' }, { label: 'Blue' }] }]
+    }
+    expect(await pressed('red, dark')).toEqual(['1', ' ', '4', '\r', '\r'])
+
+    backend = 'agy'
+    question = { id: 'hook:1', questions: [fruits] }
+    expect(await pressed('cherry, 1')).toEqual(['1', '3', '\r'])
+    expect(await pressed('A ripe mango')).toEqual(['4', 'A ripe mango', '\r'])
+    question = { id: 'hook:2', questions: [fruits, colour] }
+    expect(await pressed('1, 3\n2')).toEqual(['1', '3', '\r', '2'])
+  })
 })
 
 describe('DiscordRelay: an answer typed as keys counts only once the session shows it took it', () => {
@@ -959,15 +1020,39 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     expect(await answered).toBeUndefined()
   })
 
-  it('two answers waiting on one tab both count once the session shows it took them', async () => {
-    const { relay } = codexAsking()
-    const first = relay.answerSession(TAB, '1')
-    const second = relay.answerSession(TAB, '2')
-    await vi.advanceTimersByTimeAsync(1)
-    relay.dialogGone(TAB, false)
-    expect(await first).toBeUndefined()
-    expect(await second).toBeUndefined()
-  })
+  for (const backend of ['codex', 'muse', 'agy'] as const)
+    for (const [what, approval] of [
+      ['question', undefined],
+      ['approval', { id: 7 }]
+    ] as const)
+      it(`a second answer to one ${backend} ${what} while the first one's keys go in, or wait to be seen taken, is told to wait and reaches the session by no route, though the dialog's id changed meanwhile; once the first is not taken, a new answer goes in`, async () => {
+        let id = 'hook:1'
+        let viaApi = false
+        let inPlaceTries = 0
+        const { relay, writes } = codexAsking(
+          {
+            backendOf: () => backend,
+            pendingQuestion: () => (approval ? undefined : { ...COLOUR, id }),
+            answerInPlace: async () => (++inPlaceTries, viaApi && {})
+          },
+          approval
+        )
+        const first = relay.answerSession(TAB, approval ? 'yes' : '1')
+        await vi.advanceTimersByTimeAsync(0)
+        expect(writes.length).toBeGreaterThan(0)
+        id = 'traj:4'
+        viaApi = true
+        expect(await relay.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS / 2)
+        expect(await relay.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
+        const firstKeys = approval ? ['y'] : backend === 'muse' ? ['1', '\r'] : ['1']
+        expect(writes.map((w) => w.data)).toEqual(firstKeys)
+        expect(inPlaceTries).toBe(1)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+        expect(await first).toBe(ANSWER_NOT_TAKEN)
+        expect(await relay.answerSession(TAB, approval ? 'yes' : '1')).toBeUndefined()
+        expect(inPlaceTries).toBe(2)
+      })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
     const { relay } = codexAsking()
@@ -1614,4 +1699,18 @@ describe('DiscordRelay: an Antigravity butler that has no conversation yet', () 
     )
     expect(reactions).toContain('701 +✅')
   })
+})
+
+// AGY§19
+it('the card for a plan an Antigravity session waits on asks to approve that plan and quotes it whole, not as a command to run', async () => {
+  const { relay, posts } = setup({}, [], { backendOf: () => 'agy' })
+  relay.codexAsked(TAB, {
+    id: 'plan:c1:implementation_plan.md',
+    command: 'implementation_plan.md',
+    reason: '# Plan\n\n1. Do the thing.',
+    plan: true
+  })
+  await vi.waitFor(() => expect(posts).toHaveLength(1))
+  expect(posts[0].text).toContain('Approve this plan?\n\n# Plan\n\n1. Do the thing.')
+  expect(posts[0].text).not.toContain('asks to run')
 })

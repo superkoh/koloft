@@ -11,8 +11,8 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
-  bracketedPaste,
   onlyTheTerminalsOwnAnswers,
+  pasteFor,
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
@@ -105,34 +105,64 @@ const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
 const CTRL_C = '\x03'
+// PLATFORM§2 PLATFORM§35 CC§12 CODEX§25 MUSE§11 AGY§27
+const BRACKETED_PASTE_SWITCH = /\x1b\[\?2004([hl])/g
+// CC§12 CC§18
+const A_KEY_SENT_ON_ITS_OWN = /(\x1b\[200~[\s\S]*?\x1b\[201~|(?<!\x1b)\r)/
+const GIVE_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 5000
 
 interface LinesToType {
   shellSaid(output: string): void
   held(data: string): boolean
+  programReads(): Promise<void>
 }
 
-// PLATFORM§2
+// PLATFORM§2 CC§12 CODEX§25 MUSE§11
 function typeOnceTheShellReads(write: (text: string) => void, text: string): LinesToType {
-  if (text === '') return { shellSaid: () => {}, held: () => false }
+  if (text === '') return { shellSaid: () => {}, held: () => false, programReads: async () => {} }
   let tail = ''
   let early: string | undefined = ''
-  const type = (): void => {
-    if (early === undefined) return
-    write(text + early)
+  let linesTheShellHasNotTaken: number | undefined
+  let giving = false
+  let ctrlCs = 0
+  const programReads = async (): Promise<void> => {
+    if (linesTheShellHasNotTaken === undefined || giving) return
+    giving = true
+    while (early) {
+      const keys = early.split(A_KEY_SENT_ON_ITS_OWN).filter(Boolean)
+      const ctrlCsBefore = ctrlCs
+      early = ''
+      await typeKeys(write, keys, () => ctrlCs === ctrlCsBefore)
+    }
     early = undefined
+  }
+  const type = (shellSwitchesBracketedPaste = true): void => {
+    if (early === undefined || linesTheShellHasNotTaken !== undefined) return
+    write(text)
+    linesTheShellHasNotTaken = shellSwitchesBracketedPaste ? text.split(/[\r\n]/).length - 1 : 0
+    setTimeout(programReads, GIVE_THE_HELD_KEYS_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   }
   setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   return {
+    programReads,
     shellSaid: (output) => {
       if (early === undefined) return
       const seen = tail + output
       tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
-      if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+      if (linesTheShellHasNotTaken === undefined) {
+        if (LINE_EDITOR_STARTS_READING.test(seen)) type(seen.includes('\x1b[?2004h'))
+        return
+      }
+      for (const [, onOrOff] of seen.matchAll(BRACKETED_PASTE_SWITCH)) {
+        if (onOrOff === 'l') linesTheShellHasNotTaken--
+        else if (linesTheShellHasNotTaken <= 0) return void programReads()
+      }
     },
     held: (data) => {
       if (early === undefined || onlyTheTerminalsOwnAnswers(data)) return false
       if (data.includes(CTRL_C)) {
         early = ''
+        ctrlCs++
         return false
       }
       early += withoutMouseAndFocusReports(data)
@@ -388,7 +418,7 @@ export class PtyManager extends EventEmitter {
   }
 
   async paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    await this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+    await this.type(id, [pasteFor(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
@@ -410,6 +440,11 @@ export class PtyManager extends EventEmitter {
       const deadline = setTimeout(() => settle(ready()), ms)
       waiters.add(recheck)
     })
+  }
+
+  agentBound(id: string): void {
+    const handle = this.ptys.get(id)
+    if (handle) void this.linesToType.get(handle)?.programReads()
   }
 
   wakeReady(id: string): void {

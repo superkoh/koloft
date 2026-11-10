@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { Terminal, type IDisposable } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -10,9 +10,11 @@ import { suppressXtversionReply } from '../xtversionMask'
 import { copyOsc52ToClipboard } from '../osc52'
 import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
-import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
+import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
+import { loadMonoFonts, monoFontsLoaded } from '../monoFonts'
+import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -22,18 +24,19 @@ const ACK_FLUSH_AFTER_MS = 100
 const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
 export const NO_FOCUS_SIGNAL = 0
 
-export function TerminalView({
-  id,
-  active,
-  onUserInput,
-  autoFocus = true,
-  scrollbar = true,
-  focusSignal,
-  onRepainted,
-  onOutput,
-  maxCols,
-  copiesToClipboard = false
-}: {
+// CC§12 CODEX§25 MUSE§17 AGY§15 PLATFORM§2 PLATFORM§21
+const COMMAND_KEY_LINE_EDITS = new Map([
+  ['ArrowLeft', TO_LINE_START],
+  ['ArrowRight', TO_LINE_END],
+  ['Backspace', CLEAR_TO_LINE_START]
+])
+
+function commandKeyLineEdit(e: KeyboardEvent): string | undefined {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return undefined
+  return COMMAND_KEY_LINE_EDITS.get(e.key)
+}
+
+type TerminalViewProps = {
   id: string
   active: boolean
   onUserInput?: () => void
@@ -44,7 +47,43 @@ export function TerminalView({
   onOutput?: () => void
   maxCols?: number
   copiesToClipboard?: boolean
-}): JSX.Element {
+}
+
+// PLATFORM§66
+export function TerminalView(props: TerminalViewProps): JSX.Element {
+  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const [loadedFamily, setLoadedFamily] = useState(() =>
+    monoFontsLoaded(fontFamily) ? fontFamily : null
+  )
+  useEffect(() => {
+    let live = true
+    void loadMonoFonts(fontFamily).then(() => {
+      if (live) setLoadedFamily(fontFamily)
+    })
+    return () => {
+      live = false
+    }
+  }, [fontFamily])
+  return loadedFamily === null ? (
+    <div className="term" />
+  ) : (
+    <LiveTerminal {...props} fontFamily={loadedFamily} />
+  )
+}
+
+function LiveTerminal({
+  fontFamily,
+  id,
+  active,
+  onUserInput,
+  autoFocus = true,
+  scrollbar = true,
+  focusSignal,
+  onRepainted,
+  onOutput,
+  maxCols,
+  copiesToClipboard = false
+}: TerminalViewProps & { fontFamily: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -60,7 +99,8 @@ export function TerminalView({
     deadline: ReturnType<typeof setTimeout>
     closed: IDisposable
   } | null>(null)
-  const fontFamily = useStore((s) => s.settings.fontFamily)
+  const fontFamilyRef = useRef(fontFamily)
+  fontFamilyRef.current = fontFamily
   const fontSize = useStore((s) => s.settings.fontSize)
 
   const stopWaitingForSyncFrame = useCallback((): void => {
@@ -150,7 +190,7 @@ export function TerminalView({
     const ground = getComputedStyle(ref.current!).getPropertyValue('--term-ground').trim()
     const term = new Terminal({
       fontSize: useStore.getState().settings.fontSize,
-      fontFamily: useStore.getState().settings.fontFamily,
+      fontFamily: fontFamilyRef.current,
       cursorBlink: true,
       allowProposedApi: true,
       scrollbar: { showScrollbar: scrollbar },
@@ -231,7 +271,7 @@ export function TerminalView({
         webglRef.current?.dispose()
         webglRef.current = null
       }
-      acquireWebgl(id, attachWebgl, detachWebgl)
+      enrollWebgl(id, attachWebgl, detachWebgl)
 
       // PLATFORM§20
       let dprMql: MediaQueryList | null = null
@@ -341,6 +381,14 @@ export function TerminalView({
         return false
       }
       if (e.type === 'keydown') pendingPunct = false
+      const lineEdit = composing ? undefined : commandKeyLineEdit(e)
+      if (lineEdit !== undefined) {
+        if (e.type === 'keydown') {
+          e.preventDefault()
+          term.input(lineEdit, true)
+        }
+        return false
+      }
       // PLATFORM§22
       if (ta && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
         const cc = e.key.charCodeAt(0)
@@ -457,7 +505,7 @@ export function TerminalView({
   // PLATFORM§21
   useEffect(() => {
     if (active) {
-      touchWebgl(id)
+      showWebgl(id)
       let inner = 0
       const raf = requestAnimationFrame(() => {
         const term = termRef.current
@@ -471,6 +519,7 @@ export function TerminalView({
         })
       })
       return () => {
+        hideWebgl(id)
         cancelAnimationFrame(raf)
         cancelAnimationFrame(inner)
       }

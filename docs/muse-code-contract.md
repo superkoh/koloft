@@ -78,12 +78,26 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/responses` model streaming the answer in 4-line pieces 60 ms apart, then 60 wheel
   notches and 8 PageUp/PageDown. Not run: macOS muse, muse 1.4.14. A remote tab's muse
   sees `TERM_PROGRAM=tmux` instead (§17).
+- **Those unframed redraws are small, and none was shown half drawn in a Koloft
+  terminal.** The same scroll recorded again (2026-11-09, same image and fake model,
+  `TERM_PROGRAM=Apple_Terminal`): run straight in the pty (3 runs) muse sent 228–231
+  redraws of 48.6–49.3 KB in all, 256–262 bytes for the middle one and 808 for the
+  largest; inside a tmux 3.3a pane (2 runs) the outer terminal got 170–171 of 40.4 KB,
+  246 and 645 bytes. Each recording was replayed 3 times, at its own pace, into a shell
+  tab of a built Koloft (xterm.js `6.1.0-beta.302`, WebGL), with a marker before and
+  after every redraw, once with nothing else running and once beside 6 shell tabs each
+  printing `seq 1 4000` every 30 ms (load 4.5–11): 0 of 703–1392 screen paints per
+  recording came between a redraw's start and end, and 0 redraws were split across two
+  writes to xterm, in all 10 replays.
 - **Every way a person quits the TUI exits 0**: `/exit`, `/quit`, Ctrl+C twice and
   Ctrl+D twice at an empty input box (Ctrl+C pressed 0.3 s and 0.8 s apart, Ctrl+D
   0.3 s apart). Measured
   2026-10-29, 1.4.11 in the `koloft-muse-probe-1411` Docker image, `--provider echo`,
-  inside a tmux pane, the exit code read from the shell that started it. macOS: not
-  probed.
+  inside a tmux pane, the exit code read from the shell that started it. The same on
+  macOS: all five exited 0, 3 of 3 runs each (2026-11-09, 1.4.14 in a throwaway macOS
+  26.6.2 tart VM with no screen, `--provider echo --trust-workspace`, a python pty
+  answering the terminal's queries, each quit sent 10 s after launch with the input box
+  drawn, the code read by `waitpid`).
 
 ## §2 Where Muse keeps its data
 
@@ -258,6 +272,29 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   clients of the 7 runs had it. A cold `muse serve` answered `initialize` in
   120–760 ms (6 runs). A client that looks the id up through `session/list` instead
   finds nothing for a while: there the new session showed up 2.75 s after the frame.
+- **An approval's `rawArgs` is the tool call's arguments as a JSON string, and the
+  approval names its tool; under Koloft's flags only a shell command and a protected
+  write ask.** Measured 2026-11-09 on `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, the TUI
+  in a python3 pty (160×50) answering the cursor, colour and 7501 queries, `--approval-judge
+  off --sandbox-network enabled --trust-workspace` (Koloft's flags, §15), a fresh
+  `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, a fake `/responses` model whose first
+  `main` turn made one tool call; one second after `blocked`, `muse serve --provider echo`
+  read `approval/listPending`; one run per line.
+  - Every approval carries `toolName`, `toolCallId`, `protectedWrite`, `judgeEscalated`
+    and a `subject`. `bash` with `sandbox_permissions: "require_escalated"`:
+    `rawArgs: "{\"command\": \"echo hi\", \"sandbox_permissions\": …}"`, `subject:
+    {kind: "shell", command, stages: [], workspaceRoot}`, `protectedWrite: false`.
+  - `write_file` and `edit_file` on `<workspace>/.git/config`, and `write_file` on
+    `<workspace>/.muse/settings.json`: `blocked:kind=permission`, `protectedWrite: true`,
+    `subject: {kind: "fileAccess", access: "write", path, toolName}`, `rawArgs` the call's
+    `{path, content}` / `{path, find, replace}` as a string.
+  - Asked nothing: `write_file` on a plain file in the workspace (written); `write_file`
+    and `edit_file` outside it ("tool failed: absolute path is outside the workspace");
+    `read_file` outside it (read), of `<workspace>/.git/config` (read), and of
+    `~/.ssh/id_rsa` ("That path holds credentials …", refused).
+  - So no read asks, and a file in an ask is always one muse would write. Not probed:
+    `search` with `paths` outside the workspace, MCP tools' approvals (§21).
 
 ## §6 tmux swallows OSC 7501
 
@@ -272,6 +309,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A bracketed paste is kept as written, trailing line feeds too:
+  `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s later
+  and CR 0.3 s after that was one `turn_submit` of exactly the paste and the typed text
+  (2 of 2 runs, and 2 of 2 inside tmux 3.3a with Koloft's `TMUX_CONF`); the paste
+  alone with no Enter sent nothing in 3 s. Only a carriage return changes: `\r\n` or a
+  lone `\r` inside a paste becomes `\n`, and never sends. A paste of 3001 characters on
+  61 lines shows as `[Pasted Content 3001 chars]` ("Paste again to expand for editing")
+  and is sent whole. (`Muse Code 1.4.11 (1.4.11-R6667.1)`, `--provider echo`,
+  `koloft-muse-probe-1411` Docker image `--network none`, a python pty answering the
+  TUI's queries, the prompt read from the session log, 2026-11-08.)
 - A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
   `first line\nsecond line\nthird line` written in one go, with or without
   bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
@@ -284,6 +331,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   unsent; text typed next was added after it, and Enter sent both as a new turn
   (2026-10-31, muse 1.4.11, `koloft-muse-probe-1411` Docker image `--network none`,
   tmux 3.3a, the fake model server of the preamble). macOS: not probed.
+- **That Esc sends one `state=idle` frame, and no `done`, no `error` and no Stop.**
+  2026-11-09, `Muse Code 1.4.11 (1.4.11-R6667.1)`, the same image, `--network none`, muse in
+  a python3 pty (160×50) that answered the 7501 query with §3's reply and timestamped every
+  frame, `--trust-workspace --approval-judge off`, a fresh `XDG_CONFIG_HOME` and
+  `XDG_DATA_HOME` per run, hooks through `TBH_MANAGED_HOOKS_PATH`; the fake model server
+  sent only the SSE headers for the turn's request and then held it. Esc written alone 3 s
+  after `state=working`: muse closed the request 22–35 ms later and sent `state=idle`
+  30–50 ms after the key, then no frame in the next 10 s; `UserPromptSubmit` had fired,
+  `Stop` and `StopFailure` did not (4 of 4 runs). A held request that had already sent
+  `response.created` was not run.
 
 ## §8 Shell commands inside Muse (macOS)
 
@@ -487,6 +544,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 
 ## §11 Approvals and questions in the terminal
 
+- **A line typed before the TUI starts is lost.** At bash's `ESC[?2004h`, one write of
+  `exec muse --provider echo --trust-workspace` CR and `hello` CR left an empty input box
+  and no echo turn in 16 s. `hello` written when muse turned on bracketed paste (its
+  `?2004h`, 0.33 s after bash's, the PATH-style line and the launch line typed together
+  before it) and CR 0.3 s after that drew `❯ hello` and `◆ echo: hello`; so did `hello`
+  then CR 0.6 s apart 8 s in. Measured 2026-11-08 on `Muse Code 1.4.11`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, bash 5 in
+  a python3 pty (120×40) answering the cursor, colour and 7501 queries, the screen read
+  through `pyte`; 1 run each.
 - (fake model) `blocked:kind=permission` shows "1. Yes, proceed (y)  2. No … (esc)";
   a network target adds "2. Yes, don't ask again this session (p)". `y`, `1` or Enter
   approve, Esc rejects. `blocked:kind=question` shows the options; Enter picks the
@@ -580,6 +646,33 @@ so; the model's own shell tool was checked against those on macOS with the fake 
     highlight when unanswered); the last Enter landed in the empty input box.
   - So once the person pressed a key in a question since it was asked, Koloft leaves it
     to them and presses nothing.
+- **A question that takes several picks: a digit moves, Space ticks, its Submit row
+  sends, always through the review page.** Measured 2026-11-06 on `Muse Code 1.4.11
+  (1.4.11-R6667.1)` (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker
+  `--network none`, a python3 pty 160×50 answering the cursor, colour and 7501 queries,
+  the screen read through `pyte`, the fake `/responses` model above, `--approval-judge
+  off --trust-workspace`, a fresh `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, keys
+  ~300 ms apart from 2.5 s after `blocked`; 50 runs, two per line unless marked. The
+  tool's schema gives `selection` as `{"mode":"single"}` or `{"mode":"multiple",
+  "min_selections", "max_selections"}` (each `1`–`3` or `null`), with 2–3 options and 1–3
+  questions. `approval/listPending` (§5) lists such a question with `"selection":
+  {"mode":"multiple"}` (a number set by the model shows as `minSelections` /
+  `maxSelections`). The box draws `1. [ ] Apple` … `N+1. [ ] None of the above` and
+  `N+2. Submit answer (0 checked)`, with "Enter to toggle · Submit row to continue · ↑/↓
+  to move · Tab for an optional note · Esc to interrupt". A digit only moves the highlight
+  (nothing sent in 15 s); Space or Enter ticks or unticks the highlighted row; the digit
+  of the Submit row, then Enter, puts up "Review answers before submit" even for one
+  question, and Enter there sends `{"id":"fruits","selected_labels":["Apple","Cherry"]}`
+  (option order) for `1` Space `3` Space `5` Enter Enter. "None of the above" unticks the
+  rest and is unticked by them; `N+1`, Tab, the words, Enter put up the review page and
+  its Enter sends `{"free_text":"None of the above","note":"Mango"}`. Submitting nothing
+  ticked shows "⚠ Nothing is checked …" and stays `blocked` (1 run); fewer ticks than
+  `minSelections` makes the Submit row do nothing, and a tick past `maxSelections` is
+  refused, both silently. With two questions, the Submit row's Enter, or a note's Enter,
+  on question 1 moves to question 2 with no review page, and the last question's answer
+  puts it up: `1` Space `3` Space `5` Enter, `2` Enter, Enter sent `selected_labels`
+  then `selected_label: "Blue"`, the same for the reverse order and for a note on either
+  question. Keys in one write (`"1 3 5\r\r"`) were all taken (2 runs).
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
 - The input box is the one row between the last two full-width `────` rules, starting
@@ -884,6 +977,14 @@ server of the opening note and with `--provider echo`; October 2026.
 - **`--workspace <PATH>` adds no writable folder**: it takes one folder only, and given
   twice muse refuses ("the argument '--workspace <WORKSPACE>' cannot be used multiple
   times"; 1.4.14, Linux, 2026-11-09).
+- **Ctrl+A, Ctrl+E and Ctrl+U typed through tmux edit the input box one line at a
+  time.** In `hello world` Ctrl+A went before `h`, Ctrl+E after the last letter, Ctrl+U
+  with the caret after the third letter deleted those three, and at the line's end
+  emptied it. In a two-line box (`one`, `\n`, `two`) Ctrl+A went to the start of the
+  second line; Ctrl+E then Ctrl+U emptied that line, and a second Ctrl+U on the empty
+  line did nothing (Claude Code's deletes the line break there, CC§12). 2026-11-09,
+  muse 1.4.11 `--provider echo --trust-workspace`, Linux arm64 in Docker
+  `--network none`, inside tmux 3.3a, keys sent with `send-keys -H`.
 
 ## §18 MCP servers and a project's instruction files
 
@@ -1042,3 +1143,34 @@ Koloft dependents: the account folder's `settings.json` and `approval-policy.jso
 (`src/main/museAccounts.ts`); the Playwright variables, empty without the Workbench
 browser, in every muse Koloft starts on that folder (`museAccountEnv`) and in the shim's
 `muse exec` (`src/main/shim.ts`).
+
+## §22 Muse's own memory
+
+2026-11-07, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker `--network none`, the fake model
+server of the opening note, a new `muse exec --approval-mode never` process per step in a
+trusted plain folder (not a repository), every request saved and every file under HOME
+and `/tmp` compared before and after.
+
+- **The model gets three tools**, in a namespace `muse`: `read_memory {path, scope?,
+  offset?, limit?}`, `add_memory {path, content, scope?, description?, type?}` (creates
+  the file or appends to it), `edit_memory {path, old_str, new_str, scope?}`. `scope` is
+  `personal`, `personal_project` (the default) or `project`. The first developer message
+  says "Use persistent memory when the user asks you to remember something".
+- **Where it lands**: `personal_project` →
+  `~/.local/share/muse/memory/projects/<folder slug>-<hash>/MEMORY.md`, one per folder;
+  `personal` → `~/.local/share/muse/memory/personal/MEMORY.md`, every folder; `project`
+  → `<cwd>/.agents/memory/MEMORY.md`. Nothing under `XDG_CONFIG_HOME`.
+- **A new session gets it without asking**: a new process in the same folder carried each
+  scope's `MEMORY.md` text in its first developer message (`<system-reminder
+  source="memory-snapshot">`, `## Memory scope: personal_project\nMEMORY.md:\n- …`).
+  Another file in a scope shows only by name, under "Other Markdown files:".
+- **Another `XDG_CONFIG_HOME` keeps it**: the same folder with a different config home,
+  as when Koloft switches the Muse account (§2, §13), still got every scope's memory.
+- Not probed: whether `/clear` or `/new` in the TUI takes a fresh snapshot, a large
+  `MEMORY.md`, macOS (§2 puts the data folder in the same place), and a real model
+  choosing `add_memory` when told to remember.
+
+Koloft dependents: Koloft seeds no `AGENTS.md` when a Muse butler starts, unlike a Codex
+or Antigravity one (`src/main/museSessions.ts`). The butler folder is the same for every
+agent, so one an earlier Codex or Antigravity butler left there still reaches a Muse
+butler, as a trusted folder's `AGENTS.md` (§18), beside Muse's own memory.

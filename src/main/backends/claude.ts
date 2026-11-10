@@ -908,7 +908,6 @@ export class ClaudeBackend implements SessionBackend {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
     const host = this.d.hosts.of(root)
-    if (opts.worktree && !opts.scheduled && !opts.resumeSessionId) await host.trustFolder(root)
     return this.createTab(host, {
       tabId: opts.tabId,
       root,
@@ -924,7 +923,7 @@ export class ClaudeBackend implements SessionBackend {
       rows: opts.rows,
       role: opts.role,
       conductor: opts.conductor,
-      trustFolder: opts.trustFolder
+      trustFolder: opts.trustFolder || (!!opts.worktree && !opts.scheduled && !opts.resumeSessionId)
     })
   }
 
@@ -1058,11 +1057,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number; trustFolder?: boolean }
+    spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
-    if (spec.trustFolder) await host.trustFolder(spec.cwd ?? spec.root)
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,

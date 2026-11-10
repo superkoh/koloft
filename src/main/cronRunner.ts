@@ -627,7 +627,7 @@ export class CronRunner {
     whenSettled(this.d.trusted(job.workspacePath, cronBackend(job)), (trusted) => {
       const note = trusted
         ? `${label} did not start`
-        : `${label} did not start — this folder was never opened in ${label}; start one session here first`
+        : `${label} did not start — Koloft cannot see that ${label} trusts this folder; start one session here first`
       this.writeHistory(job, { ...lineOf(run), state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
       this.d.notify(job.name, `Could not start — ${label} did not start`)

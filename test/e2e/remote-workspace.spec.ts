@@ -1533,6 +1533,34 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-61: a commit made on the machine while the session sits idle clears remote Changes by itself, with no Reload', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+      await openRemoteSessionWorkbench(page, env)
+      await showChanges(page)
+      await expect(page.locator('.wb-panel .cv-row[data-path="tracked.txt"]')).toBeVisible({
+        timeout: 30_000
+      })
+
+      await untilTheMachineHasStamped(env, path.join(dir, '.git', 'logs', 'HEAD'))
+      gitCommitAll(dir)
+      await expect(page.locator('.wb-panel .cv-empty')).toHaveText('No changes against the base.', {
+        timeout: 60_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // PLATFORM§57
   test("E-RW-34: Browse's Reload lists the remote tree again, catching a change no folder's time shows (a file .gitignore stops hiding)", async ({
     env

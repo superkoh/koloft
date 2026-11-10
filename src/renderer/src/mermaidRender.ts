@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import { fnv1a32 } from '@shared/fnv1a'
+import { loadMonoFonts } from './monoFonts'
 
 type MermaidApi = (typeof import('mermaid'))['default']
 
@@ -52,8 +53,9 @@ function appFontFamily(): string {
 
 let mermaidPromise: Promise<MermaidApi> | null = null
 function getMermaid(): Promise<MermaidApi> {
-  return (mermaidPromise ??= import('mermaid')
-    .then(({ default: mermaid }) => {
+  // PLATFORM§66
+  return (mermaidPromise ??= Promise.all([import('mermaid'), loadMonoFonts(appFontFamily())])
+    .then(([{ default: mermaid }]) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
