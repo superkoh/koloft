@@ -29,12 +29,6 @@
   initial-value: 0deg;
 }
 
-@keyframes ibx-turn {
-  to {
-    --ibx-a: 360deg;
-  }
-}
-
 .ibx-orb {
   position: relative;
   flex: none;
@@ -309,19 +303,47 @@
 .ibx-item.focus {
   padding: 24px 28px 22px;
   border: 1px solid transparent;
-  background:
-    linear-gradient(#0f0f12, #0f0f12) padding-box,
-    conic-gradient(
-        from var(--ibx-a),
-        rgba(236, 150, 112, 0.75),
-        rgba(169, 154, 216, 0.75),
-        rgba(111, 182, 166, 0.6),
-        rgba(236, 150, 112, 0.75)
-      )
-      border-box;
-  animation: ibx-turn 6s linear infinite;
+  background: #0f0f12 padding-box;
   box-shadow: 0 30px 80px -40px rgba(169, 154, 216, 0.45);
   cursor: default;
+}
+
+.ibx-focus-edge {
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  overflow: hidden;
+  container-type: size;
+  pointer-events: none;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.ibx-focus-edge::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(hypot(100cqw, 100cqh) + 4px);
+  height: calc(hypot(100cqw, 100cqh) + 4px);
+  background: conic-gradient(
+    rgba(236, 150, 112, 0.75),
+    rgba(169, 154, 216, 0.75),
+    rgba(111, 182, 166, 0.6),
+    rgba(236, 150, 112, 0.75)
+  );
+  animation: ibx-turn 6s linear infinite;
+}
+
+@keyframes ibx-turn {
+  from {
+    transform: translate(-50%, -50%) rotate(0);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(1turn);
+  }
 }
 
 .ibx-item.done {

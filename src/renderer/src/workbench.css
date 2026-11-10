@@ -513,6 +513,7 @@
 .prog {
   position: absolute;
   bottom: -1px;
+  left: 0;
   height: 2px;
   width: 35%;
   background: var(--accent);
@@ -520,10 +521,10 @@
 }
 @keyframes bprog {
   0% {
-    left: -35%;
+    transform: translateX(-100%);
   }
   100% {
-    left: 100%;
+    transform: translateX(calc(100% / 0.35));
   }
 }
 .bguest {
