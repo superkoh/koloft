@@ -484,6 +484,34 @@ describe('CodexObservation', () => {
     expect(f.bound()).toHaveLength(1)
   })
 
+  // CODEX§4
+  it('keeps a main turn working until a child announced as sub-agent activity finishes, in the order Codex sends it', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'main' } })
+    const activity = (kind: string) => ({
+      item: { type: 'subAgentActivity', id: 'call', kind, agentThreadId: B, agentPath: '/root/x' }
+    })
+    f.server('item/started', activity('started'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
+    f.server('item/completed', activity('started'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'active', activeFlags: [] } })
+    f.server('turn/started', { threadId: B, turn: { id: 'child' } })
+    f.server('thread/status/changed', { status: { type: 'idle' } })
+    f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
+    expect(f.status()).toBe('working')
+    expect(f.background()).toEqual([expect.objectContaining({ kind: 'agent', state: 'working' })])
+    expect(f.turnDone()).toBe(0)
+    f.server('item/started', activity('completed'))
+    f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
+    f.server('turn/completed', { threadId: B, turn: { id: 'child', status: 'completed' } })
+    f.server('item/completed', activity('completed'))
+    expect(f.status()).toBe('waiting')
+    expect(f.background()).toEqual([])
+    expect(f.turnDone()).toBe(1)
+    expect(f.bound()).toHaveLength(1)
+  })
+
   it('shows a surviving command as unclassified background while the turn itself lands waiting', () => {
     const f = fixture()
     f.bind()

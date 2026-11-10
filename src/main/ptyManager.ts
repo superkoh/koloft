@@ -11,8 +11,8 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
 import {
-  bracketedPaste,
   onlyTheTerminalsOwnAnswers,
+  pasteFor,
   typeKeys,
   typedPieces,
   withoutMouseAndFocusReports
@@ -62,6 +62,8 @@ interface CreateArgs {
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_DOCS_PLUGIN?: string
     KOLOFT_PORT_OFFSET?: string
+    CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
+    CLAUDE_CODE_DECSTBM?: string
   }
 }
 
@@ -237,7 +239,9 @@ export class PtyManager extends EventEmitter {
         'KOLOFT_AGENT_PLUGIN',
         'KOLOFT_AGENT_PROMPT',
         'KOLOFT_DOCS_PLUGIN',
-        'KOLOFT_PORT_OFFSET'
+        'KOLOFT_PORT_OFFSET',
+        'CLAUDE_CODE_FORCE_SYNC_OUTPUT',
+        'CLAUDE_CODE_DECSTBM'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
@@ -384,7 +388,7 @@ export class PtyManager extends EventEmitter {
   }
 
   async paste(id: string, text: string, typedAfter = ''): Promise<void> {
-    await this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+    await this.type(id, [pasteFor(text, this.get(id)?.kind), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

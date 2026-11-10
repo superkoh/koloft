@@ -61,7 +61,6 @@ import {
   playwrightCacheRootOverride,
   playwrightMcpOverrides,
   SANDBOX_NETWORK,
-  seedAssistMemory,
   STATUS_LINE_CONFIG,
   trustedInPlace,
   type KoloftHook
@@ -95,6 +94,7 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from './mapAtMost'
+import { seedAssistMemory } from './assistMemory'
 import { pipeSecretTo } from './secretOnStdin'
 import {
   CODEX_TMP_DIR,
@@ -125,6 +125,7 @@ const MACHINE_HISTORY_FRESH_MS = 15_000
 const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 const MESSAGE_SHOWN_IN_A_NOTICE_CHARS = 120
 
+// CODEX§35
 export const CODEX_TAB_ENV = {
   koloftShim: false,
   finishEnv: (env: NodeJS.ProcessEnv) => codexEnvironment(env)
@@ -279,6 +280,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
+  homeOf(sessionId: string): string | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
   builtInStatusLine(): boolean
@@ -314,6 +316,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
+  private resumedInDefaultHome = new Set<string>()
   private sideServers = new CodexSideServers((home: string | undefined) => this.rpc(home))
   private machineSideServers = new CodexSideServers((machine: string) => this.machineRpc(machine))
   private machineHistory = new Map<
@@ -762,13 +765,31 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
   }
 
-  // CODEX§19
+  // CODEX§15 CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    return this.withRpcFor(key, async (rpc) => {
+    const read = async (rpc: CodexRpc): Promise<Turn[]> => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
-    })
+    }
+    const machine = hostOfKey(key)
+    if (machine) return this.withMachineRpc(machine, read)
+    const turns = await this.withRpc(this.deps.homeOf(key), read).catch((): Turn[] => [])
+    if (turns.length > 0) return turns
+    await this.indexInDefaultHome(id)
+    return this.withRpc(undefined, read)
+  }
+
+  // CODEX§15
+  private async indexInDefaultHome(threadId: string): Promise<void> {
+    if (this.resumedInDefaultHome.has(threadId)) return
+    this.resumedInDefaultHome.add(threadId)
+    const rpc = this.rpc(undefined)
+    try {
+      await rpc.request('thread/resume', { threadId }).catch(() => undefined)
+    } finally {
+      await rpc.close().catch(() => {})
+    }
   }
 
   // CODEX§2

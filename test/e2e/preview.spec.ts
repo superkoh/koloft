@@ -148,6 +148,46 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     await expect(page.locator(WORKBENCH.reload)).toBeVisible()
   })
 
+  test('a code file too big to color without freezing the window opens as plain text with a Show colors notice that colors it on click, and an edit on disk brings the plain text and the notice back; a plain-text file never offers colors and shows its markup as text', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const bigLines = 3500
+    fs.writeFileSync(
+      path.join(env.workspaces.a, 'src', 'big.ts'),
+      'export const answer = 42\n'.repeat(bigLines)
+    )
+    fs.writeFileSync(path.join(env.workspaces.a, 'run.log'), '<b>not bold</b>\nsecond line\n')
+    committedRepo(env.workspaces.a)
+
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await openArtifact(page, env, 'src/big.ts')
+
+    const code = artifactBody(page).locator('.code-body')
+    await expect(code.locator('.line')).toHaveCount(bigLines + 1, { timeout: 15_000 })
+    await expect(code.locator('.shiki')).toHaveCount(0)
+    const notice = artifactBody(page).locator('.fp-stale', { hasText: 'Large file' })
+    await notice.getByRole('button', { name: 'Show colors' }).click()
+    await expect(code.locator('.shiki')).toHaveCount(1, { timeout: 30_000 })
+    await expect(code.locator('.line')).toHaveCount(bigLines + 1)
+    await expect(notice).toHaveCount(0)
+
+    fs.appendFileSync(path.join(env.workspaces.a, 'src', 'big.ts'), 'export const more = 1\n')
+    await expect(code.locator('.line')).toHaveCount(bigLines + 2, { timeout: 15_000 })
+    await expect(code.locator('.shiki')).toHaveCount(0)
+    await expect(notice.getByRole('button', { name: 'Show colors' })).toBeVisible()
+
+    await openArtifact(page, env, 'run.log')
+    const log = artifactBody(page).locator('.code-body')
+    await expect(log).toContainText('<b>not bold</b>', { timeout: 15_000 })
+    await expect(log.locator('.line')).toHaveCount(3)
+    await expect(log.locator('b')).toHaveCount(0)
+    await expect(log.locator('.shiki')).toHaveCount(0)
+    await expect(artifactBody(page).locator('.fp-stale')).toHaveCount(0)
+  })
+
   test('a file tab’s default view is chosen once per file and only falls back: a code file read on Source stays on Source when an agent first edits it, and Diff is merely offered', async ({
     page,
     env

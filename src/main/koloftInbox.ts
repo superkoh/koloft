@@ -1,8 +1,10 @@
 import type { AttentionEvent, BackendId } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { ReplyChoices, Verdict } from './turnNews'
 import {
   CARD_SESSION,
   type InboxAnswers,
+  type InboxBlock,
   type InboxCard,
   type InboxCardInput,
   type InboxQuestion
@@ -12,6 +14,7 @@ import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
   planOf,
   questionsOf,
+  questionText,
   type CodexApproval,
   type CodexQuestion,
   ANSWER_NOT_TAKEN,
@@ -71,6 +74,9 @@ export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
   return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }
+
+export const ASK_NO_LONGER_ON_SCREEN =
+  'Its session stopped after asking, so this no longer shows there and cannot be answered here. Open the session and reply to it.'
 
 const ANSWERED_ELSEWHERE = { ok: false, elsewhere: true, why: 'It no longer waits for an answer' }
 
@@ -211,10 +217,28 @@ function lastWords(said: string): string {
   return chars.length > LAST_WORDS_SHOWN ? `…${chars.slice(-LAST_WORDS_SHOWN).join('')}` : said
 }
 
+function replyBlock(choices: ReplyChoices | undefined): InboxBlock {
+  if (!choices) return { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+  return {
+    type: 'choice',
+    id: 'reply',
+    questions: [
+      {
+        id: 'q',
+        text: choices.question,
+        multi: false,
+        ownAnswer: true,
+        options: choices.options.map((label, i) => ({ id: `o${i}`, label }))
+      }
+    ]
+  }
+}
+
 export function doneCard(
   m: AttentionEvent,
   s: AskedSession,
-  reply: string | undefined
+  reply: string | undefined,
+  choices?: ReplyChoices
 ): InboxCardInput {
   const said = reply?.trim()
   return {
@@ -234,7 +258,7 @@ export function doneCard(
             }
           ]
         : []),
-      { type: 'input', id: 'reply', placeholder: 'Reply to it…', required: true }
+      replyBlock(choices)
     ],
     actions: [
       {
@@ -326,6 +350,9 @@ export class KoloftInbox {
   sync(): void {
     const marks = this.d.marks().filter((m) => m.sessionId)
     const standing = new Set(marks.map(signalKey))
+    const askOnceOnScreen = new Set(
+      marks.filter((m) => m.kind === 'turn-done').map((m) => signalKey({ ...m, kind: 'approval' }))
+    )
     for (const c of this.d.inbox.all()) {
       if (
         !isSignal(c) ||
@@ -334,6 +361,10 @@ export class KoloftInbox {
         c.press?.step === 'working'
       )
         continue
+      if (askOnceOnScreen.has(c.key)) {
+        if (c.actions.length) this.askOnlyInItsTab(c)
+        continue
+      }
       try {
         this.d.inbox.move(
           KOLOFT,
@@ -348,19 +379,44 @@ export class KoloftInbox {
         void this.post(m, true)
   }
 
+  private askOnlyInItsTab(c: InboxCard): void {
+    const blocks: InboxBlock[] = c.blocks.map((b) =>
+      b.type === 'choice'
+        ? {
+            type: 'quote',
+            who: 'It asked',
+            text: b.questions
+              .map((q) =>
+                questionText({
+                  question: q.text,
+                  options: q.options.map((o) => ({ label: o.label, description: o.detail }))
+                })
+              )
+              .join('\n\n')
+          }
+        : b
+    )
+    try {
+      this.d.inbox.update(KOLOFT, c.key, {
+        blocks: [...blocks, { type: 'text', text: ASK_NO_LONGER_ON_SCREEN }],
+        actions: []
+      })
+    } catch {}
+  }
+
   turnEnded(tabId: string, reply: string, handedOff: boolean): void {
     this.finished.set(tabId, { reply, forTheOwner: !handedOff && !this.d.butlerSide(tabId) })
   }
 
-  judged(tabId: string, news: boolean): void {
+  judged(tabId: string, verdict: Verdict): void {
     const turn = this.finished.get(tabId)
     this.finished.delete(tabId)
-    if (news || !turn?.forTheOwner || this.d.watching() === tabId) return
+    if (verdict.news || !turn?.forTheOwner || this.d.watching() === tabId) return
     const m = this.d.marks().find((x) => x.tabId === tabId && x.kind === 'turn-done' && !x.fyi)
     const s = this.d.sessionOfTab(tabId)
     if (!m?.sessionId || !s || this.d.inbox.find(KOLOFT, signalKey(m))) return
     try {
-      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply))
+      this.d.inbox.add(KOLOFT, doneCard(m, s, turn.reply, verdict.choices))
     } catch {}
   }
 

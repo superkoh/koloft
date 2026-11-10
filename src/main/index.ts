@@ -22,7 +22,7 @@ import { pathToFileURL } from 'url'
 import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
-import { FlowGate } from './flowControl'
+import { FlowGate, TerminalOutput } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
@@ -95,7 +95,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { butlerStart } from '@shared/butlerStart'
+import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -138,7 +138,13 @@ import {
   writeTabHookSettings,
   type NoticeFile
 } from './hooks'
-import { formatRemoteKey, isAbsoluteOnHost, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import {
+  barePath,
+  formatRemoteKey,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -522,8 +528,8 @@ import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from '
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import {
-  bracketedPaste,
   clicksTheMouse,
+  pasteFor,
   pressesAKey,
   typedPieces,
   typeKeys,
@@ -604,7 +610,7 @@ import {
 import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
+import { NewsJudge, judgeTurn, waitsOnOtherWork } from './turnNews'
 import { isHandsOn, Presence } from './presence'
 import { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './awayDigest'
 import { OwnerAsleep, THIS_MAC } from './ownerAsleep'
@@ -653,8 +659,16 @@ function flowGateFor(id: string): FlowGate {
   }
   return gate
 }
-let resetAllFlow: () => void = () => {}
-let flushHeldData: () => void = () => {}
+const terminalOutput = new TerminalOutput({
+  gate: flowGateFor,
+  send: (id, data) => sendToRenderer(CH.terminal.data, { id, data }),
+  rendererUp: () => rendererReady,
+  now: () => performance.now()
+})
+function resetAllFlow(): void {
+  terminalOutput.clear()
+  for (const gate of flowGates.values()) gate.reset()
+}
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
@@ -752,10 +766,10 @@ function allSessions(): SessionInfo[] {
 }
 
 const newsJudge = new NewsJudge({
-  isNews: (turn) => onlyNews(assist, turn),
+  judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
   markFyi: (tabId) => attention.markFyi(tabId),
-  judged: (tabId, news) => koloftInbox.judged(tabId, news)
+  judged: (tabId, verdict) => koloftInbox.judged(tabId, verdict)
 })
 
 // CC§14
@@ -772,7 +786,8 @@ type PanelOpen = (
 function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
   return async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
-    return lines && shows(lines)
+    const somethingDrawn = lines?.some((line) => line.trim())
+    return lines && somethingDrawn ? shows(lines) : undefined
   }
 }
 
@@ -1775,14 +1790,30 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  return butlerStart(
-    preferredAssistBackend(settings),
-    {
-      enabled: settings.sessionMethods.enabled,
-      installed: await installedBackends(),
-      accounts: listAccounts()
-    },
-    butlerNameNow()
+  const preferred = preferredAssistBackend(settings)
+  const inputs = {
+    enabled: settings.sessionMethods.enabled,
+    installed: await installedBackends(),
+    accounts: listAccounts()
+  }
+  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
+  if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
+  return choice
+}
+
+function logWhyButlerIsNotOn(
+  preferred: BackendId,
+  inputs: Parameters<typeof butlerStart>[1],
+  said: string
+): void {
+  const probe = inputs.installed.find((b) => b.id === preferred)
+  const found = probe?.available ? 'found' : `not found (${probe?.reason ?? 'no answer'})`
+  const accounts = inputs.accounts
+    .filter((a) => ACCOUNT_KINDS_OF[preferred].includes(a.kind))
+    .map((a) => (a.enabled ? a.status : 'turned off'))
+  console.error(
+    `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
@@ -1978,7 +2009,7 @@ const inbox = new Inbox(
       queueMicrotask(() => {
         inboxPushQueued = false
         const now = inbox.snapshot()
-        saveInbox(now)
+        if (!quitCommitted) saveInbox(now)
         sendToRenderer(CH.inbox.changed, now)
       })
     }
@@ -2031,11 +2062,14 @@ const claudeDialogs = new ClaudeDialogWatch({
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  closed: (tabId) => {
+  dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
+  closed: (tabId, stateAfter) => {
     askEnded(tabId, true)
     void askButtons?.check(tabId)
+    if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
+tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function askEnded(tabId: string, dialogClosed = false): void {
   claudeAsks.delete(tabId)
@@ -3302,35 +3336,6 @@ app.whenReady().then(() => {
   guard.start()
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
-  const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
-  const pendingData = new Map<string, string>()
-  let flushTimer: ReturnType<typeof setTimeout> | null = null
-  const flushData = (): void => {
-    flushTimer = null
-    for (const [id, data] of pendingData) {
-      const gate = flowGateFor(id)
-      const utf16Units = data.length
-      if (!gate.maySend()) {
-        gate.onBacklog(utf16Units)
-        continue
-      }
-      if (!sendToRenderer(CH.terminal.data, { id, data })) {
-        gate.reset()
-        pendingData.delete(id)
-        continue
-      }
-      gate.onForwarded(utf16Units)
-      gate.onBacklog(0)
-      pendingData.delete(id)
-    }
-  }
-  resetAllFlow = (): void => {
-    pendingData.clear()
-    for (const gate of flowGates.values()) gate.reset()
-  }
-  flushHeldData = (): void => {
-    if (!flushTimer) flushTimer = setTimeout(flushData, 0)
-  }
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     // CC§12
     if (sleepers.has(d.id)) return
@@ -3338,8 +3343,7 @@ app.whenReady().then(() => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
-    pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
-    if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
     sendToRenderer(CH.terminal.processTitle, t)
@@ -3350,6 +3354,7 @@ app.whenReady().then(() => {
   subscribeTabSubsystems(tabLifecycle, {
     slash,
     attention,
+    cdpTabClosed: relayTabClosed,
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
@@ -3411,6 +3416,7 @@ app.whenReady().then(() => {
       void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
+      terminalOutput.end(e.id, false)
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
       return
@@ -3431,13 +3437,8 @@ app.whenReady().then(() => {
       if (claudeSaid)
         sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
-    flushData()
     // PLATFORM§21
-    const held = pendingData.get(e.id)
-    if (held !== undefined) {
-      pendingData.delete(e.id)
-      if (!sleepers.has(e.id)) sendToRenderer(CH.terminal.data, { id: e.id, data: held })
-    }
+    terminalOutput.end(e.id, !sleepers.has(e.id))
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     claudeAsks.delete(e.id)
@@ -3547,6 +3548,10 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      homeOf: (sessionId) => {
+        const name = sessionAccounts?.of('codex', sessionId)
+        return name && codexHomeOf(userData, name)
+      },
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
@@ -3680,6 +3685,7 @@ app.whenReady().then(() => {
         )
       ).flat(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
     loadLayout,
     saveLayout,
     projectInfo: projectInfoFor,
@@ -4111,6 +4117,7 @@ app.whenReady().then(() => {
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
+    onToolShells: (host, outputs) => tracker.toolShellsOnMachineSaid(host, outputs),
     onConnected: (host) => void freshness?.machineUp(host),
     onConnectedRound: (host) => {
       void pageForwards.checkMaster(host)
@@ -5390,8 +5397,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clearKeepingExit(tabId)
-  relayTabClosed(tabId)
+  tabLifecycle.emit('stopping', tabId)
   boundSessions.delete(tabId)
   return stopped.then(
     () => true,
@@ -6439,7 +6445,8 @@ function registerIpc(): void {
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
     ownerTouchedTheScreen(id)
-    if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
+    if (typedWhileAsleep.has(id))
+      return writeToTab(id, pasteFor(text, sleepers.get(id)?.kind) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {
@@ -6456,13 +6463,13 @@ function registerIpc(): void {
       ackedUtf16Units > 0
     ) {
       if (flowGates.get(id)?.onAck(ackedUtf16Units)) {
-        flushHeldData()
+        terminalOutput.wake(id)
       }
     }
   })
   ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
-    flushHeldData()
+    terminalOutput.wake(id)
   })
   ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))
@@ -7307,6 +7314,13 @@ function registerIpc(): void {
       ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
+  // PLATFORM§30
+  ipcMain.handle(CH.fs.gitHeadLog, async (_e, root: string) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = hosts.of(root)
+    const gitDir = (await host.gitOut(root, ['rev-parse', '--git-dir']))?.trim()
+    return gitDir ? host.keyed(path.posix.resolve(barePath(root), gitDir, 'logs', 'HEAD')) : null
+  })
   ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))
@@ -7331,7 +7345,7 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
+      ? hosts.of(root).watchDir(root, (r, changes) => sendToRenderer(CH.fs.dirChanged, r, changes))
       : false
   )
   ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {

@@ -1,10 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   FlowGate,
+  TerminalOutput,
+  nextSlice,
   FLOW_SEND_HIGH,
   FLOW_SEND_LOW,
   FLOW_QUEUE_PAUSE,
-  FLOW_QUEUE_RESUME
+  FLOW_QUEUE_RESUME,
+  FLOW_SLICE_UTF16_UNITS,
+  HELD_FOR_AN_UNSEEN_TAB_MAX,
+  PTY_OUTPUT_COALESCE_ONE_FRAME_MS
 } from '../../src/main/flowControl'
 
 function makeGate(
@@ -24,16 +29,14 @@ function makeGate(
   return { g, calls }
 }
 
-describe('FlowGate — pre-attach passthrough', () => {
-  it('never blocks and never counts before a consumer attaches (unackable ≠ inflight)', () => {
+describe('FlowGate — before a consumer attaches', () => {
+  it('lets nothing through until the view attaches, then opens with an empty window', () => {
     const { g, calls } = makeGate()
-    g.onForwarded(5000)
-    expect(g.maySend()).toBe(true)
-    expect(g.stats('t').inflight).toBe(0)
-    expect(calls).toEqual([])
+    expect(g.maySend()).toBe(false)
     g.attach()
     expect(g.maySend()).toBe(true)
     expect(g.stats('t').inflight).toBe(0)
+    expect(calls).toEqual([])
   })
 })
 
@@ -98,7 +101,7 @@ describe('FlowGate — pty backstop (memory guard, not throttle)', () => {
 })
 
 describe('FlowGate — reset (tab exit / renderer loss)', () => {
-  it('reopens the window, unpauses the pty, and zeroes accounting', () => {
+  it('unpauses the pty and zeroes accounting, so a fresh attach starts with an open window', () => {
     const { g, calls } = makeGate()
     g.attach()
     g.onForwarded(1500)
@@ -106,8 +109,9 @@ describe('FlowGate — reset (tab exit / renderer loss)', () => {
     expect(calls).toEqual(['pause'])
     g.reset()
     expect(calls).toEqual(['pause', 'resume'])
-    expect(g.maySend()).toBe(true)
     expect(g.stats('t').inflight).toBe(0)
+    g.attach()
+    expect(g.maySend()).toBe(true)
   })
 
   it('stays silent when nothing was paused (no spurious resume on a live fd)', () => {
@@ -118,14 +122,13 @@ describe('FlowGate — reset (tab exit / renderer loss)', () => {
     expect(calls).toEqual([])
   })
 
-  it('DETACHES: post-reset forwards are fire-and-forget again (orphan pty safety)', () => {
+  it('DETACHES: after a reset nothing is let through until the view attaches again', () => {
     const { g, calls } = makeGate()
     g.attach()
     g.onForwarded(500)
     g.reset()
     expect(g.stats('t').attached).toBe(false)
-    g.onForwarded(5000)
-    expect(g.maySend()).toBe(true)
+    expect(g.maySend()).toBe(false)
     expect(g.stats('t').inflight).toBe(0)
     expect(calls).toEqual([])
   })
@@ -147,7 +150,9 @@ describe('FlowGate — reset (tab exit / renderer loss)', () => {
 describe('FlowGate — cumulative stats (the e2e ack-loop probe)', () => {
   it('sent/acked totals accumulate across attach and reset', () => {
     const { g } = makeGate()
+    g.attach()
     g.onForwarded(100)
+    g.reset()
     g.attach()
     g.onForwarded(200)
     g.onAck(150)
@@ -176,5 +181,173 @@ describe('flow watermarks — requirements, not implementation echoes', () => {
     expect(FLOW_QUEUE_PAUSE).toBeLessThan(XTERM_INPUT_DISCARD_CAP_BYTES / 2)
     expect(FLOW_QUEUE_RESUME).toBeGreaterThan(0)
     expect(FLOW_QUEUE_RESUME).toBeLessThan(FLOW_QUEUE_PAUSE)
+  })
+})
+
+function makeOutput(opts: { rendererUp?: boolean; sendHigh?: number } = {}): {
+  out: TerminalOutput
+  sent: { id: string; data: string }[]
+  gate(id: string): FlowGate
+  calls: string[]
+} {
+  vi.useFakeTimers()
+  const sent: { id: string; data: string }[] = []
+  const calls: string[] = []
+  const gates = new Map<string, FlowGate>()
+  const gate = (id: string): FlowGate => {
+    let g = gates.get(id)
+    if (!g) {
+      g = new FlowGate(
+        { onPause: () => calls.push(`pause ${id}`), onResume: () => calls.push(`resume ${id}`) },
+        opts.sendHigh
+      )
+      gates.set(id, g)
+    }
+    return g
+  }
+  const out = new TerminalOutput({
+    gate,
+    send: (id, data) => {
+      sent.push({ id, data })
+      return true
+    },
+    rendererUp: () => opts.rendererUp ?? true,
+    now: () => Date.now()
+  })
+  return { out, sent, gate, calls }
+}
+
+describe('TerminalOutput — what reaches the view, and when', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('a key echo on an idle tab goes out at once; output right behind it goes as one, one frame after the echo', () => {
+    const { out, sent, gate } = makeOutput()
+    gate('t').attach()
+    out.push('t', 'a')
+    expect(sent).toEqual([{ id: 't', data: 'a' }])
+    vi.advanceTimersByTime(2)
+    out.push('t', 'b')
+    out.push('t', 'c')
+    expect(sent).toHaveLength(1)
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS - 2)
+    expect(sent).toEqual([
+      { id: 't', data: 'a' },
+      { id: 't', data: 'bc' }
+    ])
+  })
+
+  it('a backlog of many small reads leaves in full slices, one per tab per turn, in order and whole', () => {
+    const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
+    const read = 'y'.repeat(4000)
+    for (let i = 0; i < 70; i++) {
+      out.push('a', read)
+      out.push('b', read)
+    }
+    gate('a').attach()
+    gate('b').attach()
+    out.wake('a')
+    out.wake('b')
+    vi.advanceTimersToNextTimer()
+    expect(sent.map((s) => s.id)).toEqual(['a', 'b'])
+    vi.advanceTimersToNextTimer()
+    expect(sent.map((s) => s.id)).toEqual(['a', 'b', 'a', 'b'])
+    vi.runAllTimers()
+    expect(sent.map((s) => s.data.length)).toEqual([
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      70 * 4000 - 2 * FLOW_SLICE_UTF16_UNITS,
+      70 * 4000 - 2 * FLOW_SLICE_UTF16_UNITS
+    ])
+    for (const id of ['a', 'b'])
+      expect(
+        sent
+          .filter((s) => s.id === id)
+          .map((s) => s.data)
+          .join('')
+      ).toBe(read.repeat(70))
+  })
+
+  it("one tab draining a backlog does not hurry another tab's one-frame wait", () => {
+    const { out, sent, gate } = makeOutput({ sendHigh: Infinity })
+    gate('a').attach()
+    gate('b').attach()
+    out.push('a', 'x'.repeat(FLOW_SLICE_UTF16_UNITS * 4))
+    out.push('b', 'echo')
+    vi.advanceTimersByTime(1)
+    out.push('b', 'more')
+    vi.advanceTimersByTime(2)
+    expect(sent.filter((s) => s.id === 'b').map((s) => s.data)).toEqual(['echo'])
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    expect(sent.filter((s) => s.id === 'b').map((s) => s.data)).toEqual(['echo', 'more'])
+  })
+
+  it('a slice never ends between the two halves of an emoji', () => {
+    const data = 'x'.repeat(FLOW_SLICE_UTF16_UNITS - 1) + '😀' + 'tail'
+    const slice = nextSlice(data)
+    expect(slice).toBe('x'.repeat(FLOW_SLICE_UTF16_UNITS - 1))
+    expect(slice + nextSlice(data.slice(slice.length))).toBe(data)
+  })
+
+  it('output from before the view attaches is held, then arrives in order once it attaches', () => {
+    const { out, sent, gate } = makeOutput()
+    out.push('t', 'prompt$ ')
+    vi.advanceTimersByTime(100)
+    out.push('t', 'more')
+    vi.runAllTimers()
+    expect(sent).toEqual([])
+    gate('t').attach()
+    out.wake('t')
+    vi.runAllTimers()
+    expect(sent).toEqual([{ id: 't', data: 'prompt$ more' }])
+  })
+
+  it('an attached tab whose backlog passes the pause watermark pauses its pty, and resumes once it drains', () => {
+    const { out, gate, calls } = makeOutput({ sendHigh: Infinity })
+    gate('t').attach()
+    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 2 * FLOW_SLICE_UTF16_UNITS))
+    expect(calls).toEqual(['pause t'])
+    vi.runAllTimers()
+    expect(calls).toEqual(['pause t', 'resume t'])
+  })
+
+  it('a tab no view shows yet never pauses its pty: past its cap the oldest output goes and the newest stays', () => {
+    const { out, sent, gate, calls } = makeOutput()
+    const half = HELD_FOR_AN_UNSEEN_TAB_MAX / 2
+    out.push('t', 'a'.repeat(half))
+    out.push('t', 'b'.repeat(half))
+    out.push('t', 'newest')
+    vi.runAllTimers()
+    expect(calls).toEqual([])
+    gate('t').attach()
+    out.wake('t')
+    vi.runAllTimers()
+    expect(sent.map((s) => s.data).join('')).toBe('b'.repeat(half) + 'newest')
+  })
+
+  it('with no window to show it, output is dropped and never pauses the pty', () => {
+    const { out, sent, gate, calls } = makeOutput({ rendererUp: false })
+    out.push('t', 'x'.repeat(FLOW_QUEUE_PAUSE + 1))
+    gate('t').attach()
+    out.wake('t')
+    vi.runAllTimers()
+    expect(calls).toEqual([])
+    expect(sent).toEqual([])
+  })
+
+  it('a tab that ends hands the view its held tail in slices, gate or no gate', () => {
+    const { out, sent } = makeOutput()
+    const tail = 'z'.repeat(FLOW_SLICE_UTF16_UNITS * 2 + 1)
+    out.push('t', tail)
+    out.end('t', true)
+    expect(sent.map((s) => s.data.length)).toEqual([
+      FLOW_SLICE_UTF16_UNITS,
+      FLOW_SLICE_UTF16_UNITS,
+      1
+    ])
+    expect(sent.map((s) => s.data).join('')).toBe(tail)
   })
 })

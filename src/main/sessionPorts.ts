@@ -6,7 +6,7 @@ import { makeExec } from './taskProcs'
 const SCAN_DEADLINE_MS = 5000
 const SCAN_FINISHED = 'scanned'
 
-// PLATFORM§59 PLATFORM§66
+// PLATFORM§59 PLATFORM§67
 export const SESSION_PORTS_SH = String.raw`ids=" $1 "
 tags() {
   if [ -r /proc/self/environ ]; then

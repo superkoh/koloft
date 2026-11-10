@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { REMOTE_ENV_LINES } from './remote/install'
+import { REMOTE_COMPILE_CACHE } from './remote/paths'
 import { AGY_COST_ENV } from './agyHooks'
 
 // CC§6
@@ -149,7 +150,7 @@ node="$HOME/.koloft/node/bin/node"
     node: '"$node"',
     bundle: '"$D/ccstatusline.js"',
     config: '"$D/theme.json"',
-    cacheDir: '"$HOME/.koloft/vcache"'
+    cacheDir: `"${REMOTE_COMPILE_CACHE}"`
   })
 }
 
@@ -187,9 +188,11 @@ function pruneDeadWrappers(dir: string, keep: string): void {
   )
 }
 
+const compileCacheIn = (dir: string): string => path.join(dir, 'vcache')
+
 export function setupStatusline(): StatuslinePaths {
   const dir = path.join(app.getPath('userData'), 'statusline')
-  const cacheDir = path.join(dir, 'vcache')
+  const cacheDir = compileCacheIn(dir)
   fs.mkdirSync(cacheDir, { recursive: true })
 
   const config = path.join(dir, 'settings.json')
@@ -204,9 +207,10 @@ export function setupStatusline(): StatuslinePaths {
   return { wrapper, config }
 }
 
-// AGY§11
+// AGY§11 PLATFORM§36
 export const AGY_STATUSLINE_JS = `const fs = require('fs')
-const { spawnSync } = require('child_process')
+const { Readable } = require('stream')
+const { pathToFileURL } = require('url')
 const [bundle, config] = process.argv.slice(2)
 let input = {}
 try {
@@ -220,11 +224,12 @@ try {
   cost = Number(fs.readFileSync(process.env.${AGY_COST_ENV}, 'utf8'))
 } catch {}
 if (Number.isFinite(cost)) input.cost = { ...(input.cost || {}), total_cost_usd: cost }
-const run = spawnSync(process.execPath, [bundle, '--config', config], {
-  input: JSON.stringify(input),
-  stdio: ['pipe', 'inherit', 'inherit']
+Object.defineProperty(process, 'stdin', {
+  configurable: true,
+  value: Readable.from([Buffer.from(JSON.stringify(input))], { objectMode: false })
 })
-process.exit(run.status ?? 0)
+process.argv = [process.argv[0], bundle, '--config', config]
+import(pathToFileURL(bundle).href)
 `
 
 export function setupAgyStatusline(paths: StatuslinePaths): string {
@@ -237,6 +242,8 @@ export function setupAgyStatusline(paths: StatuslinePaths): string {
     `#!/usr/bin/env bash
 ${EXEC_MARKER}${process.execPath}
 export ELECTRON_RUN_AS_NODE=1
+# PLATFORM§36
+export NODE_COMPILE_CACHE=${shq(compileCacheIn(dir))}
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 exec ${shq(process.execPath)} ${shq(script)} ${shq(bundlePath())} ${shq(paths.config)}
 `,

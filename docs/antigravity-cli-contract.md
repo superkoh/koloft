@@ -66,7 +66,11 @@ only downloaded the public release.
   at the prompt (the first press shows "press ctrl+c again to exit"; Ctrl+C was pressed
   0.3 s and 0.8 s apart, Ctrl+D 0.3 s apart). Measured 2026-10-29, agy 1.3.6 on Linux in Docker, a python pty
   answering the terminal's queries, the API-key route with the folder trusted (§5).
-  macOS: not probed.
+  The same on macOS: all five exited 0, 3 of 3 runs each (2026-11-09, the manifest's
+  1.5.3 darwin arm64 build, sha512 checked, in a throwaway macOS 26.6.2 tart VM with no
+  screen, the API-key route against a fake Gemini server with `--gemini_dir`, the folder
+  trusted and onboarding seeded, a python pty answering the terminal's queries, each quit
+  sent 10 s after launch at the prompt, the code read by `waitpid`).
 - `AGY_CLI_NONINTERACTIVE_HEADLESS=1` or `AGY_CLI_INTERACTIVE_HEADLESS=1` without a
   terminal exits at once with `could not open TTY`.
 - `agy changelog` downloads the list from
@@ -859,8 +863,31 @@ only downloaded the public release.
   "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
   `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
-  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
-  not tried.
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true` (a single-pick
+  question has no such key).
+- **A question that takes several picks: digits tick, Enter sends.** agy 1.5.1 (sha256
+  `d2b02615…9565`, the binary of the bullets below), Docker `--network none`
+  (`agy-a-img`, tmux 3.3a, 160×50), a fake Gemini server answering with `ask_question`
+  (`is_multi_select: true`, options Apple / Banana / Cherry), keys by `tmux send-keys`
+  300 ms apart from 1.2 s after `blocked`, the tool result read from the model's next
+  request, 2026-11-06; two runs per line unless marked. The box reads `1. [ ] Apple` …
+  `4. Write-in...` and "↑/↓ Navigate · space Toggle · enter Submit · esc Skip"; a ticked
+  row shows `[x]`. A digit moves to that row and toggles it, and sends nothing (the step
+  stayed waiting 8 s); Enter sends. `1`, `3`, Enter and `3`, `1`, Enter both sent `A1:
+  Apple, Cherry` (option order); Space, Down, Down, Space, Enter the same; `1`, `1`, Enter
+  or Enter alone sent `A1: ` (empty); a digit above the options did nothing. Write-in:
+  `4` (or Enter on its row) opens "Your answer:" under the list with the ticks kept, and
+  Enter there sends at once on the last question (on question 1 of 2 it moves to question
+  2): `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks first, then the write-in,
+  `A1: Apple, A ripe mango`. With two questions and the
+  several-pick one first, its footer says "enter Submit" but Enter goes to "Question
+  2/2", whose digit then sends both: `1`, `3`, Enter, `2` sent `A1: Apple, Cherry\nA2:
+  Medium`; with it second, `2`, then its ticks and Enter, sent `A1: Medium\nA2: Apple,
+  Cherry`. Keys in one `send-keys` burst (`1 3 Enter`) were all taken. Through the
+  Connect API (§16), `responses: [{question, selectedOptionIds: ["1","3"]}]` sent `A1:
+  Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
+  time. An option whose own text holds a comma runs into the next one (`Red, dark` and
+  `Blue` sent `A1: Red, dark, Blue`).
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
@@ -892,6 +919,18 @@ only downloaded the public release.
   was not taken (6 runs): no frame for 60 s, and the digit was left unsent in the input
   box under the ask. On 1.5.1 the opening `blocked:kind=auth` frame of §10 did not come;
   the first frame was `idle`. Not probed: the file-deny key `2`; macOS.
+- **The same question asked again right after an answer comes as a new `blocked`, unless
+  the model asks again within milliseconds.** agy 1.5.3 (build `1.5.3-6604829099950080`,
+  Linux arm64 from the manifest, sha512 checked) and 1.3.6 (the image's), the setup of the
+  bullet above, 2026-11-08: the fake answered the first question's result with the very
+  same `ask_question` (1.3.6 needs `toolSummary` and `toolAction` in it), and `2` answered
+  each question 2.5 s after its frame. With the fake answering after 100 ms (3 runs) or
+  1.5 s (2 runs) on 1.5.3, and at once on 1.3.6 (2 runs): `working` 11–23 ms after the
+  key, then `blocked:kind=question` again when the second question came (17 ms – 1.5 s
+  later), then `working`, `done`. With the fake answering at once on 1.5.3 (the result
+  reached it 7–9 ms after the key; 3 runs) no frame came at all: the screen drew the
+  second question under the first one's `blocked`, so a watcher of the frames cannot
+  tell it from the first.
 
 - **A question the person already pressed keys in.** agy 1.5.1 (the binary of the bullet
   above, sha256 `d2b02615…9565`, copied into `agy-a-img`), the same setup, a fresh
@@ -923,6 +962,20 @@ only downloaded the public release.
 
 - A bracketed paste lands in the input box unsent; Enter sends it. Plain text then CR
   sends too.
+- A bracketed paste loses its trailing line feeds as it lands in the box, before any
+  send: `src/change-1.ts\n```diff\n…\n```\n\n` pasted, `keep the old name` typed 0.3 s
+  later and CR 0.3 s after that sent `…```keep the old name`, and the box showed the
+  typed text on the ``` line. Line feeds typed as plain keys right after the paste, in
+  the paste's own write or 0.3 s later, stay: the same paste without its `\n\n`, then
+  `\n\n`, then the text and CR sent `…```\n\nkeep the old name`, also inside tmux 3.3a
+  with Koloft's `TMUX_CONF`. At the send agy drops the whole prompt's leading
+  whitespace and its trailing line feeds, so line feeds with nothing typed after them
+  are lost either way. `\r\n` or a lone `\r` inside a paste becomes `\n` and sends
+  nothing early; a 60-line paste shows as `[Pasted text #1 +60 lines]` and is sent
+  whole; a paste with no Enter after it sent nothing in 3 s. (agy 1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, Docker `--network none`,
+  API-key route against a fake Gemini server, a python pty answering the TUI's queries,
+  2026-11-08; 1 run each.)
 - During a turn, paste plus Enter queues it ("▸ queued msg", footer "Press up to edit
   queued messages"); it runs right after the turn (`done`, then `working`).
 - A bare line feed (`\n`, Ctrl+J) is a new line in the input box, not an Enter:
@@ -934,6 +987,13 @@ only downloaded the public release.
   instead?" and an empty prompt, and the answer that came 25 s later drew nothing.
   Both measured 2026-10-31, agy 1.4.12, Linux arm64, Docker `--network none`, tmux 3.3a,
   the API-key route against a fake Gemini server. macOS: not probed.
+- Ctrl+A, Ctrl+E and Ctrl+U edit the input box one line at a time: in `hello world`
+  Ctrl+A went before `h`, Ctrl+E after the last letter, Ctrl+U with the caret after the
+  third letter deleted those three, and at the line's end emptied it. In a two-line box
+  (`one`, LF, `two`) Ctrl+A went to the start of the second line; Ctrl+E then Ctrl+U
+  emptied that line, and a second Ctrl+U deleted the line break. 2026-11-09, agy 1.3.6,
+  Linux arm64, Docker `--network none`, tmux 3.3a, keys sent with `send-keys -H`, the
+  API-key route with the folder trusted. macOS: not probed.
 
 ## §16 The local Connect API
 
@@ -1075,6 +1135,12 @@ only downloaded the public release.
   shift+a approve all, `p` preview, Esc; `y` sends a new user turn "[Approved]
   implementation_plan.md", `n` "[Rejected] …". Any new message, also one sent with
   `SendUserCascadeMessage`, clears the review state.
+- When the "Approve plan" frame arrives, the plan is already on disk: `brain/<id>/`
+  holds `<name>.md` with the whole plan and `<name>.md.metadata.json` with
+  `requestFeedback: true`, so the plan's name is the sidecar's name less
+  `.metadata.json` (2026-11-06, 1.3.6 Linux arm64 in Docker, fake Gemini server; the
+  directory listed at the frame). 1.3.6's `write_to_file` refuses `ArtifactType` in
+  `ArtifactMetadata` and needs `UserFacing` and `toolAction`.
 - `/plan` goes to the model as text. Plan mode is a separate switch (`--mode plan`,
   Agent Mode in `/config`).
 
@@ -1285,6 +1351,20 @@ only downloaded the public release.
   and a second option "Yes, and always allow non-workspace access" (which writes
   `"allowNonWorkspaceAccess": true`); an outside read asks "Allow access to this
   file?". `/tmp` counts as inside: writing and reading there asked nothing.
+- **`read_file` outside the workspace asks, and the ask names the read** (1.5.3, build
+  `1.5.3-6604829099950080`, Linux arm64 from the manifest, sha512 checked, Docker
+  `--network none`, default mode, `--gemini_dir` with `modelProvider` and the folder
+  trusted, the TUI in a python3 pty answering the terminal and 7501 queries, a fake
+  Gemini server calling `read_file {Path: "<home>/outside.txt"}`, 2026-11-09, 2 runs).
+  7501 `blocked:kind=permission` with msg "Approve ReadFile: Read: <path>"; the screen
+  "File access … Read: <path> / Reason: outside workspace / Allow access to this file?
+  > 1. Yes, allow access / 2. Yes, and always allow non-workspace access / 3. No, deny
+  access". `GetCascadeTrajectory`'s waiting step: `requestedInteraction: {permission:
+  {resource: {action: "read_file", target: "<path>"}, actionDescription: "Analyzing
+  outside.txt", triggerSource: {type: "TYPE_DEFAULT_FALLBACK"}}}`. Esc left it (`idle`);
+  `4` changed nothing in the 3 s watched, the box still up. The tool list was §13's
+  1.4.7 one; `read_file {Path, StartLine?, EndLine?, ByteOffset?}` refuses any other
+  property ("additional properties 'toolSummary' not allowed").
 - (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
   the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
   (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /
@@ -1342,7 +1422,8 @@ only downloaded the public release.
 
 - At start agy asks `CSI >q` (XTVERSION), DA1, DECRQM 2026/2027 and `OSC 11;?`. It
   turns on `?2004h` (bracketed paste), `>4;2m` (modifyOtherKeys), a kitty keyboard
-  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame,
+  push `>1u` plus a `?u` query, `?2026` synchronized output around every frame (only
+  when DECRQM 2026 is answered yes; unanswered, as in tmux, none: §29),
   `?2027h`, and `0 q`; on exit `>4m`, `<1u`, `?2004l`, `0 q`, `?2027l`. No mouse modes
   (1000/1002/1003/1006) and no focus events (1004) in the default inline mode.
 - With XTVERSION unanswered there is a brief `?1049h … ?1049l` alternate-screen flash
@@ -1362,6 +1443,28 @@ only downloaded the public release.
   picker, by contrast, opened on the alternate screen (seen on 1.3.6). (Linux 1.4.7 from the manifest,
   sha512 checked, Docker, API-key route, a python pty answering the queries, output
   replayed into `@xterm/headless`, 2026-10-25).
+- `TERM_PROGRAM=Apple_Terminal` turns off both synchronized output and OSC 8 links.
+  With it agy never asks DECRQM 2026 and sends no `?2026h` and no `ESC]8;;<uri>` link;
+  a markdown link `[doc 7](http://…/link-7)` shows as `doc 7 http://…/link-7` and only
+  the address is plain text a terminal may linkify. With the variable unset it asks,
+  wraps redraws in `?2026h … ?2026l` and sends every link as OSC 8: the same
+  `doc 7 http://…/link-7` on screen, with `doc 7` and each address carrying the link. In fullscreen
+  (`"altScreenMode": "always"`), 30 wheel notches up and 30 down over a 160-line reply
+  gave 49 redraws: 0 of 49 framed under `Apple_Terminal`, 49 of 49 unset (54–55 frames
+  in the whole run); in the default inline mode the run had 5–6 frames. Links in the
+  run: 0 against 426 (fullscreen) and 480–537 (inline). `TERM_PROGRAM=tmux` acts
+  like unset (asks, 49 of 49 framed, 426 links), so only `Apple_Terminal` turns them
+  off; inside a real tmux what reaches the outer terminal also depends on tmux
+  answering DECRQM 2026 (§29). (macOS arm64 1.5.2 at
+  `~/.local/bin/agy`, 2026-11-08: a python pty answering DA1, DA2, DECRQM, cursor
+  position and OSC 10–12 as Koloft's xterm does, a temp `HOME`, a made-up
+  `GEMINI_API_KEY`, the fake Gemini server, `WSL_INTEROP` set; 3 runs each, every run
+  the same.) The same binary in a Koloft tab (a built Koloft, e2e home, WebGL
+  renderer, counted in xterm's parser, 3 runs each, every run the same): with
+  `Apple_Terminal` 0 frames and 0 links while the wheel scrolled, and a click on
+  `doc 152` opened nothing; without it 49 of 49 redraws framed, 370 OSC 8 links, and the
+  click opened `/link-152` in the Workbench. The links about double what the scroll
+  sends (20.5 KB to 44.3 KB for the 60 notches); the 49 paints stayed 49.
 
 ## §28 Telemetry
 
@@ -1380,10 +1483,29 @@ only downloaded the public release.
 
 ## §29 tmux and SSH
 
-- Inside tmux 3.3a no 7501 reaches the outer terminal, also with
+- Inside tmux 3.3a, with nothing between tmux and agy that answers its `7501;?` query
+  (a relay that does passes the frames on: next bullet), no 7501 reaches the outer
+  terminal, also with
   `AGY_CLI_OSC7501=on` and `allow-passthrough on`. With `=on` agy still writes the
   frames into the pane, where `tmux pipe-pane` captures them; without it the pane gets
   none.
+- **Inside tmux 3.3a agy frames nothing, because tmux never answers its DECRQM 2026.**
+  agy asks `ESC[?2026$p` (and 2027) in the pane as outside it, gets no answer, and then
+  writes no `?2026h` at all: 0 frames, and all 57 redraws of a scroll drawn outside
+  one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
+  runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
+  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
+  a remote agy tab does not start agy through it) agy got `?2026;2$y`, wrote 63–64 frames,
+  and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
+  frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
+  `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0
+  OSC 8 links inside tmux with or without the relay (813 outside it); what turns them
+  off there was not probed. 2026-11-08, agy
+  1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a, Koloft's
+  tmux.conf, no network), `altScreenMode: always`, a fake Gemini server streaming a
+  160-line answer with links, then 60 wheel notches; a python pty answering like
+  xterm.js as the outer terminal, agy's own bytes logged by a pty between it and tmux.
+  The pane's `TERM_PROGRAM` read `tmux`. tmux 3.4 and 3.5a were not run.
 - In tmux the TUI works (sign-in, onboarding, prompts), the status-line script
   renders, hooks run, and the title reaches `#{pane_title}` (with `set-titles on`
   tmux sends OSC 0 out).
@@ -1408,6 +1530,27 @@ only downloaded the public release.
   one does. An ask: PreToolUse (the whole `toolCall`), then title `tool_use` with
   `tool_confirmation_pending:true`; after `1`: title `working`, PostToolUse,
   PreInvocation, Stop, `idle`.
+- **A declined ask tells the title script `idle` and fires no hook.** Esc or `4` on a
+  command ask ("Interrupted · What should Antigravity CLI do instead?", and with `4`
+  also "User declined the tool call"): the title script got `agent_state` `idle` with
+  the conversation id and no `tool_confirmation_pending`, 55–64 ms after Esc; after `4`
+  it first got the same `tool_use` line again (6–7 ms) and `idle` about 0.3 s after the
+  key. A second `idle` followed 0.3 s later after Esc. In the next 8 s no hook fired (no
+  PostToolUse, PostInvocation or Stop) and agy made no model call. The 7501 frames read
+  `blocked` then `idle`, no `done`, as in §10. 2026-11-09, agy 1.5.3 linux-arm64 from
+  the manifest (sha512 checked), Docker (`agy-a-img`: Debian 12, tmux 3.3a, no network,
+  plain user), API-key route on a fake Gemini server answering with a `run_command`, a
+  title script and every hook appending their stdin to a file, keys by `tmux send-keys`
+  2.5 s after the ask; 2 of 2 runs for each key. Not run over ssh; the title script and
+  hooks run inside agy, so ssh should not change what they get (inferred, not checked).
+- **Esc in the middle of a turn ends it the same way.** Same setup, the fake server
+  holding its answer 15 s, Esc 3 s after the prompt while the title said `working`: the
+  title script got `idle` 58–59 ms later and again 0.3 s after that; no hook in the next
+  20 s (no PostInvocation, no Stop); the 7501 frames read `working` then `idle`, no
+  `done`; the screen said "Interrupted · What should Antigravity CLI do instead?". On a
+  prompt the title script also gets an `idle` line 55–60 ms before the PreInvocation
+  hook runs; both are separate processes, so in a log both append to, the two may land
+  in either order (inferred, not checked). 2 of 2 runs.
 - Keys typed into the Mac side of `ssh -tt` answer a command ask (`1`) and a question
   (`2` picked option 2); so does `tmux send-keys`.
 - `node --no-warnings --experimental-sqlite` (22.12.0) run over ssh reads the shared
@@ -1417,6 +1560,17 @@ only downloaded the public release.
   title line already carries the id. Two tabs in one account folder hold their own
   `presence/<id>.lock` (FLOCK WRITE in `/proc/locks`); `flock -n <lock> true` exits 1
   while a conversation is open and 0 once it is free.
+- **Started again with `--conversation=<id>` in tmux, agy tells the title script it is
+  idle once, and then nothing until someone types.** Its title script got one
+  `authenticating` input with `conversation_id` `""` at about 0.09 s, then one input with
+  the id and `agent_state` `idle` (and the conversation's title) at about 0.4 s, then
+  nothing for 20–22 s of no typing; no hook fired and agy sent the model nothing. That one
+  line is the only sign that the conversation is open and waiting. A first launch, for
+  comparison, sent `authenticating` twice and `idle` three times with no id, then
+  SessionStart, PreInvocation, PostInvocation and Stop, and only then the id with `idle`.
+  2026-11-08, agy 1.5.3 linux-arm64 from the manifest, Docker (Debian 12, tmux 3.3a
+  default config, no network, plain user), API-key route on a fake Gemini server, a
+  title script appending its stdin to a file; 2 of 2 runs.
 - `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
   dropped ssh client leaves tmux detached with agy running and the lock held;
   `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
@@ -1496,3 +1650,40 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+
+## §32 The folder's AGENTS.md as a memory
+
+2026-11-07, agy 1.5.3 (the manifest's `linux_arm64.json`, sha512 matched), Docker
+`--network none`, user `u`, fake Gemini server on the API-key route,
+`WSL_INTEROP=koloft`, launched as Koloft does (`--gemini_dir=<gd>`, the cwd in
+`trustedWorkspaces`, onboarding seeded); the TUI in tmux and `-p --output-format json`;
+every request saved and searched for codewords. The cwd was a plain folder, not a
+repository, like the butler's.
+
+- **agy has no memory of its own.** The 12 tools are those of §13 for 1.4.7; none keeps
+  anything past one conversation. The system instruction lists the plain folder under
+  `Active Workspaces`. Its only "persisted" place is `brain/<conversation-id>/scratch/`,
+  which belongs to that one conversation; `/learn` is something the model may suggest to
+  the user, not use. `-p` and the TUI sent the same system instruction and tools.
+- **The cwd's `AGENTS.md` reaches the model whole, as a rule**: inside `<user_rules>`
+  ("rules that you MUST ALWAYS FOLLOW WITHOUT ANY EXCEPTION…"), as
+  `<RULE[<absolute path>/AGENTS.md]>…</RULE[…]>`, so the model sees where the file is.
+  An untrusted folder's reached it too in `-p`; the TUI in an untrusted folder sent no
+  request before its trust question was answered. `GEMINI.md` beside it is read too,
+  after it. A parent folder's `AGENTS.md` was not read.
+- **A line the model adds is there from the next turn on.** With a seeded `AGENTS.md`
+  ("This file is your memory folder. When the owner asks you to remember something, add
+  it here as one short line…"), the fake model answered with `write_file {Path:
+  <absolute path>, Content: "- …\n", Append: true}`. In the default approval mode the
+  TUI asked first ("Create file … Allow creation of this file? 1. Yes, allow creation 2.
+  No, deny creation", although the file existed) and wrote nothing before `1`; with
+  `--dangerously-skip-permissions` it wrote without asking; `-p` in the default mode
+  auto-denied it (`denied_actions`). The line was appended, the rest kept. The request
+  right after the write, in the same turn, did not hold it; the next turn of that
+  conversation did, and so did a new conversation after `/clear`, a `-c` resume after
+  the process was killed, and a fresh `-p`.
+- Not probed: the macOS build, `--mode accept-edits`, the Google sign-in route, and the
+  owner's own `~/.gemini/GEMINI.md` beside it.
+
+Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
+starts, as a Codex one does (`src/main/assistMemory.ts`).

@@ -18,7 +18,8 @@ import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
 import { parseUnifiedDiff } from '@shared/unifiedDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { langForPath, plainCodeHtml, tooBigToColorUnasked } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
 import '../artifactPane.css'
 
 interface Sym {
@@ -132,36 +133,65 @@ function CodeSource({
   text: string
   line?: number
 }): JSX.Element {
-  const [html, setHtml] = useState('')
+  const [colors, setColors] = useState<{ text: string; html: string } | null>(null)
+  const [colorAskedFor, setColorAskedFor] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const lang = langForPath(path)
+  const askFirst = useMemo(() => lang !== 'text' && tooBigToColorUnasked(text), [lang, text])
+  const waitingToBeAsked = askFirst && colorAskedFor !== text
+  const colored = lang !== 'text' && !waitingToBeAsked
+  const plainUntilColored = lang === 'text' || askFirst
+  const coloredHtml = plainUntilColored
+    ? colored && colors?.text === text
+      ? colors.html
+      : null
+    : (colors?.html ?? '')
 
   useEffect(() => {
+    if (!colored) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
-      .then((h) => {
-        if (!cancelled) setHtml(h)
-      })
-      .catch(() => {})
+    const color = (): void => {
+      highlightCodeOffThread(text, lang)
+        .then((html) => {
+          if (!cancelled) setColors({ text, html })
+        })
+        .catch(() => {})
+    }
+    let frame = 0
+    if (askFirst) frame = requestAnimationFrame(() => (frame = requestAnimationFrame(color)))
+    else color()
     return () => {
       cancelled = true
+      cancelAnimationFrame(frame)
     }
-  }, [text, path])
+  }, [text, lang, colored, askFirst])
 
+  const showPlain = coloredHtml === null
+  const plainHtml = useMemo(() => (showPlain ? plainCodeHtml(text) : ''), [showPlain, text])
+  const shownHtml = coloredHtml ?? plainHtml
   // PLATFORM§25
-  const codeHtml = useMemo(() => ({ __html: html }), [html])
+  const codeHtml = useMemo(() => ({ __html: shownHtml }), [shownHtml])
 
   const jumpedLine = useRef<number | null>(null)
   useEffect(() => {
-    if (!line || jumpedLine.current === line || !html) return
+    if (!line || jumpedLine.current === line || !shownHtml) return
     jumpedLine.current = line
     bodyRef.current?.querySelectorAll<HTMLElement>('.line')[line - 1]?.scrollIntoView({
       block: 'center'
     })
-  }, [line, html])
+  }, [line, shownHtml])
 
   return (
     <div className="code-wrap">
       <div className="code-body" ref={bodyRef} dangerouslySetInnerHTML={codeHtml} />
+      {waitingToBeAsked && (
+        <div className="fp-stale" role="status">
+          <span className="fp-stale-msg">Large file, no colors</span>
+          <button className="fp-stale-btn" onClick={() => setColorAskedFor(text)}>
+            Show colors
+          </button>
+        </div>
+      )}
     </div>
   )
 }

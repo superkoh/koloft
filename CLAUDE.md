@@ -135,15 +135,17 @@ Working principles:
   agent has checked it against the code and you have fixed what it found; the
   hand-back says it was checked. An agent that cannot launch agents says its report
   is unreviewed.
-- Finish the code, then review, then test. While code is still being written, only
-  the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
-  CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
+- Finish the code, then review, then test. While writing code, only the fast checks
+  run (`format`, typecheck, `check:comments`, `test:unit:changed`; there is no lint) —
+  CI's first gate is `format:check`, and no hook runs Prettier. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
   in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
   edits until the reviews are in. Merge the reports, fix what is real (a run that failed
-  is rerun, or the what-ran table says how many of three came back), and only
-  then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
+  is rerun, or the what-ran table says how many of three came back). Once the fixes are
+  committed, one second round may run on the new diff and its real findings are fixed
+  too; there is never a third round — what is still open after two goes to `Out of
+  scope`. Only then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
   checks. A cleanup commit that lands after a test round throws that round away.
   Playwright never builds: after the last `src/` change or merge of `main`, `npm run
   build` first, or e2e tests the old `out/`.

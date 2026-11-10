@@ -10,6 +10,7 @@ import {
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
+  blocksPastBudget,
   buildEntries,
   classifyKind,
   commentBlocked,
@@ -30,7 +31,6 @@ import {
   type DiffSection
 } from '../../src/renderer/src/components/changesModel'
 import { DEFAULT_FILTERS, type ChangeFilters } from '../../src/renderer/src/components/filesModel'
-
 const NUL_BYTES_GIT_CALLS_BINARY = Buffer.from([0x00, 0x01, 0x02, 0x00, 0x41])
 const LINES_FOR_TWO_SEPARATE_HUNKS = 20
 
@@ -501,6 +501,30 @@ describe('stableEntries', () => {
     expect(kept[0]).toBe(first[0])
     expect(kept[1]).not.toBe(first[1])
     expect(kept[1].delta).toEqual({ added: 3, removed: 0 })
+  })
+
+  it('hands back the previous list itself when no file moved, so a session push redraws and measures nothing', () => {
+    const snap = { '/w/a.ts': 'modified', '/w/b.ts': 'modified' } as const
+    const first = entries(snap, {})
+    expect(stableEntries(first, entries(snap, {}))).toBe(first)
+  })
+})
+
+describe('blocksPastBudget — the drawn rows stay bounded however far the stream is scrolled', () => {
+  const rows: Record<string, number> = { a: 3000, b: 3000, c: 3000 }
+  const rowsOf = (p: string): number => rows[p]
+
+  it('forgets the earliest-drawn blocks until the rest fit the budget', () => {
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, () => false, 5000)).toEqual(['a', 'b'])
+  })
+
+  it('never forgets a block that must stay — on screen, or holding the selection — even past the budget', () => {
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, (p) => p === 'a', 5000)).toEqual(['b', 'c'])
+    expect(blocksPastBudget(['a', 'b', 'c'], rowsOf, () => true, 5000)).toEqual([])
+  })
+
+  it('forgets nothing while the drawn rows fit', () => {
+    expect(blocksPastBudget(['a'], rowsOf, () => false, 5000)).toEqual([])
   })
 })
 

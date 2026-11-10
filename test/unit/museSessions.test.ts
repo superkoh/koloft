@@ -568,6 +568,44 @@ describe('MuseSessions turns from hooks', () => {
   })
 
   // MUSE§9
+  it('ends a turn whose last message has no words, as muse reports it with a null last_assistant_message after the log already says it ended, once, with an empty reply', async () => {
+    const id = await boundTab()
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'tidy up', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('tidy up'))
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: { kind: 'run', run_id: 't1', event: { kind: 'terminal', terminal: 'completed' } }
+    })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: null, turn_id: 't1' })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: null, turn_id: 't1' })
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('turn-ended')[0]).toMatchObject({
+      turn: { reply: '', said: [{ who: 'owner', text: 'tidy up' }] }
+    })
+  })
+
+  // MUSE§9
+  it('hands on the error of a failed turn from StopFailure, even when the log already says the turn ended with no words', async () => {
+    const id = await boundTab()
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'fix it', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('fix it'))
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: { kind: 'run', run_id: 't1', event: { kind: 'terminal', terminal: 'failed' } }
+    })
+    hook(id, 'StopFailure', {
+      session_id: A,
+      turn_id: 't1',
+      error: 'server_error',
+      last_assistant_message: 'API error 500: boom (server_error)'
+    })
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('turn-ended')[0]).toMatchObject({
+      turn: { reply: 'API error 500: boom (server_error)' }
+    })
+  })
+
+  // MUSE§9
   it('hands on the reply of a turn muse answers by itself without a Stop hook, like a bare first "hello", from the session log, and only once when Stop does come', async () => {
     const id = await boundTab()
     const run = (turnId: string, event: Record<string, unknown>): Record<string, unknown> => ({

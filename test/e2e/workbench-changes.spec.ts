@@ -18,6 +18,7 @@ import {
   centerTerm,
   clickAppMenuItem,
   newSessionInWith,
+  openWorktreeSession,
   runIn,
   sendShortcut,
   sessionInRow,
@@ -62,6 +63,7 @@ const CV = {
   expand: '.cv-exp:not(.cv-cmt)',
   hunk: '.cv-hunk',
   diffRow: '.idiff-row',
+  undrawn: '.cv-undrawn',
   token: '.idiff-code > span',
   special: '.cv-special',
   total: '.wb-panel .cv-total',
@@ -281,6 +283,50 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect.poll(() => x.locator(CV.diffRow).count(), { timeout: 20_000 }).toBe(compactX)
     await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
     expect(await y.locator(CV.diffRow).count()).toBe(compactY)
+  })
+
+  test('a ⤢ expanded file that leaves the change set is forgotten: later polls pull no full diff for it, and it comes back folded', async ({
+    app,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const [leaves, stays] = fx.paths.changeable
+    const relaunched = await relaunchWithGitLog(app, env)
+    const p = relaunched.page
+    const fullDiffsOf = (abs: string): number =>
+      countGitSpawns(env, {
+        subcommand: 'diff',
+        argv: (argv) => argv.includes(abs) && argv.some((a) => a.startsWith('-U'))
+      })
+    const aggregates = (): number => countGitSpawns(env, { argv: isAggregateDiff })
+    try {
+      await openChanges(p)
+      await waitStream(p, 2)
+      const x = blockOf(p, 'src/change-1.ts')
+      await x.locator(CV.expand).click()
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'true')
+      await expect.poll(() => fullDiffsOf(leaves), { timeout: 20_000 }).toBeGreaterThan(0)
+
+      fx.git('checkout', '--', leaves)
+      await expect(rows(p)).toHaveCount(1, { timeout: 30_000 })
+      await waitGitQuiet(env)
+
+      const fullBefore = fullDiffsOf(leaves)
+      const aggBefore = aggregates()
+      fx.editTracked(stays)
+      await expect.poll(aggregates, { timeout: 30_000 }).toBeGreaterThan(aggBefore)
+      await waitGitQuiet(env)
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+
+      fx.editTracked(leaves)
+      await waitStream(p, 2)
+      await waitGitQuiet(env)
+      await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
+      expect(fullDiffsOf(leaves)).toBe(fullBefore)
+    } finally {
+      await relaunched.app.close().catch(() => {})
+    }
   })
 
   test('WB-C19: ✎ comment pastes the path and the hunk in a diff fence into the session’s input box and types the note after it, unsent, with the caret in the session; it is greyed while an approval is up', async ({
@@ -901,7 +947,8 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       }
     })
 
-  test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
+  test('WB-C16: only the blocks that have been scrolled to draw their rows and get syntax-highlighted — an unscrolled block has ZERO rows and tokens, yet ⌘F still finds its text — and nothing is truncated or dropped to afford it', async ({
+    app,
     page,
     env
   }) => {
@@ -918,17 +965,59 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(first.locator(CV.diffRow).first()).toBeVisible()
     await expect.poll(() => first.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
 
-    expect(await far.locator(CV.diffRow).count()).toBeGreaterThan(0)
-    expect.soft(await far.locator(CV.token).count()).toBe(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(0)
+    expect(await far.locator(CV.token).count()).toBe(0)
+    await expect(far.locator(CV.undrawn)).toHaveCount(1)
+    const farRows = Number(await far.getAttribute('data-rows'))
+    expect(farRows).toBeGreaterThan(0)
     expect(await page.locator(CV.banner).count()).toBe(0)
     expect(await page.locator('.wb-panel .idiff-hint').count()).toBe(0)
+
+    await first.locator(CV.diffRow).first().click()
+    await sendShortcut(app, 'shortcut:find')
+    const bar = page.locator('.find-bar')
+    await expect(bar.locator('.find-input')).toBeFocused()
+    await page.keyboard.type('part6rewritten_')
+    await expect(bar.locator('.find-count')).toHaveText(/^1\/900$/)
+    await expect.poll(() => far.locator(CV.diffRow).count(), { timeout: 30_000 }).toBe(farRows)
 
     const top = await blockTop(page, 'bulk/part-6.ts')
     await stream(page).evaluate((el, y) => {
       el.scrollTop = y
     }, top)
     await expect.poll(() => far.locator(CV.token).count(), { timeout: 60_000 }).toBeGreaterThan(0)
-    expect(await first.locator(CV.token).count()).toBeGreaterThan(0)
+    expect(await far.locator(CV.diffRow).count()).toBe(farRows)
+    await expect(bar.locator('.find-count')).toHaveText(/\/900$/)
+  })
+
+  test('scrolling through more changed rows than the stream keeps drawn forgets the earliest blocks, and a forgotten block keeps the height it was drawn at, so scrolling back does not move the stream', async ({
+    page,
+    env
+  }) => {
+    test.slow()
+    setupChangeFixture(env.workspaces.a).bigChange()
+    await openChanges(page)
+    await waitStream(page, 6, 60_000)
+
+    const r = await stream(page).evaluate(async (el) => {
+      const settle = (): Promise<void> => new Promise((res) => setTimeout(res, 500))
+      const blocks = [...el.querySelectorAll<HTMLElement>('.cv-blk')]
+      const drawn: number[] = []
+      for (const b of blocks) {
+        el.scrollTop = b.offsetTop
+        await settle()
+        drawn.push(b.querySelector('.idiff-row') ? b.offsetHeight : -1)
+      }
+      const forgotten = blocks.filter((b) => b.querySelector('.cv-undrawn')).length
+      const after = blocks.map((b) => {
+        b.style.contentVisibility = 'visible'
+        return b.offsetHeight
+      })
+      return { drawn, after, forgotten }
+    })
+    expect(r.drawn).not.toContain(-1)
+    expect(r.forgotten).toBeGreaterThan(0)
+    expect(r.after).toEqual(r.drawn)
   })
 
   test('WB-C17: one Changes refresh resolves the baseline exactly once — also when a file tab watches a changed file — and a no-op directory event reruns no aggregate diff', async ({
@@ -1414,5 +1503,54 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     } finally {
       await p1app.close().catch(() => {})
     }
+  })
+
+  const COMMIT_EVERYTHING = 'git -c user.email=e2e@koloft.test -c user.name=e2e commit -qam done'
+
+  test('WB-C21: a commit the session makes in its worktree clears vs HEAD by itself, with no Reload, though the commit writes nothing inside the worktree', async ({
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('wt270')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      await showChanges(page)
+      const wtDir = fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'wt270'))
+      const rel = fx.rel(fx.paths.changeable[0])
+      fs.appendFileSync(path.join(wtDir, rel), '// made in the worktree\n')
+      await baseBtn(page).click()
+      await filesMenu(page).getByRole('menuitemradio', { name: 'vs HEAD' }).click()
+      await expect(baseBtn(page)).toHaveText(/^vs HEAD ▾$/)
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([rel])
+
+      await runIn(page, centerTerm(page), `/sh ${COMMIT_EVERYTHING}`)
+      await expect(page.locator(CV.empty)).toHaveText('No changes against the base.', {
+        timeout: 15_000
+      })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-C22: a commit the session makes in a plain checkout clears the change set by itself, with no Reload', async ({
+    page,
+    env
+  }) => {
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    await openChanges(page)
+    await waitStream(page, 1)
+
+    await runIn(page, centerTerm(page), `/sh ${COMMIT_EVERYTHING}`)
+    await expect(page.locator(CV.empty)).toHaveText('No changes against the base.', {
+      timeout: 15_000
+    })
   })
 })

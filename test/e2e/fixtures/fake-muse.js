@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 
 const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
@@ -193,6 +193,10 @@ function serve() {
 }
 
 function tui() {
+  if (fs.existsSync(file('fake-muse-exit'))) {
+    console.error('Muse fixture startup failure')
+    process.exit(Number(read('fake-muse-exit')) || 1)
+  }
   const flags = {}
   const rest = []
   for (let i = 0; i < argv.length; i++) {
@@ -439,12 +443,45 @@ function tui() {
       fire('PostToolUse', { ...call, tool_response: ran.stdout })
       return later(() => say(turnId, `Ran: ${cmd}`, text))
     }
+    // MUSE§9
+    if (text === '/silent') {
+      const turnId = turn(text)
+      return later(() => {
+        logRecord(session.id, 'runtime.session', {
+          kind: 'run',
+          run_id: turnId,
+          event: { kind: 'terminal', terminal: 'completed' }
+        })
+        inputBox()
+        const stop = { turn_id: turnId, last_assistant_message: null, stop_hook_active: false }
+        fire('Stop', stop)
+        fire('Stop', stop)
+        status('state=done:app=muse')
+      })
+    }
+    if (text.startsWith('/koloft ')) {
+      const cmd = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/sh', ['-c', cmd], { cwd: process.cwd() }, (e, out, err) => {
+        const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+        process.stdout.write(`${said}[fake-muse] koloft exit=${code}\r\n`)
+        inputBox()
+      })
+      return
+    }
     if (text === '/approve') {
       const turnId = turn(text)
       return block(
         'permission',
         {
-          approvals: [{ approvalId: 'approval-1', rawArgs: { command: 'ls -la' } }],
+          approvals: [
+            {
+              approvalId: 'approval-1',
+              toolName: 'bash',
+              rawArgs: JSON.stringify({ command: 'ls -la' }),
+              subject: { kind: 'shell', command: 'ls -la' }
+            }
+          ],
           userInputs: []
         },
         (key) => {
@@ -479,6 +516,46 @@ function tui() {
           const answer = key === ESC ? 'nothing' : options[picked]?.label
           later(() => say(turnId, `Picked: ${answer}`, text))
           return true
+        }
+      )
+    }
+    if (text === '/ask-several') {
+      const turnId = turn(text)
+      const options = [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }]
+      const submitRow = options.length + 2
+      const ticked = new Set()
+      let row = 1
+      let review = false
+      return block(
+        'question',
+        {
+          approvals: [],
+          userInputs: [
+            {
+              userInputId: 'input-several',
+              questions: [
+                {
+                  id: 'fruits',
+                  question: 'Which fruits?',
+                  options,
+                  selection: { mode: 'multiple' }
+                }
+              ]
+            }
+          ]
+        },
+        (key) => {
+          if (review && key === '\r') {
+            status('state=working:app=muse')
+            const picked = options.filter((_, i) => ticked.has(i + 1)).map((o) => o.label)
+            later(() => say(turnId, `Picked: ${picked.join(', ')}`, text))
+            return true
+          }
+          if (/^[1-9]$/.test(key) && Number(key) <= submitRow) row = Number(key)
+          else if (key === '\r' && row === submitRow) review = ticked.size > 0
+          else if ((key === ' ' || key === '\r') && row <= options.length)
+            ticked.has(row) ? ticked.delete(row) : ticked.add(row)
+          return false
         }
       )
     }
@@ -551,6 +628,20 @@ function tui() {
       process.stdout.write(`resumed session ${child.id}\r\n`)
       const turnId = turn(prompt)
       return later(() => say(turnId, `echo: ${prompt}`, prompt))
+    }
+    // MUSE§9
+    if (text === '/compact') {
+      logRecord(session.id, 'runtime.command.accepted', {
+        command_kind: 'context.compact.manual'
+      })
+      return later(() => {
+        logRecord(session.id, 'context.compact.manual.outcome', {
+          terminal_outcome: 'compacted'
+        })
+        fire('PostCompact', { trigger: 'manual' })
+        fire('SessionStart', { source: 'compact' })
+        inputBox()
+      })
     }
     if (text === '/usage') {
       const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))

@@ -110,6 +110,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   } catch (err) {
     console.error('[koloft] could not mark Claude onboarding done', err)
   }
+  if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${args.argv.join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)
@@ -136,6 +137,9 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
+      // CC§12
+      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+      CLAUDE_CODE_DECSTBM: '1',
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,
@@ -147,7 +151,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
 }
 
 // ADR-0026
-async function trustFolder(dir: string): Promise<void> {
+function trustFolder(dir: string): void {
   if (!fs.existsSync(dir)) return
   try {
     acceptClaudeTrust(claudeJsonPath(), dir)
@@ -209,7 +213,6 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
       return { spawnCwd, cwd: spawnCwd }
     },
     launch: (spec) => launchClaude(claude, spec),
-    trustFolder,
     trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),
     listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
     keyed: (p) => p,

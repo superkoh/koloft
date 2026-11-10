@@ -3,7 +3,7 @@ import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
-import { CLEAR_TO_LINE_START } from '../typeKeys'
+import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
 import { errorText } from '../agentRequests'
 import { withoutBlankEdges } from '../messageText'
 import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../inputBox'
@@ -18,7 +18,6 @@ export const RESULT_WITHIN_MS = 10 * 60_000
 const ESC = '\x1b'
 const CLOSE_THE_COMMAND_MENU = ESC
 const CLOSE_PAGER = 'q'
-const TO_LINE_END = '\x05'
 const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
 // CODEX§21 AGY§23
 const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {

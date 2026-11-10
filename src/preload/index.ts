@@ -43,7 +43,8 @@ import type {
   UpdateProgress,
   UpdateCheckResult,
   OpenRequest,
-  WorkspaceRows
+  WorkspaceRows,
+  DirChanges
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
 import type { InboxSnapshot } from '@shared/inbox'
@@ -397,10 +398,11 @@ const api: KoloftApi = {
     dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
     search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
     gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
+    gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
     watchDir: (root) => ipcRenderer.invoke(CH.fs.watchDir, root),
     unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
     onDirChange: (cb) => {
-      const handler = (_e: unknown, root: string): void => cb(root)
+      const handler = (_e: unknown, root: string, changes?: DirChanges): void => cb(root, changes)
       ipcRenderer.on(CH.fs.dirChanged, handler)
       return () => ipcRenderer.removeListener(CH.fs.dirChanged, handler)
     },
