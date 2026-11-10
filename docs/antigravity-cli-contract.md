@@ -1494,8 +1494,8 @@ only downloaded the public release.
   writes no `?2026h` at all: 0 frames, and all 57 redraws of a scroll drawn outside
   one, 4 of 4 runs (outside tmux, answered `;2$y`: 64 frames, 0 of 57 outside, 2 of 2
   runs). Wrapped by hand, for the probe, in Koloft's status relay (`STATUS_RELAY_PY`,
-  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35;
-  a remote agy tab starts agy through it, with `AGY_CLI_OSC7501=off`) agy got `?2026;2$y`, wrote 63–64 frames,
+  which answers yes when tmux does not and carries each frame past tmux, PLATFORM§35)
+  agy got `?2026;2$y`, wrote 63–64 frames,
   and the outer terminal got every one of them, with 0 of 57 redraws drawn outside a
   frame (4 of 4 runs). The relay also answers the `7501;?` query, so agy then sent
   `idle`, `working`, `done` and `idle` frames, which the relay passed on. agy sent 0

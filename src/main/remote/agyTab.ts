@@ -225,7 +225,7 @@ for (let size = 0; size !== tree.size; ) {
   size = tree.size
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
-const isTheRelay = (args) => (args.split(' ')[1] ?? '').endsWith('/${STATUS_RELAY_FILE}')
+const isTheRelay = (args) => args.includes('/${STATUS_RELAY_FILE} agy ')
 const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !isTheRelay(p.args))
 if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
