@@ -289,7 +289,7 @@ export class TranscriptFollower {
   }
 
   private async readWhatWasAdded(): Promise<LastTurnAndTokens> {
-    const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size ?? 0
+    const { size } = await fs.promises.stat(this.file)
     if (size < this.cursor.offset) {
       this.cursor = { offset: 0, tail: [] }
       this.turns = []
@@ -298,19 +298,27 @@ export class TranscriptFollower {
     while (this.cursor.offset < size) {
       const from = this.cursor.offset
       const lines = await readAppendedLines(this.file, size, this.cursor)
-      if (lines === null || this.cursor.offset === from) break
+      if (lines === null) throw new Error(`could not read ${this.file}`)
+      if (this.cursor.offset === from) break
       for (const line of lines) {
         const step = line && stepOf(line)
-        if (!step) continue
-        addToTurns(this.turns, step)
-        if (this.turns.length > 1) this.turns.shift()
-        if (step.type !== 'PLANNER_RESPONSE') continue
-        this.tokens.input += step.inputTokens
-        this.tokens.output += step.outputTokens
-        this.tokens.cacheRead += step.cacheReadTokens
+        if (step) addLastTurnStep(this.turns, this.tokens, step)
       }
     }
-    const turn = this.turns[0]
-    return { turn: turn && { ...turn, said: [...turn.said] }, tokens: { ...this.tokens } }
+    const turns = this.turns.map((turn) => ({ ...turn, said: [...turn.said] }))
+    const tokens = { ...this.tokens }
+    const lineWithNoNewlineYet =
+      this.cursor.tail.length && stepOf(Buffer.concat(this.cursor.tail).toString('utf8'))
+    if (lineWithNoNewlineYet) addLastTurnStep(turns, tokens, lineWithNoNewlineYet)
+    return { turn: turns[0], tokens }
   }
+}
+
+function addLastTurnStep(turns: Turn[], tokens: TokenTotals, step: TranscriptStep): void {
+  addToTurns(turns, step)
+  if (turns.length > 1) turns.shift()
+  if (step.type !== 'PLANNER_RESPONSE') return
+  tokens.input += step.inputTokens
+  tokens.output += step.outputTokens
+  tokens.cacheRead += step.cacheReadTokens
 }

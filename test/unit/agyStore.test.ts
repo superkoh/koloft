@@ -220,12 +220,13 @@ describe('the transcript (AGY§8)', () => {
     })
   })
 
-  it('reading only what each turn added gives the same last turn and tokens as reading the whole transcript once', async () => {
+  it('reading only what each turn added, through a tool output longer than one read piece and a last line whose newline is not written yet, gives the same last turn and tokens as reading the whole transcript once', async () => {
+    const longerThanOneReadPiece = 'x'.repeat(300 * 1024)
     const steps = [
       { type: 'USER_INPUT', content: ownerTyped('first') },
       { type: 'PLANNER_RESPONSE', content: 'one', input_tokens: 100, output_tokens: 20 },
       { type: 'USER_INPUT', content: ownerTyped('second') },
-      { type: 'GENERIC', content: 'tool output' },
+      { type: 'GENERIC', content: longerThanOneReadPiece },
       { type: 'PLANNER_RESPONSE', content: 'part a', input_tokens: 10, cache_read_tokens: 5 },
       { type: 'PLANNER_RESPONSE', content: 'part b', input_tokens: 1, output_tokens: 2 }
     ]
@@ -233,16 +234,30 @@ describe('the transcript (AGY§8)', () => {
     const full = path.join(gemini, 'whole.jsonl')
     fs.writeFileSync(full, whole)
     const once = await new TranscriptFollower(full).catchUp()
+    expect(once.turn?.reply).toBe('part a\n\npart b')
+    expect(once.tokens).toEqual({ input: 111, output: 22, cacheRead: 5 })
     fs.mkdirSync(path.dirname(transcript), { recursive: true })
     const follower = new TranscriptFollower(transcript)
-    let last = await follower.catchUp()
-    for (const cut of [37, 120, 121, 260, whole.length]) {
+    const longLineMiddle = whole.indexOf(longerThanOneReadPiece) + 200 * 1024
+    for (const cut of [37, 120, 121, longLineMiddle, whole.length - 1]) {
       fs.writeFileSync(transcript, whole.slice(0, cut))
-      last = await follower.catchUp()
+      await follower.catchUp()
     }
-    expect(last).toEqual(once)
-    expect(last.turn?.reply).toBe('part a\n\npart b')
-    expect(last.tokens).toEqual({ input: 111, output: 22, cacheRead: 5 })
+    expect(await follower.catchUp()).toEqual(once)
+    fs.writeFileSync(transcript, whole)
+    expect(await follower.catchUp()).toEqual(once)
+  })
+
+  it('a transcript it cannot read gives no turn and keeps what was read before, rather than zero tokens', async () => {
+    const follower = new TranscriptFollower(transcript)
+    await expect(follower.catchUp()).rejects.toThrow()
+    appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'kept', input_tokens: 9 }])
+    await follower.catchUp()
+    fs.renameSync(transcript, transcript + '.away')
+    await expect(follower.catchUp()).rejects.toThrow()
+    fs.renameSync(transcript + '.away', transcript)
+    appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'more', input_tokens: 1 }])
+    expect((await follower.catchUp()).tokens.input).toBe(10)
   })
 
   it('reads a transcript again from the start once it got shorter', async () => {

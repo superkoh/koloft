@@ -20,16 +20,17 @@ export async function readAppendedLines(
     const len = Math.min(size - cur.offset, APPEND_READ_CHUNK_BYTES)
     newBytes = Buffer.allocUnsafe(len)
     const { bytesRead } = await fh.read(newBytes, 0, len, cur.offset)
-    if (bytesRead < len) newBytes = newBytes.subarray(0, bytesRead)
+    if (bytesRead < len) newBytes = Buffer.from(newBytes.subarray(0, bytesRead))
   } catch {
     return null
   } finally {
     await fh?.close()
   }
+  if (!newBytes.length) return []
   cur.offset += newBytes.length
   const lastNl = newBytes.lastIndexOf(0x0a)
   if (lastNl === -1) {
-    cur.tail.push(newBytes)
+    cur.tail = [...cur.tail, newBytes]
     return []
   }
   const done = newBytes.subarray(0, lastNl)
