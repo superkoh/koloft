@@ -1732,14 +1732,16 @@ inferred, not checked.
   the `queue-operation` pair; that session, opened by `/goal`, got no `ai-title`.
   Which shape a task finishing mid-turn gets is not probed yet. Terminal `<status>` values are
   `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
-  for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
-  tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
+  for a task killed from the UI, by a Monitor timeout, or by agent teardown. A Monitor
+  also sends progress notifications, which carry only its `<task-id>` (the bullet above;
+  rechecked below on 2.1.322).
   The terminal notification wakes the model, so a wrap-up turn with its own Stop
   follows. Every ack kind gets one — except a teammate.
-  **Since 2.1.321 a long command is cut in the middle of the summary.** For a
-  background shell whose command is over 1,000 characters, 2.1.322 keeps the first 500
-  and the last 300 characters of the `<summary>` text and puts `\n\n... [N characters
-  truncated] ...\n\n` between them, before escaping `>` as `&gt;`; 2.1.319 wrote the
+  **2.1.322 cuts a long command in the middle of the summary** (the 2.1.321 changelog
+  names that release; 2.1.320 and 2.1.321 were not run). For a background shell whose
+  command is over 1,000 characters, 2.1.322 keeps the first 500 and the last 300
+  characters of the raw `<summary>` text (counted before `>` is escaped as `&gt;`) and
+  puts `\n\n... [N characters truncated] ...\n\n` between them; 2.1.319 wrote the
   whole command. The marker holds no `<`, and `<task-id>`, `<tool-use-id>` and
   `<status>` are unchanged. The Stop hook's `background_tasks[].command` and
   `.description` were already cut near 1,000 characters with `… [+N chars]` on both
@@ -2137,7 +2139,9 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 
 How established: the script as served on 2026-09-08 was fetched and read, alongside
 the official install docs; Claude Code 2.1.263 was the current version that day. The
-bullets dated 2026-10-11 were measured against a real install on macOS.
+bullets dated 2026-10-11 were measured against a real install on macOS; the 2026-11-10
+rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
+(`node:22-bookworm`, linux-arm64).
 
 - **It is `#!/bin/bash`** (uses `[[ ]]` and `=~`), so `sh` cannot run it — a machine
   without bash needs bash installed first. It needs `curl` or `wget`, and `shasum -a
@@ -2171,13 +2175,14 @@ bullets dated 2026-10-11 were measured against a real install on macOS.
   2026-11-10).
 - **On macOS the `claude install` step then downloads the whole binary again, in
   silence.** After "Installing Claude Code native build latest..." it fetches the
-  uncompressed build into `~/.cache/claude/staging` whether or not `zstd` is there, about
-  324 MB (arm64) or 338 MB (x64), and the terminal gets no byte meanwhile: at 2 Mbit/s a
-  second silent stretch of about 22 minutes. On Linux that step took 1.3 s and fetched
-  nothing. (2026-11-10, script serving 2.1.322: three macOS installs in a Python pty with a
-  scratch `HOME`, 41.7, 52.6 and 46.3 s of no output while the staging file grew to 323.7
-  MB; one in `node:22-bookworm`. Whether 2.1.316 did this too is not checked. Koloft's
-  20-minute install silence limit is issue #1698.)
+  uncompressed build into `~/.cache/claude/staging` even with `zstd` on the Mac, 323.7 MB
+  on arm64, and the terminal gets no byte meanwhile: at 2 Mbit/s a second silent stretch
+  of about 22 minutes. On Linux that step took 1.3 s and fetched nothing. (2026-11-10,
+  script serving 2.1.322: three darwin-arm64 installs in a Python pty with a scratch
+  `HOME`, `/opt/homebrew/bin/zstd` on the login PATH, 41.7, 52.6 and 46.3 s of no output
+  while the staging file grew to 323.7 MB; one in `node:22-bookworm`. Inferred, not
+  checked: the same on x64 (338.4 MB uncompressed, per the manifest), on a Mac without
+  `zstd`, and on 2.1.316.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
