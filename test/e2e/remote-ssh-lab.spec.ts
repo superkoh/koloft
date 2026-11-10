@@ -52,6 +52,7 @@ import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import {
   addWorkspace,
   agentShell,
+  listeningPortsOf,
   centerTerm,
   chooseBackend,
   closeMenu,
@@ -1977,8 +1978,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     seedSettings(env, { hintsOff: true })
     installCodexSignedInForTheLab(env)
     const [codexPort, claudePort] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
-    const portsOf = (page: Page, tab: string): Promise<number[] | undefined> =>
-      page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l?.map((p) => p.port))
     await withLab(
       env,
       async ({ app, page }) => {
@@ -1988,7 +1987,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           [codexTab, `/sh ${servesAFolderOn(codexPort)}\r`]
         )
         await expect
-          .poll(() => portsOf(page, codexTab), {
+          .poll(() => listeningPortsOf(page, codexTab), {
             timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
           })
           .toEqual([codexPort])
@@ -2003,7 +2002,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           claudeTab,
           KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         )(servesAFolderOn(claudePort))
-        await expect.poll(() => portsOf(page, claudeTab)).toEqual([claudePort])
+        await expect.poll(() => listeningPortsOf(page, claudeTab)).toEqual([claudePort])
         await switchToRow(page, page.locator(`[data-tab-id="${claudeTab}"]`))
 
         await page.locator(BROWSER.newTab).click()

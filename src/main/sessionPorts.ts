@@ -7,8 +7,7 @@ const SCAN_DEADLINE_MS = 5000
 const SCAN_FINISHED = 'scanned'
 
 // PLATFORM§59 PLATFORM§67
-export const SESSION_PORTS_SH = String.raw`ids=" $1 "
-tags() {
+export const SESSION_PORTS_SH = String.raw`tags() {
   if [ -r /proc/self/environ ]; then
     grep -a -o -s -E 'KOLOFT_(TAB_ID|HOLD_TAB)=[^[:cntrl:]]+' /proc/[0-9]*/environ | sed 's#^/proc/\([0-9]*\)/environ:[^=]*=#\1 #'
   else
@@ -16,21 +15,16 @@ tags() {
   fi
 }
 panes=" "
-[ -n "$2" ] && for p in $(tmux -L koloft list-panes -s -t "=$2:" -F '#{pane_pid}' 2>/dev/null); do panes="$panes$p "; done
-members=$({ tags; echo -; ps -A -ww -o pid= -o ppid= -o args=; } | awk -v ids="$ids" -v panes="$panes" '
+[ -n "$2" ] && panes=" $(tmux -L koloft list-panes -s -t "=$2:" -F '#{pane_pid}' 2>/dev/null | tr '\n' ' ')"
+table=$(ps -A -ww -o pid= -o ppid= -o args=) || exit 1
+members=$({ tags; echo -; printf '%s\n' "$table"; } | awk -v ids="$1" -v panes="$panes" '
 !table && $0 == "-" { table = 1; next }
 !table { tagged[++t] = $1; tag[t] = $2; next }
 { pid = $1; up[pid] = $2; a = $0; sub(/^ *[0-9]+ +[0-9]+ */, "", a); args[pid] = a; order[++m] = pid }
 END {
-  for (grew = 1; grew; ) {
-    grew = 0
-    for (i = 1; i <= m; i++) {
-      p = order[i]
-      if (!(p in pane) && (index(panes, " " p " ") || (up[p] in pane))) { pane[p] = 1; grew = 1 }
-    }
-  }
-  for (j = 1; j <= t; j++) if (tagged[j] in pane) ids = ids tag[j] " "
-  for (j = 1; j <= t; j++) if (index(ids, " " tag[j] " ")) mine[tagged[j]] = 1; else other[tagged[j]] = 1
+  n = split(ids, asked, " "); for (i = 1; i <= n; i++) own[asked[i]] = 1
+  for (j = 1; j <= t; j++) for (p = tagged[j]; p > 1; p = up[p]) if (index(panes, " " p " ")) { own[tag[j]] = 1; break }
+  for (j = 1; j <= t; j++) if (tag[j] in own) mine[tagged[j]] = 1; else other[tagged[j]] = 1
   for (grew = 1; grew; ) {
     grew = 0
     for (i = 1; i <= m; i++) {

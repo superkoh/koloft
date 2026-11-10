@@ -27,6 +27,8 @@ import {
   boundSessionId,
   centerTerm,
   continuedInOf,
+  killSession,
+  listeningPortsOf,
   newSessionInWith,
   processAlive,
   readCalls,
@@ -42,7 +44,7 @@ import {
 } from './helpers/p1'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { codexCalls } from './helpers/codex'
-import { portFreeOnTheMac, servesAFolderOn } from './helpers/fixtureServer'
+import { portFreeOnTheMac } from './helpers/fixtureServer'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
@@ -526,9 +528,13 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       const [before, after] = [await portFreeOnTheMac(), await portFreeOnTheMac()]
       const pids = path.join(machineHome(env), 'servers.pid')
       const startServer = (page: Page, port: number): Promise<void> =>
-        runIn(page, centerTerm(page), typedToRun(`${servesAFolderOn(port)} echo $! >> ${pids}`))
-      const portsOf = (page: Page, tab: string): Promise<number[] | undefined> =>
-        page.evaluate((t) => window.api.sessions.ports(t), tab).then((l) => l?.map((p) => p.port))
+        runIn(
+          page,
+          centerTerm(page),
+          typedToRun(
+            `nohup python3 -m http.server ${port} --bind 127.0.0.1 --directory ${machineHome(env)} >/dev/null 2>&1 & echo $! >> ${pids}`
+          )
+        )
       try {
         const { app, page } = await launchWithRemote(env)
         try {
@@ -536,7 +542,9 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
           await startOnTheMachine(page, agent)
           const [tab] = await remoteTabIds(page)
           await startServer(page, before)
-          await expect.poll(() => portsOf(page, tab), { timeout: 60_000 }).toEqual([before])
+          await expect
+            .poll(() => listeningPortsOf(page, tab), { timeout: 60_000 })
+            .toEqual([before])
           await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
         } finally {
           await quitAndClose(app)
@@ -552,18 +560,20 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
             timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
           })
           const [tab] = await remoteTabIds(page2)
-          await expect.poll(() => portsOf(page2, tab), { timeout: 60_000 }).toEqual([before])
+          await expect
+            .poll(() => listeningPortsOf(page2, tab), { timeout: 60_000 })
+            .toEqual([before])
           await switchToRow(page2, row)
           await startServer(page2, after)
           await expect
-            .poll(() => portsOf(page2, tab), { timeout: 60_000 })
+            .poll(() => listeningPortsOf(page2, tab), { timeout: 60_000 })
             .toEqual([before, after].sort((a, b) => a - b))
         } finally {
           await quitAndClose(app2)
         }
       } finally {
         for (const pid of fs.existsSync(pids) ? fs.readFileSync(pids, 'utf8').split('\n') : [])
-          if (pid) process.kill(Number(pid), 'SIGKILL')
+          if (pid) killSession(Number(pid), env)
       }
     })
   }

@@ -806,6 +806,9 @@ export async function waitBooted(page: Page): Promise<void> {
   )
 }
 
+export const listeningPortsOf = (page: Page, tabId: string): Promise<number[] | undefined> =>
+  page.evaluate((t) => window.api.sessions.ports(t), tabId).then((l) => l?.map((p) => p.port))
+
 export function agentShell(
   page: Page,
   tabId: string,

@@ -12,26 +12,48 @@ const run = promisify(execFile)
 const SERVER = `require('http').createServer((q, s) => s.end('ok')).listen(0, '127.0.0.1', function () { console.log(this.address().port) })`
 
 const started: ChildProcess[] = []
+const fakeBins: string[] = []
 
 afterEach(() => {
   for (const child of started.splice(0)) process.kill(-(child.pid as number), 'SIGKILL')
+  for (const bin of fakeBins.splice(0)) fs.rmSync(bin, { recursive: true, force: true })
 })
 
-async function serve(tag: string): Promise<{ pid: number; port: number }> {
-  const child = spawn(process.execPath, ['-e', SERVER], {
-    env: { ...process.env, KOLOFT_TAB_ID: tag },
-    detached: true,
-    stdio: ['ignore', 'pipe', 'ignore']
-  })
-  started.push(child)
-  const port = await new Promise<number>((resolve) =>
-    child.stdout?.once('data', (b: Buffer) => resolve(Number(String(b).trim())))
+async function serve(tag: string): Promise<{ shellPid: number; port: number }> {
+  const shell = spawn(
+    '/bin/sh',
+    ['-c', `KOLOFT_TAB_ID=${tag} "${process.execPath}" -e "$0"; :`, SERVER],
+    {
+      env: { ...process.env, KOLOFT_TAB_ID: '' },
+      detached: true,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }
   )
-  return { pid: child.pid as number, port }
+  started.push(shell)
+  const port = await new Promise<number>((resolve) =>
+    shell.stdout?.once('data', (b: Buffer) => resolve(Number(String(b).trim())))
+  )
+  return { shellPid: shell.pid as number, port }
 }
 
 const portsOf = async (tags: string[]): Promise<number[] | undefined> =>
   parseSessionPorts(await scanPortsHere(tags))?.map((p) => p.port)
+
+async function portsWithFakes(
+  fakes: Record<string, string>,
+  tags: string,
+  tmuxName: string
+): Promise<number[] | null> {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-bin-'))
+  fakeBins.push(bin)
+  for (const [name, body] of Object.entries(fakes))
+    fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}`, { mode: 0o755 })
+  const r = await run('/bin/sh', ['-c', SESSION_PORTS_SH, 'ports', tags, tmuxName], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+  }).catch((e: { stdout: string }) => e)
+  const found = parseSessionPorts(r.stdout)
+  return found && found.map((p) => p.port)
+}
 
 describe('a session tab’s listening ports', () => {
   it('lists the servers of processes carrying the tab’s id or one of its terminals’ ids, and no other tab’s', async () => {
@@ -49,40 +71,23 @@ describe('a session tab’s listening ports', () => {
     const firstId = `pty-t${randomUUID().slice(0, 8)}-1`
     const reattached = `pty-t${randomUUID().slice(0, 8)}-1`
     const tmuxName = `k-${randomUUID()}`
-    const pane = spawn(
-      '/bin/sh',
-      ['-c', `KOLOFT_TAB_ID=${firstId} "${process.execPath}" -e "$0"; :`, SERVER],
-      {
-        env: { ...process.env, KOLOFT_TAB_ID: '' },
-        detached: true,
-        stdio: ['ignore', 'pipe', 'ignore']
-      }
-    )
-    started.push(pane)
-    const inPane = await new Promise<number>((resolve) =>
-      pane.stdout?.once('data', (b: Buffer) => resolve(Number(String(b).trim())))
-    )
+    const inPane = await serve(firstId)
     const leftThePane = await serve(firstId)
-    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-tmux-'))
-    fs.writeFileSync(
-      path.join(bin, 'tmux'),
-      `#!/bin/sh\n[ "$3 $6" = "list-panes =${tmuxName}:" ] && echo ${pane.pid} && exit 0\nexit 1\n`,
-      { mode: 0o755 }
+    const tmux = `[ "$3 $6" = "list-panes =${tmuxName}:" ] && echo ${inPane.shellPid} && exit 0\nexit 1\n`
+    expect(await portsWithFakes({ tmux }, reattached, '')).toEqual([])
+    expect(await portsWithFakes({ tmux }, reattached, tmuxName)).toEqual(
+      [inPane.port, leftThePane.port].sort((a, b) => a - b)
     )
-    const scan = (tmux: string): Promise<number[] | undefined> =>
-      run('/bin/sh', ['-c', SESSION_PORTS_SH, 'ports', reattached, tmux], {
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
-      }).then((r) => parseSessionPorts(r.stdout)?.map((p) => p.port))
-    try {
-      expect(await scan('')).toEqual([])
-      expect(await scan(tmuxName)).toEqual([inPane, leftThePane.port].sort((a, b) => a - b))
-    } finally {
-      fs.rmSync(bin, { recursive: true, force: true })
-    }
   })
 
   it('lists nothing for a tab no process carries', async () => {
     expect(await portsOf([`pty-none-${randomUUID()}`])).toEqual([])
+  })
+
+  it('reads a scan whose process table could not be read as unknown, not as no ports', async () => {
+    const tab = `pty-t${randomUUID().slice(0, 8)}-1`
+    await serve(tab)
+    expect(await portsWithFakes({ ps: 'exit 1\n' }, tab, '')).toBeNull()
   })
 
   it('reads a scan that did not finish as unknown, not as no ports', () => {
