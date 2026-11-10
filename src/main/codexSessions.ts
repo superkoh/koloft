@@ -88,6 +88,7 @@ import {
   acceptCodexHookTrust,
   codexConfigFile,
   codexHookTrusted,
+  codexTrustsFolder,
   configTrusts,
   koloftHooksIn,
   type ListedHook
@@ -828,7 +829,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       else this.deps.trustFolder(dir, env)
     }
     // ADR-0026 CODEX§11
-    if (freshWorktree) for (const dir of [workspace, cwd]) trust(dir, processEnv)
+    const scheduledWorktreeOfTrustedWorkspace = async (): Promise<boolean> =>
+      !!opts.scheduled && !!resource && (await this.trustsFolder(workspace))
+    if (freshWorktree || (await scheduledWorktreeOfTrustedWorkspace()))
+      for (const dir of [workspace, cwd]) trust(dir, processEnv)
     // ADR-0029
     const assist = machine ? undefined : this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = !machine && (opts.conductor || !!assist)
@@ -1056,6 +1060,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       if (machine) fs.rmSync(this.machineDeps().tabDir(tabId), { recursive: true, force: true })
       throw error
     }
+  }
+
+  // CODEX§11
+  trustsFolder(dir: string): boolean | Promise<boolean> {
+    const onMachine = parseRemoteKey(dir)
+    return onMachine
+      ? this.machineTrusts(onMachine)
+      : codexTrustsFolder(codexConfigFile(this.processEnv), dir)
   }
 
   // CODEX§11
