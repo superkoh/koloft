@@ -2630,6 +2630,15 @@ the one before, the screen read back through `pyte`.
   `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
   `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
   with `TERM_PROGRAM` set.
+- **A line typed before the TUI starts lands in the composer unsent** (2026-11-08,
+  0.166.0, `codex --no-daemon` started from `zsh -i` in a python pty at 120×40, a scratch
+  `HOME` and `CODEX_HOME` with an API-key `auth.json` and a fake Responses server on
+  localhost, the screen read through `pyte`, 1 run each): the launch line and `hello` CR
+  in one write at zsh's `ESC[?2004h`, or `hello` CR written 0.3 s after the launch line,
+  left `› hello` in the composer and no request reached the server in 15 s. `hello` in
+  the launch line's write and a lone CR 3 s later sent it; so did `hello` written when
+  the TUI turned on bracketed paste (its `?2004h`, 0.08 s after zsh's) and CR 0.3 s
+  after that (2 runs).
 - **Ctrl+X (0x18), the leader key 0.163.0 adds, shows nothing at the idle composer in
   3 s**; a following Esc shows "esc again to edit previous message". One Ctrl+C at an
   empty composer quits at once (both versions). What Ctrl+X followed by another key does
