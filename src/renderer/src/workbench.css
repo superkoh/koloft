@@ -513,9 +513,10 @@
 .prog {
   position: absolute;
   bottom: -1px;
+  --prog-share-of-bar: 0.35;
   left: 0;
   height: 2px;
-  width: 35%;
+  width: calc(var(--prog-share-of-bar) * 100%);
   background: var(--accent);
   animation: bprog 1.1s var(--ease) infinite;
 }
@@ -524,7 +525,7 @@
     transform: translateX(-100%);
   }
   100% {
-    transform: translateX(calc(100% / 0.35));
+    transform: translateX(calc(100% / var(--prog-share-of-bar)));
   }
 }
 .bguest {

@@ -326,24 +326,16 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(hypot(100cqw, 100cqh) + 4px);
-  height: calc(hypot(100cqw, 100cqh) + 4px);
+  translate: -50% -50%;
+  width: hypot(100cqw, 100cqh);
+  height: hypot(100cqw, 100cqh);
   background: conic-gradient(
     rgba(236, 150, 112, 0.75),
     rgba(169, 154, 216, 0.75),
     rgba(111, 182, 166, 0.6),
     rgba(236, 150, 112, 0.75)
   );
-  animation: ibx-turn 6s linear infinite;
-}
-
-@keyframes ibx-turn {
-  from {
-    transform: translate(-50%, -50%) rotate(0);
-  }
-  to {
-    transform: translate(-50%, -50%) rotate(1turn);
-  }
+  animation: lspin 6s linear infinite;
 }
 
 .ibx-item.done {
