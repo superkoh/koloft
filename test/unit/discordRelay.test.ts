@@ -959,15 +959,39 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     expect(await answered).toBeUndefined()
   })
 
-  it('two answers waiting on one tab both count once the session shows it took them', async () => {
-    const { relay } = codexAsking()
-    const first = relay.answerSession(TAB, '1')
-    const second = relay.answerSession(TAB, '2')
-    await vi.advanceTimersByTimeAsync(1)
-    relay.dialogGone(TAB, false)
-    expect(await first).toBeUndefined()
-    expect(await second).toBeUndefined()
-  })
+  for (const backend of ['codex', 'muse', 'agy'] as const)
+    for (const [what, approval] of [
+      ['question', undefined],
+      ['approval', { id: 7 }]
+    ] as const)
+      it(`a second answer to one ${backend} ${what} while the first one's keys go in, or wait to be seen taken, is told to wait and reaches the session by no route, though the dialog's id changed meanwhile; once the first is not taken, a new answer goes in`, async () => {
+        let id = 'hook:1'
+        let viaApi = false
+        let inPlaceTries = 0
+        const { relay, writes } = codexAsking(
+          {
+            backendOf: () => backend,
+            pendingQuestion: () => (approval ? undefined : { ...COLOUR, id }),
+            answerInPlace: async () => (++inPlaceTries, viaApi && {})
+          },
+          approval
+        )
+        const first = relay.answerSession(TAB, approval ? 'yes' : '1')
+        await vi.advanceTimersByTimeAsync(0)
+        expect(writes.length).toBeGreaterThan(0)
+        id = 'traj:4'
+        viaApi = true
+        expect(await relay.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS / 2)
+        expect(await relay.answerSession(TAB, approval ? 'no' : '2')).toBe(ANSWER_ON_ITS_WAY)
+        const firstKeys = approval ? ['y'] : backend === 'muse' ? ['1', '\r'] : ['1']
+        expect(writes.map((w) => w.data)).toEqual(firstKeys)
+        expect(inPlaceTries).toBe(1)
+        await vi.advanceTimersByTimeAsync(A_TAKEN_ANSWER_SHOWS_WITHIN_MS)
+        expect(await first).toBe(ANSWER_NOT_TAKEN)
+        expect(await relay.answerSession(TAB, approval ? 'yes' : '1')).toBeUndefined()
+        expect(inPlaceTries).toBe(2)
+      })
 
   it('an answer waiting on a tab that closes is reported at once, not after the whole wait', async () => {
     const { relay } = codexAsking()
