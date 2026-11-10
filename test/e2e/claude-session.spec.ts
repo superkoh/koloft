@@ -17,9 +17,15 @@ import {
   terminalText,
   transcriptFile,
   waitBooted,
+  waitStartupTurnOver,
   wsRows
 } from './helpers/p1'
-import { REMOTE_WS_NAME, addRemoteWorkspace, installFakeRemote } from './helpers/remote'
+import {
+  REMOTE_WS_NAME,
+  addRemoteWorkspace,
+  installFakeRemote,
+  machineHome
+} from './helpers/remote'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
 const RC_FILES_RUN_LONGER_THAN_THE_TAB_TAKES_TO_SHOW_S = 1
@@ -49,6 +55,74 @@ for (const remote of [false, true]) {
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
         .toContain('[fake-claude] answered: early bird')
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test(`⌘⌫ in a ${remote ? 'remote ' : ''}Claude Code tab reaches the agent as Ctrl-U, so what was typed on the line before it never reaches the prompt`, async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, workspace, { remote })
+      const tabId = (await wsRows(page, workspace).first().getAttribute('data-tab-id'))!
+
+      await centerTerm(page).click()
+      await page.keyboard.type('dropped words')
+      await page.keyboard.press('Meta+Backspace')
+      await page.keyboard.type('/answer kept words')
+      await page.keyboard.press('Enter')
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('[fake-claude] answered: kept words')
+      expect(await terminalText(page, tabId)).not.toContain('answered: dropped')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
+
+for (const remote of [false, true]) {
+  // CC§2
+  test(`Esc on a ${remote ? 'remote ' : ''}Claude Code permission ask takes its row off waiting for approval at once, and Esc in the middle of a turn takes it off working at once, though Claude fires no Stop for either`, async ({
+    env
+  }) => {
+    if (remote) installFakeRemote(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, workspace, { remote })
+      await waitStartupTurnOver(page, workspace)
+      const row = wsRows(page, workspace).first()
+      const timeout = remote ? 60_000 : 15_000
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const type = (keys: string): Promise<void> =>
+        page.evaluate(([id, k]) => window.api.terminal.write(id, k), [tabId, keys])
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId)).split('Interrupted · What should Claude do').length - 1
+
+      await type('/bash rm -rf build\r')
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout })
+      await type('\x1b')
+      await expect.poll(interruptions, { timeout }).toBe(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout })
+
+      await type('/hold\r')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout })
+      await type('\x1b')
+      await expect.poll(interruptions, { timeout }).toBe(2)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout })
     } finally {
       await quitAndClose(app)
     }
@@ -169,6 +243,45 @@ test('C2: a live Claude Code row says under its branch what it did, while it wor
   await expect(line).toHaveText('Ran rm -rf build')
   await sessions.screenshot({ path: testInfo.outputPath('row-working.png') })
 })
+
+const A_DIALOG_SHOWS_BEFORE_ITS_LATE_NOTIFICATION_MS = 4_000
+
+for (const remote of [false, true]) {
+  const where = remote ? 'remote ' : ''
+  // CC§12 CC§14
+  test(`C2: a ${where}Claude Code row waits on you as soon as its dialog draws, and works again as soon as the dialog is answered in the terminal, while the approved command still runs`, async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_FAKE_PROGRAM_STATUS = '1'
+    if (remote) installFakeRemote(env)
+    const claudeHome = remote ? machineHome(env) : env.home
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      if (remote) await addRemoteWorkspace(page, env)
+      const ws = remote ? REMOTE_WS_NAME : 'ws-a'
+      await startSessionIn(page, ws, { remote })
+      const row = wsRows(page, ws).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) as string
+
+      await runIn(page, centerTerm(page), '/bash slow make test')
+      await expect(row).toHaveClass(/\bst-approval\b/, {
+        timeout: A_DIALOG_SHOWS_BEFORE_ITS_LATE_NOTIFICATION_MS
+      })
+      await page.keyboard.press('1')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 15_000 })
+      expect(await terminalText(page, tabId)).not.toContain('Ran: slow make test')
+
+      fs.writeFileSync(path.join(claudeHome, 'go-run'), '')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      expect(await terminalText(page, tabId)).toContain('Ran: slow make test')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+}
 
 test('C2: a Claude Code row keeps its Asks: line while another tool of the turn finishes, and drops it once the asked tool itself finishes, though the row still waits', async ({
   page,

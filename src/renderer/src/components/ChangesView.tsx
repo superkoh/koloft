@@ -15,7 +15,8 @@ import {
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '@shared/unifiedDiff'
-import { highlightCode, langForPath } from '../highlight'
+import { langForPath } from '../highlight'
+import { highlightCodeOffThread } from '../offThread'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
@@ -179,6 +180,21 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     setOpened({})
   }, [refreshNonce, base, root])
 
+  useEffect(() => {
+    if (baseUnresolved(base)) return
+    const onlyStillChanged = <T,>(prev: Record<string, T>): Record<string, T> => {
+      const gone = Object.keys(prev).filter((p) => !(p in git))
+      if (!gone.length) return prev
+      const next = { ...prev }
+      for (const p of gone) delete next[p]
+      return next
+    }
+    setExpanded(onlyStillChanged)
+    setExpandCut(onlyStillChanged)
+    setOpened(onlyStillChanged)
+    setBlockView(onlyStillChanged)
+  }, [git, base])
+
   const trigger = useRef({ refreshNonce, retryNonce, base, root })
   const failed = useRef(false)
   const rootTheBaselineIsFor = useRef(root)
@@ -256,7 +272,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       if (!wanted.length) setPerFile((prev) => mergeSections(prev, {}))
       else setLoad((l) => (l.backfill ? { ...l, backfill: false } : l))
 
-      const open = Object.keys(expandedRef.current)
+      const open = Object.keys(expandedRef.current).filter((p) => p in git)
       if (open.length) {
         const got = await Promise.all(
           open.map((p) =>
@@ -274,7 +290,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
         })
         setExpandCut((prev) => {
           const next = { ...prev }
-          for (const hit of got) if (hit) next[hit[0]] = hit[2]
+          for (const hit of got)
+            if (hit && expandedRef.current[hit[0]] !== undefined) next[hit[0]] = hit[2]
           return next
         })
       }
@@ -394,15 +411,16 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
         return
       }
       const gen = expandResetGen.current
+      const stillWanted = (): boolean => gen === expandResetGen.current && path in gitRef.current
       void window.api.fs
         .gitFileDiffFull(path, baseArg(base), gitRef.current[path] === 'untracked')
         .then((r) => {
-          if (gen !== expandResetGen.current) return
+          if (!stillWanted()) return
           setExpanded((prev) => ({ ...prev, [path]: r.text }))
           setExpandCut((prev) => ({ ...prev, [path]: r.truncated }))
         })
         .catch(() => {
-          if (gen !== expandResetGen.current) return
+          if (!stillWanted()) return
           setExpanded((prev) => ({ ...prev, [path]: '' }))
         })
     },
@@ -996,7 +1014,7 @@ function BlockSource({
   useEffect(() => {
     if (!seen || !text) return
     let cancelled = false
-    highlightCode(text, langForPath(path))
+    highlightCodeOffThread(text, langForPath(path))
       .then((h) => {
         if (!cancelled) setHtml(h)
       })

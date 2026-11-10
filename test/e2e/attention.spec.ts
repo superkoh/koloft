@@ -108,7 +108,7 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
     await startSessionIn(page, 'ws-a')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
-    await page.addStyleTag({ content: '.ws-list { max-height: 80px !important; }' })
+    await page.addStyleTag({ content: '.ws-list { max-height: 140px !important; }' })
     const list = page.locator('.ws-list')
     await list.evaluate((el) => (el.scrollTop = 0))
     const bRow = wsGroup(page, 'ws-b').locator('.ws-tab')

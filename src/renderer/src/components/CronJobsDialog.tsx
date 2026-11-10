@@ -122,7 +122,7 @@ const TRUST_QUESTION: Record<BackendId, string> = {
   agy: 'Do you trust the contents of this project?'
 }
 const trustHint = (backend: BackendId): string =>
-  `${BACKEND_LABEL[backend]} has never been opened in this folder. Start one session here ` +
+  `Koloft cannot see that ${BACKEND_LABEL[backend]} trusts this folder. Start one session here ` +
   `first — a scheduled run would stall on ${BACKEND_LABEL[backend]}'s "${TRUST_QUESTION[backend]}" ` +
   'question and be stopped at the deadline.'
 

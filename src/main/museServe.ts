@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import os from 'os'
 import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
-import { record } from './codexObservation'
+import { jsonRecord, record } from './codexObservation'
 import type { HistoryEntry } from './storedSessions'
 import { labelsOf, type Question } from './discord/dialog'
 import { pipeSecretTo } from './secretOnStdin'
@@ -176,16 +176,22 @@ export interface MuseAsk {
 }
 
 const commandOf = (args: Record<string, unknown>): string | undefined =>
-  [args.command, args.url, args.path].find((v): v is string => typeof v === 'string')
+  [args.command, args.url].find((v): v is string => typeof v === 'string')
+
+// MUSE§5
+function writtenFile(subject: Record<string, unknown>): string | undefined {
+  return subject.kind === 'fileAccess' && typeof subject.path === 'string'
+    ? subject.path
+    : undefined
+}
 
 // MUSE§5 MUSE§11
 export function museAsk(reply: unknown): MuseAsk {
   const r = record(reply)
   const approval = record(Array.isArray(r.approvals) ? r.approvals[0] : undefined)
   if (typeof approval.approvalId === 'string') {
-    const args = record(approval.rawArgs)
-    const command = commandOf(args)
-    const file = command === args.path ? command : undefined
+    const file = writtenFile(record(approval.subject))
+    const command = file ?? commandOf(jsonRecord(approval.rawArgs))
     return { approval: { id: approval.approvalId, command, ...(file ? { file } : {}) } }
   }
   const input = record(Array.isArray(r.userInputs) ? r.userInputs[0] : undefined)
@@ -198,9 +204,22 @@ export function museAsk(reply: unknown): MuseAsk {
 
 // MUSE§11
 function museQuestion(q: Record<string, unknown>): Question[] {
-  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return []
+  const selection = record(q.selection)
+  const mode = selection.mode
+  if (typeof q.question !== 'string' || (mode !== 'single' && mode !== 'multiple')) return []
   const options = labelsOf(q.options)
-  return options.length ? [{ question: q.question, options, ownWords: true }] : []
+  if (!options.length) return []
+  const asked: Question = { question: q.question, options, ownWords: true }
+  if (mode === 'single') return [asked]
+  const { minSelections: fewest, maxSelections: most } = selection
+  return [
+    {
+      ...asked,
+      multiSelect: true,
+      ...(typeof fewest === 'number' && { fewest }),
+      ...(typeof most === 'number' && { most })
+    }
+  ]
 }
 
 // MUSE§5

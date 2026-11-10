@@ -16,7 +16,7 @@ import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
-import { record } from './codexObservation'
+import { jsonRecord, record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
 import { mergeMuseSettings, placeKoloftSkills, readJson } from './museAccounts'
@@ -311,15 +311,6 @@ function readRegistry(
     }
   })
   return { entries, whole }
-}
-
-const responseOf = (input: Record<string, unknown>): Record<string, unknown> => {
-  if (typeof input.tool_response !== 'string') return record(input.tool_response)
-  try {
-    return record(JSON.parse(input.tool_response))
-  } catch {
-    return {}
-  }
 }
 
 // MUSE§9
@@ -708,7 +699,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
-    // ADR-0029
+    // ADR-0029 MUSE§22
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
@@ -918,7 +909,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   // MUSE§9
   private afterTool(run: MuseRun, input: Record<string, unknown>): void {
     const tool = String(input.tool_name)
-    const response = responseOf(input)
+    const response = jsonRecord(input.tool_response)
     const did = museToolDid(tool, record(input.tool_input), response)
     if (did) this.deps.events(run.tabId, { type: 'did', what: did })
     this.noteShellWrote(run, input)

@@ -1,16 +1,26 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ParsedDiff } from '@shared/unifiedDiff'
-import { highlightLines, langForPath } from '../highlight'
+import { langForPath } from '../highlight'
+import { dropQueuedColoring, highlightLinesOffThread } from '../offThread'
 import '../inlineDiff.css'
 
 export const MAX_INLINE_ROWS = 5000
 
 interface Hl {
-  newHtml: string[]
-  oldHtml: string[]
+  lang: string
+  codes: string[]
+  html: string[][]
 }
 
-export function InlineDiff({
+function htmlByLineText(code: string, html: string[]): Map<string, string> {
+  const byText = new Map<string, string>()
+  code.split('\n').forEach((text, j) => {
+    if (html[j] != null && !byText.has(text)) byText.set(text, html[j])
+  })
+  return byText
+}
+
+export const InlineDiff = memo(function InlineDiff({
   src,
   parsed,
   line
@@ -25,36 +35,46 @@ export function InlineDiff({
   const shown = truncated ? rows.slice(0, MAX_INLINE_ROWS) : rows
   const hasDel = useMemo(() => rows.some((r) => r.kind === 'del'), [rows])
   const [hl, setHl] = useState<Hl | null>(null)
+  const colorQueue = useRef({})
 
   const lang = langForPath(src)
+  const codes = useMemo(() => (hasDel ? [newText, oldText] : [newText]), [newText, oldText, hasDel])
   useEffect(() => {
-    setHl(null)
-    if (truncated) return
+    if (truncated) {
+      setHl(null)
+      return
+    }
+    const owner = colorQueue.current
     let cancelled = false
-    Promise.all([
-      highlightLines(newText, lang),
-      hasDel ? highlightLines(oldText, lang) : Promise.resolve<string[]>([])
-    ])
-      .then(([newHtml, oldHtml]) => {
-        if (!cancelled) setHl({ newHtml, oldHtml })
+    highlightLinesOffThread(owner, codes, lang)
+      .then((html) => {
+        if (!cancelled) setHl({ lang, codes, html })
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setHl(null)
+      })
     return () => {
       cancelled = true
+      dropQueuedColoring(owner)
     }
-  }, [newText, oldText, lang, truncated, hasDel])
+  }, [codes, lang, truncated])
 
   const rowsHtml = useMemo<(string | null)[]>(() => {
-    if (!hl) return shown.map(() => null)
+    if (!hl || hl.lang !== lang) return shown.map(() => null)
+    if (hl.codes !== codes) {
+      const [newByText, oldByText] = hl.codes.map((code, k) => htmlByLineText(code, hl.html[k]))
+      return shown.map((r) => (r.kind === 'del' ? oldByText : newByText)?.get(r.text) ?? null)
+    }
+    const [newHtml, oldHtml = []] = hl.html
     let ni = 0
     let oi = 0
     return shown.map((r) => {
-      if (r.kind === 'del') return hl.oldHtml[oi++] ?? ''
-      if (r.kind === 'add') return hl.newHtml[ni++] ?? ''
+      if (r.kind === 'del') return oldHtml[oi++] ?? ''
+      if (r.kind === 'add') return newHtml[ni++] ?? ''
       oi++
-      return hl.newHtml[ni++] ?? ''
+      return newHtml[ni++] ?? ''
     })
-  }, [shown, hl])
+  }, [shown, hl, lang, codes])
 
   // PLATFORM§25
   const rowHtmlObjs = useMemo<({ __html: string } | null)[]>(
@@ -95,4 +115,4 @@ export function InlineDiff({
       )}
     </div>
   )
-}
+})

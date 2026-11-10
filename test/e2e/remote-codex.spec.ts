@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, quitAndClose } from './helpers/app'
+import { test, expect, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
 import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
@@ -13,6 +13,7 @@ import {
   gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
+  killSession,
   menuItemTexts,
   newSessionInWith,
   openMenu,
@@ -56,6 +57,7 @@ const IDLE_TO_SLEEP_MS = 3000
 const TURN_OUTLIVES_THE_QUIT_MS = 15_000
 
 interface TuiCall {
+  pid: number
   argv: string[]
   cwd: string
   effectiveCwd: string
@@ -125,6 +127,14 @@ function proxyLines(env: E2EEnv): number[] {
     .split('\n')
     .filter((line) => line.includes('app-server proxy') && line.includes(machineHome(env)))
     .map((line) => Number(line.trim().split(/\s+/)[0]))
+}
+
+async function liveCodexThreads(page: Page): Promise<string[]> {
+  const all = await page.evaluate(() => window.api.sessions.list())
+  return all
+    .filter((s) => s.backendId === 'codex' && s.alive && s.nativeSessionId)
+    .map((s) => s.nativeSessionId!)
+    .sort()
 }
 
 async function koloftExitsIn(page: Page, tabId: string): Promise<string[]> {
@@ -306,6 +316,126 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
       await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
       expect(await termIds(page)).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-18: /new in a remote Codex tab binds its one row to the new thread on the machine, as /clear does in a remote Claude tab; the old thread waits in Restore session, which resumes it there, and ⇧⌘R on the tab resumes the new thread on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { hintsOff: true })
+    const nextTitle = (title: string): void =>
+      fs.writeFileSync(path.join(machineHome(env), 'fake-codex-next-title'), title)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      nextTitle('Before new')
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect(rows.filter({ hasText: /Before new/ })).toHaveClass(/st-waiting/, {
+        timeout: 60_000
+      })
+      const [before] = tuiCalls(env)
+      const [firstServer] = machineServers(env)
+      const tabs = await termIds(page)
+
+      nextTitle('After new')
+      await runIn(page, centerTerm(page), '/new')
+      await expect.poll(() => tuiCalls(env).length, { timeout: 30_000 }).toBe(2)
+      const after = tuiCalls(env)[1]
+      expect(after.method).toBe('thread/start')
+      await expect
+        .poll(() => liveCodexThreads(page), { timeout: 30_000 })
+        .toEqual([after.sessionId])
+      await expect(rows).toHaveText(/After new/)
+      await expect(rows).toHaveClass(/\bactive\b/)
+      expect(await termIds(page)).toEqual(tabs)
+      expect(machineServers(env)).toHaveLength(1)
+
+      const listedBeforeTheDialog = historyListings(env)
+      await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', {
+        name: `Restore session · ${REMOTE_WS_NAME}`,
+        exact: true
+      })
+      const entry = (title: RegExp): Locator =>
+        history.getByRole('button').filter({ hasText: title })
+      await expect(entry(/Before new/)).toHaveCount(1, { timeout: 30_000 })
+      await expect
+        .poll(() => historyListings(env), { timeout: 30_000 })
+        .toBeGreaterThan(listedBeforeTheDialog)
+      await expect(entry(/After new/)).toHaveCount(0)
+      await entry(/Before new/).click()
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(3)
+      expect(tuiCalls(env)[2]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: before.sessionId
+      })
+      expect(machineServers(env)).toHaveLength(2)
+      await expect(rows).toHaveCount(2)
+
+      const renewed = rows.filter({ hasText: /After new/ })
+      await switchToRow(page, renewed)
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(4)
+      expect(tuiCalls(env)[3]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: after.sessionId
+      })
+      expect(machineServers(env)).toHaveLength(3)
+      await expect.poll(() => serverAlive(env, firstServer.tabId!), { timeout: 30_000 }).toBe(false)
+      await expect(rows).toHaveCount(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RC-19: a remote Codex whose screen on this Mac is killed after its session started keeps its tab saying so, turns its row cold reading “killed (signal 9)”, ends its app-server on the machine and raises the “exited” mark — a red dot on its row and an OS notification — as a local Codex does; ⇧⌘R resumes the same thread on a new server there', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const row = wsRows(page, REMOTE_WS_NAME)
+      const [tabId] = await termIds(page)
+      const [{ pid, sessionId }] = tuiCalls(env)
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(1)
+      expect(serverAlive(env, server.tabId!)).toBe(true)
+      expect(processAlive(pid)).toBe(true)
+
+      killSession(pid, env)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain('Codex session ended: killed by signal 9')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-sub')).toContainText('killed (signal 9)')
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 30_000 })
+        .toEqual(['exited'])
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      const [exited] = await pendingAttention(page)
+      expect((await osOutlets(app)).notifications).toContainEqual({
+        title: exited.title,
+        body: `session exited unexpectedly · ${REMOTE_WS_NAME}`
+      })
+      await expect.poll(() => serverAlive(env, server.tabId!), { timeout: 30_000 }).toBe(false)
+      expect(await termIds(page)).toEqual([tabId])
+
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(tuiCalls(env)[1]).toMatchObject({ method: 'thread/resume', sessionId })
+      expect(machineServers(env)).toHaveLength(2)
+      await expect.poll(() => liveCodexThreads(page), { timeout: 30_000 }).toEqual([sessionId])
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(await termIds(page)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }
@@ -621,6 +751,35 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       })
       await expect(remoteRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
       await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§3 CODEX§25
+  test('E-RC-20: Esc on an approval the app-server on the machine asks for takes the remote Codex row off waiting for approval at once, and Esc in the middle of a turn there takes it off working at once', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const { tabId } = await startRemoteCodex(page, env)
+      const row = wsRows(page, REMOTE_WS_NAME)
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId!)).split('Conversation interrupted').length - 1
+
+      await runIn(page, centerTerm(page), 'approve')
+      await expect(row).toHaveClass(/st-approval/, { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(1)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+
+      await runIn(page, centerTerm(page), 'hold')
+      await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect.poll(interruptions, { timeout: 30_000 }).toBe(2)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }

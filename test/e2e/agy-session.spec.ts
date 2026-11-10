@@ -62,6 +62,7 @@ test.setTimeout(120_000)
 
 const FAKE_AGY = path.join(__dirname, 'fixtures', 'fake-agy.js')
 const TURN_LONG_ENOUGH_TO_SEE_WORKING_MS = '1500'
+const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
 const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
 const OWNER = { id: '555', username: 'letian' }
@@ -186,7 +187,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key, the account named above agy's screen; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key, no Apple_Terminal name (so agy frames its redraws and sends links), the account named above agy's screen; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -218,6 +219,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions', '-i', PROMPT])
       expect(call.env.WSL_INTEROP).toBe('koloft')
       expect(call.env.GEMINI_API_KEY).toBe(true)
+      expect(call.env).not.toHaveProperty('TERM_PROGRAM')
       expect(readAllCalls(env)).toHaveLength(0)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
         `koloft: → ${E2E_AGY_ACCOUNT}`
@@ -419,6 +421,47 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     } finally {
       await quitAndClose(app)
       await fake.close()
+    }
+  })
+
+  // AGY§10
+  test('Esc on a command ask in an Antigravity tab takes its row off waiting for approval at once, and Esc in the middle of a turn, which ends it with no done and no Stop, takes it off working at once', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true, skipPermissions: false })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await runIn(page, centerTerm(page), 'first turn')
+      const { tabId } = await agyConversationOnceFirstTurnEnded(page)
+      const row = agyRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const type = (keys: string): Promise<void> =>
+        page.evaluate(([t, k]) => window.api.terminal.write(t, k), [tabId, keys])
+      const interruptions = async (): Promise<number> =>
+        (await terminalText(page, tabId)).split('Interrupted · What should Antigravity').length - 1
+
+      await type('/bash echo declined\r')
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
+      await type('\x1b')
+      await expect.poll(interruptions).toBe(1)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-delay'),
+        MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS
+      )
+      await type('a long turn\r')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+      await type('\x1b')
+      await expect.poll(interruptions).toBe(2)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
     }
   })
 

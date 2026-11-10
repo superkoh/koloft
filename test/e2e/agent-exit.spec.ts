@@ -1,14 +1,26 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  agySessionCalls,
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { codexCalls } from './helpers/codex'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
   killSession,
   menuItemTexts,
   newSessionInWith,
   openMenu,
+  processAlive,
   readCalls,
   runIn,
   sendShortcut,
@@ -34,50 +46,92 @@ const loggedExits = (env: E2EEnv): string[] =>
         .filter((l) => / tab \S+ (exited with code|was killed by signal) /.test(l))
     : []
 
+const AGENT = {
+  claude: {
+    label: 'Claude',
+    install: (): void => {},
+    calls: (env: E2EEnv): number => readCalls(env).length
+  },
+  codex: {
+    label: 'Codex',
+    install: installCodex,
+    calls: (env: E2EEnv): number => codexCalls(env).length
+  },
+  muse: {
+    label: 'Muse',
+    install: (env: E2EEnv): void => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+    },
+    calls: (env: E2EEnv): number => museCalls(env).length
+  },
+  agy: {
+    label: 'Antigravity',
+    install: (env: E2EEnv): void => {
+      installAgy(env)
+      trustInAgy(env, env.workspaces.a)
+    },
+    calls: (env: E2EEnv): number => agySessionCalls(env).length
+  }
+} as const
+
+const startupExitFile = (env: E2EEnv, backend: keyof typeof AGENT): string =>
+  path.join(env.home, `fake-${backend}-exit`)
+
 test.describe('an agent that exits on its own keeps its tab: the row says so, the last screen stays, ⇧⌘R starts it again', () => {
-  test('a Codex that dies before its session starts keeps its row and last screen, logs that screen, and ⇧⌘R starts it again in the same tab', async ({
-    env
-  }) => {
-    installCodex(env)
-    const failOnStart = path.join(env.home, 'fake-codex-exit')
-    fs.writeFileSync(failOnStart, '3')
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(page.locator('.toast-msg')).toHaveText(
-        'Codex closed before the session started (exit code 3)',
-        { timeout: 20_000 }
-      )
+  for (const backend of ['codex', 'muse', 'agy'] as const)
+    test(`when ${AGENT[backend].label} dies before its session starts, the tab keeps its row and last screen, logs that screen, and ⇧⌘R starts it again in the same tab`, async ({
+      env
+    }) => {
+      const agent = AGENT[backend]
+      agent.install(env)
+      const failOnStart = startupExitFile(env, backend)
+      fs.writeFileSync(failOnStart, '3')
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, 'ws-a', agent.label)
+        await expect(page.locator('.toast-msg')).toHaveText(
+          `${agent.label} closed before the session started (exit code 3)`,
+          { timeout: 20_000 }
+        )
 
-      const row = wsRows(page, 'ws-a')
-      await expect(row).toHaveCount(1)
-      await expect(row).toHaveClass(/\bcold\b/)
-      await expect(row).toHaveClass(/\bactive\b/)
-      await expect(row.locator('.ws-tab-sub')).toHaveText('main · exited (code 3)')
-      const [tabId] = await termIds(page)
-      await expect
-        .poll(() => terminalText(page, tabId))
-        .toContain('[Koloft] Codex closed before the session started (exit code 3)')
-      expect(await terminalText(page, tabId)).toContain('Codex fixture startup failure')
-      await expect.poll(() => loggedExits(env)).toHaveLength(1)
-      expect(loggedExits(env)[0]).toContain(`codex tab ${tabId} exited with code 3`)
-      expect(fs.readFileSync(exitLog(env), 'utf8')).toContain('  | Codex fixture startup failure')
-      await snap(page, 'agent-exit-kept-row')
+        const row = wsRows(page, 'ws-a')
+        await expect(row).toHaveCount(1)
+        await expect(row).toHaveClass(/\bcold\b/)
+        await expect(row).toHaveClass(/\bactive\b/)
+        await expect(row.locator('.ws-tab-sub')).toHaveText('main · exited (code 3)')
+        const [tabId] = await termIds(page)
+        await expect
+          .poll(() => terminalText(page, tabId))
+          .toContain(`[Koloft] ${agent.label} closed before the session started (exit code 3)`)
+        expect(await terminalText(page, tabId)).toContain(`${agent.label} fixture startup failure`)
+        await expect.poll(() => loggedExits(env)).toHaveLength(1)
+        expect(loggedExits(env)[0]).toContain(`${backend} tab ${tabId} exited with code 3`)
+        expect(fs.readFileSync(exitLog(env), 'utf8')).toContain(
+          `  | ${agent.label} fixture startup failure`
+        )
+        if (backend === 'codex') await snap(page, 'agent-exit-kept-row')
+        const callsBefore = agent.calls(env)
 
-      fs.rmSync(failOnStart)
-      await sendShortcut(app, 'shortcut:restart-session')
-      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
-      await expect(row).toHaveCount(1)
-      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      await expect(row).toHaveClass(/\bactive\b/)
-      await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
-      expect(await termIds(page)).toHaveLength(1)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+        fs.rmSync(failOnStart)
+        await sendShortcut(app, 'shortcut:restart-session')
+        await expect.poll(() => agent.calls(env), { timeout: 30_000 }).toBe(callsBefore + 1)
+        await expect(row).toHaveCount(1)
+        // AGY§8
+        if (backend === 'agy') {
+          await expect.poll(() => termIds(page)).not.toContain(tabId)
+          await runIn(page, centerTerm(page), 'hello again')
+        }
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
+        await expect(row).toHaveClass(/\bactive\b/)
+        await expect(row.locator('.ws-tab-sub')).not.toContainText('exited')
+        expect(await termIds(page)).toHaveLength(1)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('a Claude that dies before it starts keeps a row whose Close ends it for good; a tab the user closes logs nothing', async ({
     env
@@ -119,21 +173,19 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
     }
   })
 
-  for (const backend of ['claude', 'codex'] as const)
-    test(`a ${backend} that koloft session new started and that dies before it starts keeps its row; ⇧⌘R starts it again in the same tab, still listed under the session that started it`, async ({
+  for (const backend of ['claude', 'codex', 'muse', 'agy'] as const)
+    test(`when ${AGENT[backend].label} that koloft session new started dies before it starts, its row stays; ⇧⌘R starts it again in the same tab, still listed under the session that started it`, async ({
       env
     }) => {
-      if (backend === 'codex') installCodex(env)
+      const agent = AGENT[backend]
+      agent.install(env)
       seedSettings(env, { hintsOff: true })
-      const exitFile =
-        backend === 'claude' ? env.claudeExitFile : path.join(env.home, 'fake-codex-exit')
-      const calls = (): number =>
-        backend === 'claude' ? readCalls(env).length : codexCalls(env).length
+      const exitFile = startupExitFile(env, backend)
       const app = await launchApp(env)
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startSessionIn(page, 'ws-a', backend === 'codex' ? { method: 'Claude' } : {})
+        await startSessionIn(page, 'ws-a', backend === 'claude' ? {} : { method: 'Claude' })
         const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
         fs.writeFileSync(exitFile, '1')
         await runIn(
@@ -145,12 +197,12 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
         await expect(kid.locator('.ws-tab-sub')).toContainText('exited (code 1)', {
           timeout: 30_000
         })
-        const callsBefore = calls()
+        const callsBefore = agent.calls(env)
 
         fs.rmSync(exitFile)
         await switchToRow(page, kid)
         await sendShortcut(app, 'shortcut:restart-session')
-        await expect.poll(calls, { timeout: 30_000 }).toBe(callsBefore + 1)
+        await expect.poll(() => agent.calls(env), { timeout: 30_000 }).toBe(callsBefore + 1)
         await expect(kid).toHaveCount(1)
         await expect(kid).toHaveClass(/st-waiting/, { timeout: 30_000 })
         await expect(kid.locator('.ws-tab-sub')).not.toContainText('exited')
@@ -195,6 +247,47 @@ test.describe('an agent that exits on its own keeps its tab: the row says so, th
       expect(await termIds(page)).toHaveLength(2)
       await expect(killed).toHaveCount(1)
       await expect(killed.locator('.ws-tab-sub')).not.toContainText(/killed|exited/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
+test.describe('Antigravity quit with /exit leaves the list for Restore session, as Claude, Codex and Muse do', () => {
+  // AGY§1
+  test('/exit typed inside Antigravity ends it, its row leaves the list, and Restore session brings the same conversation back', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const [first] = agySessionCalls(env)
+      const row = wsRows(page, 'ws-a')
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(row.filter({ hasText: 'keep me' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
+      const { id: conversation } = await agyConversationOnceFirstTurnEnded(page)
+
+      await runIn(page, centerTerm(page), '/exit')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(row).toHaveCount(0)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      await history.getByRole('button').filter({ hasText: 'keep me' }).click()
+      await expect.poll(() => agySessionCalls(env).length).toBe(2)
+      expect(agySessionCalls(env)[1].argv).toContain(`--conversation=${conversation}`)
+      await expect(row.filter({ hasText: 'keep me' })).toHaveClass(/st-waiting/, {
+        timeout: 30_000
+      })
     } finally {
       await quitAndClose(app)
     }

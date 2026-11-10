@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
@@ -34,6 +34,7 @@ import {
   sessionInRow,
   startSessionIn,
   switchToRow,
+  terminalText,
   transcriptFile,
   waitBooted,
   waitForCalls,
@@ -47,6 +48,9 @@ const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
 const IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS = 60_000
 const TMUX_ATTACH_SETTLE_MS = 2000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const ONE_SLEEP_WINDOW_AND_A_STOP_THERE_MS = 5000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -172,6 +176,35 @@ async function untilItCameBackOnTheMachine(
       .poll(() => there.launches(env), { timeout: 60_000 })
       .toBe(launchesBeforeQuit + there.launchesARestartAdds)
   else await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+}
+
+const remoteTabIds = (page: Page): Promise<string[]> =>
+  wsRows(page, REMOTE_WS_NAME).evaluateAll((rows) =>
+    rows.map((r) => r.getAttribute('data-tab-id') ?? '')
+  )
+
+const tabRow = (page: Page, tabId: string): Locator =>
+  page.locator(`.ws .ws-tab[data-tab-id="${tabId}"]`)
+
+async function startOneMoreOnTheMachine(
+  page: Page,
+  agent: (typeof EVERY_AGENT_ON_THE_MACHINE)[number]
+): Promise<string> {
+  const before = await remoteTabIds(page)
+  if (agent.label === 'Claude') await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  else await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+  await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(before.length + 1, { timeout: 60_000 })
+  const tabId = (await remoteTabIds(page)).find((id) => !before.includes(id))!
+  if (agent.label === 'Antigravity') {
+    await expect
+      .poll(() => terminalText(page, tabId), { timeout: 90_000 })
+      .toContain('Antigravity CLI')
+    await switchToRow(page, tabRow(page, tabId))
+    await runIn(page, centerTerm(page), 'first words')
+  }
+  await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+  await expect(tabRow(page, tabId)).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+  return tabId
 }
 
 test.describe('losing and regaining the machine: Koloft never invents an ending for a remote session', () => {
@@ -434,6 +467,40 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         expect(there.runningThere(env)).toHaveLength(1)
       } finally {
         await quitAndClose(app2)
+      }
+    })
+
+    test(`a remote ${agent.label} session marked Keep running never goes to sleep for being idle — it keeps running on the machine, never stopped and started again — while an ordinary one beside it does`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        const resident = tabRow(page, await startOneMoreOnTheMachine(page, agent))
+        await resident.click({ button: 'right' })
+        await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+        await expect(resident.locator('.ws-tab-resident')).toBeVisible()
+        await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(1)
+        const kept = there.runningThere(env)
+
+        const ordinary = tabRow(page, await startOneMoreOnTheMachine(page, agent))
+        await expect.poll(() => there.runningThere(env), { timeout: 30_000 }).toHaveLength(2)
+
+        await startSessionIn(page, 'ws-a', agent.install ? { method: 'Claude' } : {})
+        const launches = there.launches(env)
+
+        await expect.poll(() => there.runningThere(env), { timeout: 60_000 }).toEqual(kept)
+        await expect(ordinary).toHaveClass(/\bst-idle\b/)
+        await page.waitForTimeout(ONE_SLEEP_WINDOW_AND_A_STOP_THERE_MS)
+        expect(there.runningThere(env)).toEqual(kept)
+        expect(there.launches(env)).toBe(launches)
+      } finally {
+        await quitAndClose(app)
       }
     })
   }

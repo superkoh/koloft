@@ -50,9 +50,9 @@ import '../../accounts.css'
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
 
-type PaneForm = { signIn: SignInBackend; again?: string } | { paste: AccountKind }
+export type PaneForm = { signIn: SignInBackend; again?: string } | { paste: AccountKind }
 
-const loginRunning = (progress: LoginProgress | null): boolean =>
+export const loginRunning = (progress: LoginProgress | null): boolean =>
   progress !== null && progress.phase !== 'failed'
 
 const scrollIntoViewOnOpen = (form: HTMLDivElement | null): void =>
@@ -453,7 +453,7 @@ export function LoginDialog(): JSX.Element | null {
   )
 }
 
-function useSignInFailure(): SignInFailure | null {
+export function useSignInFailure(): SignInFailure | null {
   const [failure, setFailure] = useState<SignInFailure | null>(null)
   useEffect(() => {
     let alive = true
@@ -474,7 +474,7 @@ export function SignInFailedDialog(): JSX.Element | null {
   return failed && <SignInFailedCard failed={failed} />
 }
 
-function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
+export function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
   return (
     <SignInDialog
       key={`${failed.backend}:${failed.name}`}
