@@ -526,8 +526,8 @@ import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from '
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import {
-  bracketedPaste,
   clicksTheMouse,
+  pasteFor,
   pressesAKey,
   typedPieces,
   typeKeys,
@@ -6427,7 +6427,8 @@ function registerIpc(): void {
     if (typedAfter?.includes('\r')) ownerCameBack()
     ownerTouched(id)
     ownerTouchedTheScreen(id)
-    if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
+    if (typedWhileAsleep.has(id))
+      return writeToTab(id, pasteFor(text, sleepers.get(id)?.kind) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
   ipcMain.on(CH.terminal.copy, (_e, text: unknown) => {

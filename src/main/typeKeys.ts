@@ -1,3 +1,5 @@
+import type { TabKind } from '@shared/types'
+import { backendIdOf, pasteKeepsItsLastLineFeeds } from '@shared/sessionBackend'
 import { sleep } from './codexTransport'
 
 // CC§12 CC§18 MUSE§17
@@ -22,6 +24,16 @@ const CONTROLS_THAT_COULD_END_A_PASTE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g
 // CC§18 CODEX§23
 export function bracketedPaste(text: string): string {
   return `\x1b[200~${text.replace(CONTROLS_THAT_COULD_END_A_PASTE, '')}\x1b[201~`
+}
+
+const LAST_LINE_FEEDS = /\n+$/
+
+export function pasteFor(text: string, kind: TabKind | undefined): string {
+  const backend = backendIdOf(kind)
+  const typed =
+    backend && !pasteKeepsItsLastLineFeeds(backend) ? LAST_LINE_FEEDS.exec(text)?.[0] : undefined
+  if (!typed) return bracketedPaste(text)
+  return bracketedPaste(text.slice(0, -typed.length)) + typed
 }
 
 // CC§18
