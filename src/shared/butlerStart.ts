@@ -27,6 +27,8 @@ function lineOf(why: CannotRun): string {
   return `${why.lead}${settingsPaneName(why.fixedIn)}.`
 }
 
+export const BUTLER_OFF_ITS_AGENT_LOG = '[koloft] the butler is not on its agent:'
+
 export type ButlerStart =
   { backend: BackendId; because?: string } | { error: string; inFull: string; preferred: CannotRun }
 
