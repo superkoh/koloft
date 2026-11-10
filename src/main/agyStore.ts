@@ -289,7 +289,9 @@ export class TranscriptFollower {
   }
 
   private async readWhatWasAdded(): Promise<LastTurnAndTokens> {
-    const { size } = await fs.promises.stat(this.file)
+    const unreadable = { tokens: { ...this.tokens } }
+    const size = (await fs.promises.stat(this.file).catch(() => undefined))?.size
+    if (size === undefined) return unreadable
     if (size < this.cursor.offset) {
       this.cursor = { offset: 0, tail: [] }
       this.turns = []
@@ -298,7 +300,7 @@ export class TranscriptFollower {
     while (this.cursor.offset < size) {
       const from = this.cursor.offset
       const lines = await readAppendedLines(this.file, size, this.cursor)
-      if (lines === null) throw new Error(`could not read ${this.file}`)
+      if (lines === null) return unreadable
       if (this.cursor.offset === from) break
       for (const line of lines) {
         const step = line && stepOf(line)

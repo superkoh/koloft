@@ -248,13 +248,13 @@ describe('the transcript (AGY§8)', () => {
     expect(await follower.catchUp()).toEqual(once)
   })
 
-  it('a transcript it cannot read gives no turn and keeps what was read before, rather than zero tokens', async () => {
+  it('a transcript it cannot read gives no turn and the tokens read before, neither the last turn again nor zero tokens', async () => {
     const follower = new TranscriptFollower(transcript)
-    await expect(follower.catchUp()).rejects.toThrow()
+    expect(await follower.catchUp()).toEqual({ tokens: { input: 0, output: 0, cacheRead: 0 } })
     appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'kept', input_tokens: 9 }])
-    await follower.catchUp()
+    expect((await follower.catchUp()).turn?.reply).toBe('kept')
     fs.renameSync(transcript, transcript + '.away')
-    await expect(follower.catchUp()).rejects.toThrow()
+    expect(await follower.catchUp()).toEqual({ tokens: { input: 9, output: 0, cacheRead: 0 } })
     fs.renameSync(transcript + '.away', transcript)
     appendTranscript(transcript, [{ type: 'PLANNER_RESPONSE', content: 'more', input_tokens: 1 }])
     expect((await follower.catchUp()).tokens.input).toBe(10)
