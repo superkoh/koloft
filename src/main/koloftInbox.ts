@@ -89,7 +89,7 @@ export const DENY_AFTER_STOP = afterStop(
 )
 export const SHOW_PLAN_AGAIN = afterStop(
   'plan',
-  'Ask for approval of the same plan again, the same way as before.'
+  'Ask the owner to approve the same plan again, the same way as before; if you are no longer in plan mode, enter it first.'
 )
 const REJECT_PLAN_AFTER_STOP = afterStop('plan', 'The owner rejects the plan: do not carry it out.')
 const APPROVE_PLAN = 'approve'

@@ -835,12 +835,18 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   no result. On resume no dialog draws, no `PermissionRequest` or `PreToolUse` fires,
   OSC 7501 says only `idle`, and no request goes to the model; the screen shows `User
   declined to answer questions` (`User rejected Claude's plan:` for the plan, which
-  stays in plan mode). Only with the next prompt does CC write, and send, a
+  stays in plan mode on a bare `--resume`). Only with the next prompt does CC write, and send, a
   `tool_result` with `is_error: true` and `[Tool call interrupted: the session ended
   before this call's result was recorded, so its outcome is unknown. …]`, then an
   assistant `"No response requested."` (`model: "<synthetic>"`), then the prompt. So
   after a restart the question can be answered only by a message, and a plan only by
-  asking claude to ask again.
+  asking claude to ask again. **Koloft's own resume does not keep plan mode**: 2026-11-10,
+  CC 2.1.322, the hand-test sandbox, a real local Claude tab (Haiku 5.5) with "Skip
+  permission prompts" on, a plan dialog open when Koloft quit; Koloft resumed it with
+  `--dangerously-skip-permissions --resume <id>`, the transcript's mode went from `plan`
+  to `bypassPermissions`, and asked to show the plan again claude called `ExitPlanMode`
+  twice, each refused "You are not in plan mode. To enter plan mode, call the
+  EnterPlanMode tool first…", then asked for approval with an `AskUserQuestion`. 1 run.
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
