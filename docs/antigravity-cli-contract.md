@@ -1579,10 +1579,10 @@ only downloaded the public release.
   Behind the status relay 7501 frames do reach it (above), unless agy runs with
   `AGY_CLI_OSC7501=off` (§10).
 - **With `AGY_CLI_OSC7501=off` agy still frames its redraws behind the relay, and sends
-  no 7501.** Koloft's own remote tab script for agy (relay, `=off`) in tmux 3.3a: 69–70
-  `?2026h` frames reached the outer terminal, 1 of 59–60 scroll redraws drew anything
+  no 7501.** Koloft's own remote tab script for agy (relay, `=off`) in tmux 3.3a: 65–67
+  `?2026h` frames reached the outer terminal, 0 of 57 scroll redraws drew anything
   outside a frame, and 0 7501 frames came out (3 of 3 runs); with python3 made to fail,
-  so agy ran without the relay, 0 frames and 59 of 59 redraws outside one. With the
+  so agy ran without the relay, 0 frames and 57 of 57 redraws outside one. With the
   relay its process (whose command line carries agy's `--csrf_token` too) sat between
   the pane and agy; in all 4 runs Koloft's send script, with the real `ps`, found agy and
   `SendUserCascadeMessage` reached the model (§16). 2026-11-10, agy 1.5.4 linux-arm64
