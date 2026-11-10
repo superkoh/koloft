@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import type { SessionInfo } from '../../src/shared/types'
 import {
@@ -6,19 +9,21 @@ import {
   GH_PASSES_THROUGH,
   GH_REFUSED,
   GH_USAGE,
+  GH_WRITE_IT_IN_ENGLISH,
   repoFlagOf
 } from '../../src/main/agentGithub'
 
-function verb(opts: { out?: string; ok?: boolean } = {}) {
+function verb(opts: { out?: string; ok?: boolean; butler?: boolean; cwd?: string } = {}) {
   const ran: { args: string[]; tabId: string; cwd: string }[] = []
   const run = githubVerb({
     run: async (args, tabId, cwd) => {
       ran.push({ args, tabId, cwd })
       return { ok: opts.ok ?? true, out: opts.out ?? 'OPEN' }
-    }
+    },
+    writesInEnglishOnly: () => opts.butler ?? false
   })
   const call = (args: string[]) =>
-    run(args, { tabId: 'pty-1', cwd: '/ws/app', session: {} as SessionInfo })
+    run(args, { tabId: 'pty-1', cwd: opts.cwd ?? '/ws/app', session: {} as SessionInfo })
   return { call, ran }
 }
 
@@ -101,6 +106,42 @@ describe('koloft gh', () => {
     expect(exit).toBe(0)
     expect(text.length).toBeLessThan(21_000)
     expect(text).toMatch(/cut at \d+ characters; ask for less/)
+  })
+
+  it.each([
+    [
+      'a Chinese title',
+      ['issue', 'create', '--repo', 'a/b', '--title', '搜索框失去焦点', '--body', 'x']
+    ],
+    ['a Japanese body', ['issue', 'create', '-R', 'a/b', '-t', 'Search', '-b', '検索できません']],
+    ['a Korean title given with =', ['pr', 'create', '--title=검색 버그', '--body=x']],
+    ['a body file in Chinese', ['issue', 'create', '--title', 'Search', '--body-file', 'body.md']]
+  ])(
+    'refuses the butler an issue or pull request with %s, asking for English',
+    async (_n, args) => {
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-gh-'))
+      fs.writeFileSync(path.join(cwd, 'body.md'), '输入第一个字以后就失去焦点')
+      const { call, ran } = verb({ butler: true, cwd })
+      expect(await call(args)).toEqual({ text: GH_WRITE_IT_IN_ENGLISH, exit: 1 })
+      expect(ran).toEqual([])
+    }
+  )
+
+  it('lets the butler open an issue in English, and comment in any language', async () => {
+    const { call, ran } = verb({ butler: true })
+    expect(
+      (await call(['issue', 'create', '--title', 'Search loses focus', '--body', 'x'])).exit
+    ).toBe(0)
+    expect((await call(['issue', 'comment', '5', '--body', '已决定'])).exit).toBe(0)
+    expect(ran).toHaveLength(2)
+  })
+
+  it('lets a session in a workspace open an issue in its project’s language', async () => {
+    const { call, ran } = verb({ butler: false })
+    expect((await call(['issue', 'create', '--title', '搜索框失去焦点', '--body', 'x'])).exit).toBe(
+      0
+    )
+    expect(ran).toHaveLength(1)
   })
 
   it('finds the repository the butler names, for picking its GitHub account', () => {

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
 
 export const GH_USAGE =
@@ -57,20 +59,36 @@ export function cutForATurn(text: string, ifCut = ''): string {
 
 export interface GithubVerbDeps {
   run(args: string[], tabId: string, cwd: string): Promise<{ ok: boolean; out: string }>
+  writesInEnglishOnly(tabId: string): boolean
 }
 
-const LONG_REPO = '--repo'
-const SHORT_REPO = '-R'
-
 // PLATFORM§32
+function flagValuesOf(args: string[], long: string, short: string): string[] {
+  return args.flatMap((a, i) => {
+    if (a === long || a === short) return args[i + 1] === undefined ? [] : [args[i + 1]]
+    if (a.startsWith(`${long}=`)) return [a.slice(long.length + 1)]
+    if (!a.startsWith('--') && a.startsWith(short)) return [a.slice(short.length).replace(/^=/, '')]
+    return []
+  })
+}
+
 export function repoFlagOf(args: string[]): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]
-    if (a === LONG_REPO || a === SHORT_REPO) return args[i + 1]
-    if (a.startsWith(`${LONG_REPO}=`)) return a.slice(LONG_REPO.length + 1)
-    if (a.startsWith(SHORT_REPO)) return a.slice(SHORT_REPO.length).replace(/^=/, '')
-  }
-  return undefined
+  return flagValuesOf(args, '--repo', '-R')[0]
+}
+
+const OPENS_AN_ISSUE_OR_PULL_REQUEST = /^(issue|pr) create$/
+const CHINESE_JAPANESE_OR_KOREAN =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+
+export const GH_WRITE_IT_IN_ENGLISH =
+  'koloft: the butler opens a GitHub issue or pull request in English: write its title and body in English and run it again.'
+
+async function textItOpensWith(args: string[], cwd: string): Promise<string[]> {
+  const bodyFiles = flagValuesOf(args, '--body-file', '-F').filter((f) => f !== '-')
+  const files = await Promise.all(
+    bodyFiles.map((f) => readFile(path.resolve(cwd, f), 'utf8').catch(() => ''))
+  )
+  return [...flagValuesOf(args, '--title', '-t'), ...flagValuesOf(args, '--body', '-b'), ...files]
 }
 
 // PLATFORM§32
@@ -94,6 +112,13 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
     if (jqFilters(args).some((f) => READS_THE_ENVIRONMENT.test(f))) return refused(GH_JQ_READS_ENV)
     // PLATFORM§32
     if (args.includes(HANDS_THE_REST_TO_ANOTHER_PROGRAM)) return refused(GH_PASSES_THROUGH)
+    // ADR-0050
+    if (
+      d.writesInEnglishOnly(caller.tabId) &&
+      OPENS_AN_ISSUE_OR_PULL_REQUEST.test(args.slice(0, 2).join(' ')) &&
+      (await textItOpensWith(args, caller.cwd)).some((t) => CHINESE_JAPANESE_OR_KOREAN.test(t))
+    )
+      return refused(GH_WRITE_IT_IN_ENGLISH)
     const { ok, out } = await d.run(args, caller.tabId, caller.cwd)
     if (!ok) return refused(`koloft: gh ${args.slice(0, 2).join(' ')}: ${out}`)
     return answered(cutForATurn(out, '; ask for less, e.g. --json with fewer fields'))

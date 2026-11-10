@@ -2111,6 +2111,7 @@ const agentRequests = new AgentRequests({
       sleep
     }),
     gh: githubVerb({
+      writesInEnglishOnly: butlerSide,
       // PLATFORM§1 ADR-0036
       run: async (args, tabId, cwd) => {
         await loginEnvReady()
