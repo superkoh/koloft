@@ -180,8 +180,8 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     expect(t.list().find((e) => e.sessionId === 'sid-1')?.wasAsking).toBeUndefined()
   })
 
-  it('a session that turns out to still show its ask after the restart raises it again under the same time, so it stays the same ask', () => {
-    const { t } = makeTracker(lastRun)
+  it('a session that turns out to still show its ask after the restart raises it again under the same time, so it stays the same ask, and silently, as the owner was told already', () => {
+    const { t, changes } = makeTracker(lastRun)
     t.bound('tab-new', 'sid-2')
     expect(t.list()).toContainEqual(
       expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', wasAsking: true, at: 2 })
@@ -190,6 +190,7 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     const again = t.list().find((e) => e.tabId === 'tab-new')
     expect(again).toMatchObject({ kind: 'approval', at: 2 })
     expect(again?.wasAsking).toBeUndefined()
+    expect(changes.at(-1)?.event).toBeNull()
   })
 })
 

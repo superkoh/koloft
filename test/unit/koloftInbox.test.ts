@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { AttentionEvent } from '../../src/shared/types'
+import type { AttentionEvent, BackendId } from '../../src/shared/types'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
 import { pickToPress, UNDO_MS, type InboxAnswers } from '../../src/shared/inbox'
 import {
@@ -48,7 +48,6 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
   const inbox = new Inbox(host(sent))
   let marks: AttentionEvent[] = []
   const answered: [string, string][] = []
-  const told: [string, string][] = []
   const deps: KoloftInboxDeps = {
     inbox,
     marks: () => marks,
@@ -65,10 +64,6 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
       answered.push([tabId, reply])
       return undefined
     },
-    tell: async (ref, text) => {
-      told.push([ref, text])
-      return true
-    },
     butlerSide: () => false,
     watching: () => null,
     ...over
@@ -79,7 +74,6 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
     koloft,
     answered,
     sent,
-    told,
     mark: (m: AttentionEvent[]) => {
       marks = m
       koloft.sync()
@@ -157,23 +151,28 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(w.answered).toEqual([])
   })
 
-  function planWorld(machine?: string) {
+  function sessionWorld(
+    over: Partial<KoloftInboxDeps>,
+    on: { machine?: string; backend?: BackendId } = {}
+  ) {
     let live = true
+    const backend = on.backend ?? 'claude'
     const w = world({
-      askOf: async () => ({ kind: 'approval', plan: '' }),
-      liveTabOf: (ref) => (live ? { tabId: ref.replace(/^s-/, ''), backend: 'claude' } : undefined),
+      liveTabOf: (ref) => (live ? { tabId: ref.replace(/^s-/, ''), backend } : undefined),
       sessionOfTab: (tabId) => ({
         sessionId: `s-${tabId}`,
         title: 'Fix login',
-        backend: 'claude',
-        machine
-      })
+        backend,
+        machine: on.machine
+      }),
+      ...over
     })
     return { w, setLive: (v: boolean) => (live = v) }
   }
+  const aPlan = { askOf: async (): Promise<KoloftAsk> => ({ kind: 'approval', plan: '' }) }
 
-  it('a plan, even one with no text, still waiting when its local session stops is asked for once more as soon as that session runs again, and its card then closes; until then the owner may ask for it or reject it', async () => {
-    const { w, setLive } = planWorld()
+  it('a plan, even one with no text, still waiting when its local session stops is asked for once more, by its own “Show it again” with the usual undo, as soon as that session runs again; until then the owner may ask for it or reject it', async () => {
+    const { w, setLive } = sessionWorld(aPlan)
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
     setLive(false)
@@ -182,27 +181,48 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
       state: 'needs-you',
       actions: [{ label: 'Show it again' }, { label: 'Reject' }]
     })
-    expect(w.told).toEqual([])
-    setLive(true)
-    w.mark([stoppedAsking])
-    w.mark([stoppedAsking])
-    await vi.waitFor(() =>
-      expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Asked to show it again' })
-    )
-    expect(w.told).toEqual([['s-t1', SHOW_PLAN_AGAIN]])
+    vi.useFakeTimers()
+    try {
+      setLive(true)
+      w.mark([stoppedAsking])
+      w.mark([stoppedAsking])
+      expect(w.inbox.all()[0].press?.action).toBe('approve')
+      await vi.advanceTimersByTimeAsync(UNDO_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(w.sent).toHaveLength(1)
+    expect(w.sent[0][1]).toContain(SHOW_PLAN_AGAIN)
+    expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Asked to show it again' })
   })
 
-  it('a plan of a session on another machine, which may still show it after the restart, is never asked for again on its own', async () => {
-    const { w } = planWorld('build-box')
+  it('an ask of a remote Claude Code, Muse or Antigravity session, whose agent lives on in tmux through a Koloft restart, keeps its live buttons, and pressing one before the session is back leaves the card waiting', async () => {
+    const { w, setLive } = sessionWorld(aPlan, { machine: 'build-box' })
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    setLive(false)
     w.mark([stoppedAsking])
-    expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Show it again', 'Reject'])
-    expect(w.told).toEqual([])
+    expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Approve', 'Reject'])
+    expect(await w.koloft.answer('s-t1', { pick: 'yes' })).toMatchObject({ ok: false })
+    expect(w.sent).toEqual([])
   })
 
-  it('a card answered by message turns back into the same card answering the live question when its session turns out to still show it (a remote session that lived on through the restart)', async () => {
-    const w = world()
+  it('a question of a remote Codex session, whose turn the restart cuts off, is answered by message once its session is back; until then it keeps its live buttons', async () => {
+    const { w, setLive } = sessionWorld({}, { machine: 'build-box', backend: 'codex' })
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    setLive(false)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions[0].run).toMatchObject({ answer: 'q' })
+    setLive(true)
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions[0].run).toMatchObject({
+      message: expect.stringContaining('{answer:q}')
+    })
+  })
+
+  it('a card answered by message turns back into the same card answering the live question if its session turns out to still show it', async () => {
+    const { w } = sessionWorld({}, { machine: 'build-box', backend: 'codex' })
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
     const id = w.inbox.all()[0].id
@@ -375,7 +395,6 @@ describe('koloft inbox — a session posts and moves its own cards', () => {
       liveTabOf: () => undefined,
       askOf: async () => undefined,
       answer: async () => undefined,
-      tell: async () => true,
       butlerSide: () => false,
       watching: () => null
     })

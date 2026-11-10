@@ -69,7 +69,7 @@ export class AttentionTracker {
     }
     const kind = edgeAttention(prev, next)
     if (!kind) return
-    this.raise(tabId, kind, subject)
+    this.raise(tabId, kind, subject, true)
   }
 
   onExited(tabId: string, subject: AttentionSubject = {}): void {
@@ -127,16 +127,21 @@ export class AttentionTracker {
     return [...this.pending.values()]
   }
 
-  private raise(tabId: string, kind: AttentionKind, subject: AttentionSubject): void {
+  private raise(
+    tabId: string,
+    kind: AttentionKind,
+    subject: AttentionSubject,
+    sameAsk = false
+  ): void {
     const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
     const cur = this.pending.get(tabId)
-    const sameAskAsBefore = kind === 'approval' && cur?.wasAsking
+    const sameAskAsBefore = kind === 'approval' && sameAsk && cur?.wasAsking
     const at = sameAskAsBefore ? cur.at : Date.now()
     const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
-    this.onChange(this.list(), cur?.kind === kind ? null : event)
+    this.onChange(this.list(), cur?.kind === kind || sameAskAsBefore ? null : event)
     if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 }

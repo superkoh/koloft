@@ -2028,7 +2028,6 @@ const koloftInbox = new KoloftInbox({
   },
   askOf: inboxAskOf,
   answer: answerSession,
-  tell: async (ref, text) => (await sessionCommand.sendFromInbox(ref, text, true)).ok,
   butlerSide,
   watching: () => attention.watching()
 })
