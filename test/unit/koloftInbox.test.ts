@@ -88,6 +88,7 @@ function world(over: Partial<KoloftInboxDeps> = {}) {
 }
 
 const asking: AttentionEvent = { tabId: 't1', kind: 'approval', at: 100, sessionId: 's-t1' }
+const stoppedAsking: AttentionEvent = { ...asking, kind: 'turn-done', wasAsking: true }
 
 describe('Koloft source — a session waiting on the owner is a card, and the card follows the session', () => {
   it('a session that asks gets a high card with every question on it', async () => {
@@ -125,7 +126,7 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     const w = world()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    w.mark([{ ...asking, kind: 'turn-done' }])
+    w.mark([stoppedAsking])
     const card = w.inbox.all()[0]
     expect(card).toMatchObject({
       state: 'needs-you',
@@ -149,51 +150,73 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     const w = world({ askOf: async () => ({ kind: 'approval', command: 'rm -rf build' }) })
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    w.mark([{ ...asking, kind: 'turn-done' }])
+    w.mark([stoppedAsking])
     expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Allow', 'Deny'])
     await pressAfterTheUndo(w, 'deny')
     expect(w.sent[0][1]).toContain(DENY_AFTER_STOP)
     expect(w.answered).toEqual([])
   })
 
-  it('a plan still waiting when its session stops is asked for again once the session runs, and its card then closes; until then the owner may ask for it or reject it', async () => {
-    let live = false
+  function planWorld(machine?: string) {
+    let live = true
     const w = world({
-      askOf: async () => ({ kind: 'approval', plan: 'Rewrite the login page' }),
-      liveTabOf: (ref) => (live ? { tabId: ref.replace(/^s-/, ''), backend: 'claude' } : undefined)
+      askOf: async () => ({ kind: 'approval', plan: '' }),
+      liveTabOf: (ref) => (live ? { tabId: ref.replace(/^s-/, ''), backend: 'claude' } : undefined),
+      sessionOfTab: (tabId) => ({
+        sessionId: `s-${tabId}`,
+        title: 'Fix login',
+        backend: 'claude',
+        machine
+      })
     })
-    live = true
+    return { w, setLive: (v: boolean) => (live = v) }
+  }
+
+  it('a plan, even one with no text, still waiting when its local session stops is asked for once more as soon as that session runs again, and its card then closes; until then the owner may ask for it or reject it', async () => {
+    const { w, setLive } = planWorld()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    live = false
-    const stopped = { ...asking, kind: 'turn-done' as const }
-    w.mark([stopped])
+    setLive(false)
+    w.mark([stoppedAsking])
     expect(w.inbox.all()[0]).toMatchObject({
       state: 'needs-you',
       actions: [{ label: 'Show it again' }, { label: 'Reject' }]
     })
     expect(w.told).toEqual([])
-    live = true
-    w.mark([stopped])
+    setLive(true)
+    w.mark([stoppedAsking])
+    w.mark([stoppedAsking])
     await vi.waitFor(() =>
       expect(w.inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Asked to show it again' })
     )
     expect(w.told).toEqual([['s-t1', SHOW_PLAN_AGAIN]])
   })
 
-  it('a card answered by message gives way, with nothing left in Done, when its session turns out to still show the question (a remote session that lived on through the restart)', async () => {
+  it('a plan of a session on another machine, which may still show it after the restart, is never asked for again on its own', async () => {
+    const { w } = planWorld('build-box')
+    w.mark([asking])
+    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
+    w.mark([stoppedAsking])
+    expect(w.inbox.all()[0].actions.map((a) => a.label)).toEqual(['Show it again', 'Reject'])
+    expect(w.told).toEqual([])
+  })
+
+  it('a card answered by message turns back into the same card answering the live question when its session turns out to still show it (a remote session that lived on through the restart)', async () => {
     const w = world()
     w.mark([asking])
     await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    w.mark([{ ...asking, kind: 'turn-done' }])
-    const stillAsking = { ...asking, at: 200 }
-    w.mark([stillAsking])
-    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    expect(w.inbox.all()[0]).toMatchObject({
-      key: `ask:s-t1:200`,
-      state: 'needs-you',
-      actions: [{ run: { answer: 'q' } }]
-    })
+    const id = w.inbox.all()[0].id
+    w.mark([stoppedAsking])
+    w.mark([asking])
+    await vi.waitFor(() =>
+      expect(w.inbox.all()).toEqual([
+        expect.objectContaining({
+          id,
+          state: 'needs-you',
+          actions: [expect.objectContaining({ run: expect.objectContaining({ answer: 'q' }) })]
+        })
+      ])
+    )
   })
 
   const finished = (tabId: string): AttentionEvent => ({

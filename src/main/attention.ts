@@ -22,9 +22,17 @@ export class AttentionTracker {
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
     lastRun: SavedMark[] = []
   ) {
-    for (const { tabId, kind, at, title, sessionId, fyi } of lastRun) {
+    for (const { tabId, kind, at, title, sessionId, fyi, wasAsking } of lastRun) {
       const deadKind = kind === 'approval' ? 'turn-done' : kind
-      this.pending.set(tabId, { tabId, kind: deadKind, at, title, sessionId, fyi })
+      this.pending.set(tabId, {
+        tabId,
+        kind: deadKind,
+        at,
+        title,
+        sessionId,
+        fyi,
+        ...((kind === 'approval' || wasAsking) && { wasAsking: true })
+      })
     }
   }
 
@@ -32,7 +40,12 @@ export class AttentionTracker {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
-    this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
+    this.pending.set(tabId, {
+      ...carried,
+      tabId,
+      kind: 'turn-done',
+      ...(carried.kind === 'approval' && { wasAsking: true })
+    })
     this.onChange(this.list(), null)
   }
 
@@ -116,8 +129,10 @@ export class AttentionTracker {
 
   private raise(tabId: string, kind: AttentionKind, subject: AttentionSubject): void {
     const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
-    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), ...(fyi && { fyi }) }
     const cur = this.pending.get(tabId)
+    const sameAskAsBefore = kind === 'approval' && cur?.wasAsking
+    const at = sameAskAsBefore ? cur.at : Date.now()
+    const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
