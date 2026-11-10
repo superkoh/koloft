@@ -2090,6 +2090,17 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+- **It can run inside a process that already read its input.** 2.2.33's entry reads
+  its input only by iterating `process.stdin` (`for await`, unless `isTTY`) and takes
+  `--config` from `process.argv`. A script that sets `process.stdin` to a `Readable`
+  holding the JSON and `process.argv` to `[node, entry, '--config', file]`, then
+  `import()`s the entry, prints byte for byte what a second process given the same
+  JSON prints (2026-11-09, Electron 43.8.6 as node on macOS arm64, 10 renders each,
+  median: 213 ms when the script starts a second process, 186 ms in one process,
+  156 ms in one process with `NODE_COMPILE_CACHE`). The same script as a `.cjs` in a
+  `{"type":"module"}` folder also renders on node 22.12.0 (Docker
+  `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
+  folder itself.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
