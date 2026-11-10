@@ -1697,6 +1697,40 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
+  // AGY§5
+  test('an Antigravity job in a remote git workspace agy trusts there starts in its new worktree on the machine without agy asking whether to trust that folder', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    installAgy(env)
+    installRemoteAgy(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { agent: 'Antigravity', name: 'Remote report', task: 'look around' })
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Remote report')
+
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 120_000 }).toBe(1)
+      expect(machineAgyCalls(env)[0].cwd).toBe(
+        runTree(remoteDir(env), path.basename(machineAgyCalls(env)[0].cwd))
+      )
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 120_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
   test('BB-M34 on a remote workspace: a run whose agent dies on the machine keeps its tab reading the agent’s own exit code and its folder on the machine, until you close the tab', async ({
     env
   }) => {
