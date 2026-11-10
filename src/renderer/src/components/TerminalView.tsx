@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { Terminal, type IDisposable } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -13,6 +13,7 @@ import { exitSyncWindow, isSyncWindowOpen } from '../syncOutput'
 import { enrollWebgl, hideWebgl, releaseWebgl, showWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
+import { loadTerminalFonts, terminalFontsLoaded } from '../terminalFonts'
 import { CLEAR_TO_LINE_START, TO_LINE_END, TO_LINE_START } from '@shared/lineEditKeys'
 
 const RESIZE_QUIET_MS = 100
@@ -35,18 +36,7 @@ function commandKeyLineEdit(e: KeyboardEvent): string | undefined {
   return COMMAND_KEY_LINE_EDITS.get(e.key)
 }
 
-export function TerminalView({
-  id,
-  active,
-  onUserInput,
-  autoFocus = true,
-  scrollbar = true,
-  focusSignal,
-  onRepainted,
-  onOutput,
-  maxCols,
-  copiesToClipboard = false
-}: {
+type TerminalViewProps = {
   id: string
   active: boolean
   onUserInput?: () => void
@@ -57,7 +47,38 @@ export function TerminalView({
   onOutput?: () => void
   maxCols?: number
   copiesToClipboard?: boolean
-}): JSX.Element {
+}
+
+export function TerminalView(props: TerminalViewProps): JSX.Element {
+  const [fontsReady, setFontsReady] = useState(() =>
+    terminalFontsLoaded(useStore.getState().settings.fontFamily)
+  )
+  useEffect(() => {
+    if (fontsReady) return undefined
+    let live = true
+    const { fontFamily, fontSize } = useStore.getState().settings
+    void loadTerminalFonts(fontFamily, fontSize).then(() => {
+      if (live) setFontsReady(true)
+    })
+    return () => {
+      live = false
+    }
+  }, [fontsReady])
+  return fontsReady ? <LiveTerminal {...props} /> : <div className="term" />
+}
+
+function LiveTerminal({
+  id,
+  active,
+  onUserInput,
+  autoFocus = true,
+  scrollbar = true,
+  focusSignal,
+  onRepainted,
+  onOutput,
+  maxCols,
+  copiesToClipboard = false
+}: TerminalViewProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
@@ -468,11 +489,17 @@ export function TerminalView({
   }, [id, safeFit, forceRepaint, stopWaitingForSyncFrame, copiesToClipboard])
 
   useEffect(() => {
-    const term = termRef.current
-    if (!term) return
-    term.options.fontFamily = fontFamily
-    term.options.fontSize = fontSize
-    safeFit()
+    let live = true
+    void loadTerminalFonts(fontFamily, fontSize).then(() => {
+      const term = termRef.current
+      if (!live || !term) return
+      term.options.fontFamily = fontFamily
+      term.options.fontSize = fontSize
+      safeFit()
+    })
+    return () => {
+      live = false
+    }
   }, [fontFamily, fontSize, id, safeFit])
 
   // PLATFORM§21
