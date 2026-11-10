@@ -955,7 +955,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks', async ({
+  test('a scheduled job set to run in Antigravity offers agy’s models by name and only the thinking levels the picked model takes, showing Same as usual while the model would refuse the picked level and the level again once a model takes it, and starts agy with that model and level, on "Same as my other sessions", which with Skip permission prompts on skips agy\'s asks; its task, which starts with /, is typed once agy is ready instead of given with -i, and the run finishes', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -999,16 +999,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         'gemini-4-argon',
         '--effort',
         'medium',
-        '--dangerously-skip-permissions',
-        '-i',
-        TASK
+        '--dangerously-skip-permissions'
       ])
       await expect
         .poll(
           () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
           { timeout: 30_000 }
         )
-        .toEqual([expect.stringMatching(/^(running|done)$/)])
+        .toEqual(['done'])
     } finally {
       await quitAndClose(app)
     }

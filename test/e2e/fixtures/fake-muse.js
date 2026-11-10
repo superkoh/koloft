@@ -519,6 +519,46 @@ function tui() {
         }
       )
     }
+    if (text === '/ask-several') {
+      const turnId = turn(text)
+      const options = [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }]
+      const submitRow = options.length + 2
+      const ticked = new Set()
+      let row = 1
+      let review = false
+      return block(
+        'question',
+        {
+          approvals: [],
+          userInputs: [
+            {
+              userInputId: 'input-several',
+              questions: [
+                {
+                  id: 'fruits',
+                  question: 'Which fruits?',
+                  options,
+                  selection: { mode: 'multiple' }
+                }
+              ]
+            }
+          ]
+        },
+        (key) => {
+          if (review && key === '\r') {
+            status('state=working:app=muse')
+            const picked = options.filter((_, i) => ticked.has(i + 1)).map((o) => o.label)
+            later(() => say(turnId, `Picked: ${picked.join(', ')}`, text))
+            return true
+          }
+          if (/^[1-9]$/.test(key) && Number(key) <= submitRow) row = Number(key)
+          else if (key === '\r' && row === submitRow) review = ticked.size > 0
+          else if ((key === ' ' || key === '\r') && row <= options.length)
+            ticked.has(row) ? ticked.delete(row) : ticked.add(row)
+          return false
+        }
+      )
+    }
     if (text === '/subagent') {
       const turnId = turn(text)
       const child = crypto.randomUUID()

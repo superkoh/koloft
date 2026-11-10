@@ -217,9 +217,9 @@ export class AgyApi {
   ): Promise<void> {
     const responses = (pending.questions ?? []).map(({ question, options }, i) => {
       const a = answers[i]!
-      return 'pick' in a
-        ? { question, selectedOptionIds: [options[a.pick - 1]!.id] }
-        : { question, writeInResponse: a.words }
+      if ('words' in a) return { question, writeInResponse: a.words }
+      const picks = 'pick' in a ? [a.pick] : a.picks
+      return { question, selectedOptionIds: picks.map((n) => options[n - 1]!.id) }
     })
     await this.call('HandleCascadeUserInteraction', {
       cascadeId: conversationId,

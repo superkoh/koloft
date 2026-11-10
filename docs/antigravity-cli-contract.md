@@ -863,8 +863,31 @@ only downloaded the public release.
   "Question 2/2" ("← Back · enter Submit All"), and the digit or write-in there sends both:
   `A1: Banana\nA2: Medium, please`, and `A1: A ripe mango\nA2: Large`. A question with
   `is_multi_select: true` draws its options as `[ ] Apple` with "space Toggle · enter
-  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true`; answering one was
-  not tried.
+  Submit", and `GetCascadeTrajectory` gives it `"isMultiSelect": true` (a single-pick
+  question has no such key).
+- **A question that takes several picks: digits tick, Enter sends.** agy 1.5.1 (sha256
+  `d2b02615…9565`, the binary of the bullets below), Docker `--network none`
+  (`agy-a-img`, tmux 3.3a, 160×50), a fake Gemini server answering with `ask_question`
+  (`is_multi_select: true`, options Apple / Banana / Cherry), keys by `tmux send-keys`
+  300 ms apart from 1.2 s after `blocked`, the tool result read from the model's next
+  request, 2026-11-06; two runs per line unless marked. The box reads `1. [ ] Apple` …
+  `4. Write-in...` and "↑/↓ Navigate · space Toggle · enter Submit · esc Skip"; a ticked
+  row shows `[x]`. A digit moves to that row and toggles it, and sends nothing (the step
+  stayed waiting 8 s); Enter sends. `1`, `3`, Enter and `3`, `1`, Enter both sent `A1:
+  Apple, Cherry` (option order); Space, Down, Down, Space, Enter the same; `1`, `1`, Enter
+  or Enter alone sent `A1: ` (empty); a digit above the options did nothing. Write-in:
+  `4` (or Enter on its row) opens "Your answer:" under the list with the ticks kept, and
+  Enter there sends at once on the last question (on question 1 of 2 it moves to question
+  2): `4`, `A ripe mango`, Enter sent `A1: A ripe mango`; ticks first, then the write-in,
+  `A1: Apple, A ripe mango`. With two questions and the
+  several-pick one first, its footer says "enter Submit" but Enter goes to "Question
+  2/2", whose digit then sends both: `1`, `3`, Enter, `2` sent `A1: Apple, Cherry\nA2:
+  Medium`; with it second, `2`, then its ticks and Enter, sent `A1: Medium\nA2: Apple,
+  Cherry`. Keys in one `send-keys` burst (`1 3 Enter`) were all taken. Through the
+  Connect API (§16), `responses: [{question, selectedOptionIds: ["1","3"]}]` sent `A1:
+  Apple, Cherry`, and the two questions' responses in one call sent both; `200 {}` each
+  time. An option whose own text holds a comma runs into the next one (`Red, dark` and
+  `Blue` sent `A1: Red, dark, Blue`).
 - **`--dangerously-skip-permissions` does not answer a question.** agy 1.4.12 (build
   `1.4.12-4768735748292608`, Linux arm64 from the manifest, sha512 checked) in Docker with
   no network, tmux 160×50, a fresh `--gemini_dir` with onboarding and trust seeded, a fake
@@ -1627,6 +1650,29 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
   its line, and `read_file` of it succeeded.
 - Not probed: what the interactive TUI does where `-p` refused a read.
+- **A `/<name>` line sends the skill's body when it is typed after agy is ready, and
+  only as plain text when it is given with `-i`.** 2026-11-09, agy 1.5.3 linux-arm64,
+  Docker (`--network none`), agy in tmux 3.3a, a fake Gemini server logging each
+  request, a skill `zebra-skill` in `<gd>/config/skills/` whose body holds a codeword.
+  Typed into the input box as `/zebra-skill do X` and Enter, the request's user turn held
+  `/zebra-skill is a [Slash Command]: <SKILL>The user has explicitly invoked the
+  (zebra-skill) skill … Here are its contents: <body></SKILL>` in each way it was sent:
+  key by key then Enter (1 run), one bracketed paste with `\r` 2 s after the first
+  `idle` (1 run), the same text and `\r` with no paste markers (1 run), the paste with
+  `\r` at once on the first OSC 7501 `idle` frame (3 runs) and at once on the first
+  title-script input with `agent_state` `idle` (2 runs). Started with
+  `-i "/zebra-skill do X"` (2 runs) the turn held only
+  `<USER_REQUEST>/zebra-skill do X</USER_REQUEST>`, no body. At start the title script
+  got `authenticating` twice, then `idle` with `conversation_id` `""` about 0.3 s later,
+  before anything was typed; with `-i` it got no `idle` before the turn. In a folder not
+  yet trusted agy showed its trust question, sent the 7501 frame
+  `blocked:kind=permission` ("Trust this folder?") and the title `initializing`, and no
+  `idle` while the question was up; Enter there picks "Yes, I trust this folder". A line
+  written before agy started was echoed by the tty and lost. Pasted with `\r` the same way
+  (1 run each): `/tmp/notes.txt summarize this` and `/nosuch do X` went to the model as
+  plain text, with no error; `/zebra-skill` alone, with a second skill `zebra-skill-pro`
+  installed, sent `zebra-skill`'s body and not the other's; a three-line paste whose
+  first line was `/zebra-skill do X` sent all three lines and the body.
 
 ## §32 The folder's AGENTS.md as a memory
 

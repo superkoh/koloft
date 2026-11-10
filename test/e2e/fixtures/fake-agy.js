@@ -1430,12 +1430,18 @@ async function askScenario(turn, spec) {
     .split('|')
     .map((s) => s.trim())
     .filter(Boolean)
-  const question = parts[0] || 'Which one?'
+  const several = (parts[0] || '').startsWith('+')
+  const question = (parts[0] || '').replace(/^\+/, '') || 'Which one?'
   const options = parts.length > 1 ? parts.slice(1) : ['Apple', 'Banana']
   const pick = (index) =>
     index >= 0 && index < options.length ? { allow: true, option: options[index] } : undefined
+  const ticked = new Set()
+  const ticks = (indexes) => ({
+    allow: true,
+    option: options.filter((_, i) => indexes.has(i)).join(', ')
+  })
   const args = {
-    questions: [{ question, options, is_multi_select: false }],
+    questions: [{ question, options, is_multi_select: several }],
     toolAction: 'Asking a question',
     toolSummary: question
   }
@@ -1448,17 +1454,27 @@ async function askScenario(turn, spec) {
       requestedInteraction: {
         askQuestion: {
           questions: [
-            { question, options: options.map((text, i) => ({ id: String(i + 1), text })) }
+            {
+              question,
+              options: options.map((text, i) => ({ id: String(i + 1), text })),
+              ...(several && { isMultiSelect: true })
+            }
           ]
         }
       },
       frame: ['question', question],
       screen: [
         `Question 1/1: ${question}`,
-        ...options.map((o, i) => `${i === 0 ? '> ' : '  '}${i + 1}. ${o}`),
+        ...options.map((o, i) => `${i === 0 ? '> ' : '  '}${i + 1}. ${several ? '[ ] ' : ''}${o}`),
         `  ${options.length + 1}. Write-in…`
       ].join('\n'),
       onKey: (key) => {
+        if (several && /^[1-9]$/.test(key)) {
+          const i = Number(key) - 1
+          if (i < options.length) ticked.has(i) ? ticked.delete(i) : ticked.add(i)
+          return undefined
+        }
+        if (several && key === ENTER) return ticks(ticked)
         if (/^[1-9]$/.test(key)) return pick(Number(key) - 1)
         if (key === ENTER) return pick(0)
         if (key === ESC) return { allow: false, via: 'esc' }
@@ -1468,8 +1484,9 @@ async function askScenario(turn, spec) {
         const reply = interaction.askQuestion
         if (!reply) return undefined
         if (reply.cancelled) return { allow: true, option: '', fromApi: true }
-        const id = reply.responses?.[0]?.selectedOptionIds?.[0]
-        const picked = pick(Number(id) - 1)
+        const ids = reply.responses?.[0]?.selectedOptionIds ?? []
+        if (several) return { ...ticks(new Set(ids.map((id) => Number(id) - 1))), fromApi: true }
+        const picked = pick(Number(ids[0]) - 1)
         return picked ? { ...picked, fromApi: true } : undefined
       }
     },

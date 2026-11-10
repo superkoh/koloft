@@ -1317,7 +1317,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   // MUSE§5 MUSE§11
-  test('the butler answers a Muse session’s approval and its one-question list with koloft session answer; each presses its keys in the terminal', async ({
+  test('the butler answers a Muse session’s approval, its one-question list and a question that takes several picks with koloft session answer; each presses its keys in the terminal', async ({
     env
   }) => {
     installMuse(env)
@@ -1349,6 +1349,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Blue')
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, '/ask-several\r'), museTab)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
+      fake.say(OWNER, `/koloft session answer ${museId} cherry, 1`)
+      await expect
+        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Apple, Cherry')
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -1438,7 +1448,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   // AGY§14
-  test('the butler answers a remote Antigravity session’s approval with koloft session answer yes, the key reaches agy on the machine through ssh and tmux, and agy there writes the file', async ({
+  test('the butler answers a remote Antigravity session’s approval with koloft session answer yes, the key reaches agy on the machine through ssh and tmux, and agy there writes the file; a question there that takes several picks is answered by naming them', async ({
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
@@ -1465,6 +1475,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => fileText(target), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe('written by fake agy\n')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+
+      await page.evaluate(
+        (t) => window.api.terminal.write(t, '/ask +Which fruits?|Apple|Banana|Cherry\r'),
+        agy.tabId
+      )
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      fake.say(OWNER, `/koloft session answer ${agy.id} cherry, 1`)
+      await expect
+        .poll(() => terminalText(page, agy.tabId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Apple, Cherry')
     })
   })
 
@@ -1626,7 +1646,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   for (const backend of SESSION_BACKENDS) {
-    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running, a plain gh in its own folder too`, async ({
+    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth, a plain gh in its own folder too, and an issue in Chinese, without gh running`, async ({
       env
     }) => {
       installLocalAgents(env, [backend])
@@ -1641,6 +1661,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           OWNER,
           `${backend === 'agy' ? '/bash' : '/sh'} gh auth token >'${plainGhSaid}' 2>&1; echo exit=$? >>'${plainGhSaid}'`
         )
+        fake.say(OWNER, '/koloft gh issue create --repo acme/app --title 搜索框失去焦点 --body x')
         fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => fileText(ghLog), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })

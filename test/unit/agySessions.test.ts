@@ -332,6 +332,20 @@ describe('AgySessions launch', () => {
     ])
   })
 
+  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names; until then nobody else is told the tab takes typing', async () => {
+    const { id } = await launch({ firstPrompt: '/review do X' })
+    expect(created[0].argv).not.toContain('-i')
+    title(id, { conversation_id: '', agent_state: 'initializing' })
+    say(id, state('idle'))
+    expect(pty.write).not.toHaveBeenCalled()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    await hooksTaken(id)
+    expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review do X${ESC}[201~\r`]])
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+  })
+
   it('asks before every action by default, "edit without asking" starts accept-edits mode, and a resume opens the stored conversation with the permission it had', async () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
@@ -1287,26 +1301,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
   })
 
   // AGY§14
-  it('holds no question Koloft could answer while a question in the ask picks several options, from the tool call or the API', async () => {
+  it('holds a question that takes several picks open as one, from the tool call or the API; through the API its picks go as the ids of every option picked', async () => {
     const id = await boundTab()
-    const asked = async (multi: boolean): Promise<void> => {
-      hook(id, 'PreToolUse', {
-        toolCall: {
-          name: 'ask_question',
-          args: {
-            questions: [
-              { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: multi }
-            ]
-          }
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: {
+          questions: [
+            { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: true }
+          ]
         }
-      })
-      await hooksTaken(id)
-      say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }],
+      ownWords: true,
+      multiSelect: true
     }
-    await asked(true)
-    expect(sessions.openQuestion(id)).toBeUndefined()
-    expect(sessions.openApproval(id)).toBeUndefined()
-    expect(await sessions.answer(id, '1')).toBe(false)
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, '1, 2')).toBe(false)
 
     say(id, state('working'))
     apiAnswers = true
@@ -1316,18 +1332,28 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
           {
             question: 'Which fruits?',
             options: [
-              { id: '1', text: 'Apple' },
-              { id: '2', text: 'Banana' }
+              { id: 'a', text: 'Apple' },
+              { id: 'b', text: 'Banana' }
             ],
             isMultiSelect: true
           }
         ]
       }
     })
-    await asked(false)
-    expect(sessions.openQuestion(id)?.questions).toHaveLength(1)
-    await vi.waitFor(() => expect(sessions.openQuestion(id)).toBeUndefined())
-    expect(sessions.openApproval(id)).toBeUndefined()
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, 'banana, 1')).toEqual({})
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: {
+          trajectoryId: 't9',
+          stepIndex: 2,
+          askQuestion: { responses: [{ question: 'Which fruits?', selectedOptionIds: ['a', 'b'] }] }
+        }
+      }
+    ])
     expect(pty.write).not.toHaveBeenCalled()
   })
 
@@ -1475,6 +1501,17 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
     expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
     expect(spec.program.run).toMatch(/'-i' 'hi'\n$/)
+  })
+
+  it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, firstPrompt: '/review' })
+    expect(machine.launches[0].program.run).not.toContain("'-i'")
+    mirrored(id, [{ conversation_id: '', agent_state: 'authenticating' }])
+    expect(pty.write).not.toHaveBeenCalled()
+    mirrored(id, [{ conversation_id: '', agent_state: 'idle' }])
+    await vi.waitFor(() =>
+      expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review${ESC}[201~\r`]])
+    )
   })
 
   it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
