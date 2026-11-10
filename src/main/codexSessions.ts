@@ -829,10 +829,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       else this.deps.trustFolder(dir, env)
     }
     // ADR-0026 CODEX§11
-    const scheduledWorktreeOfTrustedWorkspace = async (): Promise<boolean> =>
-      !!opts.scheduled && !!resource && (await this.trustsFolder(workspace))
-    if (freshWorktree || (await scheduledWorktreeOfTrustedWorkspace()))
-      for (const dir of [workspace, cwd]) trust(dir, processEnv)
+    const trustNow = freshWorktree
+      ? [workspace, cwd]
+      : opts.scheduled && resource?.managed && (await this.trustsFolder(workspace))
+        ? [cwd]
+        : []
+    for (const dir of trustNow) trust(dir, processEnv)
     // ADR-0029
     const assist = machine ? undefined : this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = !machine && (opts.conductor || !!assist)

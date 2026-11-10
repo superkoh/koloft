@@ -1531,6 +1531,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   })
 
   const REMOTE_TASK = `/daily-report please "quote" it's $HOME`
+  const machineCodexConfig = (env: E2EEnv): string =>
+    path.join(machineHome(env), '.koloft', 'codex-home', 'config.toml')
   const machineWire = (env: E2EEnv): CodexWireLine[] =>
     machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')
   const REMOTE_FIELDS_AGENTS: {
@@ -1547,22 +1549,34 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     {
       agent: 'Codex',
       repo: true,
-      setUp: (env) => installCodexOnFakeRemote(env),
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        fs.mkdirSync(path.dirname(machineCodexConfig(env)), { recursive: true })
+        fs.mkdirSync(remoteDir(env), { recursive: true })
+        fs.writeFileSync(
+          machineCodexConfig(env),
+          `[projects.${JSON.stringify(fs.realpathSync(remoteDir(env)))}]\ntrust_level = "trusted"\n`
+        )
+      },
       pickModel: (dlg) => dlg.locator('.chip', { hasText: /^GPT-6-Luna$/ }).click(),
       launched: (env) => {
         const start = codexCalls(env).find((c) => c.method === 'thread/start')
         return start && { argv: start.argv, cwd: start.effectiveCwd }
       },
       flags: ['-a', 'never', '-s', 'danger-full-access', '-m', 'gpt-6-luna', REMOTE_TASK],
-      // CODEX§17
+      // CODEX§11 CODEX§17
       onTheMachine: {
         read: (env) => ({
           task: codexPromptsSent(machineWire(env)),
           name: machineWire(env).flatMap(({ direction, frame }) =>
             direction === 'client' && frame.method === 'thread/name/set' ? [frame.params?.name] : []
-          )
+          ),
+          runTreeTrusted:
+            /\[projects\."[^"]*\/\.claude\/worktrees\/[^"]+"\]\ntrust_level = "trusted"/.test(
+              fs.readFileSync(machineCodexConfig(env), 'utf8')
+            )
         }),
-        is: { task: [REMOTE_TASK], name: ['Remote report'] }
+        is: { task: [REMOTE_TASK], name: ['Remote report'], runTreeTrusted: true }
       },
       named: 'its name',
       rowTitle: 'Remote report'
@@ -1593,7 +1607,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     },
     {
       agent: 'Antigravity',
-      repo: false,
+      repo: true,
       setUp: (env) => {
         installAgy(env)
         installRemoteAgy(env)
