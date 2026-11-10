@@ -6,8 +6,14 @@ import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteShCommand } from './install'
-import { machineToolProgram, skillsFromMachineLine, type TabProgram } from './launch'
+import {
+  EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
+  machineToolProgram,
+  skillsFromMachineLine,
+  type TabProgram
+} from './launch'
 import { REMOTE_COMPILE_CACHE, REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
+import { STATUS_RELAY_FILE } from './statusRelay'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
@@ -112,7 +118,9 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
     ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
     `export ${exported.join(' ')}`,
-    `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
+    `set -- agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`,
+    // AGY§29
+    ...EXEC_ARGS_THROUGH_THE_STATUS_RELAY
   ]
   const file = (name: string): string => `${s.tabId}.${name}`
   return machineToolProgram('agy', run.map((line) => `  ${line}\n`).join(''), {
@@ -209,7 +217,9 @@ for (let size = 0; size !== tree.size; ) {
   size = tree.size
   for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
 }
-const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args))
+const agy = procs.find(
+  (p) => tree.has(p.pid) && /--csrf_token=\\S+/.test(p.args) && !p.args.includes('${STATUS_RELAY_FILE}')
+)
 if (!agy) process.exit(1)
 const token = /--csrf_token=(\\S+)/.exec(agy.args)[1]
 function ports() {

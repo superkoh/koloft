@@ -855,6 +855,44 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().GEMINI_API_KEY).toBeUndefined()
   })
 
+  // AGY§29 PLATFORM§35
+  it.skipIf(spawnSync('python3', ['-c', 'import pty, termios']).status !== 0)(
+    "agy runs on a terminal of the status relay's, so its redraws pass tmux before 3.7 as whole frames, and where python3 cannot run it starts on its own instead",
+    () => {
+      const agyIn = (b: Box): void =>
+        fs.writeFileSync(
+          path.join(b.home, '.local', 'bin', 'agy'),
+          `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n[ -t 0 ] && : > ${JSON.stringify(path.join(b.logs, 'tty'))}\nexit 0\n`,
+          { mode: 0o755 }
+        )
+      const agySpec = (): TabSpec =>
+        spec({
+          program: agyTab({
+            tabId: 'T',
+            account: 'a',
+            args: ['--csrf_token=x'],
+            settings: '{}',
+            hooks: '{}',
+            koloftSkill: false
+          })
+        })
+      const relayed = box(agySpec())
+      agyIn(relayed)
+      expect(relayed.run().status).toBe(0)
+      expect(relayed.onATerminal()).toBe(true)
+      expect(relayed.argv()[1]).toBe('--csrf_token=x')
+
+      const stub = box(agySpec())
+      agyIn(stub)
+      fs.writeFileSync(path.join(stub.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+        mode: 0o755
+      })
+      expect(stub.run().status).toBe(0)
+      expect(stub.onATerminal()).toBe(false)
+      expect(stub.argv()[1]).toBe('--csrf_token=x')
+    }
+  )
+
   it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
     const failed = box(spec(), { claudeExit: 3 }).run()
     expect(failed.status).toBe(3)

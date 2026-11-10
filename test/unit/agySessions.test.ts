@@ -1486,7 +1486,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
     expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
     expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
-    expect(spec.program.run).toMatch(/'-i' 'hi'\n$/)
+    expect(spec.program.run).toMatch(/'-i' 'hi'\n/)
   })
 
   it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
