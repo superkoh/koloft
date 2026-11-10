@@ -1445,7 +1445,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   full-scope login token. Long-lived tokens (from claude setup-token or
   CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
   does not work for a Koloft session.
-- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
+- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.2
+  $8/$40, 1M (cache read $0.20) — the default `fable` since CC 2.1.321 (changelog: "Added
+  Claude Fable 5.2 (`claude-fable-5-2`), now the default Fable model — 1M context, $8/$40
+  per Mtok with $0.20/Mtok cache reads"; the 2.1.322 binary names its tier
+  `tier_8_40_cache_read_0_20` and `latest_per_family` `fable: "claude-fable-5-2"`,
+  `strings`, 2026-11-10); Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
