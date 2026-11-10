@@ -27,6 +27,15 @@ export function record(value: unknown): Record<string, unknown> {
     : {}
 }
 
+export function jsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return record(value)
+  try {
+    return record(JSON.parse(value))
+  } catch {
+    return {}
+  }
+}
+
 export interface CodexThread {
   id: string
   cwd: string

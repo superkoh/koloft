@@ -272,6 +272,29 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   clients of the 7 runs had it. A cold `muse serve` answered `initialize` in
   120–760 ms (6 runs). A client that looks the id up through `session/list` instead
   finds nothing for a while: there the new session showed up 2.75 s after the frame.
+- **An approval's `rawArgs` is the tool call's arguments as a JSON string, and the
+  approval names its tool; under Koloft's flags only a shell command and a protected
+  write ask.** Measured 2026-11-09 on `Muse Code 1.4.11 (1.4.11-R6667.1)`
+  (`koloft-muse-probe-1411`, `MUSE_NO_AUTO_UPDATE=1`), Docker `--network none`, the TUI
+  in a python3 pty (160×50) answering the cursor, colour and 7501 queries, `--approval-judge
+  off --sandbox-network enabled --trust-workspace` (Koloft's flags, §15), a fresh
+  `XDG_CONFIG_HOME` and `XDG_DATA_HOME` per run, a fake `/responses` model whose first
+  `main` turn made one tool call; one second after `blocked`, `muse serve --provider echo`
+  read `approval/listPending`; one run per line.
+  - Every approval carries `toolName`, `toolCallId`, `protectedWrite`, `judgeEscalated`
+    and a `subject`. `bash` with `sandbox_permissions: "require_escalated"`:
+    `rawArgs: "{\"command\": \"echo hi\", \"sandbox_permissions\": …}"`, `subject:
+    {kind: "shell", command, stages: [], workspaceRoot}`, `protectedWrite: false`.
+  - `write_file` and `edit_file` on `<workspace>/.git/config`, and `write_file` on
+    `<workspace>/.muse/settings.json`: `blocked:kind=permission`, `protectedWrite: true`,
+    `subject: {kind: "fileAccess", access: "write", path, toolName}`, `rawArgs` the call's
+    `{path, content}` / `{path, find, replace}` as a string.
+  - Asked nothing: `write_file` on a plain file in the workspace (written); `write_file`
+    and `edit_file` outside it ("tool failed: absolute path is outside the workspace");
+    `read_file` outside it (read), of `<workspace>/.git/config` (read), and of
+    `~/.ssh/id_rsa` ("That path holds credentials …", refused).
+  - So no read asks, and a file in an ask is always one muse would write. Not probed:
+    `search` with `paths` outside the workspace, MCP tools' approvals (§21).
 
 ## §6 tmux swallows OSC 7501
 

@@ -1356,7 +1356,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.changedSoon()
   }
 
-  // AGY§12 AGY§13
+  // AGY§12 AGY§13 AGY§26
   private askFromHook(run: AgyRun, status: ProgramStatus): AgyAsk {
     const id = `hook:${Date.now()}`
     const tool = run.lastTool
@@ -1379,7 +1379,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? (argOf(tool.args, 'TargetFile') ?? argOf(tool.args, 'Path'))
         : undefined
     return {
-      approval: { id, command: commandLine ?? file ?? status.msg, ...(file ? { file } : {}) }
+      approval: {
+        id,
+        command: commandLine ?? file ?? status.msg,
+        ...(file ? { file, ...(tool?.name === 'read_file' && { read: true as const }) } : {})
+      }
     }
   }
 

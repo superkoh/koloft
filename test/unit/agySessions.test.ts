@@ -19,7 +19,6 @@ import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
-
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 
@@ -1177,9 +1176,20 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
       hook(id, 'PreToolUse', { toolCall: { name, args: { Path: file } } })
       await hooksTaken(id)
       say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
-      expect(sessions.openApproval(id)).toMatchObject({ command: file })
+      expect(sessions.openApproval(id)).toMatchObject({ command: file, file })
+      expect(sessions.openApproval(id)?.read).toBeUndefined()
       expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     }
+  })
+
+  // AGY§26
+  it('marks an approval for read_file, from its Path, as a read', async () => {
+    const id = await boundTab()
+    const file = '/elsewhere/outside.txt'
+    hook(id, 'PreToolUse', { toolCall: { name: 'read_file', args: { Path: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
   })
 
   it("answers an approval through agy's API when it answers, and presses no key", async () => {
