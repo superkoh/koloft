@@ -502,14 +502,31 @@ function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
     : undefined
 }
 
-function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+const keptJson = new WeakMap<object, string>()
+
+function jsonOf<T extends object>(kept: T, part: (x: T) => unknown = (x) => x): string {
+  let json = keptJson.get(kept)
+  if (json === undefined) keptJson.set(kept, (json = JSON.stringify(part(kept))))
+  return json
 }
 
+function keepIfSame<T extends object>(old: T | undefined, pushed: T | undefined): T | undefined {
+  if (!pushed) return pushed
+  const json = JSON.stringify(pushed)
+  if (old && json === jsonOf(old)) return old
+  keptJson.set(pushed, json)
+  return pushed
+}
+
+const withoutFiles = (s: SessionInfo): unknown => ({ ...s, files: 0 })
+
 function keepUnchangedSession(old: SessionInfo, pushed: SessionInfo): SessionInfo {
-  const files = sameJson(old.files, pushed.files) ? old.files : pushed.files
-  if (files === old.files && sameJson({ ...old, files: 0 }, { ...pushed, files: 0 })) return old
-  return files === pushed.files ? pushed : { ...pushed, files }
+  const files = keepIfSame(old.files, pushed.files)
+  const rest = JSON.stringify(withoutFiles(pushed))
+  if (files === old.files && rest === jsonOf(old, withoutFiles)) return old
+  const kept = files === pushed.files ? pushed : { ...pushed, files }
+  keptJson.set(kept, rest)
+  return kept
 }
 
 function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
@@ -523,10 +540,7 @@ function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): Sess
 
 function keepUnchangedWorkspaces(prev: WorkspaceRows[], pushed: WorkspaceRows[]): WorkspaceRows[] {
   const before = new Map(prev.map((w) => [w.workspace.path, w]))
-  const next = pushed.map((w) => {
-    const old = before.get(w.workspace.path)
-    return old && sameJson(old, w) ? old : w
-  })
+  const next = pushed.map((w) => keepIfSame(before.get(w.workspace.path), w)!)
   return next.length === prev.length && next.every((w, i) => w === prev[i]) ? prev : next
 }
 
@@ -1132,11 +1146,11 @@ export const useStore = create<AppState>((set, get) => ({
         s.workspaceRows,
         all.filter((w) => !w.workspace.butler)
       )
-      const butler = all.find((w) => w.workspace.butler) ?? null
       const butlerWorkspace =
-        butler && s.butlerWorkspace && sameJson(butler, s.butlerWorkspace)
-          ? s.butlerWorkspace
-          : butler
+        keepIfSame(
+          s.butlerWorkspace ?? undefined,
+          all.find((w) => w.workspace.butler)
+        ) ?? null
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null

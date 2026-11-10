@@ -411,6 +411,34 @@ describe('TerminalOutput — a tab off screen gets its output in fewer, larger b
     }
   })
 
+  it('a question split across two reads is still not kept waiting', () => {
+    const { out, sent } = offScreenTab()
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b\x1b[')
+    out.push('t', '6n')
+    expect(sent.map((s) => s.data)).toEqual(['a', 'b\x1b[6n'])
+  })
+
+  it('an off-screen tab the view stops acking still pauses its pty past the watermark', () => {
+    const { out, gate, calls } = makeOutput()
+    gate('t').attach()
+    out.onScreen('t', false)
+    for (let i = 0; i < 2 * (FLOW_QUEUE_PAUSE / FLOW_SLICE_UTF16_UNITS); i++)
+      out.push('t', 'x'.repeat(FLOW_SLICE_UTF16_UNITS))
+    expect(calls).toEqual(['pause t'])
+  })
+
+  it('a tab that restarts while off screen keeps getting its output in batches', () => {
+    const { out, sent } = offScreenTab()
+    out.end('t', true)
+    out.push('t', 'a')
+    vi.advanceTimersByTime(1)
+    out.push('t', 'b')
+    vi.advanceTimersByTime(PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
+    expect(sent.map((s) => s.data)).toEqual(['a'])
+  })
+
   it('a link or a cursor move is not a question', () => {
     expect(asksTheTerminal('\x1b]8;;https://x.test/?q=1\x07link\x1b]8;;\x07')).toBe(false)
     expect(asksTheTerminal('\x1b[u\x1b[2 q\x1b[22;0t')).toBe(false)

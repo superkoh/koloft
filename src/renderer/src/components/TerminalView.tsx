@@ -485,7 +485,6 @@ function LiveTerminal({
       ta?.removeEventListener('compositionend', onCompEnd)
       ro.disconnect()
       vis.disconnect()
-      window.api.terminal.onScreen(id, true)
       delete (window as unknown as { __koloftTerms?: Record<string, Terminal> }).__koloftTerms?.[id]
       unregisterScreen()
       dprCleanup?.()

@@ -106,6 +106,8 @@ export function nextSlice(data: string, maxUnits = FLOW_SLICE_UTF16_UNITS): stri
 const QUESTION_FOR_THE_TERMINAL =
   /\x1b\[(?:[?>=]?[\d;]*[cn]|\??[\d;]*\$p|>[\d;]*q|\?u|(?:1[1-9]|2[01])t)|\x1b\]\d+;(?:[^\x07\x1b]*;)?\?(?:\x07|\x1b\\)|\x1bP[$+]q/
 
+const LONGEST_QUESTION_SPLIT_ACROSS_READS = 16
+
 export function asksTheTerminal(data: string): boolean {
   return QUESTION_FOR_THE_TERMINAL.test(data)
 }
@@ -115,6 +117,7 @@ interface TabOutput {
   units: number
   lastSentAt: number
   timer: ReturnType<typeof setTimeout> | null
+  lastRead: string
 }
 
 function takeSlice(tab: TabOutput): string {
@@ -150,13 +153,19 @@ export class TerminalOutput {
     if (!this.d.rendererUp()) return
     let tab = this.tabs.get(id)
     if (!tab) {
-      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null }
+      tab = { chunks: [], units: 0, lastSentAt: -Infinity, timer: null, lastRead: '' }
       this.tabs.set(id, tab)
     }
     tab.chunks.push(data)
     tab.units += data.length
+    const lastRead = tab.lastRead
+    tab.lastRead = data
     const offScreen = this.offScreen.has(id)
-    if (offScreen && (tab.units >= FLOW_SLICE_UTF16_UNITS || asksTheTerminal(data)))
+    if (
+      offScreen &&
+      (tab.units >= FLOW_SLICE_UTF16_UNITS ||
+        asksTheTerminal(lastRead.slice(-LONGEST_QUESTION_SPLIT_ACROSS_READS) + data))
+    )
       return this.flush(id)
     if (tab.timer) return
     const every = offScreen ? PTY_OUTPUT_COALESCE_OFF_SCREEN_MS : PTY_OUTPUT_COALESCE_ONE_FRAME_MS
@@ -172,11 +181,10 @@ export class TerminalOutput {
 
   flush(id: string): void {
     const tab = this.tabs.get(id)
-    while (tab?.units && this.tabs.get(id) === tab && this.d.gate(id).maySend()) {
-      if (tab.timer) clearTimeout(tab.timer)
-      tab.timer = null
-      this.sendSlice(id, tab)
-    }
+    if (!tab?.units) return
+    if (tab.timer) clearTimeout(tab.timer)
+    tab.timer = null
+    this.sendSlice(id, tab)
   }
 
   wake(id: string): void {
@@ -188,7 +196,6 @@ export class TerminalOutput {
   }
 
   end(id: string, showTheRest: boolean): void {
-    this.offScreen.delete(id)
     const tab = this.tabs.get(id)
     if (!tab) return
     if (tab.timer) clearTimeout(tab.timer)
