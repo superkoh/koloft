@@ -3526,6 +3526,10 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      homeOf: (sessionId) => {
+        const name = sessionAccounts?.of('codex', sessionId)
+        return name && codexHomeOf(userData, name)
+      },
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
