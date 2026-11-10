@@ -297,12 +297,12 @@ interface MachineTarget {
   tabId: string
 }
 
-// PLATFORM§37
+// PLATFORM§3 PLATFORM§37
 function pushMachine(s: MachineTarget): string {
   const m = s.machine.name
   const tmp = `m.tmp.${s.tabId}`
   return (
-    `COPYFILE_DISABLE=1 tar czf - -C ${shq(s.machine.dir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
+    `COPYFILE_DISABLE=1 tar czf - --no-xattrs -C ${shq(s.machine.dir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
     `'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf ${tmp} && mkdir ${tmp} ` +
     `&& tar xzf - -C ${tmp} && sh -c "test -d ${m} || mv ${tmp} ${m}; rm -rf ${tmp}"'`
   )
@@ -317,9 +317,10 @@ const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — se
 
 const TAB_IN = 'koloft-tab-in'
 
+// PLATFORM§3
 function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string {
   return (
-    `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
+    `COPYFILE_DISABLE=1 tar cf - --no-xattrs -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
     `'umask 077; test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
     `&& tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
   )

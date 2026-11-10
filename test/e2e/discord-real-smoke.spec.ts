@@ -15,6 +15,8 @@ import {
 } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord, type FakeThread } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import type { BackendId, SessionInfo } from '../../src/shared/types'
+import { BUTLER_OFF_ITS_AGENT_LOG } from '../../src/shared/butlerStart'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
@@ -216,17 +218,62 @@ async function keepWhatHappened(env: E2EEnv, fake: FakeDiscord): Promise<void> {
       await test.info().attach(f, { path: path.join(projects, slug, f) })
 }
 
+function seededButlerBackend(env: E2EEnv): BackendId {
+  const settings = JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8'))
+  return (settings as { assist: { backend: BackendId } }).assist.backend
+}
+
+function linesKoloftLogs(app: ElectronApplication): string[] {
+  const lines: string[] = []
+  let partial = ''
+  app.process().stderr?.on('data', (chunk: Buffer) => {
+    const parts = (partial + chunk.toString()).split('\n')
+    partial = parts.pop()!
+    lines.push(...parts.filter((line) => line.startsWith('[koloft]')))
+  })
+  return lines
+}
+
+async function butlerRunsOn(page: Page, backend: BackendId, koloftLogged: string[]): Promise<void> {
+  const offItsAgent = (): boolean =>
+    koloftLogged.some((line) => line.startsWith(BUTLER_OFF_ITS_AGENT_LOG))
+  let butler: SessionInfo | undefined
+  await expect
+    .poll(
+      async () => {
+        butler = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.butler && s.alive
+        )
+        return !!butler || offItsAgent()
+      },
+      { timeout: 3 * A_REAL_MODEL_TURN_MS }
+    )
+    .toBe(true)
+  expect(
+    butler?.backendId,
+    `the butler is ${butler ? `on ${butler.backendId}` : 'not open'}, not on ${backend}; Koloft logged:\n${koloftLogged.join('\n') || '(nothing)'}`
+  ).toBe(backend)
+}
+
 async function withConductor(
   env: E2EEnv,
   fake: FakeDiscord,
-  body: (app: ElectronApplication, page: Page) => Promise<void>
+  body: (
+    app: ElectronApplication,
+    page: Page,
+    butlerRunsOnItsBackend: () => Promise<void>
+  ) => Promise<void>
 ): Promise<void> {
+  const seeded = seededButlerBackend(env)
   const app = await launchApp(env)
+  const koloftLogged = linesKoloftLogs(app)
   const page = await app.firstWindow()
+  const butlerRunsOnItsBackend = (): Promise<void> => butlerRunsOn(page, seeded, koloftLogged)
   try {
     await waitBooted(page)
     await expect.poll(() => fake.identifies).toBe(1)
-    await body(app, page)
+    await butlerRunsOnItsBackend()
+    await body(app, page, butlerRunsOnItsBackend)
   } finally {
     await keepWhatHappened(env, fake)
     await quitAndClose(app)
@@ -724,7 +771,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     useRealCodex(env)
     seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
-    await withConductor(env, fake, async (_app, page) => {
+    await withConductor(env, fake, async (_app, page, butlerRunsOnItsBackend) => {
       await answersWholeInTheChannel(fake)
       const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
         (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.butler)
@@ -734,7 +781,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await page.evaluate((id) => window.api.terminal.kill(id), first.tabId)
       await expect.poll(conductor).toBeUndefined()
 
-      await writesInTheWorkspaceItself(env, fake)
+      await Promise.all([writesInTheWorkspaceItself(env, fake), butlerRunsOnItsBackend()])
       const again = (await conductor())!
       expect(again.tabId).not.toBe(first.tabId)
       expect(again.sessionId).toBe(first.sessionId)
@@ -843,7 +890,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         gitCommitAll(env.workspaces.a)
         const fake = await startFakeDiscord(env)
         if (needs.includes('claude')) addClaudeAccountToKeychain(env)
-        await withConductor(env, fake, async (_app, page) => {
+        await withConductor(env, fake, async (_app, page, butlerRunsOnItsBackend) => {
           const conductorTab = async (): Promise<string | undefined> =>
             (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler && s.alive)
               ?.tabId
@@ -859,9 +906,12 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
           await page.evaluate((tab) => window.api.terminal.kill(tab), closed)
           await expect.poll(conductorTab).toBeUndefined()
           expect(conductorSaid(fake).join('\n')).not.toContain(SECRET)
-          await expect
-            .poll(() => conductorSaid(fake).join('\n'), { timeout: 3 * A_REAL_MODEL_TURN_MS })
-            .toContain(SECRET)
+          await Promise.all([
+            expect
+              .poll(() => conductorSaid(fake).join('\n'), { timeout: 3 * A_REAL_MODEL_TURN_MS })
+              .toContain(SECRET),
+            butlerRunsOnItsBackend()
+          ])
           expect(await conductorTab()).not.toBe(closed)
         })
       })

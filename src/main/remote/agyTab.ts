@@ -7,7 +7,7 @@ import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteShCommand } from './install'
 import { machineToolProgram, skillsFromMachineLine, type TabProgram } from './launch'
-import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
+import { REMOTE_COMPILE_CACHE, REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
@@ -280,6 +280,8 @@ export function agyStatuslineScript(): string {
 D="$(cd "$(dirname "$0")" && pwd)"
 node="${REMOTE_NODE}"
 [ -x "$node" ] || exit 0
+# PLATFORM§36
+export NODE_COMPILE_CACHE="${REMOTE_COMPILE_CACHE}"
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 exec "$node" "$D/agy.cjs" "$D/ccstatusline.js" "$D/theme.json"
 `

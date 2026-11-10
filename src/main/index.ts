@@ -95,7 +95,7 @@ import {
   turnedOffLine,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { butlerStart } from '@shared/butlerStart'
+import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
@@ -1788,14 +1788,30 @@ function installedBackends(): Promise<BackendAvailability[]> {
 
 async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  return butlerStart(
-    preferredAssistBackend(settings),
-    {
-      enabled: settings.sessionMethods.enabled,
-      installed: await installedBackends(),
-      accounts: listAccounts()
-    },
-    butlerNameNow()
+  const preferred = preferredAssistBackend(settings)
+  const inputs = {
+    enabled: settings.sessionMethods.enabled,
+    installed: await installedBackends(),
+    accounts: listAccounts()
+  }
+  const choice = butlerStart(preferred, inputs, butlerNameNow())
+  const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
+  if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
+  return choice
+}
+
+function logWhyButlerIsNotOn(
+  preferred: BackendId,
+  inputs: Parameters<typeof butlerStart>[1],
+  said: string
+): void {
+  const probe = inputs.installed.find((b) => b.id === preferred)
+  const found = probe?.available ? 'found' : `not found (${probe?.reason ?? 'no answer'})`
+  const accounts = inputs.accounts
+    .filter((a) => ACCOUNT_KINDS_OF[preferred].includes(a.kind))
+    .map((a) => (a.enabled ? a.status : 'turned off'))
+  console.error(
+    `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
