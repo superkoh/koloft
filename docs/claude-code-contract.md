@@ -1736,6 +1736,26 @@ inferred, not checked.
   tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
   The terminal notification wakes the model, so a wrap-up turn with its own Stop
   follows. Every ack kind gets one — except a teammate.
+  **Since 2.1.321 a long command is cut in the middle of the summary.** For a
+  background shell whose command is over 1,000 characters, 2.1.322 keeps the first 500
+  and the last 300 characters of the `<summary>` text and puts `\n\n... [N characters
+  truncated] ...\n\n` between them, before escaping `>` as `&gt;`; 2.1.319 wrote the
+  whole command. The marker holds no `<`, and `<task-id>`, `<tool-use-id>` and
+  `<status>` are unchanged. The Stop hook's `background_tasks[].command` and
+  `.description` were already cut near 1,000 characters with `… [+N chars]` on both
+  builds. Rechecked the same day on both builds, unchanged: the notification opens with
+  `<task-notification>` and carries `<task-id>`, `<tool-use-id>` and
+  `<status>completed</status>`; a Monitor event is `<summary>Monitor event: "<description>"</summary>`
+  with no `<status>` or `<tool-use-id>`, and its end is `<status>completed</status>` with
+  `Monitor "<description>" stream ended`; a task that finishes while CC sits idle is
+  written as the `queue-operation` enqueue, then a user record with `origin.kind:
+  'task-notification'` and no `isMeta`, and the UserPromptSubmit `prompt` opens with
+  `<task-notification>`; Stop's `background_tasks` entries hold `id`, `type`, `status`,
+  `description` and `command`, a Monitor as `type: "shell"`. (2026-11-10, CC 2.1.319 and
+  2.1.322 darwin-arm64, interactive TUI in a Python pty, scratch `HOME` and
+  `CLAUDE_CONFIG_DIR`, one 1,224-character background command, one short one and one
+  Monitor; the 1,000 threshold is the 2.1.321 changelog's, only 1,224 was run. Not
+  probed: the `attachment` path, which neither run wrote, and `TaskStop`'s result.)
 - **A teammate never gets a `<task-notification>`** (measured: 149 `teammate_spawned`
   acks across 41 recent transcripts, zero named by one). It reports through an
   `Another Claude session sent a message: <teammate-message …>` record, which carries
@@ -2120,23 +2140,44 @@ the official install docs; Claude Code 2.1.263 was the current version that day.
 bullets dated 2026-10-11 were measured against a real install on macOS.
 
 - **It is `#!/bin/bash`** (uses `[[ ]]` and `=~`), so `sh` cannot run it — a machine
-  without bash needs bash installed first. It needs `curl` or `wget` and `sha256sum` or
-  `shasum`, detects `x86_64` / `aarch64` and musl by itself, **refuses to run under
-  `sudo`** (plain root is fine), and installs a self-contained native binary to
-  `~/.local/bin/claude`, so a machine with claude need not have node.
+  without bash needs bash installed first. It needs `curl` or `wget`, and `shasum -a
+  256` on macOS or `sha256sum` on Linux (each OS uses only its own), detects `x86_64` /
+  `aarch64` and musl by itself, **refuses to run under `sudo`** (plain root is fine), and
+  installs a self-contained native binary to `~/.local/bin/claude`, so a machine with
+  claude need not have node. Rechecked 2026-11-10 on the script serving 2.1.322: under
+  `dash` it stops with `Syntax error: "(" unexpected` (exit 2); as root with
+  `SUDO_USER=node` it prints "Error: do not run this installer with sudo." and exits 1
+  (`CLAUDE_INSTALL_ALLOW_SUDO` lifts that); `~/.local/bin/claude` points into
+  `~/.local/share/claude/versions/2.1.322` on macOS and in a `node:22-bookworm`
+  container alike.
 - **The installer writes no shell rc file.** It only prints "~/.local/bin is not in your
   PATH" with an `echo … >> ~/.zshrc` line for the user to run, so neither `zsh -l -c` nor
   `zsh -l -i -c` finds `claude` afterwards. It does create `~/.claude.json` (install
   method, user and machine ids — no `hasCompletedOnboarding`). (2026-10-11, Claude Code
   2.1.296, macOS 27: `curl -fsSL https://claude.ai/install.sh | bash` under `zsh -l -i`
   with a fresh temporary `HOME` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, then the home's
-  files listed and `command -v claude` run through both shells.)
+  files listed and `command -v claude` run through both shells. Rechecked 2026-11-10 on
+  2.1.322, the same way on macOS, and on Linux in `node:22-bookworm`: still no rc file
+  written, `.bashrc` and `.profile` unchanged; there `bash -l` does find `claude`, but
+  only because Debian's stock `.profile` adds `~/.local/bin`.)
 - **The binary download prints nothing.** The script fetches the native binary with
   `curl -fsSL -o` (or `wget -q -O`) and prints its first line, "Setting up Claude
   Code...", only after the download and checksum. For 2.1.316 the macOS download is
   107 MB (arm64) or 114 MB (x64) when `zstd` is on the machine, 310 MB or 324 MB without
   it, so at 2 Mbit/s it is silent for 7 to 22 minutes. (2026-11-01: the served script
   read; `latest` answered 2.1.316, sizes from its `manifest.json` and `manifest.zst.json`.)
+  For 2.1.322: darwin-arm64 111.9 MB with `zstd` / 323.7 MB without, darwin-x64 119.1 /
+  338.4 MB, linux-arm64 123.3 / 341.5 MB, linux-x64 124.5 / 341.9 MB (its manifests,
+  2026-11-10).
+- **On macOS the `claude install` step then downloads the whole binary again, in
+  silence.** After "Installing Claude Code native build latest..." it fetches the
+  uncompressed build into `~/.cache/claude/staging` whether or not `zstd` is there, about
+  324 MB (arm64) or 338 MB (x64), and the terminal gets no byte meanwhile: at 2 Mbit/s a
+  second silent stretch of about 22 minutes. On Linux that step took 1.3 s and fetched
+  nothing. (2026-11-10, script serving 2.1.322: three macOS installs in a Python pty with a
+  scratch `HOME`, 41.7, 52.6 and 46.3 s of no output while the staging file grew to 323.7
+  MB; one in `node:22-bookworm`. Whether 2.1.316 did this too is not checked. Koloft's
+  20-minute install silence limit is issue #1698.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
