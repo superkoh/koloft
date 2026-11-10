@@ -605,7 +605,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  test('the butler lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace', async ({
+  // CODEX§15
+  test('the butler lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace, though the session ran in an account home and the default home never loaded it', async ({
     env
   }) => {
     installCodex(env)
@@ -629,6 +630,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
       const said = await koloftSays(page, `session read ${codexId}`)
       expect(said).toContain('owner: Codex fixture session')
       expect(said).toContain('assistant: Codex fixture answered: Codex fixture session')
+      const defaultHomeLoaded = path.join(env.launchEnv.CODEX_HOME!, 'fake-codex-loaded', codexId)
+      expect(fs.existsSync(defaultHomeLoaded)).toBe(false)
     } finally {
       await close()
     }
