@@ -708,7 +708,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
-    // ADR-0029
+    // ADR-0029 MUSE§22
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
