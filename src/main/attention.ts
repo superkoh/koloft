@@ -39,13 +39,15 @@ export class AttentionTracker {
   bound(tabId: string, sessionId: string): void {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
+    const askingHere = this.pending.get(tabId)
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
-    this.pending.set(tabId, {
-      ...carried,
+    const wasAsking = carried.kind === 'approval' || carried.wasAsking
+    this.pending.set(
       tabId,
-      kind: 'turn-done',
-      ...(carried.kind === 'approval' && { wasAsking: true })
-    })
+      askingHere?.kind === 'approval' && askingHere !== carried
+        ? { ...askingHere, sessionId, ...(wasAsking && { at: carried.at }) }
+        : { ...carried, tabId, kind: 'turn-done', ...(wasAsking && { wasAsking: true }) }
+    )
     this.onChange(this.list(), null)
   }
 

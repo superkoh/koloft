@@ -192,6 +192,15 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     expect(again?.wasAsking).toBeUndefined()
     expect(changes.at(-1)?.event).toBeNull()
   })
+
+  it('a reattached tab that shows its ask before it binds keeps asking once bound, as the same ask as before the restart', () => {
+    const { t } = makeTracker(lastRun)
+    t.onStatusChange('tab-new', undefined, 'approval')
+    t.bound('tab-new', 'sid-2')
+    expect(t.list().filter((e) => e.sessionId === 'sid-2')).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'approval', at: 2 })
+    ])
+  })
 })
 
 describe('attention — a session starting again keeps its mark', () => {
