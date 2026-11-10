@@ -26,7 +26,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
   it('falls back to a family row only for a date stamp, so the next minor version (5-6 after 5) is unknown, never priced as its elder', () => {
     expect(resolvePricing('claude-opus-5-6')).toBeUndefined()
     expect(resolvePricing('claude-sonnet-5-6')).toBeUndefined()
-    expect(resolvePricing('claude-fable-5-2')).toBeUndefined()
+    expect(resolvePricing('claude-fable-5-3')).toBeUndefined()
   })
 
   it('prices the DATED 4.0-generation ids real transcripts record, since one unknown id strips the $ from the whole session', () => {
@@ -103,6 +103,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
   })
 
   it.each([
+    ['claude-fable-5-2', { inPerM: 8, outPerM: 40, cacheReadPerM: 0.2, windowTokens: 1_000_000 }],
     ['claude-sonnet-5-5', { inPerM: 2, outPerM: 10, cacheReadPerM: 0.1, windowTokens: 1_000_000 }],
     [
       'claude-haiku-5-5',
@@ -140,8 +141,9 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('claude-sonnet-4-5')!.windowTokens).toBe(200_000)
   })
 
-  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment), but for the 5.5-generation rows with their own cache-read price', () => {
+  it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment), but for the rows with their own cache-read price', () => {
     const OWN_CACHE_READ: Record<string, number> = {
+      'claude-fable-5-2': 0.2,
       'claude-fable-5-1': 0.25,
       'claude-opus-5-5': 0.2,
       'claude-sonnet-5-5': 0.1
@@ -155,6 +157,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
 
   it('covers the required current families', () => {
     for (const id of [
+      'claude-fable-5-2',
       'claude-fable-5-1',
       'claude-fable-5',
       'claude-sonnet-4-5',

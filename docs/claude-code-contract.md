@@ -1445,7 +1445,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   full-scope login token. Long-lived tokens (from claude setup-token or
   CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
   does not work for a Koloft session.
-- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
+- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.2
+  $8/$40, 1M (cache read $0.20) — the default `fable` since CC 2.1.321 (changelog: "Added
+  Claude Fable 5.2 (`claude-fable-5-2`), now the default Fable model — 1M context, $8/$40
+  per Mtok with $0.20/Mtok cache reads"; the 2.1.322 binary names its tier
+  `tier_8_40_cache_read_0_20` and `latest_per_family` `fable: "claude-fable-5-2"`,
+  `strings`, 2026-11-10; its fast-mode price object, shared with `claude-mythos-5-2`, is
+  $16/$80 with cache writes $20 (5m) and $32 (1h) and reads $0.40 — twice each standard
+  figure, so the standard writes are the usual 1.25× and 2× input, $10 and $16); Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
@@ -1455,8 +1462,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   account, three requests: every cache write was `ephemeral_1h_input_tokens`, none 5m;
   CC's own `total_cost_usd` matched 2× input on them to the cent, and the transcript's
   `message.usage.cache_creation` carries the same split). A cache read costs 0.10×
-  input, as ccusage applies it — except the 5.5-generation rows, whose cache read is their own
-  figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
+  input, as ccusage applies it — except the rows whose cache read is their own
+  figure: Fable 5.2 $0.20 (above), Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
   fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing
   page for older Opus/Sonnet, and the Sonnet 5 change noted against CC 2.1.243. The Opus
@@ -1562,6 +1569,20 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   id, during the call or in its tool result after. So the process table cannot
   tie such a call to the agent that made it; it only shows that some foreground call
   is in flight. Other foreground tools and other builds are not probed yet.
+- **On Linux the same tool shell shows in `/proc`, with no `lsof`.** Measured 2026-11-08 on
+  CC 2.1.319 (linux-arm64), interactive in tmux inside the e2e SSH lab image (Debian
+  bookworm slim, no `lsof` installed), as a normal user, the model a fake Messages API
+  answering one Bash call; 1 run. A FOREGROUND `perl -e 'sleep 40'` ran as
+  `/bin/bash -c source ~/.claude/shell-snapshots/… && … eval …`, a direct child of
+  `claude`, and `readlink /proc/<pid>/fd/1` of that shell and of `perl` both gave
+  `/tmp/claude-<uid>/<cwd slug>/<session id>/tasks/b<…>.output`.
+  `find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%l\n'` listed
+  exactly those two in 2 ms with about 20 processes in the container, and took 6–24 ms
+  over three runs with 1015 processes; Koloft's whole machine heartbeat with it took
+  10–22 ms. A process left holding such a file that is not a tool shell (a stray
+  `perl … > …/tasks/b….output &`) differs from the tool shell only by its command line,
+  which lacks `shell-snapshots`. A bare `sleep 40` was refused by CC itself ("Blocked: standalone sleep 40"),
+  so a probe needs another long command. A macOS machine (no `/proc`) is not probed.
 - **Age does not tell a server from long work.** Census 2026-09-23 over every
   transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
   ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
